@@ -1,0 +1,73 @@
+export type TaskStatus = "inbox" | "planned" | "done" | "trashed";
+export type TaskPriority = "none" | "low" | "medium" | "high";
+export type CalendarProvider = "google" | "m365";
+
+export interface Task {
+  id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  title: string;
+  notes: string;
+  status: TaskStatus;
+  do_date: string | null; // 'YYYY-MM-DD'
+  start_time: string | null; // timestamptz ISO
+  duration_minutes: number | null;
+  deadline: string | null; // 'YYYY-MM-DD'
+  priority: TaskPriority;
+  roll_count: number;
+  completed_at: string | null;
+  project_id: string | null;
+  domain_id: string | null;
+  google_event_id: string | null;
+  sort_order: number;
+  task_labels?: { label_id: string }[];
+}
+
+export interface Label {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface CalendarInfo {
+  id: string;
+  summary: string;
+  color: string | null;
+  visible: boolean;
+}
+
+export interface CalendarAccount {
+  id: string;
+  provider: CalendarProvider;
+  email: string;
+  sync_direction: "two_way" | "read_only";
+  calendars: CalendarInfo[];
+  mirror_calendar_id: string | null;
+  needs_reconnect: boolean;
+}
+
+export interface ExternalEvent {
+  id: string;
+  account_id: string;
+  provider_event_id: string;
+  calendar_id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  all_day: boolean;
+  location: string | null;
+  busy: boolean;
+}
+
+export interface UserSettings {
+  user_id: string;
+  theme: "system" | "light" | "dark";
+  day_start_hour: number;
+  day_end_hour: number;
+  week_start: number;
+  hidden_calendar_ids: string[];
+  last_rollover_date: string | null;
+}
+
+export const DEFAULT_DURATION_MINUTES = 30;

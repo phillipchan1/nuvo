@@ -1,0 +1,220 @@
+@import "tailwindcss";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/* ── Daylight tokens ─────────────────────────────────────────────────── */
+:root,
+[data-theme="light"] {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --line: #dde1e7;
+  --text: #16181d;
+  --muted: #6b7280;
+  --accent: #2563eb;
+  --signal: #e8590c;
+  --accent-soft: rgba(37, 99, 235, 0.08);
+  --signal-soft: rgba(232, 89, 12, 0.08);
+}
+
+[data-theme="dark"] {
+  --bg: #131418;
+  --surface: #1b1c21;
+  --line: #2a2c33;
+  --text: #ecedef;
+  --muted: #8b8e98;
+  --accent: #5b96f7;
+  --signal: #ff7a33;
+  --accent-soft: rgba(91, 150, 247, 0.12);
+  --signal-soft: rgba(255, 122, 51, 0.12);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-signal: var(--signal);
+  --color-accent-soft: var(--accent-soft);
+  --color-signal-soft: var(--signal-soft);
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every numeral the user sees is Plex Mono, tabular. */
+.mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tiny uppercase section labels */
+.section-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Keycap hint chips */
+.keycap {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--muted);
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+/* Speed language: fast transform/opacity transitions only, no soft shadows */
+.fast {
+  transition:
+    transform 100ms ease-out,
+    opacity 100ms ease-out;
+}
+
+button {
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Completion micro-interaction: quick strike + fade, no confetti */
+@keyframes task-complete {
+  0% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0.55;
+    transform: translateX(2px);
+  }
+  100% {
+    opacity: 0.4;
+    transform: translateX(0);
+  }
+}
+.task-completing {
+  animation: task-complete 160ms ease-out forwards;
+}
+
+/* ── FullCalendar restyle to Daylight ────────────────────────────────── */
+.fc {
+  --fc-border-color: var(--line);
+  --fc-page-bg-color: var(--surface);
+  --fc-neutral-bg-color: var(--bg);
+  --fc-today-bg-color: var(--accent-soft);
+  --fc-now-indicator-color: var(--signal);
+  --fc-event-border-color: transparent;
+  font-size: 12px;
+  height: 100%;
+}
+
+.fc .fc-timegrid-slot {
+  height: 22px;
+}
+.fc .fc-timegrid-slot-label,
+.fc .fc-timegrid-axis-cushion,
+.fc .fc-col-header-cell .day-num {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.fc .fc-col-header-cell-cushion {
+  padding: 6px 4px;
+  color: var(--text);
+  font-weight: 500;
+}
+.fc .fc-timegrid-now-indicator-line {
+  border-width: 1.5px 0 0;
+}
+.fc .fc-event {
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+.fc .fc-event:focus {
+  outline: none;
+  box-shadow: none;
+}
+.fc .fc-event .fc-event-main {
+  padding: 1px 4px;
+}
+.fc .fc-timegrid-event-harness .fc-event {
+  transition: transform 100ms ease-out;
+}
+
+/* Own task blocks: accent border + checkbox affordance */
+.fc-event.evt-task {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-left-width: 3px;
+  color: var(--text);
+}
+.fc-event.evt-task.evt-done {
+  opacity: 0.55;
+}
+.fc-event.evt-task.evt-overdue {
+  border-color: var(--signal);
+  background: var(--signal-soft);
+}
+
+/* Google events: calendar's own color at reduced saturation (set inline),
+   here we just normalize text */
+.fc-event.evt-google {
+  color: var(--text);
+  border: 1px solid transparent;
+}
+
+/* M365: striped muted fill, dashed border, display-only */
+.fc-event.evt-m365 {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    color-mix(in srgb, var(--muted) 14%, transparent) 4px,
+    color-mix(in srgb, var(--muted) 14%, transparent) 8px
+  );
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+  cursor: default;
+}
+
+/* External-drag mirror element */
+.fc-event-dragging,
+.fc-event-mirror {
+  opacity: 0.8;
+}

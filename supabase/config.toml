@@ -1,0 +1,13 @@
+# Edge function auth settings.
+# OAuth callbacks (Google/Microsoft redirect the browser here without our
+# Authorization header) and the Google webhook must be publicly reachable;
+# each validates its own credentials (signed state / channel token).
+
+[functions.google-oauth]
+verify_jwt = false
+
+[functions.m365-oauth]
+verify_jwt = false
+
+[functions.google-webhook]
+verify_jwt = false
