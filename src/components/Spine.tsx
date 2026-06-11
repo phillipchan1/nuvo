@@ -1,13 +1,12 @@
-import type { Rung } from "./AppShell";
+import { LADDER, type Rung } from "./AppShell";
 
-// The permanent left navigation. Five rungs ordered by time horizon — every
-// step up is a strictly wider lens. Day · Week (the calendar) is the home rung.
+// Top-to-bottom: Now (immediate) → Domain (widest). ⌘1 at top, ⌘5 at bottom.
 const RUNGS: { id: Rung; label: string }[] = [
-  { id: "domain", label: "Domain" },
-  { id: "initiative", label: "Initiative" },
-  { id: "project", label: "Project" },
-  { id: "day", label: "Day · Week" },
   { id: "now", label: "Now" },
+  { id: "day", label: "Day · Week" },
+  { id: "project", label: "Project" },
+  { id: "initiative", label: "Initiative" },
+  { id: "domain", label: "Domain" },
 ];
 
 export default function Spine({ rung, setRung }: { rung: Rung; setRung: (r: Rung) => void }) {
@@ -27,7 +26,7 @@ export default function Spine({ rung, setRung }: { rung: Rung; setRung: (r: Rung
               key={r.id}
               onClick={() => setRung(r.id)}
               className="relative z-10 flex flex-col items-center gap-1.5"
-              title={r.label}
+              title={`${r.label} (⌘${LADDER.indexOf(r.id) + 1})`}
             >
               <span
                 className="fast rounded-full"
@@ -49,7 +48,7 @@ export default function Spine({ rung, setRung }: { rung: Rung; setRung: (r: Rung
         })}
       </div>
 
-      <div className="mono pb-3 text-[9px] text-muted">⌘↑↓</div>
+      <div className="mono pb-3 text-center text-[9px] leading-tight text-muted">⌘1–5<br />⌘↓↑</div>
     </div>
   );
 }

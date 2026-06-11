@@ -37,6 +37,8 @@ export default function LeftRail({
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);
   const captureRef = useRef<HTMLInputElement>(null);
   const [capture, setCapture] = useState("");
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
 
   const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
 
@@ -119,24 +121,35 @@ export default function LeftRail({
     return () => window.removeEventListener("keydown", onKey);
   }, [hotkeysEnabled, selected, visible, mutations, onOpenTask, setTab]);
 
-  const submitCapture = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitCapture = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const text = capture.trim();
-    if (!text) return;
-    const p = parseCapture(text);
-    const labelIds = p.labels
-      .map((name) => labels.find((l) => l.name.toLowerCase() === name.toLowerCase())?.id)
-      .filter((id): id is string => Boolean(id));
-    const input: NewTaskInput = {
-      title: p.title || text,
-      do_date: p.doDate,
-      start_time: p.startTime?.toISOString() ?? null,
-      duration_minutes: p.durationMinutes,
-      priority: p.priority,
-      labelIds,
-    };
-    setCapture("");
-    await mutations.create(input);
+    if (!text || capturing) return;
+    setCaptureError(null);
+    setCapturing(true);
+    try {
+      const p = parseCapture(text);
+      const labelIds = p.labels
+        .map((name) => labels.find((l) => l.name.toLowerCase() === name.toLowerCase())?.id)
+        .filter((id): id is string => Boolean(id));
+      const input: NewTaskInput = {
+        title: p.title || text,
+        do_date: p.doDate,
+        start_time: p.startTime?.toISOString() ?? null,
+        duration_minutes: p.durationMinutes,
+        priority: p.priority,
+        labelIds,
+      };
+      const task = await mutations.create(input);
+      setCapture("");
+      if (task.status !== "inbox") setTab("today");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not save task";
+      setCaptureError(msg);
+      console.error("[nuvo] capture failed:", err);
+    } finally {
+      setCapturing(false);
+    }
   };
 
   const rowProps = (t: Task) => ({
@@ -170,14 +183,27 @@ export default function LeftRail({
       </div>
 
       {/* Capture */}
-      <form onSubmit={submitCapture} className="border-b border-line p-2">
+      <form onSubmit={(e) => void submitCapture(e)} className="border-b border-line p-2">
         <input
           ref={captureRef}
           value={capture}
-          onChange={(e) => setCapture(e.target.value)}
+          disabled={capturing}
+          onChange={(e) => {
+            setCapture(e.target.value);
+            if (captureError) setCaptureError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void submitCapture();
+            }
+          }}
           placeholder='Capture… try "call David tomorrow 9am 30m #work !high"'
-          className="w-full border border-line bg-bg px-2.5 py-1.5 text-[13px] outline-none placeholder:text-muted/70 focus:border-accent"
+          className="w-full border border-line bg-bg px-2.5 py-1.5 text-[13px] outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
         />
+        {captureError && (
+          <div className="mt-1 px-0.5 text-[11px] text-signal">{captureError}</div>
+        )}
       </form>
 
       {/* List */}

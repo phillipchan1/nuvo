@@ -87,7 +87,8 @@ export function useTaskMutations() {
 
   const create = useMutation({
     mutationFn: async (input: NewTaskInput): Promise<Task> => {
-      const { data: u } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error("Not signed in");
       const { labelIds, ...fields } = input;
       const status = fields.do_date ? "planned" : "inbox";
       const duration =
@@ -96,7 +97,7 @@ export function useTaskMutations() {
           : fields.duration_minutes;
       const { data, error } = await supabase
         .from("tasks")
-        .insert({ ...fields, duration_minutes: duration, status, user_id: u.user!.id })
+        .insert({ ...fields, duration_minutes: duration, status, user_id: session.user.id })
         .select(TASK_COLS)
         .single();
       if (error) throw error;
