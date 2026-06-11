@@ -1,0 +1,525 @@
+import { admin } from "../_shared/admin.ts";
+import { parseCapture } from "../_shared/nlp.ts";
+
+const DEFAULT_DURATION = 30;
+const MIRROR_FIELDS = new Set(["start_time", "duration_minutes", "title", "status", "do_date"]);
+
+export interface AgentAction {
+  tool: string;
+  summary: string;
+}
+
+async function invokeFn(name: string, body: Record<string, unknown>) {
+  const url = Deno.env.get("SUPABASE_URL")!;
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const res = await fetch(`${url}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    console.warn(`[agent] ${name} failed: ${res.status} ${text}`);
+  }
+}
+
+async function mirrorTask(taskId: string) {
+  await invokeFn("task-mirror", { taskId });
+}
+
+async function getTask(userId: string, taskId: string) {
+  const { data, error } = await admin
+    .from("tasks")
+    .select("*")
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .single();
+  if (error || !data) throw new Error(`Task not found: ${taskId}`);
+  return data;
+}
+
+async function findTaskByTitle(userId: string, title: string) {
+  const q = title.toLowerCase();
+  const { data } = await admin
+    .from("tasks")
+    .select("id, title, status, do_date, start_time")
+    .eq("user_id", userId)
+    .neq("status", "trashed")
+    .ilike("title", `%${title}%`)
+    .limit(5);
+  return data ?? [];
+}
+
+async function resolveLabelIds(userId: string, names: string[]): Promise<string[]> {
+  if (!names.length) return [];
+  const { data } = await admin.from("labels").select("id, name").eq("user_id", userId);
+  const labels = data ?? [];
+  return names
+    .map((n) => labels.find((l) => l.name.toLowerCase() === n.toLowerCase())?.id)
+    .filter((id): id is string => Boolean(id));
+}
+
+export const TOOL_DEFINITIONS = [
+  {
+    type: "function" as const,
+    function: {
+      name: "create_task",
+      description:
+        "Create a new task. Use capture for natural language (e.g. 'call David tomorrow 9am 30m #church !high') or explicit fields.",
+      parameters: {
+        type: "object",
+        properties: {
+          capture: { type: "string", description: "Natural language task capture string" },
+          title: { type: "string" },
+          notes: { type: "string" },
+          do_date: { type: "string", description: "YYYY-MM-DD" },
+          start_time: { type: "string", description: "ISO 8601 timestamp" },
+          duration_minutes: { type: "integer" },
+          priority: { type: "string", enum: ["none", "low", "medium", "high"] },
+          label_names: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "plan_task",
+      description: "Plan a task for a day without a time block.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string", description: "Search by title if id unknown" },
+          do_date: { type: "string", description: "YYYY-MM-DD" },
+        },
+        required: ["do_date"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "schedule_task",
+      description: "Schedule a task as a time block on the calendar.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+          start_time: { type: "string", description: "ISO 8601 timestamp" },
+          duration_minutes: { type: "integer" },
+        },
+        required: ["start_time"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "unschedule_task",
+      description: "Remove a task from the calendar but keep it planned for its day.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "reschedule_task",
+      description: "Move a scheduled task to a new start time and/or duration.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+          start_time: { type: "string", description: "ISO 8601 timestamp" },
+          duration_minutes: { type: "integer" },
+        },
+        required: ["start_time"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "complete_task",
+      description: "Mark a task as done.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "trash_task",
+      description: "Trash a task.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "move_to_inbox",
+      description: "Move a task back to inbox, clearing dates and times.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_task",
+      description: "Update task fields (title, notes, priority, deadline).",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+          title: { type: "string" },
+          notes: { type: "string" },
+          priority: { type: "string", enum: ["none", "low", "medium", "high"] },
+          deadline: { type: "string", description: "YYYY-MM-DD or null to clear" },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "reschedule_event",
+      description: "Reschedule a Google calendar event (not a Nuvo task block).",
+      parameters: {
+        type: "object",
+        properties: {
+          event_id: { type: "string" },
+          event_title: { type: "string" },
+          start_at: { type: "string", description: "ISO 8601 timestamp" },
+          end_at: { type: "string", description: "ISO 8601 timestamp" },
+          title: { type: "string" },
+        },
+        required: ["start_at", "end_at"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_tasks",
+      description: "Search tasks by title when you need to find an id.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+];
+
+async function resolveTaskId(
+  userId: string,
+  args: { task_id?: string; task_title?: string },
+): Promise<{ id: string; title: string }> {
+  if (args.task_id) {
+    const t = await getTask(userId, args.task_id);
+    return { id: t.id, title: t.title };
+  }
+  if (args.task_title) {
+    const matches = await findTaskByTitle(userId, args.task_title);
+    if (matches.length === 0) throw new Error(`No task matching "${args.task_title}"`);
+    if (matches.length > 1) {
+      throw new Error(
+        `Multiple tasks match "${args.task_title}": ${matches.map((m) => `"${m.title}" (${m.id})`).join(", ")}. Use task_id.`,
+      );
+    }
+    return { id: matches[0].id, title: matches[0].title };
+  }
+  throw new Error("Provide task_id or task_title");
+}
+
+function localDateISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export async function executeTool(
+  userId: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ result: string; action?: AgentAction }> {
+  switch (name) {
+    case "create_task": {
+      let title = args.title as string | undefined;
+      let doDate = args.do_date as string | null | undefined;
+      let startTime = args.start_time as string | null | undefined;
+      let duration = args.duration_minutes as number | null | undefined;
+      let priority = (args.priority as string) ?? "none";
+      let labelNames = (args.label_names as string[]) ?? [];
+      const notes = (args.notes as string) ?? "";
+
+      if (args.capture) {
+        const parsed = parseCapture(args.capture as string);
+        title = parsed.title || (args.capture as string);
+        doDate = doDate ?? parsed.doDate;
+        startTime = startTime ?? parsed.startTime?.toISOString() ?? null;
+        duration = duration ?? parsed.durationMinutes;
+        if (parsed.priority !== "none") priority = parsed.priority;
+        labelNames = [...labelNames, ...parsed.labels];
+      }
+
+      if (!title?.trim()) throw new Error("Task title is required");
+
+      const status = doDate ? "planned" : "inbox";
+      const dur =
+        startTime != null ? (duration ?? DEFAULT_DURATION) : (duration ?? null);
+
+      const { data, error } = await admin
+        .from("tasks")
+        .insert({
+          user_id: userId,
+          title: title.trim(),
+          notes,
+          status,
+          do_date: doDate ?? null,
+          start_time: startTime ?? null,
+          duration_minutes: dur,
+          priority,
+        })
+        .select("id, title")
+        .single();
+      if (error) throw new Error(error.message);
+
+      const labelIds = await resolveLabelIds(userId, labelNames);
+      if (labelIds.length) {
+        await admin
+          .from("task_labels")
+          .insert(labelIds.map((label_id) => ({ task_id: data.id, label_id })));
+      }
+
+      if (startTime) await mirrorTask(data.id);
+
+      const when = startTime
+        ? `scheduled for ${new Date(startTime).toLocaleString()}`
+        : doDate
+          ? `planned for ${doDate}`
+          : "added to inbox";
+      return {
+        result: JSON.stringify({ id: data.id, title: data.title, status, doDate, startTime }),
+        action: { tool: name, summary: `Created "${data.title}" — ${when}` },
+      };
+    }
+
+    case "plan_task": {
+      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const doDate = args.do_date as string;
+      const { error } = await admin
+        .from("tasks")
+        .update({ status: "planned", do_date: doDate, start_time: null })
+        .eq("id", id);
+      if (error) throw new Error(error.message);
+      await mirrorTask(id);
+      return {
+        result: JSON.stringify({ id, doDate }),
+        action: { tool: name, summary: `Planned "${title}" for ${doDate}` },
+      };
+    }
+
+    case "schedule_task": {
+      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const startTime = args.start_time as string;
+      const duration = (args.duration_minutes as number) ?? DEFAULT_DURATION;
+      const doDate = localDateISO(new Date(startTime));
+      const { error } = await admin
+        .from("tasks")
+        .update({
+          status: "planned",
+          do_date: doDate,
+          start_time: startTime,
+          duration_minutes: duration,
+        })
+        .eq("id", id);
+      if (error) throw new Error(error.message);
+      await mirrorTask(id);
+      return {
+        result: JSON.stringify({ id, startTime, duration }),
+        action: {
+          tool: name,
+          summary: `Scheduled "${title}" for ${new Date(startTime).toLocaleString()} (${duration}m)`,
+        },
+      };
+    }
+
+    case "unschedule_task": {
+      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { error } = await admin.from("tasks").update({ start_time: null }).eq("id", id);
+      if (error) throw new Error(error.message);
+      await mirrorTask(id);
+      return {
+        result: JSON.stringify({ id }),
+        action: { tool: name, summary: `Unscheduled "${title}" from calendar` },
+      };
+    }
+
+    case "reschedule_task": {
+      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const startTime = args.start_time as string;
+      const patch: Record<string, unknown> = {
+        do_date: localDateISO(new Date(startTime)),
+        start_time: startTime,
+      };
+      if (args.duration_minutes != null) patch.duration_minutes = args.duration_minutes;
+      const { error } = await admin.from("tasks").update(patch).eq("id", id);
+      if (error) throw new Error(error.message);
+      await mirrorTask(id);
+      return {
+        result: JSON.stringify({ id, ...patch }),
+        action: {
+          tool: name,
+          summary: `Rescheduled "${title}" to ${new Date(startTime).toLocaleString()}`,
+        },
+      };
+    }
+
+    case "complete_task": {
+      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { error } = await admin
+        .from("tasks")
+        .update({ status: "done", completed_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw new Error(error.message);
+      await mirrorTask(id);
+      return {
+        result: JSON.stringify({ id }),
+        action: { tool: name, summary: `Completed "${title}"` },
+      };
+    }
+
+    case "trash_task": {
+      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { error } = await admin.from("tasks").update({ status: "trashed" }).eq("id", id);
+      if (error) throw new Error(error.message);
+      await mirrorTask(id);
+      return {
+        result: JSON.stringify({ id }),
+        action: { tool: name, summary: `Trashed "${title}"` },
+      };
+    }
+
+    case "move_to_inbox": {
+      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { error } = await admin
+        .from("tasks")
+        .update({ status: "inbox", do_date: null, start_time: null })
+        .eq("id", id);
+      if (error) throw new Error(error.message);
+      await mirrorTask(id);
+      return {
+        result: JSON.stringify({ id }),
+        action: { tool: name, summary: `Moved "${title}" to inbox` },
+      };
+    }
+
+    case "update_task": {
+      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const patch: Record<string, unknown> = {};
+      if (args.title) patch.title = args.title;
+      if (args.notes !== undefined) patch.notes = args.notes;
+      if (args.priority) patch.priority = args.priority;
+      if (args.deadline !== undefined) patch.deadline = args.deadline || null;
+      if (!Object.keys(patch).length) throw new Error("No fields to update");
+      const { error } = await admin.from("tasks").update(patch).eq("id", id);
+      if (error) throw new Error(error.message);
+      if (Object.keys(patch).some((k) => MIRROR_FIELDS.has(k))) await mirrorTask(id);
+      return {
+        result: JSON.stringify({ id, patch }),
+        action: { tool: name, summary: `Updated "${title}"` },
+      };
+    }
+
+    case "reschedule_event": {
+      let eventId = args.event_id as string | undefined;
+      if (!eventId && args.event_title) {
+        const { data } = await admin
+          .from("external_events")
+          .select("id, title")
+          .eq("user_id", userId)
+          .ilike("title", `%${args.event_title}%`)
+          .limit(5);
+        if (!data?.length) throw new Error(`No event matching "${args.event_title}"`);
+        if (data.length > 1) {
+          throw new Error(
+            `Multiple events match: ${data.map((e) => `"${e.title}" (${e.id})`).join(", ")}`,
+          );
+        }
+        eventId = data[0].id;
+      }
+      if (!eventId) throw new Error("Provide event_id or event_title");
+
+      const patch: Record<string, string> = {
+        start_at: args.start_at as string,
+        end_at: args.end_at as string,
+      };
+      if (args.title) patch.title = args.title as string;
+
+      const { data: evt, error } = await admin
+        .from("external_events")
+        .select("id, title, account_id, calendar_accounts(provider)")
+        .eq("id", eventId)
+        .eq("user_id", userId)
+        .single();
+      if (error || !evt) throw new Error("Event not found");
+
+      const provider = (evt.calendar_accounts as { provider: string } | null)?.provider;
+      if (provider !== "google") throw new Error("Only Google events can be rescheduled");
+
+      const { error: updErr } = await admin.from("external_events").update(patch).eq("id", eventId);
+      if (updErr) throw new Error(updErr.message);
+
+      await invokeFn("google-events", { eventId, patch });
+
+      return {
+        result: JSON.stringify({ id: eventId, patch }),
+        action: {
+          tool: name,
+          summary: `Rescheduled event "${evt.title}" to ${new Date(patch.start_at).toLocaleString()}`,
+        },
+      };
+    }
+
+    case "list_tasks": {
+      const matches = await findTaskByTitle(userId, args.query as string);
+      return { result: JSON.stringify(matches) };
+    }
+
+    default:
+      throw new Error(`Unknown tool: ${name}`);
+  }
+}

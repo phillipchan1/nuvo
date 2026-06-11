@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
+import { formatHourLabel } from "../lib/dates";
 import type { CalendarAccount, UserSettings } from "../lib/types";
 import { useLabels } from "../hooks/useCalendar";
 import { Btn, Modal, SectionLabel } from "./ui";
@@ -166,17 +167,21 @@ export default function SettingsModal({
                 className="mono border border-line bg-bg px-2 py-1 text-[12px]"
               >
                 {Array.from({ length: 12 }, (_, h) => (
-                  <option key={h} value={h}>{`${h}:00`}</option>
+                  <option key={h} value={h}>
+                    {formatHourLabel(h)}
+                  </option>
                 ))}
               </select>
               <span className="text-[12px] text-muted">to</span>
               <select
-                value={settings?.day_end_hour ?? 23}
+                value={settings?.day_end_hour ?? 24}
                 onChange={(e) => updateSettings({ day_end_hour: Number(e.target.value) })}
                 className="mono border border-line bg-bg px-2 py-1 text-[12px]"
               >
                 {Array.from({ length: 12 }, (_, i) => i + 13).map((h) => (
-                  <option key={h} value={h}>{`${h}:00`}</option>
+                  <option key={h} value={h}>
+                    {formatHourLabel(h)}
+                  </option>
                 ))}
               </select>
             </div>

@@ -41,7 +41,7 @@ supabase/functions/         edge functions (all server-side logic)
 supabase link --project-ref YOUR_REF
 supabase db push                  # applies migrations
 supabase functions deploy google-oauth google-sync google-webhook google-events \
-  task-mirror m365-oauth m365-sync rollover
+  task-mirror m365-oauth m365-sync rollover agent
 ```
 
 In the SQL editor, seed the two Vault secrets that pg_cron uses to invoke edge functions:
@@ -60,8 +60,14 @@ seeds the four domains (Work / Church / Trading / Family) and the settings row.
 supabase secrets set \
   GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... \
   MS_CLIENT_ID=... MS_CLIENT_SECRET=... \
-  APP_URL=https://your-app-host
+  APP_URL=https://your-app-host \
+  OPENAI_API_KEY=sk-... \
+  OPENAI_MODEL=gpt-4.1-mini
 ```
+
+The Nuvo agent reads/writes tasks via the `agent` edge function. **Do not** put
+`OPENAI_API_KEY` in the frontend `.env` — it lives in Supabase secrets only.
+For local function dev: `supabase functions serve agent --env-file .env.local`.
 
 - **Google Cloud Console:** OAuth client (web), redirect URI
   `https://YOUR_REF.supabase.co/functions/v1/google-oauth`, Calendar API enabled.
@@ -98,7 +104,7 @@ npm run dev             # or: npm run build → dist/ static bundle
 
 ## Keyboard
 
-`⌘K` capture/command bar · `C` focus capture · `1/2` inbox/today · `↑↓/jk` navigate ·
+`⌘K` capture/command bar · `⌘J` Nuvo agent · `C` focus capture · `1/2` inbox/today · `↑↓/jk` navigate ·
 `Enter` open · `E` today · `T` tomorrow · `W` next week · `S` pick date/time ·
 `D` done · `X` trash · `#` labels · `Esc` close
 

@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import { useEffect, useMemo, useRef } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -234,7 +235,7 @@ export default function CalendarPane({
   };
 
   const dayStart = settings?.day_start_hour ?? 6;
-  const dayEnd = settings?.day_end_hour ?? 23;
+  const dayEnd = settings?.day_end_hour ?? 24;
 
   return (
     <div className="h-full min-w-0 flex-1 bg-surface p-2">
@@ -248,8 +249,8 @@ export default function CalendarPane({
         nowIndicator
         nowIndicatorContent={(arg) =>
           arg.isAxis ? (
-            <span className="mono border border-signal bg-surface px-1 text-[9px] leading-tight text-signal">
-              {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}
+            <span className="mono whitespace-nowrap border border-signal bg-surface px-1 text-[9px] leading-none text-signal">
+              {format(now, "h:mma").toLowerCase()}
             </span>
           ) : null
         }
@@ -258,8 +259,8 @@ export default function CalendarPane({
         slotDuration="00:15:00"
         snapDuration="00:15:00"
         slotLabelInterval="01:00"
-        slotLabelFormat={{ hour: "numeric", minute: "2-digit", hour12: false }}
-        eventTimeFormat={{ hour: "numeric", minute: "2-digit", hour12: false }}
+        slotLabelFormat={{ hour: "numeric", minute: "2-digit", hour12: true, meridiem: "short" }}
+        eventTimeFormat={{ hour: "numeric", minute: "2-digit", hour12: true, meridiem: "short" }}
         dayHeaderContent={(arg) => (
           <div className="flex items-baseline gap-1.5">
             <span>{arg.date.toLocaleDateString([], { weekday: "short" })}</span>

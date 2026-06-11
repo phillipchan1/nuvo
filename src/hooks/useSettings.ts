@@ -8,7 +8,7 @@ const KEY = ["settings"];
 const DEFAULTS: Omit<UserSettings, "user_id"> = {
   theme: "system",
   day_start_hour: 6,
-  day_end_hour: 23,
+  day_end_hour: 24,
   week_start: 1,
   hidden_calendar_ids: [],
   last_rollover_date: null,

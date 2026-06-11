@@ -56,7 +56,15 @@ export function isOverdue(
 }
 
 export function fmtTime(iso: string): string {
-  return format(new Date(iso), "H:mm");
+  return format(new Date(iso), "h:mm a");
+}
+
+/** Hour 0–23, or 24 for midnight end-of-day. */
+export function formatHourLabel(hour: number): string {
+  if (hour === 0 || hour === 24) return "12:00 AM";
+  if (hour === 12) return "12:00 PM";
+  if (hour < 12) return `${hour}:00 AM`;
+  return `${hour - 12}:00 PM`;
 }
 
 export function fmtDuration(minutes: number | null | undefined): string {

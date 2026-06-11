@@ -5,6 +5,8 @@
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 
+@source "./**/*.{tsx,ts,jsx,js,html}";
+
 /* ── Daylight tokens ─────────────────────────────────────────────────── */
 :root,
 [data-theme="light"] {
@@ -131,6 +133,21 @@ button {
   animation: task-complete 160ms ease-out forwards;
 }
 
+/* Vertical floor transition: subtle rise as you change altitude */
+@keyframes floor-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.floor-enter {
+  animation: floor-enter 180ms ease-out;
+}
+
 /* ── FullCalendar restyle to Daylight ────────────────────────────────── */
 .fc {
   --fc-border-color: var(--line);
@@ -161,6 +178,9 @@ button {
 }
 .fc .fc-timegrid-now-indicator-line {
   border-width: 1.5px 0 0;
+}
+.fc .fc-timegrid-now-indicator-arrow {
+  white-space: nowrap;
 }
 .fc .fc-event {
   border-radius: 3px;
@@ -217,4 +237,73 @@ button {
 .fc-event-dragging,
 .fc-event-mirror {
   opacity: 0.8;
+}
+
+/* ── Agent sidebar chat bubbles ──────────────────────────────────────── */
+.agent-bubble {
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+.agent-bubble-user {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+}
+.agent-bubble-assistant {
+  background: var(--bg);
+}
+
+.agent-markdown > :first-child {
+  margin-top: 0;
+}
+.agent-markdown > :last-child {
+  margin-bottom: 0;
+}
+.agent-markdown p {
+  margin: 0.35em 0;
+}
+.agent-markdown ul,
+.agent-markdown ol {
+  margin: 0.35em 0;
+  padding-left: 1.25em;
+}
+.agent-markdown ul {
+  list-style: disc;
+}
+.agent-markdown ol {
+  list-style: decimal;
+}
+.agent-markdown li {
+  margin: 0.2em 0;
+}
+.agent-markdown li > p {
+  margin: 0;
+}
+.agent-markdown strong {
+  font-weight: 600;
+}
+.agent-markdown em {
+  font-style: italic;
+}
+.agent-markdown code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.92em;
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+  background: var(--accent-soft);
+}
+.agent-markdown pre {
+  margin: 0.35em 0;
+  padding: 0.5em 0.6em;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.agent-markdown pre code {
+  padding: 0;
+  background: none;
+}
+.agent-markdown a {
+  color: var(--accent);
+  text-decoration: underline;
 }

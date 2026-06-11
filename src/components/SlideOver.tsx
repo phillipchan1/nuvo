@@ -184,8 +184,8 @@ export function TaskSlideOver({
         </Field>
 
         <div className="mono space-y-0.5 border-t border-line pt-3 text-[11px] text-muted">
-          <div>created {format(new Date(task.created_at), "yyyy-MM-dd HH:mm")}</div>
-          {task.completed_at && <div>completed {format(new Date(task.completed_at), "yyyy-MM-dd HH:mm")}</div>}
+          <div>created {format(new Date(task.created_at), "yyyy-MM-dd h:mm a")}</div>
+          {task.completed_at && <div>completed {format(new Date(task.completed_at), "yyyy-MM-dd h:mm a")}</div>}
           {task.roll_count > 0 && <div>rolled {task.roll_count}×</div>}
         </div>
       </div>
@@ -250,7 +250,7 @@ export function EventSlideOver({
           <div className="text-[15px] font-medium">{event.title}</div>
         )}
         <div className="mono text-[12px] text-muted">
-          {format(new Date(event.start_at), "EEE MMM d, HH:mm")} – {format(new Date(event.end_at), "HH:mm")}
+          {format(new Date(event.start_at), "EEE MMM d, h:mm a")} – {format(new Date(event.end_at), "h:mm a")}
         </div>
         {event.location && <div className="text-[12px] text-muted">{event.location}</div>}
       </div>

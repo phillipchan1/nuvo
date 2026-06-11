@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuth } from "./hooks/useAuth";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
 import Login from "./components/Login";
-import Planner from "./components/Planner";
+import AppShell from "./components/AppShell";
+import UpdateToast from "./components/UpdateToast";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,7 +27,12 @@ function Shell() {
       </div>
     );
   }
-  return session ? <Planner /> : <Login />;
+  return (
+    <>
+      {session ? <AppShell /> : <Login />}
+      <UpdateToast />
+    </>
+  );
 }
 
 export default function App() {

@@ -13,6 +13,8 @@ import { EventSlideOver, TaskSlideOver } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown, MorningPlan } from "./Rituals";
+import AgentSidebar, { readAgentOpen, writeAgentOpen } from "./AgentSidebar";
+import { useAgent } from "../hooks/useAgent";
 import { Keycap } from "./ui";
 
 export default function Planner() {
@@ -35,6 +37,7 @@ export default function Planner() {
   const [showSettings, setShowSettings] = useState(false);
   const [showMorning, setShowMorning] = useState(false);
   const [showEvening, setShowEvening] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(readAgentOpen);
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -52,6 +55,15 @@ export default function Planner() {
   const { labels } = useLabels();
   const mutations = useTaskMutations();
   const eventMutations = useExternalEventMutations();
+  const agent = useAgent(range);
+
+  const toggleAgent = () => {
+    setAgentOpen((open) => {
+      const next = !open;
+      writeAgentOpen(next);
+      return next;
+    });
+  };
 
   useRealtime(true);
 
@@ -77,16 +89,25 @@ export default function Planner() {
     }
   }, [settingsLoaded, today]);
 
-  // ⌘K / Ctrl+K
+  // ⌘K / Ctrl+K → command bar  |  ⌘J → agent  |  ⌘, → settings
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setShowCmd((s) => !s);
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        toggleAgent();
+      }
+      if (e.metaKey && e.key === ",") {
+        e.preventDefault();
+        setShowSettings((s) => !s);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const allKnownTasks = useMemo(() => {
@@ -94,6 +115,8 @@ export default function Planner() {
     for (const t of [...inbox, ...todayTasks, ...scheduled]) map.set(t.id, t);
     return map;
   }, [inbox, todayTasks, scheduled]);
+
+  const allTasksArray = useMemo(() => [...allKnownTasks.values()], [allKnownTasks]);
 
   const openTask = openTaskId ? (allKnownTasks.get(openTaskId) ?? null) : null;
   const openEvent: ExternalEvent | null = openEventId
@@ -112,6 +135,7 @@ export default function Planner() {
     { id: "view-week", title: "Calendar: week view", run: () => setView("timeGridWeek") },
     { id: "connect", title: "Connect calendar…", run: () => setShowSettings(true) },
     { id: "label", title: "New label…", run: () => setShowSettings(true) },
+    { id: "agent", title: "Toggle Nuvo agent", run: toggleAgent },
     { id: "settings", title: "Settings", run: () => setShowSettings(true) },
     {
       id: "theme",
@@ -125,12 +149,16 @@ export default function Planner() {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* Header */}
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3">
+      {/* Header — data-tauri-drag-region lets you drag the window. The macOS
+          traffic lights now sit over the Spine rail, so no left inset here. */}
+      <header
+        data-tauri-drag-region
+        className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"
+      >
         <span className="text-[14px] font-semibold tracking-tight">Nuvo</span>
         <span className="mono text-[11px] text-muted">{format(now, "EEE MMM d")}</span>
         <span className="mono border border-signal px-1 text-[10px] leading-snug text-signal">
-          {format(now, "HH:mm")}
+          {format(now, "h:mm a")}
         </span>
         <div className="flex-1" />
         <button onClick={() => setShowMorning(true)} className="fast border border-line px-2 py-1 text-[11px] font-medium text-muted hover:text-ink">
@@ -152,6 +180,13 @@ export default function Planner() {
             </button>
           ))}
         </div>
+        <button
+          onClick={toggleAgent}
+          className={`flex items-center gap-1.5 text-[11px] ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
+          title="Nuvo agent"
+        >
+          <Keycap>⌘J</Keycap>
+        </button>
         <button onClick={() => setShowCmd(true)} className="flex items-center gap-1.5 text-[11px] text-muted hover:text-ink">
           <Keycap>⌘K</Keycap>
         </button>
@@ -180,37 +215,41 @@ export default function Planner() {
           now={now}
           railRef={railRef}
         />
-        <CalendarPane
-          view={view}
-          tasks={scheduled}
-          events={events}
-          accounts={accounts}
-          settings={settings}
-          now={now}
-          mutations={mutations}
-          eventMutations={eventMutations}
-          onOpenTask={(t) => setOpenTaskId(t.id)}
-          onOpenEvent={(e) => setOpenEventId(e.id)}
-          onRangeChange={(start, end) => setRange({ start, end })}
-          railRef={railRef}
-        />
-
-        {openTask && (
-          <TaskSlideOver
-            task={openTask}
-            labels={labels}
+        <div className="relative flex min-h-0 flex-1">
+          <CalendarPane
+            view={view}
+            tasks={allTasksArray}
+            events={events}
+            accounts={accounts}
+            settings={settings}
+            now={now}
             mutations={mutations}
-            onClose={() => setOpenTaskId(null)}
-          />
-        )}
-        {openEvent && !openTask && (
-          <EventSlideOver
-            event={openEvent}
-            editable={openEventAccount?.provider === "google"}
             eventMutations={eventMutations}
-            onClose={() => setOpenEventId(null)}
+            onOpenTask={(t) => setOpenTaskId(t.id)}
+            onOpenEvent={(e) => setOpenEventId(e.id)}
+            onRangeChange={(start, end) => setRange({ start, end })}
+            railRef={railRef}
           />
-        )}
+
+          {openTask && (
+            <TaskSlideOver
+              task={openTask}
+              labels={labels}
+              mutations={mutations}
+              onClose={() => setOpenTaskId(null)}
+            />
+          )}
+          {openEvent && !openTask && (
+            <EventSlideOver
+              event={openEvent}
+              editable={openEventAccount?.provider === "google"}
+              eventMutations={eventMutations}
+              onClose={() => setOpenEventId(null)}
+            />
+          )}
+        </div>
+
+        <AgentSidebar agent={agent} open={agentOpen} onToggle={toggleAgent} />
       </div>
 
       {showCmd && (
