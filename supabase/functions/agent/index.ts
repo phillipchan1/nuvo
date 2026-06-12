@@ -23,7 +23,7 @@ interface OpenAIToolCall {
 }
 
 function systemPrompt(ctxJson: string, today: string): string {
-  return `You are Otto, the personal planning assistant embedded in Nuvo, a daily-driver app.
+  return `You are Nuvo, the personal planning assistant embedded in the Nuvo daily-driver app.
 Today is ${today} (America/Los_Angeles).
 
 App model:

@@ -104,7 +104,7 @@ npm run dev             # or: npm run build → dist/ static bundle
 - **One task world** — the floors (`useVertical`) read/write live Supabase rows; the
   localStorage prototype is gone. Domain invested/quarter/last-touched derive from
   completed blocks. Calendar blocks and rail rows are tinted by domain color.
-- **Otto** (the assistant, ⌘J) — one principle everywhere: Otto proposes into quiet
+- **The assistant** (Nuvo, ⌘J) — one principle everywhere: it proposes into quiet
   pools; only you promote work toward the calendar. Endpoints on the `agent` edge
   function: `{scaffold:{projectId}}` (ordered project tasks), `{blueprint:{…}}`
   (initiative subtree), `{prepare:{taskId}}` (pre-work written to the task: approach,
@@ -135,7 +135,7 @@ After pulling: `supabase db push` (applies migrations 04 + 05) and
 
 ## Keyboard
 
-`⌘K` capture/command bar · `⌘J` Otto · `C` focus capture · `1/2/3` inbox/week/today · `↑↓/jk` navigate ·
+`⌘K` capture/command bar · `⌘J` Nuvo assistant · `C` focus capture · `1/2/3` inbox/week/today · `↑↓/jk` navigate ·
 `Enter` open · `E` today · `T` tomorrow · `W` next week · `S` pick date/time ·
 `D` done · `X` trash · `#` labels · `Esc` close
 
