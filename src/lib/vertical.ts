@@ -87,6 +87,7 @@ export interface VTask {
   doDate: string | null;
   completedAt: string | null;
   assignee: "me" | "agent";
+  rollCount: number;
   /** The assistant prepared this one — prework is waiting in the task. */
   preworkReady?: boolean;
 }
@@ -179,6 +180,7 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
     doDate: t.do_date,
     completedAt: t.completed_at,
     assignee: t.assignee ?? "me",
+    rollCount: t.roll_count ?? 0,
     preworkReady: Boolean(t.prework_at && t.prework),
   };
 }

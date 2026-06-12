@@ -82,6 +82,8 @@ export interface VerticalStore {
   clearSprint: () => void;
   setSprintGoal: (goal: string) => void;
   setFocusInitiatives: (ids: string[]) => void;
+  /** Per-day compose contexts (normal/light/travel/off) for the planning week. */
+  setDayContexts: (map: Record<string, string>) => void;
   markSprintReviewed: () => void;
 
   /** The Composer's accept: write the proposed blocks in one pass. */
@@ -542,6 +544,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
       setSprintGoal: (goal) => void patchSprint({ goal }),
       setFocusInitiatives: (ids) => void patchSprint({ focus_initiative_ids: ids }),
+      setDayContexts: (map) => void patchSprint({ day_contexts: map }),
       markSprintReviewed: () => void patchSprint({ reviewed_at: new Date().toISOString() }),
 
       applySchedule: async (placements) => {

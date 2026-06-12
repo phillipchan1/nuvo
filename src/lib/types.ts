@@ -56,6 +56,8 @@ export interface Sprint {
   goal: string;
   focus_initiative_ids: string[];
   reviewed_at: string | null;
+  /** dayISO -> compose context ('normal' | 'light' | 'travel' | 'off'). */
+  day_contexts: Record<string, string>;
 }
 
 export interface Label {

@@ -18,7 +18,8 @@ import {
   type VerticalData,
 } from "../../lib/vertical";
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO, todayISO } from "../../lib/dates";
-import { composeWeek, fmtSlot, type ComposeResult, type Placement } from "../../lib/compose";
+import { CONTEXT_META, composeWeek, fmtSlot, type ComposeResult, type DayContext, type Placement } from "../../lib/compose";
+import { calibrate, confidence, weeklyBudgetMins } from "../../lib/calibration";
 import { useSettings } from "../../hooks/useSettings";
 import { useNarrator } from "../../hooks/useNarrator";
 import { useExternalEvents } from "../../hooks/useCalendar";
@@ -469,8 +470,10 @@ function BetRow({
 }
 
 // ── Step 5 · The Compose — boundaries in, a time-blocked week out ───────────
+const CONTEXT_CYCLE: DayContext[] = ["normal", "light", "travel", "off"];
+
 function ComposeStep({ onCommit }: { onCommit: () => void }) {
-  const { data, applySchedule, setSprintGoal, markSprintReviewed } = useVertical();
+  const { data, applySchedule, setSprintGoal, setDayContexts, markSprintReviewed } = useVertical();
   const { settings, update: updateSettings } = useSettings();
   const [goal, setGoal] = useState(data.sprintGoal ?? "");
   const [result, setResult] = useState<ComposeResult | null>(null);
@@ -479,6 +482,23 @@ function ComposeStep({ onCommit }: { onCommit: () => void }) {
 
   const weekStartISO = planningWeekStartISO();
   const today = todayISO();
+
+  // boundaries: per-day contexts (where you are shapes what the day holds)
+  const dayContexts = (data.sprint?.day_contexts ?? {}) as Record<string, DayContext>;
+  const weekDays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => format(addDays(parseDateISO(weekStartISO), i), "yyyy-MM-dd")),
+    [weekStartISO],
+  );
+  const cycleContext = (iso: string) => {
+    const cur = dayContexts[iso] ?? "normal";
+    const next = CONTEXT_CYCLE[(CONTEXT_CYCLE.indexOf(cur) + 1) % CONTEXT_CYCLE.length];
+    setDayContexts({ ...dayContexts, [iso]: next });
+    setResult(null); // boundaries changed — recompose
+  };
+
+  // calibration: history corrects the plan
+  const cal = useMemo(() => calibrate(data.tasks), [data.tasks]);
+  const budget = weeklyBudgetMins(cal);
 
   // the boundaries: the planning week's immovable calendar + working hours
   const range = useMemo(() => {
@@ -493,6 +513,11 @@ function ComposeStep({ onCommit }: { onCommit: () => void }) {
   const workStart = settings?.work_start_minutes ?? 480;
   const workEnd = settings?.work_end_minutes ?? 990;
 
+  // hours already blocked on the week count against the proven pace
+  const blockedMins = blocks
+    .filter((b) => b.status !== "done")
+    .reduce((s, b) => s + (b.duration_minutes ?? 30), 0);
+
   const compose = () => {
     setResult(
       composeWeek({
@@ -505,10 +530,16 @@ function ComposeStep({ onCommit }: { onCommit: () => void }) {
         workStartMin: workStart,
         workEndMin: workEnd,
         focusInitiativeIds: data.focusInitiativeIds,
+        dayContexts,
+        weeklyBudgetMins: budget != null ? Math.max(0, budget - blockedMins) : null,
       }),
     );
     setAccepted(false);
   };
+
+  // confidence: the plan vs the proven pace (already-blocked week included)
+  const plannedMins = (result?.placements.reduce((s, p) => s + p.durationMin, 0) ?? 0) + blockedMins;
+  const conf = result && cal ? confidence(plannedMins, cal) : null;
 
   const accept = async () => {
     if (!result) return;
@@ -573,7 +604,69 @@ function ComposeStep({ onCommit }: { onCommit: () => void }) {
         <span className="mono text-[11px] text-muted">{pool.length} committed to place</span>
         <div className="flex-1" />
         <Btn kind="primary" onClick={compose}>✦ {result ? "recompose" : "compose the week"}</Btn>
+
+        {/* day contexts: click to cycle normal → light → travel → off */}
+        <div className="flex w-full items-center gap-1.5 border-t border-line pt-2.5">
+          <span className="mono text-[10px] text-muted">days</span>
+          {weekDays.map((iso) => {
+            const ctx = dayContexts[iso] ?? "normal";
+            const past = iso < today;
+            const meta = CONTEXT_META[ctx];
+            return (
+              <button
+                key={iso}
+                disabled={past}
+                onClick={() => cycleContext(iso)}
+                title={`${format(parseDateISO(iso), "EEEE")} — ${meta.label} (click to change)`}
+                className="fast mono flex-1 rounded-sm border px-1 py-1 text-[10px] disabled:opacity-25"
+                style={{
+                  borderColor: ctx === "normal" ? "var(--line)" : "var(--accent)",
+                  color: ctx === "normal" ? "var(--muted)" : "var(--accent)",
+                  background: ctx === "normal" ? "transparent" : "var(--accent-soft)",
+                }}
+              >
+                {format(parseDateISO(iso), "EEEEE")} {meta.glyph}
+              </button>
+            );
+          })}
+          <span className="mono hidden text-[9px] text-muted xl:inline">· normal ◐ light ✈ travel — off</span>
+        </div>
       </div>
+
+      {/* the confidence read: this plan vs your proven pace */}
+      {result && (
+        <div className="mb-5 rounded-md border border-line bg-surface px-4 py-3">
+          {cal && conf ? (
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <span
+                className="text-[13px] font-medium"
+                style={{ color: conf.label === "stretch" ? "var(--signal)" : "var(--accent)" }}
+              >
+                {conf.pct}% confidence · {conf.label}
+              </span>
+              <span className="text-[12px] text-muted">
+                {hrs(plannedMins)}h planned · you've completed ~{hrs(cal.avgWeeklyDoneMins)}h/wk over the last{" "}
+                {cal.weeksSampled} week{cal.weeksSampled === 1 ? "" : "s"}
+                {conf.deltaMins > 30 && <> — consider trimming ~{hrs(conf.deltaMins)}h</>}
+              </span>
+              {cal.deepMorningShare != null && (
+                <span className="mono text-[10px] text-muted">
+                  {Math.round(cal.deepMorningShare * 100)}% of your deep work really lands before 1pm
+                </span>
+              )}
+              {cal.rollRates.map((r) => (
+                <span key={r.energy} className="mono text-[10px] text-signal">
+                  {r.energy} tasks roll {r.avgRolls}× before done — prep or shrink them
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="mono text-[11px] text-muted">
+              No confidence read yet — it arrives after a week or two of completed blocks, measured from your own history.
+            </span>
+          )}
+        </div>
+      )}
 
       {!result && (
         <div className="rounded-md border border-dashed border-line p-10 text-center text-[12px] text-muted">
@@ -589,7 +682,10 @@ function ComposeStep({ onCommit }: { onCommit: () => void }) {
           <div className="mb-4 grid grid-cols-7 gap-1.5">
             {result.days.map((d) => (
               <div key={d.dayISO} className="rounded-md border border-line bg-surface px-2 py-1.5 text-center">
-                <div className="mono text-[9px] text-muted">{d.label}</div>
+                <div className="mono text-[9px] text-muted">
+                  {d.label}
+                  {d.context !== "normal" && <span className="ml-1 text-accent">{CONTEXT_META[d.context].glyph}</span>}
+                </div>
                 <div className="mono text-[11px]" style={{ color: d.placedMins > 0 ? "var(--accent)" : "var(--line)" }}>
                   {d.placedMins > 0 ? `${hrs(d.placedMins)}h` : "—"}
                 </div>

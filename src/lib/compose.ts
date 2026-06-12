@@ -28,9 +28,27 @@ export interface Placement {
   reason: string;
 }
 
+/** Per-day boundary: where you are shapes what the day can hold. */
+export type DayContext = "normal" | "light" | "travel" | "off";
+
+const CONTEXT_RULES: Record<DayContext, { cap: number; maxDeep: number; shallowOnly: boolean; note: string | null }> = {
+  normal: { cap: 0.75, maxDeep: 2, shallowOnly: false, note: null },
+  light: { cap: 0.4, maxDeep: 1, shallowOnly: false, note: "light day" },
+  travel: { cap: 0.4, maxDeep: 0, shallowOnly: true, note: "travel day — shallow only" },
+  off: { cap: 0, maxDeep: 0, shallowOnly: true, note: "off" },
+};
+
+export const CONTEXT_META: Record<DayContext, { glyph: string; label: string }> = {
+  normal: { glyph: "·", label: "normal" },
+  light: { glyph: "◐", label: "light" },
+  travel: { glyph: "✈", label: "travel" },
+  off: { glyph: "—", label: "off" },
+};
+
 export interface ComposeDay {
   dayISO: string;
   label: string; // "Mon 16"
+  context: DayContext;
   freeMins: number;
   placedMins: number;
 }
@@ -51,11 +69,14 @@ export interface ComposeInput {
   workStartMin: number;
   workEndMin: number;
   focusInitiativeIds: string[];
+  /** dayISO -> context; missing days are "normal". */
+  dayContexts?: Record<string, DayContext>;
+  /** Proven weekly pace (from calibration): stop placing past it. */
+  weeklyBudgetMins?: number | null;
 }
 
 const EVENT_BUFFER = 10; // minutes around immovable events
 const BREAK_AFTER_DEEP = 15; // breather after a long deep block
-const DAY_FILL_CAP = 0.75; // never plan a day past this share of free time
 const SNAP = 15;
 
 interface Slot { start: number; end: number }
@@ -106,10 +127,15 @@ export function composeWeek(input: ComposeInput): ComposeResult {
   }
 
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const days: { iso: string; slots: Slot[]; free: number; placed: number; deepCount: number }[] = [];
+  const days: {
+    iso: string; slots: Slot[]; free: number; placed: number; deepCount: number;
+    context: DayContext; rules: (typeof CONTEXT_RULES)[DayContext];
+  }[] = [];
   for (let i = 0; i < 7; i++) {
     const iso = format(addDays(monday, i), "yyyy-MM-dd");
     if (iso < todayISO) continue; // the past is a boundary too
+    const context = input.dayContexts?.[iso] ?? "normal";
+    if (context === "off") continue; // an off day holds nothing
     let windowStart = workStartMin;
     if (iso === todayISO) windowStart = Math.max(workStartMin, snapUp(nowMin + SNAP));
     if (windowStart >= workEndMin) continue;
@@ -124,7 +150,8 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     }
     if (cursor < workEndMin) slots.push({ start: cursor, end: workEndMin });
     const free = slots.reduce((s, x) => s + Math.max(0, x.end - x.start), 0);
-    if (free >= SNAP) days.push({ iso, slots, free, placed: 0, deepCount: 0 });
+    if (free >= SNAP)
+      days.push({ iso, slots, free, placed: 0, deepCount: 0, context, rules: CONTEXT_RULES[context] });
   }
 
   // ── 2 · the order of consideration ─────────────────────────────────────────
@@ -159,10 +186,16 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     const dur = t.duration_minutes ?? 30;
     const win = windowFor(t.energy);
     const dueBefore = t.deadline ?? null;
+    const shallow = t.energy === "quick" || t.energy === "delegate" || t.energy == null;
     for (const day of days) {
       if (dueBefore && day.iso > dueBefore) break; // deadline is a hard boundary
-      if (day.placed + dur > day.free * DAY_FILL_CAP && !relaxed) continue;
-      if (t.energy === "deep" && day.deepCount >= 2 && !relaxed) continue;
+      // context rules are boundaries — hard in both passes
+      if (day.rules.shallowOnly && !shallow) continue;
+      if (t.energy === "deep" && day.deepCount >= day.rules.maxDeep) continue;
+      // the fill cap is soft on normal days (relaxed pass may exceed it),
+      // hard wherever a context deliberately keeps the day small
+      const capHard = day.context !== "normal";
+      if (day.placed + dur > day.free * day.rules.cap && (!relaxed || capHard)) continue;
       const from = relaxed ? day.slots[0]?.start ?? win.from : win.from;
       const to = relaxed ? workEndMin : win.to;
       for (const slot of day.slots) {
@@ -184,6 +217,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
           dueBefore ? `due ${dueBefore.slice(5)}` : null,
           focus.has(t.initiative_id ?? "") ? "★ lead bet" : null,
           batched ? "batched with its project" : win.label,
+          day.rules.note,
           breather ? `+${BREAK_AFTER_DEEP}m breather after` : null,
         ].filter(Boolean);
         placements.push({ task: t, dayISO: day.iso, startMin: start, durationMin: dur, reason: reasons.join(" · ") });
@@ -193,13 +227,28 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     return false;
   };
 
+  const budget = input.weeklyBudgetMins ?? null;
+  let placedTotal = 0;
   for (const t of queue) {
-    if (tryPlace(t, false) || tryPlace(t, true)) continue;
+    const dur = t.duration_minutes ?? 30;
+    // the proven-pace boundary: don't plan past what history says gets done
+    if (budget != null && placedTotal + dur > budget) {
+      unplaced.push({ task: t, reason: `past your proven pace (~${Math.round(budget / 60)}h/wk) — protect the win rate` });
+      continue;
+    }
+    if (tryPlace(t, false) || tryPlace(t, true)) {
+      placedTotal += dur;
+      continue;
+    }
+    const deepBlocked =
+      t.energy === "deep" && days.every((d) => d.rules.maxDeep === 0 || d.deepCount >= d.rules.maxDeep);
     unplaced.push({
       task: t,
       reason: t.deadline && days.every((d) => d.iso > t.deadline!)
         ? "deadline already behind the remaining week"
-        : "the week is full — slack protected",
+        : deepBlocked
+          ? "no deep-capable day left (contexts/limits)"
+          : "the week is full — slack protected",
     });
   }
 
@@ -211,6 +260,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     days: days.map((d) => ({
       dayISO: d.iso,
       label: format(parseDateISO(d.iso), "EEE d"),
+      context: d.context,
       freeMins: d.free,
       placedMins: d.placed,
     })),

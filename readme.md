@@ -110,10 +110,17 @@ npm run dev             # or: npm run build → dist/ static bundle
   (initiative subtree), `{prepare:{taskId}}` (pre-work written to the task: approach,
   drafts, pitfalls — ✦ badge, surfaced at Sunrise, boosted in Now),
   `{narrate:{…}}` (one gain-framed sentence over the measured deltas).
-- **Working hours** are a compose boundary in `user_settings`
-  (`work_start_minutes`/`work_end_minutes`), editable inside the Sunday flow.
+- **Compose boundaries** — working hours in `user_settings`
+  (`work_start_minutes`/`work_end_minutes`) and per-day contexts on the sprint
+  (`day_contexts`: normal / ◐ light / ✈ travel / — off): travel days get no deep
+  blocks, off days get nothing, light days stay half-empty. Both editable inside
+  the Sunday flow.
+- **Calibration** (`src/lib/calibration.ts`) — completed blocks are the evidence:
+  the proven weekly pace (last 4 weeks) caps the composer (+15% room to grow), and
+  the composed week gets a confidence read (planned vs proven, deep-work morning
+  share, roll-rate friction per energy). No history → it says so instead of guessing.
 
-After pulling: `supabase db push` (applies migrations 04 + 05) and
+After pulling: `supabase db push` (applies migrations 04-06) and
 `supabase functions deploy agent`.
 
 ## Behavior notes
