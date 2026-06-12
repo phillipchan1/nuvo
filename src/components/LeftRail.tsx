@@ -4,7 +4,7 @@ import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { parseCapture } from "../lib/nlp";
 import type { NewTaskInput, useTaskMutations } from "../hooks/useTasks";
 import { useVertical } from "../hooks/useVertical";
-import { domainById, initiativeById, projectById } from "../lib/vertical";
+import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
 import TaskRow from "./TaskRow";
 import { Keycap, SectionLabel } from "./ui";
 
@@ -39,14 +39,7 @@ export default function LeftRail({
   const { data: vertical, setSprintGoal } = useVertical();
 
   /** A task's thread back up the vertical: its domain color. */
-  const accentOf = (t: Task): string | null => {
-    const domainId =
-      t.domain_id ??
-      projectById(vertical, t.project_id)?.domainId ??
-      initiativeById(vertical, t.initiative_id)?.domainId ??
-      null;
-    return domainById(vertical, domainId)?.color ?? null;
-  };
+  const accentOf = (t: Task) => taskDomainColor(vertical, t);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [labelPickerFor, setLabelPickerFor] = useState<Task | null>(null);
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);

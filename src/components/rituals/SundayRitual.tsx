@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from "react";
 import { addDays, differenceInCalendarDays, format, parseISO, subDays } from "date-fns";
-import { useVertical, currentWeekStartISO } from "../../hooks/useVertical";
+import { useVertical } from "../../hooks/useVertical";
 import {
   domainById,
   faithfulness,
@@ -17,15 +17,13 @@ import {
   type VerticalData,
   type VTask,
 } from "../../lib/vertical";
-import { parseDateISO, todayISO } from "../../lib/dates";
+import { fmtHours as hrs, parseDateISO, planningWeekStartISO, todayISO } from "../../lib/dates";
 import { ENERGY_META, ENERGY_ORDER } from "../../lib/energy";
 import { SprintFunnel } from "../floors/SprintFloor";
 import { MomentumChip } from "../floors/parts";
 import { Btn } from "../ui";
 
 const STEPS = ["The Gain", "The Sweep", "The Bets", "The Pull", "The Anchor"];
-
-const hrs = (mins: number) => (mins / 60).toFixed(mins % 60 === 0 ? 0 : 1);
 
 export default function SundayRitual({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
@@ -37,7 +35,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
         <span className="text-[14px] font-semibold tracking-tight">Sunday</span>
         <span className="mono text-[11px] text-muted">
-          week of {format(parseISO(currentWeekStartISO()), "MMM d")}
+          week of {format(parseISO(planningWeekStartISO()), "MMM d")}
         </span>
         <div className="flex flex-1 items-center justify-center gap-5">
           {STEPS.map((s, i) => (
@@ -454,7 +452,7 @@ function AnchorStep({ onCommit }: { onCommit: () => void }) {
   const { data, planTaskFor, unplanTask, setSprintGoal, markSprintReviewed } = useVertical();
   const [goal, setGoal] = useState(data.sprintGoal ?? "");
 
-  const weekStart = parseISO(currentWeekStartISO());
+  const weekStart = parseISO(planningWeekStartISO());
   const today = todayISO();
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 

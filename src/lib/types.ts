@@ -32,6 +32,20 @@ export interface Task {
   task_labels?: { label_id: string }[];
 }
 
+/**
+ * Where a not-done, not-trashed task rests when it loses its date: dated →
+ * planned; parented or week-committed → backlog (processed); else → inbox.
+ * The single source of truth for the status state machine — every mutation
+ * that un-dates or un-completes a task goes through this.
+ */
+export function restingStatus(
+  t: Pick<Task, "do_date" | "project_id" | "initiative_id" | "domain_id" | "sprint_id">,
+): TaskStatus {
+  if (t.do_date) return "planned";
+  if (t.project_id || t.initiative_id || t.domain_id || t.sprint_id) return "backlog";
+  return "inbox";
+}
+
 /** The week as a real entity: goal + lead initiatives + Sunday review state. */
 export interface Sprint {
   id: string;

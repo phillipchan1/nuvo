@@ -11,8 +11,22 @@ export interface AgentContext {
   inbox: unknown[];
   todayTasks: unknown[];
   scheduled: unknown[];
+  /** This week's sprint goal, if a sprint row exists. */
+  sprintGoal: string | null;
+  /** Tasks committed to this week's sprint and not yet done. */
+  weekPool: unknown[];
   events: unknown[];
   labels: { id: string; name: string }[];
+}
+
+/** Monday of the planning week (LA calendar; Sundays plan the week ahead). */
+function planningWeekStart(todayIso: string): string {
+  const [y, m, d] = todayIso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCDay() === 0) dt.setUTCDate(dt.getUTCDate() + 1);
+  const sinceMonday = (dt.getUTCDay() + 6) % 7;
+  dt.setUTCDate(dt.getUTCDate() - sinceMonday);
+  return dt.toISOString().slice(0, 10);
 }
 
 function fmtTask(t: Record<string, unknown>) {
@@ -89,7 +103,26 @@ export async function buildContext(
       .maybeSingle(),
   ]);
 
+  // the week pool: tasks committed to this week's sprint, not done yet
+  const weekStart = planningWeekStart(today);
+  const { data: sprint } = await admin
+    .from("sprints")
+    .select("id, goal")
+    .eq("user_id", userId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  const weekRes = sprint
+    ? await admin
+        .from("tasks")
+        .select(TASK_COLS)
+        .eq("user_id", userId)
+        .eq("sprint_id", sprint.id)
+        .in("status", ["backlog", "planned"])
+        .order("sort_order")
+    : { data: [], error: null };
+
   if (inboxRes.error) throw new Error(inboxRes.error.message);
+  if (weekRes.error) throw new Error(weekRes.error.message);
   if (todayRes.error) throw new Error(todayRes.error.message);
   if (scheduledRes.error) throw new Error(scheduledRes.error.message);
   if (eventsRes.error) throw new Error(eventsRes.error.message);
@@ -109,6 +142,8 @@ export async function buildContext(
     inbox: (inboxRes.data ?? []).map(fmtTask),
     todayTasks: (todayRes.data ?? []).map(fmtTask),
     scheduled: (scheduledRes.data ?? []).map(fmtTask),
+    sprintGoal: sprint?.goal ?? null,
+    weekPool: (weekRes.data ?? []).map(fmtTask),
     events: (eventsRes.data ?? []).map(fmtEvent),
     labels: labelsRes.data ?? [],
   };

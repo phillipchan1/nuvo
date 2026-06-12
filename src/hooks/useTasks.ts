@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
-import { DEFAULT_DURATION_MINUTES, type Task, type TaskPriority } from "../lib/types";
+import { DEFAULT_DURATION_MINUTES, restingStatus, type Task, type TaskPriority } from "../lib/types";
 import { todayISO } from "../lib/dates";
 
 const TASK_COLS = "*, task_labels(label_id)";
@@ -172,15 +172,7 @@ export function useTaskMutations() {
     complete: (t: Task) =>
       patchTask(t.id, { status: "done", completed_at: new Date().toISOString() }),
 
-    uncomplete: (t: Task) =>
-      patchTask(t.id, {
-        status: t.do_date
-          ? "planned"
-          : t.project_id || t.initiative_id || t.domain_id
-            ? "backlog"
-            : "inbox",
-        completed_at: null,
-      }),
+    uncomplete: (t: Task) => patchTask(t.id, { status: restingStatus(t), completed_at: null }),
 
     trash: (t: Task) => patchTask(t.id, { status: "trashed" }),
 
@@ -190,17 +182,11 @@ export function useTaskMutations() {
     /** An over-planned day degrades into the week pool, not into guilt-rolling:
      *  drop the date, keep the sprint commitment. */
     backToWeek: (t: Task) =>
-      patchTask(t.id, { status: "backlog", do_date: null, start_time: null }),
-
-    /** Commit a task to the current sprint (the Week gate). Processing an
-     *  inbox capture this way moves it to backlog — out of the inbox. */
-    commitToWeek: (t: Task, sprintId: string) =>
       patchTask(t.id, {
-        sprint_id: sprintId,
-        ...(t.status === "inbox" ? { status: "backlog" as const } : {}),
+        status: restingStatus({ ...t, do_date: null }),
+        do_date: null,
+        start_time: null,
       }),
-
-    uncommitFromWeek: (t: Task) => patchTask(t.id, { sprint_id: null }),
 
     setLabels: async (taskId: string, labelIds: string[]) => {
       await supabase.from("task_labels").delete().eq("task_id", taskId);

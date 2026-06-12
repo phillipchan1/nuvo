@@ -2,33 +2,61 @@
 // the ready tasks for this moment, and lets you complete one so the Gain
 // ripples up the spine. The daily dividend of building the whole vertical.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
+import { endOf } from "../../lib/dates";
 import { faithfulness, initiativeProgress } from "../../lib/vertical";
-import { nowContext, rankNow } from "../../lib/now";
+import { nowContext, rankNow, type NowContext } from "../../lib/now";
 import { Btn } from "../ui";
 
 export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   const { data, toggleTask } = useVertical();
 
-  // the real gap: the next busy thing on the live calendar (event or block)
-  const horizon = useMemo(() => {
-    const now = new Date();
-    return { now, end: new Date(now.getTime() + 18 * 3600_000) };
+  // a live "now" — the floor can stay open for hours
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(t);
   }, []);
-  const { data: events = [] } = useExternalEvents(horizon.now.toISOString(), horizon.end.toISOString());
-  const { data: blocks = [] } = useScheduledTasks(horizon.now.toISOString(), horizon.end.toISOString());
 
-  const ctx = useMemo(() => {
-    const starts = [
-      ...events.filter((e) => e.busy && !e.all_day).map((e) => new Date(e.start_at)),
-      ...blocks.filter((t) => t.status !== "done" && t.start_time).map((t) => new Date(t.start_time!)),
-    ].filter((d) => d.getTime() > horizon.now.getTime());
+  // the real gap: the next busy thing on the live calendar (event or block).
+  // Query window is keyed to the hour so it doesn't churn every minute.
+  const horizon = useMemo(() => {
+    const start = new Date(now);
+    start.setMinutes(0, 0, 0);
+    return { start: start.toISOString(), end: new Date(start.getTime() + 18 * 3600_000).toISOString() };
+  }, [now.getHours()]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { data: events = [] } = useExternalEvents(horizon.start, horizon.end);
+  const { data: blocks = [] } = useScheduledTasks(horizon.start, horizon.end);
+
+  const ctx = useMemo<NowContext>(() => {
+    const busy = [
+      ...events
+        .filter((e) => e.busy && !e.all_day)
+        .map((e) => ({ title: e.title, start: new Date(e.start_at), end: new Date(e.end_at) })),
+      ...blocks
+        .filter((t) => t.status !== "done" && t.start_time)
+        .map((t) => ({
+          title: t.title,
+          start: new Date(t.start_time!),
+          end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }),
+        })),
+    ];
+    // already inside something busy? the gap is what's left of it
+    const ongoing = busy.find((b) => b.start <= now && now < b.end);
+    if (ongoing) {
+      const base = nowContext(now, ongoing.end);
+      return {
+        ...base,
+        gapLabel: `in “${ongoing.title}” for ${base.gapMins}m more`,
+      };
+    }
+    const starts = busy.map((b) => b.start).filter((d) => d > now);
     starts.sort((a, b) => a.getTime() - b.getTime());
-    return nowContext(horizon.now, starts[0] ?? null);
-  }, [events, blocks, horizon]);
+    return nowContext(now, starts[0] ?? null);
+  }, [events, blocks, now]);
   const suggestions = useMemo(() => rankNow(data, ctx), [data, ctx]);
   const [idx, setIdx] = useState(0);
   const [state, setState] = useState<"choose" | "focus" | "done">("choose");

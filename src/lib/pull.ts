@@ -2,6 +2,7 @@
 // always shown as a proposal to prune, never auto-committed (the agent
 // proposes; only you promote work toward the calendar).
 
+import { fmtHours } from "./dates";
 import {
   backlogTasks,
   domainById,
@@ -74,5 +75,5 @@ export function pullSummary(d: VerticalData, suggestions: PullSuggestion[]): str
   const projects = new Set(
     suggestions.map((s) => projectById(d, s.task.projectId)?.name).filter(Boolean),
   );
-  return `${(mins / 60).toFixed(mins % 60 === 0 ? 0 : 1)}h across ${domains.size} domain${domains.size === 1 ? "" : "s"}, ${projects.size} project${projects.size === 1 ? "" : "s"}`;
+  return `${fmtHours(mins)}h across ${domains.size} domain${domains.size === 1 ? "" : "s"}, ${projects.size} project${projects.size === 1 ? "" : "s"}`;
 }

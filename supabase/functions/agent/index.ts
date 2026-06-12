@@ -24,7 +24,8 @@ function systemPrompt(ctxJson: string, today: string): string {
 Today is ${today} (America/Los_Angeles).
 
 App model:
-- Tasks live in inbox (no date), planned (do_date set, no time), or scheduled (do_date + start_time = calendar block).
+- Tasks live in inbox (raw capture, no date), backlog (filed under a project/initiative/domain, deliberately undated), planned (do_date set, no time), or scheduled (do_date + start_time = calendar block).
+- The weekPool in context = tasks committed to this week's sprint (the user's weekly plan). When asked to plan or schedule the week/day, prefer scheduling weekPool tasks over inventing new ones.
 - A scheduled task IS a time block — there is no separate event entity for tasks.
 - External calendar events (Google/M365) are read-only except Google events can be rescheduled.
 - Use task ids from context when available. Use list_tasks or task_title to find tasks.

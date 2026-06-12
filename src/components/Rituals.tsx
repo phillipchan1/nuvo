@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Task } from "../lib/types";
 import type { useTaskMutations } from "../hooks/useTasks";
+import { useVertical } from "../hooks/useVertical";
 import { fmtDuration, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { Btn, Modal } from "./ui";
 
@@ -105,8 +106,8 @@ export function MorningPlan({
         <div className="p-4">
           <div className="mb-2 text-[14px] font-medium">Inbox zero.</div>
           <div className="mb-4 text-[13px] text-muted">
-            {todayCount + pulled.size} task{todayCount + pulled.size === 1 ? "" : "s"} on Today. Drag
-            them onto the calendar to block time.
+            {todayCount} task{todayCount === 1 ? "" : "s"} on Today. Drag them onto the calendar to
+            block time.
           </div>
           <Btn kind="primary" onClick={onClose}>
             Go plan the day
@@ -130,6 +131,7 @@ export function EveningShutdown({
   mutations: Mutations;
   onClose: () => void;
 }) {
+  const { data: vertical } = useVertical();
   const remaining = useMemo(
     () => todayTasks.filter((t) => t.status !== "done"),
     [todayTasks],
@@ -185,7 +187,9 @@ export function EveningShutdown({
             <span className="min-w-0 flex-1 truncate text-[13px]">{t.title}</span>
             <Btn onClick={() => mutations.complete(t)}>Done</Btn>
             <Btn onClick={() => mutations.planFor(t, tomorrowISO())}>Tomorrow</Btn>
-            {t.sprint_id && (
+            {/* only for THIS week's commitments — a stale sprint_id must not
+                offer a pool the rail no longer shows */}
+            {t.sprint_id && t.sprint_id === vertical.sprint?.id && (
               <Btn onClick={() => mutations.backToWeek(t)} title="Drop the date, keep the week commitment">
                 ↩ week
               </Btn>

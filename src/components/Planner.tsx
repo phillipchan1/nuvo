@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { todayISO } from "../lib/dates";
 import type { ExternalEvent, Task } from "../lib/types";
@@ -7,7 +7,7 @@ import { useCalendarAccounts, useExternalEventMutations, useExternalEvents, useL
 import { useRealtime } from "../hooks/useRealtime";
 import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
-import { domainById, initiativeById, projectById } from "../lib/vertical";
+import { taskDomainColor } from "../lib/vertical";
 import LeftRail, { type RailTab } from "./LeftRail";
 import CalendarPane, { type CalView } from "./CalendarPane";
 import CommandBar, { type Command } from "./CommandBar";
@@ -120,15 +120,9 @@ export default function Planner({ openSunday }: { openSunday: () => void }) {
     return map;
   }, [inbox, weekTasks, todayTasks, scheduled]);
 
-  /** Calendar blocks carry their domain color — the thread up the vertical. */
-  const taskAccent = (t: Task): string | null => {
-    const domainId =
-      t.domain_id ??
-      projectById(vertical, t.project_id)?.domainId ??
-      initiativeById(vertical, t.initiative_id)?.domainId ??
-      null;
-    return domainById(vertical, domainId)?.color ?? null;
-  };
+  /** Calendar blocks carry their domain color — the thread up the vertical.
+   *  Stable identity (useCallback) so CalendarPane's event memo holds. */
+  const taskAccent = useCallback((t: Task) => taskDomainColor(vertical, t), [vertical]);
 
   const allTasksArray = useMemo(() => [...allKnownTasks.values()], [allKnownTasks]);
 

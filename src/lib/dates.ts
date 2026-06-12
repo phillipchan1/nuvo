@@ -27,6 +27,22 @@ export function nextWeekISO(): string {
   return toDateISO(monday);
 }
 
+/**
+ * Monday of the *planning* week as 'YYYY-MM-DD', computed from the APP_TZ
+ * calendar (not the machine clock). On Sundays this is tomorrow's Monday —
+ * Sunday evening plans the week ahead, not the week that's ending.
+ */
+export function planningWeekStartISO(now: Date = new Date()): string {
+  const laToday = parseDateISO(todayISO(now));
+  const base = laToday.getDay() === 0 ? addDays(laToday, 1) : laToday;
+  return toDateISO(startOfWeek(base, { weekStartsOn: 1 }));
+}
+
+/** Hours from minutes, max one decimal: 90 → "1.5", 120 → "2". */
+export function fmtHours(minutes: number): string {
+  return (minutes / 60).toFixed(minutes % 60 === 0 ? 0 : 1);
+}
+
 /** Parse 'YYYY-MM-DD' into a local-midnight Date (for date-fns math/format). */
 export function parseDateISO(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);

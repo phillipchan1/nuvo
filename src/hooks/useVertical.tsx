@@ -6,9 +6,9 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { format, startOfWeek } from "date-fns";
-import { supabase } from "../lib/supabase";
-import type { Sprint, Task } from "../lib/types";
+import { invokeQuiet, supabase } from "../lib/supabase";
+import { planningWeekStartISO } from "../lib/dates";
+import { restingStatus, type Sprint, type Task } from "../lib/types";
 import {
   buildVertical,
   type Domain,
@@ -76,6 +76,8 @@ export interface VerticalStore {
 
   // sprint funnel — the Week gate
   toggleTaskSprint: (id: string) => void;
+  /** Bulk commit (suggested pull "add all"): one write, not N. */
+  commitTasksToSprint: (ids: string[]) => void;
   addProjectReadyToSprint: (projectId: string) => void;
   clearSprint: () => void;
   setSprintGoal: (goal: string) => void;
@@ -85,14 +87,8 @@ export interface VerticalStore {
 
 const Ctx = createContext<VerticalStore | null>(null);
 
-/**
- * Monday of the *planning* week, 'YYYY-MM-DD'. On Sunday this is tomorrow's
- * Monday — Sunday evening plans the week ahead, not the week that's ending.
- */
-export function currentWeekStartISO(now: Date = new Date()): string {
-  const base = now.getDay() === 0 ? new Date(now.getTime() + 86_400_000) : now;
-  return format(startOfWeek(base, { weekStartsOn: 1 }), "yyyy-MM-dd");
-}
+/** Fields whose change requires re-syncing the Google mirror event. */
+const MIRROR_FIELDS: (keyof Task)[] = ["start_time", "duration_minutes", "title", "status", "do_date"];
 
 async function userId(): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -102,7 +98,7 @@ async function userId(): Promise<string> {
 
 export function VerticalProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
-  const weekStart = currentWeekStartISO();
+  const weekStart = planningWeekStartISO();
 
   const domainsQ = useQuery({
     queryKey: ["vertical", "domains"],
@@ -190,7 +186,9 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       if (error) console.error(`[vertical] update ${table} failed`, error);
     };
 
-    /** The current sprint row, created on first use. */
+    /** The current sprint row, created on first use. Creating/entering a new
+     *  week releases unfinished commitments from PAST sprints back to their
+     *  pools (the gate re-decides — nothing strands on a stale sprint_id). */
     const ensureSprint = async (): Promise<Sprint> => {
       const cached = qc.getQueryData<Sprint | null>(["sprint", weekStart]);
       if (cached) return cached;
@@ -202,6 +200,27 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         .single();
       if (error) throw error;
       qc.setQueryData(["sprint", weekStart], row);
+
+      // parentless week-only captures go back to the inbox (never limbo)…
+      await supabase
+        .from("tasks")
+        .update({ status: "inbox", sprint_id: null })
+        .eq("status", "backlog")
+        .is("project_id", null)
+        .is("initiative_id", null)
+        .is("domain_id", null)
+        .is("do_date", null)
+        .not("sprint_id", "is", null)
+        .neq("sprint_id", row.id);
+      // …and everything else unfinished is released to its backlog
+      await supabase
+        .from("tasks")
+        .update({ sprint_id: null })
+        .not("sprint_id", "is", null)
+        .neq("sprint_id", row.id)
+        .not("status", "in", '("done","trashed")');
+      invalidate(["tasks"]);
+
       return row as Sprint;
     };
 
@@ -217,6 +236,8 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
     const patchTaskRow = async (id: string, rowPatch: Partial<Task>) => {
       patchRows<Task>(["tasks", "all"], id, rowPatch);
       await writeTable("tasks", id, rowPatch);
+      // keep the Google "Nuvo" mirror in sync, same contract as useTasks
+      if (MIRROR_FIELDS.some((f) => f in rowPatch)) invokeQuiet("task-mirror", { taskId: id });
       invalidate(["tasks"]);
     };
 
@@ -406,15 +427,10 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         void patchTaskRow(id, { status: "trashed" });
       },
       toggleTask: (id) => {
-        const t = data.tasks.find((x) => x.id === id);
-        if (!t) return;
-        if (t.status === "done") {
-          const back = t.doDate
-            ? "planned"
-            : t.projectId || t.initiativeId || t.domainId
-              ? "backlog"
-              : "inbox";
-          void patchTaskRow(id, { status: back, completed_at: null });
+        const row = (tasksQ.data ?? []).find((x) => x.id === id);
+        if (!row) return;
+        if (row.status === "done") {
+          void patchTaskRow(id, { status: restingStatus(row), completed_at: null });
         } else {
           void patchTaskRow(id, { status: "done", completed_at: new Date().toISOString() });
         }
@@ -441,7 +457,9 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         }
       },
       planTaskFor: (id, dateISO) => {
-        void patchTaskRow(id, { status: "planned", do_date: dateISO });
+        // placing on a day clears any existing time block (same contract as
+        // useTasks.planFor) — the block is re-dragged on the calendar
+        void patchTaskRow(id, { status: "planned", do_date: dateISO, start_time: null });
       },
       unplanTask: (id) => {
         void patchTaskRow(id, { status: "backlog", do_date: null, start_time: null });
@@ -449,19 +467,31 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
       // ── sprint funnel — the Week gate ───────────────────────────────────
       toggleTaskSprint: (id) => {
-        const t = data.tasks.find((x) => x.id === id);
-        if (!t) return;
-        if (t.sprint) {
-          void patchTaskRow(id, { sprint_id: null });
+        const row = (tasksQ.data ?? []).find((x) => x.id === id);
+        if (!row) return;
+        if (row.sprint_id && row.sprint_id === data.sprint?.id) {
+          // releasing from the week: a parentless week-only capture goes
+          // back to the inbox rather than into invisible limbo
+          void patchTaskRow(id, {
+            sprint_id: null,
+            status: row.status === "backlog" ? restingStatus({ ...row, sprint_id: null }) : row.status,
+          });
         } else {
           void ensureSprint().then((sprint) => {
             // committing an inbox capture to the week processes it
-            const row = (tasksQ.data ?? []).find((x) => x.id === id);
             const patch: Partial<Task> = { sprint_id: sprint.id };
-            if (row?.status === "inbox") patch.status = "backlog";
+            if (row.status === "inbox") patch.status = "backlog";
             void patchTaskRow(id, patch);
           });
         }
+      },
+      commitTasksToSprint: (ids) => {
+        if (!ids.length) return;
+        void ensureSprint().then(async (sprint) => {
+          await supabase.from("tasks").update({ sprint_id: sprint.id }).in("id", ids);
+          await supabase.from("tasks").update({ status: "backlog" }).in("id", ids).eq("status", "inbox");
+          invalidate(["tasks"]);
+        });
       },
       addProjectReadyToSprint: (projectId) => {
         void ensureSprint().then(async (sprint) => {
@@ -476,8 +506,20 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       clearSprint: () => {
         const sprint = data.sprint;
         if (!sprint) return;
-        void supabase.from("tasks").update({ sprint_id: null }).eq("sprint_id", sprint.id)
-          .then(() => invalidate(["tasks"]));
+        void (async () => {
+          // parentless week-only captures resurface in the inbox
+          await supabase
+            .from("tasks")
+            .update({ status: "inbox", sprint_id: null })
+            .eq("sprint_id", sprint.id)
+            .eq("status", "backlog")
+            .is("project_id", null)
+            .is("initiative_id", null)
+            .is("domain_id", null)
+            .is("do_date", null);
+          await supabase.from("tasks").update({ sprint_id: null }).eq("sprint_id", sprint.id);
+          invalidate(["tasks"]);
+        })();
       },
       setSprintGoal: (goal) => void patchSprint({ goal }),
       setFocusInitiatives: (ids) => void patchSprint({ focus_initiative_ids: ids }),

@@ -22,13 +22,12 @@ import {
   type VTask,
 } from "../../lib/vertical";
 import { pullSummary, suggestPull } from "../../lib/pull";
+import { fmtHours as hrs } from "../../lib/dates";
 import { ENERGY_META } from "../../lib/energy";
 import { FloorHeader, InlineText } from "./parts";
 import { Btn } from "../ui";
 
 type Source = "inbox" | "backlog" | "projects";
-
-const hrs = (mins: number) => (mins / 60).toFixed(mins % 60 === 0 ? 0 : 1);
 
 export default function SprintFloor() {
   const { data, setSprintGoal, clearSprint } = useVertical();
@@ -65,7 +64,7 @@ export default function SprintFloor() {
 
 /** The funnel proper: capacity + balance, sources → commitment, suggested pull. */
 export function SprintFunnel() {
-  const { data, toggleTaskSprint } = useVertical();
+  const { data, toggleTaskSprint, commitTasksToSprint } = useVertical();
   const [source, setSource] = useState<Source>("backlog");
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
 
@@ -109,7 +108,7 @@ export function SprintFunnel() {
             <span className="mono text-[10px] text-muted">{pullSummary(data, suggestions)}</span>
             <div className="flex-1" />
             <button
-              onClick={() => suggestions.forEach((s) => toggleTaskSprint(s.task.id))}
+              onClick={() => commitTasksToSprint(suggestions.map((s) => s.task.id))}
               className="fast mono text-[11px] font-medium text-accent hover:underline"
             >
               add all {suggestions.length}
@@ -236,47 +235,58 @@ function InboxSource() {
 }
 
 function BacklogSource() {
-  const { data, addProjectReadyToSprint } = useVertical();
+  const { data, commitTasksToSprint } = useVertical();
   const items = backlogTasks(data);
   const focus = new Set(data.focusInitiativeIds);
+
+  // group by project, falling back to the initiative or domain a loose task
+  // was routed to in the Sweep — everything processed stays pullable
   const groups = useMemo(() => {
-    const m = new Map<string, VTask[]>();
+    interface Group { key: string; label: string; color?: string; lead: boolean; tasks: VTask[] }
+    const m = new Map<string, Group>();
     items.forEach((t) => {
-      const k = t.projectId!;
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push(t);
+      const project = projectById(data, t.projectId);
+      const initiative = initiativeById(data, project?.initiativeId ?? t.initiativeId);
+      const domain = domainById(data, project?.domainId ?? initiative?.domainId ?? t.domainId);
+      const key = project?.id ?? (initiative ? `i:${initiative.id}` : `d:${t.domainId}`);
+      const g = m.get(key) ?? {
+        key,
+        label: project?.name ?? (initiative ? `${initiative.name} · loose` : `${domain?.name ?? "—"} · someday`),
+        color: domain?.color,
+        lead: focus.has(project?.initiativeId ?? initiative?.id ?? ""),
+        tasks: [],
+      };
+      g.tasks.push(t);
+      m.set(key, g);
     });
     // the week's lead initiatives surface first — pull the right next steps
-    return [...m.entries()].sort(([a], [b]) => {
-      const ai = focus.has(projectById(data, a)?.initiativeId ?? "") ? 0 : 1;
-      const bi = focus.has(projectById(data, b)?.initiativeId ?? "") ? 0 : 1;
-      return ai - bi;
-    });
+    return [...m.values()].sort((a, b) => Number(b.lead) - Number(a.lead));
   }, [items, data, focus]);
 
-  if (groups.length === 0) return <Empty>No project backlog — every project task is done.</Empty>;
+  if (groups.length === 0) return <Empty>No backlog — everything processed is done.</Empty>;
   return (
     <div>
-      <Hint>Ready work under each project. Add tasks one by one, or pull a whole project in.</Hint>
+      <Hint>Ready work under each project (and loose, routed work). Add tasks one by one, or pull a group in.</Hint>
       <div className="space-y-3">
-        {groups.map(([projectId, tasks]) => {
-          const project = projectById(data, projectId);
-          const domain = domainById(data, project?.domainId ?? null);
-          const lead = focus.has(project?.initiativeId ?? "");
-          const remaining = tasks.filter((t) => !t.sprint).length;
+        {groups.map((g) => {
+          const remaining = g.tasks.filter((t) => !t.sprint);
           return (
-            <div key={projectId}>
+            <div key={g.key}>
               <div className="mb-0.5 flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full" style={{ background: domain?.color }} />
-                <span className="text-[11px] font-medium">{project?.name}</span>
-                {lead && <span className="mono text-[9px]" style={{ color: "var(--signal)" }}>★ lead</span>}
-                {remaining > 0 && (
-                  <button onClick={() => addProjectReadyToSprint(projectId)} className="fast mono ml-auto text-[9px] text-muted hover:text-signal" title="Add all ready tasks">
-                    + add all {remaining}
+                <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
+                <span className="text-[11px] font-medium">{g.label}</span>
+                {g.lead && <span className="mono text-[9px]" style={{ color: "var(--signal)" }}>★ lead</span>}
+                {remaining.length > 0 && (
+                  <button
+                    onClick={() => commitTasksToSprint(remaining.map((t) => t.id))}
+                    className="fast mono ml-auto text-[9px] text-muted hover:text-signal"
+                    title="Add all ready tasks"
+                  >
+                    + add all {remaining.length}
                   </button>
                 )}
               </div>
-              {tasks.map((t) => <CandidateRow key={t.id} task={t} />)}
+              {g.tasks.map((t) => <CandidateRow key={t.id} task={t} />)}
             </div>
           );
         })}

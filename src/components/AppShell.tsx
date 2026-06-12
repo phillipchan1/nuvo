@@ -5,7 +5,8 @@ import {
   projectById,
   projectsOf,
 } from "../lib/vertical";
-import { VerticalProvider, useVertical, currentWeekStartISO } from "../hooks/useVertical";
+import { VerticalProvider, useVertical } from "../hooks/useVertical";
+import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import Planner from "./Planner";
 import Spine from "./Spine";
 import FloorPane, { type DetailView, type ProjectView } from "./FloorPane";
@@ -82,15 +83,15 @@ function AppShellInner() {
   // been reviewed, offer the ritual once (dismissable per week).
   useEffect(() => {
     if (!ready) return;
-    const dow = new Date().getDay(); // 0 = Sunday, 1 = Monday
-    const key = `nuvo-sunday-${currentWeekStartISO()}`;
+    const dow = parseDateISO(todayISO()).getDay(); // app-TZ weekday; 0 = Sunday, 1 = Monday
+    const key = `nuvo-sunday-${planningWeekStartISO()}`;
     if ((dow === 0 || dow === 1) && !data.sprint?.reviewed_at && !localStorage.getItem(key)) {
       setSundayNudge(true);
     }
   }, [ready, data.sprint?.reviewed_at]);
 
   const dismissSundayNudge = () => {
-    localStorage.setItem(`nuvo-sunday-${currentWeekStartISO()}`, "1");
+    localStorage.setItem(`nuvo-sunday-${planningWeekStartISO()}`, "1");
     setSundayNudge(false);
   };
 

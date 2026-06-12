@@ -194,7 +194,8 @@ export function buildVertical(
   now: Date = new Date(),
 ): VerticalData {
   const today = todayISO(now);
-  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  // calendar-week boundary in the app timezone, not the machine clock
+  const weekStart = startOfWeek(parseDateISO(today), { weekStartsOn: 1 });
   const quarterStart = subDays(now, 90);
 
   const initiatives: Initiative[] = [...initiativeRows]
@@ -332,9 +333,13 @@ export const sprintTasks = (d: VerticalData) => d.tasks.filter((t) => t.sprint);
 export const inboxTasks = (d: VerticalData) =>
   d.tasks.filter((t) => t.inbox && t.status !== "done");
 
-/** Ready, undone, not-yet-committed tasks that live under a project. */
+/** Processed, undone work anywhere in the vertical — under a project, loose
+ *  on an initiative, or parked on a domain ("someday"). The funnel's Backlogs
+ *  source; nothing routed in the Sweep may fall out of it. */
 export const backlogTasks = (d: VerticalData) =>
-  d.tasks.filter((t) => t.projectId && t.status !== "done");
+  d.tasks.filter(
+    (t) => !t.inbox && t.status !== "done" && (t.projectId || t.initiativeId || t.domainId),
+  );
 
 /** How many of a project's tasks are committed to the sprint. */
 export const projectSprintCount = (d: VerticalData, projectId: string) =>
@@ -407,14 +412,31 @@ export function initiativeProgressAt(d: VerticalData, i: Initiative, cutoff: Dat
   if (ps.length === 0) return i.progress;
   const cut = cutoff.getTime();
   const per = ps.map((p) => {
+    // a manually-done project counts 100 on BOTH sides, or it would show a
+    // phantom "moved" delta every week forever
+    if (p.status === "done") return 100;
     const ts = tasksOf(d, p.id);
-    if (ts.length === 0) return p.status === "done" ? 100 : p.progress;
+    if (ts.length === 0) return p.progress;
     const done = ts.filter(
       (t) => t.status === "done" && t.completedAt && new Date(t.completedAt).getTime() < cut,
     ).length;
     return Math.round((done / ts.length) * 100);
   });
   return Math.round(per.reduce((a, b) => a + b, 0) / per.length);
+}
+
+/** Resolve a task ROW's domain color through the parent chain — the one
+ *  accent rule, shared by the rail, the calendar, and the rituals. */
+export function taskDomainColor(
+  d: VerticalData,
+  t: { domain_id: string | null; project_id: string | null; initiative_id: string | null },
+): string | null {
+  const domainId =
+    t.domain_id ??
+    projectById(d, t.project_id)?.domainId ??
+    initiativeById(d, t.initiative_id)?.domainId ??
+    null;
+  return domainById(d, domainId)?.color ?? null;
 }
 
 /** Faithfulness read: lit = tended recently, dim = going quiet. */
