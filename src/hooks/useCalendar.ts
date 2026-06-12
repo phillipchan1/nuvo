@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
-import type { CalendarAccount, ExternalEvent, Label } from "../lib/types";
+import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleRawEvent, Label, RecurrenceScope } from "../lib/types";
 
 export function useCalendarAccounts() {
   return useQuery({
@@ -32,22 +32,31 @@ export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
   });
 }
 
-/** Move/resize/retitle a Google event: optimistic local write + API write-back. */
+/** Move/resize/retitle a Google event: optimistic local write + API write-back.
+ *  scope="ALL" patches the master recurring event in Google instead of just this instance. */
 export function useExternalEventMutations() {
   const qc = useQueryClient();
   const update = useMutation({
     mutationFn: async ({
       id,
       patch,
+      scope = "THIS",
     }: {
       id: string;
       patch: Partial<Pick<ExternalEvent, "title" | "start_at" | "end_at">>;
+      scope?: RecurrenceScope;
     }) => {
-      const { error } = await supabase.from("external_events").update(patch).eq("id", id);
-      if (error) throw error;
-      invokeQuiet("google-events", { eventId: id, patch });
+      // For THIS-only edits, write the instance row immediately so optimistic
+      // update is consistent. For ALL, the master PATCH in Google will push a
+      // sync back that rewrites all instances — skip the local row update.
+      if (scope === "THIS") {
+        const { error } = await supabase.from("external_events").update(patch).eq("id", id);
+        if (error) throw error;
+      }
+      invokeQuiet("google-events", { eventId: id, patch, scope });
     },
-    onMutate: async ({ id, patch }) => {
+    onMutate: async ({ id, patch, scope = "THIS" }) => {
+      if (scope !== "THIS") return;
       await qc.cancelQueries({ queryKey: ["external_events"] });
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old?.map((e) => (e.id === id ? { ...e, ...patch } : e)),
@@ -55,7 +64,66 @@ export function useExternalEventMutations() {
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });
-  return { updateEvent: update.mutate };
+
+  const rsvp = useMutation({
+    mutationFn: async ({
+      id,
+      responseStatus,
+      sendNotifications = true,
+    }: {
+      id: string;
+      responseStatus: AttendeeStatus;
+      sendNotifications?: boolean;
+    }) => {
+      invokeQuiet("google-events", { action: "rsvp", eventId: id, responseStatus, sendNotifications });
+    },
+    onSettled: (_d, _e, vars) => {
+      qc.invalidateQueries({ queryKey: ["event_details", vars.id] });
+    },
+  });
+
+  // Create a real Google event on the primary calendar. The edge function does
+  // the POST and writes the external_events row, so we just refetch on settle.
+  const create = useMutation({
+    mutationFn: async ({
+      title,
+      start_at,
+      end_at,
+    }: {
+      title: string;
+      start_at: string;
+      end_at: string;
+    }) => {
+      const { data, error } = await supabase.functions.invoke("google-events", {
+        body: { action: "create", title, start_at, end_at },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
+  });
+
+  return { updateEvent: update.mutate, rsvpEvent: rsvp.mutate, createEvent: create.mutateAsync };
+}
+
+/** Fetch the raw Google event payload for a single event — attendees,
+ *  organizer, conference link, etc. Only called when a slide-over is open. */
+export function useEventDetails(id: string | null) {
+  return useQuery({
+    queryKey: ["event_details", id],
+    enabled: Boolean(id),
+    staleTime: 30_000,
+    queryFn: async (): Promise<GoogleRawEvent | null> => {
+      if (!id) return null;
+      const { data, error } = await supabase
+        .from("external_events")
+        .select("raw")
+        .eq("id", id)
+        .single();
+      if (error) throw error;
+      return (data?.raw as GoogleRawEvent) ?? null;
+    },
+  });
 }
 
 export function useLabels() {

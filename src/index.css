@@ -1,9 +1,8 @@
 @import "tailwindcss";
-@import "@fontsource/ibm-plex-sans/400.css";
-@import "@fontsource/ibm-plex-sans/500.css";
-@import "@fontsource/ibm-plex-sans/600.css";
-@import "@fontsource/ibm-plex-mono/400.css";
-@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/plus-jakarta-sans/400.css";
+@import "@fontsource/plus-jakarta-sans/500.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
 
 @source "./**/*.{tsx,ts,jsx,js,html}";
 
@@ -29,8 +28,8 @@
   --accent: #5a4be2;
   --accent-2: #8a6cf0;
   --signal: #e0620f;
-  --accent-soft: rgba(90, 75, 226, 0.08);
-  --signal-soft: rgba(224, 98, 15, 0.09);
+  --accent-soft: rgba(90, 75, 226, 0.11);
+  --signal-soft: rgba(224, 98, 15, 0.11);
   --accent-glow: rgba(90, 75, 226, 0.18);
 
   /* soft, low, faintly violet-warm elevation — never a hard drop shadow */
@@ -74,8 +73,10 @@
   --color-signal: var(--signal);
   --color-accent-soft: var(--accent-soft);
   --color-signal-soft: var(--signal-soft);
-  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  /* Mono is reserved for genuine code (keycaps, code blocks) — never for the
+     numerals/labels the user reads. Those use the sans with tabular figures. */
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   /* radius scale: hairline controls → cards → moments */
   --radius-sm: 4px;
@@ -86,6 +87,49 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+/* ── Type scale ────────────────────────────────────────────────────────
+   A small, deliberate ladder, so hierarchy is composed at the system level
+   rather than improvised per component. Each step owns its line-height and
+   optical tracking — tighter tracking as the size grows, looser leading as
+   it shrinks. Weight stays explicit in the markup so it reads as the primary
+   hierarchy lever (a 13px title leads by weight, not by a bespoke size).
+       display  page / floor heroes
+       head     bar titles, the wordmark register, big day numbers
+       body     primary content — task & event titles, prose
+       caption  secondary headings, tabs, the date range
+       label    controls, buttons, chips
+       meta     dense secondary — durations, dates, counts
+       micro    eyebrow caps, badges, event times, timeline ticks          */
+@theme {
+  --text-display: 22px;
+  --text-display--line-height: 1.12;
+  --text-display--letter-spacing: -0.021em;
+
+  --text-head: 15px;
+  --text-head--line-height: 1.25;
+  --text-head--letter-spacing: -0.015em;
+
+  --text-body: 13px;
+  --text-body--line-height: 1.4;
+  --text-body--letter-spacing: -0.006em;
+
+  --text-caption: 12px;
+  --text-caption--line-height: 1.35;
+  --text-caption--letter-spacing: -0.008em;
+
+  --text-label: 11px;
+  --text-label--line-height: 1.35;
+  --text-label--letter-spacing: -0.002em;
+
+  --text-meta: 10.5px;
+  --text-meta--line-height: 1.3;
+  --text-meta--letter-spacing: 0em;
+
+  --text-micro: 9.5px;
+  --text-micro--line-height: 1.2;
+  --text-micro--letter-spacing: 0.002em;
 }
 
 :root {
@@ -106,8 +150,11 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "IBM Plex Sans", system-ui, sans-serif;
-  font-size: 13.5px;
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  /* Jakarta is a touch wide; a hair of negative tracking makes running text
+     feel set rather than defaulted, and warms the rhythm. */
+  letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -122,16 +169,20 @@ body {
     var(--bg);
 }
 
-/* Every numeral the user sees is Plex Mono, tabular. */
+/* The app's small-label voice. Historically Plex Mono — now the sans with
+   tabular, lining figures so times and durations still align in a column,
+   but read warm and human instead of like a terminal. The class name is kept
+   (it's used in ~200 places) even though it's no longer monospaced. */
 .mono {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.003em;
 }
 
 /* The wordmark — tightened tracking, the twilight gradient on brand surfaces. */
 .wordmark {
-  letter-spacing: -0.025em;
-  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-weight: 700;
 }
 .wordmark-grad {
   background: linear-gradient(120deg, var(--accent) 0%, var(--accent-2) 60%, var(--signal) 130%);
@@ -140,18 +191,19 @@ body {
   color: transparent;
 }
 
-/* Tiny uppercase section labels */
+/* Tiny uppercase section labels — softened tracking so they read as quiet
+   eyebrows, not a system console. */
 .section-label {
-  font-size: 10px;
-  letter-spacing: 0.1em;
+  font-size: 10.5px;
+  letter-spacing: 0.045em;
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 600;
 }
 
-/* Keycap hint chips */
+/* Keycap hint chips — genuine keyboard glyphs, so genuine monospace. */
 .keycap {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1;
   padding: 3px 5px;
@@ -335,25 +387,42 @@ textarea:focus {
   --fc-today-bg-color: var(--accent-soft);
   --fc-now-indicator-color: var(--signal);
   --fc-event-border-color: transparent;
+  --fc-event-text-color: var(--text);
   font-size: 12px;
   height: 100%;
 }
 
 .fc .fc-timegrid-slot {
   height: 22px;
+  border-top-color: color-mix(in srgb, var(--line) 60%, transparent);
+}
+/* Hide 15-min minor dividers — only hour guides remain */
+.fc .fc-timegrid-slot-minor {
+  border-top-color: transparent;
 }
 .fc .fc-timegrid-slot-label,
 .fc .fc-timegrid-axis-cushion,
 .fc .fc-col-header-cell .day-num {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums lining-nums;
   font-size: 10.5px;
+  letter-spacing: -0.01em;
   color: var(--muted);
 }
 .fc .fc-col-header-cell-cushion {
-  padding: 6px 4px;
+  padding: 4px 4px 6px;
   color: var(--text);
   font-weight: 500;
+  text-decoration: none !important;
+}
+/* Today column header: accent background band */
+.fc .fc-col-header-cell.fc-day-today {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+/* Column dividers: slightly softer than the hour lines */
+.fc .fc-timegrid-col {
+  border-left-color: color-mix(in srgb, var(--line) 70%, transparent);
 }
 .fc .fc-timegrid-now-indicator-line {
   border-width: 1.5px 0 0;
@@ -371,31 +440,32 @@ textarea:focus {
   box-shadow: none;
 }
 .fc .fc-event .fc-event-main {
-  padding: 1px 4px;
+  padding: 2px 5px 2px;
 }
 .fc .fc-timegrid-event-harness .fc-event:hover {
   box-shadow: var(--shadow-1);
 }
 
-/* Own task blocks: accent border + checkbox affordance */
+/* Own task blocks: accent left bar, subtle surrounding border, soft tint */
 .fc-event.evt-task {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent);
-  border-left-width: 3px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-left: 3px solid var(--accent);
   color: var(--text);
 }
 .fc-event.evt-task.evt-done {
-  opacity: 0.55;
+  opacity: 0.5;
 }
 .fc-event.evt-task.evt-overdue {
-  border-color: var(--signal);
-  background: var(--signal-soft);
+  border-color: color-mix(in srgb, var(--signal) 28%, var(--line));
+  border-left-color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 11%, var(--surface));
 }
 
 /* Google events: calendar color as left bar (set inline via custom render) */
 .fc-event.evt-google {
   color: var(--text);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
 }
 .fc-event.evt-google .fc-event-main,
 .fc-event.evt-m365 .fc-event-main {
@@ -417,11 +487,80 @@ textarea:focus {
   cursor: default;
 }
 
+/* Time slots: a dashed container (tint + color set inline) holding tasks */
+.fc-event.evt-slot {
+  border-style: dashed !important;
+  color: var(--text);
+}
+.fc-event.evt-slot .fc-event-main {
+  padding: 0;
+  overflow: hidden;
+}
+
 /* External-drag mirror element */
 .fc-event-dragging,
 .fc-event-mirror {
   opacity: 0.8;
   box-shadow: var(--shadow-2);
+}
+
+/* ── Month view: compact pills + overflow popover ────────────────────── */
+/* Make month events shorter so more fit before the "+N more" threshold */
+.fc .fc-daygrid-event {
+  margin-top: 1px !important;
+  border-radius: 4px !important;
+}
+.fc .fc-daygrid-event .fc-event-main {
+  padding: 0 !important;
+}
+/* "+N more" chip */
+.fc .fc-daygrid-more-link {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-top: 1px;
+  display: inline-block;
+  transition: background-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
+}
+.fc .fc-daygrid-more-link:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* Popover card */
+.fc .fc-more-popover {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  min-width: 160px;
+  overflow: hidden;
+  animation: rise 160ms var(--ease-out) both;
+}
+.fc .fc-more-popover .fc-popover-header {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fc .fc-more-popover .fc-popover-close {
+  color: var(--muted);
+  font-size: 14px;
+  opacity: 0.6;
+}
+.fc .fc-more-popover .fc-popover-close:hover {
+  opacity: 1;
+}
+.fc .fc-more-popover .fc-popover-body {
+  padding: 4px 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 /* ── Agent sidebar chat bubbles ──────────────────────────────────────── */
@@ -474,7 +613,7 @@ textarea:focus {
   font-style: italic;
 }
 .agent-markdown code {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
   padding: 0.1em 0.3em;
   border-radius: 2px;

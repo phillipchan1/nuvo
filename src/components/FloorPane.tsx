@@ -49,7 +49,7 @@ export default function FloorPane({
   return (
     <div className="flex h-full flex-col bg-bg">
       <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-line bg-surface px-5">
-        {rung === "now" && <span className="mono text-[11px] font-medium text-ink">Now</span>}
+        {rung === "now" && <span className="mono text-[11px] font-medium text-ink">Today</span>}
         {rung === "domain" && <span className="mono text-[11px] font-medium text-ink">Domains</span>}
         {rung === "project" && (
           <RungTabs

@@ -31,7 +31,29 @@ export interface Task {
   prework_at: string | null;
   google_event_id: string | null;
   sort_order: number;
+  slot_id: string | null;
   task_labels?: { label_id: string }[];
+}
+
+/**
+ * A Time Slot: a first-class timed container on the calendar that holds many
+ * tasks. Its start/duration are independent of the tasks inside it — children
+ * carry slot_id (and start_time null), ordered by sort_order. No done-state of
+ * its own; progress is derived from its children (n done / m total).
+ */
+export interface Slot {
+  id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  title: string;
+  do_date: string; // 'YYYY-MM-DD'
+  start_time: string; // timestamptz ISO
+  duration_minutes: number;
+  project_id: string | null;
+  domain_id: string | null;
+  color: string | null;
+  google_event_id: string | null;
 }
 
 /**
@@ -94,7 +116,12 @@ export interface ExternalEvent {
   all_day: boolean;
   location: string | null;
   busy: boolean;
+  /** Master series event ID from Google — present on recurring instances.
+   *  Populated once migration 00000000000007 is applied; omitted before that. */
+  recurring_event_id?: string | null;
 }
+
+export type RecurrenceScope = "THIS" | "ALL";
 
 export interface UserSettings {
   user_id: string;
@@ -109,3 +136,30 @@ export interface UserSettings {
 }
 
 export const DEFAULT_DURATION_MINUTES = 30;
+
+// ── Google Calendar raw event shape (subset we use) ──────────────────────
+export type AttendeeStatus = "needsAction" | "accepted" | "declined" | "tentative";
+
+export interface GoogleAttendee {
+  email: string;
+  displayName?: string;
+  responseStatus: AttendeeStatus;
+  self?: boolean;
+  organizer?: boolean;
+  optional?: boolean;
+}
+
+export interface GoogleRawEvent {
+  attendees?: GoogleAttendee[];
+  organizer?: { email: string; displayName?: string };
+  description?: string;
+  htmlLink?: string;
+  conferenceData?: {
+    conferenceSolution?: { name?: string };
+    entryPoints?: Array<{
+      entryPointType: "video" | "phone" | "more" | string;
+      uri: string;
+      label?: string;
+    }>;
+  };
+}

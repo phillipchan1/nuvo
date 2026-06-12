@@ -3,7 +3,7 @@ import { LADDER, type Rung } from "./AppShell";
 
 // Top-to-bottom: Now (immediate) → Domain (widest). ⌘1 at top, ⌘5 at bottom.
 const RUNGS: { id: Rung; label: string }[] = [
-  { id: "now", label: "Now" },
+  { id: "now", label: "Today" },
   { id: "day", label: "Day · Week" },
   { id: "project", label: "Project" },
   { id: "initiative", label: "Initiative" },

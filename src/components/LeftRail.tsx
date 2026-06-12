@@ -1,15 +1,39 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { parseCapture } from "../lib/nlp";
 import type { NewTaskInput, useTaskMutations } from "../hooks/useTasks";
 import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
-import TaskRow from "./TaskRow";
+import TaskRow, { type TaskMeta } from "./TaskRow";
 import { Keycap, SectionLabel } from "./ui";
 
 export type RailTab = "inbox" | "week" | "today";
 type Mutations = ReturnType<typeof useTaskMutations>;
+
+const RAIL_WIDTH_KEY = "nuvo-rail-width";
+const DEFAULT_RAIL_WIDTH = 360;
+const MIN_RAIL_WIDTH = 240;
+const MAX_RAIL_WIDTH = 560;
+
+function readRailWidth(): number {
+  try {
+    const v = Number(localStorage.getItem(RAIL_WIDTH_KEY));
+    if (Number.isFinite(v) && v >= MIN_RAIL_WIDTH && v <= MAX_RAIL_WIDTH) return v;
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_RAIL_WIDTH;
+}
+
+function writeRailWidth(width: number) {
+  try {
+    localStorage.setItem(RAIL_WIDTH_KEY, String(width));
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function LeftRail({
   tab,
@@ -31,19 +55,22 @@ export default function LeftRail({
   today: Task[];
   labels: Label[];
   mutations: Mutations;
-  onOpenTask: (t: Task) => void;
+  onOpenTask: (t: Task, anchor: DOMRect) => void;
   hotkeysEnabled: boolean;
   now: Date;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
 }) {
-  const { data: vertical, setSprintGoal } = useVertical();
+  const { data: vertical, setSprintGoal, toggleTaskSprint } = useVertical();
 
   /** A task's thread back up the vertical: its domain color. */
   const accentOf = (t: Task) => taskDomainColor(vertical, t);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ task: Task; x: number; y: number } | null>(null);
   const [labelPickerFor, setLabelPickerFor] = useState<Task | null>(null);
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);
   const captureRef = useRef<HTMLInputElement>(null);
+  const [railWidth, setRailWidth] = useState(readRailWidth);
   const [capture, setCapture] = useState("");
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -69,13 +96,22 @@ export default function LeftRail({
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
+      // Targets: multi-select if active, else the keyboard cursor
+      const targets = selectedIds.size > 1
+        ? visible.filter((t) => selectedIds.has(t.id))
+        : selected ? [selected] : [];
+
       const idx = selected ? visible.findIndex((t) => t.id === selected.id) : -1;
       const move = (delta: number) => {
         const next = visible[Math.min(visible.length - 1, Math.max(0, idx + delta))];
-        if (next) setSelectedId(next.id);
+        if (next) { setSelectedId(next.id); setSelectedIds(new Set()); }
       };
 
       switch (e.key) {
+        case "Escape":
+          setSelectedIds(new Set());
+          setContextMenu(null);
+          break;
         case "ArrowDown":
         case "j":
           e.preventDefault();
@@ -87,34 +123,38 @@ export default function LeftRail({
           idx === -1 ? visible[0] && setSelectedId(visible[0].id) : move(-1);
           break;
         case "Enter":
-          if (selected) onOpenTask(selected);
-          break;
-        case "e":
-          if (selected) mutations.planFor(selected, todayISO());
-          break;
-        case "t":
-          if (selected) mutations.planFor(selected, tomorrowISO());
-          break;
-        case "w":
-          if (selected) mutations.planFor(selected, nextWeekISO());
-          break;
-        case "d":
-          if (selected)
-            selected.status === "done" ? mutations.uncomplete(selected) : mutations.complete(selected);
-          break;
-        case "x":
-          if (selected) {
-            mutations.trash(selected);
-            setSelectedId(null);
+          if (targets.length === 1) {
+            const el = document.querySelector<HTMLElement>(`[data-task-drag="${targets[0].id}"]`);
+            const anchor = el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40);
+            onOpenTask(targets[0], anchor);
           }
           break;
+        case "e":
+          targets.forEach((t) => mutations.planFor(t, todayISO()));
+          break;
+        case "t":
+          targets.forEach((t) => mutations.planFor(t, tomorrowISO()));
+          break;
+        case "w":
+          targets.forEach((t) => mutations.planFor(t, nextWeekISO()));
+          break;
+        case "d":
+          targets.forEach((t) =>
+            t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t),
+          );
+          break;
+        case "x":
+          targets.forEach((t) => mutations.trash(t));
+          setSelectedId(null);
+          setSelectedIds(new Set());
+          break;
         case "s":
-          if (selected) setSchedulePickerFor(selected);
+          if (targets.length === 1) setSchedulePickerFor(targets[0]);
           break;
         case "#":
-          if (selected) {
+          if (targets.length === 1) {
             e.preventDefault();
-            setLabelPickerFor(selected);
+            setLabelPickerFor(targets[0]);
           }
           break;
         case "1":
@@ -134,7 +174,7 @@ export default function LeftRail({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hotkeysEnabled, selected, visible, mutations, onOpenTask, setTab]);
+  }, [hotkeysEnabled, selected, selectedIds, visible, mutations, onOpenTask, setTab]);
 
   const submitCapture = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -167,15 +207,51 @@ export default function LeftRail({
     }
   };
 
+  const metaOf = (t: Task): TaskMeta => {
+    const project = projectById(vertical, t.project_id);
+    const initiative = initiativeById(vertical, t.initiative_id ?? project?.initiativeId ?? null);
+    const domain = domainById(
+      vertical,
+      t.domain_id ?? project?.domainId ?? initiative?.domainId ?? null,
+    );
+    return {
+      project: project?.name ?? null,
+      domain: domain?.name ?? null,
+      domainColor: domain?.color ?? null,
+    };
+  };
+
+  const toggleMultiSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+    setSelectedId(id);
+  };
+
+  const openContextMenu = (t: Task, e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ task: t, x: e.clientX, y: e.clientY });
+    setSelectedId(t.id);
+  };
+
   const rowProps = (t: Task) => ({
     task: t,
     labels,
     selected: t.id === selectedId,
+    multiSelected: selectedIds.has(t.id),
     draggable: true,
     accent: accentOf(t),
+    meta: metaOf(t),
     onSelect: () => setSelectedId(t.id),
-    onOpen: () => onOpenTask(t),
+    onOpen: (anchor: DOMRect) => {
+      setSelectedIds(new Set());
+      onOpenTask(t, anchor);
+    },
     onToggleDone: () => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t)),
+    onMultiToggle: () => toggleMultiSelect(t.id),
+    onContextMenu: (e: React.MouseEvent) => openContextMenu(t, e),
   });
 
   const tabCount = (t: RailTab) =>
@@ -185,20 +261,54 @@ export default function LeftRail({
         ? week.filter((x) => x.status !== "done").length
         : today.filter((x) => x.status !== "done").length;
 
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = railWidth;
+    let latest = startW;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: PointerEvent) => {
+      latest = Math.min(MAX_RAIL_WIDTH, Math.max(MIN_RAIL_WIDTH, startW + ev.clientX - startX));
+      setRailWidth(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      writeRailWidth(latest);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   return (
-    <div ref={railRef} className="flex h-full w-[360px] shrink-0 flex-col border-r border-line bg-surface">
+    <div
+      ref={railRef}
+      className="relative flex h-full shrink-0 flex-col border-r border-line bg-surface"
+      style={{ width: railWidth }}
+    >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onPointerDown={startResize}
+        className="absolute -right-1 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35"
+      />
       {/* Tabs */}
       <div className="flex border-b border-line">
         {(["inbox", "week", "today"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`fast flex-1 px-3 py-2 text-[12px] font-medium ${
+            className={`fast flex-1 px-3 py-2 text-caption font-semibold ${
               tab === t ? "border-b-2 border-accent text-ink" : "text-muted hover:text-ink"
             }`}
           >
             {t === "inbox" ? "Inbox" : t === "week" ? "Week" : "Today"}
-            <span className="mono ml-1.5 text-[10px] text-muted">{tabCount(t)}</span>
+            <span className="mono ml-1.5 text-meta text-muted">{tabCount(t)}</span>
           </button>
         ))}
       </div>
@@ -220,10 +330,10 @@ export default function LeftRail({
             }
           }}
           placeholder='Capture… try "call David tomorrow 9am 30m #work !high"'
-          className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-[13px] outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
+          className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-body outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
         />
         {captureError && (
-          <div className="mt-1 px-0.5 text-[11px] text-signal">{captureError}</div>
+          <div className="mt-1 px-0.5 text-label text-signal">{captureError}</div>
         )}
       </form>
 
@@ -340,16 +450,58 @@ export default function LeftRail({
         )}
       </div>
 
-      {/* Shortcut hints */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-3 py-2 text-[10px] text-muted">
-        <span className="flex items-center gap-1"><Keycap>E</Keycap> today</span>
-        <span className="flex items-center gap-1"><Keycap>T</Keycap> tomorrow</span>
-        <span className="flex items-center gap-1"><Keycap>W</Keycap> next wk</span>
-        <span className="flex items-center gap-1"><Keycap>S</Keycap> pick</span>
-        <span className="flex items-center gap-1"><Keycap>D</Keycap> done</span>
-        <span className="flex items-center gap-1"><Keycap>X</Keycap> trash</span>
-        <span className="flex items-center gap-1"><Keycap>#</Keycap> label</span>
-      </div>
+      {/* Bulk action bar — slides up when ≥2 tasks are multi-selected */}
+      {selectedIds.size > 1 ? (
+        <div className="rise flex shrink-0 items-center gap-2 border-t border-accent/30 bg-accent-soft px-3 py-2">
+          <span className="mono text-[11px] font-semibold text-accent">{selectedIds.size} selected</span>
+          <div className="flex-1" />
+          <button
+            onClick={() => {
+              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.planFor(t, todayISO(now)));
+              setSelectedIds(new Set());
+            }}
+            className="fast rounded border border-line px-2 py-0.5 text-[11px] text-muted hover:border-accent hover:text-accent"
+          >
+            → Today
+          </button>
+          <button
+            onClick={() => {
+              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.complete(t));
+              setSelectedIds(new Set());
+            }}
+            className="fast rounded border border-line px-2 py-0.5 text-[11px] text-muted hover:border-accent hover:text-accent"
+          >
+            ✓ Done
+          </button>
+          <button
+            onClick={() => {
+              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.trash(t));
+              setSelectedIds(new Set());
+            }}
+            className="fast rounded border border-signal/30 px-2 py-0.5 text-[11px] text-signal hover:bg-signal-soft"
+          >
+            Trash
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="ml-1 text-[11px] text-muted hover:text-ink"
+            aria-label="Clear selection"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        /* Shortcut hints */
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-3 py-2 text-[10px] text-muted">
+          <span className="flex items-center gap-1"><Keycap>E</Keycap> today</span>
+          <span className="flex items-center gap-1"><Keycap>T</Keycap> tomorrow</span>
+          <span className="flex items-center gap-1"><Keycap>W</Keycap> next wk</span>
+          <span className="flex items-center gap-1"><Keycap>S</Keycap> pick</span>
+          <span className="flex items-center gap-1"><Keycap>D</Keycap> done</span>
+          <span className="flex items-center gap-1"><Keycap>X</Keycap> trash</span>
+          <span className="flex items-center gap-1"><Keycap>#</Keycap> label</span>
+        </div>
+      )}
 
       {labelPickerFor && (
         <LabelPicker
@@ -366,12 +518,150 @@ export default function LeftRail({
           mutations={mutations}
         />
       )}
+
+      {contextMenu && (
+        <TaskContextMenu
+          task={contextMenu.task}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          now={now}
+          vertical={vertical}
+          mutations={mutations}
+          onSchedule={() => { setSchedulePickerFor(contextMenu.task); setContextMenu(null); }}
+          onLabel={() => { setLabelPickerFor(contextMenu.task); setContextMenu(null); }}
+          onOpen={() => {
+            const el = document.querySelector<HTMLElement>(`[data-task-drag="${contextMenu.task.id}"]`);
+            const anchor = el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40);
+            onOpenTask(contextMenu.task, anchor);
+            setContextMenu(null);
+          }}
+          onClose={() => setContextMenu(null)}
+          toggleTaskSprint={toggleTaskSprint}
+        />
+      )}
     </div>
   );
 }
 
 function EmptyState({ text }: { text: string }) {
   return <div className="px-3 py-6 text-center text-[12px] text-muted">{text}</div>;
+}
+
+// ── Right-click context menu ───────────────────────────────────────────────
+function TaskContextMenu({
+  task,
+  x,
+  y,
+  now,
+  vertical,
+  mutations,
+  onSchedule,
+  onLabel,
+  onOpen,
+  onClose,
+  toggleTaskSprint,
+}: {
+  task: Task;
+  x: number;
+  y: number;
+  now: Date;
+  vertical: ReturnType<typeof useVertical>["data"];
+  mutations: Mutations;
+  onSchedule: () => void;
+  onLabel: () => void;
+  onOpen: (anchor: DOMRect) => void;
+  onClose: () => void;
+  toggleTaskSprint: (id: string) => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const done = task.status === "done";
+  const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
+
+  // Clamp to viewport
+  const POP_W = 200;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const left = x + POP_W > vw - 8 ? vw - POP_W - 8 : x;
+  const top = y + 260 > vh - 8 ? vh - 260 - 8 : y;
+
+  type Item =
+    | { kind: "action"; label: string; key?: string; danger?: boolean; action: () => void }
+    | { kind: "sep" };
+
+  const items: Item[] = [
+    {
+      kind: "action", label: "Open", key: "↵",
+      action: () => {
+        const el = document.querySelector<HTMLElement>(`[data-task-drag="${task.id}"]`);
+        onOpen(el?.getBoundingClientRect() ?? new DOMRect(360, 200, 0, 40));
+      },
+    },
+    { kind: "sep" },
+    { kind: "action", label: "Today", key: "E", action: () => { mutations.planFor(task, todayISO(now)); onClose(); } },
+    { kind: "action", label: "Tomorrow", key: "T", action: () => { mutations.planFor(task, tomorrowISO()); onClose(); } },
+    { kind: "action", label: "Next week", key: "W", action: () => { mutations.planFor(task, nextWeekISO()); onClose(); } },
+    { kind: "action", label: "Schedule…", key: "S", action: onSchedule },
+    { kind: "sep" },
+    {
+      kind: "action",
+      label: inWeek ? "Remove from week" : "Commit to this week",
+      action: () => { toggleTaskSprint(task.id); onClose(); },
+    },
+    { kind: "sep" },
+    {
+      kind: "action",
+      label: done ? "Reopen" : "Mark done",
+      key: "D",
+      action: () => {
+        done ? mutations.uncomplete(task) : mutations.complete(task);
+        onClose();
+      },
+    },
+    { kind: "action", label: "Label…", key: "#", action: onLabel },
+    { kind: "sep" },
+    {
+      kind: "action",
+      label: "Trash",
+      key: "X",
+      danger: true,
+      action: () => { mutations.trash(task); onClose(); },
+    },
+  ];
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-50" onClick={onClose} />
+      <div
+        className="rise elev-3 fixed z-50 w-[200px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+        style={{ top, left }}
+      >
+        {items.map((item, i) => {
+          if (item.kind === "sep")
+            return <div key={i} className="my-1 border-t border-line" />;
+          return (
+            <button
+              key={i}
+              onClick={item.action}
+              className={`fast flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-bg ${
+                item.danger ? "text-signal" : "text-text"
+              }`}
+            >
+              <span className="flex-1">{item.label}</span>
+              {item.key && (
+                <span className="mono text-[10px] text-muted">{item.key}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </>,
+    document.body,
+  );
 }
 
 function GoalInput({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {

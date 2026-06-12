@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
-import { DEFAULT_DURATION_MINUTES, restingStatus, type Task, type TaskPriority } from "../lib/types";
+import { DEFAULT_DURATION_MINUTES, restingStatus, type Slot, type Task, type TaskPriority } from "../lib/types";
 import { todayISO } from "../lib/dates";
 
 const TASK_COLS = "*, task_labels(label_id)";
@@ -31,6 +31,7 @@ export function useDayTasks(dateISO: string) {
         .select(TASK_COLS)
         .eq("do_date", dateISO)
         .in("status", ["planned", "done"])
+        .is("slot_id", null) // slot children show inside their slot, not here
         .order("sort_order")
         .order("created_at");
       if (error) throw error;
@@ -99,6 +100,9 @@ export interface NewTaskInput {
   deadline?: string | null;
   priority?: TaskPriority;
   labelIds?: string[];
+  slot_id?: string | null;
+  project_id?: string | null;
+  domain_id?: string | null;
 }
 
 export function useTaskMutations() {
@@ -168,6 +172,28 @@ export function useTaskMutations() {
 
     /** Remove from calendar but keep planned for its day. */
     unblock: (t: Task) => patchTask(t.id, { start_time: null }),
+
+    /** Move a task into a slot: it drops its own block and rides the slot's day. */
+    assignToSlot: (t: Task, slot: Slot) =>
+      patchTask(t.id, {
+        slot_id: slot.id,
+        start_time: null,
+        do_date: slot.do_date,
+        status: "planned",
+      }),
+
+    /** Pull a task out of its slot — keeps its day, still has no time block. */
+    removeFromSlot: (t: Task) => patchTask(t.id, { slot_id: null }),
+
+    /** Create a fresh task already inside a slot (no block of its own). */
+    createInSlot: (slot: Slot, title: string) =>
+      create.mutateAsync({
+        title,
+        do_date: slot.do_date,
+        slot_id: slot.id,
+        project_id: slot.project_id,
+        domain_id: slot.domain_id,
+      }),
 
     complete: (t: Task) =>
       patchTask(t.id, { status: "done", completed_at: new Date().toISOString() }),

@@ -1,25 +1,306 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { supabase } from "../lib/supabase";
 import { formatHourLabel } from "../lib/dates";
 import type { CalendarAccount, UserSettings } from "../lib/types";
 import { useLabels } from "../hooks/useCalendar";
-import { Btn, Modal, SectionLabel } from "./ui";
+import { Btn, Modal } from "./ui";
 
-export default function SettingsModal({
+// ── Section registry ──────────────────────────────────────────────────────
+type SectionId = "appearance" | "schedule" | "connections" | "labels" | "account";
+
+const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
+  {
+    id: "appearance",
+    label: "Appearance",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M8 2.5a5.5 5.5 0 000 11z" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    id: "schedule",
+    label: "Schedule",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M8 4.8V8l2.2 1.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    id: "connections",
+    label: "Connections",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <rect x="2.3" y="3.3" width="11.4" height="10.4" rx="1.6" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M2.3 6.3h11.4" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M5.5 1.8v2.6M10.5 1.8v2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    id: "labels",
+    label: "Labels",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <path d="M2.5 2.5h4.7l6.3 6.3a1 1 0 010 1.4l-3.3 3.3a1 1 0 01-1.4 0L2.5 7.2z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        <circle cx="5.4" cy="5.4" r="0.95" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    id: "account",
+    label: "Account",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="5.5" r="2.6" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M3.2 13.4c0-2.5 2.1-4.1 4.8-4.1s4.8 1.6 4.8 4.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+];
+
+// ── Shared layout atoms ───────────────────────────────────────────────────
+function PaneHeader({ title, sub }: { title: string; sub: string }) {
+  return (
+    <div className="mb-4">
+      <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+      <p className="mt-0.5 text-[12px] leading-snug text-muted">{sub}</p>
+    </div>
+  );
+}
+
+function Row({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3.5">
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium text-ink">{title}</div>
+        {desc && <div className="mt-0.5 text-[12px] leading-snug text-muted">{desc}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function Segmented({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          className={`fast rounded-md px-3 py-1 text-[12px] font-medium ${
+            value === o.value
+              ? "bg-surface text-ink shadow-sm"
+              : "text-muted hover:text-ink"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const toMinLabel = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+// ── Appearance: live theme preview tiles ──────────────────────────────────
+const PALETTES = {
+  light: { bg: "#f3f2f7", surface: "#ffffff", line: "#e5e3ee", accent: "#5a4be2", text: "#1a1822", muted: "#6c6880" },
+  dark: { bg: "#141320", surface: "#1c1a28", line: "#2d2b3d", accent: "#8b80ff", text: "#ecebf3", muted: "#95909f" },
+} as const;
+type Palette = (typeof PALETTES)[keyof typeof PALETTES];
+
+function MiniBars({ p }: { p: Palette }) {
+  return (
+    <div className="flex h-full gap-1 p-1.5">
+      <div className="flex w-[34%] flex-col gap-1 rounded-[3px] border p-1" style={{ background: p.surface, borderColor: p.line }}>
+        <div className="h-1 w-3/4 rounded-full" style={{ background: p.accent }} />
+        <div className="h-1 w-full rounded-full" style={{ background: p.line }} />
+        <div className="h-1 w-1/2 rounded-full" style={{ background: p.line }} />
+      </div>
+      <div className="flex flex-1 flex-col gap-1 rounded-[3px] border p-1" style={{ background: p.surface, borderColor: p.line }}>
+        <div className="h-1 w-1/2 rounded-full opacity-80" style={{ background: p.text }} />
+        <div className="h-1 w-full rounded-full opacity-50" style={{ background: p.muted }} />
+        <div className="h-1 w-2/3 rounded-full opacity-50" style={{ background: p.muted }} />
+        <div className="mt-auto h-2 w-7 rounded-[2px]" style={{ background: p.accent }} />
+      </div>
+    </div>
+  );
+}
+
+function ThemeCard({
+  theme,
+  active,
+  onSelect,
+}: {
+  theme: "system" | "light" | "dark";
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      className={`fast group overflow-hidden rounded-lg border text-left ${
+        active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
+      }`}
+    >
+      <div className="h-[58px]" style={{ background: theme === "dark" ? PALETTES.dark.bg : PALETTES.light.bg }}>
+        {theme === "system" ? (
+          <div className="flex h-full">
+            <div className="w-1/2 overflow-hidden" style={{ background: PALETTES.light.bg }}>
+              <MiniBars p={PALETTES.light} />
+            </div>
+            <div className="w-1/2 overflow-hidden border-l border-black/20" style={{ background: PALETTES.dark.bg }}>
+              <MiniBars p={PALETTES.dark} />
+            </div>
+          </div>
+        ) : (
+          <MiniBars p={PALETTES[theme]} />
+        )}
+      </div>
+      <div className="flex items-center justify-between border-t border-line bg-surface px-2.5 py-1.5">
+        <span className="text-[12px] font-medium capitalize text-ink">{theme}</span>
+        <span
+          className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
+            active ? "border-accent bg-accent text-white" : "border-line-strong"
+          }`}
+        >
+          {active && (
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+              <path d="M2 5l2 2 4-4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ── Section panes ─────────────────────────────────────────────────────────
+function AppearancePane({
+  settings,
+  updateSettings,
+}: {
+  settings: UserSettings | undefined;
+  updateSettings: (patch: Partial<UserSettings>) => void;
+}) {
+  const theme = settings?.theme ?? "system";
+  return (
+    <div>
+      <PaneHeader title="Appearance" sub="How Nuvo looks. System follows your device's light or dark mode." />
+      <div className="grid grid-cols-3 gap-2.5">
+        {(["system", "light", "dark"] as const).map((t) => (
+          <ThemeCard key={t} theme={t} active={theme === t} onSelect={() => updateSettings({ theme: t })} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SchedulePane({
+  settings,
+  updateSettings,
+}: {
+  settings: UserSettings | undefined;
+  updateSettings: (patch: Partial<UserSettings>) => void;
+}) {
+  const setWork = (key: "work_start_minutes" | "work_end_minutes") => (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.value) return;
+    const [h, mm] = e.target.value.split(":").map(Number);
+    updateSettings({ [key]: h * 60 + mm });
+  };
+  const selCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-[12px] outline-none focus:border-accent";
+  const timeCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-[12px] outline-none focus:border-accent";
+
+  return (
+    <div>
+      <PaneHeader title="Schedule" sub="The shape of your day — what the calendar shows and when Nuvo plans for you." />
+      <div className="divide-y divide-line">
+        <Row title="Day view window" desc="The span of hours shown in your calendar.">
+          <div className="flex items-center gap-2">
+            <select
+              value={settings?.day_start_hour ?? 6}
+              onChange={(e) => updateSettings({ day_start_hour: Number(e.target.value) })}
+              className={selCls}
+            >
+              {Array.from({ length: 12 }, (_, h) => (
+                <option key={h} value={h}>
+                  {formatHourLabel(h)}
+                </option>
+              ))}
+            </select>
+            <span className="text-[12px] text-muted">to</span>
+            <select
+              value={settings?.day_end_hour ?? 24}
+              onChange={(e) => updateSettings({ day_end_hour: Number(e.target.value) })}
+              className={selCls}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 13).map((h) => (
+                <option key={h} value={h}>
+                  {formatHourLabel(h)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </Row>
+
+        <Row title="Working hours" desc="The window Nuvo proposes focus blocks inside.">
+          <div className="flex items-center gap-2">
+            <input
+              type="time"
+              step={900}
+              value={toMinLabel(settings?.work_start_minutes ?? 480)}
+              onChange={setWork("work_start_minutes")}
+              className={timeCls}
+            />
+            <span className="text-[12px] text-muted">to</span>
+            <input
+              type="time"
+              step={900}
+              value={toMinLabel(settings?.work_end_minutes ?? 990)}
+              onChange={setWork("work_end_minutes")}
+              className={timeCls}
+            />
+          </div>
+        </Row>
+
+        <Row title="Week starts on" desc="The first column of the week and month views.">
+          <Segmented
+            value={String(settings?.week_start ?? 1)}
+            onChange={(v) => updateSettings({ week_start: Number(v) })}
+            options={[
+              { value: "0", label: "Sunday" },
+              { value: "1", label: "Monday" },
+            ]}
+          />
+        </Row>
+      </div>
+    </div>
+  );
+}
+
+function ConnectionsPane({
   settings,
   updateSettings,
   accounts,
-  onClose,
 }: {
   settings: UserSettings | undefined;
   updateSettings: (patch: Partial<UserSettings>) => void;
   accounts: CalendarAccount[];
-  onClose: () => void;
 }) {
-  const { labels, createLabel, updateLabel, deleteLabel } = useLabels();
-  const [newLabel, setNewLabel] = useState("");
-  const [newColor, setNewColor] = useState("#2563EB");
-
   const connect = async (provider: "google" | "m365") => {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
@@ -28,7 +309,6 @@ export default function SettingsModal({
     const redirect = encodeURIComponent(window.location.origin);
     window.location.href = `${base}/functions/v1/${provider === "google" ? "google-oauth" : "m365-oauth"}?action=start&token=${token}&redirect=${redirect}`;
   };
-
   const disconnect = async (id: string) => {
     await supabase.from("calendar_accounts").delete().eq("id", id);
   };
@@ -41,175 +321,233 @@ export default function SettingsModal({
   };
 
   return (
-    <Modal onClose={onClose} width="max-w-2xl">
+    <div>
+      <PaneHeader title="Connections" sub="Calendars Nuvo reads from and writes to. Toggle which ones appear on your board." />
+      <div className="space-y-3">
+        {accounts.map((a) => (
+          <div key={a.id} className="overflow-hidden rounded-lg border border-line">
+            <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
+              <span
+                className="flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-semibold text-white"
+                style={{ background: a.provider === "google" ? "#4285F4" : "#2563EB" }}
+              >
+                {a.provider === "google" ? "G" : "M"}
+              </span>
+              <div className="min-w-0">
+                <div className="text-[13px] font-medium leading-tight">
+                  {a.provider === "google" ? "Google" : "Microsoft 365"}
+                </div>
+                <div className="mono truncate text-[11px] text-muted">{a.email}</div>
+              </div>
+              <span
+                className={`mono ml-1 rounded-full px-1.5 py-0.5 text-[10px] ${
+                  a.sync_direction === "two_way"
+                    ? "bg-accent-soft text-accent"
+                    : "border border-line text-muted"
+                }`}
+              >
+                {a.sync_direction === "two_way" ? "two-way" : "read-only"}
+              </span>
+              <div className="flex-1" />
+              {a.needs_reconnect && (
+                <Btn kind="signal" onClick={() => connect(a.provider)}>
+                  Reconnect
+                </Btn>
+              )}
+              <Btn onClick={() => disconnect(a.id)}>Disconnect</Btn>
+            </div>
+            <div className="space-y-0.5 p-1.5">
+              {(a.calendars ?? []).map((c) => {
+                const on = !hidden.has(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => toggleCalendar(c.id)}
+                    className="fast flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-surface-2"
+                  >
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                      style={{ background: on ? (c.color ?? "var(--muted)") : "transparent", boxShadow: on ? "none" : "inset 0 0 0 1.5px var(--line-strong)" }}
+                    />
+                    <span className={`flex-1 truncate ${on ? "text-ink" : "text-muted line-through decoration-line-strong"}`}>
+                      {c.summary}
+                    </span>
+                    <span
+                      className={`fast relative h-4 w-7 shrink-0 rounded-full ${on ? "bg-accent" : "bg-line-strong"}`}
+                    >
+                      <span
+                        className="fast absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm"
+                        style={{ left: on ? "14px" : "2px" }}
+                      />
+                    </span>
+                  </button>
+                );
+              })}
+              {(a.calendars ?? []).length === 0 && (
+                <div className="px-2 py-1.5 text-[12px] text-muted">No calendars synced yet.</div>
+              )}
+            </div>
+          </div>
+        ))}
+
+        <div className="flex gap-2">
+          <Btn kind="primary" onClick={() => connect("google")}>
+            {accounts.some((a) => a.provider === "google") ? "+ Add Google account" : "Connect Google"}
+          </Btn>
+          {!accounts.some((a) => a.provider === "m365") && (
+            <Btn onClick={() => connect("m365")}>Connect Microsoft 365</Btn>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LabelsPane() {
+  const { labels, createLabel, updateLabel, deleteLabel } = useLabels();
+  const [newLabel, setNewLabel] = useState("");
+  const [newColor, setNewColor] = useState("#2563EB");
+
+  return (
+    <div>
+      <PaneHeader title="Labels" sub="Color-coded tags you can attach to any task across the board." />
+      <div className="space-y-1.5">
+        {labels.map((l) => (
+          <div key={l.id} className="group flex items-center gap-2 rounded-md border border-transparent px-1 py-0.5 hover:border-line hover:bg-surface-2">
+            <input
+              type="color"
+              value={l.color}
+              onChange={(e) => updateLabel({ id: l.id, color: e.target.value })}
+              className="h-7 w-8 cursor-pointer rounded-md border border-line bg-surface"
+            />
+            <input
+              defaultValue={l.name}
+              onBlur={(e) =>
+                e.target.value.trim() &&
+                e.target.value !== l.name &&
+                updateLabel({ id: l.id, name: e.target.value.trim() })
+              }
+              className="flex-1 rounded-md border border-line bg-bg px-2 py-1 text-[13px] outline-none focus:border-accent"
+            />
+            <button
+              onClick={() => deleteLabel(l.id)}
+              title="Delete label"
+              className="fast flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 hover:bg-signal-soft hover:text-signal group-hover:opacity-100"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 4h8M5.5 4V3h3v1M4 4l.5 7h5L10 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+        ))}
+        {labels.length === 0 && <div className="px-1 py-2 text-[12px] text-muted">No labels yet — add one below.</div>}
+
+        <form
+          className="mt-2 flex items-center gap-2 border-t border-line pt-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!newLabel.trim()) return;
+            await createLabel({ name: newLabel.trim(), color: newColor });
+            setNewLabel("");
+          }}
+        >
+          <input
+            type="color"
+            value={newColor}
+            onChange={(e) => setNewColor(e.target.value)}
+            className="h-7 w-8 cursor-pointer rounded-md border border-line bg-surface"
+          />
+          <input
+            value={newLabel}
+            onChange={(e) => setNewLabel(e.target.value)}
+            placeholder="New label…"
+            className="flex-1 rounded-md border border-line bg-bg px-2 py-1 text-[13px] outline-none focus:border-accent"
+          />
+          <Btn kind="primary">Add</Btn>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AccountPane() {
+  const [email, setEmail] = useState("");
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ""));
+  }, []);
+
+  return (
+    <div>
+      <PaneHeader title="Account" sub="You're signed in to Nuvo." />
+      <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2 p-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-soft text-[14px] font-semibold uppercase text-accent">
+          {email ? email[0] : "?"}
+        </span>
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-wider text-muted">Signed in as</div>
+          <div className="mono truncate text-[13px] text-ink">{email || "…"}</div>
+        </div>
+        <div className="flex-1" />
+        <Btn kind="signal" onClick={() => supabase.auth.signOut()}>
+          Sign out
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Shell ─────────────────────────────────────────────────────────────────
+export default function SettingsModal({
+  settings,
+  updateSettings,
+  accounts,
+  onClose,
+}: {
+  settings: UserSettings | undefined;
+  updateSettings: (patch: Partial<UserSettings>) => void;
+  accounts: CalendarAccount[];
+  onClose: () => void;
+}) {
+  const [active, setActive] = useState<SectionId>("appearance");
+
+  return (
+    <Modal onClose={onClose} width="max-w-3xl">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
         <div className="text-[14px] font-semibold">Settings</div>
-        <button onClick={onClose} className="keycap">esc</button>
+        <button onClick={onClose} className="keycap">
+          esc
+        </button>
       </div>
 
-      <div className="max-h-[70vh] space-y-6 overflow-y-auto p-4">
-        {/* Connections */}
-        <section>
-          <SectionLabel>Calendar connections</SectionLabel>
-          <div className="space-y-2 px-3">
-            {accounts.map((a) => (
-              <div key={a.id} className="overflow-hidden rounded-md border border-line">
-                <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-                  <span className="text-[13px] font-medium">
-                    {a.provider === "google" ? "Google" : "Microsoft 365"}
-                  </span>
-                  <span className="mono text-[11px] text-muted">{a.email}</span>
-                  <span className="mono text-[10px] text-muted">
-                    {a.sync_direction === "two_way" ? "two-way" : "read-only"}
-                  </span>
-                  <div className="flex-1" />
-                  {a.needs_reconnect && (
-                    <Btn kind="signal" onClick={() => connect(a.provider)}>
-                      Reconnect
-                    </Btn>
-                  )}
-                  <Btn onClick={() => disconnect(a.id)}>Disconnect</Btn>
-                </div>
-                <div className="space-y-1 px-3 py-2">
-                  {(a.calendars ?? []).map((c) => (
-                    <label key={c.id} className="flex cursor-pointer items-center gap-2 text-[12px]">
-                      <input
-                        type="checkbox"
-                        checked={!hidden.has(c.id)}
-                        onChange={() => toggleCalendar(c.id)}
-                      />
-                      <span
-                        className="inline-block h-2 w-2"
-                        style={{ background: c.color ?? "var(--muted)" }}
-                      />
-                      {c.summary}
-                    </label>
-                  ))}
-                  {(a.calendars ?? []).length === 0 && (
-                    <div className="text-[12px] text-muted">No calendars synced yet.</div>
-                  )}
-                </div>
-              </div>
-            ))}
-            <div className="flex gap-2">
-              {!accounts.some((a) => a.provider === "google") && (
-                <Btn kind="primary" onClick={() => connect("google")}>
-                  Connect Google
-                </Btn>
-              )}
-              {!accounts.some((a) => a.provider === "m365") && (
-                <Btn onClick={() => connect("m365")}>Connect Microsoft 365</Btn>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* Labels */}
-        <section>
-          <SectionLabel>Labels</SectionLabel>
-          <div className="space-y-1.5 px-3">
-            {labels.map((l) => (
-              <div key={l.id} className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={l.color}
-                  onChange={(e) => updateLabel({ id: l.id, color: e.target.value })}
-                  className="h-6 w-8 cursor-pointer border border-line bg-surface"
-                />
-                <input
-                  defaultValue={l.name}
-                  onBlur={(e) =>
-                    e.target.value.trim() &&
-                    e.target.value !== l.name &&
-                    updateLabel({ id: l.id, name: e.target.value.trim() })
-                  }
-                  className="flex-1 border border-line bg-bg px-2 py-1 text-[13px] outline-none focus:border-accent"
-                />
-                <Btn kind="signal" onClick={() => deleteLabel(l.id)}>
-                  Delete
-                </Btn>
-              </div>
-            ))}
-            <form
-              className="flex items-center gap-2"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!newLabel.trim()) return;
-                await createLabel({ name: newLabel.trim(), color: newColor });
-                setNewLabel("");
-              }}
+      <div className="flex h-[min(72vh,560px)]">
+        {/* Section nav */}
+        <nav className="w-[188px] shrink-0 space-y-0.5 overflow-y-auto border-r border-line bg-surface-2/40 p-2.5">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setActive(s.id)}
+              className={`fast flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium ${
+                active === s.id
+                  ? "bg-accent-soft text-accent"
+                  : "text-muted hover:bg-surface-2 hover:text-ink"
+              }`}
             >
-              <input
-                type="color"
-                value={newColor}
-                onChange={(e) => setNewColor(e.target.value)}
-                className="h-6 w-8 cursor-pointer border border-line bg-surface"
-              />
-              <input
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                placeholder="New label…"
-                className="flex-1 border border-line bg-bg px-2 py-1 text-[13px] outline-none focus:border-accent"
-              />
-              <Btn kind="primary">Add</Btn>
-            </form>
-          </div>
-        </section>
+              <span className={active === s.id ? "text-accent" : "text-muted"}>{s.icon}</span>
+              {s.label}
+            </button>
+          ))}
+        </nav>
 
-        {/* Day boundaries + appearance */}
-        <section className="grid grid-cols-2 gap-4">
-          <div>
-            <SectionLabel>Calendar day boundaries</SectionLabel>
-            <div className="flex items-center gap-2 px-3">
-              <select
-                value={settings?.day_start_hour ?? 6}
-                onChange={(e) => updateSettings({ day_start_hour: Number(e.target.value) })}
-                className="mono border border-line bg-bg px-2 py-1 text-[12px]"
-              >
-                {Array.from({ length: 12 }, (_, h) => (
-                  <option key={h} value={h}>
-                    {formatHourLabel(h)}
-                  </option>
-                ))}
-              </select>
-              <span className="text-[12px] text-muted">to</span>
-              <select
-                value={settings?.day_end_hour ?? 24}
-                onChange={(e) => updateSettings({ day_end_hour: Number(e.target.value) })}
-                className="mono border border-line bg-bg px-2 py-1 text-[12px]"
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 13).map((h) => (
-                  <option key={h} value={h}>
-                    {formatHourLabel(h)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="px-3 pt-2 text-[11px] text-muted">Week starts Monday.</div>
-          </div>
-          <div>
-            <SectionLabel>Appearance</SectionLabel>
-            <div className="flex gap-1 px-3">
-              {(["system", "light", "dark"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => updateSettings({ theme: t })}
-                  className={`fast flex-1 border px-2 py-1 text-[12px] ${
-                    (settings?.theme ?? "system") === t
-                      ? "border-accent bg-accent-soft text-accent"
-                      : "border-line text-muted hover:text-ink"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-t border-line pt-3">
-          <Btn onClick={() => supabase.auth.signOut()}>Sign out</Btn>
-        </section>
+        {/* Active pane */}
+        <div key={active} className="floor-enter flex-1 overflow-y-auto p-5">
+          {active === "appearance" && <AppearancePane settings={settings} updateSettings={updateSettings} />}
+          {active === "schedule" && <SchedulePane settings={settings} updateSettings={updateSettings} />}
+          {active === "connections" && (
+            <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
+          )}
+          {active === "labels" && <LabelsPane />}
+          {active === "account" && <AccountPane />}
+        </div>
       </div>
     </Modal>
   );

@@ -4,6 +4,7 @@ import { todayISO } from "../lib/dates";
 import type { ExternalEvent, Task } from "../lib/types";
 import { useDayTasks, useInboxTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
+import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { useRealtime } from "../hooks/useRealtime";
 import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
@@ -12,7 +13,7 @@ import LeftRail, { type RailTab } from "./LeftRail";
 import type { FlowName } from "./Spine";
 import CalendarPane, { type CalView } from "./CalendarPane";
 import CommandBar, { type Command } from "./CommandBar";
-import { EventSlideOver, TaskSlideOver } from "./SlideOver";
+import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown, MorningPlan } from "./Rituals";
@@ -34,8 +35,9 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
       end: new Date(now.getTime() + 7 * 86400_000).toISOString(),
     };
   });
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  const [openEventId, setOpenEventId] = useState<string | null>(null);
+  const [taskPanel, setTaskPanel] = useState<{ id: string; anchor: DOMRect } | null>(null);
+  const [eventPanel, setEventPanel] = useState<{ id: string; anchor: DOMRect } | null>(null);
+  const [slotPanel, setSlotPanel] = useState<{ id: string; anchor: DOMRect } | null>(null);
   const [showCmd, setShowCmd] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showMorning, setShowMorning] = useState(false);
@@ -56,10 +58,23 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const { data: weekTasks = [] } = useSprintTasks(vertical.sprint?.id ?? null);
   const { data: scheduled = [] } = useScheduledTasks(range.start, range.end);
   const { data: events = [] } = useExternalEvents(range.start, range.end);
+  const { data: slots = [] } = useSlots(range.start, range.end);
+  const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
+  const { data: slotChildTasks = [] } = useSlotTasks(slotIds);
   const { data: accounts = [] } = useCalendarAccounts();
   const { labels } = useLabels();
   const mutations = useTaskMutations();
   const eventMutations = useExternalEventMutations();
+  const slotMutations = useSlotMutations();
+
+  const slotTasksBySlot = useMemo(() => {
+    const m: Record<string, Task[]> = {};
+    for (const t of slotChildTasks) {
+      if (!t.slot_id) continue;
+      (m[t.slot_id] ??= []).push(t);
+    }
+    return m;
+  }, [slotChildTasks]);
   const agent = useAgent(range);
 
   const toggleAgent = () => {
@@ -117,9 +132,10 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   const allKnownTasks = useMemo(() => {
     const map = new Map<string, Task>();
-    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled]) map.set(t.id, t);
+    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled, ...slotChildTasks])
+      map.set(t.id, t);
     return map;
-  }, [inbox, weekTasks, todayTasks, scheduled]);
+  }, [inbox, weekTasks, todayTasks, scheduled, slotChildTasks]);
 
   /** Calendar blocks carry their domain color — the thread up the vertical.
    *  Stable identity (useCallback) so CalendarPane's event memo holds. */
@@ -127,13 +143,14 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   const allTasksArray = useMemo(() => [...allKnownTasks.values()], [allKnownTasks]);
 
-  const openTask = openTaskId ? (allKnownTasks.get(openTaskId) ?? null) : null;
-  const openEvent: ExternalEvent | null = openEventId
-    ? (events.find((e) => e.id === openEventId) ?? null)
+  const openTask = taskPanel ? (allKnownTasks.get(taskPanel.id) ?? null) : null;
+  const openEvent: ExternalEvent | null = eventPanel
+    ? (events.find((e) => e.id === eventPanel.id) ?? null)
     : null;
   const openEventAccount = openEvent ? accounts.find((a) => a.id === openEvent.account_id) : null;
+  const openSlot = slotPanel ? (slots.find((s) => s.id === slotPanel.id) ?? null) : null;
 
-  const anyModalOpen = showCmd || showSettings || showMorning || showEvening || Boolean(openTask) || Boolean(openEvent);
+  const anyModalOpen = showCmd || showSettings || showMorning || showEvening || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel);
 
   const commands: Command[] = [
     { id: "today", title: "Go to today", run: () => setTab("today") },
@@ -146,6 +163,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     { id: "shutdown", title: "Evening shutdown", run: () => setShowEvening(true) },
     { id: "view-day", title: "Calendar: day view", run: () => setView("timeGridDay") },
     { id: "view-week", title: "Calendar: week view", run: () => setView("timeGridWeek") },
+    { id: "view-month", title: "Calendar: month view", run: () => setView("dayGridMonth") },
     { id: "connect", title: "Connect calendar…", run: () => setShowSettings(true) },
     { id: "label", title: "New label…", run: () => setShowSettings(true) },
     { id: "agent", title: "Toggle Nuvo agent", run: toggleAgent },
@@ -168,45 +186,45 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
         data-tauri-drag-region
         className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"
       >
-        <span className="wordmark wordmark-grad text-[15px]">Nuvo</span>
-        <span className="mono text-[11px] text-muted">{format(now, "EEE MMM d")}</span>
-        <span className="mono rounded border border-signal px-1 text-[10px] leading-snug text-signal">
+        <span className="wordmark wordmark-grad text-head">Nuvo</span>
+        <span className="mono text-meta text-muted">{format(now, "EEE MMM d")}</span>
+        <span className="mono rounded border border-signal px-1 text-meta leading-snug text-signal">
           {format(now, "h:mm a")}
         </span>
         <div className="flex-1" />
-        <button onClick={() => setShowMorning(true)} className="fast rounded-md border border-line px-2 py-1 text-[11px] font-medium text-muted hover:border-line-strong hover:text-ink">
+        <button onClick={() => setShowMorning(true)} className="fast rounded-md border border-line px-2 py-1 text-label font-medium text-muted hover:border-line-strong hover:text-ink">
           Plan
         </button>
-        <button onClick={() => setShowEvening(true)} className="fast rounded-md border border-line px-2 py-1 text-[11px] font-medium text-muted hover:border-line-strong hover:text-ink">
+        <button onClick={() => setShowEvening(true)} className="fast rounded-md border border-line px-2 py-1 text-label font-medium text-muted hover:border-line-strong hover:text-ink">
           Shutdown
         </button>
         <div className="flex overflow-hidden rounded-md border border-line">
-          {(["timeGridDay", "timeGridWeek"] as const).map((v) => (
+          {(["timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`fast px-2 py-1 text-[11px] font-medium ${
+              className={`fast px-2 py-1 text-label font-medium ${
                 view === v ? "bg-accent text-white" : "text-muted hover:text-ink"
               }`}
             >
-              {v === "timeGridDay" ? "Day" : "Week"}
+              {v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
             </button>
           ))}
         </div>
         <button
           onClick={toggleAgent}
-          className={`flex items-center gap-1.5 text-[11px] ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
+          className={`flex items-center gap-1.5 text-label ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
           title="Nuvo agent"
         >
           <Keycap>⌘J</Keycap>
         </button>
-        <button onClick={() => setShowCmd(true)} className="flex items-center gap-1.5 text-[11px] text-muted hover:text-ink">
+        <button onClick={() => setShowCmd(true)} className="flex items-center gap-1.5 text-label text-muted hover:text-ink">
           <Keycap>⌘K</Keycap>
         </button>
         <button
           onClick={() => setShowSettings(true)}
           title="Settings"
-          className="fast text-[15px] text-muted hover:text-ink"
+          className="fast text-head text-muted hover:text-ink"
         >
           ⚙
         </button>
@@ -224,7 +242,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           today={todayTasks}
           labels={labels}
           mutations={mutations}
-          onOpenTask={(t) => setOpenTaskId(t.id)}
+          onOpenTask={(t, anchor) => setTaskPanel({ id: t.id, anchor })}
           hotkeysEnabled={!anyModalOpen}
           now={now}
           railRef={railRef}
@@ -234,32 +252,53 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             view={view}
             tasks={allTasksArray}
             events={events}
+            slots={slots}
+            slotTasks={slotTasksBySlot}
             accounts={accounts}
             settings={settings}
             now={now}
             taskAccent={taskAccent}
             mutations={mutations}
             eventMutations={eventMutations}
-            onOpenTask={(t) => setOpenTaskId(t.id)}
-            onOpenEvent={(e) => setOpenEventId(e.id)}
+            slotMutations={slotMutations}
+            onOpenTask={(t, anchor) => setTaskPanel({ id: t.id, anchor })}
+            onOpenEvent={(e, anchor) => setEventPanel({ id: e.id, anchor })}
+            onOpenSlot={(s, anchor) => setSlotPanel({ id: s.id, anchor })}
             onRangeChange={(start, end) => setRange({ start, end })}
             railRef={railRef}
           />
 
-          {openTask && (
-            <TaskSlideOver
+          {openTask && taskPanel && (
+            <TaskPopover
               task={openTask}
+              anchor={taskPanel.anchor}
               labels={labels}
               mutations={mutations}
-              onClose={() => setOpenTaskId(null)}
+              onClose={() => setTaskPanel(null)}
             />
           )}
-          {openEvent && !openTask && (
-            <EventSlideOver
+          {openEvent && eventPanel && !openTask && (
+            <EventPopover
               event={openEvent}
+              anchor={eventPanel.anchor}
               editable={openEventAccount?.provider === "google"}
               eventMutations={eventMutations}
-              onClose={() => setOpenEventId(null)}
+              onClose={() => setEventPanel(null)}
+            />
+          )}
+          {openSlot && slotPanel && !openTask && (
+            <SlotPopover
+              slot={openSlot}
+              anchor={slotPanel.anchor}
+              childTasks={slotTasksBySlot[openSlot.id] ?? []}
+              taskMutations={mutations}
+              slotMutations={slotMutations}
+              onOpenTask={(t) => {
+                const anchor = slotPanel.anchor;
+                setSlotPanel(null);
+                setTaskPanel({ id: t.id, anchor });
+              }}
+              onClose={() => setSlotPanel(null)}
             />
           )}
         </div>

@@ -32,6 +32,8 @@ export interface NowContext {
   deepWindow: boolean;
   clockLabel: string; // e.g. "3:12 PM"
   gapLabel: string; // e.g. "33m till your next meeting"
+  /** The user told us they're low/spent — favor low-friction, defer deep work. */
+  tired?: boolean;
 }
 
 /**
@@ -54,6 +56,97 @@ export function nowContext(at: Date, nextCommitment?: Date | null): NowContext {
   return { gapMins, deepWindow, clockLabel, gapLabel };
 }
 
+// ── Reading the shape of the day ─────────────────────────────────────────
+// The Now view needs more than "the next gap" — a four-domain operator needs
+// the whole arc: what you're in, what's next, where the open blocks are, and
+// how much real focus time is left. readDay() turns the live calendar into
+// that picture so a recommendation can land in an actual block, not in the
+// abstract.
+
+export interface BusyBlock {
+  title: string;
+  start: Date;
+  end: Date;
+  kind: "event" | "block"; // external commitment vs. your own scheduled task
+  done?: boolean;
+  location?: string | null;
+}
+
+export interface Gap {
+  start: Date;
+  end: Date;
+  mins: number;
+}
+
+export interface DayRead {
+  current: BusyBlock | null; // the thing you're inside right now (earliest-started, if stacked)
+  overlapping: BusyBlock[]; // other commitments also covering now — the conflict stack
+  next: BusyBlock | null; // the next commitment after now
+  upcoming: BusyBlock[]; // the runway — the next few commitments, in order
+  gaps: Gap[]; // forward open spans inside the work window
+  openMins: number; // total open focus minutes still ahead
+  remaining: number; // commitments still ahead today
+  deepWindow: boolean;
+  deepEndsLabel: string | null; // when the deep-focus window closes, if in one
+}
+
+const MIN_GAP = 10; // spans shorter than this aren't worth offering as focus time
+
+export function readDay(now: Date, busy: BusyBlock[], windowStart: Date, windowEnd: Date): DayRead {
+  const sorted = [...busy].sort((a, b) => a.start.getTime() - b.start.getTime());
+  const onNow = sorted.filter((b) => b.start <= now && now < b.end);
+  const current = onNow[0] ?? null; // earliest-started of the stack reads as "the" meeting
+  const overlapping = onNow.slice(1);
+  const ahead = sorted.filter((b) => b.start > now);
+
+  // Walk the work window from the present forward, collecting the open spans
+  // between commitments. If you're mid-meeting, the first open block starts
+  // when it ends — you can't focus during it.
+  let cursor = new Date(Math.max(now.getTime(), windowStart.getTime()));
+  if (current) cursor = new Date(Math.max(cursor.getTime(), current.end.getTime()));
+  const gaps: Gap[] = [];
+  const push = (start: Date, end: Date) => {
+    const mins = Math.round((end.getTime() - start.getTime()) / 60_000);
+    if (mins >= MIN_GAP) gaps.push({ start, end, mins });
+  };
+  for (const b of sorted) {
+    if (b.end <= cursor || b.start >= windowEnd) continue;
+    if (b.start > cursor) push(cursor, b.start);
+    if (b.end > cursor) cursor = b.end;
+  }
+  if (cursor < windowEnd) push(cursor, windowEnd);
+
+  const openMins = gaps.reduce((s, g) => s + g.mins, 0);
+  const h = now.getHours();
+  const deepWindow = (h >= 9 && h < 12) || (h >= 14 && h < 16);
+  let deepEndsLabel: string | null = null;
+  if (deepWindow) {
+    const ends = new Date(now);
+    ends.setHours(h < 12 ? 12 : 16, 0, 0, 0);
+    deepEndsLabel = ends.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  return {
+    current,
+    overlapping,
+    next: ahead[0] ?? null,
+    upcoming: ahead.slice(0, 4),
+    gaps,
+    openMins,
+    remaining: ahead.length,
+    deepWindow,
+    deepEndsLabel,
+  };
+}
+
+/** "1h 42m" · "45m" · "0m" — compact human duration for stat chips. */
+export function fmtMins(mins: number): string {
+  if (mins <= 0) return "0m";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
+
 const ENERGY_GLYPH: Record<string, string> = { deep: "◆", decide: "▲", delegate: "⇢", quick: "•" };
 
 export function rankNow(data: VerticalData, ctx: NowContext): Suggestion[] {
@@ -71,7 +164,10 @@ export function rankNow(data: VerticalData, ctx: NowContext): Suggestion[] {
       if (!f.lit) {
         const w = domain.lastTouchedDays >= 10 ? 4 : 3;
         score += w;
-        reasons.push({ glyph: "⚖", text: `${domain.name} has been quiet ${domain.lastTouchedDays} days` });
+        reasons.push({
+          glyph: "⚖",
+          text: domain.lastTouchedDays >= 99 ? `${domain.name} is untouched` : `${domain.name} has been quiet ${domain.lastTouchedDays} days`,
+        });
       }
     }
 
@@ -85,17 +181,20 @@ export function rankNow(data: VerticalData, ctx: NowContext): Suggestion[] {
     // Does it fit the open gap?
     if (task.durationMins <= ctx.gapMins) {
       score += 1;
-      reasons.push({ glyph: "⏱", text: `fits your ${ctx.gapMins}m gap` });
+      reasons.push({ glyph: "⏱", text: `fits your ${fmtMins(ctx.gapMins)} gap` });
     } else {
       score -= 2;
-      reasons.push({ glyph: "⏱", text: `needs ${task.durationMins}m — bigger than this gap, block it` });
+      reasons.push({ glyph: "⏱", text: `needs ${fmtMins(task.durationMins)} — bigger than this gap, block it` });
     }
 
-    // Energy match to the window.
+    // Energy match to the window — and to how you're actually running today.
     if (task.energy) {
       const g = ENERGY_GLYPH[task.energy];
-      if (ctx.deepWindow && task.energy === "deep") { score += 2; reasons.push({ glyph: g, text: "your deep-focus window" }); }
-      else if (!ctx.deepWindow && (task.energy === "quick" || task.energy === "delegate")) { score += 1; reasons.push({ glyph: g, text: "low-friction, right for now" }); }
+      const lowFriction = task.energy === "quick" || task.energy === "delegate";
+      if (ctx.tired && task.energy === "deep") { score -= 2; reasons.push({ glyph: g, text: "deep work — save it for when you're fresh" }); }
+      else if (ctx.tired && lowFriction) { score += 2; reasons.push({ glyph: g, text: "low-friction — kind to a tired you" }); }
+      else if (ctx.deepWindow && task.energy === "deep") { score += 2; reasons.push({ glyph: g, text: "your deep-focus window" }); }
+      else if (!ctx.deepWindow && lowFriction) { score += 1; reasons.push({ glyph: g, text: "low-friction, right for now" }); }
     }
 
     // The week pool first: you committed to this on Sunday.
