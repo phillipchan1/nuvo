@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { todayISO } from "../lib/dates";
 import type { ExternalEvent, Task } from "../lib/types";
-import { useDayTasks, useInboxTasks, useRolloverGuard, useScheduledTasks, useTaskMutations } from "../hooks/useTasks";
+import { useDayTasks, useInboxTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
 import { useRealtime } from "../hooks/useRealtime";
 import { useSettings } from "../hooks/useSettings";
+import { useVertical } from "../hooks/useVertical";
+import { domainById, initiativeById, projectById } from "../lib/vertical";
 import LeftRail, { type RailTab } from "./LeftRail";
 import CalendarPane, { type CalView } from "./CalendarPane";
 import CommandBar, { type Command } from "./CommandBar";
@@ -17,7 +19,7 @@ import AgentSidebar, { readAgentOpen, writeAgentOpen } from "./AgentSidebar";
 import { useAgent } from "../hooks/useAgent";
 import { Keycap } from "./ui";
 
-export default function Planner() {
+export default function Planner({ openSunday }: { openSunday: () => void }) {
   const railRef = useRef<HTMLDivElement | null>(null);
 
   const [tab, setTab] = useState<RailTab>("today");
@@ -47,8 +49,10 @@ export default function Planner() {
 
   const today = todayISO(now);
   const { settings, update: updateSettings } = useSettings();
+  const { data: vertical } = useVertical();
   const { data: inbox = [] } = useInboxTasks();
   const { data: todayTasks = [] } = useDayTasks(today);
+  const { data: weekTasks = [] } = useSprintTasks(vertical.sprint?.id ?? null);
   const { data: scheduled = [] } = useScheduledTasks(range.start, range.end);
   const { data: events = [] } = useExternalEvents(range.start, range.end);
   const { data: accounts = [] } = useCalendarAccounts();
@@ -112,9 +116,19 @@ export default function Planner() {
 
   const allKnownTasks = useMemo(() => {
     const map = new Map<string, Task>();
-    for (const t of [...inbox, ...todayTasks, ...scheduled]) map.set(t.id, t);
+    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled]) map.set(t.id, t);
     return map;
-  }, [inbox, todayTasks, scheduled]);
+  }, [inbox, weekTasks, todayTasks, scheduled]);
+
+  /** Calendar blocks carry their domain color — the thread up the vertical. */
+  const taskAccent = (t: Task): string | null => {
+    const domainId =
+      t.domain_id ??
+      projectById(vertical, t.project_id)?.domainId ??
+      initiativeById(vertical, t.initiative_id)?.domainId ??
+      null;
+    return domainById(vertical, domainId)?.color ?? null;
+  };
 
   const allTasksArray = useMemo(() => [...allKnownTasks.values()], [allKnownTasks]);
 
@@ -128,7 +142,9 @@ export default function Planner() {
 
   const commands: Command[] = [
     { id: "today", title: "Go to today", run: () => setTab("today") },
+    { id: "week", title: "Go to this week", run: () => setTab("week") },
     { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
+    { id: "sunday", title: "Plan the week (Sunday ritual)", run: openSunday },
     { id: "plan", title: "Plan my day (morning ritual)", run: () => setShowMorning(true) },
     { id: "shutdown", title: "Evening shutdown", run: () => setShowEvening(true) },
     { id: "view-day", title: "Calendar: day view", run: () => setView("timeGridDay") },
@@ -207,6 +223,7 @@ export default function Planner() {
           tab={tab}
           setTab={setTab}
           inbox={inbox}
+          week={weekTasks}
           today={todayTasks}
           labels={labels}
           mutations={mutations}
@@ -223,6 +240,7 @@ export default function Planner() {
             accounts={accounts}
             settings={settings}
             now={now}
+            taskAccent={taskAccent}
             mutations={mutations}
             eventMutations={eventMutations}
             onOpenTask={(t) => setOpenTaskId(t.id)}
@@ -271,13 +289,14 @@ export default function Planner() {
       {showMorning && (
         <MorningPlan
           inbox={inbox}
+          weekPool={weekTasks.filter((t) => t.status !== "done" && !t.do_date)}
           todayCount={todayTasks.filter((t) => t.status !== "done").length}
           mutations={mutations}
           onClose={() => setShowMorning(false)}
         />
       )}
       {showEvening && (
-        <EveningShutdown todayTasks={todayTasks} mutations={mutations} onClose={() => setShowEvening(false)} />
+        <EveningShutdown todayTasks={todayTasks} taskAccent={taskAccent} mutations={mutations} onClose={() => setShowEvening(false)} />
       )}
     </div>
   );

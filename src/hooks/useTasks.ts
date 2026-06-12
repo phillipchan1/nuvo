@@ -57,6 +57,25 @@ export function useScheduledTasks(rangeStartISO: string, rangeEndISO: string) {
   });
 }
 
+/** Every task committed to a sprint (the Week pool), done included. */
+export function useSprintTasks(sprintId: string | null) {
+  return useQuery({
+    queryKey: ["tasks", "sprint", sprintId],
+    enabled: Boolean(sprintId),
+    queryFn: async (): Promise<Task[]> => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(TASK_COLS)
+        .eq("sprint_id", sprintId!)
+        .neq("status", "trashed")
+        .order("sort_order")
+        .order("created_at");
+      if (error) throw error;
+      return data as Task[];
+    },
+  });
+}
+
 /** Patch a task in every cached task list (optimistic update). */
 function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
   qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
@@ -153,12 +172,35 @@ export function useTaskMutations() {
     complete: (t: Task) =>
       patchTask(t.id, { status: "done", completed_at: new Date().toISOString() }),
 
-    uncomplete: (t: Task) => patchTask(t.id, { status: t.do_date ? "planned" : "inbox", completed_at: null }),
+    uncomplete: (t: Task) =>
+      patchTask(t.id, {
+        status: t.do_date
+          ? "planned"
+          : t.project_id || t.initiative_id || t.domain_id
+            ? "backlog"
+            : "inbox",
+        completed_at: null,
+      }),
 
     trash: (t: Task) => patchTask(t.id, { status: "trashed" }),
 
     backToInbox: (t: Task) =>
       patchTask(t.id, { status: "inbox", do_date: null, start_time: null }),
+
+    /** An over-planned day degrades into the week pool, not into guilt-rolling:
+     *  drop the date, keep the sprint commitment. */
+    backToWeek: (t: Task) =>
+      patchTask(t.id, { status: "backlog", do_date: null, start_time: null }),
+
+    /** Commit a task to the current sprint (the Week gate). Processing an
+     *  inbox capture this way moves it to backlog — out of the inbox. */
+    commitToWeek: (t: Task, sprintId: string) =>
+      patchTask(t.id, {
+        sprint_id: sprintId,
+        ...(t.status === "inbox" ? { status: "backlog" as const } : {}),
+      }),
+
+    uncommitFromWeek: (t: Task) => patchTask(t.id, { sprint_id: null }),
 
     setLabels: async (taskId: string, labelIds: string[]) => {
       await supabase.from("task_labels").delete().eq("task_id", taskId);

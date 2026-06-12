@@ -141,7 +141,7 @@ export default function InitiativeFloor({
         <section className="lg:col-span-7">
           <div className="mb-3 flex items-center justify-between">
             <div className="section-label">{projects.length} project{projects.length === 1 ? "" : "s"} feeding it</div>
-            <Btn onClick={() => { const p = addProject(initiative.domainId, initiative.id); onOpenProject(p.id); }}>+ new project</Btn>
+            <Btn onClick={() => void addProject(initiative.domainId, initiative.id).then((p) => onOpenProject(p.id))}>+ new project</Btn>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {projects.map((p) => {

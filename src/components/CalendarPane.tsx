@@ -20,6 +20,7 @@ export default function CalendarPane({
   accounts,
   settings,
   now,
+  taskAccent,
   mutations,
   eventMutations,
   onOpenTask,
@@ -33,6 +34,8 @@ export default function CalendarPane({
   accounts: CalendarAccount[];
   settings: UserSettings | undefined;
   now: Date;
+  /** Domain color per task — blocks carry their thread up the vertical. */
+  taskAccent: (t: Task) => string | null;
   mutations: ReturnType<typeof useTaskMutations>;
   eventMutations: ReturnType<typeof useExternalEventMutations>;
   onOpenTask: (t: Task) => void;
@@ -77,19 +80,30 @@ export default function CalendarPane({
   const fcEvents = useMemo(() => {
     const taskEvents = tasks
       .filter((t) => t.start_time)
-      .map((t) => ({
-        id: `task:${t.id}`,
-        title: t.title,
-        start: t.start_time!,
-        end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }).toISOString(),
-        editable: true,
-        classNames: [
-          "evt-task",
-          t.status === "done" ? "evt-done" : "",
-          t.status !== "done" && isOverdue(t, now) ? "evt-overdue" : "",
-        ].filter(Boolean),
-        extendedProps: { kind: "task" as const, refId: t.id },
-      }));
+      .map((t) => {
+        const overdue = t.status !== "done" && isOverdue(t, now);
+        // domain tint (skipped while overdue — signal orange must win)
+        const accent = overdue ? null : taskAccent(t);
+        return {
+          id: `task:${t.id}`,
+          title: t.title,
+          start: t.start_time!,
+          end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }).toISOString(),
+          editable: true,
+          classNames: [
+            "evt-task",
+            t.status === "done" ? "evt-done" : "",
+            overdue ? "evt-overdue" : "",
+          ].filter(Boolean),
+          ...(accent
+            ? {
+                borderColor: accent,
+                backgroundColor: `color-mix(in srgb, ${accent} 12%, var(--surface))`,
+              }
+            : {}),
+          extendedProps: { kind: "task" as const, refId: t.id },
+        };
+      });
 
     const externalEvents = events
       .filter((e) => !hidden.has(e.calendar_id) && !e.all_day)
@@ -116,7 +130,7 @@ export default function CalendarPane({
       });
 
     return [...taskEvents, ...externalEvents];
-  }, [tasks, events, hidden, accountById, now]);
+  }, [tasks, events, hidden, accountById, now, taskAccent]);
 
   const findTask = (id: string) => tasksRef.current.find((t) => t.id === id);
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);

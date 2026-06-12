@@ -9,6 +9,11 @@ const TABLE_TO_KEYS: Record<string, string[][]> = {
   external_events: [["external_events"]],
   calendar_accounts: [["calendar_accounts"]],
   user_settings: [["settings"]],
+  domains: [["vertical"]],
+  initiatives: [["vertical"]],
+  projects: [["vertical"]],
+  key_results: [["vertical"]],
+  sprints: [["sprint"]],
 };
 
 /** Live updates: any server-side change (sync jobs, rollover, other devices)

@@ -62,9 +62,13 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
   const newInitiative = () => {
     const domId = domainFilter ?? [...data.domains].sort((a, b) => a.sort - b.sort)[0]?.id;
     if (!domId) return;
-    const init = addInitiative(domId);
-    onOpen(init.id);
+    void addInitiative(domId).then((init) => onOpen(init.id));
   };
+
+  // the trophy shelf — shipped bets stay visible; gains need a place to live
+  const shipped = data.initiatives.filter(
+    (i) => i.status === "shipped" && (!domainFilter || i.domainId === domainFilter),
+  );
 
   return (
     <div className="mx-auto max-w-[1480px]">
@@ -89,6 +93,28 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
           storageKey: "initiatives",
         }}
       />
+
+      {shipped.length > 0 && (
+        <section className="mt-10">
+          <div className="section-label mb-2">The shelf · {shipped.length} shipped</div>
+          <div className="flex flex-wrap gap-2.5">
+            {shipped.map((i) => {
+              const domain = domainById(data, i.domainId);
+              return (
+                <button
+                  key={i.id}
+                  onClick={() => onOpen(i.id)}
+                  className="fast flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-left hover:border-muted"
+                >
+                  <span className="text-[13px]" style={{ color: domain?.color }}>✓</span>
+                  <span className="text-[12px] font-medium">{i.name}</span>
+                  {i.targetDate && <span className="mono text-[9px] text-muted">{i.targetDate.slice(0, 7)}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

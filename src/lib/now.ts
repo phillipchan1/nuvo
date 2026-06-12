@@ -34,17 +34,23 @@ export interface NowContext {
   gapLabel: string; // e.g. "33m till your next meeting"
 }
 
-/** Build the moment from the wall clock (no live calendar wired yet). */
-export function nowContext(at: Date): NowContext {
+/**
+ * Build the moment. `nextCommitment` is the start of the next busy thing on
+ * the live calendar (external event or scheduled block); null = open horizon.
+ */
+export function nowContext(at: Date, nextCommitment?: Date | null): NowContext {
   const h = at.getHours();
-  const m = at.getMinutes();
   const deepWindow = (h >= 9 && h < 12) || (h >= 14 && h < 16);
-  // Stub the next-commitment gap until the calendar feeds it in.
-  const toNextHalf = 30 - (m % 30);
-  const gapMins = h >= 18 || h < 8 ? 90 : Math.max(20, toNextHalf + 15);
   const clockLabel = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  const gapLabel =
-    h >= 18 || h < 8 ? "open evening — no meetings" : `${gapMins}m till your next commitment`;
+
+  if (nextCommitment) {
+    const gapMins = Math.max(5, Math.round((nextCommitment.getTime() - at.getTime()) / 60_000));
+    const next = nextCommitment.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return { gapMins, deepWindow, clockLabel, gapLabel: `${gapMins}m till ${next}` };
+  }
+  // nothing on the calendar ahead — a long open block
+  const gapMins = h >= 18 || h < 8 ? 90 : 120;
+  const gapLabel = h >= 18 || h < 8 ? "open evening — nothing scheduled" : "open horizon — nothing scheduled";
   return { gapMins, deepWindow, clockLabel, gapLabel };
 }
 
@@ -90,6 +96,12 @@ export function rankNow(data: VerticalData, ctx: NowContext): Suggestion[] {
       const g = ENERGY_GLYPH[task.energy];
       if (ctx.deepWindow && task.energy === "deep") { score += 2; reasons.push({ glyph: g, text: "your deep-focus window" }); }
       else if (!ctx.deepWindow && (task.energy === "quick" || task.energy === "delegate")) { score += 1; reasons.push({ glyph: g, text: "low-friction, right for now" }); }
+    }
+
+    // The week pool first: you committed to this on Sunday.
+    if (task.sprint) {
+      score += 2;
+      reasons.push({ glyph: "★", text: "committed this week" });
     }
 
     // Initiative momentum — keep the moving things moving.

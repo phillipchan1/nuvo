@@ -1,5 +1,6 @@
 import { handleOptions, json, requireUser } from "../_shared/admin.ts";
 import { buildContext, contextToPrompt } from "./context.ts";
+import { scaffoldProject } from "./scaffold.ts";
 import { executeTool, TOOL_DEFINITIONS, type AgentAction } from "./tools.ts";
 
 const MAX_ROUNDS = 5;
@@ -67,6 +68,13 @@ Deno.serve(async (req) => {
   try {
     const user = await requireUser(req);
     const body = await req.json();
+
+    // Scaffold mode: propose an ordered task list for a project. Proposal
+    // only — the client writes accepted tasks as backlog rows itself.
+    if (body.scaffold?.projectId) {
+      return json(await scaffoldProject(user.id, String(body.scaffold.projectId)));
+    }
+
     const { messages, rangeStart, rangeEnd } = body as {
       messages: { role: "user" | "assistant"; content: string }[];
       rangeStart?: string;

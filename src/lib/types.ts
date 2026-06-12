@@ -1,4 +1,8 @@
-export type TaskStatus = "inbox" | "planned" | "done" | "trashed";
+import type { Energy } from "./energy";
+
+// inbox = raw capture · backlog = processed, deliberately undated (never in
+// inbox, never on Today, never rolls) · planned = dated · done/trashed.
+export type TaskStatus = "inbox" | "backlog" | "planned" | "done" | "trashed";
 export type TaskPriority = "none" | "low" | "medium" | "high";
 export type CalendarProvider = "google" | "m365";
 
@@ -18,10 +22,24 @@ export interface Task {
   roll_count: number;
   completed_at: string | null;
   project_id: string | null;
+  initiative_id: string | null;
   domain_id: string | null;
+  sprint_id: string | null;
+  energy: Energy | null;
+  assignee: "me" | "agent";
   google_event_id: string | null;
   sort_order: number;
   task_labels?: { label_id: string }[];
+}
+
+/** The week as a real entity: goal + lead initiatives + Sunday review state. */
+export interface Sprint {
+  id: string;
+  user_id: string;
+  week_start: string; // Monday, 'YYYY-MM-DD'
+  goal: string;
+  focus_initiative_ids: string[];
+  reviewed_at: string | null;
 }
 
 export interface Label {

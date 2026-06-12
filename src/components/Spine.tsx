@@ -9,14 +9,34 @@ const RUNGS: { id: Rung; label: string }[] = [
   { id: "domain", label: "Domain" },
 ];
 
-export default function Spine({ rung, setRung }: { rung: Rung; setRung: (r: Rung) => void }) {
+export default function Spine({
+  rung,
+  setRung,
+  onBegin,
+}: {
+  rung: Rung;
+  setRung: (r: Rung) => void;
+  onBegin: () => void;
+}) {
   return (
     <div className="relative flex w-[74px] shrink-0 flex-col items-center border-r border-line bg-surface">
       {/* drag region that also clears the macOS traffic lights */}
       <div data-tauri-drag-region className="h-9 w-full shrink-0" />
 
+      {/* Begin — the ritual door. Floors are for looking; rituals are for deciding. */}
+      <button
+        onClick={onBegin}
+        title="Sunday ritual — plan the week"
+        className="fast group mb-1 flex flex-col items-center gap-1"
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-line text-[12px] text-muted transition-colors group-hover:border-accent group-hover:text-accent">
+          ◉
+        </span>
+        <span className="mono text-[8px] text-muted group-hover:text-ink">begin</span>
+      </button>
+
       {/* connector line behind the rungs */}
-      <div className="pointer-events-none absolute left-1/2 top-[58px] bottom-12 w-px -translate-x-1/2 bg-line" />
+      <div className="pointer-events-none absolute left-1/2 top-[104px] bottom-12 w-px -translate-x-1/2 bg-line" />
 
       <div className="flex flex-1 flex-col items-center justify-center gap-7">
         {RUNGS.map((r) => {

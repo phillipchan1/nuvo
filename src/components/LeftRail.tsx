@@ -3,16 +3,19 @@ import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { parseCapture } from "../lib/nlp";
 import type { NewTaskInput, useTaskMutations } from "../hooks/useTasks";
+import { useVertical } from "../hooks/useVertical";
+import { domainById, initiativeById, projectById } from "../lib/vertical";
 import TaskRow from "./TaskRow";
 import { Keycap, SectionLabel } from "./ui";
 
-export type RailTab = "inbox" | "today";
+export type RailTab = "inbox" | "week" | "today";
 type Mutations = ReturnType<typeof useTaskMutations>;
 
 export default function LeftRail({
   tab,
   setTab,
   inbox,
+  week,
   today,
   labels,
   mutations,
@@ -24,6 +27,7 @@ export default function LeftRail({
   tab: RailTab;
   setTab: (t: RailTab) => void;
   inbox: Task[];
+  week: Task[];
   today: Task[];
   labels: Label[];
   mutations: Mutations;
@@ -32,6 +36,17 @@ export default function LeftRail({
   now: Date;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
 }) {
+  const { data: vertical, setSprintGoal } = useVertical();
+
+  /** A task's thread back up the vertical: its domain color. */
+  const accentOf = (t: Task): string | null => {
+    const domainId =
+      t.domain_id ??
+      projectById(vertical, t.project_id)?.domainId ??
+      initiativeById(vertical, t.initiative_id)?.domainId ??
+      null;
+    return domainById(vertical, domainId)?.color ?? null;
+  };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [labelPickerFor, setLabelPickerFor] = useState<Task | null>(null);
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);
@@ -42,10 +57,14 @@ export default function LeftRail({
 
   const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
 
+  const weekPool = useMemo(() => buildWeekPool(week), [week]);
+
   const visible: Task[] =
     tab === "inbox"
       ? inbox
-      : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
+      : tab === "week"
+        ? [...weekPool.unplaced, ...weekPool.placed]
+        : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
 
   const selected = visible.find((t) => t.id === selectedId) ?? null;
 
@@ -109,6 +128,9 @@ export default function LeftRail({
           setTab("inbox");
           break;
         case "2":
+          setTab("week");
+          break;
+        case "3":
           setTab("today");
           break;
         case "c":
@@ -157,16 +179,24 @@ export default function LeftRail({
     labels,
     selected: t.id === selectedId,
     draggable: true,
+    accent: accentOf(t),
     onSelect: () => setSelectedId(t.id),
     onOpen: () => onOpenTask(t),
     onToggleDone: () => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t)),
   });
 
+  const tabCount = (t: RailTab) =>
+    t === "inbox"
+      ? inbox.length
+      : t === "week"
+        ? week.filter((x) => x.status !== "done").length
+        : today.filter((x) => x.status !== "done").length;
+
   return (
     <div ref={railRef} className="flex h-full w-[360px] shrink-0 flex-col border-r border-line bg-surface">
       {/* Tabs */}
       <div className="flex border-b border-line">
-        {(["inbox", "today"] as const).map((t) => (
+        {(["inbox", "week", "today"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -174,10 +204,8 @@ export default function LeftRail({
               tab === t ? "border-b-2 border-accent text-ink" : "text-muted hover:text-ink"
             }`}
           >
-            {t === "inbox" ? "Inbox" : "Today"}
-            <span className="mono ml-1.5 text-[10px] text-muted">
-              {t === "inbox" ? inbox.length : today.filter((x) => x.status !== "done").length}
-            </span>
+            {t === "inbox" ? "Inbox" : t === "week" ? "Week" : "Today"}
+            <span className="mono ml-1.5 text-[10px] text-muted">{tabCount(t)}</span>
           </button>
         ))}
       </div>
@@ -214,6 +242,72 @@ export default function LeftRail({
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
             {inbox.length === 0 && <EmptyState text="Inbox zero. Capture with C or ⌘K." />}
+          </>
+        )}
+
+        {tab === "week" && (
+          <>
+            {/* the sprint header: goal + the ring that only ever fills */}
+            <div className="border-b border-line px-3 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <WeekRing tasks={week} />
+                <div className="min-w-0 flex-1">
+                  <div className="section-label !p-0">This week's goal</div>
+                  <GoalInput value={vertical.sprintGoal ?? ""} onCommit={setSprintGoal} />
+                </div>
+              </div>
+            </div>
+
+            {weekPool.unplaced.length === 0 && weekPool.placed.length === 0 && (
+              <EmptyState text="Nothing committed this week yet. Run the Sunday ritual (◉ begin) or ★ tasks on the floors." />
+            )}
+
+            {groupWeekByInitiative(weekPool.unplaced, vertical).map((g) => (
+              <div key={g.key}>
+                <SectionLabel>
+                  <span className="flex items-center gap-1.5">
+                    {g.lead && <span style={{ color: "var(--signal)" }}>★</span>}
+                    <span className="h-2 w-2 rounded-full" style={{ background: g.color ?? "var(--line)" }} />
+                    {g.label}
+                  </span>
+                </SectionLabel>
+                {g.tasks.map((t) => (
+                  <TaskRow
+                    key={t.id}
+                    {...rowProps(t)}
+                    action={
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          mutations.planFor(t, todayISO(now));
+                        }}
+                        title="Pull onto today"
+                        className="fast mono shrink-0 border border-line px-1 text-[10px] text-muted opacity-0 hover:border-accent hover:text-accent group-hover:opacity-100"
+                      >
+                        ▸
+                      </button>
+                    }
+                  />
+                ))}
+              </div>
+            ))}
+
+            {weekPool.placed.length > 0 && (
+              <>
+                <SectionLabel>Placed on days</SectionLabel>
+                {weekPool.placed.map((t) => (
+                  <TaskRow key={t.id} {...rowProps(t)} />
+                ))}
+              </>
+            )}
+            {weekPool.done.length > 0 && (
+              <>
+                <SectionLabel>Done</SectionLabel>
+                {weekPool.done.map((t) => (
+                  <TaskRow key={t.id} {...rowProps(t)} />
+                ))}
+              </>
+            )}
           </>
         )}
 
@@ -285,6 +379,88 @@ export default function LeftRail({
 
 function EmptyState({ text }: { text: string }) {
   return <div className="px-3 py-6 text-center text-[12px] text-muted">{text}</div>;
+}
+
+function GoalInput({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => draft !== value && onCommit(draft);
+  return (
+    <input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+      placeholder="What does a good week look like?"
+      className="w-full bg-transparent text-[12px] font-medium outline-none placeholder:text-muted/60"
+    />
+  );
+}
+
+/** The week pool, split: unplaced (pull targets), placed on a day, done. */
+function buildWeekPool(week: Task[]) {
+  const open = week.filter((t) => t.status !== "done");
+  return {
+    unplaced: open.filter((t) => !t.do_date),
+    placed: open.filter((t) => t.do_date).sort((a, b) => (a.do_date! < b.do_date! ? -1 : 1)),
+    done: week.filter((t) => t.status === "done"),
+  };
+}
+
+/** Group the unplaced pool by initiative, the week's lead bets first. */
+function groupWeekByInitiative(
+  tasks: Task[],
+  vertical: ReturnType<typeof useVertical>["data"],
+) {
+  const focus = new Set(vertical.focusInitiativeIds);
+  const groups = new Map<string, { key: string; label: string; color: string | null; lead: boolean; tasks: Task[] }>();
+  for (const t of tasks) {
+    const initiativeId = t.initiative_id ?? projectById(vertical, t.project_id)?.initiativeId ?? null;
+    const initiative = initiativeById(vertical, initiativeId);
+    const domain = domainById(
+      vertical,
+      initiative?.domainId ?? t.domain_id ?? projectById(vertical, t.project_id)?.domainId ?? null,
+    );
+    const key = initiative?.id ?? domain?.id ?? "loose";
+    const g = groups.get(key) ?? {
+      key,
+      label: initiative?.name ?? domain?.name ?? "Loose",
+      color: domain?.color ?? null,
+      lead: Boolean(initiative && focus.has(initiative.id)),
+      tasks: [],
+    };
+    g.tasks.push(t);
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => Number(b.lead) - Number(a.lead));
+}
+
+/** The persistent anti-gap device: only fills, resets Sunday, measures against
+ *  what you committed — not against infinity. */
+function WeekRing({ tasks }: { tasks: Task[] }) {
+  const total = tasks.reduce((s, t) => s + (t.duration_minutes ?? 30), 0);
+  const done = tasks
+    .filter((t) => t.status === "done")
+    .reduce((s, t) => s + (t.duration_minutes ?? 30), 0);
+  const pct = total > 0 ? done / total : 0;
+  const r = 13;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="relative h-9 w-9 shrink-0" title={`${Math.round(pct * 100)}% of committed hours done`}>
+      <svg width="36" height="36" viewBox="0 0 36 36" className="-rotate-90">
+        <circle cx="18" cy="18" r={r} fill="none" stroke="var(--line)" strokeWidth="3" />
+        <circle
+          cx="18" cy="18" r={r} fill="none"
+          stroke="var(--accent)" strokeWidth="3" strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
+          style={{ transition: "stroke-dashoffset 300ms ease-out" }}
+        />
+      </svg>
+      <span className="mono absolute inset-0 flex items-center justify-center text-[8px] text-muted">
+        {Math.round(pct * 100)}
+      </span>
+    </div>
+  );
 }
 
 function buildTodaySections(today: Task[], now: Date) {

@@ -56,8 +56,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
   const newProject = () => {
     const domId = domainFilter ?? [...data.domains].sort((a, b) => a.sort - b.sort)[0]?.id;
     if (!domId) return;
-    const p = addProject(domId, null);
-    onOpen(p.id);
+    void addProject(domId, null).then((p) => onOpen(p.id));
   };
 
   return (

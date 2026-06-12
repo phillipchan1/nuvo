@@ -85,6 +85,27 @@ npm install
 npm run dev             # or: npm run build → dist/ static bundle
 ```
 
+## The flows layer (docs/execution-flows.md)
+
+- **Four pools, one gate** — `inbox` (raw captures) → `backlog` (processed, deliberately
+  undated: project/initiative tasks live here, never in the inbox, never on Today, never
+  rolled) → **Week** (`sprints` row per week; tasks point at it via `sprint_id`) → Day
+  (`do_date`, optionally a block). The Week is the only gate between the vertical and
+  the calendar.
+- **Rituals** — Sunrise (morning plan, pulls from the Week pool first), Sundown (evening
+  shutdown, leads with the day's gain, can send leftovers "back to week"), **Sunday**
+  (◉ begin on the spine: Gain → Sweep → Bets → Pull → Anchor, ends with a committed
+  week + ≤3 lead initiatives), Summit (quarterly — planned).
+- **One task world** — the floors (`useVertical`) read/write live Supabase rows; the
+  localStorage prototype is gone. Domain invested/quarter/last-touched derive from
+  completed blocks. Calendar blocks and rail rows are tinted by domain color.
+- **AI scaffolding** — "✦ scaffold with AI" on a project calls the `agent` edge function
+  (`{ scaffold: { projectId } }`), which proposes an ordered task list; accepted drafts
+  land in `backlog`. The agent proposes into quiet pools; only you promote work.
+
+After pulling: `supabase db push` (applies `00000000000004_flows.sql`) and
+`supabase functions deploy agent`.
+
 ## Behavior notes
 
 - **Rollover** runs at 00:05 America/Los_Angeles via pg_cron (scheduled at both 07:05

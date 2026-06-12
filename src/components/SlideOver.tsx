@@ -3,6 +3,8 @@ import { format } from "date-fns";
 import type { ExternalEvent, Label, Task } from "../lib/types";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
+import { useVertical } from "../hooks/useVertical";
+import { domainById, initiativeById, projectById } from "../lib/vertical";
 import { fmtDuration } from "../lib/dates";
 import { Btn, RollBadge } from "./ui";
 
@@ -31,10 +33,39 @@ export function TaskSlideOver({
 }) {
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes);
+  const { data: vertical, toggleTaskSprint } = useVertical();
   useEffect(() => {
     setTitle(task.title);
     setNotes(task.notes);
   }, [task.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the thread up the vertical
+  const project = projectById(vertical, task.project_id);
+  const initiative = initiativeById(vertical, task.initiative_id ?? project?.initiativeId ?? null);
+  const domain = domainById(
+    vertical,
+    task.domain_id ?? project?.domainId ?? initiative?.domainId ?? null,
+  );
+  const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
+
+  const setProject = (projectId: string) => {
+    const p = projectById(vertical, projectId || null);
+    mutations.patchTask(task.id, {
+      project_id: p?.id ?? null,
+      initiative_id: p?.initiativeId ?? null,
+      domain_id: p?.domainId ?? task.domain_id,
+      // filing an inbox capture processes it; un-filing a dateless backlog
+      // task with no other parent sends it back to the inbox (never limbo)
+      ...(task.status === "inbox" && p ? { status: "backlog" as const } : {}),
+      ...(!p && task.status === "backlog" && !task.domain_id && !task.do_date
+        ? { status: "inbox" as const }
+        : {}),
+    });
+  };
+
+  const setDomain = (domainId: string) => {
+    mutations.patchTask(task.id, { domain_id: domainId || null });
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -73,6 +104,15 @@ export function TaskSlideOver({
       </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        {/* the thread: why this block matters */}
+        {(domain || initiative || project) && (
+          <div className="mono flex flex-wrap items-center gap-1 text-[10px] text-muted">
+            {domain && <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span>}
+            {initiative && <><span>›</span><span>{initiative.name}</span></>}
+            {project && <><span>›</span><span>{project.name}</span></>}
+          </div>
+        )}
+
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -100,7 +140,9 @@ export function TaskSlideOver({
               onChange={(e) =>
                 e.target.value
                   ? mutations.planFor(task, e.target.value)
-                  : mutations.backToInbox(task)
+                  : task.project_id || task.initiative_id || task.domain_id
+                    ? mutations.backToWeek(task) // parented: back to backlog/week pool
+                    : mutations.backToInbox(task)
               }
               className={`${inputCls} mono`}
             />
@@ -136,6 +178,53 @@ export function TaskSlideOver({
             />
           </Field>
         </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Project">
+            <select
+              value={task.project_id ?? ""}
+              onChange={(e) => setProject(e.target.value)}
+              className={`${inputCls}`}
+            >
+              <option value="">— none —</option>
+              {vertical.projects
+                .filter((p) => p.status !== "done" || p.id === task.project_id)
+                .map((p) => {
+                  const d = domainById(vertical, p.domainId);
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {d ? `${d.name} · ` : ""}{p.name}
+                    </option>
+                  );
+                })}
+            </select>
+          </Field>
+          <Field label="Domain">
+            <select
+              value={task.domain_id ?? ""}
+              onChange={(e) => setDomain(e.target.value)}
+              className={`${inputCls}`}
+            >
+              <option value="">— none —</option>
+              {vertical.domains.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        <Field label="This week">
+          <button
+            onClick={() => toggleTaskSprint(task.id)}
+            className={`fast w-full border px-2 py-1.5 text-[12px] ${
+              inWeek
+                ? "border-signal bg-signal-soft text-signal"
+                : "border-line text-muted hover:text-ink"
+            }`}
+          >
+            {inWeek ? "★ committed to this week — click to release" : "☆ commit to this week"}
+          </button>
+        </Field>
 
         <Field label="Priority">
           <div className="flex gap-1">

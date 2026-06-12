@@ -2,15 +2,11 @@
 // tasks that hang straight off an initiative or domain (the "teach my kid to
 // ride a bike" case — first-class work that deserves no project).
 
-import { useVertical } from "../../hooks/useVertical";
-import { emptyTask, type VTask } from "../../lib/vertical";
+import { useVertical, type TaskParent } from "../../hooks/useVertical";
+import type { VTask } from "../../lib/vertical";
 import { DeleteBtn, EnergyPicker, InlineNumber, InlineText } from "./parts";
 
-export interface TaskParent {
-  projectId?: string | null;
-  initiativeId?: string | null;
-  domainId?: string | null;
-}
+export type { TaskParent };
 
 export default function TaskList({
   tasks,
@@ -23,13 +19,10 @@ export default function TaskList({
   accent: string;
   emptyHint?: string;
 }) {
-  const { addTask, updateTask, deleteTask, toggleTask } = useVertical();
+  const { addTask, updateTask, deleteTask, toggleTask, toggleTaskSprint } = useVertical();
 
-  const add = () => {
-    const t = emptyTask(parent);
-    t.title = "";
-    addTask(t);
-  };
+  // New tasks land in `backlog` — quiet by design (never inbox, never Today).
+  const add = () => addTask(parent);
 
   return (
     <div>
@@ -62,14 +55,14 @@ export default function TaskList({
             <InlineNumber value={t.durationMins} onChange={(v) => updateTask(t.id, { durationMins: v })} suffix="m" />
           </span>
 
-          {/* status cycle: ready → blocked → ready (done is the checkbox) */}
+          {/* the Week gate: ★ = committed to the current sprint */}
           <button
-            onClick={() => updateTask(t.id, { status: t.status === "blocked" ? "ready" : "blocked" })}
-            className="mono w-14 shrink-0 text-right text-[10px]"
-            style={{ color: t.status === "blocked" ? "var(--signal)" : "var(--muted)" }}
-            title="Toggle blocked"
+            onClick={() => toggleTaskSprint(t.id)}
+            className="mono w-10 shrink-0 text-right text-[11px]"
+            style={{ color: t.sprint ? "var(--signal)" : "var(--line)" }}
+            title={t.sprint ? "Remove from this week" : "Commit to this week"}
           >
-            {t.status}
+            ★
           </button>
 
           <div className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100">

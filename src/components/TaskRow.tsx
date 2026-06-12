@@ -11,6 +11,8 @@ export default function TaskRow({
   onSelect,
   onOpen,
   onToggleDone,
+  accent,
+  action,
 }: {
   task: Task;
   labels: Label[];
@@ -19,6 +21,10 @@ export default function TaskRow({
   onSelect: () => void;
   onOpen: () => void;
   onToggleDone: () => void;
+  /** Domain color — the task's thread back up the vertical. */
+  accent?: string | null;
+  /** Optional trailing control (e.g. "▸ today" in the Week rail). */
+  action?: React.ReactNode;
 }) {
   const [completing, setCompleting] = useState(false);
   const done = task.status === "done";
@@ -49,6 +55,7 @@ export default function TaskRow({
       className={`fast group flex cursor-pointer items-center gap-2 border-b border-line px-3 py-2 ${
         completing ? "task-completing" : ""
       } ${selected ? "bg-accent-soft" : "hover:bg-bg"}`}
+      style={accent ? { boxShadow: `inset 2px 0 0 0 ${accent}` } : undefined}
     >
       <button
         aria-label={done ? "Mark not done" : "Mark done"}
@@ -106,6 +113,8 @@ export default function TaskRow({
       ) : task.duration_minutes ? (
         <span className="mono shrink-0 text-[11px] text-muted">{fmtDuration(task.duration_minutes)}</span>
       ) : null}
+
+      {action}
     </div>
   );
 }

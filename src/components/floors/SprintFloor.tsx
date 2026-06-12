@@ -2,6 +2,7 @@
 // project Backlogs, whole Projects) into a single weekly commitment on the
 // right. A capacity meter guards against over-committing; a domain-balance
 // strip guards against going quiet on a domain (the faithfulness thesis).
+// The funnel body (SprintFunnel) is shared with the Sunday ritual's Pull step.
 
 import { useMemo, useState } from "react";
 import { endOfWeek, format, startOfWeek } from "date-fns";
@@ -20,6 +21,7 @@ import {
   weeklyCapacityHours,
   type VTask,
 } from "../../lib/vertical";
+import { pullSummary, suggestPull } from "../../lib/pull";
 import { ENERGY_META } from "../../lib/energy";
 import { FloorHeader, InlineText } from "./parts";
 import { Btn } from "../ui";
@@ -30,8 +32,6 @@ const hrs = (mins: number) => (mins / 60).toFixed(mins % 60 === 0 ? 0 : 1);
 
 export default function SprintFloor() {
   const { data, setSprintGoal, clearSprint } = useVertical();
-  const [source, setSource] = useState<Source>("backlog");
-  const [note, setNote] = useState<string | null>(null);
 
   const week = useMemo(() => {
     const now = new Date();
@@ -40,23 +40,11 @@ export default function SprintFloor() {
     return `${format(s, "MMM d")} – ${format(e, "MMM d")}`;
   }, []);
 
-  const committed = sprintTasks(data).filter((t) => t.status !== "done");
-  const loadMins = sprintLoadMins(data);
-  const capacityHrs = weeklyCapacityHours(data);
-  const loadHrs = loadMins / 60;
-  const overPct = Math.min(100, (loadHrs / capacityHrs) * 100);
-  const over = loadHrs > capacityHrs;
-
   return (
     <div className="mx-auto max-w-[1320px]">
       <FloorHeader
         eyebrow={`Weekly sprint · ${week}`}
-        actions={
-          <div className="flex items-center gap-2">
-            <Btn onClick={() => setNote("Sent committed tasks to your Day backlog — schedule them on the calendar.")}>send to Day →</Btn>
-            <Btn kind="signal" onClick={clearSprint}>clear week</Btn>
-          </div>
-        }
+        actions={<Btn kind="signal" onClick={clearSprint}>clear week</Btn>}
       >
         <h1 className="text-[24px] font-semibold tracking-tight">This Week</h1>
         <div className="mt-1 flex items-baseline gap-2 text-[14px]">
@@ -70,8 +58,31 @@ export default function SprintFloor() {
         </div>
       </FloorHeader>
 
+      <SprintFunnel />
+    </div>
+  );
+}
+
+/** The funnel proper: capacity + balance, sources → commitment, suggested pull. */
+export function SprintFunnel() {
+  const { data, toggleTaskSprint } = useVertical();
+  const [source, setSource] = useState<Source>("backlog");
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
+
+  const committed = sprintTasks(data).filter((t) => t.status !== "done");
+  const loadMins = sprintLoadMins(data);
+  const capacityHrs = weeklyCapacityHours(data);
+  const loadHrs = loadMins / 60;
+  const overPct = capacityHrs > 0 ? Math.min(100, (loadHrs / capacityHrs) * 100) : 0;
+  const over = capacityHrs > 0 && loadHrs > capacityHrs;
+
+  const suggestions = useMemo(() => suggestPull(data), [data]);
+  const showSuggestions = !suggestionsDismissed && suggestions.length > 0;
+
+  return (
+    <div>
       {/* capacity + balance */}
-      <div className="mb-6 grid grid-cols-1 gap-4 rounded-md border border-line bg-surface px-4 py-3 lg:grid-cols-2">
+      <div className="mb-4 grid grid-cols-1 gap-4 rounded-md border border-line bg-surface px-4 py-3 lg:grid-cols-2">
         <div>
           <div className="flex items-baseline justify-between">
             <span className="section-label">Committed load</span>
@@ -89,6 +100,45 @@ export default function SprintFloor() {
           <DomainBalance />
         </div>
       </div>
+
+      {/* the intelligence strip — a starting pull, always yours to prune */}
+      {showSuggestions && (
+        <div className="mb-6 rounded-md border border-accent/40 bg-accent-soft px-4 py-3">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[12px] font-medium text-accent">✦ Suggested pull</span>
+            <span className="mono text-[10px] text-muted">{pullSummary(data, suggestions)}</span>
+            <div className="flex-1" />
+            <button
+              onClick={() => suggestions.forEach((s) => toggleTaskSprint(s.task.id))}
+              className="fast mono text-[11px] font-medium text-accent hover:underline"
+            >
+              add all {suggestions.length}
+            </button>
+            <button onClick={() => setSuggestionsDismissed(true)} className="fast mono text-[11px] text-muted hover:text-ink">
+              dismiss
+            </button>
+          </div>
+          <div className="mt-2 space-y-0.5">
+            {suggestions.map((s) => {
+              const domain = domainById(data, s.task.domainId);
+              return (
+                <div key={s.task.id} className="flex items-center gap-2 text-[11px]">
+                  <button
+                    onClick={() => toggleTaskSprint(s.task.id)}
+                    className="fast mono text-[10px] text-accent hover:underline"
+                    title="Add to week"
+                  >
+                    + add
+                  </button>
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: domain?.color }} />
+                  <span className="min-w-0 truncate">{s.task.title}</span>
+                  <span className="mono shrink-0 text-[9px] text-muted">{s.reason} · {s.task.durationMins}m</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* funnel: sources → commitment */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -118,7 +168,6 @@ export default function SprintFloor() {
         <section className="lg:col-span-6">
           <div className="section-label mb-3">This week's commitment</div>
           <SprintColumn />
-          {note && <div className="mt-3 text-[11px] text-muted">{note}</div>}
         </section>
       </div>
     </div>
@@ -189,6 +238,7 @@ function InboxSource() {
 function BacklogSource() {
   const { data, addProjectReadyToSprint } = useVertical();
   const items = backlogTasks(data);
+  const focus = new Set(data.focusInitiativeIds);
   const groups = useMemo(() => {
     const m = new Map<string, VTask[]>();
     items.forEach((t) => {
@@ -196,8 +246,13 @@ function BacklogSource() {
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(t);
     });
-    return [...m.entries()];
-  }, [items]);
+    // the week's lead initiatives surface first — pull the right next steps
+    return [...m.entries()].sort(([a], [b]) => {
+      const ai = focus.has(projectById(data, a)?.initiativeId ?? "") ? 0 : 1;
+      const bi = focus.has(projectById(data, b)?.initiativeId ?? "") ? 0 : 1;
+      return ai - bi;
+    });
+  }, [items, data, focus]);
 
   if (groups.length === 0) return <Empty>No project backlog — every project task is done.</Empty>;
   return (
@@ -207,12 +262,14 @@ function BacklogSource() {
         {groups.map(([projectId, tasks]) => {
           const project = projectById(data, projectId);
           const domain = domainById(data, project?.domainId ?? null);
+          const lead = focus.has(project?.initiativeId ?? "");
           const remaining = tasks.filter((t) => !t.sprint).length;
           return (
             <div key={projectId}>
               <div className="mb-0.5 flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full" style={{ background: domain?.color }} />
                 <span className="text-[11px] font-medium">{project?.name}</span>
+                {lead && <span className="mono text-[9px]" style={{ color: "var(--signal)" }}>★ lead</span>}
                 {remaining > 0 && (
                   <button onClick={() => addProjectReadyToSprint(projectId)} className="fast mono ml-auto text-[9px] text-muted hover:text-signal" title="Add all ready tasks">
                     + add all {remaining}
@@ -230,7 +287,10 @@ function BacklogSource() {
 
 function ProjectsSource() {
   const { data, addProjectReadyToSprint } = useVertical();
-  const projects = data.projects.filter((p) => p.status !== "done");
+  const focus = new Set(data.focusInitiativeIds);
+  const projects = data.projects
+    .filter((p) => p.status !== "done")
+    .sort((a, b) => Number(focus.has(b.initiativeId ?? "")) - Number(focus.has(a.initiativeId ?? "")));
   if (projects.length === 0) return <Empty>No active projects.</Empty>;
   return (
     <div>
@@ -245,7 +305,10 @@ function ProjectsSource() {
             <div key={p.id} className="flex items-center gap-2.5 border-b border-line py-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: domain?.color }} />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px]">{p.name}</div>
+                <div className="truncate text-[12px]">
+                  {p.name}
+                  {focus.has(p.initiativeId ?? "") && <span className="mono ml-1.5 text-[9px]" style={{ color: "var(--signal)" }}>★</span>}
+                </div>
                 <div className="mono truncate text-[9px] text-muted">{initiative?.name ?? domain?.name} · {pct}%</div>
               </div>
               {inSprint > 0 && <span className="mono shrink-0 text-[9px]" style={{ color: "var(--signal)" }}>★ {inSprint}</span>}

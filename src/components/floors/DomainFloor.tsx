@@ -36,7 +36,7 @@ export default function DomainFloor({
     <div className="mx-auto max-w-[1280px]">
       <FloorHeader
         eyebrow="The anchor · areas that persist for years"
-        actions={<Btn kind="primary" onClick={() => { const d = addDomain(); onSwitchDomain(d.id); }}>+ new domain</Btn>}
+        actions={<Btn kind="primary" onClick={() => void addDomain().then((d) => onSwitchDomain(d.id))}>+ new domain</Btn>}
       >
         <h1 className="text-[24px] font-semibold tracking-tight">Domains</h1>
         <p className="mt-1 max-w-[640px] text-[13px] text-muted">
@@ -151,20 +151,19 @@ function DomainCard({
         />
       </div>
 
-      {/* invested this week vs target + the quarter Gain */}
+      {/* invested this week vs target + the quarter Gain — derived from
+          completed blocks (a task IS a block), only the target is editable */}
       <div className="mt-4">
         <div className="flex items-baseline justify-between">
           <span className="section-label">Invested this week</span>
           <span className="mono text-[10px] text-muted">
-            <InlineNumber value={domain.investedThisWeek} onChange={(v) => updateDomain(domain.id, { investedThisWeek: v })} /> /{" "}
+            {domain.investedThisWeek.toFixed(domain.investedThisWeek % 1 === 0 ? 0 : 1)} /{" "}
             <InlineNumber value={domain.weeklyTargetHours} onChange={(v) => updateDomain(domain.id, { weeklyTargetHours: v })} suffix="h" />
           </span>
         </div>
         <Bar pct={investedPct} color={domain.color} baseline={100} />
         <div className="mono text-[10px] text-muted">
-          <span style={{ color: domain.color }}>
-            <InlineNumber value={domain.quarterHours} onChange={(v) => updateDomain(domain.id, { quarterHours: v })} suffix="h" />
-          </span>{" "}
+          <span style={{ color: domain.color }}>{domain.quarterHours}h</span>{" "}
           this quarter · {rollup}% across initiatives
         </div>
       </div>
@@ -174,7 +173,7 @@ function DomainCard({
         <div className="mb-1.5 flex items-center justify-between">
           <span className="section-label">{inits.length} initiative{inits.length === 1 ? "" : "s"}</span>
           <button
-            onClick={(e) => { e.stopPropagation(); const i = addInitiative(domain.id); onOpenInitiative(i.id); }}
+            onClick={(e) => { e.stopPropagation(); void addInitiative(domain.id).then((i) => onOpenInitiative(i.id)); }}
             className="fast mono text-[10px] text-muted hover:text-ink"
           >
             + initiative

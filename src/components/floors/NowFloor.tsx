@@ -4,13 +4,31 @@
 
 import { useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
+import { useExternalEvents } from "../../hooks/useCalendar";
+import { useScheduledTasks } from "../../hooks/useTasks";
 import { faithfulness, initiativeProgress } from "../../lib/vertical";
 import { nowContext, rankNow } from "../../lib/now";
 import { Btn } from "../ui";
 
 export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   const { data, toggleTask } = useVertical();
-  const ctx = useMemo(() => nowContext(new Date()), []);
+
+  // the real gap: the next busy thing on the live calendar (event or block)
+  const horizon = useMemo(() => {
+    const now = new Date();
+    return { now, end: new Date(now.getTime() + 18 * 3600_000) };
+  }, []);
+  const { data: events = [] } = useExternalEvents(horizon.now.toISOString(), horizon.end.toISOString());
+  const { data: blocks = [] } = useScheduledTasks(horizon.now.toISOString(), horizon.end.toISOString());
+
+  const ctx = useMemo(() => {
+    const starts = [
+      ...events.filter((e) => e.busy && !e.all_day).map((e) => new Date(e.start_at)),
+      ...blocks.filter((t) => t.status !== "done" && t.start_time).map((t) => new Date(t.start_time!)),
+    ].filter((d) => d.getTime() > horizon.now.getTime());
+    starts.sort((a, b) => a.getTime() - b.getTime());
+    return nowContext(horizon.now, starts[0] ?? null);
+  }, [events, blocks, horizon]);
   const suggestions = useMemo(() => rankNow(data, ctx), [data, ctx]);
   const [idx, setIdx] = useState(0);
   const [state, setState] = useState<"choose" | "focus" | "done">("choose");
