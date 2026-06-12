@@ -168,19 +168,19 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
         data-tauri-drag-region
         className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"
       >
-        <span className="text-[14px] font-semibold tracking-tight">Nuvo</span>
+        <span className="wordmark wordmark-grad text-[15px]">Nuvo</span>
         <span className="mono text-[11px] text-muted">{format(now, "EEE MMM d")}</span>
-        <span className="mono border border-signal px-1 text-[10px] leading-snug text-signal">
+        <span className="mono rounded border border-signal px-1 text-[10px] leading-snug text-signal">
           {format(now, "h:mm a")}
         </span>
         <div className="flex-1" />
-        <button onClick={() => setShowMorning(true)} className="fast border border-line px-2 py-1 text-[11px] font-medium text-muted hover:text-ink">
+        <button onClick={() => setShowMorning(true)} className="fast rounded-md border border-line px-2 py-1 text-[11px] font-medium text-muted hover:border-line-strong hover:text-ink">
           Plan
         </button>
-        <button onClick={() => setShowEvening(true)} className="fast border border-line px-2 py-1 text-[11px] font-medium text-muted hover:text-ink">
+        <button onClick={() => setShowEvening(true)} className="fast rounded-md border border-line px-2 py-1 text-[11px] font-medium text-muted hover:border-line-strong hover:text-ink">
           Shutdown
         </button>
-        <div className="flex border border-line">
+        <div className="flex overflow-hidden rounded-md border border-line">
           {(["timeGridDay", "timeGridWeek"] as const).map((v) => (
             <button
               key={v}

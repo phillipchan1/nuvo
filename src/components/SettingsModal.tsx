@@ -53,7 +53,7 @@ export default function SettingsModal({
           <SectionLabel>Calendar connections</SectionLabel>
           <div className="space-y-2 px-3">
             {accounts.map((a) => (
-              <div key={a.id} className="border border-line">
+              <div key={a.id} className="overflow-hidden rounded-md border border-line">
                 <div className="flex items-center gap-2 border-b border-line px-3 py-2">
                   <span className="text-[13px] font-medium">
                     {a.provider === "google" ? "Google" : "Microsoft 365"}

@@ -179,7 +179,7 @@ export function EveningShutdown({
               Today's gain: {gain.count} done · {fmtDuration(gain.mins)} logged.
             </div>
             {gain.byColor.length > 0 && gain.mins > 0 && (
-              <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-bg">
+              <div className="grow-x mt-2 flex h-2 overflow-hidden rounded-full bg-bg">
                 {gain.byColor.map(([color, mins]) => (
                   <div key={color} style={{ width: `${(mins / gain.mins) * 100}%`, background: color }} />
                 ))}

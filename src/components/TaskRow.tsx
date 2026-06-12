@@ -39,7 +39,7 @@ export default function TaskRow({
       window.setTimeout(() => {
         setCompleting(false);
         onToggleDone();
-      }, 160);
+      }, 200);
     } else {
       onToggleDone();
     }
@@ -63,11 +63,11 @@ export default function TaskRow({
           e.stopPropagation();
           toggle();
         }}
-        className={`fast flex h-[15px] w-[15px] shrink-0 items-center justify-center border ${
-          done ? "border-accent bg-accent text-white" : "border-line hover:border-accent"
-        }`}
+        className={`fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
+          completing ? "bloom" : ""
+        } ${done || completing ? "border-accent bg-accent text-white" : "border-line hover:border-accent"}`}
       >
-        {done && (
+        {(done || completing) && (
           <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
             <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" />
           </svg>

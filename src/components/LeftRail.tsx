@@ -220,7 +220,7 @@ export default function LeftRail({
             }
           }}
           placeholder='Capture… try "call David tomorrow 9am 30m #work !high"'
-          className="w-full border border-line bg-bg px-2.5 py-1.5 text-[13px] outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
+          className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-[13px] outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
         />
         {captureError && (
           <div className="mt-1 px-0.5 text-[11px] text-signal">{captureError}</div>
@@ -568,7 +568,7 @@ function Popover({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="absolute bottom-12 left-2 z-30 w-[330px] border border-line bg-surface p-2">
+    <div className="rise elev-3 absolute bottom-12 left-2 z-30 w-[330px] rounded-lg border border-line bg-surface p-2.5">
       <div className="mb-1 flex items-center justify-between">
         <div className="truncate pr-2 text-[11px] font-medium text-muted">{title}</div>
         <button onClick={onClose} className="text-[11px] text-muted hover:text-ink">esc</button>

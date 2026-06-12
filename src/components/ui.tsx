@@ -31,10 +31,14 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-start justify-center bg-black/30 pt-[12vh]"
+      className="scrim fixed inset-0 z-40 flex items-start justify-center bg-black/30 pt-[12vh] backdrop-blur-[2px]"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className={`fast w-full ${width} border border-line bg-surface`}>{children}</div>
+      <div
+        className={`moment elev-3 w-full ${width} overflow-hidden rounded-lg border border-line bg-surface`}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -56,16 +60,16 @@ export function Btn({
 }) {
   const styles =
     kind === "primary"
-      ? "bg-accent text-white border-accent hover:opacity-90"
+      ? "bg-accent text-white border-accent shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)]"
       : kind === "signal"
-        ? "text-signal border-line hover:border-signal"
-        : "text-ink border-line hover:border-muted";
+        ? "text-signal border-line hover:border-signal hover:bg-signal-soft"
+        : "text-ink border-line hover:border-line-strong hover:bg-surface-2";
   return (
     <button
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`fast border px-2.5 py-1 text-[12px] font-medium disabled:opacity-40 ${styles} ${className}`}
+      className={`fast rounded-md border px-2.5 py-1 text-[12px] font-medium active:translate-y-px disabled:opacity-40 ${styles} ${className}`}
     >
       {children}
     </button>

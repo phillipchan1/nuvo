@@ -23,7 +23,7 @@ export default function ReconnectBanner({ accounts }: { accounts: CalendarAccoun
         <button
           key={a.id}
           onClick={() => reconnect(a)}
-          className="fast border border-signal px-2 py-0.5 text-[11px] font-medium text-signal hover:bg-signal hover:text-white"
+          className="fast rounded-md border border-signal px-2 py-0.5 text-[11px] font-medium text-signal hover:bg-signal hover:text-white"
         >
           Reconnect {a.provider === "google" ? "Google" : "M365"}
         </button>

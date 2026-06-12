@@ -117,7 +117,7 @@ export default function AgentSidebar({
           ))}
           {loading && (
             <div className="agent-bubble agent-bubble-assistant">
-              <span className="mono text-[11px] text-muted">Thinking…</span>
+              <span className="mono shimmer text-[11px]">Thinking…</span>
             </div>
           )}
         </div>
@@ -139,14 +139,14 @@ export default function AgentSidebar({
           placeholder="Ask Nuvo…"
           rows={2}
           disabled={loading}
-          className="w-full resize-none border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent disabled:opacity-50"
+          className="w-full resize-none rounded-md border border-line bg-surface-2 px-2.5 py-2 text-[13px] outline-none focus:border-accent disabled:opacity-50"
         />
         <div className="mt-1.5 flex items-center justify-between">
           <span className="mono text-[10px] text-muted">Enter to send · Shift+Enter for newline</span>
           <button
             onClick={submit}
             disabled={!input.trim() || loading}
-            className="fast border border-accent bg-accent px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-40"
+            className="fast rounded-md border border-accent bg-accent px-3 py-1 text-[11px] font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px disabled:opacity-40"
           >
             Send
           </button>

@@ -7,45 +7,94 @@
 
 @source "./**/*.{tsx,ts,jsx,js,html}";
 
-/* ── Daylight tokens ─────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════
+   TWILIGHT — Nuvo's design language.
+   The metaphor is the arc of a day: dawn → daylight → dusk. Warm-neutral
+   surfaces, a twilight-indigo accent, a warm ember signal. Work surfaces stay
+   dense and hairline; ceremonial surfaces (flows, rituals, the assistant)
+   rise on soft light. Motion is calm by default, with a gentle spring kept
+   for the moments that matter.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Daybreak (light) ────────────────────────────────────────────────── */
 :root,
 [data-theme="light"] {
-  --bg: #f4f5f7;
+  --bg: #f3f2f7;
   --surface: #ffffff;
-  --line: #dde1e7;
-  --text: #16181d;
-  --muted: #6b7280;
-  --accent: #2563eb;
-  --signal: #e8590c;
-  --accent-soft: rgba(37, 99, 235, 0.08);
-  --signal-soft: rgba(232, 89, 12, 0.08);
+  --surface-2: #faf9fd;
+  --line: #e5e3ee;
+  --line-strong: #d4d0e0;
+  --text: #1a1822;
+  --muted: #6c6880;
+  --accent: #5a4be2;
+  --accent-2: #8a6cf0;
+  --signal: #e0620f;
+  --accent-soft: rgba(90, 75, 226, 0.08);
+  --signal-soft: rgba(224, 98, 15, 0.09);
+  --accent-glow: rgba(90, 75, 226, 0.18);
+
+  /* soft, low, faintly violet-warm elevation — never a hard drop shadow */
+  --shadow-1: 0 1px 2px rgba(26, 22, 48, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(26, 22, 48, 0.12), 0 1px 2px rgba(26, 22, 48, 0.05);
+  --shadow-3: 0 24px 60px -16px rgba(46, 32, 96, 0.24), 0 4px 12px -4px rgba(26, 22, 48, 0.1);
 }
 
+/* ── Twilight (dark) ─────────────────────────────────────────────────── */
 [data-theme="dark"] {
-  --bg: #131418;
-  --surface: #1b1c21;
-  --line: #2a2c33;
-  --text: #ecedef;
-  --muted: #8b8e98;
-  --accent: #5b96f7;
-  --signal: #ff7a33;
-  --accent-soft: rgba(91, 150, 247, 0.12);
-  --signal-soft: rgba(255, 122, 51, 0.12);
+  --bg: #141320;
+  --surface: #1c1a28;
+  --surface-2: #232133;
+  --line: #2d2b3d;
+  --line-strong: #3b3850;
+  --text: #ecebf3;
+  --muted: #95909f;
+  --accent: #8b80ff;
+  --accent-2: #a892ff;
+  --signal: #ff8a4c;
+  --accent-soft: rgba(139, 128, 255, 0.13);
+  --signal-soft: rgba(255, 138, 76, 0.14);
+  --accent-glow: rgba(139, 128, 255, 0.28);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-3: 0 28px 64px -16px rgba(0, 0, 0, 0.7), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-ink: var(--text);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
   --color-signal: var(--signal);
   --color-accent-soft: var(--accent-soft);
   --color-signal-soft: var(--signal-soft);
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* radius scale: hairline controls → cards → moments */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 14px;
+
+  /* motion: calm standard ease + a gentle spring reserved for moments */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+:root {
+  --d-fast: 130ms;
+  --d-base: 220ms;
+  --d-slow: 340ms;
+  --d-moment: 540ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
 }
 
 html,
@@ -60,12 +109,35 @@ body {
   font-family: "IBM Plex Sans", system-ui, sans-serif;
   font-size: 13.5px;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The atmosphere: a whisper of dawn (top-left) and dusk (bottom-right) light,
+   laid over the base surface. Used on the big full-bleed surfaces — the panels
+   that sit on top stay clean. Subtle on purpose; it should be felt, not seen. */
+.atmosphere {
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--signal) 7%, transparent), transparent 42%),
+    radial-gradient(130% 100% at 100% 100%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 46%),
+    var(--bg);
 }
 
 /* Every numeral the user sees is Plex Mono, tabular. */
 .mono {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
+}
+
+/* The wordmark — tightened tracking, the twilight gradient on brand surfaces. */
+.wordmark {
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+.wordmark-grad {
+  background: linear-gradient(120deg, var(--accent) 0%, var(--accent-2) 60%, var(--signal) 130%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 /* Tiny uppercase section labels */
@@ -84,21 +156,138 @@ body {
   line-height: 1;
   padding: 3px 5px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   background: var(--surface);
   white-space: nowrap;
+  transition: border-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
 }
 
-/* Speed language: fast transform/opacity transitions only, no soft shadows */
+/* Elevation utilities */
+.elev-1 { box-shadow: var(--shadow-1); }
+.elev-2 { box-shadow: var(--shadow-2); }
+.elev-3 { box-shadow: var(--shadow-3); }
+
+/* ── Motion language ───────────────────────────────────────────────────
+   .fast is everywhere in the app: keep the name, widen what it eases so every
+   hover/focus/selection settles instead of snapping. */
 .fast {
   transition:
-    transform 100ms ease-out,
-    opacity 100ms ease-out;
+    transform var(--d-fast) var(--ease-out),
+    opacity var(--d-fast) var(--ease-out),
+    color var(--d-fast) var(--ease-out),
+    background-color var(--d-fast) var(--ease-out),
+    border-color var(--d-fast) var(--ease-out),
+    box-shadow var(--d-fast) var(--ease-out);
+}
+
+/* A card that lifts toward you on hover. */
+.lift {
+  transition: transform var(--d-base) var(--ease-out), box-shadow var(--d-base) var(--ease-out);
+}
+.lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+/* Entrances */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise var(--d-base) var(--ease-out) both; }
+
+/* The scrim behind a moment — fades the world back, blurs it softly. */
+@keyframes scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.scrim { animation: scrim-in var(--d-base) var(--ease-out) both; }
+
+/* A moment arriving — a raised surface that springs gently into place. */
+@keyframes moment-in {
+  0% { opacity: 0; transform: translateY(12px) scale(0.985); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.moment { animation: moment-in var(--d-moment) var(--ease-spring) both; }
+
+/* A panel sliding in from the right edge — slide-overs, detail rails. */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.slide-in-right { animation: slide-in-right var(--d-base) var(--ease-out) both; }
+
+/* Staggered entrance for lists / stations. Pair with --i index var. */
+.rise-stagger { animation: rise var(--d-base) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+
+/* The completion bloom — a soft ring of light, not confetti. */
+@keyframes bloom {
+  0% { transform: scale(0.4); opacity: 0.55; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.bloom::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px var(--accent);
+  animation: bloom 520ms var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+/* A measured bar sweeping in from the left — the day's gain, revealed. */
+@keyframes grow-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.grow-x { transform-origin: left center; animation: grow-x var(--d-moment) var(--ease-out) both; }
+
+/* A breathing glow for live / pending states. */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent-glow) 35%, transparent); }
+}
+.pulse-glow { animation: pulse-glow 2.4s var(--ease-in-out) infinite; }
+
+/* A lit pipeline arrow nudges forward — the artifact flowing to the next stage. */
+@keyframes pulse-arrow {
+  0%, 100% { transform: translateX(0); opacity: 0.7; }
+  50% { transform: translateX(2px); opacity: 1; }
+}
+.pulse-arrow { animation: pulse-arrow 1.8s var(--ease-in-out) infinite; }
+
+/* Shimmer for "Thinking…" copy. */
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--muted) 25%, var(--text) 50%, var(--muted) 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.6s linear infinite;
 }
 
 button {
   cursor: pointer;
+}
+
+input,
+textarea,
+button {
+  transition:
+    border-color var(--d-fast) var(--ease-out),
+    box-shadow var(--d-fast) var(--ease-out),
+    background-color var(--d-fast) var(--ease-out);
+}
+
+/* Inputs earn a soft focus ring in the accent rather than a hard border swap. */
+input:focus,
+textarea:focus {
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 ::-webkit-scrollbar {
@@ -106,49 +295,39 @@ button {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--line);
+  background: var(--line-strong);
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: content-box;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* Completion micro-interaction: quick strike + fade, no confetti */
+/* Completion micro-interaction: a calm strike + settle, no confetti. */
 @keyframes task-complete {
-  0% {
-    opacity: 1;
-  }
-  60% {
-    opacity: 0.55;
-    transform: translateX(2px);
-  }
-  100% {
-    opacity: 0.4;
-    transform: translateX(0);
-  }
+  0% { opacity: 1; }
+  55% { opacity: 0.55; transform: translateX(3px); }
+  100% { opacity: 0.42; transform: translateX(0); }
 }
 .task-completing {
-  animation: task-complete 160ms ease-out forwards;
+  animation: task-complete 200ms var(--ease-out) forwards;
 }
 
-/* Vertical floor transition: subtle rise as you change altitude */
+/* Vertical floor transition: a subtle rise as you change altitude. */
 @keyframes floor-enter {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .floor-enter {
-  animation: floor-enter 180ms ease-out;
+  animation: floor-enter var(--d-base) var(--ease-out);
 }
 
-/* ── FullCalendar restyle to Daylight ────────────────────────────────── */
+/* ── FullCalendar restyle to Twilight ────────────────────────────────── */
 .fc {
   --fc-border-color: var(--line);
   --fc-page-bg-color: var(--surface);
@@ -183,8 +362,9 @@ button {
   white-space: nowrap;
 }
 .fc .fc-event {
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
+  transition: transform var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
 }
 .fc .fc-event:focus {
   outline: none;
@@ -193,8 +373,8 @@ button {
 .fc .fc-event .fc-event-main {
   padding: 1px 4px;
 }
-.fc .fc-timegrid-event-harness .fc-event {
-  transition: transform 100ms ease-out;
+.fc .fc-timegrid-event-harness .fc-event:hover {
+  box-shadow: var(--shadow-1);
 }
 
 /* Own task blocks: accent border + checkbox affordance */
@@ -237,20 +417,24 @@ button {
 .fc-event-dragging,
 .fc-event-mirror {
   opacity: 0.8;
+  box-shadow: var(--shadow-2);
 }
 
 /* ── Agent sidebar chat bubbles ──────────────────────────────────────── */
 .agent-bubble {
-  padding: 8px 10px;
-  border-radius: 4px;
+  padding: 8px 11px;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
+  animation: rise var(--d-base) var(--ease-out) both;
 }
 .agent-bubble-user {
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-bottom-right-radius: var(--radius-sm);
 }
 .agent-bubble-assistant {
-  background: var(--bg);
+  background: var(--surface-2);
+  border-bottom-left-radius: var(--radius-sm);
 }
 
 .agent-markdown > :first-child {
@@ -297,6 +481,7 @@ button {
   padding: 0.5em 0.6em;
   overflow-x: auto;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 .agent-markdown pre code {
@@ -306,4 +491,16 @@ button {
 .agent-markdown a {
   color: var(--accent);
   text-decoration: underline;
+}
+
+/* ── Respect the user's motion preference ────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

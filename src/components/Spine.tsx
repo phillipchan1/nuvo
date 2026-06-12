@@ -40,7 +40,7 @@ export default function Spine({
         title="Flows — guided planning with one clear output"
         className="fast group mb-1 flex flex-col items-center gap-1"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-line text-[12px] text-muted transition-colors group-hover:border-accent group-hover:text-accent">
+        <span className="fast flex h-7 w-7 items-center justify-center rounded-full border border-line text-[12px] text-muted group-hover:scale-105 group-hover:border-accent group-hover:text-accent group-hover:shadow-[0_0_0_4px_var(--accent-soft)]">
           ◉
         </span>
         <span className="mono text-[8px] text-muted group-hover:text-ink">flows</span>
@@ -49,12 +49,12 @@ export default function Spine({
       {menu && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-          <div className="absolute left-[64px] top-12 z-50 w-[190px] rounded-md border border-line bg-surface p-1.5 shadow-lg">
+          <div className="moment elev-3 absolute left-[64px] top-12 z-50 w-[190px] rounded-lg border border-line bg-surface p-1.5">
             {FLOWS.map((f) => (
               <button
                 key={f.id}
                 onClick={() => { setMenu(false); openFlow(f.id); }}
-                className="fast block w-full rounded-sm px-2.5 py-1.5 text-left hover:bg-accent-soft"
+                className="fast block w-full rounded-md px-2.5 py-1.5 text-left hover:bg-accent-soft"
               >
                 <div className="text-[12px] font-medium">{f.label}</div>
                 <div className="mono text-[9px] text-muted">{f.sub}</div>
@@ -78,12 +78,16 @@ export default function Spine({
               title={`${r.label} (⌘${LADDER.indexOf(r.id) + 1})`}
             >
               <span
-                className="fast rounded-full"
+                className="rounded-full"
                 style={{
                   width: on ? 12 : 8,
                   height: on ? 12 : 8,
-                  background: on ? "var(--accent)" : "var(--line)",
-                  boxShadow: on ? "0 0 0 4px var(--accent-soft)" : "none",
+                  background: on ? "var(--accent)" : "var(--line-strong)",
+                  boxShadow: on
+                    ? "0 0 0 4px var(--accent-soft), 0 0 12px 1px var(--accent-glow)"
+                    : "none",
+                  transition:
+                    "width 320ms var(--ease-spring), height 320ms var(--ease-spring), background-color 180ms var(--ease-out), box-shadow 280ms var(--ease-out)",
                 }}
               />
               <span

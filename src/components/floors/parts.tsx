@@ -1,6 +1,6 @@
 // Shared building blocks for the vertical floors: inline editors, progress
 // bars, status/momentum chips, an energy picker, and a month-scale timeline.
-// Everything is keyboard-friendly and uses the Daylight tokens.
+// Everything is keyboard-friendly and uses the Twilight tokens.
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ENERGY_META, ENERGY_ORDER, type Energy } from "../../lib/energy";
@@ -252,7 +252,7 @@ export function StatusPill<T extends string>({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full z-50 mt-1 min-w-[110px] border border-line bg-surface py-1 shadow-lg">
+          <div className="rise elev-2 absolute left-0 top-full z-50 mt-1 min-w-[110px] rounded-md border border-line bg-surface py-1">
             {options.map((o) => (
               <button
                 key={o}

@@ -6,7 +6,7 @@ export default function UpdateToast() {
   if (state.status === "idle" || state.status === "error") return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex w-72 flex-col gap-2 border border-line bg-surface px-4 py-3 shadow-lg">
+    <div className="rise elev-3 fixed bottom-4 right-4 z-50 flex w-72 flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-3">
       {state.status === "available" && (
         <>
           <div className="flex items-center justify-between gap-2">
@@ -29,13 +29,13 @@ export default function UpdateToast() {
           <div className="flex gap-2 pt-1">
             <button
               onClick={install}
-              className="fast border border-accent bg-accent px-3 py-1 text-[11px] font-medium text-white hover:opacity-90"
+              className="fast rounded-md border border-accent bg-accent px-3 py-1 text-[11px] font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
             >
               Install &amp; Restart
             </button>
             <button
               onClick={dismiss}
-              className="fast border border-line px-3 py-1 text-[11px] font-medium text-muted hover:text-ink"
+              className="fast rounded-md border border-line px-3 py-1 text-[11px] font-medium text-muted hover:border-line-strong hover:text-ink"
             >
               Later
             </button>

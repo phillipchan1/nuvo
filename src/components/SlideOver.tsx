@@ -21,7 +21,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const inputCls =
-  "w-full border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent";
+  "w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[13px] outline-none focus:border-accent";
 
 export function TaskSlideOver({
   task,
@@ -117,7 +117,7 @@ export function TaskSlideOver({
   const labelIds = new Set((task.task_labels ?? []).map((tl) => tl.label_id));
 
   return (
-    <div className="absolute inset-y-0 right-0 z-30 flex w-[400px] flex-col border-l border-line bg-surface">
+    <div className="slide-in-right elev-2 absolute inset-y-0 right-0 z-30 flex w-[400px] flex-col border-l border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
         <div className="section-label !p-0">Task</div>
         <div className="flex items-center gap-2">
@@ -239,7 +239,7 @@ export function TaskSlideOver({
         <Field label="This week">
           <button
             onClick={() => toggleTaskSprint(task.id)}
-            className={`fast w-full border px-2 py-1.5 text-[12px] ${
+            className={`fast w-full rounded-md border px-2 py-1.5 text-[12px] ${
               inWeek
                 ? "border-signal bg-signal-soft text-signal"
                 : "border-line text-muted hover:text-ink"
@@ -251,7 +251,7 @@ export function TaskSlideOver({
 
         <Field label={`${ASSISTANT_NAME} — pre-work`}>
           {task.prework && task.prework_at ? (
-            <div className="border border-line bg-bg p-2.5">
+            <div className="rounded-md border border-line bg-surface-2 p-2.5">
               <div className="max-h-[220px] overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed">
                 {task.prework}
               </div>
@@ -280,7 +280,7 @@ export function TaskSlideOver({
               <button
                 key={p}
                 onClick={() => mutations.patchTask(task.id, { priority: p })}
-                className={`fast flex-1 border px-2 py-1 text-[12px] ${
+                className={`fast flex-1 rounded-md border px-2 py-1 text-[12px] ${
                   task.priority === p
                     ? "border-accent bg-accent-soft text-accent"
                     : "border-line text-muted hover:text-ink"
@@ -304,7 +304,7 @@ export function TaskSlideOver({
                     on ? next.delete(l.id) : next.add(l.id);
                     void mutations.setLabels(task.id, [...next]);
                   }}
-                  className="fast border px-1.5 py-0.5 text-[11px]"
+                  className="fast rounded-full border px-2 py-0.5 text-[11px]"
                   style={{
                     borderColor: on ? l.color : "var(--line)",
                     color: on ? l.color : "var(--muted)",
@@ -366,7 +366,7 @@ export function EventSlideOver({
   }, [onClose]);
 
   return (
-    <div className="absolute inset-y-0 right-0 z-30 flex w-[400px] flex-col border-l border-line bg-surface">
+    <div className="slide-in-right elev-2 absolute inset-y-0 right-0 z-30 flex w-[400px] flex-col border-l border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
         <div className="section-label !p-0">{editable ? "Google event" : "Microsoft 365 event (read-only)"}</div>
         <button onClick={onClose} className="keycap">esc</button>

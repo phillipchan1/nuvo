@@ -67,11 +67,11 @@ export default function FlowShell({
   }, [step, last, setStep, finished]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-bg">
+    <div className="scrim atmosphere fixed inset-0 z-50 flex flex-col">
       {/* the pipeline header: inputs → stages → output, all live */}
-      <header className="flex shrink-0 items-center gap-4 border-b border-line bg-surface px-5 py-2">
+      <header className="flex shrink-0 items-center gap-4 border-b border-line bg-surface px-5 py-2 elev-1">
         <div className="w-[108px] shrink-0">
-          <div className="text-[14px] font-semibold tracking-tight">{title}</div>
+          <div className="wordmark text-[14px]">{title}</div>
           <div className="mono text-[10px] text-muted">{sub}</div>
         </div>
 
@@ -112,14 +112,17 @@ export default function FlowShell({
 
       {/* the canvas: one wide track, stations side by side, slide to travel */}
       {finished ? (
-        <div className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7">
+        <div className="moment min-h-0 flex-1 overflow-y-auto px-8 py-7">
           <div className="mx-auto max-w-[1100px]">{finished}</div>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-hidden">
           <div
-            className="flex h-full transition-transform duration-300 ease-out"
-            style={{ transform: `translateX(-${step * 100}%)` }}
+            className="flex h-full"
+            style={{
+              transform: `translateX(-${step * 100}%)`,
+              transition: "transform var(--d-slow) var(--ease-out)",
+            }}
           >
             {stages.map((s) => (
               <div key={s.id} className="h-full w-full shrink-0 overflow-y-auto px-8 py-7">
@@ -183,7 +186,8 @@ function PipelineNode({
         border,
         background: active ? "var(--accent-soft)" : reached ? "var(--accent-soft)" : "transparent",
         opacity: kind === "stage" && !active && !passed ? 0.55 : 1,
-        boxShadow: active ? "0 0 0 3px var(--accent-soft)" : "none",
+        boxShadow: active ? "0 0 0 3px var(--accent-soft), 0 6px 18px -8px var(--accent-glow)" : "none",
+        transform: active ? "translateY(-1px)" : "none",
       }}
     >
       <div
@@ -202,8 +206,8 @@ function PipelineNode({
 function Arrow({ lit }: { lit: boolean }) {
   return (
     <span
-      className="self-center text-[11px]"
-      style={{ color: lit ? "var(--accent)" : "var(--line)" }}
+      className={`self-center text-[11px] ${lit ? "pulse-arrow" : ""}`}
+      style={{ color: lit ? "var(--accent)" : "var(--line)", transition: "color var(--d-base) var(--ease-out)" }}
     >
       →
     </span>

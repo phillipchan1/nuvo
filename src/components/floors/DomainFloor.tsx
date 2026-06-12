@@ -212,7 +212,7 @@ function Popover({ children, onClose }: { children: React.ReactNode; onClose: ()
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); onClose(); }} />
-      <div className="absolute left-0 top-full z-50 mt-1 rounded-md border border-line bg-surface p-2 shadow-lg" onClick={(e) => e.stopPropagation()}>
+      <div className="rise elev-2 absolute left-0 top-full z-50 mt-1 rounded-md border border-line bg-surface p-2" onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
     </>

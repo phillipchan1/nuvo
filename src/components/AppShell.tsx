@@ -136,13 +136,13 @@ function AppShellInner() {
   }, []);
 
   return (
-    <div className="flex h-full bg-bg">
+    <div className="atmosphere flex h-full">
       <Spine rung={rung} setRung={goRung} openFlow={setFlow} />
       <div className="relative min-w-0 flex-1">
         {/* Day · Week stays mounted so the calendar never loses its place. */}
         <Planner openFlow={setFlow} />
         {rung !== "day" && (
-          <div className="absolute inset-0 z-30 bg-bg">
+          <div className="atmosphere floor-enter absolute inset-0 z-30">
             <FloorPane
               rung={rung}
               focus={focus}
@@ -160,17 +160,19 @@ function AppShellInner() {
 
         {/* the weekly nudge — quiet, dismissable, once per week */}
         {sundayNudge && !flow && (
-          <div className="absolute bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-line bg-surface px-4 py-2 shadow-lg">
-            <span className="text-[12px]">A new week is here — plan it?</span>
-            <button
-              onClick={() => { setFlow("sunday"); setSundayNudge(false); }}
-              className="fast rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-white"
-            >
-              Sunday flow ▸
-            </button>
-            <button onClick={dismissSundayNudge} className="fast text-[11px] text-muted hover:text-ink">
-              not now
-            </button>
+          <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2">
+            <div className="rise elev-3 flex items-center gap-3 rounded-full border border-line bg-surface px-4 py-2">
+              <span className="text-[12px]">A new week is here — plan it?</span>
+              <button
+                onClick={() => { setFlow("sunday"); setSundayNudge(false); }}
+                className="fast rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
+              >
+                Sunday flow ▸
+              </button>
+              <button onClick={dismissSundayNudge} className="fast text-[11px] text-muted hover:text-ink">
+                not now
+              </button>
+            </div>
           </div>
         )}
       </div>
