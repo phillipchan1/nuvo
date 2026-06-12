@@ -252,7 +252,7 @@ export default function LeftRail({
             </div>
 
             {weekPool.unplaced.length === 0 && weekPool.placed.length === 0 && (
-              <EmptyState text="Nothing committed this week yet. Run the Sunday ritual (◉ begin) or ★ tasks on the floors." />
+              <EmptyState text="Nothing committed this week yet. Run the Sunday flow (◉ flows) or ★ tasks on the floors." />
             )}
 
             {groupWeekByInitiative(weekPool.unplaced, vertical).map((g) => (

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { AgentMessage } from "../lib/agentTypes";
 import type { useAgent } from "../hooks/useAgent";
+import { ASSISTANT_NAME } from "../lib/assistant";
 import { Keycap } from "./ui";
 
 const STORAGE_KEY = "nuvo-agent-open";
@@ -63,11 +64,11 @@ export default function AgentSidebar({
       <aside className="flex w-10 shrink-0 flex-col items-center border-l border-line bg-surface">
         <button
           onClick={onToggle}
-          title="Open Nuvo agent (⌘J)"
+          title={`Open ${ASSISTANT_NAME} (⌘J)`}
           className="fast flex h-full w-full flex-col items-center gap-2 py-3 text-muted hover:text-ink"
         >
           <span className="text-[11px] font-semibold tracking-tight [writing-mode:vertical-rl] rotate-180">
-            Nuvo
+            {ASSISTANT_NAME}
           </span>
         </button>
       </aside>
@@ -77,8 +78,8 @@ export default function AgentSidebar({
   return (
     <aside className="flex w-[360px] shrink-0 flex-col border-l border-line bg-surface">
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
-        <span className="text-[13px] font-semibold">Nuvo</span>
-        <span className="mono text-[10px] text-muted">agent</span>
+        <span className="text-[13px] font-semibold">{ASSISTANT_NAME}</span>
+        <span className="mono text-[10px] text-muted">your planner</span>
         <div className="flex-1" />
         {messages.length > 0 && (
           <button

@@ -13,17 +13,21 @@ import {
   initiativeProgressAt,
   sprintMinsByDomain,
   sprintTasks,
+  taskDomainColor,
   type Initiative,
   type VerticalData,
-  type VTask,
 } from "../../lib/vertical";
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO, todayISO } from "../../lib/dates";
-import { ENERGY_META, ENERGY_ORDER } from "../../lib/energy";
+import { composeWeek, fmtSlot, type ComposeResult, type Placement } from "../../lib/compose";
+import { useSettings } from "../../hooks/useSettings";
+import { useNarrator } from "../../hooks/useNarrator";
+import { useExternalEvents } from "../../hooks/useCalendar";
+import { useScheduledTasks, useSprintTasks } from "../../hooks/useTasks";
 import { SprintFunnel } from "../floors/SprintFloor";
 import { MomentumChip } from "../floors/parts";
 import { Btn } from "../ui";
 
-const STEPS = ["The Gain", "The Sweep", "The Bets", "The Pull", "The Anchor"];
+const STEPS = ["The Gain", "The Sweep", "The Bets", "The Pull", "The Compose"];
 
 export default function SundayRitual({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
@@ -71,7 +75,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
               {step === 1 && <SweepStep />}
               {step === 2 && <BetsStep />}
               {step === 3 && <SprintFunnel />}
-              {step === 4 && <AnchorStep onCommit={() => setCommitted(true)} />}
+              {step === 4 && <ComposeStep onCommit={() => setCommitted(true)} />}
             </>
           )}
         </div>
@@ -99,6 +103,23 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
 function GainStep() {
   const { data } = useVertical();
   const gain = useMemo(() => computeGain(data), [data]);
+  const narrated = useNarrator(
+    useMemo(
+      () => ({
+        window: "week" as const,
+        doneCount: gain.doneCount,
+        doneHours: Math.round((gain.doneMins / 60) * 10) / 10,
+        byDomain: gain.byDomain.map(({ domain, mins }) => ({
+          name: domain.name,
+          hours: Math.round((mins / 60) * 10) / 10,
+          targetHours: domain.weeklyTargetHours,
+        })),
+        moved: gain.moved.map(({ initiative, from, to }) => ({ name: initiative.name, from, to })),
+      }),
+      [gain],
+    ),
+  );
+  const narrator = narrated ?? gain.narrator;
 
   return (
     <div>
@@ -111,7 +132,7 @@ function GainStep() {
         <div className="text-[16px] font-medium">
           {gain.doneCount} task{gain.doneCount === 1 ? "" : "s"} done · {hrs(gain.doneMins)}h invested
         </div>
-        {gain.narrator && <div className="mt-1 text-[13px] text-muted">{gain.narrator}</div>}
+        {narrator && <div className="mt-1 text-[13px] text-muted">{narrator}</div>}
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -447,28 +468,64 @@ function BetRow({
   );
 }
 
-// ── Step 5 · The Anchor — place the rocks on days, set the goal, commit ──────
-function AnchorStep({ onCommit }: { onCommit: () => void }) {
-  const { data, planTaskFor, unplanTask, setSprintGoal, markSprintReviewed } = useVertical();
+// ── Step 5 · The Compose — boundaries in, a time-blocked week out ───────────
+function ComposeStep({ onCommit }: { onCommit: () => void }) {
+  const { data, applySchedule, setSprintGoal, markSprintReviewed } = useVertical();
+  const { settings, update: updateSettings } = useSettings();
   const [goal, setGoal] = useState(data.sprintGoal ?? "");
+  const [result, setResult] = useState<ComposeResult | null>(null);
+  const [accepted, setAccepted] = useState(false);
+  const [applying, setApplying] = useState(false);
 
-  const weekStart = parseISO(planningWeekStartISO());
+  const weekStartISO = planningWeekStartISO();
   const today = todayISO();
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
-  const committed = sprintTasks(data)
-    .filter((t) => t.status !== "done")
-    .sort(
-      (a, b) =>
-        ENERGY_ORDER.indexOf(a.energy ?? "quick") - ENERGY_ORDER.indexOf(b.energy ?? "quick") ||
-        b.durationMins - a.durationMins,
+  // the boundaries: the planning week's immovable calendar + working hours
+  const range = useMemo(() => {
+    const start = parseDateISO(weekStartISO);
+    return { start: start.toISOString(), end: addDays(start, 7).toISOString() };
+  }, [weekStartISO]);
+  const { data: events = [] } = useExternalEvents(range.start, range.end);
+  const { data: blocks = [] } = useScheduledTasks(range.start, range.end);
+  const { data: weekTasks = [] } = useSprintTasks(data.sprint?.id ?? null);
+
+  const pool = weekTasks.filter((t) => t.status !== "done" && !t.start_time);
+  const workStart = settings?.work_start_minutes ?? 480;
+  const workEnd = settings?.work_end_minutes ?? 990;
+
+  const compose = () => {
+    setResult(
+      composeWeek({
+        weekStartISO,
+        todayISO: today,
+        now: new Date(),
+        tasks: pool,
+        events,
+        blocks: blocks.filter((b) => b.status !== "done"),
+        workStartMin: workStart,
+        workEndMin: workEnd,
+        focusInitiativeIds: data.focusInitiativeIds,
+      }),
     );
+    setAccepted(false);
+  };
 
-  const minsOn = (iso: string) =>
-    committed.filter((t) => t.doDate === iso).reduce((s, t) => s + t.durationMins, 0);
-
-  const totalMins = committed.reduce((s, t) => s + t.durationMins, 0);
-  const split = sprintMinsByDomain(data);
+  const accept = async () => {
+    if (!result) return;
+    setApplying(true);
+    await applySchedule(
+      result.placements.map((p) => {
+        const [y, m, d] = p.dayISO.split("-").map(Number);
+        return {
+          id: p.task.id,
+          doDateISO: p.dayISO,
+          startISO: new Date(y, m - 1, d, Math.floor(p.startMin / 60), p.startMin % 60).toISOString(),
+        };
+      }),
+    );
+    setApplying(false);
+    setAccepted(true);
+  };
 
   const commit = () => {
     if (goal.trim() !== (data.sprintGoal ?? "")) setSprintGoal(goal.trim());
@@ -476,46 +533,120 @@ function AnchorStep({ onCommit }: { onCommit: () => void }) {
     onCommit();
   };
 
+  const toMinLabel = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const setWork = (key: "work_start_minutes" | "work_end_minutes") => (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.value) return;
+    const [h, mm] = e.target.value.split(":").map(Number);
+    updateSettings({ [key]: h * 60 + mm });
+    setResult(null); // boundaries changed — recompose
+  };
+
+  const eventCount = events.filter((e) => e.busy && !e.all_day).length;
+  const byDay = useMemo(() => {
+    const m = new Map<string, Placement[]>();
+    result?.placements.forEach((p) => {
+      if (!m.has(p.dayISO)) m.set(p.dayISO, []);
+      m.get(p.dayISO)!.push(p);
+    });
+    return m;
+  }, [result]);
+
   return (
     <div>
       <StepTitle
-        title="The Anchor"
-        sub="Place the big rocks on days — deep work first. The rest stays in the Week pool for daily pulling. Time-block on the calendar tomorrow morning."
+        title="The Compose"
+        sub="Boundaries in — your calendar, your working hours. One output: a time-blocked week. You stay high-vision; the deciding-where is done for you."
       />
 
-      {/* per-day load */}
-      <div className="mb-4 grid grid-cols-7 gap-1.5">
-        {days.map((d) => {
-          const iso = format(d, "yyyy-MM-dd");
-          const mins = minsOn(iso);
-          return (
-            <div key={iso} className="rounded-md border border-line bg-surface px-2 py-1.5 text-center">
-              <div className="mono text-[9px] text-muted">{format(d, "EEE d")}</div>
-              <div className="mono text-[11px]" style={{ color: mins > 0 ? "var(--accent)" : "var(--line)" }}>
-                {mins > 0 ? `${hrs(mins)}h` : "—"}
-              </div>
-            </div>
-          );
-        })}
+      {/* the boundaries bar */}
+      <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-line bg-surface px-4 py-3">
+        <span className="section-label">Boundaries</span>
+        <label className="mono flex items-center gap-1.5 text-[11px] text-muted">
+          working hours
+          <input type="time" step={900} value={toMinLabel(workStart)} onChange={setWork("work_start_minutes")}
+            className="border border-line bg-bg px-1.5 py-0.5 text-[11px] outline-none focus:border-accent" />
+          –
+          <input type="time" step={900} value={toMinLabel(workEnd)} onChange={setWork("work_end_minutes")}
+            className="border border-line bg-bg px-1.5 py-0.5 text-[11px] outline-none focus:border-accent" />
+        </label>
+        <span className="mono text-[11px] text-muted">{eventCount} immovable event{eventCount === 1 ? "" : "s"}</span>
+        <span className="mono text-[11px] text-muted">{pool.length} committed to place</span>
+        <div className="flex-1" />
+        <Btn kind="primary" onClick={compose}>✦ {result ? "recompose" : "compose the week"}</Btn>
       </div>
 
-      <div className="space-y-1">
-        {committed.map((t) => (
-          <AnchorRow
-            key={t.id}
-            task={t}
-            data={data}
-            days={days}
-            today={today}
-            onPlace={(iso) => (t.doDate === iso ? unplanTask(t.id) : planTaskFor(t.id, iso))}
-          />
-        ))}
-        {committed.length === 0 && (
-          <div className="rounded-md border border-dashed border-line p-8 text-center text-[12px] text-muted">
-            Nothing committed yet — go back to the Pull.
+      {!result && (
+        <div className="rounded-md border border-dashed border-line p-10 text-center text-[12px] text-muted">
+          {pool.length === 0
+            ? "Nothing left to place — everything committed is already on the calendar."
+            : "Compose proposes morning deep work, batched small tasks, breathers after long blocks, deadlines first — inside your boundaries. Nothing lands until you accept."}
+        </div>
+      )}
+
+      {result && (
+        <>
+          {/* per-day load strip */}
+          <div className="mb-4 grid grid-cols-7 gap-1.5">
+            {result.days.map((d) => (
+              <div key={d.dayISO} className="rounded-md border border-line bg-surface px-2 py-1.5 text-center">
+                <div className="mono text-[9px] text-muted">{d.label}</div>
+                <div className="mono text-[11px]" style={{ color: d.placedMins > 0 ? "var(--accent)" : "var(--line)" }}>
+                  {d.placedMins > 0 ? `${hrs(d.placedMins)}h` : "—"}
+                </div>
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+
+          <div className="space-y-4">
+            {[...byDay.entries()].map(([dayISO, ps]) => (
+              <div key={dayISO} className="rounded-md border border-line bg-surface">
+                <div className="mono border-b border-line px-3 py-1.5 text-[10px] font-medium text-muted">
+                  {format(parseDateISO(dayISO), "EEEE MMM d")}
+                </div>
+                <div className="px-3 py-1">
+                  {ps.map((p) => (
+                    <div key={p.task.id} className="group flex items-center gap-2.5 border-b border-line py-1.5 last:border-0">
+                      <span className="mono w-[104px] shrink-0 text-[10px] text-muted">{fmtSlot(p)}</span>
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: taskDomainColor(data, p.task) ?? "var(--line)" }} />
+                      <span className="min-w-0 flex-1 truncate text-[12px]">{p.task.title}</span>
+                      <span className="mono hidden shrink-0 truncate text-[9px] text-muted lg:inline" style={{ maxWidth: 240 }}>{p.reason}</span>
+                      <button
+                        onClick={() => setResult((r) => r && { ...r, placements: r.placements.filter((x) => x.task.id !== p.task.id) })}
+                        className="fast shrink-0 text-[12px] text-muted opacity-0 hover:text-signal group-hover:opacity-100"
+                        title="Leave in the week pool instead"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {result.unplaced.length > 0 && (
+            <div className="mt-4 rounded-md border border-dashed border-line px-4 py-3">
+              <div className="section-label mb-1.5">Left in the pool ({result.unplaced.length})</div>
+              {result.unplaced.map(({ task, reason }) => (
+                <div key={task.id} className="flex items-center gap-2 text-[11px] text-muted">
+                  <span className="min-w-0 truncate">{task.title}</span>
+                  <span className="mono shrink-0 text-[9px]">{reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4">
+            {accepted ? (
+              <span className="text-[12px]" style={{ color: "var(--accent)" }}>✓ {result.placements.length} blocks on the calendar — drag-tune them any time.</span>
+            ) : (
+              <Btn kind="primary" onClick={() => void accept()} disabled={applying || result.placements.length === 0}>
+                {applying ? "placing…" : `accept ${result.placements.length} blocks → calendar`}
+              </Btn>
+            )}
+          </div>
+        </>
+      )}
 
       {/* the goal + the commit */}
       <div className="mt-7 rounded-md border border-line bg-surface px-5 py-4">
@@ -526,61 +657,9 @@ function AnchorStep({ onCommit }: { onCommit: () => void }) {
           placeholder="One line — what does a good week look like?"
           className="w-full bg-transparent text-[15px] font-medium outline-none placeholder:text-muted/60"
         />
-        <div className="mono mt-2 text-[10px] text-muted">
-          {hrs(totalMins)}h committed · {committed.length} tasks · {split.length} domain{split.length === 1 ? "" : "s"} · ★ {data.focusInitiativeIds.length} lead bet{data.focusInitiativeIds.length === 1 ? "" : "s"}
-        </div>
         <div className="mt-3">
           <Btn kind="primary" onClick={commit}>Commit the week →</Btn>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function AnchorRow({
-  task,
-  data,
-  days,
-  today,
-  onPlace,
-}: {
-  task: VTask;
-  data: VerticalData;
-  days: Date[];
-  today: string;
-  onPlace: (iso: string) => void;
-}) {
-  const domain = domainById(data, task.domainId);
-  const accent = domain?.color ?? "var(--muted)";
-  return (
-    <div className="flex items-center gap-2.5 rounded-md border border-line bg-surface px-3 py-1.5">
-      <span className="shrink-0 text-[11px]" style={{ color: accent }} title={task.energy ?? ""}>
-        {task.energy ? ENERGY_META[task.energy].icon : "·"}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-[12px]">{task.title || "untitled"}</span>
-      <span className="mono shrink-0 text-[10px] text-muted">{task.durationMins}m</span>
-      <div className="flex shrink-0 gap-0.5">
-        {days.map((d) => {
-          const iso = format(d, "yyyy-MM-dd");
-          const on = task.doDate === iso;
-          const past = iso < today;
-          return (
-            <button
-              key={iso}
-              disabled={past && !on}
-              onClick={() => onPlace(iso)}
-              title={format(d, "EEE MMM d")}
-              className="fast mono h-6 w-6 rounded-sm border text-[9px] disabled:opacity-25"
-              style={{
-                borderColor: on ? accent : "var(--line)",
-                background: on ? accent : "transparent",
-                color: on ? "#fff" : "var(--muted)",
-              }}
-            >
-              {format(d, "EEEEE")}
-            </button>
-          );
-        })}
       </div>
     </div>
   );

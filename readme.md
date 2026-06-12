@@ -92,18 +92,28 @@ npm run dev             # or: npm run build → dist/ static bundle
   rolled) → **Week** (`sprints` row per week; tasks point at it via `sprint_id`) → Day
   (`do_date`, optionally a block). The Week is the only gate between the vertical and
   the calendar.
-- **Rituals** — Sunrise (morning plan, pulls from the Week pool first), Sundown (evening
-  shutdown, leads with the day's gain, can send leftovers "back to week"), **Sunday**
-  (◉ begin on the spine: Gain → Sweep → Bets → Pull → Anchor, ends with a committed
-  week + ≤3 lead initiatives), Summit (quarterly — planned).
+- **Flows** (◉ on the spine) — each one is inputs → boundaries → intelligence → one
+  output. **Sunday** (Gain → Sweep → Bets → Pull → **Compose**): the Week Composer
+  auto-blocks the committed week inside working hours and around immovable calendar
+  events (morning deep work, batched small tasks, breathers, deadlines first) — you
+  review and accept. **Summit** (quarterly: Quarter's Gain → Vows → Portfolio →
+  Months). **Blueprint** (state a bet → the assistant proposes KRs + projects +
+  ordered tasks → accept creates the subtree). Daily: Sunrise (morning plan, pulls
+  from the Week pool, surfaces prepared tasks) and Sundown (leads with the day's
+  gain, "back to week" for leftovers).
 - **One task world** — the floors (`useVertical`) read/write live Supabase rows; the
   localStorage prototype is gone. Domain invested/quarter/last-touched derive from
   completed blocks. Calendar blocks and rail rows are tinted by domain color.
-- **AI scaffolding** — "✦ scaffold with AI" on a project calls the `agent` edge function
-  (`{ scaffold: { projectId } }`), which proposes an ordered task list; accepted drafts
-  land in `backlog`. The agent proposes into quiet pools; only you promote work.
+- **Otto** (the assistant, ⌘J) — one principle everywhere: Otto proposes into quiet
+  pools; only you promote work toward the calendar. Endpoints on the `agent` edge
+  function: `{scaffold:{projectId}}` (ordered project tasks), `{blueprint:{…}}`
+  (initiative subtree), `{prepare:{taskId}}` (pre-work written to the task: approach,
+  drafts, pitfalls — ✦ badge, surfaced at Sunrise, boosted in Now),
+  `{narrate:{…}}` (one gain-framed sentence over the measured deltas).
+- **Working hours** are a compose boundary in `user_settings`
+  (`work_start_minutes`/`work_end_minutes`), editable inside the Sunday flow.
 
-After pulling: `supabase db push` (applies `00000000000004_flows.sql`) and
+After pulling: `supabase db push` (applies migrations 04 + 05) and
 `supabase functions deploy agent`.
 
 ## Behavior notes
@@ -125,7 +135,7 @@ After pulling: `supabase db push` (applies `00000000000004_flows.sql`) and
 
 ## Keyboard
 
-`⌘K` capture/command bar · `⌘J` Nuvo agent · `C` focus capture · `1/2` inbox/today · `↑↓/jk` navigate ·
+`⌘K` capture/command bar · `⌘J` Otto · `C` focus capture · `1/2/3` inbox/week/today · `↑↓/jk` navigate ·
 `Enter` open · `E` today · `T` tomorrow · `W` next week · `S` pick date/time ·
 `D` done · `X` trash · `#` labels · `Esc` close
 

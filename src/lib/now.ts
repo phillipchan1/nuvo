@@ -104,6 +104,12 @@ export function rankNow(data: VerticalData, ctx: NowContext): Suggestion[] {
       reasons.push({ glyph: "★", text: "committed this week" });
     }
 
+    // The assistant already did the prep — lowest possible friction.
+    if (task.preworkReady) {
+      score += 2;
+      reasons.push({ glyph: "✦", text: "prework is ready — just start" });
+    }
+
     // Initiative momentum — keep the moving things moving.
     if (initiative && initiative.momentum === "up") {
       score += 1;

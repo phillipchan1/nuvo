@@ -27,6 +27,8 @@ export interface Task {
   sprint_id: string | null;
   energy: Energy | null;
   assignee: "me" | "agent";
+  prework: string;
+  prework_at: string | null;
   google_event_id: string | null;
   sort_order: number;
   task_labels?: { label_id: string }[];
@@ -98,6 +100,8 @@ export interface UserSettings {
   day_start_hour: number;
   day_end_hour: number;
   week_start: number;
+  work_start_minutes: number; // compose boundary: blocks proposed inside these
+  work_end_minutes: number;
   hidden_calendar_ids: string[];
   last_rollover_date: string | null;
 }

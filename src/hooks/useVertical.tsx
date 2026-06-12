@@ -83,6 +83,25 @@ export interface VerticalStore {
   setSprintGoal: (goal: string) => void;
   setFocusInitiatives: (ids: string[]) => void;
   markSprintReviewed: () => void;
+
+  /** The Composer's accept: write the proposed blocks in one pass. */
+  applySchedule: (placements: { id: string; doDateISO: string; startISO: string }[]) => Promise<void>;
+  /** The Blueprint's accept: create a whole initiative subtree (KRs,
+   *  projects, ordered backlog tasks) and return the initiative id. */
+  addInitiativeTree: (domainId: string, tree: BlueprintTree) => Promise<string>;
+}
+
+export interface BlueprintTree {
+  name: string;
+  outcome: string;
+  description?: string;
+  targetDate?: string | null;
+  keyResults: { name: string; baseline: number; target: number; unit: string }[];
+  projects: {
+    name: string;
+    outcome: string;
+    tasks: { title: string; energy: VTask["energy"]; durationMins: number }[];
+  }[];
 }
 
 const Ctx = createContext<VerticalStore | null>(null);
@@ -524,6 +543,65 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       setSprintGoal: (goal) => void patchSprint({ goal }),
       setFocusInitiatives: (ids) => void patchSprint({ focus_initiative_ids: ids }),
       markSprintReviewed: () => void patchSprint({ reviewed_at: new Date().toISOString() }),
+
+      applySchedule: async (placements) => {
+        for (const p of placements) {
+          const { error } = await supabase
+            .from("tasks")
+            .update({ status: "planned", do_date: p.doDateISO, start_time: p.startISO })
+            .eq("id", p.id);
+          if (error) console.error("[compose] apply failed", error);
+          else invokeQuiet("task-mirror", { taskId: p.id });
+        }
+        invalidate(["tasks"]);
+      },
+
+      addInitiativeTree: async (domainId, tree) => {
+        const uid = await userId();
+        const { data: init, error } = await supabase
+          .from("initiatives")
+          .insert({
+            user_id: uid, domain_id: domainId, name: tree.name,
+            outcome: tree.outcome, description: tree.description ?? "",
+            target_date: tree.targetDate ?? null,
+          })
+          .select("id")
+          .single();
+        if (error) throw error;
+
+        if (tree.keyResults.length) {
+          await supabase.from("key_results").insert(
+            tree.keyResults.map((k, i) => ({
+              user_id: uid, initiative_id: init.id, name: k.name,
+              baseline_value: k.baseline, current_value: k.baseline,
+              target_value: k.target, unit: k.unit, sort_order: i,
+            })),
+          );
+        }
+        for (const [pi, p] of tree.projects.entries()) {
+          const { data: proj, error: pErr } = await supabase
+            .from("projects")
+            .insert({
+              user_id: uid, domain_id: domainId, initiative_id: init.id,
+              name: p.name, outcome: p.outcome, status: "planned", sort_order: pi,
+            })
+            .select("id")
+            .single();
+          if (pErr) throw pErr;
+          if (p.tasks.length) {
+            await supabase.from("tasks").insert(
+              p.tasks.map((t, ti) => ({
+                user_id: uid, title: t.title, status: "backlog",
+                project_id: proj.id, initiative_id: init.id, domain_id: domainId,
+                energy: t.energy, duration_minutes: t.durationMins,
+                sort_order: ti,
+              })),
+            );
+          }
+        }
+        invalidate(["vertical"], ["tasks"]);
+        return init.id as string;
+      },
     };
   }, [data, ready, qc, weekStart, domainsQ.data, tasksQ.data]);
 

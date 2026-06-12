@@ -15,6 +15,7 @@ import {
   tasksOf,
 } from "../../lib/vertical";
 import { ENERGY_META, type Energy } from "../../lib/energy";
+import { ASSISTANT_NAME } from "../../lib/assistant";
 import type { Focus } from "../AppShell";
 import {
   Bar,
@@ -236,7 +237,7 @@ export default function ProjectFloor({
 
       <div className="mt-6 flex items-center gap-2">
         <Btn kind="signal" onClick={() => void scaffold()} disabled={scaffolding}>
-          {scaffolding ? "✦ thinking…" : "✦ scaffold with AI"}
+          {scaffolding ? "✦ thinking…" : `✦ scaffold with ${ASSISTANT_NAME}`}
         </Btn>
         <Btn onClick={() => { addProjectReadyToSprint(project.id); setNote("Committed this project's open tasks to the week — they're in the Week rail now."); }}>
           ★ commit to week{inSprint > 0 ? ` (${inSprint} in)` : ""}

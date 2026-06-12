@@ -8,9 +8,11 @@ import {
 import { VerticalProvider, useVertical } from "../hooks/useVertical";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import Planner from "./Planner";
-import Spine from "./Spine";
+import Spine, { type FlowName } from "./Spine";
 import FloorPane, { type DetailView, type ProjectView } from "./FloorPane";
 import SundayRitual from "./rituals/SundayRitual";
+import SummitRitual from "./rituals/SummitRitual";
+import BlueprintFlow from "./rituals/BlueprintFlow";
 
 export type Rung = "now" | "day" | "project" | "initiative" | "domain";
 export interface Focus {
@@ -38,7 +40,7 @@ function AppShellInner() {
   const [projectView, setProjectView] = useState<ProjectView>("portfolio");
   const [initiativeView, setInitiativeView] = useState<DetailView>("portfolio");
   const [focus, setFocus] = useState<Focus>({ domainId: "", initiativeId: "", projectId: "" });
-  const [sundayOpen, setSundayOpen] = useState(false);
+  const [flow, setFlow] = useState<FlowName | null>(null);
   const [sundayNudge, setSundayNudge] = useState(false);
 
   // Entering a board rung from the spine/keyboard lands on the board, not a
@@ -135,10 +137,10 @@ function AppShellInner() {
 
   return (
     <div className="flex h-full bg-bg">
-      <Spine rung={rung} setRung={goRung} onBegin={() => setSundayOpen(true)} />
+      <Spine rung={rung} setRung={goRung} openFlow={setFlow} />
       <div className="relative min-w-0 flex-1">
         {/* Day · Week stays mounted so the calendar never loses its place. */}
-        <Planner openSunday={() => setSundayOpen(true)} />
+        <Planner openFlow={setFlow} />
         {rung !== "day" && (
           <div className="absolute inset-0 z-30 bg-bg">
             <FloorPane
@@ -157,14 +159,14 @@ function AppShellInner() {
         )}
 
         {/* the weekly nudge — quiet, dismissable, once per week */}
-        {sundayNudge && !sundayOpen && (
+        {sundayNudge && !flow && (
           <div className="absolute bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-line bg-surface px-4 py-2 shadow-lg">
             <span className="text-[12px]">A new week is here — plan it?</span>
             <button
-              onClick={() => { setSundayOpen(true); setSundayNudge(false); }}
+              onClick={() => { setFlow("sunday"); setSundayNudge(false); }}
               className="fast rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-white"
             >
-              Sunday ritual ▸
+              Sunday flow ▸
             </button>
             <button onClick={dismissSundayNudge} className="fast text-[11px] text-muted hover:text-ink">
               not now
@@ -173,7 +175,16 @@ function AppShellInner() {
         )}
       </div>
 
-      {sundayOpen && <SundayRitual onClose={() => { setSundayOpen(false); setSundayNudge(false); }} />}
+      {flow === "sunday" && <SundayRitual onClose={() => { setFlow(null); setSundayNudge(false); }} />}
+      {flow === "summit" && (
+        <SummitRitual onClose={() => setFlow(null)} onOpenBlueprint={() => setFlow("blueprint")} />
+      )}
+      {flow === "blueprint" && (
+        <BlueprintFlow
+          onClose={() => setFlow(null)}
+          onCreated={(id) => { setFlow(null); openInitiative(id); }}
+        />
+      )}
     </div>
   );
 }

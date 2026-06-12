@@ -12,6 +12,7 @@ type Mutations = ReturnType<typeof useTaskMutations>;
 export function MorningPlan({
   inbox,
   weekPool,
+  prepared,
   todayCount,
   mutations,
   onClose,
@@ -19,6 +20,8 @@ export function MorningPlan({
   inbox: Task[];
   /** Committed-this-week tasks not yet placed on a day. */
   weekPool: Task[];
+  /** Open tasks the assistant prepared overnight (prework waiting). */
+  prepared: Task[];
   todayCount: number;
   mutations: Mutations;
   onClose: () => void;
@@ -37,6 +40,18 @@ export function MorningPlan({
           Inbox {startCount} → {inbox.length}
         </div>
       </div>
+
+      {/* what came back prepared — the lowest-friction starts of the day */}
+      {prepared.length > 0 && (
+        <div className="border-b border-line px-4 py-2.5">
+          <div className="text-[11px]" style={{ color: "var(--accent)" }}>
+            ✦ {prepared.length} task{prepared.length === 1 ? "" : "s"} came back prepared:
+          </div>
+          <div className="mono mt-0.5 truncate text-[11px] text-muted">
+            {prepared.map((t) => t.title).join(" · ")}
+          </div>
+        </div>
+      )}
 
       {/* the week pool first — you already decided this matters */}
       {weekPool.length > 0 && (

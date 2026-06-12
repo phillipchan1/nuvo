@@ -9,6 +9,7 @@ import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
 import { taskDomainColor } from "../lib/vertical";
 import LeftRail, { type RailTab } from "./LeftRail";
+import type { FlowName } from "./Spine";
 import CalendarPane, { type CalView } from "./CalendarPane";
 import CommandBar, { type Command } from "./CommandBar";
 import { EventSlideOver, TaskSlideOver } from "./SlideOver";
@@ -19,7 +20,7 @@ import AgentSidebar, { readAgentOpen, writeAgentOpen } from "./AgentSidebar";
 import { useAgent } from "../hooks/useAgent";
 import { Keycap } from "./ui";
 
-export default function Planner({ openSunday }: { openSunday: () => void }) {
+export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void }) {
   const railRef = useRef<HTMLDivElement | null>(null);
 
   const [tab, setTab] = useState<RailTab>("today");
@@ -138,7 +139,9 @@ export default function Planner({ openSunday }: { openSunday: () => void }) {
     { id: "today", title: "Go to today", run: () => setTab("today") },
     { id: "week", title: "Go to this week", run: () => setTab("week") },
     { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
-    { id: "sunday", title: "Plan the week (Sunday ritual)", run: openSunday },
+    { id: "sunday", title: "Sunday — compose the week", run: () => openFlow("sunday") },
+    { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
+    { id: "blueprint", title: "Blueprint — shape a new bet", run: () => openFlow("blueprint") },
     { id: "plan", title: "Plan my day (morning ritual)", run: () => setShowMorning(true) },
     { id: "shutdown", title: "Evening shutdown", run: () => setShowEvening(true) },
     { id: "view-day", title: "Calendar: day view", run: () => setView("timeGridDay") },
@@ -284,6 +287,7 @@ export default function Planner({ openSunday }: { openSunday: () => void }) {
         <MorningPlan
           inbox={inbox}
           weekPool={weekTasks.filter((t) => t.status !== "done" && !t.do_date)}
+          prepared={allTasksArray.filter((t) => t.status !== "done" && t.prework_at && t.prework)}
           todayCount={todayTasks.filter((t) => t.status !== "done").length}
           mutations={mutations}
           onClose={() => setShowMorning(false)}

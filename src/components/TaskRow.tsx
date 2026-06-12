@@ -94,6 +94,12 @@ export default function TaskRow({
         </span>
       ))}
 
+      {task.prework_at && task.prework && !done && (
+        <span className="mono shrink-0 text-[10px] text-accent" title="Prework ready — open the task">
+          ✦
+        </span>
+      )}
+
       <RollBadge count={task.roll_count} />
 
       {overdue && (

@@ -87,6 +87,8 @@ export interface VTask {
   doDate: string | null;
   completedAt: string | null;
   assignee: "me" | "agent";
+  /** The assistant prepared this one — prework is waiting in the task. */
+  preworkReady?: boolean;
 }
 
 export interface VerticalData {
@@ -177,6 +179,7 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
     doDate: t.do_date,
     completedAt: t.completed_at,
     assignee: t.assignee ?? "me",
+    preworkReady: Boolean(t.prework_at && t.prework),
   };
 }
 

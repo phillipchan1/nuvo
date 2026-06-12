@@ -3,9 +3,12 @@ import { format } from "date-fns";
 import type { ExternalEvent, Label, Task } from "../lib/types";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
+import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, projectById } from "../lib/vertical";
 import { fmtDuration } from "../lib/dates";
+import { ASSISTANT_NAME } from "../lib/assistant";
+import { supabase } from "../lib/supabase";
 import { Btn, RollBadge } from "./ui";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -33,7 +36,27 @@ export function TaskSlideOver({
 }) {
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes);
+  const [preparing, setPreparing] = useState(false);
+  const [prepError, setPrepError] = useState<string | null>(null);
+  const qc = useQueryClient();
   const { data: vertical, toggleTaskSprint } = useVertical();
+
+  // delegation: the assistant does the pre-work, execution stays yours
+  const prepare = async () => {
+    setPreparing(true);
+    setPrepError(null);
+    try {
+      const { error } = await supabase.functions.invoke("agent", {
+        body: { prepare: { taskId: task.id } },
+      });
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    } catch (e) {
+      setPrepError(e instanceof Error ? e.message : "prepare failed");
+    } finally {
+      setPreparing(false);
+    }
+  };
   useEffect(() => {
     setTitle(task.title);
     setNotes(task.notes);
@@ -224,6 +247,31 @@ export function TaskSlideOver({
           >
             {inWeek ? "★ committed to this week — click to release" : "☆ commit to this week"}
           </button>
+        </Field>
+
+        <Field label={`${ASSISTANT_NAME} — pre-work`}>
+          {task.prework && task.prework_at ? (
+            <div className="border border-line bg-bg p-2.5">
+              <div className="max-h-[220px] overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed">
+                {task.prework}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Btn onClick={() => void prepare()} disabled={preparing}>
+                  {preparing ? "✦ preparing…" : "✦ redo"}
+                </Btn>
+                <Btn onClick={() => mutations.patchTask(task.id, { prework: "", prework_at: null })}>
+                  clear
+                </Btn>
+              </div>
+            </div>
+          ) : (
+            <Btn onClick={() => void prepare()} disabled={preparing} className="w-full">
+              {preparing
+                ? "✦ preparing — approach, drafts, pitfalls…"
+                : `✦ delegate the prep to ${ASSISTANT_NAME}`}
+            </Btn>
+          )}
+          {prepError && <div className="mt-1 text-[11px] text-signal">{prepError}</div>}
         </Field>
 
         <Field label="Priority">

@@ -10,6 +10,8 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   day_start_hour: 6,
   day_end_hour: 24,
   week_start: 1,
+  work_start_minutes: 480,
+  work_end_minutes: 990,
   hidden_calendar_ids: [],
   last_rollover_date: null,
 };

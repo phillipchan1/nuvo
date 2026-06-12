@@ -1,6 +1,9 @@
 import { handleOptions, json, requireUser } from "../_shared/admin.ts";
 import { buildContext, contextToPrompt } from "./context.ts";
 import { scaffoldProject } from "./scaffold.ts";
+import { blueprintInitiative } from "./blueprint.ts";
+import { prepareTask } from "./prepare.ts";
+import { narrate } from "./narrate.ts";
 import { executeTool, TOOL_DEFINITIONS, type AgentAction } from "./tools.ts";
 
 const MAX_ROUNDS = 5;
@@ -20,7 +23,7 @@ interface OpenAIToolCall {
 }
 
 function systemPrompt(ctxJson: string, today: string): string {
-  return `You are Nuvo, a personal planning assistant embedded in a daily-driver app.
+  return `You are Otto, the personal planning assistant embedded in Nuvo, a daily-driver app.
 Today is ${today} (America/Los_Angeles).
 
 App model:
@@ -70,10 +73,19 @@ Deno.serve(async (req) => {
     const user = await requireUser(req);
     const body = await req.json();
 
-    // Scaffold mode: propose an ordered task list for a project. Proposal
-    // only — the client writes accepted tasks as backlog rows itself.
+    // One-shot intelligence endpoints. All of them propose; only `prepare`
+    // writes (to the task's own prework field — never to the plan).
     if (body.scaffold?.projectId) {
       return json(await scaffoldProject(user.id, String(body.scaffold.projectId)));
+    }
+    if (body.blueprint) {
+      return json(await blueprintInitiative(user.id, body.blueprint));
+    }
+    if (body.prepare?.taskId) {
+      return json(await prepareTask(user.id, String(body.prepare.taskId)));
+    }
+    if (body.narrate) {
+      return json(await narrate(body.narrate));
     }
 
     const { messages, rangeStart, rangeEnd } = body as {
