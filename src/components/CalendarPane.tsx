@@ -120,12 +120,13 @@ export default function CalendarPane({
           editable: isGoogle,
           durationEditable: isGoogle,
           classNames: [isGoogle ? "evt-google" : "evt-m365"],
-          // Google events: calendar's own color at reduced saturation
           backgroundColor: isGoogle
-            ? `color-mix(in srgb, ${calColor} 22%, var(--surface))`
+            ? `color-mix(in srgb, ${calColor} 10%, var(--surface))`
             : "transparent",
-          borderColor: isGoogle ? `color-mix(in srgb, ${calColor} 55%, var(--surface))` : undefined,
-          extendedProps: { kind: isGoogle ? ("google" as const) : ("m365" as const), refId: e.id },
+          borderColor: isGoogle
+            ? `color-mix(in srgb, ${calColor} 30%, var(--line))`
+            : undefined,
+          extendedProps: { kind: isGoogle ? ("google" as const) : ("m365" as const), refId: e.id, calColor },
         };
       });
 
@@ -208,12 +209,29 @@ export default function CalendarPane({
   };
 
   const renderEvent = (arg: EventContentArg) => {
-    const { kind, refId } = arg.event.extendedProps as { kind: string; refId: string };
+    const { kind, refId, calColor } = arg.event.extendedProps as {
+      kind: string;
+      refId: string;
+      calColor?: string;
+    };
     if (kind !== "task") {
+      const startMs = arg.event.start?.getTime() ?? 0;
+      const endMs = arg.event.end?.getTime() ?? startMs + 3_600_000;
+      const showTime = (endMs - startMs) / 60_000 > 29;
       return (
-        <div className="flex h-full min-w-0 flex-col overflow-hidden">
-          <div className="truncate text-[11px] font-medium">{arg.event.title}</div>
-          <div className="mono text-[10px] opacity-70">{arg.timeText}</div>
+        <div className="flex h-full min-w-0 overflow-hidden">
+          {calColor && (
+            <div
+              className="w-[3px] shrink-0 self-stretch rounded-l-[3px]"
+              style={{ backgroundColor: calColor, opacity: kind === "m365" ? 0.5 : 1 }}
+            />
+          )}
+          <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden px-1.5 py-px">
+            <div className="truncate text-[11px] font-semibold leading-snug">{arg.event.title}</div>
+            {showTime && (
+              <div className="mono truncate text-[9.5px] leading-tight opacity-55">{arg.timeText}</div>
+            )}
+          </div>
         </div>
       );
     }

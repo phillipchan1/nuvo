@@ -392,11 +392,15 @@ textarea:focus {
   background: var(--signal-soft);
 }
 
-/* Google events: calendar's own color at reduced saturation (set inline),
-   here we just normalize text */
+/* Google events: calendar color as left bar (set inline via custom render) */
 .fc-event.evt-google {
   color: var(--text);
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
+}
+.fc-event.evt-google .fc-event-main,
+.fc-event.evt-m365 .fc-event-main {
+  padding: 0;
+  overflow: hidden;
 }
 
 /* M365: striped muted fill, dashed border, display-only */
