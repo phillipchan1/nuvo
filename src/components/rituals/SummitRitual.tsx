@@ -22,9 +22,9 @@ import {
   Timeline,
   type TimelineItem,
 } from "../floors/parts";
+import FlowShell, { type FlowStage } from "./FlowShell";
 import { Btn } from "../ui";
 
-const STEPS = ["The Quarter's Gain", "The Vows", "The Portfolio", "The Months"];
 const QUARTER_KEY = () => {
   const d = new Date();
   return `nuvo-summit-${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
@@ -37,6 +37,7 @@ export default function SummitRitual({
   onClose: () => void;
   onOpenBlueprint: () => void;
 }) {
+  const { data } = useVertical();
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
 
@@ -45,68 +46,72 @@ export default function SummitRitual({
     setDone(true);
   };
 
+  // header pipeline: live outputs along the canvas
+  const gain = useMemo(() => quarterGain(data), [data]);
+  const active = data.initiatives.filter((i) => i.status === "active");
+  const paused = data.initiatives.filter((i) => i.status === "paused");
+  const dated = active.filter((i) => i.startDate || i.targetDate);
+  const targetSum = Math.round(data.domains.reduce((s, d) => s + d.weeklyTargetHours, 0));
+
+  const stages: FlowStage[] = [
+    {
+      id: "gain",
+      label: "Quarter's Gain",
+      value: `${hrs(gain.doneMins)}h · ${gain.shipped.length} shipped`,
+      body: <QuarterGainStep />,
+    },
+    {
+      id: "vows",
+      label: "The Vows",
+      value: `${data.domains.length} vows · ${targetSum}h/wk`,
+      body: <VowsStep />,
+    },
+    {
+      id: "portfolio",
+      label: "The Portfolio",
+      value: `${active.length} live · ${paused.length} paused`,
+      body: <PortfolioStep onOpenBlueprint={onOpenBlueprint} />,
+    },
+    {
+      id: "months",
+      label: "The Months",
+      value: `${dated.length}/${active.length} dated`,
+      body: <MonthsStep />,
+    },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-bg">
-      <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
-        <span className="text-[14px] font-semibold tracking-tight">Summit</span>
-        <span className="mono text-[11px] text-muted">the quarter, decided</span>
-        <div className="flex flex-1 items-center justify-center gap-5">
-          {STEPS.map((s, i) => (
-            <button key={s} onClick={() => !done && setStep(i)} className="flex items-center gap-1.5">
-              <span
-                className="fast h-2 w-2 rounded-full"
-                style={{
-                  background: i <= step || done ? "var(--accent)" : "var(--line)",
-                  opacity: i === step && !done ? 1 : 0.45,
-                  boxShadow: i === step && !done ? "0 0 0 3px var(--accent-soft)" : "none",
-                }}
-              />
-              <span className="mono hidden text-[10px] md:inline" style={{ color: i === step && !done ? "var(--text)" : "var(--muted)" }}>
-                {s}
-              </span>
-            </button>
-          ))}
-        </div>
-        <button onClick={onClose} className="keycap">esc — resumes later</button>
-      </header>
-
-      <div className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7" key={done ? "done" : step}>
-        <div className="mx-auto max-w-[1100px]">
-          {done ? (
-            <div className="flex min-h-[50vh] items-center justify-center">
-              <div className="max-w-[460px] text-center">
-                <div className="text-[22px] font-semibold tracking-tight">The quarter is shaped.</div>
-                <div className="mt-2 text-[13px] text-muted">
-                  Vows re-affirmed, bets decided, months rough-cut. The Sunday flow takes it from here, week by week.
-                </div>
-                <div className="mt-6"><Btn kind="primary" onClick={onClose}>Back to the week</Btn></div>
+    <FlowShell
+      title="Summit"
+      sub="the quarter, decided"
+      inputs={{ label: "the season", value: `90 days · ${data.domains.length} domains` }}
+      output={{
+        label: "the quarter",
+        value: done ? `${active.length} bets sealed` : `${active.length} bets in play`,
+        reached: done,
+      }}
+      stages={stages}
+      step={step}
+      setStep={setStep}
+      finished={
+        done ? (
+          <div className="flex min-h-[50vh] items-center justify-center">
+            <div className="max-w-[460px] text-center">
+              <div className="text-[22px] font-semibold tracking-tight">The quarter is shaped.</div>
+              <div className="mt-2 text-[13px] text-muted">
+                Vows re-affirmed, bets decided, months rough-cut. The Sunday flow takes it from here, week by week.
               </div>
+              <div className="mt-6"><Btn kind="primary" onClick={onClose}>Back to the week</Btn></div>
             </div>
-          ) : (
-            <>
-              {step === 0 && <QuarterGainStep />}
-              {step === 1 && <VowsStep />}
-              {step === 2 && <PortfolioStep onOpenBlueprint={onOpenBlueprint} />}
-              {step === 3 && <MonthsStep />}
-            </>
-          )}
-        </div>
-      </div>
-
-      {!done && (
-        <footer className="flex h-12 shrink-0 items-center justify-between border-t border-line bg-surface px-5">
-          <Btn onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0}>‹ back</Btn>
-          <span className="mono text-[10px] text-muted">{step + 1} / {STEPS.length} · {STEPS[step]}</span>
-          {step < STEPS.length - 1 ? (
-            <Btn kind="primary" onClick={() => setStep((s) => s + 1)}>next ›</Btn>
-          ) : (
-            <Btn kind="primary" onClick={finish}>Seal the quarter →</Btn>
-          )}
-        </footer>
-      )}
-    </div>
+          </div>
+        ) : undefined
+      }
+      lastCta={{ label: "Seal the quarter →", onClick: finish }}
+      onClose={onClose}
+    />
   );
 }
+
 
 // ── 1 · The Quarter's Gain ───────────────────────────────────────────────────
 function quarterGain(data: VerticalData) {

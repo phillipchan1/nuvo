@@ -11,6 +11,7 @@ import {
   inboxTasks,
   initiativeProgress,
   initiativeProgressAt,
+  sprintLoadMins,
   sprintMinsByDomain,
   sprintTasks,
   taskDomainColor,
@@ -26,84 +27,110 @@ import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks, useSprintTasks } from "../../hooks/useTasks";
 import { SprintFunnel } from "../floors/SprintFloor";
 import { MomentumChip } from "../floors/parts";
+import FlowShell, { type FlowStage } from "./FlowShell";
 import { Btn } from "../ui";
 
-const STEPS = ["The Gain", "The Sweep", "The Bets", "The Pull", "The Compose"];
+const CONTEXT_CYCLE_GLYPHS: Record<string, string> = { light: "◐", travel: "✈", off: "—" };
+
+const fmtHM = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
 
 export default function SundayRitual({ onClose }: { onClose: () => void }) {
+  const { data } = useVertical();
+  const { settings } = useSettings();
   const [step, setStep] = useState(0);
   const [committed, setCommitted] = useState(false);
 
+  const weekStartISO = planningWeekStartISO();
+
+  // header pipeline reads — same query keys as the Compose station, so the
+  // cache is shared and the canvas preloads the whole flow on open
+  const range = useMemo(() => {
+    const start = parseDateISO(weekStartISO);
+    return { start: start.toISOString(), end: addDays(start, 7).toISOString() };
+  }, [weekStartISO]);
+  const { data: events = [] } = useExternalEvents(range.start, range.end);
+  const { data: blocks = [] } = useScheduledTasks(range.start, range.end);
+  const { data: weekTasks = [] } = useSprintTasks(data.sprint?.id ?? null);
+
+  const gain = useMemo(() => computeGain(data), [data]);
+  const inboxCount = inboxTasks(data).length;
+  const loadMins = sprintLoadMins(data);
+  const pool = weekTasks.filter((t) => t.status !== "done" && !t.start_time);
+  const onCal = blocks.filter((b) => b.status !== "done");
+  const onCalMins = onCal.reduce((s, b) => s + (b.duration_minutes ?? 30), 0);
+  const eventCount = events.filter((e) => e.busy && !e.all_day).length;
+  const workStart = settings?.work_start_minutes ?? 480;
+  const workEnd = settings?.work_end_minutes ?? 990;
+  const weekEndISO = format(addDays(parseDateISO(weekStartISO), 7), "yyyy-MM-dd");
+  const shapedDays = Object.entries(data.sprint?.day_contexts ?? {})
+    .filter(([iso, c]) => iso >= weekStartISO && iso < weekEndISO && c !== "normal")
+    .map(([, c]) => CONTEXT_CYCLE_GLYPHS[c] ?? "")
+    .join("");
+
+  const stages: FlowStage[] = [
+    {
+      id: "gain",
+      label: "The Gain",
+      value: `${gain.doneCount} done · ${hrs(gain.doneMins)}h`,
+      body: <GainStep gain={gain} />,
+    },
+    {
+      id: "sweep",
+      label: "The Sweep",
+      value: inboxCount === 0 ? "inbox zero ✓" : `${inboxCount} to route`,
+      body: <SweepStep />,
+    },
+    {
+      id: "bets",
+      label: "The Bets",
+      value: `★ ${data.focusInitiativeIds.length}/3 leads`,
+      body: <BetsStep />,
+    },
+    {
+      id: "pull",
+      label: "The Pull",
+      value: loadMins > 0 ? `${hrs(loadMins)}h committed` : "nothing pulled",
+      body: (
+        <div>
+          <StepTitle title="The Pull" sub="Fill the week from the sources — capacity and domain balance keep you honest." />
+          <SprintFunnel />
+        </div>
+      ),
+    },
+    {
+      id: "compose",
+      label: "The Compose",
+      value: pool.length === 0 && loadMins > 0 ? "all placed ✓" : `${pool.length} to place`,
+      body: <ComposeStep onCommit={() => setCommitted(true)} />,
+    },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-bg">
-      {/* header: title + stepper + leave */}
-      <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
-        <span className="text-[14px] font-semibold tracking-tight">Sunday</span>
-        <span className="mono text-[11px] text-muted">
-          week of {format(parseISO(planningWeekStartISO()), "MMM d")}
-        </span>
-        <div className="flex flex-1 items-center justify-center gap-5">
-          {STEPS.map((s, i) => (
-            <button key={s} onClick={() => !committed && setStep(i)} className="flex items-center gap-1.5">
-              <span
-                className="fast h-2 w-2 rounded-full"
-                style={{
-                  background: i === step && !committed ? "var(--accent)" : i < step || committed ? "var(--accent)" : "var(--line)",
-                  opacity: i === step && !committed ? 1 : i < step || committed ? 0.45 : 1,
-                  boxShadow: i === step && !committed ? "0 0 0 3px var(--accent-soft)" : "none",
-                }}
-              />
-              <span
-                className="mono hidden text-[10px] md:inline"
-                style={{ color: i === step && !committed ? "var(--text)" : "var(--muted)" }}
-              >
-                {s}
-              </span>
-            </button>
-          ))}
-        </div>
-        <button onClick={onClose} className="keycap">esc — resumes later</button>
-      </header>
-
-      {/* body */}
-      <div className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7" key={committed ? "done" : step}>
-        <div className="mx-auto max-w-[1100px]">
-          {committed ? (
-            <DoneState onClose={onClose} />
-          ) : (
-            <>
-              {step === 0 && <GainStep />}
-              {step === 1 && <SweepStep />}
-              {step === 2 && <BetsStep />}
-              {step === 3 && <SprintFunnel />}
-              {step === 4 && <ComposeStep onCommit={() => setCommitted(true)} />}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* footer nav */}
-      {!committed && (
-        <footer className="flex h-12 shrink-0 items-center justify-between border-t border-line bg-surface px-5">
-          <Btn onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0}>
-            ‹ back
-          </Btn>
-          <span className="mono text-[10px] text-muted">{step + 1} / {STEPS.length} · {STEPS[step]}</span>
-          {step < STEPS.length - 1 ? (
-            <Btn kind="primary" onClick={() => setStep((s) => s + 1)}>next ›</Btn>
-          ) : (
-            <span className="mono text-[10px] text-muted">commit above ↑</span>
-          )}
-        </footer>
-      )}
-    </div>
+    <FlowShell
+      title="Sunday"
+      sub={`wk of ${format(parseISO(weekStartISO), "MMM d")}`}
+      inputs={{
+        label: "boundaries",
+        value: `${eventCount} ev · ${fmtHM(workStart)}–${fmtHM(workEnd)}${shapedDays ? ` · ${shapedDays}` : ""}`,
+      }}
+      output={{
+        label: "the week",
+        value: onCal.length > 0 ? `${onCal.length} blocks · ${hrs(onCalMins)}h` : "awaiting compose",
+        reached: onCal.length > 0,
+      }}
+      stages={stages}
+      step={step}
+      setStep={setStep}
+      finished={committed ? <DoneState onClose={onClose} /> : undefined}
+      lastHint="commit above ↑"
+      onClose={onClose}
+    />
   );
 }
 
 // ── Step 1 · The Gain — the last 7 days, measured from where you started ────
-function GainStep() {
+function GainStep({ gain }: { gain: ReturnType<typeof computeGain> }) {
   const { data } = useVertical();
-  const gain = useMemo(() => computeGain(data), [data]);
   const narrated = useNarrator(
     useMemo(
       () => ({
