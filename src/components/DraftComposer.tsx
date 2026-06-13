@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { format } from "date-fns";
-import { fmtDuration, toDateISO } from "../lib/dates";
-import type { RecurrenceRule } from "../lib/recurrence";
+import { addDays, format } from "date-fns";
+import { fmtDuration, parseDateISO, toDateISO } from "../lib/dates";
+import { expandRule, type RecurrenceRule } from "../lib/recurrence";
 import { RepeatControl } from "./RecurrencePicker";
 
 export type CreateKind = "task" | "event" | "slot";
@@ -75,6 +75,15 @@ export default function DraftComposer({
 
   const durationMins = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
 
+  // If the chosen repeat skips the day you drew on (e.g. "every weekday" on a
+  // weekend), the first real occurrence lands later — say so up front.
+  const anchorISO = toDateISO(start);
+  const firstOccurrence =
+    repeat && kind !== "event"
+      ? expandRule(repeat, anchorISO, anchorISO, toDateISO(addDays(parseDateISO(anchorISO), 366)))[0]
+      : null;
+  const startsLater = firstOccurrence && firstOccurrence !== anchorISO;
+
   // Slots derive their title from contents, so an empty name is fine there.
   const canCreate = kind === "slot" || Boolean(title.trim());
 
@@ -134,8 +143,13 @@ export default function DraftComposer({
         </div>
 
         {/* Repeat */}
-        <div className="flex">
-          <RepeatControl anchorISO={toDateISO(start)} value={repeat} onChange={setRepeat} />
+        <div className="flex flex-col gap-1">
+          <RepeatControl anchorISO={anchorISO} value={repeat} onChange={setRepeat} />
+          {startsLater && (
+            <span className="mono pl-0.5 text-[10px] text-muted">
+              First on {format(parseDateISO(firstOccurrence!), "EEE MMM d")} — not this day
+            </span>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2">

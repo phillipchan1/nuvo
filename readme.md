@@ -141,14 +141,19 @@ After pulling: `supabase db push` (applies migrations 04-09 — incl. the
   with weekday picks / monthly, an interval, and an optional end) plus the template
   every occurrence is stamped from. Occurrences are *materialized* as ordinary
   `tasks`/`slots` rows up to a 35-day horizon (`HORIZON_DAYS`), topped up client-side
-  on every app open and after rollover — so drag, resize, the Google mirror, and
-  slot-children all keep working with zero special-casing. A recurring occurrence
-  **never rolls over** (a missed one is just missed; tomorrow already has its own).
-  Set a repeat from the drag-to-create card or the ↻ chip in a task/slot popover;
-  editing one occurrence (drag/resize) pins it so a later "edit all" leaves it be.
-  Deleting offers **this occurrence · this & following · whole series**. Repeating
-  **calendar events** are handled natively by Google (an RRULE on create); the
-  read-sync pulls the instances back and the existing THIS/ALL dialog edits them.
+  on every app open and after rollover — so drag, resize, and slot-children all keep
+  working with zero special-casing. A recurring occurrence **never rolls over** (a
+  missed one is just missed; tomorrow already has its own). If a repeat skips the
+  day you drew on (e.g. "every weekday" on a Saturday) the create card says "first
+  on Mon Jun 15" and the calendar jumps to that first occurrence so it never seems
+  to vanish. Set a repeat from the drag-to-create card or the ↻ chip in a task/slot
+  popover; editing one occurrence (drag/resize) pins it so a later "edit all" leaves
+  it be. Deleting offers **this occurrence · this & following · whole series**.
+  Materialized occurrences are *not* pushed to the Google "Nuvo" mirror calendar —
+  firing ~25 concurrent mirror writes raced on the OAuth token refresh and 500'd, so
+  series live in Nuvo only for now (phone-mirroring a series is a follow-up).
+  Repeating **calendar events** are handled natively by Google (an RRULE on create);
+  the read-sync pulls the instances back and the existing THIS/ALL dialog edits them.
 - **Slot titles auto-derive** — a time slot's name is an optional override. Unnamed,
   it shows its project, a domain its children share, or a time-of-day label
   ("Morning · 3 tasks") — so you drop a container on the grid and fill it without

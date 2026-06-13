@@ -60,8 +60,12 @@ export function useRecurrenceMutations() {
 
   /**
    * Fill in every missing occurrence of one series within [from, horizon],
-   * skipping exdates and dates that already have a row. Returns nothing but
-   * mirrors any freshly-created scheduled occurrence to Google.
+   * skipping exdates and dates that already have a row.
+   *
+   * Note: occurrences are NOT pushed to the Google "Nuvo" mirror here. Firing
+   * one mirror write per occurrence meant ~25 concurrent edge-function calls,
+   * which race on the shared OAuth token refresh and cascade into 500s. The
+   * rows live in Nuvo regardless; phone-mirroring a series is a follow-up.
    */
   const materializeSeries = useCallback(async (rec: Recurrence, fromISO: string) => {
     const toISO = toDateISO(addDays(parseDateISO(todayISO()), HORIZON_DAYS));
@@ -95,16 +99,8 @@ export function useRecurrenceMutations() {
         recurrence_id: rec.id,
         recurrence_date: d,
       }));
-      const { data, error } = await supabase
-        .from("tasks")
-        .insert(rows)
-        .select("id, start_time");
+      const { error } = await supabase.from("tasks").insert(rows);
       if (error) { if (error.code !== "23505") throw error; return; }
-      for (const t of data ?? []) {
-        if ((t as { start_time: string | null }).start_time) {
-          invokeQuiet("task-mirror", { taskId: (t as { id: string }).id });
-        }
-      }
     } else {
       const minutes = rec.time_of_day_minutes ?? 9 * 60;
       const rows = missing.map((d) => ({
@@ -119,9 +115,8 @@ export function useRecurrenceMutations() {
         recurrence_id: rec.id,
         recurrence_date: d,
       }));
-      const { data, error } = await supabase.from("slots").insert(rows).select("id");
+      const { error } = await supabase.from("slots").insert(rows);
       if (error) { if (error.code !== "23505") throw error; return; }
-      for (const s of data ?? []) invokeQuiet("slot-mirror", { slotId: (s as { id: string }).id });
     }
 
     await supabase.from("recurrences").update({ last_materialized: toISO }).eq("id", rec.id);

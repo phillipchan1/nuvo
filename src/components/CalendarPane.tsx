@@ -8,12 +8,13 @@ import type { DatesSetArg, DateSelectArg, EventClickArg, EventContentArg, EventD
 import type { EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
-import { endOf, isOverdue, toDateISO } from "../lib/dates";
-import { toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
+import { endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
+import { addDays } from "date-fns";
+import { expandRule, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
-import type { useRecurrenceMutations } from "../hooks/useRecurrence";
+import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateKind } from "./DraftComposer";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth";
@@ -183,6 +184,10 @@ export default function CalendarPane({
   const [recurrencePrompt, setRecurrencePrompt] = useState<null | {
     onConfirm: (scope: RecurrenceScope) => void;
   }>(null);
+
+  // Surfaced when a grid create (task/event/slot, incl. repeats) fails, so a
+  // server-side error never silently swallows the thing you just made.
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Alt+← / Alt+→ = prev/next  |  Alt+T = today
   useEffect(() => {
@@ -513,6 +518,16 @@ export default function CalendarPane({
     setDraft(null);
     calRef.current?.getApi().unselect();
 
+    // A repeat may exclude the very day you drew on (e.g. "every weekday" on a
+    // Saturday → first occurrence Monday). Jump to the first real occurrence so
+    // the series is visibly there instead of seeming to vanish.
+    const revealFirstOccurrence = () => {
+      if (!recurrence) return;
+      const toISO = toDateISO(addDays(parseDateISO(doDate), HORIZON_DAYS));
+      const first = expandRule(recurrence, doDate, doDate, toISO)[0];
+      if (first && first !== doDate) calRef.current?.getApi().gotoDate(`${first}T12:00:00`);
+    };
+
     try {
       if (kind === "task") {
         if (recurrence) {
@@ -522,6 +537,7 @@ export default function CalendarPane({
             anchorISO: doDate,
             template: { title, duration_minutes: duration, time_of_day_minutes: minutes },
           });
+          revealFirstOccurrence();
         } else {
           await mutations.create({
             title,
@@ -544,6 +560,7 @@ export default function CalendarPane({
           anchorISO: doDate,
           template: { title, duration_minutes: duration, time_of_day_minutes: minutes },
         });
+        revealFirstOccurrence();
       } else {
         const slot = await slotMutations.createSlot({
           title,
@@ -555,7 +572,13 @@ export default function CalendarPane({
         onOpenSlot(slot, new DOMRect(point.x, point.y, 0, 0));
       }
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.warn("[nuvo] create from grid failed:", e);
+      setCreateError(
+        kind === "event"
+          ? `Couldn't create the event: ${msg}`
+          : `Couldn't create ${recurrence ? "the repeating " : "the "}${kind}: ${msg}`,
+      );
     }
   };
 
@@ -733,6 +756,22 @@ export default function CalendarPane({
 
   return (
     <div className="relative flex h-full min-w-0 flex-1 flex-col bg-surface">
+      {createError && (
+        <div className="flex shrink-0 items-start gap-2 border-b border-signal bg-signal-soft px-3 py-2 text-[12px] text-signal">
+          <span className="mt-px shrink-0">⚠</span>
+          <span className="min-w-0 flex-1 break-words">{createError}</span>
+          <button
+            onClick={() => setCreateError(null)}
+            className="fast shrink-0 rounded p-0.5 hover:opacity-70"
+            aria-label="Dismiss"
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {recurrencePrompt && (
         <RecurrenceDialog
           onConfirm={recurrencePrompt.onConfirm}
