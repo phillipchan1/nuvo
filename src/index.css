@@ -403,8 +403,8 @@ textarea:focus {
 }
 
 .fc .fc-timegrid-slot {
-  height: 22px;
-  border-top-color: color-mix(in srgb, var(--line) 60%, transparent);
+  height: calc(var(--nuvo-hour, 52px) / 4);
+  border-top-color: color-mix(in srgb, var(--line) 55%, transparent);
 }
 /* Hide 15-min minor dividers — only hour guides remain */
 .fc .fc-timegrid-slot-minor {
@@ -415,7 +415,7 @@ textarea:focus {
 .fc .fc-col-header-cell .day-num {
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums lining-nums;
-  font-size: 10.5px;
+  font-size: 10px;
   letter-spacing: -0.01em;
   color: var(--muted);
 }
@@ -440,72 +440,47 @@ textarea:focus {
 .fc .fc-timegrid-now-indicator-arrow {
   white-space: nowrap;
 }
+
+/* ── Calendar items: one chrome for every kind ──────────────────────────
+   The soft fill + 1px border are set inline from the item's own color; the
+   3px accent bar and ALL text padding live in the React render (eventContent),
+   so tasks, events and slots share identical spacing, radius and type. */
 .fc .fc-event {
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   border: 1px solid transparent;
-  transition: transform var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
-}
-.fc .fc-event:focus {
-  outline: none;
+  background-clip: padding-box;
   box-shadow: none;
+  transition: box-shadow var(--d-fast) var(--ease-out), filter var(--d-fast) var(--ease-out);
 }
+.fc .fc-event:focus { outline: none; box-shadow: none; }
 .fc .fc-event .fc-event-main {
-  padding: 2px 5px 2px;
-}
-.fc .fc-timegrid-event-harness .fc-event:hover {
-  box-shadow: var(--shadow-1);
-}
-
-/* Own task blocks: accent left bar, subtle surrounding border, soft tint */
-.fc-event.evt-task {
-  background: color-mix(in srgb, var(--accent) 13%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
-  border-left: 3px solid var(--accent);
-  color: var(--text);
-}
-.fc-event.evt-task.evt-done {
-  opacity: 0.5;
-}
-.fc-event.evt-task.evt-overdue {
-  border-color: color-mix(in srgb, var(--signal) 28%, var(--line));
-  border-left-color: var(--signal);
-  background: color-mix(in srgb, var(--signal) 11%, var(--surface));
-}
-
-/* Google events: calendar color as left bar (set inline via custom render) */
-.fc-event.evt-google {
-  color: var(--text);
-  border: 1px solid var(--line-strong);
-}
-.fc-event.evt-google .fc-event-main,
-.fc-event.evt-m365 .fc-event-main {
   padding: 0;
+  height: 100%;
+  color: var(--text);
   overflow: hidden;
 }
+.fc .fc-timegrid-event { box-shadow: none; }
+.fc .fc-timegrid-event-harness .fc-event:hover {
+  box-shadow: var(--shadow-1);
+  filter: brightness(1.015);
+}
+.fc-event.evt-done { opacity: 0.5; }
 
-/* M365: striped muted fill, dashed border, display-only */
+/* M365: striped, dashed, display-only (fill + border come from CSS here, not
+   inline, so the diagonal hatch reads through). */
 .fc-event.evt-m365 {
   background: repeating-linear-gradient(
     -45deg,
     transparent,
-    transparent 4px,
-    color-mix(in srgb, var(--muted) 14%, transparent) 4px,
-    color-mix(in srgb, var(--muted) 14%, transparent) 8px
+    transparent 5px,
+    color-mix(in srgb, var(--muted) 12%, transparent) 5px,
+    color-mix(in srgb, var(--muted) 12%, transparent) 10px
   );
-  border: 1px dashed var(--muted);
-  color: var(--muted);
+  border: 1px dashed color-mix(in srgb, var(--muted) 55%, var(--line));
   cursor: default;
 }
-
-/* Time slots: a dashed container (tint + color set inline) holding tasks */
-.fc-event.evt-slot {
-  border-style: dashed !important;
-  color: var(--text);
-}
-.fc-event.evt-slot .fc-event-main {
-  padding: 0;
-  overflow: hidden;
-}
+/* Slots: a dashed container (tint + border set inline) holding tasks */
+.fc-event.evt-slot { border-style: dashed !important; }
 
 /* External-drag mirror element */
 .fc-event-dragging,
