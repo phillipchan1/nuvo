@@ -5,6 +5,7 @@ import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { parseCapture } from "../lib/nlp";
 import type { NewTaskInput, useTaskMutations } from "../hooks/useTasks";
 import { useVertical } from "../hooks/useVertical";
+import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
 import TaskRow, { type TaskMeta } from "./TaskRow";
 import { Keycap, SectionLabel } from "./ui";
@@ -61,6 +62,7 @@ export default function LeftRail({
   railRef: React.MutableRefObject<HTMLDivElement | null>;
 }) {
   const { data: vertical, setSprintGoal, toggleTaskSprint } = useVertical();
+  const { nav } = useAppNavigation();
 
   /** A task's thread back up the vertical: its domain color. */
   const accentOf = (t: Task) => taskDomainColor(vertical, t);
@@ -74,6 +76,13 @@ export default function LeftRail({
   const [capture, setCapture] = useState("");
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
+
+  // Dismiss rail micro-overlays when navigation changes (incl. browser back).
+  useEffect(() => {
+    setContextMenu(null);
+    setLabelPickerFor(null);
+    setSchedulePickerFor(null);
+  }, [nav]);
 
   const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
 

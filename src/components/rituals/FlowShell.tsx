@@ -35,6 +35,7 @@ export default function FlowShell({
   lastHint,
   lastCta,
   onClose,
+  onStepBack,
 }: {
   title: string;
   sub: string;
@@ -50,6 +51,7 @@ export default function FlowShell({
   /** Footer CTA at the last station (when the commit lives in the shell). */
   lastCta?: { label: string; onClick: () => void };
   onClose: () => void;
+  onStepBack?: () => void;
 }) {
   const last = stages.length - 1;
 
@@ -60,11 +62,13 @@ export default function FlowShell({
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
       if (e.key === "ArrowRight") setStep(Math.min(last, step + 1));
-      if (e.key === "ArrowLeft") setStep(Math.max(0, step - 1));
+      if (e.key === "ArrowLeft") {
+        if (step > 0) onStepBack ? onStepBack() : setStep(Math.max(0, step - 1));
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step, last, setStep, finished]);
+  }, [step, last, setStep, finished, onStepBack]);
 
   return (
     <div className="scrim atmosphere fixed inset-0 z-50 flex flex-col">
@@ -136,7 +140,12 @@ export default function FlowShell({
       {/* footer travel */}
       {!finished && (
         <footer className="flex h-12 shrink-0 items-center justify-between border-t border-line bg-surface px-5">
-          <Btn onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>‹ back</Btn>
+          <Btn
+            onClick={() => { if (step > 0) (onStepBack ?? (() => setStep(step - 1)))(); }}
+            disabled={step === 0}
+          >
+            ‹ back
+          </Btn>
           <span className="mono text-[10px] text-muted">
             {step + 1} / {stages.length} · {stages[step]?.label} · ← →
           </span>

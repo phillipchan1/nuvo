@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { todayISO } from "../lib/dates";
+import { fallbackPanelAnchor } from "../lib/appNav";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
 import { useDayTasks, useInboxTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
@@ -9,27 +10,39 @@ import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
 import { useRealtime } from "../hooks/useRealtime";
 import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
+import { useAppNavigation } from "../hooks/useAppNavigation";
 import { taskDomainColor } from "../lib/vertical";
 import { deriveSlotTitle } from "../lib/slots";
-import LeftRail, { type RailTab } from "./LeftRail";
+import { writeAgentOpen } from "./AgentSidebar";
+import LeftRail from "./LeftRail";
 import type { FlowName } from "./Spine";
-import CalendarPane, { type CalView } from "./CalendarPane";
+import CalendarPane from "./CalendarPane";
 import CommandBar, { type Command } from "./CommandBar";
 import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown, MorningPlan } from "./Rituals";
-import AgentSidebar, { readAgentOpen, writeAgentOpen } from "./AgentSidebar";
+import AgentSidebar from "./AgentSidebar";
 import { useAgent } from "../hooks/useAgent";
 import { Keycap } from "./ui";
 
 export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void }) {
   const railRef = useRef<HTMLDivElement | null>(null);
+  const {
+    nav,
+    setTab,
+    setCalView,
+    openOverlay,
+    closeOverlay,
+    toggleAgent,
+    navigate,
+    panelAnchor,
+  } = useAppNavigation();
 
-  const [tab, setTab] = useState<RailTab>("today");
-  const [view, setView] = useState<CalView>(() =>
-    window.innerWidth < 1100 ? "timeGridDay" : "timeGridWeek",
-  );
+  const { tab, calView: view, overlay, overlayId, agentOpen, settingsSection } = nav;
+
+  const morningAutoRef = useRef(false);
+
   const [range, setRange] = useState<{ start: string; end: string }>(() => {
     const now = new Date();
     return {
@@ -37,14 +50,6 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
       end: new Date(now.getTime() + 7 * 86400_000).toISOString(),
     };
   });
-  const [taskPanel, setTaskPanel] = useState<{ id: string; anchor: DOMRect } | null>(null);
-  const [eventPanel, setEventPanel] = useState<{ id: string; anchor: DOMRect } | null>(null);
-  const [slotPanel, setSlotPanel] = useState<{ id: string; anchor: DOMRect } | null>(null);
-  const [showCmd, setShowCmd] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showMorning, setShowMorning] = useState(false);
-  const [showEvening, setShowEvening] = useState(false);
-  const [agentOpen, setAgentOpen] = useState(readAgentOpen);
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -85,7 +90,6 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     return m;
   }, [slotChildTasks]);
 
-  /** Display title for a slot — derived from its contents when unnamed. */
   const slotTitle = useCallback(
     (s: Slot) => deriveSlotTitle(s, slotTasksBySlot[s.id] ?? [], vertical),
     [slotTasksBySlot, vertical],
@@ -93,19 +97,13 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   const agent = useAgent(range);
 
-  const toggleAgent = () => {
-    setAgentOpen((open) => {
-      const next = !open;
-      writeAgentOpen(next);
-      return next;
-    });
+  const handleToggleAgent = () => {
+    toggleAgent();
+    writeAgentOpen(!agentOpen);
   };
 
   useRealtime(true);
 
-  // Defensive client-side rollover + recurrence top-up on first open of a new
-  // day (and whenever the tab regains focus): repeating series walk their
-  // horizon forward one day at a time, even if the cron never ran.
   const rollover = useRolloverGuard(settings?.last_rollover_date);
   const settingsLoaded = Boolean(settings);
   useEffect(() => {
@@ -120,36 +118,48 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoaded, today]);
 
-  // Morning plan auto-prompt on first open of the day
+  // Morning plan auto-prompt on first open of the day — replaces current entry, no stack push.
   useEffect(() => {
     if (!settingsLoaded) return;
     const key = `nuvo-morning-${today}`;
     if (!localStorage.getItem(key)) {
       localStorage.setItem(key, "1");
-      setShowMorning(true);
+      morningAutoRef.current = true;
+      navigate({ overlay: "morning" }, "replace");
     }
-  }, [settingsLoaded, today]);
+  }, [settingsLoaded, today, navigate]);
+
+  const closeMorning = () => {
+    if (morningAutoRef.current) {
+      morningAutoRef.current = false;
+      navigate({ overlay: "none" }, "replace");
+    } else {
+      closeOverlay();
+    }
+  };
 
   // ⌘K / Ctrl+K → command bar  |  ⌘J → agent  |  ⌘, → settings
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setShowCmd((s) => !s);
+        if (overlay === "cmd") closeOverlay();
+        else openOverlay("cmd");
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
         e.preventDefault();
-        toggleAgent();
+        handleToggleAgent();
       }
       if (e.metaKey && e.key === ",") {
         e.preventDefault();
-        setShowSettings((s) => !s);
+        if (overlay === "settings") closeOverlay();
+        else openOverlay("settings");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [overlay]);
 
   const allKnownTasks = useMemo(() => {
     const map = new Map<string, Task>();
@@ -158,11 +168,19 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     return map;
   }, [inbox, weekTasks, todayTasks, scheduled, slotChildTasks]);
 
-  /** Calendar blocks carry their domain color — the thread up the vertical.
-   *  Stable identity (useCallback) so CalendarPane's event memo holds. */
   const taskAccent = useCallback((t: Task) => taskDomainColor(vertical, t), [vertical]);
 
   const allTasksArray = useMemo(() => [...allKnownTasks.values()], [allKnownTasks]);
+
+  const taskPanel = overlay === "task" && overlayId ? { id: overlayId } : null;
+  const eventPanel = overlay === "event" && overlayId ? { id: overlayId } : null;
+  const slotPanel = overlay === "slot" && overlayId ? { id: overlayId } : null;
+  const showCmd = overlay === "cmd";
+  const showSettings = overlay === "settings";
+  const showMorning = overlay === "morning";
+  const showEvening = overlay === "evening";
+
+  const panelRect = panelAnchor ?? fallbackPanelAnchor();
 
   const openTask = taskPanel ? (allKnownTasks.get(taskPanel.id) ?? null) : null;
   const openEvent: ExternalEvent | null = eventPanel
@@ -180,15 +198,15 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     { id: "sunday", title: "Sunday — compose the week", run: () => openFlow("sunday") },
     { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
     { id: "blueprint", title: "Blueprint — shape a new bet", run: () => openFlow("blueprint") },
-    { id: "plan", title: "Plan my day (morning ritual)", run: () => setShowMorning(true) },
-    { id: "shutdown", title: "Evening shutdown", run: () => setShowEvening(true) },
-    { id: "view-day", title: "Calendar: day view", run: () => setView("timeGridDay") },
-    { id: "view-week", title: "Calendar: week view", run: () => setView("timeGridWeek") },
-    { id: "view-month", title: "Calendar: month view", run: () => setView("dayGridMonth") },
-    { id: "connect", title: "Connect calendar…", run: () => setShowSettings(true) },
-    { id: "label", title: "New label…", run: () => setShowSettings(true) },
-    { id: "agent", title: "Toggle Nuvo agent", run: toggleAgent },
-    { id: "settings", title: "Settings", run: () => setShowSettings(true) },
+    { id: "plan", title: "Plan my day (morning ritual)", run: () => { morningAutoRef.current = false; openOverlay("morning"); } },
+    { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
+    { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
+    { id: "view-week", title: "Calendar: week view", run: () => setCalView("timeGridWeek") },
+    { id: "view-month", title: "Calendar: month view", run: () => setCalView("dayGridMonth") },
+    { id: "connect", title: "Connect calendar…", run: () => openOverlay("settings") },
+    { id: "label", title: "New label…", run: () => openOverlay("settings") },
+    { id: "agent", title: "Toggle Nuvo agent", run: handleToggleAgent },
+    { id: "settings", title: "Settings", run: () => openOverlay("settings") },
     {
       id: "theme",
       title: "Toggle dark mode",
@@ -201,7 +219,6 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* Header — drag region; traffic lights sit over the Spine, not this pane. */}
       <header
         data-tauri-drag-region
         className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"
@@ -212,17 +229,17 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           {format(now, "h:mm a")}
         </span>
         <div className="flex-1" />
-        <button onClick={() => setShowMorning(true)} className="fast rounded-md border border-line px-2 py-1 text-label font-medium text-muted hover:border-line-strong hover:text-ink">
+        <button onClick={() => { morningAutoRef.current = false; openOverlay("morning"); }} className="fast rounded-md border border-line px-2 py-1 text-label font-medium text-muted hover:border-line-strong hover:text-ink">
           Plan
         </button>
-        <button onClick={() => setShowEvening(true)} className="fast rounded-md border border-line px-2 py-1 text-label font-medium text-muted hover:border-line-strong hover:text-ink">
+        <button onClick={() => openOverlay("evening")} className="fast rounded-md border border-line px-2 py-1 text-label font-medium text-muted hover:border-line-strong hover:text-ink">
           Shutdown
         </button>
         <div className="flex overflow-hidden rounded-md border border-line">
           {(["timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => (
             <button
               key={v}
-              onClick={() => setView(v)}
+              onClick={() => setCalView(v)}
               className={`fast px-2 py-1 text-label font-medium ${
                 view === v ? "bg-accent text-white" : "text-muted hover:text-ink"
               }`}
@@ -232,17 +249,17 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           ))}
         </div>
         <button
-          onClick={toggleAgent}
+          onClick={handleToggleAgent}
           className={`flex items-center gap-1.5 text-label ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
           title="Nuvo agent"
         >
           <Keycap>⌘J</Keycap>
         </button>
-        <button onClick={() => setShowCmd(true)} className="flex items-center gap-1.5 text-label text-muted hover:text-ink">
+        <button onClick={() => openOverlay("cmd")} className="flex items-center gap-1.5 text-label text-muted hover:text-ink">
           <Keycap>⌘K</Keycap>
         </button>
         <button
-          onClick={() => setShowSettings(true)}
+          onClick={() => openOverlay("settings")}
           title="Settings"
           className="fast text-head text-muted hover:text-ink"
         >
@@ -252,7 +269,6 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
       <ReconnectBanner accounts={accounts} />
 
-      {/* Main two-pane surface */}
       <div className="relative flex min-h-0 flex-1">
         <LeftRail
           tab={tab}
@@ -262,7 +278,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           today={todayTasks}
           labels={labels}
           mutations={mutations}
-          onOpenTask={(t, anchor) => setTaskPanel({ id: t.id, anchor })}
+          onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor)}
           hotkeysEnabled={!anyModalOpen}
           now={now}
           railRef={railRef}
@@ -283,9 +299,9 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             eventMutations={eventMutations}
             slotMutations={slotMutations}
             recurrenceMutations={recurrenceMutations}
-            onOpenTask={(t, anchor) => setTaskPanel({ id: t.id, anchor })}
-            onOpenEvent={(e, anchor) => setEventPanel({ id: e.id, anchor })}
-            onOpenSlot={(s, anchor) => setSlotPanel({ id: s.id, anchor })}
+            onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor)}
+            onOpenEvent={(e, anchor) => openOverlay("event", e.id, anchor)}
+            onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
             onRangeChange={(start, end) => setRange({ start, end })}
             railRef={railRef}
           />
@@ -293,43 +309,39 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           {openTask && taskPanel && (
             <TaskPopover
               task={openTask}
-              anchor={taskPanel.anchor}
+              anchor={panelRect}
               labels={labels}
               mutations={mutations}
               recurrence={openTask.recurrence_id ? recurrenceById.get(openTask.recurrence_id) ?? null : null}
               recurrenceMutations={recurrenceMutations}
-              onClose={() => setTaskPanel(null)}
+              onClose={closeOverlay}
             />
           )}
           {openEvent && eventPanel && !openTask && (
             <EventPopover
               event={openEvent}
-              anchor={eventPanel.anchor}
+              anchor={panelRect}
               editable={openEventAccount?.provider === "google"}
               eventMutations={eventMutations}
-              onClose={() => setEventPanel(null)}
+              onClose={closeOverlay}
             />
           )}
           {openSlot && slotPanel && !openTask && (
             <SlotPopover
               slot={openSlot}
-              anchor={slotPanel.anchor}
+              anchor={panelRect}
               childTasks={slotTasksBySlot[openSlot.id] ?? []}
               taskMutations={mutations}
               slotMutations={slotMutations}
               recurrence={openSlot.recurrence_id ? recurrenceById.get(openSlot.recurrence_id) ?? null : null}
               recurrenceMutations={recurrenceMutations}
-              onOpenTask={(t) => {
-                const anchor = slotPanel.anchor;
-                setSlotPanel(null);
-                setTaskPanel({ id: t.id, anchor });
-              }}
-              onClose={() => setSlotPanel(null)}
+              onOpenTask={(t) => openOverlay("task", t.id, panelRect)}
+              onClose={closeOverlay}
             />
           )}
         </div>
 
-        <AgentSidebar agent={agent} open={agentOpen} onToggle={toggleAgent} />
+        <AgentSidebar agent={agent} open={agentOpen} onToggle={handleToggleAgent} />
       </div>
 
       {showCmd && (
@@ -337,7 +349,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           labels={labels}
           commands={commands}
           onCreate={mutations.create}
-          onClose={() => setShowCmd(false)}
+          onClose={closeOverlay}
         />
       )}
       {showSettings && (
@@ -345,7 +357,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           settings={settings}
           updateSettings={updateSettings}
           accounts={accounts}
-          onClose={() => setShowSettings(false)}
+          section={settingsSection}
+          onClose={closeOverlay}
         />
       )}
       {showMorning && (
@@ -355,11 +368,11 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           prepared={allTasksArray.filter((t) => t.status !== "done" && t.prework_at && t.prework)}
           todayCount={todayTasks.filter((t) => t.status !== "done").length}
           mutations={mutations}
-          onClose={() => setShowMorning(false)}
+          onClose={closeMorning}
         />
       )}
       {showEvening && (
-        <EveningShutdown todayTasks={todayTasks} taskAccent={taskAccent} mutations={mutations} onClose={() => setShowEvening(false)} />
+        <EveningShutdown todayTasks={todayTasks} taskAccent={taskAccent} mutations={mutations} onClose={closeOverlay} />
       )}
     </div>
   );

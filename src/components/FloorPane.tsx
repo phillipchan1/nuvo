@@ -6,6 +6,7 @@
 import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, projectById } from "../lib/vertical";
 import type { Focus, Rung } from "./AppShell";
+import { useAppNavigation } from "../hooks/useAppNavigation";
 import type { BlueprintSeed } from "./rituals/BlueprintFlow";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativeFloor from "./floors/InitiativeFloor";
@@ -44,6 +45,7 @@ export default function FloorPane({
   openBlueprint: (seed: BlueprintSeed) => void;
 }) {
   const { data } = useVertical();
+  const { back } = useAppNavigation();
   const domain = domainById(data, focus.domainId);
   const accent = domain?.color ?? "var(--accent)";
 
@@ -90,7 +92,7 @@ export default function FloorPane({
             focus={focus}
             accent={accent}
             onUp={() => focus.initiativeId && openInitiative(focus.initiativeId)}
-            onBack={() => setProjectView("portfolio")}
+            onBack={back}
           />
         )}
 
@@ -101,7 +103,7 @@ export default function FloorPane({
           <InitiativeFloor
             focus={focus}
             onUp={() => goRung("domain")}
-            onBack={() => setInitiativeView("portfolio")}
+            onBack={back}
             onOpenProject={openProject}
           />
         )}

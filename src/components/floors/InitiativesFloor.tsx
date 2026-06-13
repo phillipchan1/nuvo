@@ -4,12 +4,12 @@
 
 import { useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
   domainById,
   initiativeProgress,
   projectsOf,
 } from "../../lib/vertical";
-// (project cascade on domain move keeps children coherent)
 import { FloorHeader, INITIATIVE_STATUS, INITIATIVE_STATUS_COLORS } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
@@ -30,8 +30,10 @@ export default function InitiativesFloor({
   openBlueprint?: (seed: BlueprintSeed) => void;
 }) {
   const { data, updateInitiative, updateProject } = useVertical();
+  const { nav, openFloorModal, closeFloorModal } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+
+  const creating = nav.floorModal === "new-initiative";
 
   const initiatives = data.initiatives.filter((i) => !domainFilter || i.domainId === domainFilter);
 
@@ -57,7 +59,6 @@ export default function InitiativesFloor({
       },
       setTitle: (v) => updateInitiative(i.id, { name: v }),
       setStatus: (s) => updateInitiative(i.id, { status: s as typeof i.status }),
-      // move the initiative and carry its projects to the same domain
       setDomain: (domId) => {
         updateInitiative(i.id, { domainId: domId });
         projectsOf(data, i.id).forEach((p) => updateProject(p.id, { domainId: domId }));
@@ -68,7 +69,6 @@ export default function InitiativesFloor({
     };
   });
 
-  // the trophy shelf — shipped bets stay visible; gains need a place to live
   const shipped = data.initiatives.filter(
     (i) => i.status === "shipped" && (!domainFilter || i.domainId === domainFilter),
   );
@@ -91,7 +91,7 @@ export default function InitiativesFloor({
             { key: "momentum", label: "Momentum" },
             { key: "projects", label: "Projects" },
           ],
-          onNew: () => setCreating(true),
+          onNew: () => openFloorModal("new-initiative"),
           newLabel: "+ new initiative",
           storageKey: "initiatives",
         }}
@@ -100,13 +100,9 @@ export default function InitiativesFloor({
       {creating && (
         <NewInitiative
           initialDomainId={domainFilter}
-          onClose={() => setCreating(false)}
-          onCreated={(id) => { setCreating(false); onOpen(id); }}
-          onBlueprint={
-            openBlueprint
-              ? (seed) => { setCreating(false); openBlueprint(seed); }
-              : undefined
-          }
+          onClose={closeFloorModal}
+          onCreated={(id) => { onOpen(id); }}
+          onBlueprint={openBlueprint}
         />
       )}
 

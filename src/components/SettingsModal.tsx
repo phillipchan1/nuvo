@@ -5,6 +5,8 @@ import { formatHourLabel } from "../lib/dates";
 import type { CalendarAccount, UserSettings } from "../lib/types";
 import { useLabels } from "../hooks/useCalendar";
 import { Btn, Modal } from "./ui";
+import type { SettingsSection } from "../lib/appNav";
+import { useAppNavigation } from "../hooks/useAppNavigation";
 
 // ── Section registry ──────────────────────────────────────────────────────
 type SectionId = "appearance" | "schedule" | "connections" | "labels" | "account";
@@ -501,14 +503,16 @@ export default function SettingsModal({
   settings,
   updateSettings,
   accounts,
+  section,
   onClose,
 }: {
   settings: UserSettings | undefined;
   updateSettings: (patch: Partial<UserSettings>) => void;
   accounts: CalendarAccount[];
+  section: SettingsSection;
   onClose: () => void;
 }) {
-  const [active, setActive] = useState<SectionId>("appearance");
+  const { setSettingsSection } = useAppNavigation();
 
   return (
     <Modal onClose={onClose} width="max-w-3xl">
@@ -525,28 +529,28 @@ export default function SettingsModal({
           {SECTIONS.map((s) => (
             <button
               key={s.id}
-              onClick={() => setActive(s.id)}
+              onClick={() => setSettingsSection(s.id)}
               className={`fast flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium ${
-                active === s.id
+                section === s.id
                   ? "bg-accent-soft text-accent"
                   : "text-muted hover:bg-surface-2 hover:text-ink"
               }`}
             >
-              <span className={active === s.id ? "text-accent" : "text-muted"}>{s.icon}</span>
+              <span className={section === s.id ? "text-accent" : "text-muted"}>{s.icon}</span>
               {s.label}
             </button>
           ))}
         </nav>
 
         {/* Active pane */}
-        <div key={active} className="floor-enter flex-1 overflow-y-auto p-5">
-          {active === "appearance" && <AppearancePane settings={settings} updateSettings={updateSettings} />}
-          {active === "schedule" && <SchedulePane settings={settings} updateSettings={updateSettings} />}
-          {active === "connections" && (
+        <div key={section} className="floor-enter flex-1 overflow-y-auto p-5">
+          {section === "appearance" && <AppearancePane settings={settings} updateSettings={updateSettings} />}
+          {section === "schedule" && <SchedulePane settings={settings} updateSettings={updateSettings} />}
+          {section === "connections" && (
             <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
           )}
-          {active === "labels" && <LabelsPane />}
-          {active === "account" && <AccountPane />}
+          {section === "labels" && <LabelsPane />}
+          {section === "account" && <AccountPane />}
         </div>
       </div>
     </Modal>

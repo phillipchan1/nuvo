@@ -6,10 +6,11 @@ import {
   projectsOf,
 } from "../lib/vertical";
 import { VerticalProvider, useVertical } from "../hooks/useVertical";
+import { useAppNavigation } from "../hooks/useAppNavigation";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import Planner from "./Planner";
 import Spine, { type FlowName } from "./Spine";
-import FloorPane, { type DetailView, type ProjectView } from "./FloorPane";
+import FloorPane from "./FloorPane";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
 import BlueprintFlow, { type BlueprintSeed } from "./rituals/BlueprintFlow";
@@ -34,63 +35,69 @@ export default function AppShell() {
 
 function AppShellInner() {
   const { data, ready } = useVertical();
-  const [rung, setRung] = useState<Rung>("day");
-  // The Project / Initiative rungs open on a high-level board; drilling into a
-  // single record sets "detail".
-  const [projectView, setProjectView] = useState<ProjectView>("portfolio");
-  const [initiativeView, setInitiativeView] = useState<DetailView>("portfolio");
-  const [focus, setFocus] = useState<Focus>({ domainId: "", initiativeId: "", projectId: "" });
-  const [flow, setFlow] = useState<FlowName | null>(null);
+  const {
+    nav,
+    goRung,
+    openFlow,
+    closeFlow,
+    focusDomain: navFocusDomain,
+    openInitiative,
+    openProject,
+    setProjectView,
+    setInitiativeView,
+    navigate,
+  } = useAppNavigation();
+
+  const { rung, projectView, initiativeView, focus, flow, flowStep } = nav;
+
   // a half-typed bet handed from the quick-create moment into Blueprint
   const [blueprintSeed, setBlueprintSeed] = useState<BlueprintSeed | null>(null);
   const [sundayNudge, setSundayNudge] = useState(false);
 
-  // Opening a flow from the spine/planner clears any stale Blueprint seed so
-  // the AI flow starts blank unless it was opened from a create moment.
-  const openFlow = (f: FlowName) => {
-    if (f === "blueprint") setBlueprintSeed(null);
-    setFlow(f);
-  };
   const openBlueprint = (seed: BlueprintSeed) => {
     setBlueprintSeed(seed);
-    setFlow("blueprint");
+    openFlow("blueprint");
   };
 
-  // Entering a board rung from the spine/keyboard lands on the board, not a
-  // stale drill-down.
-  const goRung = (r: Rung) => {
-    if (r === "project") setProjectView("portfolio");
-    if (r === "initiative") setInitiativeView("portfolio");
-    setRung(r);
-  };
-
-  // Keep the branch coherent as focus changes at any altitude.
   const focusDomain = (id: string) => {
     const init = initiativesOf(data, id)[0];
     const proj = init ? projectsOf(data, init.id)[0] : null;
-    setFocus({ domainId: id, initiativeId: init?.id ?? "", projectId: proj?.id ?? "" });
+    navFocusDomain({
+      domainId: id,
+      initiativeId: init?.id ?? "",
+      projectId: proj?.id ?? "",
+    });
   };
-  const focusInitiative = (id: string) => {
+
+  const openInitiativeDetail = (id: string) => {
     const init = initiativeById(data, id);
     const proj = projectsOf(data, id)[0];
-    setFocus({ domainId: init?.domainId ?? focus.domainId, initiativeId: id, projectId: proj?.id ?? "" });
-    setInitiativeView("detail");
+    openInitiative({
+      domainId: init?.domainId ?? focus.domainId,
+      initiativeId: id,
+      projectId: proj?.id ?? "",
+    });
   };
-  const focusProject = (id: string) => {
+
+  const openProjectDetail = (id: string) => {
     const proj = projectById(data, id);
-    setFocus({
+    openProject({
       domainId: proj?.domainId ?? focus.domainId,
       initiativeId: proj?.initiativeId ?? focus.initiativeId,
       projectId: id,
     });
-    setProjectView("detail");
   };
 
   // Live data arrives async: seed the focus branch once domains land.
   useEffect(() => {
     if (!ready || focus.domainId) return;
     const dom = [...data.domains].sort((a, b) => a.sort - b.sort)[0];
-    if (dom) focusDomain(dom.id);
+    if (!dom) return;
+    const init = initiativesOf(data, dom.id)[0];
+    const proj = init ? projectsOf(data, init.id)[0] : null;
+    navigate({
+      focus: { domainId: dom.id, initiativeId: init?.id ?? "", projectId: proj?.id ?? "" },
+    }, "none");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, data.domains.length]);
 
@@ -98,7 +105,7 @@ function AppShellInner() {
   // been reviewed, offer the ritual once (dismissable per week).
   useEffect(() => {
     if (!ready) return;
-    const dow = parseDateISO(todayISO()).getDay(); // app-TZ weekday; 0 = Sunday, 1 = Monday
+    const dow = parseDateISO(todayISO()).getDay();
     const key = `nuvo-sunday-${planningWeekStartISO()}`;
     if ((dow === 0 || dow === 1) && !data.sprint?.reviewed_at && !localStorage.getItem(key)) {
       setSundayNudge(true);
@@ -110,11 +117,6 @@ function AppShellInner() {
     setSundayNudge(false);
   };
 
-  // Cross-floor drill-ins: set the focus, the rung, and the detail view together
-  // (without the board reset that goRung applies).
-  const openInitiative = (id: string) => { focusInitiative(id); setRung("initiative"); };
-  const openProject = (id: string) => { focusProject(id); setRung("project"); };
-
   // ⌘1–5 jump to a rung; ⌘↑ / ⌘↓ travel the ladder.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -124,44 +126,40 @@ function AppShellInner() {
 
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
-        setRung((r) => {
-          const i = LADDER.indexOf(r);
-          const next = e.key === "ArrowDown" ? Math.min(LADDER.length - 1, i + 1) : Math.max(0, i - 1);
-          const target = LADDER[next];
-          if (target === "project") setProjectView("portfolio");
-          if (target === "initiative") setInitiativeView("portfolio");
-          return target;
-        });
+        const i = LADDER.indexOf(rung);
+        const next = e.key === "ArrowDown" ? Math.min(LADDER.length - 1, i + 1) : Math.max(0, i - 1);
+        goRung(LADDER[next]);
         return;
       }
 
       const num = Number(e.key);
       if (num >= 1 && num <= LADDER.length) {
         e.preventDefault();
-        const target = LADDER[num - 1];
-        if (target === "project") setProjectView("portfolio");
-        if (target === "initiative") setInitiativeView("portfolio");
-        setRung(target);
+        goRung(LADDER[num - 1]);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [goRung, rung]);
+
+  const openFlowWithSeed = (f: FlowName) => {
+    if (f === "blueprint") setBlueprintSeed(null);
+    openFlow(f);
+  };
 
   return (
     <div className="atmosphere flex h-full">
-      <Spine rung={rung} setRung={goRung} openFlow={openFlow} />
+      <Spine rung={rung} setRung={goRung} openFlow={openFlowWithSeed} />
       <div className="relative min-w-0 flex-1">
-        {/* Day · Week stays mounted so the calendar never loses its place. */}
-        <Planner openFlow={openFlow} />
+        <Planner openFlow={openFlowWithSeed} />
         {rung !== "day" && (
           <div className="atmosphere floor-enter absolute inset-0 z-30">
             <FloorPane
               rung={rung}
               focus={focus}
               focusDomain={focusDomain}
-              openInitiative={openInitiative}
-              openProject={openProject}
+              openInitiative={openInitiativeDetail}
+              openProject={openProjectDetail}
               goRung={goRung}
               projectView={projectView}
               setProjectView={setProjectView}
@@ -172,13 +170,12 @@ function AppShellInner() {
           </div>
         )}
 
-        {/* the weekly nudge — quiet, dismissable, once per week */}
         {sundayNudge && !flow && (
           <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2">
             <div className="rise elev-3 flex items-center gap-3 rounded-full border border-line bg-surface px-4 py-2">
               <span className="text-[12px]">A new week is here — plan it?</span>
               <button
-                onClick={() => { setFlow("sunday"); setSundayNudge(false); }}
+                onClick={() => { openFlow("sunday"); setSundayNudge(false); }}
                 className="fast rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
               >
                 Plan the week ▸
@@ -191,15 +188,20 @@ function AppShellInner() {
         )}
       </div>
 
-      {flow === "sunday" && <SundayRitual onClose={() => { setFlow(null); setSundayNudge(false); }} />}
+      {flow === "sunday" && <SundayRitual onClose={closeFlow} />}
       {flow === "summit" && (
-        <SummitRitual onClose={() => setFlow(null)} onOpenBlueprint={() => openFlow("blueprint")} />
+        <SummitRitual
+          step={flowStep}
+          setStep={(s) => navigate({ flowStep: s })}
+          onClose={closeFlow}
+          onOpenBlueprint={() => openFlowWithSeed("blueprint")}
+        />
       )}
       {flow === "blueprint" && (
         <BlueprintFlow
           seed={blueprintSeed ?? undefined}
-          onClose={() => { setFlow(null); setBlueprintSeed(null); }}
-          onCreated={(id) => { setFlow(null); setBlueprintSeed(null); openInitiative(id); }}
+          onClose={() => { closeFlow(); setBlueprintSeed(null); }}
+          onCreated={(id) => { setBlueprintSeed(null); openInitiativeDetail(id); }}
         />
       )}
     </div>

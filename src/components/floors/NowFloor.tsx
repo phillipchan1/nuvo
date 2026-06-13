@@ -13,9 +13,10 @@ import { useSettings } from "../../hooks/useSettings";
 import { useAgent } from "../../hooks/useAgent";
 import { endOf } from "../../lib/dates";
 import { faithfulness, initiativeProgress, type Domain } from "../../lib/vertical";
-import { fmtMins, rankNow, readDay, type BusyBlock, type DayRead, type Gap, type NowContext, type Suggestion } from "../../lib/now";
+import { fmtMins, rankNow, readDay, type BusyBlock, type DayRead, type Gap, type NowContext } from "../../lib/now";
 import { composeBrief, type Brief } from "../../lib/brief";
 import type { AgentMessage } from "../../lib/agentTypes";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { Btn } from "../ui";
 
 const NAME = "Phil";
@@ -30,6 +31,8 @@ const readChatOpen = (): boolean => {
 export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   const { data, toggleTask } = useVertical();
   const { settings } = useSettings();
+  const { nav, setNowMoment, back } = useAppNavigation();
+  const { nowMoment, nowTaskId } = nav;
 
   // a live "now" — the floor can stay open for hours
   const [now, setNow] = useState(() => new Date());
@@ -107,28 +110,28 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
 
   const suggestions = useMemo(() => rankNow(data, ctx), [data, ctx]);
   const [idx, setIdx] = useState(0);
-  const [state, setState] = useState<"choose" | "focus" | "done">("choose");
-  // The suggestion you committed to — snapshotted so the focus/done moments
-  // survive the task leaving the ready pool when it completes.
-  const [active, setActive] = useState<Suggestion | null>(null);
   const top = suggestions[Math.min(idx, Math.max(0, suggestions.length - 1))] ?? null;
+  const active = useMemo(
+    () => (nowTaskId ? suggestions.find((s) => s.task.id === nowTaskId) ?? null : null),
+    [nowTaskId, suggestions],
+  );
   const brief = useMemo(() => composeBrief({ now, name: NAME, dayRead, top, tired }), [now, dayRead, top, tired]);
 
   // ── Focusing / done are "moments": clear the day away, one thing only ──
-  if (active && state === "focus") {
+  if (active && nowMoment === "focus") {
     return (
       <Moment accent={active.domain?.color}>
         <div className="section-label">Focusing</div>
         <div className="mt-1.5 text-[20px] font-medium">{active.task.title}</div>
         <div className="mono mt-1 text-[11px] text-muted">{active.task.durationMins}m · everything else is quiet</div>
         <div className="mt-5 flex justify-center gap-2">
-          <Btn kind="primary" onClick={() => { toggleTask(active.task.id); setState("done"); }}>✓ done</Btn>
-          <Btn onClick={() => { setState("choose"); setActive(null); }}>back</Btn>
+          <Btn kind="primary" onClick={() => { toggleTask(active.task.id); setNowMoment("done", active.task.id); }}>✓ done</Btn>
+          <Btn onClick={back}>back</Btn>
         </div>
       </Moment>
     );
   }
-  if (active && state === "done") {
+  if (active && nowMoment === "done") {
     return (
       <Moment accent={active.domain?.color}>
         <div className="text-[15px] font-medium" style={{ color: active.domain?.color }}>✓ logged as a gain</div>
@@ -137,7 +140,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
           {active.initiative && <div>{active.initiative.name} — now {initiativeProgress(data, active.initiative)}%</div>}
           {active.domain && <div>{active.domain.name} tended · faithful again today</div>}
         </div>
-        <div className="mt-4"><Btn onClick={() => { setState("choose"); setActive(null); setIdx(0); }}>what's next →</Btn></div>
+        <div className="mt-4"><Btn onClick={() => { setNowMoment("choose"); setIdx(0); }}>what's next →</Btn></div>
       </Moment>
     );
   }
@@ -209,12 +212,12 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
                       <Btn kind="primary" onClick={onOpenDay}>
                         {activeGap ? `plan for ${activeGap.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} →` : "open day planner"}
                       </Btn>
-                      <Btn onClick={() => { setActive(top); setState("focus"); }}>start now</Btn>
+                      <Btn onClick={() => top && setNowMoment("focus", top.task.id)}>start now</Btn>
                       <Btn onClick={() => setIdx((i) => (i + 1) % suggestions.length)}>not this</Btn>
                     </>
                   ) : (
                     <>
-                      <Btn kind="primary" onClick={() => { setActive(top); setState("focus"); }}>▶ start · {top.task.durationMins}m</Btn>
+                      <Btn kind="primary" onClick={() => top && setNowMoment("focus", top.task.id)}>▶ start · {top.task.durationMins}m</Btn>
                       <Btn onClick={() => setIdx((i) => (i + 1) % suggestions.length)}>not now</Btn>
                       <Btn onClick={onOpenDay}>open day planner</Btn>
                     </>

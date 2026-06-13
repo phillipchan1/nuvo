@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
   domainById,
   initiativeById,
@@ -18,8 +19,10 @@ import NewProject from "./NewProject";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, updateProject } = useVertical();
+  const { nav, openFloorModal, closeFloorModal } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+
+  const creating = nav.floorModal === "new-project";
 
   const projects = data.projects.filter((p) => !domainFilter || p.domainId === domainFilter);
 
@@ -47,7 +50,6 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
       },
       setTitle: (v) => updateProject(p.id, { name: v }),
       setStatus: (s) => updateProject(p.id, { status: s as typeof p.status }),
-      // moving to another domain drops the (now-mismatched) initiative link
       setDomain: (domId) => updateProject(p.id, { domainId: domId, initiativeId: null }),
       setStartDate: (v) => updateProject(p.id, { startDate: v }),
       setTargetDate: (v) => updateProject(p.id, { targetDate: v }),
@@ -74,7 +76,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
             { key: "tasks", label: "Tasks" },
             { key: "week", label: "Week" },
           ],
-          onNew: () => setCreating(true),
+          onNew: () => openFloorModal("new-project"),
           newLabel: "+ new project",
           storageKey: "projects",
         }}
@@ -83,8 +85,8 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
       {creating && (
         <NewProject
           initialDomainId={domainFilter}
-          onClose={() => setCreating(false)}
-          onCreated={(id) => { setCreating(false); onOpen(id); }}
+          onClose={closeFloorModal}
+          onCreated={(id) => onOpen(id)}
         />
       )}
     </div>

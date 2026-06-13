@@ -6,6 +6,7 @@
 import { useMemo, useState } from "react";
 import { subDays } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useNarrator } from "../../hooks/useNarrator";
 import {
   domainById,
@@ -31,14 +32,18 @@ const QUARTER_KEY = () => {
 };
 
 export default function SummitRitual({
+  step,
+  setStep,
   onClose,
   onOpenBlueprint,
 }: {
+  step: number;
+  setStep: (s: number) => void;
   onClose: () => void;
   onOpenBlueprint: () => void;
 }) {
   const { data } = useVertical();
-  const [step, setStep] = useState(0);
+  const { back } = useAppNavigation();
   const [done, setDone] = useState(false);
 
   const finish = () => {
@@ -93,6 +98,7 @@ export default function SummitRitual({
       stages={stages}
       step={step}
       setStep={setStep}
+      onStepBack={back}
       finished={
         done ? (
           <div className="flex min-h-[50vh] items-center justify-center">
