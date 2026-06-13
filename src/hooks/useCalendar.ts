@@ -89,13 +89,16 @@ export function useExternalEventMutations() {
       title,
       start_at,
       end_at,
+      recurrence,
     }: {
       title: string;
       start_at: string;
       end_at: string;
+      /** Google RRULE lines, e.g. ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"]. */
+      recurrence?: string[];
     }) => {
       const { data, error } = await supabase.functions.invoke("google-events", {
-        body: { action: "create", title, start_at, end_at },
+        body: { action: "create", title, start_at, end_at, recurrence },
       });
       if (error) throw error;
       return data;

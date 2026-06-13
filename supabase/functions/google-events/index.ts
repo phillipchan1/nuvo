@@ -22,6 +22,9 @@ Deno.serve(async (req) => {
       const title = (body.title as string)?.trim() || "(no title)";
       const start_at = body.start_at as string;
       const end_at = body.end_at as string;
+      // Optional Google RRULE lines for a repeating event — Google expands the
+      // series natively; the read-sync pulls the instances back.
+      const recurrence = Array.isArray(body.recurrence) ? (body.recurrence as string[]) : undefined;
       if (!start_at || !end_at) return json({ error: "start_at and end_at required" }, 400);
 
       const account = (await loadGoogleAccounts()).find((a) => a.user_id === user.id);
@@ -33,6 +36,7 @@ Deno.serve(async (req) => {
           summary: title,
           start: { dateTime: new Date(start_at).toISOString() },
           end: { dateTime: new Date(end_at).toISOString() },
+          ...(recurrence?.length ? { recurrence } : {}),
         }),
       });
       if (!res.ok) throw new Error(`create event failed: ${res.status} ${await res.text()}`);

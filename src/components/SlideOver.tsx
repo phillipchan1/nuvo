@@ -2,42 +2,46 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import ReactMarkdown from "react-markdown";
 import { createPortal } from "react-dom";
 import { format } from "date-fns";
-import type { AttendeeStatus, ExternalEvent, GoogleAttendee, Label, Slot, Task } from "../lib/types";
+import type { AttendeeStatus, ExternalEvent, GoogleAttendee, Label, Recurrence, Slot, Task } from "../lib/types";
+import { ruleOf } from "../lib/types";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
+import type { useRecurrenceMutations, SeriesTemplate } from "../hooks/useRecurrence";
 import { useEventDetails } from "../hooks/useCalendar";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, projectById } from "../lib/vertical";
-import { fmtDuration } from "../lib/dates";
+import { fmtDuration, todayISO } from "../lib/dates";
+import { deriveSlotTitle } from "../lib/slots";
+import { rulesEqual, type RecurrenceRule } from "../lib/recurrence";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import { supabase } from "../lib/supabase";
+import { RecurrenceDeleteButton, RepeatControl } from "./RecurrencePicker";
 import { Btn, RollBadge } from "./ui";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <div className="section-label !p-0">{label}</div>
-      {children}
-    </div>
-  );
+/** Minutes after local midnight for an ISO instant (for series templates). */
+function localMinutes(iso: string): number {
+  const d = new Date(iso);
+  return d.getHours() * 60 + d.getMinutes();
 }
-
-const inputCls =
-  "w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[13px] outline-none focus:border-accent";
 
 export function TaskPopover({
   task,
   anchor,
   labels,
   mutations,
+  recurrence,
+  recurrenceMutations,
   onClose,
 }: {
   task: Task;
   anchor: DOMRect;
   labels: Label[];
   mutations: ReturnType<typeof useTaskMutations>;
+  /** The series this task belongs to (if any) — drives the repeat chip. */
+  recurrence: Recurrence | null;
+  recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
@@ -144,6 +148,24 @@ export function TaskPopover({
     const [y, m, d] = dateISO.split("-").map(Number);
     const [h, min] = hhmm.split(":").map(Number);
     mutations.block(task, new Date(y, m - 1, d, h, min));
+  };
+
+  // Set / change / stop the repeat. A dated task converts to a series anchored
+  // at its day; an existing series re-rules in place; clearing it stops here on.
+  const applyRepeat = (rule: RecurrenceRule | null) => {
+    if (!task.do_date) return;
+    if (rulesEqual(recurrence ? ruleOf(recurrence) : null, rule)) return;
+    const template: SeriesTemplate = {
+      title: task.title,
+      duration_minutes: task.duration_minutes ?? 30,
+      time_of_day_minutes: task.start_time ? localMinutes(task.start_time) : null,
+      project_id: task.project_id,
+      domain_id: task.domain_id,
+      priority: task.priority,
+    };
+    if (rule && !recurrence) void recurrenceMutations.convertToSeries("task", task, rule, template);
+    else if (rule && recurrence) void recurrenceMutations.updateSeries(recurrence, rule, template);
+    else if (!rule && recurrence) void recurrenceMutations.stopSeries(recurrence, task.do_date);
   };
 
   const labelIds = new Set((task.task_labels ?? []).map((tl) => tl.label_id));
@@ -387,6 +409,14 @@ export function TaskPopover({
             />
           </label>
 
+          {/* Repeat */}
+          <RepeatControl
+            anchorISO={task.do_date ?? todayISO()}
+            value={recurrence ? ruleOf(recurrence) : null}
+            onChange={applyRepeat}
+            disabled={!task.do_date}
+          />
+
           <div className="flex-1" />
 
           {/* This week star */}
@@ -517,9 +547,21 @@ export function TaskPopover({
           )}
           {task.start_time && <Btn onClick={() => mutations.unblock(task)}>Unblock</Btn>}
           <div className="flex-1" />
-          <Btn kind="signal" onClick={() => { mutations.trash(task); onClose(); }}>
-            Trash
-          </Btn>
+          <RecurrenceDeleteButton
+            recurring={Boolean(task.recurrence_id && recurrence)}
+            label="Trash"
+            onSimple={() => { mutations.trash(task); onClose(); }}
+            onThis={() => {
+              if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
+              mutations.trash(task);
+              onClose();
+            }}
+            onFollowing={() => {
+              if (recurrence && task.do_date) recurrenceMutations.deleteFollowing(recurrence, task.do_date);
+              onClose();
+            }}
+            onSeries={() => { if (recurrence) recurrenceMutations.deleteSeries(recurrence); onClose(); }}
+          />
         </div>
       </div>
     </>,
@@ -905,6 +947,8 @@ export function SlotPopover({
   childTasks,
   taskMutations,
   slotMutations,
+  recurrence,
+  recurrenceMutations,
   onOpenTask,
   onClose,
 }: {
@@ -913,6 +957,8 @@ export function SlotPopover({
   childTasks: Task[];
   taskMutations: ReturnType<typeof useTaskMutations>;
   slotMutations: ReturnType<typeof useSlotMutations>;
+  recurrence: Recurrence | null;
+  recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
   onOpenTask: (t: Task) => void;
   onClose: () => void;
 }) {
@@ -920,6 +966,24 @@ export function SlotPopover({
   const [newTitle, setNewTitle] = useState("");
   const popRef = useRef<HTMLDivElement>(null);
   const { data: vertical } = useVertical();
+
+  // What the slot shows when unnamed — derived from its contents.
+  const derivedTitle = deriveSlotTitle(slot, childTasks, vertical);
+
+  const applyRepeat = (rule: RecurrenceRule | null) => {
+    if (rulesEqual(recurrence ? ruleOf(recurrence) : null, rule)) return;
+    const template: SeriesTemplate = {
+      title: slot.title,
+      duration_minutes: slot.duration_minutes,
+      time_of_day_minutes: localMinutes(slot.start_time),
+      project_id: slot.project_id,
+      domain_id: slot.domain_id,
+      color: slot.color,
+    };
+    if (rule && !recurrence) void recurrenceMutations.convertToSeries("slot", slot, rule, template);
+    else if (rule && recurrence) void recurrenceMutations.updateSeries(recurrence, rule, template);
+    else if (!rule && recurrence) void recurrenceMutations.stopSeries(recurrence, slot.do_date);
+  };
 
   useEffect(() => setTitle(slot.title), [slot.id, slot.title]);
 
@@ -1043,9 +1107,12 @@ export function SlotPopover({
               onChange={(e) => setTitle(e.target.value)}
               onBlur={commitTitle}
               onKeyDown={(e) => e.key === "Enter" && commitTitle()}
-              className="w-full border-0 bg-transparent text-[15px] font-semibold leading-snug outline-none placeholder:text-muted"
-              placeholder="Slot name…"
+              className="w-full border-0 bg-transparent text-[15px] font-semibold leading-snug outline-none placeholder:text-muted/70"
+              placeholder={derivedTitle}
             />
+            {!slot.title.trim() && (
+              <div className="mono mt-0.5 text-[10px] text-muted/70">✦ auto-named — type to override</div>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -1117,6 +1184,13 @@ export function SlotPopover({
                 })}
             </select>
           </label>
+
+          {/* Repeat */}
+          <RepeatControl
+            anchorISO={slot.do_date}
+            value={recurrence ? ruleOf(recurrence) : null}
+            onChange={applyRepeat}
+          />
         </div>
 
         {/* Progress */}
@@ -1187,15 +1261,21 @@ export function SlotPopover({
         {/* Footer */}
         <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
           <div className="flex-1" />
-          <Btn
-            kind="signal"
-            onClick={() => {
+          <RecurrenceDeleteButton
+            recurring={Boolean(slot.recurrence_id && recurrence)}
+            label="Delete slot"
+            onSimple={() => { slotMutations.removeSlot(slot); onClose(); }}
+            onThis={() => {
+              if (recurrence && slot.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, slot.recurrence_date);
               slotMutations.removeSlot(slot);
               onClose();
             }}
-          >
-            Delete slot
-          </Btn>
+            onFollowing={() => {
+              if (recurrence) recurrenceMutations.deleteFollowing(recurrence, slot.do_date);
+              onClose();
+            }}
+            onSeries={() => { if (recurrence) recurrenceMutations.deleteSeries(recurrence); onClose(); }}
+          />
         </div>
       </div>
     </>,

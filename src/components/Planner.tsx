@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { todayISO } from "../lib/dates";
-import type { ExternalEvent, Task } from "../lib/types";
+import type { ExternalEvent, Slot, Task } from "../lib/types";
 import { useDayTasks, useInboxTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
+import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
 import { useRealtime } from "../hooks/useRealtime";
 import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
 import { taskDomainColor } from "../lib/vertical";
+import { deriveSlotTitle } from "../lib/slots";
 import LeftRail, { type RailTab } from "./LeftRail";
 import type { FlowName } from "./Spine";
 import CalendarPane, { type CalView } from "./CalendarPane";
@@ -62,10 +64,17 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
   const { data: slotChildTasks = [] } = useSlotTasks(slotIds);
   const { data: accounts = [] } = useCalendarAccounts();
+  const { data: recurrences = [] } = useRecurrences();
   const { labels } = useLabels();
   const mutations = useTaskMutations();
   const eventMutations = useExternalEventMutations();
   const slotMutations = useSlotMutations();
+  const recurrenceMutations = useRecurrenceMutations();
+
+  const recurrenceById = useMemo(
+    () => new Map(recurrences.map((r) => [r.id, r])),
+    [recurrences],
+  );
 
   const slotTasksBySlot = useMemo(() => {
     const m: Record<string, Task[]> = {};
@@ -75,6 +84,13 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     }
     return m;
   }, [slotChildTasks]);
+
+  /** Display title for a slot — derived from its contents when unnamed. */
+  const slotTitle = useCallback(
+    (s: Slot) => deriveSlotTitle(s, slotTasksBySlot[s.id] ?? [], vertical),
+    [slotTasksBySlot, vertical],
+  );
+
   const agent = useAgent(range);
 
   const toggleAgent = () => {
@@ -87,13 +103,18 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   useRealtime(true);
 
-  // Defensive client-side rollover on first open of a new day
+  // Defensive client-side rollover + recurrence top-up on first open of a new
+  // day (and whenever the tab regains focus): repeating series walk their
+  // horizon forward one day at a time, even if the cron never ran.
   const rollover = useRolloverGuard(settings?.last_rollover_date);
   const settingsLoaded = Boolean(settings);
   useEffect(() => {
     if (!settingsLoaded) return;
-    void rollover();
-    const onVisible = () => document.visibilityState === "visible" && void rollover();
+    void (async () => { await rollover(); await recurrenceMutations.materializeAll(); })();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void (async () => { await rollover(); await recurrenceMutations.materializeAll(); })();
+    };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -258,9 +279,11 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             settings={settings}
             now={now}
             taskAccent={taskAccent}
+            slotTitle={slotTitle}
             mutations={mutations}
             eventMutations={eventMutations}
             slotMutations={slotMutations}
+            recurrenceMutations={recurrenceMutations}
             onOpenTask={(t, anchor) => setTaskPanel({ id: t.id, anchor })}
             onOpenEvent={(e, anchor) => setEventPanel({ id: e.id, anchor })}
             onOpenSlot={(s, anchor) => setSlotPanel({ id: s.id, anchor })}
@@ -274,6 +297,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
               anchor={taskPanel.anchor}
               labels={labels}
               mutations={mutations}
+              recurrence={openTask.recurrence_id ? recurrenceById.get(openTask.recurrence_id) ?? null : null}
+              recurrenceMutations={recurrenceMutations}
               onClose={() => setTaskPanel(null)}
             />
           )}
@@ -293,6 +318,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
               childTasks={slotTasksBySlot[openSlot.id] ?? []}
               taskMutations={mutations}
               slotMutations={slotMutations}
+              recurrence={openSlot.recurrence_id ? recurrenceById.get(openSlot.recurrence_id) ?? null : null}
+              recurrenceMutations={recurrenceMutations}
               onOpenTask={(t) => {
                 const anchor = slotPanel.anchor;
                 setSlotPanel(null);

@@ -471,7 +471,7 @@ function layoutColumns(blocks: BusyBlock[]): { b: BusyBlock; col: number; cols: 
 // the day: what's behind you dims, what you're in glows, open blocks read as
 // the breathing room they are.
 function DaySpine({
-  now, busy, gaps, activeGap, windowStart, windowEnd,
+  now, busy, activeGap, windowStart, windowEnd,
 }: {
   now: Date; busy: BusyBlock[]; gaps: Gap[]; activeGap: Gap | null; windowStart: Date; windowEnd: Date;
 }) {

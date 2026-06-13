@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { format } from "date-fns";
-import { fmtDuration } from "../lib/dates";
+import { fmtDuration, toDateISO } from "../lib/dates";
+import type { RecurrenceRule } from "../lib/recurrence";
+import { RepeatControl } from "./RecurrencePicker";
 
 export type CreateKind = "task" | "event" | "slot";
 
@@ -29,7 +31,7 @@ export default function DraftComposer({
   point: { x: number; y: number };
   initialKind: CreateKind;
   googleAvailable: boolean;
-  onCreate: (kind: CreateKind, title: string) => void;
+  onCreate: (kind: CreateKind, title: string, recurrence: RecurrenceRule | null) => void;
   onCancel: () => void;
 }) {
   const kinds = KINDS.filter((k) => k.value !== "event" || googleAvailable);
@@ -37,6 +39,7 @@ export default function DraftComposer({
     initialKind === "event" && !googleAvailable ? "task" : initialKind,
   );
   const [title, setTitle] = useState("");
+  const [repeat, setRepeat] = useState<RecurrenceRule | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -72,13 +75,16 @@ export default function DraftComposer({
 
   const durationMins = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
 
+  // Slots derive their title from contents, so an empty name is fine there.
+  const canCreate = kind === "slot" || Boolean(title.trim());
+
   const submit = () => {
-    if (!title.trim()) return;
-    onCreate(kind, title.trim());
+    if (!canCreate) return;
+    onCreate(kind, title.trim(), repeat);
   };
 
   const placeholder =
-    kind === "event" ? "Event title…" : kind === "slot" ? "Slot name…" : "Task title…";
+    kind === "event" ? "Event title…" : kind === "slot" ? "Slot name (optional)…" : "Task title…";
 
   return createPortal(
     <>
@@ -127,6 +133,11 @@ export default function DraftComposer({
           <span className="text-muted/60">· {fmtDuration(durationMins)}</span>
         </div>
 
+        {/* Repeat */}
+        <div className="flex">
+          <RepeatControl anchorISO={toDateISO(start)} value={repeat} onChange={setRepeat} />
+        </div>
+
         <div className="flex items-center justify-end gap-2">
           <button
             onClick={onCancel}
@@ -136,7 +147,7 @@ export default function DraftComposer({
           </button>
           <button
             onClick={submit}
-            disabled={!title.trim()}
+            disabled={!canCreate}
             className="fast rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-40"
           >
             Create

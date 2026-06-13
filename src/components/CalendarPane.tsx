@@ -9,9 +9,11 @@ import type { EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@ful
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { endOf, isOverdue, toDateISO } from "../lib/dates";
+import { toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
+import type { useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateKind } from "./DraftComposer";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth";
@@ -21,6 +23,8 @@ type ExtendedProps = {
   refId: string;
   calColor?: string;
   recurringEventId?: string;
+  /** Part of a repeating series (task/slot occurrence or Google instance). */
+  recurring?: boolean;
   slotDone?: number;
   slotTotal?: number;
   slotChildren?: { title: string; done: boolean }[];
@@ -113,9 +117,11 @@ export default function CalendarPane({
   settings,
   now,
   taskAccent,
+  slotTitle,
   mutations,
   eventMutations,
   slotMutations,
+  recurrenceMutations,
   onOpenTask,
   onOpenEvent,
   onOpenSlot,
@@ -133,9 +139,12 @@ export default function CalendarPane({
   now: Date;
   /** Domain color per task — blocks carry their thread up the vertical. */
   taskAccent: (t: Task) => string | null;
+  /** Display title for a slot — derived from its contents when unnamed. */
+  slotTitle: (s: Slot) => string;
   mutations: ReturnType<typeof useTaskMutations>;
   eventMutations: ReturnType<typeof useExternalEventMutations>;
   slotMutations: ReturnType<typeof useSlotMutations>;
+  recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
   onOpenTask: (t: Task, anchor: DOMRect) => void;
   onOpenEvent: (e: ExternalEvent, anchor: DOMRect) => void;
   onOpenSlot: (s: Slot, anchor: DOMRect) => void;
@@ -243,7 +252,7 @@ export default function CalendarPane({
                 backgroundColor: `color-mix(in srgb, ${accent} 15%, var(--surface))`,
               }
             : {}),
-          extendedProps: { kind: "task" as const, refId: t.id },
+          extendedProps: { kind: "task" as const, refId: t.id, recurring: Boolean(t.recurrence_id) },
         };
       });
 
@@ -279,6 +288,9 @@ export default function CalendarPane({
               (isGoogle && /_.{8}T\d{6}Z?$/.test(e.provider_event_id)
                 ? e.provider_event_id
                 : undefined),
+            recurring: Boolean(
+              e.recurring_event_id ?? (isGoogle && /_.{8}T\d{6}Z?$/.test(e.provider_event_id)),
+            ),
           },
         };
       });
@@ -294,7 +306,7 @@ export default function CalendarPane({
       const done = children.filter((c) => c.done).length;
       return {
         id: `slot:${s.id}`,
-        title: s.title || "Time slot",
+        title: slotTitle(s),
         start: s.start_time,
         end: end.toISOString(),
         editable: true,
@@ -306,6 +318,7 @@ export default function CalendarPane({
           kind: "slot" as const,
           refId: s.id,
           calColor: color,
+          recurring: Boolean(s.recurrence_id),
           slotDone: done,
           slotTotal: children.length,
           slotChildren: children,
@@ -314,7 +327,7 @@ export default function CalendarPane({
     });
 
     return [...taskEvents, ...externalEvents, ...slotEvents];
-  }, [tasks, events, slots, slotTasks, hidden, accountById, now, taskAccent]);
+  }, [tasks, events, slots, slotTasks, hidden, accountById, now, taskAccent, slotTitle]);
 
   const findTask = (id: string) => tasksRef.current.find((t) => t.id === id);
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
@@ -363,7 +376,11 @@ export default function CalendarPane({
 
     if (kind === "task") {
       const task = findTask(refId);
-      if (task && info.event.start) mutations.block(task, info.event.start);
+      if (task && info.event.start) {
+        mutations.block(task, info.event.start);
+        if (task.recurrence_id && !task.recurrence_overridden)
+          mutations.patchTask(task.id, { recurrence_overridden: true });
+      }
       return;
     }
 
@@ -379,6 +396,7 @@ export default function CalendarPane({
             ...(ne
               ? { duration_minutes: Math.max(15, Math.round((ne.getTime() - ns.getTime()) / 60_000)) }
               : {}),
+            ...(findSlot(refId)?.recurrence_id ? { recurrence_overridden: true } : {}),
           },
         });
       }
@@ -412,7 +430,10 @@ export default function CalendarPane({
       const task = findTask(refId);
       if (task && info.event.start && info.event.end) {
         const mins = Math.round((info.event.end.getTime() - info.event.start.getTime()) / 60_000);
-        mutations.patchTask(task.id, { duration_minutes: Math.max(15, mins) });
+        mutations.patchTask(task.id, {
+          duration_minutes: Math.max(15, mins),
+          ...(task.recurrence_id && !task.recurrence_overridden ? { recurrence_overridden: true } : {}),
+        });
       }
       return;
     }
@@ -427,6 +448,7 @@ export default function CalendarPane({
             start_time: ns.toISOString(),
             do_date: toDateISO(ns),
             duration_minutes: Math.max(15, Math.round((ne.getTime() - ns.getTime()) / 60_000)),
+            ...(findSlot(refId)?.recurrence_id ? { recurrence_overridden: true } : {}),
           },
         });
       }
@@ -482,27 +504,45 @@ export default function CalendarPane({
     });
   };
 
-  const handleCreate = async (kind: CreateKind, title: string) => {
+  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null) => {
     if (!draft) return;
     const { start, end, point } = draft;
     const duration = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
     const doDate = toDateISO(start);
+    const minutes = start.getHours() * 60 + start.getMinutes();
     setDraft(null);
     calRef.current?.getApi().unselect();
 
     try {
       if (kind === "task") {
-        await mutations.create({
-          title,
-          do_date: doDate,
-          start_time: start.toISOString(),
-          duration_minutes: duration,
-        });
+        if (recurrence) {
+          await recurrenceMutations.createSeries({
+            kind: "task",
+            rule: recurrence,
+            anchorISO: doDate,
+            template: { title, duration_minutes: duration, time_of_day_minutes: minutes },
+          });
+        } else {
+          await mutations.create({
+            title,
+            do_date: doDate,
+            start_time: start.toISOString(),
+            duration_minutes: duration,
+          });
+        }
       } else if (kind === "event") {
         await eventMutations.createEvent({
           title,
           start_at: start.toISOString(),
           end_at: end.toISOString(),
+          ...(recurrence ? { recurrence: toGoogleRRULE(recurrence) } : {}),
+        });
+      } else if (recurrence) {
+        await recurrenceMutations.createSeries({
+          kind: "slot",
+          rule: recurrence,
+          anchorISO: doDate,
+          template: { title, duration_minutes: duration, time_of_day_minutes: minutes },
         });
       } else {
         const slot = await slotMutations.createSlot({
@@ -534,7 +574,7 @@ export default function CalendarPane({
   };
 
   const renderEvent = (arg: EventContentArg) => {
-    const { kind, refId, calColor } = arg.event.extendedProps as ExtendedProps;
+    const { kind, refId, calColor, recurring } = arg.event.extendedProps as ExtendedProps;
     const inMonth = arg.view.type === "dayGridMonth";
 
     // ── Month view: compact dot + title pill ──────────────────────────────
@@ -580,6 +620,7 @@ export default function CalendarPane({
               <span className="truncate text-label font-semibold leading-tight">
                 {arg.event.title}
               </span>
+              {recurring && <RecurMark className="shrink-0 opacity-50" />}
               {slotTotal > 0 && (
                 <span className="mono ml-auto shrink-0 rounded-full bg-bg px-1 text-micro leading-snug text-muted">
                   {slotDone}/{slotTotal}
@@ -622,8 +663,11 @@ export default function CalendarPane({
             />
           )}
           <div className="flex min-w-0 flex-1 flex-col justify-start overflow-hidden px-1.5 pt-1.5 pb-1">
-            <div className="truncate text-label font-semibold leading-tight">
-              {arg.event.title}
+            <div className="flex min-w-0 items-center gap-1">
+              <span className="truncate text-label font-semibold leading-tight">
+                {arg.event.title}
+              </span>
+              {recurring && <RecurMark className="shrink-0 opacity-50" />}
             </div>
             {showTime && (
               <div className="mono mt-0.5 truncate text-micro leading-tight opacity-60">
@@ -657,12 +701,15 @@ export default function CalendarPane({
           )}
         </button>
         <div className="min-w-0">
-          <div
-            className={`truncate text-label font-semibold leading-tight ${
-              done ? "line-through opacity-55" : ""
-            }`}
-          >
-            {arg.event.title}
+          <div className="flex min-w-0 items-center gap-1">
+            <span
+              className={`truncate text-label font-semibold leading-tight ${
+                done ? "line-through opacity-55" : ""
+              }`}
+            >
+              {arg.event.title}
+            </span>
+            {recurring && <RecurMark className="shrink-0 opacity-45" />}
           </div>
           {showTime && (
             <div className="mono mt-0.5 text-micro leading-tight opacity-60">
@@ -844,4 +891,14 @@ function minutesToDuration(mins: number): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/** The two-arrow repeat glyph marking a block as part of a series. */
+function RecurMark({ className = "" }: { className?: string }) {
+  return (
+    <svg width="9" height="9" viewBox="0 0 14 14" fill="none" className={className}>
+      <path d="M3 5a4 4 0 016.9-2.7M11 9a4 4 0 01-6.9 2.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M10 1.5V4H7.5M4 12.5V10h2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }

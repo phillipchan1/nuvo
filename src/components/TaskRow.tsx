@@ -133,6 +133,13 @@ export default function TaskRow({
           {task.prework_at && task.prework && !done && (
             <span className="mono shrink-0 text-micro text-accent" title="Prework ready">✦</span>
           )}
+          {task.recurrence_id && (
+            <svg width="9" height="9" viewBox="0 0 14 14" fill="none" className="shrink-0 text-muted" aria-label="Repeats">
+              <title>Repeats</title>
+              <path d="M3 5a4 4 0 016.9-2.7M11 9a4 4 0 01-6.9 2.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              <path d="M10 1.5V4H7.5M4 12.5V10h2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
           <RollBadge count={task.roll_count} />
           {overdue && (
             <span className="mono shrink-0 text-micro font-medium text-signal">overdue</span>

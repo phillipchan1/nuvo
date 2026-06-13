@@ -6,6 +6,7 @@ const TABLE_TO_KEYS: Record<string, string[][]> = {
   tasks: [["tasks"]],
   task_labels: [["tasks"]],
   slots: [["slots"]],
+  recurrences: [["recurrences"], ["tasks"], ["slots"]],
   labels: [["labels"]],
   external_events: [["external_events"]],
   calendar_accounts: [["calendar_accounts"]],

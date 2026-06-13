@@ -1,4 +1,5 @@
 import type { Energy } from "./energy";
+import type { RecurrenceRule } from "./recurrence";
 
 // inbox = raw capture · backlog = processed, deliberately undated (never in
 // inbox, never on Today, never rolls) · planned = dated · done/trashed.
@@ -32,6 +33,10 @@ export interface Task {
   google_event_id: string | null;
   sort_order: number;
   slot_id: string | null;
+  /** Set when this row is one occurrence of a repeating series. */
+  recurrence_id: string | null;
+  recurrence_date: string | null; // the occurrence's date, 'YYYY-MM-DD'
+  recurrence_overridden: boolean; // a THIS-scope edit pinned this occurrence
   task_labels?: { label_id: string }[];
 }
 
@@ -54,6 +59,49 @@ export interface Slot {
   domain_id: string | null;
   color: string | null;
   google_event_id: string | null;
+  recurrence_id: string | null;
+  recurrence_date: string | null;
+  recurrence_overridden: boolean;
+}
+
+/**
+ * A repeating series: the rule + the template every occurrence is stamped from.
+ * Occurrences are real `tasks`/`slots` rows (materialized up to a horizon), not
+ * virtual instances — see src/lib/recurrence.ts and useRecurrence.ts.
+ */
+export interface Recurrence {
+  id: string;
+  user_id: string;
+  kind: "task" | "slot";
+  freq: RecurrenceRule["freq"];
+  interval: number;
+  byweekday: number[];
+  bymonthday: number | null;
+  anchor_date: string; // 'YYYY-MM-DD'
+  until_date: string | null;
+  max_count: number | null;
+  exdates: string[];
+  title: string;
+  duration_minutes: number;
+  time_of_day_minutes: number | null; // start as minutes after midnight; null = no block
+  project_id: string | null;
+  domain_id: string | null;
+  priority: TaskPriority;
+  color: string | null;
+  active: boolean;
+  last_materialized: string | null;
+}
+
+/** Read a series' rule back out of its stored columns. */
+export function ruleOf(r: Recurrence): RecurrenceRule {
+  return {
+    freq: r.freq,
+    interval: r.interval,
+    byweekday: r.byweekday,
+    bymonthday: r.bymonthday,
+    until: r.until_date,
+    count: r.max_count,
+  };
 }
 
 /**
@@ -121,7 +169,7 @@ export interface ExternalEvent {
   recurring_event_id?: string | null;
 }
 
-export type RecurrenceScope = "THIS" | "ALL";
+export type RecurrenceScope = "THIS" | "FOLLOWING" | "ALL";
 
 export interface UserSettings {
   user_id: string;

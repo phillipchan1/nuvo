@@ -120,8 +120,9 @@ npm run dev             # or: npm run build → dist/ static bundle
   the composed week gets a confidence read (planned vs proven, deep-work morning
   share, roll-rate friction per energy). No history → it says so instead of guessing.
 
-After pulling: `supabase db push` (applies migrations 04-06) and
-`supabase functions deploy agent`.
+After pulling: `supabase db push` (applies migrations 04-09 — incl. the
+`recurrences` table) and `supabase functions deploy agent google-events`
+(the latter gained native RRULE support for repeating calendar events).
 
 ## Behavior notes
 
@@ -136,6 +137,22 @@ After pulling: `supabase db push` (applies migrations 04-06) and
   Every scheduled task is reconciled to it (create on block, update on move/resize/
   retitle, ✓-prefix on completion, delete on unblock/trash/roll). One-directional:
   the app's version always wins.
+- **Repeating tasks & slots** — a `recurrences` row holds the rule (daily / weekly
+  with weekday picks / monthly, an interval, and an optional end) plus the template
+  every occurrence is stamped from. Occurrences are *materialized* as ordinary
+  `tasks`/`slots` rows up to a 35-day horizon (`HORIZON_DAYS`), topped up client-side
+  on every app open and after rollover — so drag, resize, the Google mirror, and
+  slot-children all keep working with zero special-casing. A recurring occurrence
+  **never rolls over** (a missed one is just missed; tomorrow already has its own).
+  Set a repeat from the drag-to-create card or the ↻ chip in a task/slot popover;
+  editing one occurrence (drag/resize) pins it so a later "edit all" leaves it be.
+  Deleting offers **this occurrence · this & following · whole series**. Repeating
+  **calendar events** are handled natively by Google (an RRULE on create); the
+  read-sync pulls the instances back and the existing THIS/ALL dialog edits them.
+- **Slot titles auto-derive** — a time slot's name is an optional override. Unnamed,
+  it shows its project, a domain its children share, or a time-of-day label
+  ("Morning · 3 tasks") — so you drop a container on the grid and fill it without
+  ever naming it.
 - **M365** events are read-only: striped fill, dashed border, not draggable.
 - **Token failures** flip `needs_reconnect` on the account, which surfaces the orange
   reconnect banner — sync never fails silently. All sync operations write to `sync_log`.

@@ -3,7 +3,7 @@ import { invokeQuiet, supabase } from "../lib/supabase";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../lib/types";
 
 const SLOT_COLS =
-  "id, user_id, created_at, updated_at, title, do_date, start_time, duration_minutes, project_id, domain_id, color, google_event_id";
+  "id, user_id, created_at, updated_at, title, do_date, start_time, duration_minutes, project_id, domain_id, color, google_event_id, recurrence_id, recurrence_date, recurrence_overridden";
 
 /** Slots intersecting a calendar range (keyed on start, like scheduled tasks). */
 export function useSlots(rangeStartISO: string, rangeEndISO: string) {
