@@ -23,6 +23,8 @@ type ExtendedProps = {
   kind: "task" | "google" | "m365" | "slot";
   refId: string;
   calColor?: string;
+  /** Solid color of the 3px accent bar (domain / calendar / slot color). */
+  barColor?: string;
   recurringEventId?: string;
   /** Part of a repeating series (task/slot occurrence or Google instance). */
   recurring?: boolean;
@@ -30,6 +32,14 @@ type ExtendedProps = {
   slotTotal?: number;
   slotChildren?: { title: string; done: boolean }[];
 };
+
+/** One consistent fill + border, tinted from an item's own color. */
+function blockColors(c: string) {
+  return {
+    backgroundColor: `color-mix(in srgb, ${c} 14%, var(--surface))`,
+    borderColor: `color-mix(in srgb, ${c} 30%, var(--line))`,
+  };
+}
 
 // ── Recurrence scope dialog ────────────────────────────────────────────────
 function RecurrenceDialog({
@@ -189,6 +199,42 @@ export default function CalendarPane({
   // server-side error never silently swallows the thing you just made.
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // ── Vertical density: "how many hours fill the screen" ──────────────────
+  // Fewer hours = taller rows (more scroll); more hours = everything fits.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [fitHours, setFitHours] = useState<number>(() => {
+    const v = Number(localStorage.getItem("nuvo.cal.fitHours"));
+    return v >= 6 && v <= 24 ? v : 13;
+  });
+  useEffect(() => {
+    try { localStorage.setItem("nuvo.cal.fitHours", String(fitHours)); } catch { /* ignore */ }
+  }, [fitHours]);
+
+  const [availH, setAvailH] = useState(0);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setAvailH(el.clientHeight));
+    ro.observe(el);
+    setAvailH(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+
+  const dayStart = settings?.day_start_hour ?? 6;
+  const dayEnd = settings?.day_end_hour ?? 24;
+  // An hour of headroom around the working window so an early (or late) event
+  // is always reachable instead of jammed against the top edge of the grid.
+  const viewStart = Math.max(0, dayStart - 1);
+  const viewEnd = Math.min(24, dayEnd < 24 ? dayEnd + 1 : 24);
+  const windowHours = Math.max(1, viewEnd - viewStart);
+  const fitClamped = Math.min(Math.max(6, fitHours), windowHours);
+  // px-per-hour that makes `fitClamped` hours fill the viewport; the rest
+  // scrolls. (~16px chrome padding + ~52px day header subtracted.)
+  const pxPerHour =
+    availH > 160 ? Math.max(26, Math.min(190, (availH - 16 - 52) / fitClamped)) : 52;
+  const densityRef = useRef(pxPerHour);
+  densityRef.current = pxPerHour;
+
   // Alt+← / Alt+→ = prev/next  |  Alt+T = today
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -238,26 +284,21 @@ export default function CalendarPane({
       .filter((t) => t.start_time)
       .map((t) => {
         const overdue = t.status !== "done" && isOverdue(t, now);
-        const accent = overdue ? null : taskAccent(t);
+        const color = overdue ? "var(--signal)" : (taskAccent(t) ?? "var(--accent)");
         return {
           id: `task:${t.id}`,
           title: t.title,
           start: t.start_time!,
           end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }).toISOString(),
           editable: true,
-          classNames: [
-            "evt-task",
-            t.status === "done" ? "evt-done" : "",
-            overdue ? "evt-overdue" : "",
-          ].filter(Boolean),
-          ...(accent
-            ? {
-                borderColor: `color-mix(in srgb, ${accent} 30%, var(--line))`,
-                borderLeftColor: accent,
-                backgroundColor: `color-mix(in srgb, ${accent} 15%, var(--surface))`,
-              }
-            : {}),
-          extendedProps: { kind: "task" as const, refId: t.id, recurring: Boolean(t.recurrence_id) },
+          classNames: ["evt-task", t.status === "done" ? "evt-done" : ""].filter(Boolean),
+          ...blockColors(color),
+          extendedProps: {
+            kind: "task" as const,
+            refId: t.id,
+            barColor: color,
+            recurring: Boolean(t.recurrence_id),
+          },
         };
       });
 
@@ -276,16 +317,13 @@ export default function CalendarPane({
           editable: isGoogle,
           durationEditable: isGoogle,
           classNames: [isGoogle ? "evt-google" : "evt-m365"],
-          backgroundColor: isGoogle
-            ? `color-mix(in srgb, ${calColor} 18%, var(--surface))`
-            : "transparent",
-          borderColor: isGoogle
-            ? `color-mix(in srgb, ${calColor} 50%, var(--line))`
-            : undefined,
+          // Google gets the unified tint; M365 leaves fill/border to CSS (hatch).
+          ...(isGoogle ? blockColors(calColor) : {}),
           extendedProps: {
             kind: isGoogle ? ("google" as const) : ("m365" as const),
             refId: e.id,
             calColor,
+            barColor: calColor,
             // Prefer the DB-derived field (post-migration); fall back to
             // detecting the Google instance ID pattern: base_YYYYMMDDTHHMMSSZ
             recurringEventId:
@@ -317,12 +355,12 @@ export default function CalendarPane({
         editable: true,
         durationEditable: true,
         classNames: ["evt-slot"],
-        backgroundColor: `color-mix(in srgb, ${color} 10%, var(--surface))`,
-        borderColor: `color-mix(in srgb, ${color} 35%, var(--line))`,
+        ...blockColors(color),
         extendedProps: {
           kind: "slot" as const,
           refId: s.id,
           calColor: color,
+          barColor: color,
           recurring: Boolean(s.recurrence_id),
           slotDone: done,
           slotTotal: children.length,
@@ -620,43 +658,55 @@ export default function CalendarPane({
       );
     }
 
-    // ── Time-grid view ────────────────────────────────────────────────────
+    // ── Time-grid view: one shell for every kind ──────────────────────────
+    const { barColor, slotDone = 0, slotTotal = 0, slotChildren = [] } =
+      arg.event.extendedProps as ExtendedProps;
     const startMs = arg.event.start?.getTime() ?? 0;
     const endMs = arg.event.end?.getTime() ?? startMs + 3_600_000;
     const durationMins = (endMs - startMs) / 60_000;
-    const showTime = durationMins > 29;
+    // Pick chrome from the block's real rendered height, not just its minutes,
+    // so density (zoom) and short blocks both stay legible.
+    const heightPx = (durationMins / 60) * densityRef.current;
+    const compact = heightPx < 34; // one line, no time
+    const tiny = heightPx < 19; // ultra-short — kill the vertical padding
+    const bar = barColor ?? calColor ?? "var(--accent)";
+    const padY = tiny ? "py-0" : "py-[3px]";
 
-    // ── Slot: a container with a progress badge + child task peek ──────────
+    const Bar = (
+      <span
+        className="shrink-0 self-stretch rounded-l-[5px]"
+        style={{ width: 3, background: bar, opacity: kind === "m365" ? 0.5 : 1 }}
+      />
+    );
+    const TimeLine = !compact ? (
+      <div className="mono mt-px truncate text-[9.5px] leading-none text-muted">{arg.timeText}</div>
+    ) : null;
+    const Recur = recurring ? <RecurMark className="shrink-0 opacity-45" /> : null;
+    const titleCls = "truncate text-[11.5px] font-semibold leading-[1.2]";
+
+    // ── Slot: container with a progress badge + child task peek ────────────
     if (kind === "slot") {
-      const { slotDone = 0, slotTotal = 0, slotChildren = [] } =
-        arg.event.extendedProps as ExtendedProps;
-      const color = calColor ?? "var(--accent)";
-      const tall = durationMins > 44;
+      const showChildren = heightPx > 64;
       return (
         <div className="flex h-full min-w-0 overflow-hidden">
-          <div
-            className="w-[3px] shrink-0 self-stretch rounded-l-[3px]"
-            style={{ backgroundColor: color }}
-          />
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden px-1.5 pt-1 pb-0.5">
-            <div className="flex items-center gap-1">
-              <span className="truncate text-label font-semibold leading-tight">
-                {arg.event.title}
-              </span>
-              {recurring && <RecurMark className="shrink-0 opacity-50" />}
+          {Bar}
+          <div className={`flex min-w-0 flex-1 flex-col overflow-hidden px-1.5 ${padY} ${compact ? "justify-center" : "justify-start"}`}>
+            <div className="flex min-w-0 items-center gap-1">
+              <span className={titleCls}>{arg.event.title}</span>
+              {Recur}
               {slotTotal > 0 && (
-                <span className="mono ml-auto shrink-0 rounded-full bg-bg px-1 text-micro leading-snug text-muted">
+                <span className="mono ml-auto shrink-0 rounded-full bg-bg px-1 text-[9px] leading-snug text-muted">
                   {slotDone}/{slotTotal}
                 </span>
               )}
             </div>
-            {tall && slotChildren.length > 0 && (
-              <div className="mt-0.5 flex min-h-0 flex-col gap-px overflow-hidden">
+            {showChildren && slotChildren.length > 0 && (
+              <div className="mt-1 flex min-h-0 flex-col gap-0.5 overflow-hidden">
                 {slotChildren.slice(0, 4).map((c, i) => (
-                  <div key={i} className="flex items-center gap-1 text-meta leading-tight">
+                  <div key={i} className="flex items-center gap-1.5 text-[10px] leading-tight">
                     <span
                       className="h-[3px] w-[3px] shrink-0 rounded-full"
-                      style={{ backgroundColor: c.done ? "var(--muted)" : color }}
+                      style={{ background: c.done ? "var(--muted)" : bar }}
                     />
                     <span className={`truncate ${c.done ? "line-through opacity-50" : "opacity-80"}`}>
                       {c.title}
@@ -664,88 +714,72 @@ export default function CalendarPane({
                   </div>
                 ))}
                 {slotChildren.length > 4 && (
-                  <span className="text-micro text-muted">+{slotChildren.length - 4} more</span>
+                  <span className="pl-[9px] text-[9px] text-muted">+{slotChildren.length - 4} more</span>
                 )}
               </div>
             )}
-            {tall && slotChildren.length === 0 && (
-              <span className="mt-0.5 text-meta italic text-muted/70">empty — click to add</span>
+            {showChildren && slotChildren.length === 0 && (
+              <span className="mt-1 text-[10px] italic text-muted/70">empty — click to add</span>
             )}
           </div>
         </div>
       );
     }
 
+    // ── Google / M365 event ────────────────────────────────────────────────
     if (kind !== "task") {
       return (
         <div className="flex h-full min-w-0 overflow-hidden">
-          {calColor && (
-            <div
-              className="w-[3px] shrink-0 self-stretch rounded-l-[3px]"
-              style={{ backgroundColor: calColor, opacity: kind === "m365" ? 0.5 : 1 }}
-            />
-          )}
-          <div className="flex min-w-0 flex-1 flex-col justify-start overflow-hidden px-1.5 pt-1.5 pb-1">
+          {Bar}
+          <div className={`flex min-w-0 flex-1 flex-col overflow-hidden px-1.5 ${padY} ${compact ? "justify-center" : "justify-start"}`}>
             <div className="flex min-w-0 items-center gap-1">
-              <span className="truncate text-label font-semibold leading-tight">
-                {arg.event.title}
-              </span>
-              {recurring && <RecurMark className="shrink-0 opacity-50" />}
+              <span className={`${titleCls} ${kind === "m365" ? "text-muted" : ""}`}>{arg.event.title}</span>
+              {Recur}
             </div>
-            {showTime && (
-              <div className="mono mt-0.5 truncate text-micro leading-tight opacity-60">
-                {arg.timeText}
-              </div>
-            )}
+            {TimeLine}
           </div>
         </div>
       );
     }
 
+    // ── Task: checkbox tinted to its own color ─────────────────────────────
     const task = findTask(refId);
     const done = task?.status === "done";
     return (
-      <div className="flex h-full min-w-0 items-start gap-1.5 overflow-hidden pt-0.5">
-        <button
-          aria-label="toggle done"
-          className={`fast mt-[1px] flex h-[12px] w-[12px] shrink-0 items-center justify-center border ${
-            done ? "border-accent bg-accent text-white" : "border-accent bg-surface"
-          }`}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (task) done ? mutations.uncomplete(task) : mutations.complete(task);
-          }}
-        >
-          {done && (
-            <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
-              <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.8" />
-            </svg>
-          )}
-        </button>
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-1">
-            <span
-              className={`truncate text-label font-semibold leading-tight ${
-                done ? "line-through opacity-55" : ""
-              }`}
-            >
-              {arg.event.title}
-            </span>
-            {recurring && <RecurMark className="shrink-0 opacity-45" />}
-          </div>
-          {showTime && (
-            <div className="mono mt-0.5 text-micro leading-tight opacity-60">
-              {arg.timeText}
+      <div className="flex h-full min-w-0 overflow-hidden">
+        {Bar}
+        <div className={`flex min-w-0 flex-1 gap-1.5 overflow-hidden px-1.5 ${padY} ${compact ? "items-center" : "items-start"}`}>
+          <button
+            aria-label="toggle done"
+            className={`fast mt-[1px] flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border ${
+              done ? "border-accent bg-accent text-white" : "bg-surface"
+            }`}
+            style={done ? undefined : { borderColor: bar }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (task) done ? mutations.uncomplete(task) : mutations.complete(task);
+            }}
+          >
+            {done && (
+              <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            )}
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1">
+              <span className={`${titleCls} ${done ? "line-through opacity-55" : ""}`}>
+                {arg.event.title}
+              </span>
+              {Recur}
             </div>
-          )}
+            {TimeLine}
+          </div>
         </div>
       </div>
     );
   };
-
-  const dayStart = settings?.day_start_hour ?? 6;
-  const dayEnd = settings?.day_end_hour ?? 24;
 
   const isMonth = view === "dayGridMonth";
 
@@ -829,6 +863,36 @@ export default function CalendarPane({
 
         <div className="flex-1" />
 
+        {/* Vertical zoom — how many hours fill the screen. More hours = less
+            scrolling; fewer = taller rows. Persisted per device. */}
+        {!isMonth && (
+          <div
+            className="mr-1 flex items-center gap-1"
+            title="Hours visible — more hours fit = less scrolling"
+          >
+            <span className="text-meta text-muted">hours</span>
+            <div className="flex items-center overflow-hidden rounded-md border border-line">
+              <button
+                onClick={() => setFitHours(Math.max(6, fitClamped - 1))}
+                disabled={fitClamped <= 6}
+                className="fast px-1.5 py-0.5 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+                title="Fewer hours (taller rows)"
+              >
+                −
+              </button>
+              <span className="mono w-7 select-none text-center text-meta tabular-nums text-text">{fitClamped}h</span>
+              <button
+                onClick={() => setFitHours(Math.min(windowHours, fitClamped + 1))}
+                disabled={fitClamped >= windowHours}
+                className="fast px-1.5 py-0.5 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+                title="More hours (less scrolling)"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Drag-to-create mode — what a plain click-drag makes. Power users can
             also ⌥-drag (event) or ⌘-drag (slot) to override this. */}
         {!isMonth && (
@@ -857,7 +921,11 @@ export default function CalendarPane({
       </div>
 
       {/* ── FullCalendar ────────────────────────────────────────────────── */}
-      <div className="min-h-0 flex-1 p-2">
+      <div
+        ref={wrapRef}
+        className="min-h-0 flex-1 p-2"
+        style={{ "--nuvo-hour": `${pxPerHour}px` } as React.CSSProperties}
+      >
         <FullCalendar
           ref={calRef}
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
@@ -874,14 +942,14 @@ export default function CalendarPane({
             ) : null
           }
           {...(!isMonth && {
-            slotMinTime: `${String(dayStart).padStart(2, "0")}:00:00`,
-            slotMaxTime: `${String(dayEnd).padStart(2, "0")}:00:00`,
+            slotMinTime: `${String(viewStart).padStart(2, "0")}:00:00`,
+            slotMaxTime: `${String(viewEnd).padStart(2, "0")}:00:00`,
             slotDuration: "00:15:00",
             snapDuration: "00:15:00",
             slotLabelInterval: "01:00",
             slotLabelFormat: { hour: "numeric", minute: "2-digit", hour12: true, meridiem: "short" },
             eventTimeFormat: { hour: "numeric", minute: "2-digit", hour12: true, meridiem: "short" },
-            scrollTime: `${String(Math.max(dayStart, Math.min(now.getHours() - 1, 20))).padStart(2, "0")}:00:00`,
+            scrollTime: `${String(Math.max(viewStart, Math.min(now.getHours() - 1, viewEnd - 1))).padStart(2, "0")}:00:00`,
           })}
           dayHeaderContent={(arg) => {
             const isToday = arg.isToday;
