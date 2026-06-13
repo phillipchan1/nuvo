@@ -71,6 +71,9 @@ export interface ComposeInput {
   focusInitiativeIds: string[];
   /** dayISO -> context; missing days are "normal". */
   dayContexts?: Record<string, DayContext>;
+  /** Weekdays you work (0=Sun…6=Sat). Non-working days hold nothing — the
+   *  recurring boundary, where day contexts are the per-week tweak. */
+  workingDays?: number[];
   /** Proven weekly pace (from calibration): stop placing past it. */
   weeklyBudgetMins?: number | null;
 }
@@ -100,6 +103,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
   const { weekStartISO, todayISO, now, workStartMin, workEndMin } = input;
   const monday = parseDateISO(weekStartISO);
   const focus = new Set(input.focusInitiativeIds);
+  const working = new Set(input.workingDays ?? [0, 1, 2, 3, 4, 5, 6]);
 
   // ── 1 · the canvas: free slots per day inside working hours ───────────────
   const busyByDay = new Map<string, Slot[]>();
@@ -132,8 +136,10 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     context: DayContext; rules: (typeof CONTEXT_RULES)[DayContext];
   }[] = [];
   for (let i = 0; i < 7; i++) {
-    const iso = format(addDays(monday, i), "yyyy-MM-dd");
+    const date = addDays(monday, i);
+    const iso = format(date, "yyyy-MM-dd");
     if (iso < todayISO) continue; // the past is a boundary too
+    if (!working.has(date.getDay())) continue; // a non-working day holds nothing
     const context = input.dayContexts?.[iso] ?? "normal";
     if (context === "off") continue; // an off day holds nothing
     let windowStart = workStartMin;

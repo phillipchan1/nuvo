@@ -108,6 +108,42 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    // ── Delete / cancel: remove from Google + local mirror ───────────────
+    // sendUpdates "all" notifies attendees (a real cancellation for events the
+    // user organizes); "none" (default) quietly removes it from their calendar.
+    if (action === "delete") {
+      const sendUpdates = body.sendUpdates === "all" ? "all" : "none";
+      const recurringEventId = (evt.raw as Record<string, unknown>)?.recurringEventId as
+        | string
+        | undefined;
+      // scope="ALL" deletes the whole series (the master event); otherwise
+      // just this instance / single event.
+      const targetId = scope === "ALL" && recurringEventId ? recurringEventId : evt.provider_event_id;
+
+      const res = await gFetch(
+        account,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(targetId)}?sendUpdates=${sendUpdates}`,
+        { method: "DELETE" },
+      );
+      // 404/410 = already gone on Google's side; treat as success.
+      if (!res.ok && res.status !== 404 && res.status !== 410) {
+        throw new Error(`delete event failed: ${res.status} ${await res.text()}`);
+      }
+
+      if (scope === "ALL" && recurringEventId) {
+        await admin
+          .from("external_events")
+          .delete()
+          .eq("account_id", evt.account_id)
+          .eq("calendar_id", evt.calendar_id)
+          .eq("recurring_event_id", recurringEventId);
+      } else {
+        await admin.from("external_events").delete().eq("id", eventId);
+      }
+      await logSync("google", "event-delete", "ok", undefined, user.id);
+      return json({ ok: true });
+    }
+
     if (scope === "ALL") {
       // Patch the master recurring event so every instance shifts together.
       const recurringEventId = (evt.raw as Record<string, unknown>)?.recurringEventId as string | undefined;

@@ -14,10 +14,12 @@ import {
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
+import NewProject from "./NewProject";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
-  const { data, addProject, updateProject } = useVertical();
+  const { data, updateProject } = useVertical();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const projects = data.projects.filter((p) => !domainFilter || p.domainId === domainFilter);
 
@@ -53,12 +55,6 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
     };
   });
 
-  const newProject = () => {
-    const domId = domainFilter ?? [...data.domains].sort((a, b) => a.sort - b.sort)[0]?.id;
-    if (!domId) return;
-    void addProject(domId, null).then((p) => onOpen(p.id));
-  };
-
   return (
     <div className="mx-auto max-w-[1480px]">
       <FloorHeader eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => p.status === "active").length} in flight`}>
@@ -78,11 +74,19 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
             { key: "tasks", label: "Tasks" },
             { key: "week", label: "Week" },
           ],
-          onNew: newProject,
+          onNew: () => setCreating(true),
           newLabel: "+ new project",
           storageKey: "projects",
         }}
       />
+
+      {creating && (
+        <NewProject
+          initialDomainId={domainFilter}
+          onClose={() => setCreating(false)}
+          onCreated={(id) => { setCreating(false); onOpen(id); }}
+        />
+      )}
     </div>
   );
 }

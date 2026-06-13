@@ -9,13 +9,16 @@ export interface AgentAction {
   summary: string;
 }
 
-async function invokeFn(name: string, body: Record<string, unknown>) {
+/** Call a sibling edge function. Pass `token` (the user's JWT) for user-scoped
+ *  functions like google-events; omit it for internal ones (task-mirror) that
+ *  run as the service role. Returns whether the call succeeded. */
+async function invokeFn(name: string, body: Record<string, unknown>, token?: string): Promise<boolean> {
   const url = Deno.env.get("SUPABASE_URL")!;
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const bearer = token || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const res = await fetch(`${url}/functions/v1/${name}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key}`,
+      Authorization: `Bearer ${bearer}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -23,7 +26,9 @@ async function invokeFn(name: string, body: Record<string, unknown>) {
   if (!res.ok) {
     const text = await res.text();
     console.warn(`[agent] ${name} failed: ${res.status} ${text}`);
+    return false;
   }
+  return true;
 }
 
 async function mirrorTask(taskId: string) {
@@ -229,6 +234,38 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
+      name: "cancel_event",
+      description:
+        "Remove a Google calendar event from the user's calendar (cancel it). For meetings the user organizes this cancels for everyone; for an invite it drops off their calendar. Confirm with the user before calling. Only set notify=true if the user explicitly wants attendees told.",
+      parameters: {
+        type: "object",
+        properties: {
+          event_id: { type: "string" },
+          event_title: { type: "string", description: "Search by title if id unknown" },
+          notify: { type: "boolean", description: "Email attendees that it's cancelled. Default false." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "decline_event",
+      description:
+        "Decline a Google calendar event (RSVP declined) without removing it. Confirm with the user before calling. Only set notify=true if the user wants the organizer told.",
+      parameters: {
+        type: "object",
+        properties: {
+          event_id: { type: "string" },
+          event_title: { type: "string", description: "Search by title if id unknown" },
+          notify: { type: "boolean", description: "Tell the organizer you declined. Default false." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "list_tasks",
       description: "Search tasks by title when you need to find an id.",
       parameters: {
@@ -270,10 +307,43 @@ function localDateISO(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+async function resolveEventId(
+  userId: string,
+  args: { event_id?: string; event_title?: string },
+): Promise<{ id: string; title: string }> {
+  if (args.event_id) {
+    const { data, error } = await admin
+      .from("external_events")
+      .select("id, title")
+      .eq("id", args.event_id)
+      .eq("user_id", userId)
+      .single();
+    if (error || !data) throw new Error(`Event not found: ${args.event_id}`);
+    return { id: data.id, title: data.title };
+  }
+  if (args.event_title) {
+    const { data } = await admin
+      .from("external_events")
+      .select("id, title")
+      .eq("user_id", userId)
+      .ilike("title", `%${args.event_title}%`)
+      .limit(5);
+    if (!data?.length) throw new Error(`No event matching "${args.event_title}"`);
+    if (data.length > 1) {
+      throw new Error(
+        `Multiple events match "${args.event_title}": ${data.map((e) => `"${e.title}" (${e.id})`).join(", ")}. Use event_id.`,
+      );
+    }
+    return { id: data[0].id, title: data[0].title };
+  }
+  throw new Error("Provide event_id or event_title");
+}
+
 export async function executeTool(
   userId: string,
   name: string,
   args: Record<string, unknown>,
+  userToken?: string,
 ): Promise<{ result: string; action?: AgentAction }> {
   switch (name) {
     case "create_task": {
@@ -503,7 +573,7 @@ export async function executeTool(
       const { error: updErr } = await admin.from("external_events").update(patch).eq("id", eventId);
       if (updErr) throw new Error(updErr.message);
 
-      await invokeFn("google-events", { eventId, patch });
+      await invokeFn("google-events", { eventId, patch }, userToken);
 
       return {
         result: JSON.stringify({ id: eventId, patch }),
@@ -511,6 +581,34 @@ export async function executeTool(
           tool: name,
           summary: `Rescheduled event "${evt.title}" to ${new Date(patch.start_at).toLocaleString()}`,
         },
+      };
+    }
+
+    case "cancel_event": {
+      const { id, title } = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+      const ok = await invokeFn(
+        "google-events",
+        { eventId: id, action: "delete", sendUpdates: args.notify ? "all" : "none" },
+        userToken,
+      );
+      if (!ok) throw new Error(`Couldn't cancel "${title}" — only Google events can be cancelled.`);
+      return {
+        result: JSON.stringify({ id, cancelled: true }),
+        action: { tool: name, summary: `Cancelled "${title}"${args.notify ? " (attendees notified)" : ""}` },
+      };
+    }
+
+    case "decline_event": {
+      const { id, title } = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+      const ok = await invokeFn(
+        "google-events",
+        { eventId: id, action: "rsvp", responseStatus: "declined", sendNotifications: Boolean(args.notify) },
+        userToken,
+      );
+      if (!ok) throw new Error(`Couldn't decline "${title}" — only Google events can be declined.`);
+      return {
+        result: JSON.stringify({ id, declined: true }),
+        action: { tool: name, summary: `Declined "${title}"${args.notify ? " (organizer notified)" : ""}` },
       };
     }
 

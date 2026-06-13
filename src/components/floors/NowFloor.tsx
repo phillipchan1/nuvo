@@ -4,7 +4,7 @@
 // proportional spine of today on the left, the ranked Right Now anchored to
 // the next open block on the right, and a domain-balance read framed as Gain.
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { useVertical } from "../../hooks/useVertical";
 import { useExternalEvents } from "../../hooks/useCalendar";
@@ -19,6 +19,13 @@ import type { AgentMessage } from "../../lib/agentTypes";
 import { Btn } from "../ui";
 
 const NAME = "Phil";
+
+// Nuvo collapses by default so the day owns the hero space; expands to a rail
+// only when you actually want to talk. Choice persists.
+const CHAT_KEY = "nuvo.today.chat";
+const readChatOpen = (): boolean => {
+  try { return localStorage.getItem(CHAT_KEY) === "1"; } catch { return false; }
+};
 
 export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   const { data, toggleTask } = useVertical();
@@ -44,12 +51,18 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   // How you're actually running today — set by talking to Nuvo. Re-voices the
   // brief and re-ranks the day toward low-friction work when you're spent.
   const [tired, setTired] = useState(false);
+  const [chatOpen, setChatOpen] = useState(readChatOpen);
+  useEffect(() => {
+    try { localStorage.setItem(CHAT_KEY, chatOpen ? "1" : "0"); } catch { /* ignore */ }
+  }, [chatOpen]);
   const agent = useAgent({ start: horizon.start, end: horizon.end });
 
   const busy = useMemo<BusyBlock[]>(() => {
+    // respect the calendars the user has toggled off in settings
+    const hidden = new Set(settings?.hidden_calendar_ids ?? []);
     return [
       ...events
-        .filter((e) => e.busy && !e.all_day)
+        .filter((e) => e.busy && !e.all_day && !hidden.has(e.calendar_id))
         .map((e): BusyBlock => ({ title: e.title, start: new Date(e.start_at), end: new Date(e.end_at), kind: "event", location: e.location })),
       ...blocks
         .filter((t) => t.start_time)
@@ -61,7 +74,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
           done: t.status === "done",
         })),
     ];
-  }, [events, blocks]);
+  }, [events, blocks, settings]);
 
   // The work window (the part of the day where focus lives), stretched to hold
   // anything scheduled outside it so nothing falls off the spine.
@@ -130,11 +143,25 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   }
 
   return (
-    <div className="mx-auto max-w-[960px]">
-      <NowBrief now={now} dayRead={dayRead} brief={brief} tired={tired} setTired={setTired} agent={agent} />
+    <div className={`mx-auto w-full ${chatOpen ? "max-w-[1460px] 2xl:max-w-[1720px]" : "max-w-[1080px]"}`}>
+      {/* Collapsed (default): one centered column, the day as the hero.
+          Expanded: the chat earns a sticky right rail and reclaims the margin. */}
+      <div className={chatOpen ? "xl:grid xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start xl:gap-x-10" : ""}>
+        <div className="xl:col-start-1 xl:row-start-1">
+          <NowBrief now={now} dayRead={dayRead} brief={brief} tired={tired} />
+          {!chatOpen && (
+            <NuvoBar agent={agent} tired={tired} setTired={setTired} onOpen={() => setChatOpen(true)} />
+          )}
+        </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-x-9 gap-y-7 md:grid-cols-[248px_1fr]">
-        <DaySpine now={now} busy={busy} gaps={dayRead.gaps} activeGap={activeGap} windowStart={windowStart} windowEnd={windowEnd} />
+        {chatOpen && (
+          <div className="mt-4 xl:col-start-2 xl:row-start-1 xl:row-span-2 xl:mt-0 xl:self-start xl:sticky xl:top-0">
+            <NowAssistant agent={agent} tired={tired} setTired={setTired} onCollapse={() => setChatOpen(false)} />
+          </div>
+        )}
+
+        <div className="mt-6 grid grid-cols-1 gap-x-9 gap-y-7 md:grid-cols-[248px_1fr] xl:col-start-1 xl:row-start-2">
+          <DaySpine now={now} busy={busy} gaps={dayRead.gaps} activeGap={activeGap} windowStart={windowStart} windowEnd={windowEnd} />
 
         <div className="min-w-0">
           {/* RIGHT NOW — the meeting you're in, when you're in one; else the task to start */}
@@ -227,6 +254,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
 
           <DomainBalance domains={data.domains} />
         </div>
+        </div>
       </div>
     </div>
   );
@@ -236,14 +264,12 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
 // The brief — Nuvo talking to you. A first-person read of the whole day, the
 // scannable stats underneath, and a composer so you can just say what you need.
 function NowBrief({
-  now, dayRead, brief, tired, setTired, agent,
+  now, dayRead, brief, tired,
 }: {
   now: Date;
   dayRead: DayRead;
   brief: Brief;
   tired: boolean;
-  setTired: (v: boolean) => void;
-  agent: ReturnType<typeof useAgent>;
 }) {
   const weekday = now.toLocaleDateString([], { weekday: "short" });
   const clock = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -275,23 +301,52 @@ function NowBrief({
           </span>
         ))}
       </div>
-
-      <NowAssistant agent={agent} tired={tired} setTired={setTired} />
     </div>
   );
 }
 
-// The composer — talk to Nuvo right here. Quick chips for the things you say
-// most; free text routes to the real agent (which can move blocks for you).
-function NowAssistant({
-  agent, tired, setTired,
+// Collapsed launcher — a single calm row under the brief: open Nuvo, or fire a
+// common ask straight away. Keeps control one tap away without holding space.
+function NuvoBar({
+  agent, tired, setTired, onOpen,
 }: {
   agent: ReturnType<typeof useAgent>;
   tired: boolean;
   setTired: (v: boolean) => void;
+  onOpen: () => void;
+}) {
+  const ask = (text: string) => { onOpen(); void agent.sendMessage(text); };
+  const pill = "fast rounded-full border px-2.5 py-1 text-[11px]";
+  const ghost = `${pill} border-line text-muted hover:border-accent hover:text-accent`;
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-1.5">
+      <button onClick={onOpen} className={`${pill} flex items-center gap-1.5 border-accent/40 bg-accent-soft font-medium text-accent hover:bg-accent/15`}>
+        <span>✦</span> Ask Nuvo
+      </button>
+      <button onClick={() => setTired(!tired)} className={ghost}>
+        {tired ? "↑ back to full energy" : "☾ I'm wiped — lighten today"}
+      </button>
+      <button onClick={() => ask("What should I prep for my next meeting? Give me a quick preread.")} className={ghost}>what should I prep?</button>
+      <button onClick={() => ask("I'm short on time — push my non-urgent afternoon tasks to tomorrow.")} className={ghost}>move my afternoon</button>
+      <button onClick={() => ask("Where are my open blocks for the rest of today?")} className={ghost}>what's open later?</button>
+    </div>
+  );
+}
+
+// The expanded panel — the live conversation. Talk to Nuvo; free text routes to
+// the real agent (which can move blocks for you).
+function NowAssistant({
+  agent, tired, setTired, onCollapse,
+}: {
+  agent: ReturnType<typeof useAgent>;
+  tired: boolean;
+  setTired: (v: boolean) => void;
+  onCollapse: () => void;
 }) {
   const { messages, loading, error, sendMessage } = agent;
   const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
   const send = (text: string) => {
     if (!text.trim() || loading) return;
     setInput("");
@@ -308,9 +363,14 @@ function NowAssistant({
   ];
 
   return (
-    <div className="mt-4">
-      {messages.length > 0 && (
-        <div className="mb-2.5 max-h-[240px] space-y-2.5 overflow-y-auto rounded-lg border border-line bg-surface-2 p-3">
+    <div className="rise rounded-lg border border-line bg-surface-2 p-3.5">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="section-label">Ask Nuvo</span>
+        <button onClick={onCollapse} title="Collapse" className="fast mono text-[10px] text-muted hover:text-ink">collapse ›</button>
+      </div>
+
+      {messages.length > 0 ? (
+        <div className="mb-2.5 max-h-[260px] space-y-2.5 overflow-y-auto rounded-lg border border-line bg-surface p-3 xl:max-h-[calc(100vh-340px)]">
           {messages.map((m) => <Bubble key={m.id} message={m} />)}
           {loading && (
             <div className="agent-bubble agent-bubble-assistant w-fit">
@@ -318,6 +378,10 @@ function NowAssistant({
             </div>
           )}
         </div>
+      ) : (
+        <p className="mb-2.5 text-[12px] leading-relaxed text-muted">
+          I've read your day. Ask me to move things, prep you for what's next, or lighten the load.
+        </p>
       )}
       {error && !loading && (
         <div className="mb-2 rounded-md bg-signal-soft px-2.5 py-1.5 text-[11px] text-signal">{error}</div>
@@ -339,6 +403,7 @@ function NowAssistant({
       <div className="fast mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
         <span className="mono shrink-0 text-[10px] text-accent">›</span>
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); send(input); } }}

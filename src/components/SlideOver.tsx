@@ -671,11 +671,17 @@ export function EventPopover({
   const [title, setTitle] = useState(event.title);
   const [notify, setNotify] = useState(true);
   const [pendingRsvp, setPendingRsvp] = useState<AttendeeStatus | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const popRef = useRef<HTMLDivElement>(null);
 
   const { data: raw, isLoading: detailsLoading } = useEventDetails(event.id);
+  const recurring = Boolean((raw as { recurringEventId?: string } | null)?.recurringEventId);
 
-  useEffect(() => { setTitle(event.title); setPendingRsvp(null); }, [event.id, event.title]);
+  useEffect(() => {
+    setTitle(event.title);
+    setPendingRsvp(null);
+    setConfirmDelete(false);
+  }, [event.id, event.title]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -932,6 +938,56 @@ export function EventPopover({
 
           </div>
         </div>
+
+        {/* Footer — delete (with this/series choice for recurring events) */}
+        {editable && (
+          <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
+            {!confirmDelete ? (
+              <>
+                <div className="flex-1" />
+                <Btn kind="signal" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+              </>
+            ) : recurring ? (
+              <>
+                <span className="text-[11.5px] text-muted">Delete…</span>
+                <div className="flex-1" />
+                <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+                <Btn
+                  onClick={() => {
+                    eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
+                    onClose();
+                  }}
+                >
+                  This event
+                </Btn>
+                <Btn
+                  kind="signal"
+                  onClick={() => {
+                    eventMutations.deleteEvent({ id: event.id, scope: "ALL" });
+                    onClose();
+                  }}
+                >
+                  All events
+                </Btn>
+              </>
+            ) : (
+              <>
+                <span className="text-[11.5px] text-muted">Delete this event?</span>
+                <div className="flex-1" />
+                <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+                <Btn
+                  kind="signal"
+                  onClick={() => {
+                    eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
+                    onClose();
+                  }}
+                >
+                  Delete
+                </Btn>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </>,
     document.body,

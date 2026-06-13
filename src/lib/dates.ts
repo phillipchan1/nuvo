@@ -29,13 +29,15 @@ export function nextWeekISO(): string {
 
 /**
  * Monday of the *planning* week as 'YYYY-MM-DD', computed from the APP_TZ
- * calendar (not the machine clock). On Sundays this is tomorrow's Monday —
- * Sunday evening plans the week ahead, not the week that's ending.
+ * calendar (not the machine clock). The work-week (Mon–Fri) plans the week
+ * it's living; the weekend points forward — Sat/Sun "the week" means the one
+ * about to start, so the Plan flow opens on it and the rail's funnel follows.
  */
 export function planningWeekStartISO(now: Date = new Date()): string {
   const laToday = parseDateISO(todayISO(now));
-  const base = laToday.getDay() === 0 ? addDays(laToday, 1) : laToday;
-  return toDateISO(startOfWeek(base, { weekStartsOn: 1 }));
+  const dow = laToday.getDay(); // 0 = Sun, 6 = Sat
+  const shift = dow === 0 ? 1 : dow === 6 ? 2 : 0; // weekend → next Monday
+  return toDateISO(startOfWeek(addDays(laToday, shift), { weekStartsOn: 1 }));
 }
 
 /** Hours from minutes, max one decimal: 90 → "1.5", 120 → "2". */

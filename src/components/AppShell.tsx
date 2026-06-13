@@ -12,7 +12,7 @@ import Spine, { type FlowName } from "./Spine";
 import FloorPane, { type DetailView, type ProjectView } from "./FloorPane";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
-import BlueprintFlow from "./rituals/BlueprintFlow";
+import BlueprintFlow, { type BlueprintSeed } from "./rituals/BlueprintFlow";
 
 export type Rung = "now" | "day" | "project" | "initiative" | "domain";
 export interface Focus {
@@ -41,7 +41,20 @@ function AppShellInner() {
   const [initiativeView, setInitiativeView] = useState<DetailView>("portfolio");
   const [focus, setFocus] = useState<Focus>({ domainId: "", initiativeId: "", projectId: "" });
   const [flow, setFlow] = useState<FlowName | null>(null);
+  // a half-typed bet handed from the quick-create moment into Blueprint
+  const [blueprintSeed, setBlueprintSeed] = useState<BlueprintSeed | null>(null);
   const [sundayNudge, setSundayNudge] = useState(false);
+
+  // Opening a flow from the spine/planner clears any stale Blueprint seed so
+  // the AI flow starts blank unless it was opened from a create moment.
+  const openFlow = (f: FlowName) => {
+    if (f === "blueprint") setBlueprintSeed(null);
+    setFlow(f);
+  };
+  const openBlueprint = (seed: BlueprintSeed) => {
+    setBlueprintSeed(seed);
+    setFlow("blueprint");
+  };
 
   // Entering a board rung from the spine/keyboard lands on the board, not a
   // stale drill-down.
@@ -137,10 +150,10 @@ function AppShellInner() {
 
   return (
     <div className="atmosphere flex h-full">
-      <Spine rung={rung} setRung={goRung} openFlow={setFlow} />
+      <Spine rung={rung} setRung={goRung} openFlow={openFlow} />
       <div className="relative min-w-0 flex-1">
         {/* Day · Week stays mounted so the calendar never loses its place. */}
-        <Planner openFlow={setFlow} />
+        <Planner openFlow={openFlow} />
         {rung !== "day" && (
           <div className="atmosphere floor-enter absolute inset-0 z-30">
             <FloorPane
@@ -154,6 +167,7 @@ function AppShellInner() {
               setProjectView={setProjectView}
               initiativeView={initiativeView}
               setInitiativeView={setInitiativeView}
+              openBlueprint={openBlueprint}
             />
           </div>
         )}
@@ -167,7 +181,7 @@ function AppShellInner() {
                 onClick={() => { setFlow("sunday"); setSundayNudge(false); }}
                 className="fast rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
               >
-                Sunday flow ▸
+                Plan the week ▸
               </button>
               <button onClick={dismissSundayNudge} className="fast text-[11px] text-muted hover:text-ink">
                 not now
@@ -179,12 +193,13 @@ function AppShellInner() {
 
       {flow === "sunday" && <SundayRitual onClose={() => { setFlow(null); setSundayNudge(false); }} />}
       {flow === "summit" && (
-        <SummitRitual onClose={() => setFlow(null)} onOpenBlueprint={() => setFlow("blueprint")} />
+        <SummitRitual onClose={() => setFlow(null)} onOpenBlueprint={() => openFlow("blueprint")} />
       )}
       {flow === "blueprint" && (
         <BlueprintFlow
-          onClose={() => setFlow(null)}
-          onCreated={(id) => { setFlow(null); openInitiative(id); }}
+          seed={blueprintSeed ?? undefined}
+          onClose={() => { setFlow(null); setBlueprintSeed(null); }}
+          onCreated={(id) => { setFlow(null); setBlueprintSeed(null); openInitiative(id); }}
         />
       )}
     </div>

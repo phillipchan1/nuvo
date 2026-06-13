@@ -58,6 +58,25 @@ export function useScheduledTasks(rangeStartISO: string, rangeEndISO: string) {
   });
 }
 
+/** Every non-trashed task, done included — same query key the vertical store
+ *  fills, so this shares its cache (no second fetch). The Plan flow needs the
+ *  raw rows to feed the composer; `VTask` drops the deadline ISO it relies on. */
+export function useAllTasks() {
+  return useQuery({
+    queryKey: ["tasks", "all"],
+    queryFn: async (): Promise<Task[]> => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .neq("status", "trashed")
+        .order("sort_order")
+        .order("created_at");
+      if (error) throw error;
+      return data as Task[];
+    },
+  });
+}
+
 /** Every task committed to a sprint (the Week pool), done included. */
 export function useSprintTasks(sprintId: string | null) {
   return useQuery({

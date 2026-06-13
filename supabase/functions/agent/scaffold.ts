@@ -3,6 +3,11 @@
 // list. Proposes only — nothing is inserted here. The client renders the
 // draft diff and writes accepted tasks itself as `backlog` rows (the agent
 // proposes into quiet pools; only the user promotes work toward the calendar).
+//
+// Two entry points share one proposer:
+//   scaffoldProject — for a saved project (drill-in "scaffold with Nuvo").
+//   scaffoldDraft   — for a project still being typed in the create moment,
+//                     so the first tasks can be drafted BEFORE it exists.
 
 import { admin } from "../_shared/admin.ts";
 
@@ -15,44 +20,26 @@ export interface ScaffoldDraft {
   rationale?: string;
 }
 
-export async function scaffoldProject(
-  userId: string,
-  projectId: string,
-): Promise<{ tasks: ScaffoldDraft[] }> {
-  const { data: project, error } = await admin
-    .from("projects")
-    .select("*")
-    .eq("id", projectId)
-    .eq("user_id", userId)
-    .single();
-  if (error || !project) throw new Error("Project not found");
+interface ScaffoldInput {
+  name: string;
+  outcome: string;
+  description?: string;
+  initiative?: { name: string; outcome: string } | null;
+  domain?: { name: string; intention: string } | null;
+  existing?: { title: string; status: string }[];
+}
 
-  const [initiativeRes, domainRes, tasksRes] = await Promise.all([
-    project.initiative_id
-      ? admin.from("initiatives").select("name, outcome, description").eq("id", project.initiative_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    project.domain_id
-      ? admin.from("domains").select("name, intention").eq("id", project.domain_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    admin
-      .from("tasks")
-      .select("title, status, energy, duration_minutes")
-      .eq("project_id", projectId)
-      .neq("status", "trashed")
-      .order("sort_order"),
-  ]);
-
-  const initiative = initiativeRes.data;
-  const domain = domainRes.data;
-  const existing = tasksRes.data ?? [];
-
+/** The shared proposer — grounds the LLM in the project's place in the
+ *  vertical and returns an ordered, de-duplicated starter task list. */
+async function proposeTasks(input: ScaffoldInput): Promise<{ tasks: ScaffoldDraft[] }> {
+  const existing = input.existing ?? [];
   const prompt = `You are scaffolding a personal project into concrete, ordered tasks.
 
-Project: ${project.name}
-Outcome (what "done" looks like): ${project.outcome || "(not stated)"}
-${project.description ? `Description: ${project.description}` : ""}
-${initiative ? `Parent initiative: ${initiative.name} — ${initiative.outcome}` : ""}
-${domain ? `Life domain: ${domain.name}. Standing intention: ${domain.intention}` : ""}
+Project: ${input.name}
+Outcome (what "done" looks like): ${input.outcome || "(not stated)"}
+${input.description ? `Description: ${input.description}` : ""}
+${input.initiative ? `Parent initiative: ${input.initiative.name} — ${input.initiative.outcome}` : ""}
+${input.domain ? `Life domain: ${input.domain.name}. Standing intention: ${input.domain.intention}` : ""}
 
 Existing tasks (do NOT duplicate these):
 ${existing.length ? existing.map((t) => `- [${t.status}] ${t.title}`).join("\n") : "(none yet)"}
@@ -100,4 +87,75 @@ Respond with JSON only: {"tasks":[{"title":string,"energy":string,"duration_minu
     .slice(0, 10);
 
   return { tasks };
+}
+
+export async function scaffoldProject(
+  userId: string,
+  projectId: string,
+): Promise<{ tasks: ScaffoldDraft[] }> {
+  const { data: project, error } = await admin
+    .from("projects")
+    .select("*")
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .single();
+  if (error || !project) throw new Error("Project not found");
+
+  const [initiativeRes, domainRes, tasksRes] = await Promise.all([
+    project.initiative_id
+      ? admin.from("initiatives").select("name, outcome, description").eq("id", project.initiative_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    project.domain_id
+      ? admin.from("domains").select("name, intention").eq("id", project.domain_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    admin
+      .from("tasks")
+      .select("title, status, energy, duration_minutes")
+      .eq("project_id", projectId)
+      .neq("status", "trashed")
+      .order("sort_order"),
+  ]);
+
+  return proposeTasks({
+    name: project.name,
+    outcome: project.outcome,
+    description: project.description,
+    initiative: initiativeRes.data,
+    domain: domainRes.data,
+    existing: tasksRes.data ?? [],
+  });
+}
+
+/** Draft a not-yet-created project's first tasks from what the user has typed
+ *  in the create moment. Grounds in the parent initiative / domain if given. */
+export async function scaffoldDraft(
+  userId: string,
+  body: {
+    name?: string;
+    outcome?: string;
+    description?: string;
+    initiativeId?: string | null;
+    domainId?: string | null;
+  },
+): Promise<{ tasks: ScaffoldDraft[] }> {
+  const name = String(body.name ?? "").trim();
+  if (!name) throw new Error("Name the project first");
+
+  const [initiativeRes, domainRes] = await Promise.all([
+    body.initiativeId
+      ? admin.from("initiatives").select("name, outcome, description").eq("id", body.initiativeId).eq("user_id", userId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    body.domainId
+      ? admin.from("domains").select("name, intention").eq("id", body.domainId).eq("user_id", userId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  return proposeTasks({
+    name,
+    outcome: String(body.outcome ?? "").trim(),
+    description: body.description ? String(body.description).trim() : undefined,
+    initiative: initiativeRes.data,
+    domain: domainRes.data,
+    existing: [],
+  });
 }

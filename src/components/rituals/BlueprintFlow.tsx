@@ -15,18 +15,29 @@ interface DraftKR { name: string; baseline: number; target: number; unit: string
 interface DraftTask { title: string; energy: Energy; durationMins: number }
 interface DraftProject { name: string; outcome: string; tasks: DraftTask[]; included: boolean }
 
+/** A partial bet handed in from the quick-create moment — Blueprint opens
+ *  pre-filled with whatever the person already typed. */
+export interface BlueprintSeed {
+  domainId?: string;
+  name?: string;
+  outcome?: string;
+  description?: string;
+}
+
 export default function BlueprintFlow({
   onClose,
   onCreated,
+  seed,
 }: {
   onClose: () => void;
   onCreated: (initiativeId: string) => void;
+  seed?: BlueprintSeed;
 }) {
   const { data, addInitiativeTree } = useVertical();
-  const [domainId, setDomainId] = useState(data.domains[0]?.id ?? "");
-  const [name, setName] = useState("");
-  const [outcome, setOutcome] = useState("");
-  const [description, setDescription] = useState("");
+  const [domainId, setDomainId] = useState(seed?.domainId || data.domains[0]?.id || "");
+  const [name, setName] = useState(seed?.name ?? "");
+  const [outcome, setOutcome] = useState(seed?.outcome ?? "");
+  const [description, setDescription] = useState(seed?.description ?? "");
   const [drafting, setDrafting] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);

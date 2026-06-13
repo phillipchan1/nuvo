@@ -11,7 +11,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "tauri:icon": "tauri icon"
+    "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons"
   },
   "dependencies": {
     "@fontsource/plus-jakarta-sans": "^5.2.8",

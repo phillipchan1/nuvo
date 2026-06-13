@@ -44,16 +44,22 @@ export function composeBrief({
   }
 
   const parts: string[] = [];
+  const open = dayRead.openMins;
+  const rem = dayRead.remaining;
+  const remLabel = `${rem} commitment${rem === 1 ? "" : "s"}`;
 
-  // the shape of the day
-  if (dayRead.remaining >= 6) {
-    parts.push(`It's a full one — ${dayRead.remaining} commitments ahead${firstGap ? `, but it opens up around ${at(firstGap.start)}` : ""}.`);
-  } else if (dayRead.remaining >= 3) {
-    parts.push(`A steady day — ${dayRead.remaining} commitments, ${fmtMins(dayRead.openMins)} of open room.`);
-  } else if (dayRead.remaining === 0) {
-    parts.push(`Your calendar's clear — ${fmtMins(dayRead.openMins)} that's entirely yours.`);
+  // the shape of the day — keyed off BOTH what's left and how much is open, so
+  // it never claims an "open day" when you're actually booked through.
+  if (open <= 0) {
+    parts.push(rem === 0 ? `That's a wrap — nothing left on the calendar.` : `You're booked through — ${remLabel} left and no open blocks.`);
+  } else if (rem >= 6) {
+    parts.push(`It's a full one — ${remLabel} ahead${firstGap ? `, but it opens up around ${at(firstGap.start)}` : ""}.`);
+  } else if (rem >= 3) {
+    parts.push(`A steady day — ${remLabel}, ${fmtMins(open)} of open room.`);
+  } else if (rem === 0) {
+    parts.push(`Your calendar's clear — ${fmtMins(open)} that's entirely yours.`);
   } else {
-    parts.push(`An open day — ${dayRead.remaining} commitment${dayRead.remaining > 1 ? "s" : ""}, ${fmtMins(dayRead.openMins)} to make yours.`);
+    parts.push(`Light ahead — ${remLabel} and ${fmtMins(open)} to make yours.`);
   }
 
   // where you are right now
@@ -69,9 +75,16 @@ export function composeBrief({
   // the plan I'm holding for you
   if (top) {
     const due = top.task.deadlineDaysAway != null && top.task.deadlineDaysAway <= 1 ? ", since it's due tomorrow" : "";
-    if (dayRead.current && firstGap) {
+    if (!firstGap) {
+      // no open block left today — it's a tomorrow item
+      parts.push(
+        dayRead.current
+          ? `Nothing opens up before you're done — "${top.task.title}" is one to carry to tomorrow.`
+          : `No open block left today — "${top.task.title}" is first up tomorrow.`,
+      );
+    } else if (dayRead.current) {
       parts.push(`Your first clear block is ${at(firstGap.start)} — I'm holding it for "${top.task.title}"${due}.`);
-    } else if (firstGap && firstGap.start.getTime() > now.getTime() + 60_000) {
+    } else if (firstGap.start.getTime() > now.getTime() + 60_000) {
       parts.push(`At ${at(firstGap.start)} you're free — "${top.task.title}" is what I'd line up${due}.`);
     } else {
       parts.push(`Right now I'd start "${top.task.title}"${due}.`);

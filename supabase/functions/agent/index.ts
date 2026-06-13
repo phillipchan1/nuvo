@@ -1,6 +1,6 @@
 import { handleOptions, json, requireUser } from "../_shared/admin.ts";
 import { buildContext, contextToPrompt } from "./context.ts";
-import { scaffoldProject } from "./scaffold.ts";
+import { scaffoldProject, scaffoldDraft } from "./scaffold.ts";
 import { blueprintInitiative } from "./blueprint.ts";
 import { prepareTask } from "./prepare.ts";
 import { narrate } from "./narrate.ts";
@@ -22,16 +22,29 @@ interface OpenAIToolCall {
   function: { name: string; arguments: string };
 }
 
-function systemPrompt(ctxJson: string, today: string): string {
+function systemPrompt(ctxJson: string, today: string, nowLabel: string, nowISO: string): string {
   return `You are Nuvo, the personal planning assistant embedded in the Nuvo daily-driver app.
-Today is ${today} (America/Los_Angeles).
+Today is ${today} (America/Los_Angeles). The current time is ${nowLabel} (${nowISO}).
+
+Time awareness (important):
+- Every event and scheduled block carries a "past" flag and events also carry "ongoing". past:true means it already ended.
+- When the user asks what's "left", "remaining", "still on", "upcoming", or "next" today, ONLY consider items where past is false. Never list a meeting that already ended as if it's still ahead.
+- "ongoing":true is the thing they're in right now.
 
 App model:
 - Tasks live in inbox (raw capture, no date), backlog (filed under a project/initiative/domain, deliberately undated), planned (do_date set, no time), or scheduled (do_date + start_time = calendar block).
 - The weekPool in context = tasks committed to this week's sprint (the user's weekly plan). When asked to plan or schedule the week/day, prefer scheduling weekPool tasks over inventing new ones.
 - A scheduled task IS a time block — there is no separate event entity for tasks.
-- External calendar events (Google/M365) are read-only except Google events can be rescheduled.
-- Use task ids from context when available. Use list_tasks or task_title to find tasks.
+- External calendar events: Google events can be rescheduled (reschedule_event), removed from the calendar (cancel_event), or declined (decline_event). M365 events are read-only.
+
+Canceling / declining calendar events:
+- cancel_event removes the event from the user's calendar. For a meeting the user organizes this cancels it for everyone; for an invite it just drops it off their calendar.
+- decline_event marks the user as not attending (RSVP declined) but leaves the event in place.
+- ALWAYS confirm with the user before canceling or declining — list exactly which events you'll touch and wait for a yes. These affect other people.
+- By default do NOT notify other attendees (notify=false / sendUpdates="none"). Only notify when the user explicitly asks to let people know.
+- When the user says "cancel the rest of my meetings" or similar, only include events that are not past, and exclude any they named as keep.
+
+- Use task ids from context when available. Use list_tasks or task_title to find tasks; use event_title to find events.
 - Be concise and action-oriented. After making changes, briefly confirm what you did.
 - Format replies with markdown: use **bold** for task names and times, bullet lists for multiple items, short paragraphs.
 
@@ -71,12 +84,20 @@ Deno.serve(async (req) => {
 
   try {
     const user = await requireUser(req);
+    // The caller's JWT, forwarded to user-scoped sub-functions (google-events)
+    // so they act as the user rather than the unauthenticated service role.
+    const userToken = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     const body = await req.json();
 
     // One-shot intelligence endpoints. All of them propose; only `prepare`
     // writes (to the task's own prework field — never to the plan).
     if (body.scaffold?.projectId) {
       return json(await scaffoldProject(user.id, String(body.scaffold.projectId)));
+    }
+    // The create-moment variant: draft a project's first tasks from typed
+    // context, before the project row exists.
+    if (body.scaffoldDraft) {
+      return json(await scaffoldDraft(user.id, body.scaffoldDraft));
     }
     if (body.blueprint) {
       return json(await blueprintInitiative(user.id, body.blueprint));
@@ -100,7 +121,7 @@ Deno.serve(async (req) => {
     const ctxJson = contextToPrompt(ctx);
 
     const oaiMessages: ChatMessage[] = [
-      { role: "system", content: systemPrompt(ctxJson, ctx.today) },
+      { role: "system", content: systemPrompt(ctxJson, ctx.today, ctx.nowLabel, ctx.nowISO) },
       ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
@@ -129,7 +150,7 @@ Deno.serve(async (req) => {
 
           let toolResult: string;
           try {
-            const { result, action } = await executeTool(user.id, tc.function.name, args);
+            const { result, action } = await executeTool(user.id, tc.function.name, args, userToken);
             toolResult = result;
             if (action) actions.push(action);
           } catch (e) {

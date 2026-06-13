@@ -201,8 +201,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* Header — data-tauri-drag-region lets you drag the window. The macOS
-          traffic lights now sit over the Spine rail, so no left inset here. */}
+      {/* Header — drag region; traffic lights sit over the Spine, not this pane. */}
       <header
         data-tauri-drag-region
         className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"

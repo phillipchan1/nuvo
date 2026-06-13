@@ -13,6 +13,8 @@ import {
 import { FloorHeader, INITIATIVE_STATUS, INITIATIVE_STATUS_COLORS } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
+import NewInitiative from "./NewInitiative";
+import type { BlueprintSeed } from "../rituals/BlueprintFlow";
 
 const MOMENTUM = {
   up: { value: "↑ rising", color: "var(--accent)" },
@@ -20,9 +22,16 @@ const MOMENTUM = {
   down: { value: "↓ stalled", color: "var(--signal)" },
 };
 
-export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => void }) {
-  const { data, addInitiative, updateInitiative, updateProject } = useVertical();
+export default function InitiativesFloor({
+  onOpen,
+  openBlueprint,
+}: {
+  onOpen: (id: string) => void;
+  openBlueprint?: (seed: BlueprintSeed) => void;
+}) {
+  const { data, updateInitiative, updateProject } = useVertical();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const initiatives = data.initiatives.filter((i) => !domainFilter || i.domainId === domainFilter);
 
@@ -59,12 +68,6 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
     };
   });
 
-  const newInitiative = () => {
-    const domId = domainFilter ?? [...data.domains].sort((a, b) => a.sort - b.sort)[0]?.id;
-    if (!domId) return;
-    void addInitiative(domId).then((init) => onOpen(init.id));
-  };
-
   // the trophy shelf — shipped bets stay visible; gains need a place to live
   const shipped = data.initiatives.filter(
     (i) => i.status === "shipped" && (!domainFilter || i.domainId === domainFilter),
@@ -88,11 +91,24 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
             { key: "momentum", label: "Momentum" },
             { key: "projects", label: "Projects" },
           ],
-          onNew: newInitiative,
+          onNew: () => setCreating(true),
           newLabel: "+ new initiative",
           storageKey: "initiatives",
         }}
       />
+
+      {creating && (
+        <NewInitiative
+          initialDomainId={domainFilter}
+          onClose={() => setCreating(false)}
+          onCreated={(id) => { setCreating(false); onOpen(id); }}
+          onBlueprint={
+            openBlueprint
+              ? (seed) => { setCreating(false); openBlueprint(seed); }
+              : undefined
+          }
+        />
+      )}
 
       {shipped.length > 0 && (
         <section className="mt-10">

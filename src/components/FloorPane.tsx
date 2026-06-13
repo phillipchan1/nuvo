@@ -6,6 +6,7 @@
 import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, projectById } from "../lib/vertical";
 import type { Focus, Rung } from "./AppShell";
+import type { BlueprintSeed } from "./rituals/BlueprintFlow";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativeFloor from "./floors/InitiativeFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
@@ -28,6 +29,7 @@ export default function FloorPane({
   setProjectView,
   initiativeView,
   setInitiativeView,
+  openBlueprint,
 }: {
   rung: Rung;
   focus: Focus;
@@ -39,6 +41,7 @@ export default function FloorPane({
   setProjectView: (v: ProjectView) => void;
   initiativeView: DetailView;
   setInitiativeView: (v: DetailView) => void;
+  openBlueprint: (seed: BlueprintSeed) => void;
 }) {
   const { data } = useVertical();
   const domain = domainById(data, focus.domainId);
@@ -48,7 +51,10 @@ export default function FloorPane({
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-line bg-surface px-5">
+      <div
+        data-tauri-drag-region
+        className="flex h-11 shrink-0 items-center gap-1.5 border-b border-line bg-surface px-5"
+      >
         {rung === "now" && <span className="mono text-[11px] font-medium text-ink">Today</span>}
         {rung === "domain" && <span className="mono text-[11px] font-medium text-ink">Domains</span>}
         {rung === "project" && (
@@ -88,7 +94,9 @@ export default function FloorPane({
           />
         )}
 
-        {rung === "initiative" && initiativeView === "portfolio" && <InitiativesFloor onOpen={openInitiative} />}
+        {rung === "initiative" && initiativeView === "portfolio" && (
+          <InitiativesFloor onOpen={openInitiative} openBlueprint={openBlueprint} />
+        )}
         {rung === "initiative" && initiativeView === "detail" && (
           <InitiativeFloor
             focus={focus}

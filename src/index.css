@@ -169,6 +169,16 @@ body {
     var(--bg);
 }
 
+/* macOS overlay titlebar — room for traffic lights (set in main.tsx) */
+html.tauri-macos {
+  --titlebar-inset-left: 78px;
+}
+
+/* Full-width top bars that span under the native window controls */
+.titlebar-pad {
+  padding-left: var(--titlebar-inset-left, 0px);
+}
+
 /* The app's small-label voice. Historically Plex Mono — now the sans with
    tabular, lining figures so times and durations still align in a column,
    but read warm and human instead of like a terminal. The class name is kept

@@ -82,6 +82,28 @@ export function useExternalEventMutations() {
     },
   });
 
+  // Delete a Google event. Optimistically drop it locally; the edge function
+  // removes it from Google and the mirror row(s). scope="ALL" deletes the
+  // whole recurring series.
+  const del = useMutation({
+    // Await the function: it needs the mirror row to find the Google event, and
+    // it deletes the row itself. If we returned early (fire-and-forget) the
+    // onSettled refetch would race the deletion and the event would pop back.
+    mutationFn: async ({ id, scope = "THIS" }: { id: string; scope?: RecurrenceScope }) => {
+      const { error } = await supabase.functions.invoke("google-events", {
+        body: { action: "delete", eventId: id, scope },
+      });
+      if (error) throw error;
+    },
+    onMutate: async ({ id }) => {
+      await qc.cancelQueries({ queryKey: ["external_events"] });
+      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
+        old?.filter((e) => e.id !== id),
+      );
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
+  });
+
   // Create a real Google event on the primary calendar. The edge function does
   // the POST and writes the external_events row, so we just refetch on settle.
   const create = useMutation({
@@ -106,7 +128,12 @@ export function useExternalEventMutations() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });
 
-  return { updateEvent: update.mutate, rsvpEvent: rsvp.mutate, createEvent: create.mutateAsync };
+  return {
+    updateEvent: update.mutate,
+    rsvpEvent: rsvp.mutate,
+    createEvent: create.mutateAsync,
+    deleteEvent: del.mutate,
+  };
 }
 
 /** Fetch the raw Google event payload for a single event — attendees,

@@ -37,8 +37,9 @@ export interface VerticalStore {
   updateDomain: (id: string, patch: Partial<Domain>) => void;
   deleteDomain: (id: string) => void;
 
-  // initiatives
-  addInitiative: (domainId: string) => Promise<Initiative>;
+  // initiatives — created blank by default; pass `init` to seed the moment
+  // (name/goal/dates) so the create flow lands a fully-shaped bet in one write.
+  addInitiative: (domainId: string, init?: Partial<Initiative>) => Promise<Initiative>;
   updateInitiative: (id: string, patch: Partial<Initiative>) => void;
   deleteInitiative: (id: string) => void;
 
@@ -47,8 +48,9 @@ export interface VerticalStore {
   updateKeyResult: (initiativeId: string, krId: string, patch: Partial<KeyResult>) => void;
   deleteKeyResult: (initiativeId: string, krId: string) => void;
 
-  // projects
-  addProject: (domainId: string, initiativeId: string | null) => Promise<Project>;
+  // projects — created blank by default; pass `init` to seed name/goal/dates
+  // so the create moment lands a fully-shaped project in one write.
+  addProject: (domainId: string, initiativeId: string | null, init?: Partial<Project>) => Promise<Project>;
   updateProject: (id: string, patch: Partial<Project>) => void;
   deleteProject: (id: string) => void;
 
@@ -88,6 +90,14 @@ export interface VerticalStore {
 
   /** The Composer's accept: write the proposed blocks in one pass. */
   applySchedule: (placements: { id: string; doDateISO: string; startISO: string }[]) => Promise<void>;
+  /** The Plan flow's one commit: commit the kept candidates to the week,
+   *  schedule the placed ones, and stamp the sprint goal + reviewed — all
+   *  against the current planning week's sprint, in order, one await. */
+  planWeek: (input: {
+    commitTaskIds: string[];
+    placements: { id: string; doDateISO: string; startISO: string }[];
+    goal: string;
+  }) => Promise<void>;
   /** The Blueprint's accept: create a whole initiative subtree (KRs,
    *  projects, ordered backlog tasks) and return the initiative id. */
   addInitiativeTree: (domainId: string, tree: BlueprintTree) => Promise<string>;
@@ -301,19 +311,31 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
 
       // ── initiatives ──────────────────────────────────────────────────────
-      addInitiative: async (domainId) => {
+      addInitiative: async (domainId, init) => {
         const uid = await userId();
+        const insert: Record<string, unknown> = {
+          user_id: uid,
+          domain_id: domainId,
+          name: init?.name?.trim() || "New initiative",
+        };
+        if (init?.outcome != null) insert.outcome = init.outcome.trim();
+        if (init?.description != null) insert.description = init.description.trim();
+        if ("startDate" in (init ?? {})) insert.start_date = init?.startDate ?? null;
+        if ("targetDate" in (init ?? {})) insert.target_date = init?.targetDate ?? null;
+        if (init?.status != null) insert.status = init.status;
         const { data: row, error } = await supabase
           .from("initiatives")
-          .insert({ user_id: uid, domain_id: domainId, name: "New initiative" })
+          .insert(insert)
           .select("*")
           .single();
         if (error) throw error;
         invalidate(["vertical"]);
         return {
-          id: row.id, domainId, name: row.name, outcome: "", description: "",
-          startDate: null, targetDate: null, status: "active", progress: 0,
-          momentum: "flat", keyResults: [],
+          id: row.id, domainId, name: row.name, outcome: row.outcome ?? "",
+          description: row.description ?? "", startDate: row.start_date ?? null,
+          targetDate: row.target_date ?? null,
+          status: (row.status ?? "active") as Initiative["status"], progress: row.progress ?? 0,
+          momentum: (row.momentum ?? "flat") as Initiative["momentum"], keyResults: [],
         };
       },
       updateInitiative: (id, patch) => {
@@ -362,21 +384,31 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
 
       // ── projects ─────────────────────────────────────────────────────────
-      addProject: async (domainId, initiativeId) => {
+      addProject: async (domainId, initiativeId, init) => {
         const uid = await userId();
+        const insert: Record<string, unknown> = {
+          user_id: uid,
+          domain_id: domainId,
+          initiative_id: initiativeId,
+          name: init?.name?.trim() || "New project",
+          status: init?.status ?? "planned",
+        };
+        if (init?.outcome != null) insert.outcome = init.outcome.trim();
+        if (init?.description != null) insert.description = init.description.trim();
+        if ("startDate" in (init ?? {})) insert.start_date = init?.startDate ?? null;
+        if ("targetDate" in (init ?? {})) insert.target_date = init?.targetDate ?? null;
         const { data: row, error } = await supabase
           .from("projects")
-          .insert({
-            user_id: uid, domain_id: domainId, initiative_id: initiativeId,
-            name: "New project", status: "planned",
-          })
+          .insert(insert)
           .select("*")
           .single();
         if (error) throw error;
         invalidate(["vertical"]);
         return {
-          id: row.id, initiativeId, domainId, name: row.name, outcome: "",
-          description: "", startDate: null, targetDate: null, status: "planned", progress: 0,
+          id: row.id, initiativeId, domainId, name: row.name, outcome: row.outcome ?? "",
+          description: row.description ?? "", startDate: row.start_date ?? null,
+          targetDate: row.target_date ?? null,
+          status: (row.status ?? "planned") as Project["status"], progress: row.progress ?? 0,
         };
       },
       updateProject: (id, patch) => {
@@ -557,6 +589,37 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           else invokeQuiet("task-mirror", { taskId: p.id });
         }
         invalidate(["tasks"]);
+      },
+
+      planWeek: async ({ commitTaskIds, placements, goal }) => {
+        const sprint = await ensureSprint();
+
+        // 1 · every kept candidate becomes a week commitment (the funnel),
+        //     and any inbox capture among them is processed out of the inbox
+        if (commitTaskIds.length) {
+          await supabase.from("tasks").update({ sprint_id: sprint.id }).in("id", commitTaskIds);
+          await supabase
+            .from("tasks")
+            .update({ status: "backlog" })
+            .in("id", commitTaskIds)
+            .eq("status", "inbox");
+        }
+        // 2 · the placed subset also lands on the calendar
+        for (const p of placements) {
+          const { error } = await supabase
+            .from("tasks")
+            .update({ status: "planned", do_date: p.doDateISO, start_time: p.startISO, sprint_id: sprint.id })
+            .eq("id", p.id);
+          if (error) console.error("[plan] schedule failed", error);
+          else invokeQuiet("task-mirror", { taskId: p.id });
+        }
+        // 3 · stamp the week: goal + reviewed (focus/contexts persist live as
+        //     they're toggled, so they're already on the row)
+        const rowPatch = { goal, reviewed_at: new Date().toISOString() };
+        qc.setQueryData<Sprint | null>(["sprint", weekStart], (old) => (old ? { ...old, ...rowPatch } : old));
+        await writeTable("sprints", sprint.id, rowPatch);
+
+        invalidate(["tasks"], ["sprint"]);
       },
 
       addInitiativeTree: async (domainId, tree) => {
