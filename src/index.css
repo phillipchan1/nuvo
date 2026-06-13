@@ -3,6 +3,11 @@
 @import "@fontsource/plus-jakarta-sans/500.css";
 @import "@fontsource/plus-jakarta-sans/600.css";
 @import "@fontsource/plus-jakarta-sans/700.css";
+/* Candidate typefaces — wired to the FontPlayground switcher (temporary). */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/manrope";
+@import "@fontsource-variable/figtree";
 
 @source "./**/*.{tsx,ts,jsx,js,html}";
 
@@ -58,6 +63,29 @@
   --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-3: 0 28px 64px -16px rgba(0, 0, 0, 0.7), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
+}
+
+/* ── Dark anchor (the Spine) ──────────────────────────────────────────────
+   The mockup's instinct — "one dark vertical anchor, light workspace" — routed
+   to the surface that's actually chrome. Rather than hardcode colours, we scope
+   a twilight palette so the Spine's existing token-driven utilities (bg-surface,
+   text-muted, border-line, var(--accent)…) simply read as dark, in either theme.
+   In light mode this gives the dark-rail / light-canvas split; in dark mode it
+   stays a touch deeper than the page so it still reads as a recessed anchor. */
+.spine-dark {
+  --surface: #181726;
+  --surface-2: #201e30;
+  --bg: #131220;
+  --line: #2e2c3e;
+  --line-strong: #423f58;
+  --text: #ecebf3;
+  --muted: #8b8799;
+  --accent: #8b80ff;
+  --accent-2: #a892ff;
+  --signal: #ff8a4c;
+  --accent-soft: rgba(139, 128, 255, 0.16);
+  --signal-soft: rgba(255, 138, 76, 0.16);
+  --accent-glow: rgba(139, 128, 255, 0.32);
 }
 
 @theme inline {
@@ -150,7 +178,9 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  /* Driven by the --font-sans token so the FontPlayground switcher can flip the
+     whole app live. Defaults to Plus Jakarta Sans (set in @theme inline). */
+  font-family: var(--font-sans);
   font-size: 13px;
   /* Jakarta is a touch wide; a hair of negative tracking makes running text
      feel set rather than defaulted, and warms the rhythm. */

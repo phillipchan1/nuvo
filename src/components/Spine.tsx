@@ -35,7 +35,7 @@ export default function Spine({
   openFlow: (f: FlowName) => void;
 }) {
   return (
-    <div className="relative z-40 flex w-[74px] shrink-0 flex-col items-center border-r border-line bg-surface">
+    <div className="spine-dark relative z-40 flex w-[74px] shrink-0 flex-col items-center border-r border-line bg-surface">
       {/* drag region that also clears the macOS traffic lights */}
       <div data-tauri-drag-region className="h-9 w-full shrink-0" />
 

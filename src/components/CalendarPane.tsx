@@ -952,20 +952,33 @@ export default function CalendarPane({
             scrollTime: `${String(Math.max(viewStart, Math.min(now.getHours() - 1, viewEnd - 1))).padStart(2, "0")}:00:00`,
           })}
           dayHeaderContent={(arg) => {
-            const isToday = arg.isToday;
-            const weekday = arg.date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
-            const dateNum = arg.date.getDate();
-            return (
-              <div className="flex flex-col items-center gap-0.5 py-1">
-                <span className="text-micro font-semibold tracking-widest text-muted">
+            const weekday = arg.date.toLocaleDateString([], { weekday: "short" });
+            // Month view headers are weekday-only — a big date numeral there is
+            // meaningless (the date is just a representative day of the column).
+            if (arg.view.type === "dayGridMonth") {
+              return (
+                <span className="text-micro font-semibold uppercase tracking-widest text-muted">
                   {weekday}
                 </span>
+              );
+            }
+            const isToday = arg.isToday;
+            const dateNum = arg.date.getDate();
+            return (
+              <div className="flex flex-col items-center gap-0.5 py-1.5">
                 <span
-                  className={`mono flex h-7 w-7 items-center justify-center rounded-full text-head font-semibold tabular-nums leading-none transition-colors ${
-                    isToday ? "bg-accent text-white" : "text-text"
+                  className={`mono text-[30px] font-bold leading-none tabular-nums tracking-[-0.02em] transition-colors ${
+                    isToday ? "text-accent" : "text-text"
                   }`}
                 >
-                  {dateNum}
+                  {String(dateNum).padStart(2, "0")}
+                </span>
+                <span
+                  className={`text-micro font-semibold lowercase tracking-[0.08em] ${
+                    isToday ? "text-accent" : "text-muted"
+                  }`}
+                >
+                  {weekday.toLowerCase()}
                 </span>
               </div>
             );

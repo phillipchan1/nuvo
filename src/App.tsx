@@ -4,6 +4,7 @@ import { useApplyTheme, useSettings } from "./hooks/useSettings";
 import Login from "./components/Login";
 import AppShell from "./components/AppShell";
 import UpdateToast from "./components/UpdateToast";
+import FontPlayground from "./components/FontPlayground";
 import { AppNavigationProvider } from "./hooks/useAppNavigation";
 
 const queryClient = new QueryClient({
@@ -38,6 +39,7 @@ function Shell() {
         <Login />
       )}
       <UpdateToast />
+      <FontPlayground />
     </>
   );
 }
