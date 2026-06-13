@@ -646,6 +646,45 @@ textarea:focus {
   text-decoration: underline;
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   MOBILE — the on-the-go shell. The desktop layout is a horizontal spine /
+   rail / calendar; on a phone we collapse to a single column with a bottom
+   tab bar, a floating quick-capture, and full-height sheets. These rules only
+   bite on small viewports, so the desktop experience is untouched.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Safe-area helpers (notch / home indicator). Used by the mobile shell. */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+.inset-safe-b { bottom: env(safe-area-inset-bottom, 0px); }
+
+/* A sheet rising from the bottom edge — quick-capture, task detail, chat. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.sheet-up { animation: sheet-up var(--d-base) var(--ease-out) both; }
+
+@media (max-width: 767px) {
+  /* Comfortable momentum scrolling inside the column. */
+  .mobile-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Generous tap targets — Apple's 44px minimum — without disturbing the
+     desktop's hairline density. */
+  .tap { min-height: 44px; }
+
+  /* Hide the thin desktop scrollbars; touch surfaces don't need them. */
+  .mobile-scroll::-webkit-scrollbar { width: 0; height: 0; }
+
+  /* FullCalendar is dense for a phone — give the time axis and headers room. */
+  .fc .fc-timegrid-slot { height: 30px; }
+  .fc .fc-col-header-cell-cushion { padding: 6px 2px; }
+  .fc .fc-toolbar-title { font-size: 15px; }
+}
+
 /* ── Respect the user's motion preference ────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,

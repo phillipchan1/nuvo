@@ -7,6 +7,8 @@ import {
 } from "../lib/vertical";
 import { VerticalProvider, useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { useIsMobile } from "../hooks/useIsMobile";
+import MobileShell from "./mobile/MobileShell";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import Planner from "./Planner";
 import Spine, { type FlowName } from "./Spine";
@@ -28,9 +30,17 @@ export const LADDER: Rung[] = ["now", "day", "project", "initiative", "domain"];
 export default function AppShell() {
   return (
     <VerticalProvider>
-      <AppShellInner />
+      <ResponsiveShell />
     </VerticalProvider>
   );
+}
+
+// On a phone the desktop spine / rail / calendar layout is unusable, so we swap
+// in a single-column shell built for the thumb. Both share the same data layer
+// (VerticalProvider + the task hooks) and navigation context.
+function ResponsiveShell() {
+  const isMobile = useIsMobile();
+  return isMobile ? <MobileShell /> : <AppShellInner />;
 }
 
 function AppShellInner() {
