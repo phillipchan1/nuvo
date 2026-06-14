@@ -54,6 +54,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
       setDomain: (domId) => updateProject(p.id, { domainId: domId, initiativeId: null }),
       setStartDate: (v) => updateProject(p.id, { startDate: v }),
       setTargetDate: (v) => updateProject(p.id, { targetDate: v }),
+      setDates: (start, target) => updateProject(p.id, { startDate: start, targetDate: target }),
       open: () => onOpen(p.id),
     };
   });

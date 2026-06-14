@@ -65,6 +65,7 @@ export default function InitiativesFloor({
       },
       setStartDate: (v) => updateInitiative(i.id, { startDate: v }),
       setTargetDate: (v) => updateInitiative(i.id, { targetDate: v }),
+      setDates: (start, target) => updateInitiative(i.id, { startDate: start, targetDate: target }),
       open: () => onOpen(i.id),
     };
   });
