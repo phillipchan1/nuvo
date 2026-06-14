@@ -44,6 +44,8 @@ interface AppNavigationContextValue {
   setFlowStep: (step: number) => void;
   openOverlay: (kind: OverlayKind, id?: string | null, anchor?: DOMRect | null) => void;
   closeOverlay: () => void;
+  /** Open a project / initiative as the centered Record modal. */
+  openRecord: (kind: "project" | "initiative", id: string) => void;
   openFloorModal: (modal: FloorModal) => void;
   closeFloorModal: () => void;
   toggleAgent: () => void;
@@ -255,6 +257,16 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     if (navRef.current.floorModal) back();
   }, [back]);
 
+  const openRecord = useCallback(
+    (kind: "project" | "initiative", id: string) =>
+      navigate({
+        overlay: kind === "project" ? "project-record" : "initiative-record",
+        overlayId: id,
+        floorModal: null,
+      }),
+    [navigate],
+  );
+
   const closeOverlay = useCallback(() => {
     if (navRef.current.overlay !== "none") back();
     else if (navRef.current.floorModal) back();
@@ -348,6 +360,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     setFlowStep,
     openOverlay,
     closeOverlay,
+    openRecord,
     openFloorModal,
     closeFloorModal,
     toggleAgent,

@@ -16,7 +16,11 @@ export type OverlayKind =
   | "evening"
   | "task"
   | "event"
-  | "slot";
+  | "slot"
+  // Record command center — a project / initiative opened as a full modal.
+  // The record id rides in `overlayId`; no anchor (it's centered, not a popover).
+  | "project-record"
+  | "initiative-record";
 
 export type SettingsSection = "appearance" | "schedule" | "connections" | "labels" | "account";
 

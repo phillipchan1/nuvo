@@ -24,7 +24,6 @@ export default function FloorPane({
   focus,
   focusDomain,
   openInitiative,
-  openProject,
   goRung,
   projectView,
   setProjectView,
@@ -36,7 +35,6 @@ export default function FloorPane({
   focus: Focus;
   focusDomain: (id: string) => void;
   openInitiative: (id: string) => void;
-  openProject: (id: string) => void;
   goRung: (r: Rung) => void;
   projectView: ProjectView;
   setProjectView: (v: ProjectView) => void;
@@ -45,9 +43,15 @@ export default function FloorPane({
   openBlueprint: (seed: BlueprintSeed) => void;
 }) {
   const { data } = useVertical();
-  const { back } = useAppNavigation();
+  const { back, openRecord } = useAppNavigation();
   const domain = domainById(data, focus.domainId);
   const accent = domain?.color ?? "var(--accent)";
+
+  // Clicking a project / initiative anywhere opens its Record modal (the
+  // beautiful, fully-editable command center). The full-page floor stays one
+  // "Open full page ↗" away from inside the modal.
+  const openProjectRecord = (id: string) => openRecord("project", id);
+  const openInitiativeRecord = (id: string) => openRecord("initiative", id);
 
   const viewKey = rung === "project" ? projectView : rung === "initiative" ? initiativeView : "";
 
@@ -85,7 +89,7 @@ export default function FloorPane({
       <div key={`${rung}-${viewKey}`} className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7">
         {rung === "now" && <NowFloor onOpenDay={() => goRung("day")} />}
 
-        {rung === "project" && projectView === "portfolio" && <PortfolioFloor onOpen={openProject} />}
+        {rung === "project" && projectView === "portfolio" && <PortfolioFloor onOpen={openProjectRecord} />}
         {rung === "project" && projectView === "sprint" && <SprintFloor />}
         {rung === "project" && projectView === "detail" && (
           <ProjectFloor
@@ -97,19 +101,19 @@ export default function FloorPane({
         )}
 
         {rung === "initiative" && initiativeView === "portfolio" && (
-          <InitiativesFloor onOpen={openInitiative} openBlueprint={openBlueprint} />
+          <InitiativesFloor onOpen={openInitiativeRecord} openBlueprint={openBlueprint} />
         )}
         {rung === "initiative" && initiativeView === "detail" && (
           <InitiativeFloor
             focus={focus}
             onUp={() => goRung("domain")}
             onBack={back}
-            onOpenProject={openProject}
+            onOpenProject={openProjectRecord}
           />
         )}
 
         {rung === "domain" && (
-          <DomainFloor focus={focus} onSwitchDomain={focusDomain} onOpenInitiative={openInitiative} />
+          <DomainFloor focus={focus} onSwitchDomain={focusDomain} onOpenInitiative={openInitiativeRecord} />
         )}
       </div>
     </div>

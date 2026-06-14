@@ -13,6 +13,7 @@ import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import Planner from "./Planner";
 import Spine, { type FlowName } from "./Spine";
 import FloorPane from "./FloorPane";
+import RecordModal from "./record/RecordModal";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
 import BlueprintFlow, { type BlueprintSeed } from "./rituals/BlueprintFlow";
@@ -53,6 +54,8 @@ function AppShellInner() {
     focusDomain: navFocusDomain,
     openInitiative,
     openProject,
+    openRecord,
+    closeOverlay,
     setProjectView,
     setInitiativeView,
     navigate,
@@ -169,7 +172,6 @@ function AppShellInner() {
               focus={focus}
               focusDomain={focusDomain}
               openInitiative={openInitiativeDetail}
-              openProject={openProjectDetail}
               goRung={goRung}
               projectView={projectView}
               setProjectView={setProjectView}
@@ -212,6 +214,22 @@ function AppShellInner() {
           seed={blueprintSeed ?? undefined}
           onClose={() => { closeFlow(); setBlueprintSeed(null); }}
           onCreated={(id) => { setBlueprintSeed(null); openInitiativeDetail(id); }}
+        />
+      )}
+
+      {/* The Record command center — a project / initiative opened as a modal. */}
+      {(nav.overlay === "project-record" || nav.overlay === "initiative-record") && nav.overlayId && (
+        <RecordModal
+          kind={nav.overlay === "project-record" ? "project" : "initiative"}
+          id={nav.overlayId}
+          onClose={closeOverlay}
+          onExpand={() =>
+            nav.overlay === "project-record"
+              ? openProjectDetail(nav.overlayId!)
+              : openInitiativeDetail(nav.overlayId!)
+          }
+          onOpenProject={(pid) => openRecord("project", pid)}
+          onOpenInitiative={(iid) => openRecord("initiative", iid)}
         />
       )}
     </div>
