@@ -135,7 +135,7 @@ export default function InitiativeFloor({
       {/* timeline */}
       <section className="mb-8">
         <div className="section-label mb-2">Timeline</div>
-        <Timeline items={timelineItems} />
+        <Timeline items={timelineItems} persistKey={`initiative-${initiative.id}`} />
       </section>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">

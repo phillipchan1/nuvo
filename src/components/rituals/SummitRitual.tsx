@@ -331,19 +331,10 @@ function MonthsStep() {
       };
     });
 
-  const undated = data.initiatives.filter((i) => i.status === "active" && !i.startDate && !i.targetDate);
-
   return (
     <div>
-      <StepTitle title="The Months" sub="Drag the bars: target dates staggered on purpose are plans; stacked on the same month they're wishes. Projects inherit the rhythm in their own floors." />
-      <div className="rounded-md border border-line bg-surface p-4">
-        <Timeline items={items} />
-      </div>
-      {undated.length > 0 && (
-        <div className="mono mt-3 text-[11px] text-muted">
-          {undated.length} active bet{undated.length === 1 ? "" : "s"} without dates — set a start/target on the Initiative floor to see {undated.length === 1 ? "it" : "them"} here.
-        </div>
-      )}
+      <StepTitle title="The Months" sub="Drag the bars: target dates staggered on purpose are plans; stacked on the same month they're wishes. Undated bets wait in the tray below — drag them onto the grid. Projects inherit the rhythm in their own floors." />
+      <Timeline items={items} defaultZoom="quarter" persistKey="summit-months" />
       {data.initiatives.filter((i) => i.status === "active").length === 0 && (
         <div className="mt-3 text-[12px] text-muted italic">Nothing active to place.</div>
       )}
