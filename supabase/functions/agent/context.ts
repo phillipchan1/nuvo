@@ -1,7 +1,20 @@
 import { admin, todayLA } from "../_shared/admin.ts";
 
+const APP_TZ = "America/Los_Angeles";
 const TASK_COLS =
   "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count";
+
+export interface ScheduleItem {
+  kind: "event" | "task";
+  id: string;
+  title: string;
+  localDate: string;
+  /** Pre-formatted in America/Los_Angeles — use this verbatim, never convert ISO yourself. */
+  timeRange: string;
+  past: boolean;
+  ongoing?: boolean;
+  allDay?: boolean;
+}
 
 export interface AgentContext {
   today: string;
@@ -12,7 +25,10 @@ export interface AgentContext {
   rangeStart: string;
   rangeEnd: string;
   settings: { dayStartHour: number; dayEndHour: number } | null;
+  /** Pre-filtered timed items for today (LA calendar). Primary source for "what's on today". */
+  todaySchedule: ScheduleItem[];
   inbox: unknown[];
+  /** Tasks with do_date=today but no start_time — not on the calendar. */
   todayTasks: unknown[];
   scheduled: unknown[];
   /** This week's sprint goal, if a sprint row exists. */
@@ -21,6 +37,12 @@ export interface AgentContext {
   weekPool: unknown[];
   events: unknown[];
   labels: { id: string; name: string }[];
+  /** Life structure — use ids from here when creating/updating vertical entities. */
+  vertical: {
+    domains: unknown[];
+    initiatives: unknown[];
+    projects: unknown[];
+  };
 }
 
 /** Monday of the planning week (LA calendar; Sundays plan the week ahead). */
@@ -33,35 +55,135 @@ function planningWeekStart(todayIso: string): string {
   return dt.toISOString().slice(0, 10);
 }
 
-function fmtTask(t: Record<string, unknown>) {
+function localDateISO(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
+function fmtTimeLA(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TZ,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(iso));
+}
+
+function fmtTimeRangeLA(startIso: string, endIso: string): string {
+  return `${fmtTimeLA(startIso)}–${fmtTimeLA(endIso)}`;
+}
+
+function fmtTask(t: Record<string, unknown>, today: string, nowMs: number) {
+  const startTime = t.start_time as string | null;
+  const duration = (t.duration_minutes as number) ?? 30;
+  let past = false;
+  let ongoing = false;
+  let localDate: string | undefined;
+  let timeRange: string | undefined;
+
+  if (startTime) {
+    const startMs = new Date(startTime).getTime();
+    const endMs = startMs + duration * 60_000;
+    past = endMs <= nowMs;
+    ongoing = startMs <= nowMs && nowMs < endMs;
+    localDate = localDateISO(startTime);
+    timeRange = fmtTimeRangeLA(startTime, new Date(endMs).toISOString());
+  }
+
   return {
     id: t.id,
     title: t.title,
     status: t.status,
     doDate: t.do_date,
     startTime: t.start_time,
-    durationMinutes: t.duration_minutes,
+    durationMinutes: duration,
     deadline: t.deadline,
     priority: t.priority,
     notes: t.notes || undefined,
     rollCount: t.roll_count || 0,
+    localDate,
+    timeRange,
+    isToday: localDate === today,
+    past,
+    ongoing,
   };
 }
 
-function fmtEvent(e: Record<string, unknown>, now: number) {
-  const start = e.start_at ? new Date(e.start_at as string).getTime() : null;
-  const end = e.end_at ? new Date(e.end_at as string).getTime() : null;
+function fmtEvent(e: Record<string, unknown>, today: string, now: number) {
+  const startAt = e.start_at as string;
+  const endAt = e.end_at as string;
+  const start = startAt ? new Date(startAt).getTime() : null;
+  const end = endAt ? new Date(endAt).getTime() : null;
+  const localDate = startAt ? localDateISO(startAt) : undefined;
+  const allDay = Boolean(e.all_day);
+
   return {
     id: e.id,
     title: e.title,
-    startAt: e.start_at,
-    endAt: e.end_at,
-    allDay: e.all_day,
+    startAt,
+    endAt,
+    allDay,
     location: e.location || undefined,
-    // so the model never offers a meeting that already happened
+    localDate,
+    timeRange: startAt && endAt && !allDay ? fmtTimeRangeLA(startAt, endAt) : undefined,
+    isToday: localDate === today,
     past: end != null ? end <= now : false,
     ongoing: start != null && end != null ? start <= now && now < end : false,
   };
+}
+
+function buildTodaySchedule(
+  events: ReturnType<typeof fmtEvent>[],
+  scheduled: ReturnType<typeof fmtTask>[],
+  today: string,
+): ScheduleItem[] {
+  const items: ScheduleItem[] = [];
+
+  for (const e of events) {
+    if (e.localDate !== today) continue;
+    items.push({
+      kind: "event",
+      id: e.id as string,
+      title: e.title as string,
+      localDate: e.localDate!,
+      timeRange: e.allDay ? "all day" : (e.timeRange ?? ""),
+      past: e.past,
+      ongoing: e.ongoing,
+      allDay: e.allDay,
+    });
+  }
+
+  for (const t of scheduled) {
+    if (!t.startTime || t.localDate !== today) continue;
+    items.push({
+      kind: "task",
+      id: t.id as string,
+      title: t.title as string,
+      localDate: t.localDate!,
+      timeRange: t.timeRange ?? "",
+      past: t.past,
+      ongoing: t.ongoing,
+    });
+  }
+
+  items.sort((a, b) => {
+    const parse = (s: string) => {
+      const m = s.match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return 0;
+      let h = Number(m[1]);
+      const min = Number(m[2]);
+      if (/PM/i.test(s) && h < 12) h += 12;
+      if (/AM/i.test(s) && h === 12) h = 0;
+      return h * 60 + min;
+    };
+    return parse(a.timeRange) - parse(b.timeRange);
+  });
+
+  return items;
 }
 
 export async function buildContext(
@@ -73,7 +195,7 @@ export async function buildContext(
   const now = new Date();
   const nowMs = now.getTime();
   const nowLabel = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
+    timeZone: APP_TZ,
     weekday: "short",
     hour: "numeric",
     minute: "2-digit",
@@ -81,7 +203,7 @@ export async function buildContext(
   const start = rangeStart ?? new Date(now.getTime() - 7 * 86400_000).toISOString();
   const end = rangeEnd ?? new Date(now.getTime() + 7 * 86400_000).toISOString();
 
-  const [inboxRes, todayRes, scheduledRes, eventsRes, labelsRes, settingsRes] = await Promise.all([
+  const [inboxRes, todayRes, scheduledRes, eventsRes, labelsRes, settingsRes, domainsRes, initiativesRes, projectsRes] = await Promise.all([
     admin
       .from("tasks")
       .select(TASK_COLS)
@@ -117,9 +239,11 @@ export async function buildContext(
       .select("day_start_hour, day_end_hour, hidden_calendar_ids")
       .eq("user_id", userId)
       .maybeSingle(),
+    admin.from("domains").select("id, name, intention, icon, color, weekly_target_hours").eq("user_id", userId).order("sort_order"),
+    admin.from("initiatives").select("id, name, domain_id, outcome, description, status, target_date, start_date, key_results(id, name, baseline_value, current_value, target_value, unit)").eq("user_id", userId).order("sort_order"),
+    admin.from("projects").select("id, name, domain_id, initiative_id, outcome, description, status, start_date, target_date").eq("user_id", userId).order("sort_order"),
   ]);
 
-  // the week pool: tasks committed to this week's sprint, not done yet
   const weekStart = planningWeekStart(today);
   const { data: sprint } = await admin
     .from("sprints")
@@ -144,16 +268,24 @@ export async function buildContext(
   if (eventsRes.error) throw new Error(eventsRes.error.message);
   if (labelsRes.error) throw new Error(labelsRes.error.message);
   if (settingsRes.error) throw new Error(settingsRes.error.message);
+  if (domainsRes.error) throw new Error(domainsRes.error.message);
+  if (initiativesRes.error) throw new Error(initiativesRes.error.message);
+  if (projectsRes.error) throw new Error(projectsRes.error.message);
 
   const hiddenCalendars = new Set<string>(
     (settingsRes.data?.hidden_calendar_ids as string[] | null) ?? [],
   );
 
-  const scheduledPast = (t: Record<string, unknown>): boolean => {
-    if (!t.start_time) return false;
-    const end = new Date(t.start_time as string).getTime() + ((t.duration_minutes as number) ?? 30) * 60_000;
-    return end <= nowMs;
-  };
+  const inbox = (inboxRes.data ?? []).map((t) => fmtTask(t, today, nowMs));
+  const todayTasks = (todayRes.data ?? [])
+    .filter((t) => !t.start_time)
+    .map((t) => fmtTask(t, today, nowMs));
+  const scheduled = (scheduledRes.data ?? []).map((t) => fmtTask(t, today, nowMs));
+  const events = (eventsRes.data ?? [])
+    .filter((e) => !hiddenCalendars.has(e.calendar_id as string))
+    .map((e) => fmtEvent(e, today, nowMs));
+
+  const todaySchedule = buildTodaySchedule(events, scheduled, today);
 
   return {
     today,
@@ -167,19 +299,58 @@ export async function buildContext(
           dayEndHour: settingsRes.data.day_end_hour,
         }
       : null,
-    inbox: (inboxRes.data ?? []).map(fmtTask),
-    todayTasks: (todayRes.data ?? []).map(fmtTask),
-    scheduled: (scheduledRes.data ?? []).map((t) => ({ ...fmtTask(t), past: scheduledPast(t) })),
+    todaySchedule,
+    inbox,
+    todayTasks,
+    scheduled,
     sprintGoal: sprint?.goal ?? null,
-    weekPool: (weekRes.data ?? []).map(fmtTask),
-    // only calendars the user hasn't toggled off in settings
-    events: (eventsRes.data ?? [])
-      .filter((e) => !hiddenCalendars.has(e.calendar_id as string))
-      .map((e) => fmtEvent(e, nowMs)),
+    weekPool: (weekRes.data ?? []).map((t) => fmtTask(t, today, nowMs)),
+    events,
     labels: labelsRes.data ?? [],
+    vertical: {
+      domains: (domainsRes.data ?? []).map((d) => ({
+        id: d.id,
+        name: d.name,
+        intention: d.intention,
+        icon: d.icon,
+        color: d.color,
+        weeklyTargetHours: d.weekly_target_hours,
+      })),
+      initiatives: (initiativesRes.data ?? []).map((i) => ({
+        id: i.id,
+        name: i.name,
+        domainId: i.domain_id,
+        outcome: i.outcome,
+        description: i.description,
+        status: i.status,
+        targetDate: i.target_date,
+        startDate: i.start_date,
+        keyResults: (i.key_results ?? []).map((k: Record<string, unknown>) => ({
+          id: k.id,
+          name: k.name,
+          baseline: k.baseline_value,
+          current: k.current_value,
+          target: k.target_value,
+          unit: k.unit,
+        })),
+      })),
+      projects: (projectsRes.data ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        domainId: p.domain_id,
+        initiativeId: p.initiative_id,
+        outcome: p.outcome,
+        description: p.description,
+        status: p.status,
+        startDate: p.start_date,
+        targetDate: p.target_date,
+      })),
+    },
   };
 }
 
 export function contextToPrompt(ctx: AgentContext): string {
-  return JSON.stringify(ctx, null, 2);
+  return `Internal note for you only: "id" fields are for tool calls — never paste them in user-facing replies.
+
+${JSON.stringify(ctx, null, 2)}`;
 }

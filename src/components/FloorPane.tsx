@@ -7,6 +7,7 @@ import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, projectById } from "../lib/vertical";
 import type { Focus, Rung } from "./AppShell";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { Keycap } from "./ui";
 import type { BlueprintSeed } from "./rituals/BlueprintFlow";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativeFloor from "./floors/InitiativeFloor";
@@ -43,7 +44,8 @@ export default function FloorPane({
   openBlueprint: (seed: BlueprintSeed) => void;
 }) {
   const { data } = useVertical();
-  const { back, openRecord } = useAppNavigation();
+  const { back, openRecord, toggleAgent, nav } = useAppNavigation();
+  const { agentOpen } = nav;
   const domain = domainById(data, focus.domainId);
   const accent = domain?.color ?? "var(--accent)";
 
@@ -59,7 +61,7 @@ export default function FloorPane({
     <div className="flex h-full flex-col bg-bg">
       <div
         data-tauri-drag-region
-        className="flex h-11 shrink-0 items-center gap-1.5 border-b border-line bg-surface px-5"
+        className="app-topbar flex h-11 shrink-0 items-center gap-1.5 border-b border-line bg-surface px-5"
       >
         {rung === "now" && <span className="mono text-[11px] font-medium text-ink">Today</span>}
         {rung === "domain" && <span className="mono text-[11px] font-medium text-ink">Domains</span>}
@@ -83,7 +85,14 @@ export default function FloorPane({
           />
         )}
         <div className="flex-1" />
-        <button onClick={() => goRung("day")} className="mono text-[11px] text-muted hover:text-ink">day ↓</button>
+        <button
+          onClick={toggleAgent}
+          className={`fast flex items-center gap-1 rounded-md px-2 py-1 text-[11px] ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
+          title="Nuvo agent"
+        >
+          <Keycap>⌘J</Keycap>
+        </button>
+        <button onClick={() => goRung("day")} className="mono text-[11px] text-muted hover:text-ink">Schedule ↓</button>
       </div>
 
       <div key={`${rung}-${viewKey}`} className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7">

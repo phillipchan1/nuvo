@@ -172,6 +172,18 @@ body {
 /* macOS overlay titlebar — room for traffic lights (set in main.tsx) */
 html.tauri-macos {
   --titlebar-inset-left: 78px;
+  --titlebar-inset-top: 28px;
+  --spine-width: 78px;
+}
+
+/* Top bars sit under the overlay titlebar; spine column owns the left inset. */
+html.tauri-macos .app-topbar {
+  min-height: calc(2.75rem + var(--titlebar-inset-top));
+  padding-top: var(--titlebar-inset-top);
+}
+
+html.tauri-macos .spine-top {
+  min-height: calc(var(--titlebar-inset-top) + 0.5rem);
 }
 
 /* Full-width top bars that span under the native window controls */
@@ -258,6 +270,13 @@ html.tauri-macos {
   to { opacity: 1; transform: translateY(0); }
 }
 .rise { animation: rise var(--d-base) var(--ease-out) both; }
+
+/* Marquee multi-select — suppress text selection while dragging */
+body.nuvo-selecting,
+body.nuvo-selecting * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
 
 /* The scrim behind a moment — fades the world back, blurs it softly. */
 @keyframes scrim-in {
@@ -620,6 +639,46 @@ textarea:focus {
   color: var(--accent);
   text-decoration: underline;
 }
+
+/* Agent compose — drag-drop attachments */
+.agent-compose-box {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.agent-attach-btn:hover svg {
+  transform: rotate(-8deg);
+}
+.agent-attach-btn svg {
+  transition: transform 180ms var(--ease-out);
+}
+.agent-drop-overlay {
+  animation: rise var(--d-fast) var(--ease-out) both;
+}
+.agent-attachment-pill {
+  animation: rise var(--d-fast) var(--ease-out) both;
+}
+.agent-attachment-thumb {
+  transition: box-shadow 180ms var(--ease-out), border-color 180ms var(--ease-out);
+}
+.agent-attachment-thumb:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  box-shadow: 0 4px 14px -6px var(--accent-glow);
+}
+.agent-rail-toggle:hover span:first-child {
+  transform: scale(1.06);
+}
+.agent-rail-toggle span:first-child {
+  transition: transform 200ms var(--ease-spring);
+}
+
+.agent-suggestion-chip {
+  animation: rise var(--d-fast) var(--ease-out) both;
+}
+.agent-suggestions .agent-suggestion-chip:nth-child(1) { animation-delay: 0ms; }
+.agent-suggestions .agent-suggestion-chip:nth-child(2) { animation-delay: 40ms; }
+.agent-suggestions .agent-suggestion-chip:nth-child(3) { animation-delay: 80ms; }
+.agent-suggestions .agent-suggestion-chip:nth-child(4) { animation-delay: 120ms; }
+.agent-suggestions .agent-suggestion-chip:nth-child(5) { animation-delay: 160ms; }
+.agent-suggestions .agent-suggestion-chip:nth-child(6) { animation-delay: 200ms; }
 
 /* ════════════════════════════════════════════════════════════════════════
    MOBILE — the on-the-go shell. The desktop layout is a horizontal spine /

@@ -5,14 +5,24 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ENERGY_META, ENERGY_ORDER, type Energy } from "../../lib/energy";
 import type { Momentum, ProjectStatus } from "../../lib/vertical";
+import type { CollectionSelection } from "../../hooks/useCollectionSelection";
+import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
 
 // ── Shared status vocab (kept here so board/detail/initiative agree) ─────────
-export const PROJECT_STATUS: ProjectStatus[] = ["planned", "active", "blocked", "done"];
+export const PROJECT_STATUS: ProjectStatus[] = ["backlog", "in_progress", "waiting", "cancelled", "complete"];
 export const PROJECT_STATUS_COLORS: Record<ProjectStatus, string> = {
-  planned: "var(--muted)", active: "var(--accent)", blocked: "var(--signal)", done: "#0D9488",
+  backlog: "var(--muted)",
+  in_progress: "var(--accent)",
+  waiting: "#D97706",
+  cancelled: "var(--signal)",
+  complete: "#0D9488",
 };
 export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
-  planned: "Backlog", active: "In progress", blocked: "Blocked", done: "Done",
+  backlog: "Backlog",
+  in_progress: "In progress",
+  waiting: "Waiting",
+  cancelled: "Cancelled",
+  complete: "Complete",
 };
 export const INITIATIVE_STATUS = ["active", "paused", "shipped", "dropped"] as const;
 export const INITIATIVE_STATUS_COLORS: Record<string, string> = {
@@ -232,22 +242,33 @@ export function StatusPill<T extends string>({
   value,
   options,
   colors,
+  labels,
+  filled,
   onChange,
 }: {
   value: T;
   options: T[];
   colors: Record<string, string>;
+  labels?: Record<string, string>;
+  filled?: Set<string>;
   onChange: (v: T) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const label = labels?.[value] ?? value;
+  const color = colors[value] ?? "var(--muted)";
+  const isFilled = filled?.has(value);
   return (
     <span className="relative inline-block">
       <button
         onClick={() => setOpen((o) => !o)}
         className="fast mono rounded-full border px-2 py-0.5 text-[10px]"
-        style={{ borderColor: colors[value] ?? "var(--line)", color: colors[value] ?? "var(--muted)" }}
+        style={{
+          borderColor: color,
+          color: isFilled ? "#fff" : color,
+          background: isFilled ? color : "transparent",
+        }}
       >
-        {value}
+        {label}
       </button>
       {open && (
         <>
@@ -260,7 +281,7 @@ export function StatusPill<T extends string>({
                 className="fast mono block w-full px-2.5 py-1 text-left text-[11px] hover:bg-accent-soft"
                 style={{ color: colors[o] ?? "var(--muted)" }}
               >
-                {o}
+                {labels?.[o] ?? o}
               </button>
             ))}
           </div>
@@ -376,7 +397,15 @@ function snapDay(ms: number): number {
 
 type DragMode = "move" | "start" | "end";
 
-export function Timeline({ items, today = new Date() }: { items: TimelineItem[]; today?: Date }) {
+export function Timeline({
+  items,
+  today = new Date(),
+  selection,
+}: {
+  items: TimelineItem[];
+  today?: Date;
+  selection?: CollectionSelection;
+}) {
   const barsRef = useRef<HTMLDivElement>(null);
   // live preview while dragging a bar (commit on release)
   const [drag, setDrag] = useState<{ id: string; start: number; end: number } | null>(null);
@@ -448,26 +477,24 @@ export function Timeline({ items, today = new Date() }: { items: TimelineItem[];
   };
 
   const ROW = 30;
+  const LABEL_W = selection ? 132 : 0;
   return (
     <div className="overflow-hidden rounded-md border border-line bg-surface" style={{ userSelect: drag ? "none" : "auto" }}>
-      {/* month header */}
-      <div className="relative h-6 border-b border-line bg-bg">
-        {gridlines.map((g, i) => (
-          <div key={i} className="absolute top-0 bottom-0 flex items-center pl-1" style={{ left: `${g.left}%` }}>
-            <div className="mono text-[9px] uppercase text-muted">{g.label}</div>
+      <div className="flex border-b border-line bg-bg">
+        {selection && (
+          <div className="mono shrink-0 border-r border-line px-2 py-1.5 text-[9px] uppercase text-muted" style={{ width: LABEL_W }}>
+            Name
           </div>
-        ))}
-      </div>
-      <div ref={barsRef} className="relative" style={{ height: dated.length * ROW + 8 }}>
-        {/* gridlines */}
-        {gridlines.map((g, i) => (
-          <div key={i} className="absolute top-0 bottom-0 w-px bg-line" style={{ left: `${g.left}%` }} />
-        ))}
-        {/* today marker */}
-        <div className="absolute top-0 bottom-0 w-px" style={{ left: `${pos(todayMs)}%`, background: "var(--signal)" }}>
-          <div className="mono absolute -top-0 left-1 text-[8px] text-signal">today</div>
+        )}
+        <div ref={barsRef} className="relative h-6 min-w-0 flex-1">
+          {gridlines.map((g, i) => (
+            <div key={i} className="absolute top-0 bottom-0 flex items-center pl-1" style={{ left: `${g.left}%` }}>
+              <div className="mono text-[9px] uppercase text-muted">{g.label}</div>
+            </div>
+          ))}
         </div>
-        {/* bars */}
+      </div>
+      <div>
         {dated.map((it, row) => {
           const live = drag && drag.id === it.id ? drag : null;
           const s = live ? live.start : parse(it.start) ?? parse(it.end)!;
@@ -475,29 +502,59 @@ export function Timeline({ items, today = new Date() }: { items: TimelineItem[];
           const left = pos(Math.min(s, e));
           const width = Math.max(2, pos(Math.max(s, e)) - pos(Math.min(s, e)));
           const editable = !!it.onChangeDates;
+          const picked = selection?.isSelected(it.id);
+          const preview = selection?.isPreviewSelected(it.id);
+          const visual = picked ? "selected" : preview ? "preview" : "none";
           return (
             <div
               key={it.id}
-              className="group absolute"
-              style={{ top: row * ROW + 6, left: `${left}%`, width: `${width}%`, height: ROW - 10, minWidth: 80 }}
+              data-select-id={it.id}
+              ref={(el) => selection?.registerRef(it.id, el)}
+              onMouseDown={selection ? selection.itemPointerDown(it.id) : undefined}
+              className={`flex ${selection ? itemSelectRowClass(selection, it.id) : ""}`}
+              style={{ height: ROW }}
             >
-              <div
-                onPointerDown={editable ? (ev) => startDrag(it, "move", ev) : undefined}
-                onClick={!editable ? it.onClick : undefined}
-                className={`fast relative flex h-full items-center overflow-hidden rounded-sm px-2 text-left ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
-                style={{ background: it.dim ? "var(--bg)" : `${it.color}22`, border: `1px solid ${it.color}`, opacity: it.dim ? 0.6 : 1 }}
-                title={editable ? `${it.label} — drag to move, edges to resize` : it.label}
-              >
-                <div className="absolute left-0 top-0 bottom-0 rounded-sm" style={{ width: `${it.progress}%`, background: `${it.color}33` }} />
-                <span className="relative truncate text-[11px] text-ink">{it.label}</span>
-                <span className="relative mono ml-auto pl-2 text-[9px] text-muted">{it.progress}%</span>
-              </div>
-              {editable && (
-                <>
-                  <span onPointerDown={(ev) => startDrag(it, "start", ev)} className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-l-sm opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the start" />
-                  <span onPointerDown={(ev) => startDrag(it, "end", ev)} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-r-sm opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the target" />
-                </>
+              {selection && (
+                <div className="flex shrink-0 items-center gap-1 border-r border-line px-2" style={{ width: LABEL_W }} data-no-select>
+                  <SelectCheckbox
+                    checked={visual === "selected"}
+                    preview={visual === "preview"}
+                    onToggle={() => selection.pick(it.id, { extend: true, range: false })}
+                  />
+                  <span className="truncate text-[10px] text-ink" onDoubleClick={it.onClick}>{it.label}</span>
+                </div>
               )}
+              <div className="relative min-w-0 flex-1">
+                {row === 0 && gridlines.map((g, i) => (
+                  <div key={i} className="pointer-events-none absolute top-0 bottom-0 w-px bg-line" style={{ left: `${g.left}%` }} />
+                ))}
+                {row === 0 && (
+                  <div className="pointer-events-none absolute top-0 bottom-0 w-px" style={{ left: `${pos(todayMs)}%`, background: "var(--signal)" }} />
+                )}
+                <div
+                  className="group absolute z-10"
+                  style={{ top: 6, left: `${left}%`, width: `${width}%`, height: ROW - 12, minWidth: 80 }}
+                >
+                  <div
+                    onPointerDown={editable ? (ev) => startDrag(it, "move", ev) : undefined}
+                    onClick={!editable ? it.onClick : undefined}
+                    className={`fast relative flex h-full items-center overflow-hidden rounded-sm px-2 text-left ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                    style={{ background: it.dim ? "var(--bg)" : `${it.color}22`, border: `1px solid ${it.color}`, opacity: it.dim ? 0.6 : 1 }}
+                    title={editable ? `${it.label} — drag to move, edges to resize` : it.label}
+                    data-no-select
+                  >
+                    <div className="absolute left-0 top-0 bottom-0 rounded-sm" style={{ width: `${it.progress}%`, background: `${it.color}33` }} />
+                    <span className="relative truncate text-[11px] text-ink">{it.label}</span>
+                    <span className="relative mono ml-auto pl-2 text-[9px] text-muted">{it.progress}%</span>
+                  </div>
+                  {editable && (
+                    <>
+                      <span onPointerDown={(ev) => startDrag(it, "start", ev)} className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-l-sm opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the start" data-no-select />
+                      <span onPointerDown={(ev) => startDrag(it, "end", ev)} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-r-sm opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the target" data-no-select />
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           );
         })}

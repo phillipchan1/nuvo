@@ -29,7 +29,7 @@ export default function InitiativesFloor({
   onOpen: (id: string) => void;
   openBlueprint?: (seed: BlueprintSeed) => void;
 }) {
-  const { data, updateInitiative, updateProject } = useVertical();
+  const { data, updateInitiative, updateProject, deleteInitiatives } = useVertical();
   const { nav, openFloorModal, closeFloorModal } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
 
@@ -74,7 +74,7 @@ export default function InitiativesFloor({
   );
 
   return (
-    <div className="mx-auto max-w-[1480px]">
+    <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
       <FloorHeader eyebrow={`${data.initiatives.length} initiatives · ${data.initiatives.filter((i) => i.status === "active").length} active`}>
         <h1 className="text-[24px] font-semibold tracking-tight">Initiatives</h1>
         <p className="mt-1 text-[13px] text-muted">The bets with finish lines, across every domain — switch the view, click any to drill in.</p>
@@ -82,7 +82,8 @@ export default function InitiativesFloor({
 
       <DomainFilter value={domainFilter} onChange={setDomainFilter} />
 
-      <Collection
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Collection
         config={{
           records,
           statusOptions: [...INITIATIVE_STATUS],
@@ -94,8 +95,11 @@ export default function InitiativesFloor({
           onNew: () => openFloorModal("new-initiative"),
           newLabel: "+ new initiative",
           storageKey: "initiatives",
+          selectable: true,
+          onBulkDelete: deleteInitiatives,
         }}
-      />
+        />
+      </div>
 
       {creating && (
         <NewInitiative

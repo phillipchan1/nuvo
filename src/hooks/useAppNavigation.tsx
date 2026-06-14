@@ -201,14 +201,26 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     };
   }, [applyAtIndex, back, canGoBack]);
 
+  const clearCalendarOverlay = useCallback((patch: Partial<AppNavState>) => {
+    const { overlay } = navRef.current;
+    if (overlay === "task" || overlay === "event" || overlay === "slot") {
+      patch.overlay = "none";
+      patch.overlayId = null;
+    }
+  }, []);
+
   const setRung = useCallback(
     (r: Rung) => {
       const patch: Partial<AppNavState> = { rung: r, floorModal: null };
       if (r === "project") patch.projectView = "portfolio";
       if (r === "initiative") patch.initiativeView = "portfolio";
+      if (r !== "day") {
+        clearCalendarOverlay(patch);
+        setPanelAnchor(null);
+      }
       navigate(patch);
     },
-    [navigate],
+    [clearCalendarOverlay, navigate],
   );
 
   const goRung = setRung;
@@ -294,8 +306,8 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   );
 
   const openInitiative = useCallback(
-    (focus: Focus) =>
-      navigate({
+    (focus: Focus) => {
+      const patch: Partial<AppNavState> = {
         focus,
         rung: "initiative",
         initiativeView: "detail",
@@ -304,13 +316,15 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
         overlay: "none",
         overlayId: null,
         floorModal: null,
-      }),
+      };
+      navigate(patch);
+    },
     [navigate],
   );
 
   const openProject = useCallback(
-    (focus: Focus) =>
-      navigate({
+    (focus: Focus) => {
+      const patch: Partial<AppNavState> = {
         focus,
         rung: "project",
         projectView: "detail",
@@ -319,7 +333,9 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
         overlay: "none",
         overlayId: null,
         floorModal: null,
-      }),
+      };
+      navigate(patch);
+    },
     [navigate],
   );
 

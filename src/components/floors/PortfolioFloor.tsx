@@ -8,6 +8,7 @@ import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
   domainById,
   initiativeById,
+  isProjectInFlight,
   projectProgress,
   projectSprintCount,
   tasksOf,
@@ -18,7 +19,7 @@ import { DomainFilter } from "./DomainFilter";
 import NewProject from "./NewProject";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
-  const { data, updateProject } = useVertical();
+  const { data, updateProject, deleteProjects } = useVertical();
   const { nav, openFloorModal, closeFloorModal } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
 
@@ -58,15 +59,16 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
   });
 
   return (
-    <div className="mx-auto max-w-[1480px]">
-      <FloorHeader eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => p.status === "active").length} in flight`}>
+    <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
+      <FloorHeader eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => isProjectInFlight(p.status)).length} in flight`}>
         <h1 className="text-[24px] font-semibold tracking-tight">Projects</h1>
         <p className="mt-1 text-[13px] text-muted">Every project at a glance — switch the view, click any to drill in.</p>
       </FloorHeader>
 
       <DomainFilter value={domainFilter} onChange={setDomainFilter} />
 
-      <Collection
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Collection
         config={{
           records,
           statusOptions: PROJECT_STATUS,
@@ -79,8 +81,11 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
           onNew: () => openFloorModal("new-project"),
           newLabel: "+ new project",
           storageKey: "projects",
+          selectable: true,
+          onBulkDelete: deleteProjects,
         }}
-      />
+        />
+      </div>
 
       {creating && (
         <NewProject

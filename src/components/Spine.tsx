@@ -3,7 +3,7 @@ import { LADDER, type Rung } from "./AppShell";
 // Top-to-bottom: Now (immediate) → Domain (widest). ⌘1 at top, ⌘5 at bottom.
 const RUNGS: { id: Rung; label: string }[] = [
   { id: "now", label: "Today" },
-  { id: "day", label: "Day · Week" },
+  { id: "day", label: "Schedule" },
   { id: "project", label: "Project" },
   { id: "initiative", label: "Initiative" },
   { id: "domain", label: "Domain" },
@@ -35,9 +35,9 @@ export default function Spine({
   openFlow: (f: FlowName) => void;
 }) {
   return (
-    <div className="relative z-40 flex w-[74px] shrink-0 flex-col items-center border-r border-line bg-surface">
+    <div className="spine relative z-40 flex w-[var(--spine-width,78px)] shrink-0 flex-col items-center border-r border-line bg-surface">
       {/* drag region that also clears the macOS traffic lights */}
-      <div data-tauri-drag-region className="h-9 w-full shrink-0" />
+      <div data-tauri-drag-region className="spine-top w-full shrink-0" />
 
       <div className="flex flex-1 flex-col items-center justify-center">
         <div className="relative flex flex-col items-center gap-7">
@@ -63,7 +63,7 @@ export default function Spine({
                   </div>
                 )}
 
-                <div className="group relative flex w-[74px] flex-col items-center">
+                <div className="group relative flex w-[var(--spine-width,78px)] flex-col items-center">
                   <button
                     onClick={() => setRung(r.id)}
                     className="relative z-10 flex flex-col items-center gap-1.5"

@@ -11,7 +11,7 @@ import type { useRecurrenceMutations, SeriesTemplate } from "../hooks/useRecurre
 import { useEventDetails } from "../hooks/useCalendar";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
-import { domainById, initiativeById, projectById } from "../lib/vertical";
+import { domainById, initiativeById, isProjectComplete, projectById } from "../lib/vertical";
 import { fmtDuration, todayISO } from "../lib/dates";
 import { deriveSlotTitle } from "../lib/slots";
 import { rulesEqual, type RecurrenceRule } from "../lib/recurrence";
@@ -190,7 +190,7 @@ export function TaskPopover({
       if (lower.includes(n) || n.split(/\W+/).filter((w) => w.length > 2).some((w) => words.includes(w)))
         return d;
     }
-    for (const p of vertical.projects.filter((p) => p.status !== "done")) {
+    for (const p of vertical.projects.filter((p) => !isProjectComplete(p.status))) {
       const n = p.name.toLowerCase();
       if (lower.includes(n) || n.split(/\W+/).filter((w) => w.length > 2).some((w) => words.includes(w)))
         return domainById(vertical, p.domainId) ?? null;
@@ -303,7 +303,7 @@ export function TaskPopover({
             >
               <option value="">— none —</option>
               {vertical.projects
-                .filter((p) => p.status !== "done" || p.id === task.project_id)
+                .filter((p) => !isProjectComplete(p.status) || p.id === task.project_id)
                 .map((p) => {
                   const d = domainById(vertical, p.domainId);
                   return <option key={p.id} value={p.id}>{d ? `${d.name} · ` : ""}{p.name}</option>;
@@ -1233,7 +1233,7 @@ export function SlotPopover({
             >
               <option value="">— none —</option>
               {vertical.projects
-                .filter((p) => p.status !== "done" || p.id === slot.project_id)
+                .filter((p) => !isProjectComplete(p.status) || p.id === slot.project_id)
                 .map((p) => {
                   const d = domainById(vertical, p.domainId);
                   return <option key={p.id} value={p.id}>{d ? `${d.name} · ` : ""}{p.name}</option>;

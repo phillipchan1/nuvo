@@ -12,6 +12,7 @@ import {
   domainById,
   inboxTasks,
   initiativeById,
+  isProjectComplete,
   projectById,
   projectProgress,
   projectSprintCount,
@@ -299,7 +300,7 @@ function ProjectsSource() {
   const { data, addProjectReadyToSprint } = useVertical();
   const focus = new Set(data.focusInitiativeIds);
   const projects = data.projects
-    .filter((p) => p.status !== "done")
+    .filter((p) => !isProjectComplete(p.status))
     .sort((a, b) => Number(focus.has(b.initiativeId ?? "")) - Number(focus.has(a.initiativeId ?? "")));
   if (projects.length === 0) return <Empty>No active projects.</Empty>;
   return (

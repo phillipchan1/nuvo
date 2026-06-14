@@ -42,6 +42,7 @@ export interface VerticalStore {
   addInitiative: (domainId: string, init?: Partial<Initiative>) => Promise<Initiative>;
   updateInitiative: (id: string, patch: Partial<Initiative>) => void;
   deleteInitiative: (id: string) => void;
+  deleteInitiatives: (ids: string[]) => void;
 
   // key results
   addKeyResult: (initiativeId: string) => void;
@@ -53,6 +54,7 @@ export interface VerticalStore {
   addProject: (domainId: string, initiativeId: string | null, init?: Partial<Project>) => Promise<Project>;
   updateProject: (id: string, patch: Partial<Project>) => void;
   deleteProject: (id: string) => void;
+  deleteProjects: (ids: string[]) => void;
 
   // tasks — created under a project/initiative/domain they land in `backlog`,
   // quiet by design: never in the inbox, never on Today, never roll.
@@ -357,6 +359,15 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         void supabase.from("initiatives").delete().eq("id", id)
           .then(() => invalidate(["vertical"], ["tasks"]));
       },
+      deleteInitiatives: (ids) => {
+        if (!ids.length) return;
+        void (async () => {
+          await supabase.from("projects").update({ initiative_id: null }).in("initiative_id", ids);
+          await supabase.from("key_results").delete().in("initiative_id", ids);
+          await supabase.from("initiatives").delete().in("id", ids);
+          invalidate(["vertical"], ["tasks"]);
+        })();
+      },
 
       // ── key results ──────────────────────────────────────────────────────
       addKeyResult: (initiativeId) => {
@@ -391,7 +402,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           domain_id: domainId,
           initiative_id: initiativeId,
           name: init?.name?.trim() || "New project",
-          status: init?.status ?? "planned",
+          status: init?.status ?? "backlog",
         };
         if (init?.outcome != null) insert.outcome = init.outcome.trim();
         if (init?.description != null) insert.description = init.description.trim();
@@ -408,7 +419,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           id: row.id, initiativeId, domainId, name: row.name, outcome: row.outcome ?? "",
           description: row.description ?? "", startDate: row.start_date ?? null,
           targetDate: row.target_date ?? null,
-          status: (row.status ?? "planned") as Project["status"], progress: row.progress ?? 0,
+          status: (row.status ?? "backlog") as Project["status"], progress: row.progress ?? 0,
         };
       },
       updateProject: (id, patch) => {
@@ -428,6 +439,11 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
       deleteProject: (id) => {
         void supabase.from("projects").delete().eq("id", id)
+          .then(() => invalidate(["vertical"], ["tasks"]));
+      },
+      deleteProjects: (ids) => {
+        if (!ids.length) return;
+        void supabase.from("projects").delete().in("id", ids)
           .then(() => invalidate(["vertical"], ["tasks"]));
       },
 
@@ -649,7 +665,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             .from("projects")
             .insert({
               user_id: uid, domain_id: domainId, initiative_id: init.id,
-              name: p.name, outcome: p.outcome, status: "planned", sort_order: pi,
+              name: p.name, outcome: p.outcome, status: "backlog", sort_order: pi,
             })
             .select("id")
             .single();

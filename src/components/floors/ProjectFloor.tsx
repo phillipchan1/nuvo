@@ -27,6 +27,7 @@ import {
   InlineTextarea,
   PROJECT_STATUS,
   PROJECT_STATUS_COLORS,
+  PROJECT_STATUS_LABEL,
   StatusPill,
 } from "./parts";
 import TaskList from "./TaskList";
@@ -56,7 +57,7 @@ export default function ProjectFloor({
   const pct = projectProgress(data, project);
   const inSprint = projectSprintCount(data, project.id);
 
-  const barColor = (status: string) => (status === "done" ? "var(--muted)" : accent);
+  const barColor = (status: string) => (status === "complete" || status === "done" ? "var(--muted)" : accent);
 
   // sequence the Gantt by list order (a → b → c)
   const n = Math.max(1, tasks.length);
@@ -105,7 +106,14 @@ export default function ProjectFloor({
         }
         actions={
           <div className="flex items-center gap-2">
-            <StatusPill value={project.status} options={PROJECT_STATUS} colors={PROJECT_STATUS_COLORS} onChange={(s) => updateProject(project.id, { status: s })} />
+            <StatusPill
+              value={project.status}
+              options={PROJECT_STATUS}
+              colors={PROJECT_STATUS_COLORS}
+              labels={PROJECT_STATUS_LABEL}
+              filled={project.status === "in_progress" ? new Set(["in_progress"]) : undefined}
+              onChange={(s) => updateProject(project.id, { status: s })}
+            />
             <DeleteBtn what="project" onDelete={() => { deleteProject(project.id); onUp(); }} />
           </div>
         }

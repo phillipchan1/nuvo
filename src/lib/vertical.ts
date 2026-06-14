@@ -51,7 +51,7 @@ export interface Initiative {
   keyResults: KeyResult[];
 }
 
-export type ProjectStatus = "planned" | "active" | "blocked" | "done";
+export type ProjectStatus = "backlog" | "in_progress" | "waiting" | "cancelled" | "complete";
 
 export interface Project {
   id: string;
@@ -159,7 +159,27 @@ export interface ProjectRow {
 // ── Row → view mapping ───────────────────────────────────────────────────────
 
 const INITIATIVE_STATUSES = new Set(["active", "paused", "shipped", "dropped"]);
-const PROJECT_STATUSES = new Set(["planned", "active", "blocked", "done"]);
+const PROJECT_STATUSES = new Set(["backlog", "in_progress", "waiting", "cancelled", "complete"]);
+
+const LEGACY_PROJECT_STATUS: Record<string, ProjectStatus> = {
+  planned: "backlog",
+  active: "in_progress",
+  blocked: "waiting",
+  done: "complete",
+};
+
+export function normalizeProjectStatus(raw: string): ProjectStatus {
+  if (PROJECT_STATUSES.has(raw)) return raw as ProjectStatus;
+  return LEGACY_PROJECT_STATUS[raw] ?? "backlog";
+}
+
+export function isProjectComplete(status: string) {
+  return status === "complete" || status === "done";
+}
+
+export function isProjectInFlight(status: string) {
+  return status === "in_progress" || status === "active";
+}
 
 export function toVTask(t: Task, currentSprintId: string | null, today: string): VTask {
   return {
@@ -241,7 +261,7 @@ export function buildVertical(
       description: p.description,
       startDate: p.start_date,
       targetDate: p.target_date,
-      status: (PROJECT_STATUSES.has(p.status) ? p.status : "active") as ProjectStatus,
+      status: normalizeProjectStatus(p.status),
       progress: p.progress,
     }));
 
@@ -383,7 +403,7 @@ export function nextUpTask(d: VerticalData, projectId: string): VTask | null {
 /** A project's progress = share of its tasks done, falling back to its stored % */
 export function projectProgress(d: VerticalData, p: Project): number {
   const ts = tasksOf(d, p.id);
-  if (p.status === "done") return 100;
+  if (isProjectComplete(p.status)) return 100;
   if (ts.length === 0) return p.progress;
   const done = ts.filter((t) => t.status === "done").length;
   return Math.round((done / ts.length) * 100);
@@ -419,7 +439,7 @@ export function initiativeProgressAt(d: VerticalData, i: Initiative, cutoff: Dat
   const per = ps.map((p) => {
     // a manually-done project counts 100 on BOTH sides, or it would show a
     // phantom "moved" delta every week forever
-    if (p.status === "done") return 100;
+    if (isProjectComplete(p.status)) return 100;
     const ts = tasksOf(d, p.id);
     if (ts.length === 0) return p.progress;
     const done = ts.filter(

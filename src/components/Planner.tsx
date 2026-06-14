@@ -4,7 +4,7 @@ import { todayISO } from "../lib/dates";
 import { fallbackPanelAnchor } from "../lib/appNav";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
 import { useDayTasks, useInboxTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
-import { useCalendarAccounts, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
+import { useCalendarAccounts, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
 import { useRealtime } from "../hooks/useRealtime";
@@ -22,8 +22,7 @@ import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown, MorningPlan } from "./Rituals";
-import AgentSidebar from "./AgentSidebar";
-import { useAgent } from "../hooks/useAgent";
+import { useAgentContext } from "../hooks/useAgentContext";
 import { Keycap } from "./ui";
 
 export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void }) {
@@ -39,17 +38,27 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     panelAnchor,
   } = useAppNavigation();
 
-  const { tab, calView: view, overlay, overlayId, agentOpen, settingsSection } = nav;
+  const { tab, calView: view, overlay, overlayId, agentOpen, settingsSection, rung } = nav;
+  const onSchedule = rung === "day";
 
   const morningAutoRef = useRef(false);
 
-  const [range, setRange] = useState<{ start: string; end: string }>(() => {
+  const [range, setRangeLocal] = useState<{ start: string; end: string }>(() => {
     const now = new Date();
     return {
       start: new Date(now.getTime() - 7 * 86400_000).toISOString(),
       end: new Date(now.getTime() + 7 * 86400_000).toISOString(),
     };
   });
+  const { setRange: setAgentRange } = useAgentContext();
+  const syncRange = useCallback(
+    (start: string, end: string) => {
+      const next = { start, end };
+      setRangeLocal(next);
+      setAgentRange(next);
+    },
+    [setAgentRange],
+  );
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -69,6 +78,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
   const { data: slotChildTasks = [] } = useSlotTasks(slotIds);
   const { data: accounts = [] } = useCalendarAccounts();
+  const { refresh: refreshCalendars, refreshing: refreshingCalendars } = useCalendarRefresh();
   const { data: recurrences = [] } = useRecurrences();
   const { labels } = useLabels();
   const mutations = useTaskMutations();
@@ -94,8 +104,6 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     (s: Slot) => deriveSlotTitle(s, slotTasksBySlot[s.id] ?? [], vertical),
     [slotTasksBySlot, vertical],
   );
-
-  const agent = useAgent(range);
 
   const handleToggleAgent = () => {
     toggleAgent();
@@ -145,10 +153,6 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
         e.preventDefault();
         if (overlay === "cmd") closeOverlay();
         else openOverlay("cmd");
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
-        e.preventDefault();
-        handleToggleAgent();
       }
       if (e.metaKey && e.key === ",") {
         e.preventDefault();
@@ -221,7 +225,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     <div className="flex h-full flex-col bg-bg">
       <header
         data-tauri-drag-region
-        className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"
+        className="app-topbar flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"
       >
         <span className="wordmark wordmark-grad text-head">Nuvo</span>
         <span className="mono text-meta text-muted">{format(now, "EEE MMM d")}</span>
@@ -299,14 +303,16 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             eventMutations={eventMutations}
             slotMutations={slotMutations}
             recurrenceMutations={recurrenceMutations}
+            onRefreshCalendars={accounts.length > 0 ? refreshCalendars : undefined}
+            refreshingCalendars={refreshingCalendars}
             onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor)}
             onOpenEvent={(e, anchor) => openOverlay("event", e.id, anchor)}
             onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
-            onRangeChange={(start, end) => setRange({ start, end })}
+            onRangeChange={syncRange}
             railRef={railRef}
           />
 
-          {openTask && taskPanel && (
+          {onSchedule && openTask && taskPanel && (
             <TaskPopover
               task={openTask}
               anchor={panelRect}
@@ -317,7 +323,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
               onClose={closeOverlay}
             />
           )}
-          {openEvent && eventPanel && !openTask && (
+          {onSchedule && openEvent && eventPanel && !openTask && (
             <EventPopover
               event={openEvent}
               anchor={panelRect}
@@ -326,7 +332,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
               onClose={closeOverlay}
             />
           )}
-          {openSlot && slotPanel && !openTask && (
+          {onSchedule && openSlot && slotPanel && !openTask && (
             <SlotPopover
               slot={openSlot}
               anchor={panelRect}
@@ -340,8 +346,6 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             />
           )}
         </div>
-
-        <AgentSidebar agent={agent} open={agentOpen} onToggle={handleToggleAgent} />
       </div>
 
       {showCmd && (

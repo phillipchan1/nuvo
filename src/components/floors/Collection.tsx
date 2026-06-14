@@ -3,7 +3,7 @@
 // a parent, a progress, and a date range), so they share this component —
 // switch between Table · Board · Calendar · Timeline over the same data.
 
-import { useMemo, useState, type DragEvent as ReactDragEvent } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   addMonths,
   eachDayOfInterval,
@@ -19,6 +19,16 @@ import {
 } from "date-fns";
 import { Bar, InlineDate, InlineText, StatusPill, Timeline, type TimelineItem } from "./parts";
 import { Btn } from "../ui";
+import { useCollectionSelection, type CollectionSelection } from "../../hooks/useCollectionSelection";
+import {
+  MarqueeOverlay,
+  SelectCheckbox,
+  SelectionBulkBar,
+  SelectionHint,
+  itemSelectClass,
+  itemSelectRowClass,
+  itemSelectVisual,
+} from "./collectionSelection";
 
 export interface CollectionRecord {
   id: string;
@@ -51,6 +61,9 @@ export interface CollectionConfig {
   newLabel?: string;
   /** persist the chosen view per collection */
   storageKey: string;
+  /** Desktop-grade selection in every view */
+  selectable?: boolean;
+  onBulkDelete?: (ids: string[]) => void;
 }
 
 type View = "table" | "board" | "calendar" | "timeline";
@@ -78,18 +91,44 @@ function savePref(key: string, pref: { view: View; groupBy: GroupBy }) {
   }
 }
 
+/** Marquee-select surface — stretches to the floor pane so drag can start in open space. */
+function SelectionSurface({
+  selection,
+  className = "",
+  children,
+}: {
+  selection: CollectionSelection;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      {...selection.surfaceProps}
+      className={`relative flex min-h-full flex-1 flex-col ${selection.surfaceProps.className} ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function Collection({ config }: { config: CollectionConfig }) {
   const init = loadPref(config.storageKey, { view: "table", groupBy: "status" });
   const [view, setView] = useState<View>(init.view);
   const [groupBy, setGroupBy] = useState<GroupBy>(init.groupBy);
+  const orderedIds = useMemo(() => config.records.map((r) => r.id), [config.records]);
+  const selection = useCollectionSelection(orderedIds, !!config.selectable, config.onBulkDelete);
 
   const choose = (v: View) => { setView(v); savePref(config.storageKey, { view: v, groupBy }); };
   const chooseGroup = (g: GroupBy) => { setGroupBy(g); savePref(config.storageKey, { view, groupBy: g }); };
 
+  const selectionActive =
+    !!config.selectable &&
+    (selection.count > 0 || (selection.isMarqueeActive && selection.previewCount > 0));
+
   return (
-    <div>
+    <div className="flex min-h-full flex-1 flex-col">
       {/* view toolbar */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border border-line p-0.5">
           {VIEWS.map((v) => (
             <button
@@ -122,14 +161,34 @@ export default function Collection({ config }: { config: CollectionConfig }) {
         )}
 
         <div className="flex-1" />
-        <span className="mono text-[10px] text-muted">{config.records.length} records</span>
+        <div className="relative flex h-7 shrink-0 items-center justify-end">
+          <span
+            className={`mono text-[10px] leading-none text-muted ${selectionActive ? "invisible" : ""}`}
+            aria-hidden={selectionActive}
+          >
+            {config.records.length} records
+          </span>
+          {selectionActive && (
+            <div className="absolute inset-y-0 right-0 flex items-center">
+              <SelectionBulkBar inline selection={selection} onBulkDelete={config.onBulkDelete} />
+            </div>
+          )}
+        </div>
         {config.onNew && <Btn kind="primary" onClick={config.onNew}>{config.newLabel ?? "+ new"}</Btn>}
       </div>
 
-      {view === "table" && <TableView config={config} />}
-      {view === "board" && <BoardView config={config} groupBy={groupBy} />}
-      {view === "calendar" && <CalendarView config={config} />}
-      {view === "timeline" && <TimelineView config={config} />}
+      <MarqueeOverlay style={selection.marqueeStyle} />
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        {view === "table" && <TableView config={config} selection={selection} />}
+        {view === "board" && <BoardView config={config} groupBy={groupBy} selection={selection} />}
+        {view === "calendar" && <CalendarView config={config} selection={selection} />}
+        {view === "timeline" && <TimelineView config={config} selection={selection} />}
+      </div>
+
+      <div className="mt-2 min-h-[14px]">
+        <SelectionHint enabled={!!config.selectable} count={selection.count} recordCount={config.records.length} previewCount={selection.previewCount} />
+      </div>
     </div>
   );
 }
@@ -137,8 +196,8 @@ export default function Collection({ config }: { config: CollectionConfig }) {
 // ── Table ────────────────────────────────────────────────────────────────────
 type SortKey = "title" | "status" | "progress" | "targetDate";
 
-function TableView({ config }: { config: CollectionConfig }) {
-  const { records, statusOptions, statusColors, extraColumns = [] } = config;
+function TableView({ config, selection }: { config: CollectionConfig; selection: CollectionSelection }) {
+  const { records, statusOptions, statusColors, extraColumns = [], selectable } = config;
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "status", dir: 1 });
 
   const sorted = useMemo(() => {
@@ -155,7 +214,9 @@ function TableView({ config }: { config: CollectionConfig }) {
     return rows;
   }, [records, sort, statusOptions]);
 
-  const cols = `minmax(200px,2.2fr) 124px minmax(120px,1.4fr) 150px ${extraColumns.map(() => "minmax(90px,1fr)").join(" ")} 110px 36px`;
+  const checkCol = selectable ? "28px " : "";
+  const cols = `${checkCol}minmax(200px,2.2fr) 124px minmax(120px,1.4fr) 150px ${extraColumns.map(() => "minmax(90px,1fr)").join(" ")} 110px 36px`;
+
   const Th = ({ k, children, className = "" }: { k?: SortKey; children: React.ReactNode; className?: string }) => (
     <button
       onClick={k ? () => setSort((s) => ({ key: k, dir: s.key === k ? (s.dir === 1 ? -1 : 1) : 1 })) : undefined}
@@ -168,8 +229,14 @@ function TableView({ config }: { config: CollectionConfig }) {
   );
 
   return (
-    <div className="overflow-hidden rounded-md border border-line bg-surface">
-      <div className="grid items-center gap-3 border-b border-line bg-bg px-3 py-2" style={{ gridTemplateColumns: cols }}>
+    <SelectionSurface
+      selection={selection}
+      className="overflow-hidden rounded-md border border-line bg-surface"
+    >
+      <div className="grid shrink-0 items-center gap-3 border-b border-line bg-bg px-3 py-2" style={{ gridTemplateColumns: cols }}>
+        {selectable && (
+          <SelectCheckbox checked={selection.allSelected} onToggle={selection.toggleAll} />
+        )}
         <Th k="title">Name</Th>
         <Th k="status">Status</Th>
         <Th>Context</Th>
@@ -178,38 +245,81 @@ function TableView({ config }: { config: CollectionConfig }) {
         <Th k="targetDate">Target</Th>
         <span />
       </div>
-      {sorted.map((r) => (
-        <div key={r.id} className="group grid items-center gap-3 border-b border-line px-3 py-2 last:border-0 hover:bg-accent-soft" style={{ gridTemplateColumns: cols }}>
-          <div className="min-w-0">
-            <InlineText value={r.title} onChange={r.setTitle} placeholder="Untitled" className="text-[13px] font-medium" />
-          </div>
-          <div><StatusPill value={r.status} options={statusOptions} colors={statusColors} onChange={r.setStatus} /></div>
-          <div className="mono flex items-center gap-1.5 truncate text-[11px] text-muted">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.accent }} />
-            <span className="truncate">{r.subtitle}</span>
-          </div>
-          <div>
-            <Bar pct={r.progress} color={r.accent} h={1} />
-            <span className="mono text-[10px] text-muted">{r.progress}%</span>
-          </div>
-          {extraColumns.map((c) => (
-            <div key={c.key} className="mono truncate text-[11px]" style={{ color: r.meta[c.key]?.color ?? "var(--muted)" }}>
-              {r.meta[c.key]?.value ?? "—"}
+
+      {sorted.map((r) => {
+        const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
+        return (
+          <div
+            key={r.id}
+            data-select-id={r.id}
+            ref={(el) => selection.registerRef(r.id, el)}
+            onMouseDown={selection.itemPointerDown(r.id)}
+            onDoubleClick={r.open}
+            className={`group grid cursor-default items-center gap-3 border-b border-line px-3 py-2 last:border-0 ${
+              selectable ? itemSelectRowClass(selection, r.id) : "hover:bg-accent-soft/60"
+            }`}
+            style={{ gridTemplateColumns: cols }}
+          >
+            {selectable && (
+              <SelectCheckbox
+                checked={visual === "selected"}
+                preview={visual === "preview"}
+                onToggle={() => selection.pick(r.id, { extend: true, range: false })}
+              />
+            )}
+            <div className="min-w-0" data-no-select onMouseDown={(e) => e.stopPropagation()}>
+              <InlineText value={r.title} onChange={r.setTitle} placeholder="Untitled" className="text-[13px] font-medium" />
             </div>
-          ))}
-          <div className="mono text-[11px] text-muted"><InlineDate value={r.targetDate} onChange={r.setTargetDate} /></div>
-          <button onClick={r.open} title="Open" className="fast flex h-6 w-6 items-center justify-center rounded-full text-[12px] text-muted opacity-0 hover:bg-bg hover:text-ink group-hover:opacity-100">↗</button>
-        </div>
-      ))}
+            <div data-no-select onMouseDown={(e) => e.stopPropagation()}>
+              <StatusPill value={r.status} options={statusOptions} colors={statusColors} labels={config.statusLabels} onChange={r.setStatus} />
+            </div>
+            <div className="mono flex items-center gap-1.5 truncate text-[11px] text-muted">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.accent }} />
+              <span className="truncate">{r.subtitle}</span>
+            </div>
+            <div>
+              <Bar pct={r.progress} color={r.accent} h={1} />
+              <span className="mono text-[10px] text-muted">{r.progress}%</span>
+            </div>
+            {extraColumns.map((c) => (
+              <div key={c.key} className="mono truncate text-[11px]" style={{ color: r.meta[c.key]?.color ?? "var(--muted)" }}>
+                {r.meta[c.key]?.value ?? "—"}
+              </div>
+            ))}
+            <div className="mono text-[11px] text-muted" data-no-select onMouseDown={(e) => e.stopPropagation()}>
+              <InlineDate value={r.targetDate} onChange={r.setTargetDate} />
+            </div>
+            <button
+              data-no-select
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={r.open}
+              title="Open"
+              className="fast flex h-6 w-6 items-center justify-center rounded-full text-[12px] text-muted opacity-0 hover:bg-bg hover:text-ink group-hover:opacity-100"
+            >
+              ↗
+            </button>
+          </div>
+        );
+      })}
       {records.length === 0 && <div className="py-10 text-center text-[12px] text-muted italic">Nothing here yet.</div>}
-    </div>
+      <div className="min-h-[12rem] flex-1" aria-hidden />
+    </SelectionSurface>
   );
 }
 
 // ── Board (drag a card to a lane to set its status / domain) ─────────────────
-function BoardView({ config, groupBy }: { config: CollectionConfig; groupBy: GroupBy }) {
-  const { records, statusOptions, statusColors, statusLabels } = config;
+function BoardView({
+  config,
+  groupBy,
+  selection,
+}: {
+  config: CollectionConfig;
+  groupBy: GroupBy;
+  selection: CollectionSelection;
+}) {
+  const { records, statusOptions, statusColors, statusLabels, selectable } = config;
   const [dragId, setDragId] = useState<string | null>(null);
+  const dragIdRef = useRef<string | null>(null);
   const [overLane, setOverLane] = useState<string | null>(null);
 
   const lanes = useMemo(() => {
@@ -228,85 +338,154 @@ function BoardView({ config, groupBy }: { config: CollectionConfig; groupBy: Gro
     }));
   }, [records, groupBy, statusOptions, statusColors, statusLabels]);
 
-  const dropOn = (laneKey: string) => {
-    const r = records.find((x) => x.id === dragId);
+  const beginDrag = (id: string) => {
+    dragIdRef.current = id;
+    setDragId(id);
+  };
+
+  const endDrag = () => {
+    dragIdRef.current = null;
     setDragId(null);
     setOverLane(null);
+  };
+
+  const dropOn = (laneKey: string, droppedId: string | null) => {
+    const id = droppedId ?? dragIdRef.current ?? dragId;
+    endDrag();
+    const r = records.find((x) => x.id === id);
     if (!r) return;
     if (groupBy === "status" && r.status !== laneKey) r.setStatus(laneKey);
     if (groupBy === "domain" && r.domainId !== laneKey) r.setDomain?.(laneKey);
   };
 
+  const dragging = dragIdRef.current ?? dragId;
+
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {lanes.map((lane) => {
-        const canDrop = groupBy === "status" || !!records.find((x) => x.id === dragId)?.setDomain;
-        const over = overLane === lane.key && dragId && canDrop;
-        return (
-          <div
-            key={lane.key}
-            onDragOver={(e) => { if (dragId && canDrop) { e.preventDefault(); setOverLane(lane.key); } }}
-            onDragLeave={() => setOverLane((l) => (l === lane.key ? null : l))}
-            onDrop={(e) => { e.preventDefault(); dropOn(lane.key); }}
-            className="fast flex flex-col rounded-md p-1"
-            style={{ background: over ? "var(--accent-soft)" : "transparent", outline: over ? `1px dashed ${lane.color}` : "none" }}
-          >
-            <div className="mb-2 flex items-center gap-2 px-1">
-              <span className="h-2 w-2 rounded-full" style={{ background: lane.color }} />
-              <span className="section-label" style={{ color: "var(--text)" }}>{lane.label}</span>
-              <span className="mono text-[10px] text-muted">{lane.items.length}</span>
+    <SelectionSurface selection={selection}>
+      <div className="grid min-h-full flex-1 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {lanes.map((lane) => {
+          const canDrop = groupBy === "status" || !!records.find((x) => x.id === dragging)?.setDomain;
+          const over = overLane === lane.key && dragging && canDrop;
+          const activeLane = groupBy === "status" && lane.key === "in_progress";
+          return (
+            <div
+              key={lane.key}
+              onDragOver={(e) => {
+                if (!dragging || !canDrop) return;
+                e.preventDefault();
+                setOverLane(lane.key);
+              }}
+              onDragLeave={() => setOverLane((l) => (l === lane.key ? null : l))}
+              onDrop={(e) => {
+                e.preventDefault();
+                dropOn(lane.key, e.dataTransfer.getData("text/plain") || null);
+              }}
+              className="fast flex min-h-full flex-col rounded-md p-1"
+              style={{
+                background: over ? "var(--accent-soft)" : activeLane ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent",
+                outline: over ? `1px dashed ${lane.color}` : activeLane ? "1px solid color-mix(in srgb, var(--accent) 25%, transparent)" : "none",
+              }}
+            >
+              <div className="mb-2 flex items-center gap-2 px-1">
+                <span className="h-2 w-2 rounded-full" style={{ background: lane.color, boxShadow: activeLane ? "0 0 6px var(--accent-glow)" : undefined }} />
+                <span className="section-label" style={{ color: activeLane ? "var(--accent)" : "var(--text)" }}>{lane.label}</span>
+                <span className="mono text-[10px] text-muted">{lane.items.length}</span>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+                {lane.items.map((r) => (
+                  <BoardCard
+                    key={r.id}
+                    r={r}
+                    config={config}
+                    selectable={!!selectable}
+                    selection={selection}
+                    dragging={dragId === r.id}
+                    onDragStart={() => beginDrag(r.id)}
+                    onDragEnd={endDrag}
+                  />
+                ))}
+                {lane.items.length === 0 ? (
+                  <div className="flex flex-1 flex-col rounded-md border border-dashed border-line py-6 text-center text-[11px] text-muted">
+                    {over ? "drop here" : "empty"}
+                  </div>
+                ) : (
+                  <div className="min-h-[4rem] flex-1" aria-hidden />
+                )}
+              </div>
             </div>
-            <div className="flex flex-col gap-2.5">
-              {lane.items.map((r) => (
-                <BoardCard
-                  key={r.id}
-                  r={r}
-                  config={config}
-                  dragging={dragId === r.id}
-                  onDragStart={() => setDragId(r.id)}
-                  onDragEnd={() => { setDragId(null); setOverLane(null); }}
-                />
-              ))}
-              {lane.items.length === 0 && <div className="rounded-md border border-dashed border-line py-6 text-center text-[11px] text-muted">{over ? "drop here" : "empty"}</div>}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </SelectionSurface>
   );
 }
 
 function BoardCard({
   r,
   config,
+  selectable,
+  selection,
   dragging,
   onDragStart,
   onDragEnd,
 }: {
   r: CollectionRecord;
   config: CollectionConfig;
+  selectable: boolean;
+  selection: CollectionSelection;
   dragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
 }) {
   const metaEntries = (config.extraColumns ?? []).map((c) => r.meta[c.key]?.value).filter(Boolean);
+  const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
+  const inProgress = r.status === "in_progress";
   return (
     <div
       draggable
-      onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", r.id); onDragStart(); }}
+      data-drag-item
+      data-select-id={r.id}
+      ref={(el) => selection.registerRef(r.id, el)}
+      onDragStart={(e) => {
+        selection.cancelPointer();
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", r.id);
+        onDragStart();
+      }}
       onDragEnd={onDragEnd}
-      onClick={r.open}
-      className="fast group relative cursor-grab overflow-hidden rounded-md border border-line bg-surface p-3 hover:border-muted active:cursor-grabbing"
-      style={{ opacity: dragging ? 0.4 : 1 }}
+      onClick={selectable ? selection.itemClickSelect(r.id) : undefined}
+      onDoubleClick={r.open}
+      className={`fast group relative cursor-grab overflow-hidden rounded-md border bg-surface p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${
+        inProgress ? "border-accent/50 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_20%,transparent)]" : ""
+      } ${visual === "selected" ? "border-accent/40" : visual === "preview" ? "border-accent/50 border-dashed" : inProgress ? "" : "border-line"}`}
+      style={{
+        opacity: dragging ? 0.4 : 1,
+        background: inProgress ? "color-mix(in srgb, var(--accent) 6%, var(--surface))" : undefined,
+      }}
     >
-      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: r.accent }} />
+      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: inProgress ? "var(--accent)" : r.accent }} />
       <div className="flex items-start gap-2 pl-1.5">
+        {selectable && (
+          <SelectCheckbox
+            checked={visual === "selected"}
+            preview={visual === "preview"}
+            onToggle={() => selection.pick(r.id, { extend: true, range: false })}
+            className="mt-0.5"
+          />
+        )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium">{r.title || "Untitled"}</div>
           <div className="mono mt-0.5 truncate text-[10px]" style={{ color: r.accent }}>{r.domainIcon} {r.subtitle}</div>
         </div>
-        <div onClick={(e) => e.stopPropagation()}>
-          <StatusPill value={r.status} options={config.statusOptions} colors={config.statusColors} onChange={r.setStatus} />
+        <div data-no-select onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+          <StatusPill
+            value={r.status}
+            options={config.statusOptions}
+            colors={config.statusColors}
+            labels={config.statusLabels}
+            filled={inProgress ? new Set(["in_progress"]) : undefined}
+            onChange={r.setStatus}
+          />
         </div>
       </div>
       <div className="mt-2 pl-1.5">
@@ -322,7 +501,60 @@ function BoardCard({
 }
 
 // ── Calendar (drag a record onto a day to set its target date) ───────────────
-function CalendarView({ config }: { config: CollectionConfig }) {
+function CalendarChip({
+  r,
+  selectable,
+  selection,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  className,
+  style,
+}: {
+  r: CollectionRecord;
+  selectable: boolean;
+  selection: CollectionSelection;
+  dragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  className: string;
+  style?: React.CSSProperties;
+}) {
+  const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
+  return (
+    <div
+      draggable
+      data-drag-item
+      data-select-id={r.id}
+      ref={(el) => selection.registerRef(r.id, el)}
+      onDragStart={(e) => {
+        selection.cancelPointer();
+        e.dataTransfer.effectAllowed = "move";
+        e.stopPropagation();
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
+      onClick={selectable ? selection.itemClickSelect(r.id) : undefined}
+      onDoubleClick={r.open}
+      className={`${className} cursor-grab active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${visual === "preview" ? "border-dashed" : ""}`}
+      style={{ ...style, opacity: dragging ? 0.4 : 1 }}
+      title={r.title ? `${r.title} — drag to reschedule` : "Drag to reschedule"}
+    >
+      {selectable && (
+        <SelectCheckbox
+          checked={visual === "selected"}
+          preview={visual === "preview"}
+          onToggle={() => selection.pick(r.id, { extend: true, range: false })}
+          className="mr-1 inline-flex align-middle"
+        />
+      )}
+      <span className="truncate">{r.title || "Untitled"}</span>
+    </div>
+  );
+}
+
+function CalendarView({ config, selection }: { config: CollectionConfig; selection: CollectionSelection }) {
+  const { selectable } = config;
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [dragId, setDragId] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
@@ -342,20 +574,14 @@ function CalendarView({ config }: { config: CollectionConfig }) {
     if (r) r.setTargetDate(iso);
   };
 
-  const chipProps = (r: CollectionRecord) => ({
-    draggable: true,
-    onDragStart: (e: ReactDragEvent) => { e.dataTransfer.effectAllowed = "move"; setDragId(r.id); },
-    onDragEnd: () => { setDragId(null); setOverKey(null); },
-  });
-
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-3">
+    <SelectionSurface selection={selection}>
+      <div className="mb-3 flex shrink-0 items-center gap-3">
         <button onClick={() => setCursor((c) => addMonths(c, -1))} className="fast mono rounded border border-line px-2 py-0.5 text-[12px] text-muted hover:text-ink">‹</button>
         <span className="text-[14px] font-medium">{format(cursor, "MMMM yyyy")}</span>
         <button onClick={() => setCursor((c) => addMonths(c, 1))} className="fast mono rounded border border-line px-2 py-0.5 text-[12px] text-muted hover:text-ink">›</button>
         <button onClick={() => setCursor(startOfMonth(new Date()))} className="fast mono text-[11px] text-muted hover:text-ink">today</button>
-        {dragId && <span className="mono text-[10px] text-muted">drop on a day to reschedule</span>}
+        {dragId && <span className="mono text-[10px] text-muted">drag onto a day to reschedule</span>}
       </div>
 
       <div className="overflow-hidden rounded-md border border-line bg-surface">
@@ -386,16 +612,17 @@ function CalendarView({ config }: { config: CollectionConfig }) {
                 </div>
                 <div className="space-y-1">
                   {items.slice(0, 3).map((r) => (
-                    <div
+                    <CalendarChip
                       key={r.id}
-                      {...chipProps(r)}
-                      onClick={r.open}
-                      className="fast block w-full cursor-grab truncate rounded-sm px-1 py-0.5 text-left text-[10px] active:cursor-grabbing"
-                      style={{ background: `${r.accent}1f`, color: "var(--text)", borderLeft: `2px solid ${r.accent}`, opacity: dragId === r.id ? 0.4 : 1 }}
-                      title={r.title}
-                    >
-                      {r.title || "Untitled"}
-                    </div>
+                      r={r}
+                      selectable={!!selectable}
+                      selection={selection}
+                      dragging={dragId === r.id}
+                      onDragStart={() => setDragId(r.id)}
+                      onDragEnd={() => { setDragId(null); setOverKey(null); }}
+                      className="fast flex w-full items-center truncate rounded-sm px-1 py-0.5 text-left text-[10px]"
+                      style={{ background: `${r.accent}1f`, color: "var(--text)", borderLeft: `2px solid ${r.accent}` }}
+                    />
                   ))}
                   {items.length > 3 && <div className="mono px-1 text-[9px] text-muted">+{items.length - 3} more</div>}
                 </div>
@@ -415,26 +642,27 @@ function CalendarView({ config }: { config: CollectionConfig }) {
         <div className="section-label mb-2">No target date ({unscheduled.length}){dragId ? " · drop here to clear" : ""}</div>
         <div className="flex flex-wrap gap-2">
           {unscheduled.map((r) => (
-            <div
+            <CalendarChip
               key={r.id}
-              {...chipProps(r)}
-              onClick={r.open}
-              className="fast flex cursor-grab items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] hover:border-muted active:cursor-grabbing"
-              style={{ opacity: dragId === r.id ? 0.4 : 1 }}
-            >
-              <span className="h-2 w-2 rounded-full" style={{ background: r.accent }} />
-              {r.title || "Untitled"}
-            </div>
+              r={r}
+              selectable={!!selectable}
+              selection={selection}
+              dragging={dragId === r.id}
+              onDragStart={() => setDragId(r.id)}
+              onDragEnd={() => { setDragId(null); setOverKey(null); }}
+              className="fast flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] hover:border-muted"
+            />
           ))}
           {unscheduled.length === 0 && <span className="mono text-[11px] text-muted italic">Everything has a date.</span>}
         </div>
       </div>
-    </div>
+      <div className="min-h-[10rem] flex-1" aria-hidden />
+    </SelectionSurface>
   );
 }
 
 // ── Timeline ─────────────────────────────────────────────────────────────────
-function TimelineView({ config }: { config: CollectionConfig }) {
+function TimelineView({ config, selection }: { config: CollectionConfig; selection: CollectionSelection }) {
   const items: TimelineItem[] = config.records.map((r) => ({
     id: r.id,
     label: r.title || "Untitled",
@@ -442,15 +670,19 @@ function TimelineView({ config }: { config: CollectionConfig }) {
     start: r.startDate,
     end: r.targetDate,
     progress: r.progress,
-    dim: r.status === "done" || r.status === "shipped" || r.status === "dropped",
+    dim: r.status === "complete" || r.status === "done" || r.status === "shipped" || r.status === "dropped",
     onClick: r.open,
     onChangeDates: (start, end) => { r.setStartDate(start); r.setTargetDate(end); },
   }));
   const undated = config.records.filter((r) => !r.startDate && !r.targetDate).length;
   return (
-    <div>
-      <Timeline items={items} />
-      {undated > 0 && <div className="mono mt-2 text-[10px] text-muted">{undated} record{undated === 1 ? "" : "s"} hidden — no dates set.</div>}
-    </div>
+    <SelectionSurface selection={selection}>
+      <Timeline
+        items={items}
+        selection={config.selectable ? selection : undefined}
+      />
+      {undated > 0 && <div className="mono mt-2 shrink-0 text-[10px] text-muted">{undated} record{undated === 1 ? "" : "s"} hidden — no dates set.</div>}
+      <div className="min-h-[10rem] flex-1" aria-hidden />
+    </SelectionSurface>
   );
 }

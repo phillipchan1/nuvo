@@ -9,6 +9,7 @@ import {
   faithfulness,
   inboxTasks,
   initiativeById,
+  isProjectComplete,
   nextUpTask,
   projectById,
   weeklyCapacityHours,
@@ -33,7 +34,7 @@ export function suggestPull(d: VerticalData): PullSuggestion[] {
   for (const initId of d.focusInitiativeIds) {
     const init = initiativeById(d, initId);
     if (!init || init.status !== "active") continue;
-    for (const p of d.projects.filter((p) => p.initiativeId === initId && p.status !== "done")) {
+    for (const p of d.projects.filter((p) => p.initiativeId === initId && !isProjectComplete(p.status))) {
       add(nextUpTask(d, p.id), `next up in ${p.name} (★ lead)`);
     }
   }

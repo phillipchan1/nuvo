@@ -9,6 +9,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   theme: "system",
   day_start_hour: 6,
   day_end_hour: 24,
+  calendar_fit_hours: 13,
   week_start: 1,
   work_start_minutes: 480,
   work_end_minutes: 990,
@@ -24,7 +25,16 @@ export function useSettings() {
     queryFn: async (): Promise<UserSettings> => {
       const { data, error } = await supabase.from("user_settings").select("*").maybeSingle();
       if (error) throw error;
-      if (data) return { ...data, hidden_calendar_ids: data.hidden_calendar_ids ?? [] };
+      if (data) {
+        let calendar_fit_hours = data.calendar_fit_hours ?? DEFAULTS.calendar_fit_hours;
+        try {
+          const local = Number(localStorage.getItem("nuvo.cal.fitHours"));
+          if (data.calendar_fit_hours == null && local >= 6 && local <= 24) {
+            calendar_fit_hours = local;
+          }
+        } catch { /* ignore */ }
+        return { ...data, calendar_fit_hours, hidden_calendar_ids: data.hidden_calendar_ids ?? [] };
+      }
       const { data: u } = await supabase.auth.getUser();
       return { user_id: u.user?.id ?? "", ...DEFAULTS };
     },

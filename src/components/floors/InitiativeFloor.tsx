@@ -8,6 +8,7 @@ import {
   domainById,
   initiativeById,
   initiativeProgress,
+  isProjectComplete,
   looseTasksOfInitiative,
   projectProgress,
   projectsOf,
@@ -27,6 +28,7 @@ import {
   INITIATIVE_STATUS_COLORS,
   MomentumChip,
   PROJECT_STATUS_COLORS,
+  PROJECT_STATUS_LABEL,
   StatusPill,
   Timeline,
   type TimelineItem,
@@ -68,7 +70,7 @@ export default function InitiativeFloor({
     start: p.startDate,
     end: p.targetDate,
     progress: projectProgress(data, p),
-    dim: p.status === "done",
+    dim: isProjectComplete(p.status),
     onClick: () => onOpenProject(p.id),
     onChangeDates: (start, end) => updateProject(p.id, { startDate: start, targetDate: end }),
   }));
@@ -154,9 +156,15 @@ export default function InitiativeFloor({
                 >
                   <div className="flex items-start gap-2">
                     <span className="text-[13px] font-medium leading-snug">{p.name}</span>
-                    <span className="mono ml-auto shrink-0 rounded-full border px-1.5 text-[9px]"
-                      style={{ borderColor: PROJECT_STATUS_COLORS[p.status], color: PROJECT_STATUS_COLORS[p.status] }}>
-                      {p.status}
+                    <span
+                      className="mono ml-auto shrink-0 rounded-full border px-1.5 text-[9px]"
+                      style={{
+                        borderColor: PROJECT_STATUS_COLORS[p.status as keyof typeof PROJECT_STATUS_COLORS] ?? "var(--muted)",
+                        color: p.status === "in_progress" ? "#fff" : PROJECT_STATUS_COLORS[p.status as keyof typeof PROJECT_STATUS_COLORS] ?? "var(--muted)",
+                        background: p.status === "in_progress" ? "var(--accent)" : "transparent",
+                      }}
+                    >
+                      {PROJECT_STATUS_LABEL[p.status as keyof typeof PROJECT_STATUS_LABEL] ?? p.status}
                     </span>
                   </div>
                   {p.outcome && <div className="mt-1 line-clamp-2 text-[11px] text-muted">{p.outcome}</div>}

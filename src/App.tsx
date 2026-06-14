@@ -5,6 +5,7 @@ import Login from "./components/Login";
 import AppShell from "./components/AppShell";
 import UpdateToast from "./components/UpdateToast";
 import { AppNavigationProvider } from "./hooks/useAppNavigation";
+import { AgentProvider } from "./hooks/useAgentContext";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,7 +33,9 @@ function Shell() {
     <>
       {session ? (
         <AppNavigationProvider>
-          <AppShell />
+          <AgentProvider>
+            <AppShell />
+          </AgentProvider>
         </AppNavigationProvider>
       ) : (
         <Login />

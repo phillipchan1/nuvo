@@ -13,7 +13,7 @@ import {
 import { useLabels, useCalendarAccounts } from "../../hooks/useCalendar";
 import { useRecurrenceMutations } from "../../hooks/useRecurrence";
 import { useRealtime } from "../../hooks/useRealtime";
-import { useAgent } from "../../hooks/useAgent";
+import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
 import type { Task } from "../../lib/types";
 import NowFloor from "../floors/NowFloor";
@@ -81,7 +81,10 @@ export default function MobileShell() {
   const { data: accounts = [] } = useCalendarAccounts();
   const mutations = useTaskMutations();
   const recurrenceMutations = useRecurrenceMutations();
-  const agent = useAgent(range);
+  const { agent, setRange } = useAgentContext();
+  useEffect(() => {
+    setRange(range);
+  }, [range, setRange]);
 
   useRealtime(true);
 
@@ -235,7 +238,7 @@ export default function MobileShell() {
           defaultDoDate={tab === "today" ? today : null}
         />
       )}
-      {chatOpen && <ChatSheet agent={agent} onClose={() => setChatOpen(false)} />}
+      {chatOpen && <ChatSheet agent={agent} mobileTab={tab} onClose={() => setChatOpen(false)} />}
       {openTask && (
         <MobileTaskSheet
           task={openTask}

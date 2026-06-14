@@ -1,5 +1,6 @@
 import { admin } from "../_shared/admin.ts";
 import { parseCapture } from "../_shared/nlp.ts";
+import { executeVerticalTool, isVerticalTool, VERTICAL_TOOL_DEFINITIONS } from "./verticalTools.ts";
 
 const DEFAULT_DURATION = 30;
 const MIRROR_FIELDS = new Set(["start_time", "duration_minutes", "title", "status", "do_date"]);
@@ -85,6 +86,9 @@ export const TOOL_DEFINITIONS = [
           duration_minutes: { type: "integer" },
           priority: { type: "string", enum: ["none", "low", "medium", "high"] },
           label_names: { type: "array", items: { type: "string" } },
+          project_id: { type: "string", description: "Parent project — task lands in backlog" },
+          initiative_id: { type: "string", description: "Parent initiative if no project" },
+          domain_id: { type: "string", description: "Parent domain if no project/initiative" },
         },
       },
     },
@@ -277,6 +281,7 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  ...VERTICAL_TOOL_DEFINITIONS,
 ];
 
 async function resolveTaskId(
@@ -345,6 +350,8 @@ export async function executeTool(
   args: Record<string, unknown>,
   userToken?: string,
 ): Promise<{ result: string; action?: AgentAction }> {
+  if (isVerticalTool(name)) return executeVerticalTool(userId, name, args);
+
   switch (name) {
     case "create_task": {
       let title = args.title as string | undefined;
@@ -367,7 +374,33 @@ export async function executeTool(
 
       if (!title?.trim()) throw new Error("Task title is required");
 
-      const status = doDate ? "planned" : "inbox";
+      const projectId = args.project_id as string | undefined;
+      let initiativeId = args.initiative_id as string | undefined;
+      let domainId = args.domain_id as string | undefined;
+
+      if (projectId) {
+        const { data: proj } = await admin
+          .from("projects")
+          .select("domain_id, initiative_id")
+          .eq("id", projectId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (!proj) throw new Error(`Project not found: ${projectId}`);
+        initiativeId = initiativeId ?? proj.initiative_id ?? undefined;
+        domainId = domainId ?? proj.domain_id ?? undefined;
+      } else if (initiativeId && !domainId) {
+        const { data: init } = await admin
+          .from("initiatives")
+          .select("domain_id")
+          .eq("id", initiativeId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (init?.domain_id) domainId = init.domain_id;
+      }
+
+      const parented = Boolean(projectId || initiativeId || domainId);
+
+      const status = parented ? "backlog" : doDate ? "planned" : "inbox";
       const dur =
         startTime != null ? (duration ?? DEFAULT_DURATION) : (duration ?? null);
 
@@ -382,6 +415,9 @@ export async function executeTool(
           start_time: startTime ?? null,
           duration_minutes: dur,
           priority,
+          project_id: projectId ?? null,
+          initiative_id: initiativeId ?? null,
+          domain_id: domainId ?? null,
         })
         .select("id, title")
         .single();
@@ -400,7 +436,9 @@ export async function executeTool(
         ? `scheduled for ${new Date(startTime).toLocaleString()}`
         : doDate
           ? `planned for ${doDate}`
-          : "added to inbox";
+          : parented
+            ? "added to project backlog"
+            : "added to inbox";
       return {
         result: JSON.stringify({ id: data.id, title: data.title, status, doDate, startTime }),
         action: { tool: name, summary: `Created "${data.title}" — ${when}` },

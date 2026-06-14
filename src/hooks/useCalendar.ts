@@ -2,6 +2,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleRawEvent, Label, RecurrenceScope } from "../lib/types";
 
+export function useCalendarRefresh() {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.functions.invoke("calendar-refresh", { body: {} });
+      if (error) throw error;
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["external_events"] });
+      qc.invalidateQueries({ queryKey: ["calendar_accounts"] });
+    },
+  });
+  return { refresh: mutation.mutate, refreshing: mutation.isPending, error: mutation.error };
+}
+
 export function useCalendarAccounts() {
   return useQuery({
     queryKey: ["calendar_accounts"],

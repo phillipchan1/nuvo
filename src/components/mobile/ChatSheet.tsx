@@ -1,8 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import type { AgentMessage } from "../../lib/agentTypes";
-import type { useAgent } from "../../hooks/useAgent";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentAttachment } from "../../lib/agentTypes";
+import type { AgentHandle } from "../../hooks/useAgent";
+import { useFileDrop } from "../../hooks/useFileDrop";
+import { filesToAttachments } from "../../lib/agentAttachments";
+import { agentHints } from "../../lib/agentHints";
 import { ASSISTANT_NAME } from "../../lib/assistant";
+import AgentChatInput from "../AgentChatInput";
+import AgentMessageBubble from "../AgentMessageBubble";
+import AgentSuggestionChips from "../AgentSuggestionChips";
 import Sheet from "./Sheet";
 
 // Full-height chat, reachable from every tab. Reuses the same agent the desktop
@@ -10,31 +15,50 @@ import Sheet from "./Sheet";
 export default function ChatSheet({
   agent,
   onClose,
+  mobileTab,
 }: {
-  agent: ReturnType<typeof useAgent>;
+  agent: AgentHandle;
   onClose: () => void;
+  mobileTab?: "now" | "today" | "week" | "inbox";
 }) {
+  const hints = useMemo(() => agentHints({ rung: "day", mobileTab }), [mobileTab]);
   const { messages, loading, error, sendMessage, clear } = agent;
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [otherMode, setOtherMode] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const addFiles = useCallback(async (files: File[]) => {
+    const { attachments: next } = await filesToAttachments(files);
+    if (next.length) setAttachments((prev) => [...prev, ...next].slice(0, 6));
+  }, []);
+
+  const { dragging, dropHandlers } = useFileDrop(addFiles, !loading);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const send = () => {
-    const text = input.trim();
-    if (!text || loading) return;
+  const send = (text?: string) => {
+    const msg = (text ?? input).trim();
+    if ((!msg && attachments.length === 0) || loading) return;
+    const files = attachments;
     setInput("");
-    void sendMessage(text);
+    setAttachments([]);
+    setOtherMode(false);
+    void sendMessage(msg, files);
   };
 
-  const starters = [
-    "What's in my inbox?",
-    "Plan my afternoon",
-    "What should I prep next?",
-    "Move my non-urgent tasks to tomorrow",
-  ];
+  const last = messages[messages.length - 1];
+  const activeSuggestions =
+    !loading && last?.role === "assistant" && last.suggestions?.length ? last.suggestions : null;
+
+  const focusOther = () => {
+    setOtherMode(true);
+    setInput("");
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
 
   const title = (
     <span className="flex items-center gap-2">
@@ -44,106 +68,80 @@ export default function ChatSheet({
   );
 
   return (
-    <Sheet onClose={onClose} title={title} tall contentClassName="flex flex-col">
-      {messages.length > 0 && (
-        <div className="flex shrink-0 justify-end px-4 pb-1">
-          <button onClick={clear} className="fast text-[12px] text-muted hover:text-ink">
-            Clear
-          </button>
-        </div>
-      )}
-
-      <div className="mobile-scroll min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-2">
-        {messages.length === 0 && !loading && (
-          <div className="flex flex-col items-center gap-3 px-2 pt-8 text-center">
-            <p className="text-[14px] text-muted">
-              Ask about your day, add tasks, or reschedule blocks.
-            </p>
-            <div className="flex flex-wrap justify-center gap-1.5">
-              {starters.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => void sendMessage(s)}
-                  className="fast rounded-full border border-line px-3 py-1.5 text-[12.5px] text-muted hover:border-accent hover:text-accent"
-                >
-                  {s}
-                </button>
-              ))}
+    <Sheet onClose={onClose} title={title} tall contentClassName="relative flex flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col" {...dropHandlers}>
+        {dragging && (
+          <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-accent-soft/75 backdrop-blur-[2px]">
+            <div className="rounded-2xl border-2 border-dashed border-accent bg-surface px-6 py-5 text-center shadow-lg">
+              <span className="text-[24px]">↓</span>
+              <p className="mt-1 text-[13px] font-medium text-accent">Drop to attach</p>
             </div>
           </div>
         )}
 
-        {messages.map((m) => (
-          <Bubble key={m.id} message={m} />
-        ))}
-        {loading && (
-          <div className="agent-bubble agent-bubble-assistant w-fit">
-            <span className="mono shimmer text-[12px]">Thinking…</span>
+        {messages.length > 0 && (
+          <div className="flex shrink-0 justify-end px-4 pb-1">
+            <button onClick={clear} className="fast text-[12px] text-muted hover:text-ink">
+              Clear
+            </button>
           </div>
         )}
-        <div ref={bottomRef} />
-      </div>
 
-      {error && (
-        <div className="shrink-0 border-t border-line bg-signal-soft px-4 py-2 text-[12px] text-signal">
-          {error}
+        <div className="mobile-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-2">
+          {messages.length === 0 && !loading ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 text-center">
+              <p className="text-[14px] text-muted">{hints.prompt}</p>
+              <div className="w-full max-w-sm">
+                <AgentSuggestionChips
+                  suggestions={hints.starters.map((s) => ({ label: s, message: s }))}
+                  onPick={send}
+                  onOther={focusOther}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="mt-auto space-y-3">
+              {messages.map((m) => (
+                <AgentMessageBubble key={m.id} message={m} compact />
+              ))}
+              {loading && (
+                <div className="agent-bubble agent-bubble-assistant w-fit">
+                  <span className="mono shimmer text-[12px]">Thinking…</span>
+                </div>
+              )}
+              {activeSuggestions && (
+                <AgentSuggestionChips
+                  suggestions={activeSuggestions}
+                  onPick={send}
+                  onOther={focusOther}
+                  disabled={loading}
+                />
+              )}
+              <div ref={bottomRef} />
+            </div>
+          )}
         </div>
-      )}
 
-      <div className="shrink-0 border-t border-line p-3">
-        <div className="fast flex items-end gap-2 rounded-2xl border border-line bg-surface-2 px-3 py-2 focus-within:border-accent">
-          <textarea
+        {error && (
+          <div className="shrink-0 border-t border-line bg-signal-soft px-4 py-2 text-[12px] text-signal">
+            {error}
+          </div>
+        )}
+
+        <div className="shrink-0 border-t border-line p-3">
+          <AgentChatInput
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            rows={1}
-            placeholder={`Ask ${ASSISTANT_NAME}…`}
-            disabled={loading}
-            className="max-h-28 min-h-[24px] min-w-0 flex-1 resize-none bg-transparent py-1 text-[16px] outline-none placeholder:text-muted/70 disabled:opacity-50"
+            onChange={setInput}
+            attachments={attachments}
+            onAttachmentsChange={setAttachments}
+            onSubmit={() => send()}
+            loading={loading}
+            placeholder={otherMode ? "Say something else…" : `Ask ${ASSISTANT_NAME}…`}
+            compact
+            inputRef={inputRef}
           />
-          <button
-            onClick={send}
-            disabled={!input.trim() || loading}
-            aria-label="Send"
-            className="tap fast flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-[16px] text-white active:translate-y-px disabled:opacity-30"
-          >
-            ↑
-          </button>
         </div>
       </div>
     </Sheet>
-  );
-}
-
-function Bubble({ message }: { message: AgentMessage }) {
-  const isUser = message.role === "user";
-  return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`agent-bubble max-w-[88%] ${isUser ? "agent-bubble-user" : "agent-bubble-assistant"}`}
-      >
-        {isUser ? (
-          <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{message.content}</p>
-        ) : (
-          <div className="agent-markdown text-[14px] leading-relaxed">
-            <ReactMarkdown>{message.content}</ReactMarkdown>
-          </div>
-        )}
-        {message.actions && message.actions.length > 0 && (
-          <ul className="mt-2 space-y-1 border-t border-line/50 pt-2">
-            {message.actions.map((a) => (
-              <li key={a.summary} className="mono text-[11px] text-muted">
-                ✓ {a.summary}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
   );
 }

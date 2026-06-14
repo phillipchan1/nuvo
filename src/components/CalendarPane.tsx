@@ -133,6 +133,8 @@ export default function CalendarPane({
   eventMutations,
   slotMutations,
   recurrenceMutations,
+  onRefreshCalendars,
+  refreshingCalendars = false,
   onOpenTask,
   onOpenEvent,
   onOpenSlot,
@@ -156,6 +158,8 @@ export default function CalendarPane({
   eventMutations: ReturnType<typeof useExternalEventMutations>;
   slotMutations: ReturnType<typeof useSlotMutations>;
   recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
+  onRefreshCalendars?: () => void;
+  refreshingCalendars?: boolean;
   onOpenTask: (t: Task, anchor: DOMRect) => void;
   onOpenEvent: (e: ExternalEvent, anchor: DOMRect) => void;
   onOpenSlot: (s: Slot, anchor: DOMRect) => void;
@@ -202,14 +206,6 @@ export default function CalendarPane({
   // ── Vertical density: "how many hours fill the screen" ──────────────────
   // Fewer hours = taller rows (more scroll); more hours = everything fits.
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [fitHours, setFitHours] = useState<number>(() => {
-    const v = Number(localStorage.getItem("nuvo.cal.fitHours"));
-    return v >= 6 && v <= 24 ? v : 13;
-  });
-  useEffect(() => {
-    try { localStorage.setItem("nuvo.cal.fitHours", String(fitHours)); } catch { /* ignore */ }
-  }, [fitHours]);
-
   const [availH, setAvailH] = useState(0);
   useEffect(() => {
     const el = wrapRef.current;
@@ -227,7 +223,7 @@ export default function CalendarPane({
   const viewStart = Math.max(0, dayStart - 1);
   const viewEnd = Math.min(24, dayEnd < 24 ? dayEnd + 1 : 24);
   const windowHours = Math.max(1, viewEnd - viewStart);
-  const fitClamped = Math.min(Math.max(6, fitHours), windowHours);
+  const fitClamped = Math.min(Math.max(6, settings?.calendar_fit_hours ?? 13), windowHours);
   // px-per-hour that makes `fitClamped` hours fill the viewport; the rest
   // scrolls. (~16px chrome padding + ~52px day header subtracted.)
   const pxPerHour =
@@ -861,37 +857,32 @@ export default function CalendarPane({
           Today
         </button>
 
-        <div className="flex-1" />
-
-        {/* Vertical zoom — how many hours fill the screen. More hours = less
-            scrolling; fewer = taller rows. Persisted per device. */}
-        {!isMonth && (
-          <div
-            className="mr-1 flex items-center gap-1"
-            title="Hours visible — more hours fit = less scrolling"
+        {onRefreshCalendars && (
+          <button
+            onClick={onRefreshCalendars}
+            disabled={refreshingCalendars}
+            className="fast ml-1 flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink disabled:opacity-40"
+            title="Refresh calendars"
           >
-            <span className="text-meta text-muted">hours</span>
-            <div className="flex items-center overflow-hidden rounded-md border border-line">
-              <button
-                onClick={() => setFitHours(Math.max(6, fitClamped - 1))}
-                disabled={fitClamped <= 6}
-                className="fast px-1.5 py-0.5 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
-                title="Fewer hours (taller rows)"
-              >
-                −
-              </button>
-              <span className="mono w-7 select-none text-center text-meta tabular-nums text-text">{fitClamped}h</span>
-              <button
-                onClick={() => setFitHours(Math.min(windowHours, fitClamped + 1))}
-                disabled={fitClamped >= windowHours}
-                className="fast px-1.5 py-0.5 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
-                title="More hours (less scrolling)"
-              >
-                +
-              </button>
-            </div>
-          </div>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              className={refreshingCalendars ? "animate-spin" : undefined}
+            >
+              <path
+                d="M11.5 7A4.5 4.5 0 107.8 2.3M11.5 2.3v2.8H8.7"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         )}
+
+        <div className="flex-1" />
 
         {/* Drag-to-create mode — what a plain click-drag makes. Power users can
             also ⌥-drag (event) or ⌘-drag (slot) to override this. */}

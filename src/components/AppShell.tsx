@@ -14,6 +14,8 @@ import Planner from "./Planner";
 import Spine, { type FlowName } from "./Spine";
 import FloorPane from "./FloorPane";
 import RecordModal from "./record/RecordModal";
+import AgentSidebar from "./AgentSidebar";
+import { useAgentContext } from "../hooks/useAgentContext";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
 import BlueprintFlow, { type BlueprintSeed } from "./rituals/BlueprintFlow";
@@ -59,9 +61,11 @@ function AppShellInner() {
     setProjectView,
     setInitiativeView,
     navigate,
+    toggleAgent,
   } = useAppNavigation();
 
-  const { rung, projectView, initiativeView, focus, flow, flowStep } = nav;
+  const { rung, projectView, initiativeView, focus, flow, flowStep, agentOpen } = nav;
+  const { agent } = useAgentContext();
 
   // a half-typed bet handed from the quick-create moment into Blueprint
   const [blueprintSeed, setBlueprintSeed] = useState<BlueprintSeed | null>(null);
@@ -160,29 +164,43 @@ function AppShellInner() {
     openFlow(f);
   };
 
+  // ⌘J toggles Nuvo from any floor — not just the schedule view.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "j") return;
+      const el = e.target as HTMLElement;
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      e.preventDefault();
+      toggleAgent();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleAgent]);
+
   return (
     <div className="atmosphere flex h-full">
       <Spine rung={rung} setRung={goRung} openFlow={openFlowWithSeed} />
-      <div className="relative min-w-0 flex-1">
-        <Planner openFlow={openFlowWithSeed} />
-        {rung !== "day" && (
-          <div className="atmosphere floor-enter absolute inset-0 z-30">
-            <FloorPane
-              rung={rung}
-              focus={focus}
-              focusDomain={focusDomain}
-              openInitiative={openInitiativeDetail}
-              goRung={goRung}
-              projectView={projectView}
-              setProjectView={setProjectView}
-              initiativeView={initiativeView}
-              setInitiativeView={setInitiativeView}
-              openBlueprint={openBlueprint}
-            />
-          </div>
-        )}
+      <div className="flex min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1">
+          <Planner openFlow={openFlowWithSeed} />
+          {rung !== "day" && (
+            <div className="atmosphere floor-enter absolute inset-0 z-30">
+              <FloorPane
+                rung={rung}
+                focus={focus}
+                focusDomain={focusDomain}
+                openInitiative={openInitiativeDetail}
+                goRung={goRung}
+                projectView={projectView}
+                setProjectView={setProjectView}
+                initiativeView={initiativeView}
+                setInitiativeView={setInitiativeView}
+                openBlueprint={openBlueprint}
+              />
+            </div>
+          )}
 
-        {sundayNudge && !flow && (
+          {sundayNudge && !flow && (
           <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2">
             <div className="rise elev-3 flex items-center gap-3 rounded-full border border-line bg-surface px-4 py-2">
               <span className="text-[12px]">A new week is here — plan it?</span>
@@ -198,6 +216,9 @@ function AppShellInner() {
             </div>
           </div>
         )}
+        </div>
+
+        <AgentSidebar agent={agent} open={agentOpen} onToggle={toggleAgent} />
       </div>
 
       {flow === "sunday" && <SundayRitual onClose={closeFlow} />}

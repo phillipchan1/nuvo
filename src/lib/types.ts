@@ -176,6 +176,8 @@ export interface UserSettings {
   theme: "system" | "light" | "dark";
   day_start_hour: number;
   day_end_hour: number;
+  /** Hours of the day view that fill the screen before scrolling. */
+  calendar_fit_hours: number;
   week_start: number;
   work_start_minutes: number; // compose boundary: blocks proposed inside these
   work_end_minutes: number;

@@ -227,6 +227,14 @@ function SchedulePane({
   const selCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-[12px] outline-none focus:border-accent";
   const timeCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-[12px] outline-none focus:border-accent";
 
+  const dayStart = settings?.day_start_hour ?? 6;
+  const dayEnd = settings?.day_end_hour ?? 24;
+  const viewStart = Math.max(0, dayStart - 1);
+  const viewEnd = Math.min(24, dayEnd < 24 ? dayEnd + 1 : 24);
+  const windowHours = Math.max(1, viewEnd - viewStart);
+  const fitHours = settings?.calendar_fit_hours ?? 13;
+  const fitClamped = Math.min(Math.max(6, fitHours), windowHours);
+
   return (
     <div>
       <PaneHeader title="Schedule" sub="The shape of your day — what the calendar shows and when Nuvo plans for you." />
@@ -276,6 +284,31 @@ function SchedulePane({
               onChange={setWork("work_end_minutes")}
               className={timeCls}
             />
+          </div>
+        </Row>
+
+        <Row
+          title="Hours on screen"
+          desc="How many hours of your day view fill the screen. More hours = less scrolling; fewer = taller rows."
+        >
+          <div className="flex items-center overflow-hidden rounded-md border border-line">
+            <button
+              onClick={() => updateSettings({ calendar_fit_hours: Math.max(6, fitClamped - 1) })}
+              disabled={fitClamped <= 6}
+              className="fast px-2 py-1 text-[12px] leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+              title="Fewer hours (taller rows)"
+            >
+              −
+            </button>
+            <span className="mono w-9 select-none text-center text-[12px] tabular-nums text-text">{fitClamped}h</span>
+            <button
+              onClick={() => updateSettings({ calendar_fit_hours: Math.min(windowHours, fitClamped + 1) })}
+              disabled={fitClamped >= windowHours}
+              className="fast px-2 py-1 text-[12px] leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+              title="More hours (less scrolling)"
+            >
+              +
+            </button>
           </div>
         </Row>
 
