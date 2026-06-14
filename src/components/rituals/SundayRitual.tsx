@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, differenceInCalendarDays, format, subDays } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useSettings } from "../../hooks/useSettings";
+import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useAllTasks, useScheduledTasks } from "../../hooks/useTasks";
 import {
@@ -46,23 +47,6 @@ const fmtMinShort = (m: number) => {
   const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "p" : "a", hh = ((h + 11) % 12) + 1;
   return mm === 0 ? `${hh}${ap}` : `${hh}:${String(mm).padStart(2, "0")}${ap}`;
 };
-
-/** Which weekdays you work (0=Sun…6=Sat) — a recurring boundary, kept local to
- *  the device for now (a follow-up promotes it to the settings row). */
-function useWorkingDays(): [number[], (d: number[]) => void] {
-  const [days, setDays] = useState<number[]>(() => {
-    try {
-      const raw = localStorage.getItem("nuvo-working-days");
-      if (raw) return JSON.parse(raw) as number[];
-    } catch { /* ignore */ }
-    return [1, 2, 3, 4, 5];
-  });
-  const set = (d: number[]) => {
-    setDays(d);
-    try { localStorage.setItem("nuvo-working-days", JSON.stringify(d)); } catch { /* ignore */ }
-  };
-  return [days, set];
-}
 
 export default function SundayRitual({ onClose }: { onClose: () => void }) {
   const { data, planWeek } = useVertical();

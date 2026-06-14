@@ -15,12 +15,16 @@ export function composeBrief({
   dayRead,
   top,
   tired,
+  restDay = false,
 }: {
   now: Date;
   name: string;
   dayRead: DayRead;
   top: Suggestion | null;
   tired: boolean;
+  /** Today is a day you don't work (weekend / marked off). The brief protects
+   *  the rest instead of pointing at the next task to start. */
+  restDay?: boolean;
 }): Brief {
   const h = now.getHours();
   const part = h < 12 ? "Morning" : h < 17 ? "Afternoon" : "Evening";
@@ -29,6 +33,23 @@ export function composeBrief({
     ? Math.max(1, Math.round((dayRead.current.end.getTime() - now.getTime()) / 60_000))
     : 0;
   const firstGap = dayRead.gaps[0] ?? null;
+
+  // A day off changes the whole job of the brief: not "here's the next thing to
+  // start" but "you're off — here's only what's actually planned, then rest."
+  // We never push the work backlog or promise a slot; the open time is the point.
+  if (restDay) {
+    const parts = ["Today's a day off — nothing's pushing on you."];
+    if (dayRead.current) {
+      parts.push(`You're in ${dayRead.current.title} — ${fmtMins(minsLeft)} left.`);
+    } else if (dayRead.next) {
+      const more = dayRead.remaining - 1;
+      parts.push(`You've got ${dayRead.next.title} at ${at(dayRead.next.start)}${more > 0 ? `, then ${more} more` : ""} — otherwise it's open.`);
+    } else {
+      parts.push("Nothing's on the calendar — the day is yours.");
+    }
+    parts.push("Rest easy. I'll have your work ready when you're back to it.");
+    return { greeting: `${part}, ${name}.`, body: parts.join(" ") };
+  }
 
   // When you've told me you're spent, the brief changes its whole posture.
   if (tired) {

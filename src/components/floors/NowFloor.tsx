@@ -10,8 +10,9 @@ import { useVertical } from "../../hooks/useVertical";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
 import { useSettings } from "../../hooks/useSettings";
+import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useAgent } from "../../hooks/useAgent";
-import { endOf } from "../../lib/dates";
+import { endOf, todayISO } from "../../lib/dates";
 import { faithfulness, initiativeProgress, type Domain } from "../../lib/vertical";
 import { fmtMins, rankNow, readDay, type BusyBlock, type DayRead, type Gap, type NowContext } from "../../lib/now";
 import { composeBrief, type Brief } from "../../lib/brief";
@@ -31,6 +32,7 @@ const readChatOpen = (): boolean => {
 export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   const { data, toggleTask } = useVertical();
   const { settings } = useSettings();
+  const [workingDays] = useWorkingDays();
   const { nav, setNowMoment, back } = useAppNavigation();
   const { nowMoment, nowTaskId } = nav;
 
@@ -40,6 +42,18 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
     const t = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(t);
   }, []);
+
+  // Is today a day off? A Saturday — or any day you marked off — is not an open
+  // gap to fill with the work backlog. When it is, Now drops its "start this
+  // next" posture: it shows only what's actually planned and protects the rest,
+  // with a quiet opt-in for the times you genuinely want to pick something up.
+  const restDay = useMemo(() => {
+    const ctx = (data.sprint?.day_contexts ?? {})[todayISO(now)];
+    return ctx === "off" || !workingDays.includes(now.getDay());
+  }, [data.sprint, workingDays, now]);
+  // opt-in reveal of suggestions on a rest day — off by default, you choose
+  const [showPicks, setShowPicks] = useState(false);
+  useEffect(() => { if (!restDay) setShowPicks(false); }, [restDay]);
 
   // the real day: every busy thing on the live calendar (event or block).
   // Query window is keyed to the hour so it doesn't churn every minute.
@@ -115,7 +129,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
     () => (nowTaskId ? suggestions.find((s) => s.task.id === nowTaskId) ?? null : null),
     [nowTaskId, suggestions],
   );
-  const brief = useMemo(() => composeBrief({ now, name: NAME, dayRead, top, tired }), [now, dayRead, top, tired]);
+  const brief = useMemo(() => composeBrief({ now, name: NAME, dayRead, top, tired, restDay }), [now, dayRead, top, tired, restDay]);
 
   // ── Focusing / done are "moments": clear the day away, one thing only ──
   if (active && nowMoment === "focus") {
@@ -151,7 +165,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
           Expanded: the chat earns a sticky right rail and reclaims the margin. */}
       <div className={chatOpen ? "xl:grid xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start xl:gap-x-10" : ""}>
         <div className="xl:col-start-1 xl:row-start-1">
-          <NowBrief now={now} dayRead={dayRead} brief={brief} tired={tired} />
+          <NowBrief now={now} dayRead={dayRead} brief={brief} tired={tired} restDay={restDay} />
           {!chatOpen && (
             <NuvoBar agent={agent} tired={tired} setTired={setTired} onOpen={() => setChatOpen(true)} />
           )}
@@ -179,14 +193,26 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
             <UpNext now={now} items={dayRead.upcoming} className={dayRead.current ? "mt-5" : ""} />
           )}
 
-          {top ? (
+          {restDay && !showPicks ? (
+            <div className={dayRead.current || dayRead.upcoming.length ? "mt-6" : ""}>
+              <RestPanel
+                weekday={now.toLocaleDateString([], { weekday: "long" })}
+                label={dayRead.current ? "The rest of today" : "Right now"}
+                hasPlans={Boolean(dayRead.current || dayRead.upcoming.length)}
+                canPick={suggestions.length > 0}
+                onPick={() => setShowPicks(true)}
+              />
+            </div>
+          ) : top ? (
             <div className={dayRead.current || dayRead.upcoming.length ? "mt-6" : ""}>
               <div className="section-label mb-2">
                 {dayRead.current
                   ? activeGap
                     ? `When you're free · ${activeGap.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${fmtMins(activeGap.mins)}`
                     : "Line up next"
-                  : "Right now"}
+                  : restDay
+                    ? "If you want to pick something up"
+                    : "Right now"}
               </div>
               <div className="rise rounded-lg border bg-surface p-4" style={{ borderColor: top.domain?.color, borderWidth: 1.5 }}>
                 <div className="text-[19px] font-medium leading-snug">{top.task.title}</div>
@@ -255,7 +281,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
             )
           )}
 
-          <DomainBalance domains={data.domains} />
+          <DomainBalance domains={data.domains} restDay={restDay} />
         </div>
         </div>
       </div>
@@ -267,20 +293,23 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
 // The brief — Nuvo talking to you. A first-person read of the whole day, the
 // scannable stats underneath, and a composer so you can just say what you need.
 function NowBrief({
-  now, dayRead, brief, tired,
+  now, dayRead, brief, tired, restDay,
 }: {
   now: Date;
   dayRead: DayRead;
   brief: Brief;
   tired: boolean;
+  restDay: boolean;
 }) {
   const weekday = now.toLocaleDateString([], { weekday: "short" });
   const clock = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
   const chips: { glyph: string; text: string; tone?: "accent" | "muted" }[] = [];
-  if (dayRead.openMins > 0) chips.push({ glyph: "⏱", text: `${fmtMins(dayRead.openMins)} open`, tone: "accent" });
+  // On a day off, open time isn't a number to fill — so we don't headline it.
+  if (restDay) chips.push({ glyph: "—", text: "day off", tone: "muted" });
+  else if (dayRead.openMins > 0) chips.push({ glyph: "⏱", text: `${fmtMins(dayRead.openMins)} open`, tone: "accent" });
   chips.push({ glyph: "◷", text: dayRead.remaining === 0 ? "no commitments left" : `${dayRead.remaining} commitment${dayRead.remaining > 1 ? "s" : ""} left` });
-  if (dayRead.deepWindow && dayRead.deepEndsLabel && !dayRead.current && !tired) chips.push({ glyph: "◆", text: `deep focus till ${dayRead.deepEndsLabel}` });
+  if (!restDay && dayRead.deepWindow && dayRead.deepEndsLabel && !dayRead.current && !tired) chips.push({ glyph: "◆", text: `deep focus till ${dayRead.deepEndsLabel}` });
   if (tired) chips.push({ glyph: "☾", text: "low-energy mode" });
 
   return (
@@ -661,9 +690,41 @@ function GapAnchor({ activeGap, current, accent }: { activeGap: Gap | null; curr
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// A day off — so Now stops being a queue. Instead of the next task to start,
+// it holds the rest: today is yours, here's only what's actually planned. The
+// work backlog stays out of sight behind a quiet, deliberate opt-in.
+function RestPanel({
+  weekday, label, hasPlans, canPick, onPick,
+}: {
+  weekday: string;
+  label: string;
+  hasPlans: boolean;
+  canPick: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-line bg-surface-2 p-5">
+      <div className="section-label mb-1.5 text-muted">{label}</div>
+      <div className="text-[16px] font-medium">Enjoy your {weekday}.</div>
+      <p className="mt-1.5 max-w-[460px] text-[13px] leading-relaxed text-muted">
+        {hasPlans
+          ? "Just what's on your calendar — nothing else is asking for you. The work will keep."
+          : "Nothing's scheduled and nothing's due. Take the day — I'll have your week ready when you're back to it."}
+      </p>
+      {canPick && (
+        <button onClick={onPick} className="fast mt-3.5 text-[12px] text-muted underline-offset-2 hover:text-accent hover:underline">
+          Actually, show me something I could pick up →
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Domain balance — the faithfulness read, framed as Gain not Gap. The quietest
-// domain rises to the top with a gentle nudge: don't go silent here.
-function DomainBalance({ domains }: { domains: Domain[] }) {
+// domain rises to the top with a gentle nudge: don't go silent here. On a day
+// off the nudge softens — it's a note for the week ahead, not a task for today.
+function DomainBalance({ domains, restDay }: { domains: Domain[]; restDay: boolean }) {
   if (!domains.length) return null;
   const quietest = [...domains].sort((a, b) => b.lastTouchedDays - a.lastTouchedDays)[0];
   const nudge = quietest && quietest.lastTouchedDays >= 4 ? quietest : null;
@@ -695,9 +756,13 @@ function DomainBalance({ domains }: { domains: Domain[] }) {
       {nudge && (
         <div className="mono mt-3 flex items-center gap-1.5 text-[10.5px] text-muted">
           <span style={{ color: nudge.color }}>⚖</span>
-          {nudge.lastTouchedDays >= 99
-            ? `${nudge.name} is untouched — a short task here would start the arc.`
-            : `${nudge.name} has been quiet ${nudge.lastTouchedDays}d — a short task here would tend it.`}
+          {restDay
+            ? nudge.lastTouchedDays >= 99
+              ? `${nudge.name} stayed untouched this week — one for the week ahead, not today.`
+              : `${nudge.name} has been quiet ${nudge.lastTouchedDays}d — something for the week ahead.`
+            : nudge.lastTouchedDays >= 99
+              ? `${nudge.name} is untouched — a short task here would start the arc.`
+              : `${nudge.name} has been quiet ${nudge.lastTouchedDays}d — a short task here would tend it.`}
         </div>
       )}
     </div>
