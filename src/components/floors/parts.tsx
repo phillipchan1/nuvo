@@ -1,8 +1,21 @@
 // Shared building blocks for the vertical floors: inline editors, progress
-// bars, status/momentum chips, an energy picker, and a month-scale timeline.
+// bars, status/momentum chips, an energy picker, and a zoomable Gantt timeline.
 // Everything is keyboard-friendly and uses the Twilight tokens.
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+  addDays,
+  addMonths,
+  eachDayOfInterval,
+  eachMonthOfInterval,
+  eachWeekOfInterval,
+  endOfMonth,
+  endOfWeek,
+  isWeekend,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+} from "date-fns";
 import { ENERGY_META, ENERGY_ORDER, type Energy } from "../../lib/energy";
 import type { Momentum, ProjectStatus } from "../../lib/vertical";
 import type { CollectionSelection } from "../../hooks/useCollectionSelection";
@@ -355,7 +368,7 @@ export function DeleteBtn({ onDelete, what }: { onDelete: () => void; what: stri
   return <IconBtn onClick={() => setArmed(true)} title={`Delete ${what}`} danger>✕</IconBtn>;
 }
 
-// ── Month-scale timeline ─────────────────────────────────────────────────────
+// ── Timeline / Gantt ─────────────────────────────────────────────────────────
 export interface TimelineItem {
   id: string;
   label: string;
@@ -365,12 +378,14 @@ export interface TimelineItem {
   progress: number;
   dim?: boolean;
   onClick?: () => void;
-  // when present, the bar can be dragged to move and its edges resized
+  // when present, the bar can be dragged to move/resize and an undated item can
+  // be dragged in from the tray to get a date range
   onChangeDates?: (start: string | null, end: string | null) => void;
 }
 
 const DAY = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
 
 export function fmtDate(iso: string): string {
   const [, m, d] = iso.split("-").map(Number);
@@ -395,78 +410,224 @@ function snapDay(ms: number): number {
   return d.getTime();
 }
 
+// ── Zoom levels — Week · Month · Quarter · Year (borrowing Asana / Notion) ───
+export type TimelineZoom = "week" | "month" | "quarter" | "year";
+
+interface ZoomSpec {
+  id: TimelineZoom;
+  label: string;
+  pxPerDay: number; // horizontal scale
+  dropSpanDays: number; // default length when an undated item is dropped in
+}
+
+const ZOOMS: ZoomSpec[] = [
+  { id: "week", label: "Week", pxPerDay: 30, dropSpanDays: 2 },
+  { id: "month", label: "Month", pxPerDay: 12, dropSpanDays: 6 },
+  { id: "quarter", label: "Quarter", pxPerDay: 4.4, dropSpanDays: 13 },
+  { id: "year", label: "Year", pxPerDay: 1.7, dropSpanDays: 29 },
+];
+
 type DragMode = "move" | "start" | "end";
+
+interface Tick { key: string; left: number; label: string; strong?: boolean; weekend?: boolean; width?: number }
+
+const startOfQuarterLocal = (d: Date) => new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1);
+
+/** The padded date window the grid should cover, snapped to period edges so the
+ *  axis always reads cleanly — and wide enough to be useful when nothing is
+ *  scheduled yet (lo/hi collapse to today). */
+function rangeFor(zoom: TimelineZoom, lo: Date, hi: Date): { origin: Date; end: Date } {
+  switch (zoom) {
+    case "week":
+      return { origin: startOfWeek(addDays(lo, -10), { weekStartsOn: 1 }), end: endOfWeek(addDays(hi, 18), { weekStartsOn: 1 }) };
+    case "month":
+      return { origin: startOfMonth(addMonths(lo, -1)), end: endOfMonth(addMonths(hi, 2)) };
+    case "quarter":
+      return { origin: startOfMonth(addMonths(lo, -2)), end: endOfMonth(addMonths(hi, 4)) };
+    case "year":
+      return { origin: startOfMonth(addMonths(lo, -3)), end: endOfMonth(addMonths(hi, 11)) };
+  }
+}
+
+/** Two header tiers + gridlines + weekend bands for the active zoom. */
+function buildTicks(zoom: TimelineZoom, origin: Date, end: Date, x: (ms: number) => number) {
+  const majors: Tick[] = [];
+  const minors: Tick[] = [];
+  const weekends: Tick[] = [];
+  const months = eachMonthOfInterval({ start: origin, end });
+  const endMs = end.getTime();
+
+  // weekend shading reads only at the tighter zooms
+  if (zoom === "week" || zoom === "month") {
+    for (const d of eachDayOfInterval({ start: origin, end })) {
+      if (isWeekend(d)) weekends.push({ key: `we-${d.getTime()}`, left: x(d.getTime()), label: "", width: x(d.getTime() + DAY) - x(d.getTime()) });
+    }
+  }
+
+  if (zoom === "week" || zoom === "month") {
+    for (const m of months) {
+      const right = Math.min(addMonths(m, 1).getTime(), endMs);
+      majors.push({ key: `mo-${m.getTime()}`, left: x(m.getTime()), width: x(right) - x(m.getTime()), label: `${MONTHS[m.getMonth()]} ${String(m.getFullYear()).slice(2)}` });
+    }
+  } else if (zoom === "quarter") {
+    let q = startOfQuarterLocal(origin);
+    while (q.getTime() <= endMs) {
+      const nq = addMonths(q, 3);
+      majors.push({ key: `q-${q.getTime()}`, left: x(q.getTime()), width: x(Math.min(nq.getTime(), endMs)) - x(q.getTime()), label: `Q${Math.floor(q.getMonth() / 3) + 1} ${q.getFullYear()}` });
+      q = nq;
+    }
+  } else {
+    let y = startOfYear(origin);
+    while (y.getTime() <= endMs) {
+      const ny = new Date(y.getFullYear() + 1, 0, 1);
+      majors.push({ key: `y-${y.getTime()}`, left: x(y.getTime()), width: x(Math.min(ny.getTime(), endMs)) - x(y.getTime()), label: `${y.getFullYear()}` });
+      y = ny;
+    }
+  }
+
+  if (zoom === "week") {
+    for (const d of eachDayOfInterval({ start: origin, end })) {
+      minors.push({ key: `d-${d.getTime()}`, left: x(d.getTime()), label: `${WEEKDAY[d.getDay()]} ${d.getDate()}`, strong: d.getDay() === 1, weekend: isWeekend(d), width: x(d.getTime() + DAY) - x(d.getTime()) });
+    }
+  } else if (zoom === "month") {
+    for (const w of eachWeekOfInterval({ start: origin, end }, { weekStartsOn: 1 })) {
+      minors.push({ key: `w-${w.getTime()}`, left: x(w.getTime()), label: `${w.getDate()}`, strong: true });
+    }
+  } else {
+    for (const m of months) {
+      minors.push({ key: `m-${m.getTime()}`, left: x(m.getTime()), label: MONTHS[m.getMonth()], strong: m.getMonth() % 3 === 0 });
+    }
+  }
+
+  return { majors, minors, weekends };
+}
+
+function loadZoom(key: string | undefined, fallback: TimelineZoom): TimelineZoom {
+  if (!key) return fallback;
+  try {
+    const raw = localStorage.getItem(`nuvo.timeline.zoom.${key}`);
+    return raw === "week" || raw === "month" || raw === "quarter" || raw === "year" ? raw : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const ROW = 34;
+const AXIS_H = 42;
+const LABEL_W = 172;
+const MIN_BAR = 10;
+const EMPTY_H = 132;
 
 export function Timeline({
   items,
   today = new Date(),
   selection,
+  persistKey,
+  defaultZoom = "month",
 }: {
   items: TimelineItem[];
   today?: Date;
   selection?: CollectionSelection;
+  /** persist the chosen zoom level per surface */
+  persistKey?: string;
+  defaultZoom?: TimelineZoom;
 }) {
-  const barsRef = useRef<HTMLDivElement>(null);
-  // live preview while dragging a bar (commit on release)
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState<TimelineZoom>(() => loadZoom(persistKey, defaultZoom));
+  const spec = ZOOMS.find((z) => z.id === zoom) ?? ZOOMS[1];
+  const pxPerDay = spec.pxPerDay;
+
+  // live preview while dragging an existing bar (commit on release)
   const [drag, setDrag] = useState<{ id: string; start: number; end: number } | null>(null);
-  const session = useRef<{ mode: DragMode; startX: number; origStart: number; origEnd: number; msPerPx: number; moved: boolean } | null>(null);
+  const session = useRef<{ mode: DragMode; startX: number; origStart: number; origEnd: number; moved: boolean } | null>(null);
+
+  // live preview while dragging an undated item in from the tray
+  const [tray, setTray] = useState<{ id: string; x: number; y: number; ms: number | null } | null>(null);
+  const trayRef = useRef<{ moved: boolean } | null>(null);
+
+  const choose = (z: TimelineZoom) => {
+    setZoom(z);
+    if (persistKey) {
+      try { localStorage.setItem(`nuvo.timeline.zoom.${persistKey}`, z); } catch { /* ignore */ }
+    }
+  };
 
   const dated = items.filter((i) => i.start || i.end);
+  const undated = items.filter((i) => !i.start && !i.end);
+
   const stamps = dated.flatMap((i) => [parse(i.start), parse(i.end)].filter((x): x is number => x != null));
   const todayMs = today.getTime();
-  if (stamps.length === 0) {
-    return <div className="mono py-6 text-center text-[11px] text-muted">No dated work yet — set start/target dates to see the timeline.</div>;
-  }
+  const lo = new Date(stamps.length ? Math.min(...stamps, todayMs) : todayMs);
+  const hi = new Date(stamps.length ? Math.max(...stamps, todayMs) : todayMs);
+  const { origin, end } = rangeFor(zoom, lo, hi);
+  const originMs = origin.getTime();
+  const x = (ms: number) => ((ms - originMs) / DAY) * pxPerDay;
+  const totalWidth = Math.max(1, Math.ceil(x(end.getTime())));
+  const { majors, minors, weekends } = buildTicks(zoom, origin, end, x);
+  const todayX = x(snapDay(todayMs) + DAY / 2);
 
-  let min = Math.min(...stamps, todayMs);
-  let max = Math.max(...stamps, todayMs);
-  // pad the range by ~8% on each side, min 10 days
-  const pad = Math.max(10 * DAY, (max - min) * 0.08);
-  min -= pad;
-  max += pad;
-  const span = max - min || DAY;
-  const pos = (ms: number) => ((ms - min) / span) * 100;
+  const bodyRows = dated.length;
+  const bodyHeight = Math.max(bodyRows * ROW + (tray ? ROW : 0), EMPTY_H);
 
-  // month gridlines
-  const gridlines: { left: number; label: string }[] = [];
-  const cur = new Date(min);
-  cur.setDate(1);
-  cur.setHours(0, 0, 0, 0);
-  while (cur.getTime() <= max) {
-    gridlines.push({ left: pos(cur.getTime()), label: `${MONTHS[cur.getMonth()]}` });
-    cur.setMonth(cur.getMonth() + 1);
-  }
+  // re-centre on today when the zoom changes (and on first paint)
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = Math.max(0, x(snapDay(todayMs)) - el.clientWidth * 0.32);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom]);
 
-  const startDrag = (it: TimelineItem, mode: DragMode, e: ReactPointerEvent) => {
-    if (!it.onChangeDates || !barsRef.current) return;
+  const edgeScroll = (clientX: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (clientX < r.left + 36) el.scrollLeft -= 14;
+    else if (clientX > r.right - 36) el.scrollLeft += 14;
+  };
+
+  const centerToday = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ left: Math.max(0, x(snapDay(todayMs)) - el.clientWidth * 0.32), behavior: "smooth" });
+  };
+  const nudge = (dir: -1 | 1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" });
+  };
+
+  // ── drag an existing bar: move the whole span, or pull an edge ─────────────
+  const startBarDrag = (it: TimelineItem, mode: DragMode, e: ReactPointerEvent) => {
+    if (!it.onChangeDates) return;
     e.preventDefault();
     e.stopPropagation();
-    const width = barsRef.current.getBoundingClientRect().width;
     const origStart = parse(it.start) ?? parse(it.end)!;
     const origEnd = parse(it.end) ?? parse(it.start)!;
-    session.current = { mode, startX: e.clientX, origStart, origEnd, msPerPx: span / width, moved: false };
+    const msPerPx = DAY / pxPerDay;
+    session.current = { mode, startX: e.clientX, origStart, origEnd, moved: false };
     setDrag({ id: it.id, start: origStart, end: origEnd });
 
     const onMove = (ev: PointerEvent) => {
       const s = session.current;
       if (!s) return;
-      const dms = (ev.clientX - s.startX) * s.msPerPx;
+      const dms = (ev.clientX - s.startX) * msPerPx;
       if (Math.abs(ev.clientX - s.startX) > 3) s.moved = true;
       let start = s.origStart;
-      let end = s.origEnd;
-      if (s.mode === "move") { start = snapDay(s.origStart + dms); end = start + (s.origEnd - s.origStart); }
+      let endMs = s.origEnd;
+      if (s.mode === "move") { start = snapDay(s.origStart + dms); endMs = start + (s.origEnd - s.origStart); }
       else if (s.mode === "start") { start = Math.min(snapDay(s.origStart + dms), s.origEnd); }
-      else { end = Math.max(snapDay(s.origEnd + dms), s.origStart); }
-      setDrag({ id: it.id, start, end });
+      else { endMs = Math.max(snapDay(s.origEnd + dms), s.origStart); }
+      setDrag({ id: it.id, start, end: endMs });
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       const s = session.current;
       session.current = null;
-      setDrag((cur2) => {
-        if (s && cur2) {
-          if (s.moved) it.onChangeDates!(it.start ? toISO(cur2.start) : null, it.end ? toISO(cur2.end) : null);
+      setDrag((cur) => {
+        if (s && cur) {
+          if (s.moved) it.onChangeDates!(it.start ? toISO(cur.start) : null, it.end ? toISO(cur.end) : null);
           else it.onClick?.();
         }
         return null;
@@ -476,89 +637,280 @@ export function Timeline({
     window.addEventListener("pointerup", onUp);
   };
 
-  const ROW = 30;
-  const LABEL_W = selection ? 132 : 0;
+  // ── drag an undated item from the tray onto the grid ───────────────────────
+  const overMsFromPointer = (clientX: number, clientY: number): number | null => {
+    const body = bodyRef.current;
+    if (!body) return null;
+    const r = body.getBoundingClientRect();
+    if (clientY < r.top - 8 || clientY > r.bottom + 8) return null;
+    const local = clientX - r.left;
+    if (local < -4 || local > r.width + 4) return null;
+    return originMs + (Math.max(0, local) / pxPerDay) * DAY;
+  };
+
+  const startTrayDrag = (it: TimelineItem, e: ReactPointerEvent) => {
+    if (!it.onChangeDates) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    trayRef.current = { moved: false };
+    setTray({ id: it.id, x: startX, y: startY, ms: overMsFromPointer(startX, startY) });
+
+    const onMove = (ev: PointerEvent) => {
+      const t = trayRef.current;
+      if (!t) return;
+      if (Math.abs(ev.clientX - startX) > 3 || Math.abs(ev.clientY - startY) > 3) t.moved = true;
+      edgeScroll(ev.clientX);
+      setTray({ id: it.id, x: ev.clientX, y: ev.clientY, ms: overMsFromPointer(ev.clientX, ev.clientY) });
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const t = trayRef.current;
+      trayRef.current = null;
+      const ms = overMsFromPointer(ev.clientX, ev.clientY);
+      setTray(null);
+      if (!t) return;
+      if (t.moved && ms != null) {
+        const start = snapDay(ms);
+        it.onChangeDates!(toISO(start), toISO(start + spec.dropSpanDays * DAY));
+      } else if (!t.moved) {
+        it.onClick?.();
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   return (
-    <div className="overflow-hidden rounded-md border border-line bg-surface" style={{ userSelect: drag ? "none" : "auto" }}>
-      <div className="flex border-b border-line bg-bg">
-        {selection && (
-          <div className="mono shrink-0 border-r border-line px-2 py-1.5 text-[9px] uppercase text-muted" style={{ width: LABEL_W }}>
-            Name
-          </div>
-        )}
-        <div ref={barsRef} className="relative h-6 min-w-0 flex-1">
-          {gridlines.map((g, i) => (
-            <div key={i} className="absolute top-0 bottom-0 flex items-center pl-1" style={{ left: `${g.left}%` }}>
-              <div className="mono text-[9px] uppercase text-muted">{g.label}</div>
-            </div>
+    <div className="overflow-hidden rounded-md border border-line bg-surface" style={{ userSelect: drag || tray ? "none" : "auto" }}>
+      {/* toolbar — zoom · navigation · counts */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-bg px-2.5 py-1.5">
+        <div className="inline-flex rounded-md border border-line p-0.5">
+          {ZOOMS.map((z) => (
+            <button
+              key={z.id}
+              onClick={() => choose(z.id)}
+              className="fast mono rounded-[5px] px-2 py-0.5 text-[10px]"
+              style={{ background: zoom === z.id ? "var(--accent)" : "transparent", color: zoom === z.id ? "#fff" : "var(--muted)" }}
+            >
+              {z.label}
+            </button>
           ))}
         </div>
+        <div className="inline-flex items-center gap-0.5">
+          <button onClick={() => nudge(-1)} title="Earlier" className="fast mono flex h-6 w-6 items-center justify-center rounded border border-line text-[12px] text-muted hover:text-ink">‹</button>
+          <button onClick={centerToday} title="Jump to today" className="fast mono rounded border border-line px-2 py-0.5 text-[10px] text-muted hover:text-ink">Today</button>
+          <button onClick={() => nudge(1)} title="Later" className="fast mono flex h-6 w-6 items-center justify-center rounded border border-line text-[12px] text-muted hover:text-ink">›</button>
+        </div>
+        <div className="flex-1" />
+        <span className="mono text-[10px] text-muted">
+          {dated.length} scheduled{undated.length ? ` · ${undated.length} unscheduled` : ""}
+        </span>
       </div>
-      <div>
-        {dated.map((it, row) => {
-          const live = drag && drag.id === it.id ? drag : null;
-          const s = live ? live.start : parse(it.start) ?? parse(it.end)!;
-          const e = live ? live.end : parse(it.end) ?? parse(it.start)!;
-          const left = pos(Math.min(s, e));
-          const width = Math.max(2, pos(Math.max(s, e)) - pos(Math.min(s, e)));
-          const editable = !!it.onChangeDates;
-          const picked = selection?.isSelected(it.id);
-          const preview = selection?.isPreviewSelected(it.id);
-          const visual = picked ? "selected" : preview ? "preview" : "none";
-          return (
-            <div
-              key={it.id}
-              data-select-id={it.id}
-              ref={(el) => selection?.registerRef(it.id, el)}
-              onMouseDown={selection ? selection.itemPointerDown(it.id) : undefined}
-              className={`flex ${selection ? itemSelectRowClass(selection, it.id) : ""}`}
-              style={{ height: ROW }}
-            >
-              {selection && (
-                <div className="flex shrink-0 items-center gap-1 border-r border-line px-2" style={{ width: LABEL_W }} data-no-select>
-                  <SelectCheckbox
-                    checked={visual === "selected"}
-                    preview={visual === "preview"}
-                    onToggle={() => selection.pick(it.id, { extend: true, range: false })}
-                  />
-                  <span className="truncate text-[10px] text-ink" onDoubleClick={it.onClick}>{it.label}</span>
-                </div>
-              )}
-              <div className="relative min-w-0 flex-1">
-                {row === 0 && gridlines.map((g, i) => (
-                  <div key={i} className="pointer-events-none absolute top-0 bottom-0 w-px bg-line" style={{ left: `${g.left}%` }} />
-                ))}
-                {row === 0 && (
-                  <div className="pointer-events-none absolute top-0 bottom-0 w-px" style={{ left: `${pos(todayMs)}%`, background: "var(--signal)" }} />
+
+      {/* chart — fixed name column + horizontally-scrolling grid */}
+      <div className="flex">
+        <div className="shrink-0 border-r border-line" style={{ width: LABEL_W }}>
+          <div className="border-b border-line bg-bg" style={{ height: AXIS_H }}>
+            <div className="mono flex h-full items-end px-2.5 pb-1 text-[9px] uppercase text-muted">Name</div>
+          </div>
+          {dated.map((it) => {
+            const picked = selection?.isSelected(it.id);
+            const preview = selection?.isPreviewSelected(it.id);
+            const visual = picked ? "selected" : preview ? "preview" : "none";
+            return (
+              <div
+                key={it.id}
+                data-select-id={selection ? it.id : undefined}
+                ref={selection ? (el) => selection.registerRef(it.id, el) : undefined}
+                onMouseDown={selection ? selection.itemPointerDown(it.id) : undefined}
+                className={`flex items-center gap-1.5 px-2.5 ${selection ? itemSelectRowClass(selection, it.id) : "hover:bg-accent-soft/50"}`}
+                style={{ height: ROW }}
+              >
+                {selection && (
+                  <span data-no-select>
+                    <SelectCheckbox
+                      checked={visual === "selected"}
+                      preview={visual === "preview"}
+                      onToggle={() => selection.pick(it.id, { extend: true, range: false })}
+                    />
+                  </span>
                 )}
-                <div
-                  className="group absolute z-10"
-                  style={{ top: 6, left: `${left}%`, width: `${width}%`, height: ROW - 12, minWidth: 80 }}
-                >
-                  <div
-                    onPointerDown={editable ? (ev) => startDrag(it, "move", ev) : undefined}
-                    onClick={!editable ? it.onClick : undefined}
-                    className={`fast relative flex h-full items-center overflow-hidden rounded-sm px-2 text-left ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
-                    style={{ background: it.dim ? "var(--bg)" : `${it.color}22`, border: `1px solid ${it.color}`, opacity: it.dim ? 0.6 : 1 }}
-                    title={editable ? `${it.label} — drag to move, edges to resize` : it.label}
-                    data-no-select
-                  >
-                    <div className="absolute left-0 top-0 bottom-0 rounded-sm" style={{ width: `${it.progress}%`, background: `${it.color}33` }} />
-                    <span className="relative truncate text-[11px] text-ink">{it.label}</span>
-                    <span className="relative mono ml-auto pl-2 text-[9px] text-muted">{it.progress}%</span>
-                  </div>
-                  {editable && (
-                    <>
-                      <span onPointerDown={(ev) => startDrag(it, "start", ev)} className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-l-sm opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the start" data-no-select />
-                      <span onPointerDown={(ev) => startDrag(it, "end", ev)} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-r-sm opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the target" data-no-select />
-                    </>
-                  )}
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: it.color, opacity: it.dim ? 0.5 : 1 }} />
+                <button onClick={it.onClick} className="fast truncate text-left text-[11px] text-ink hover:text-accent" title={it.label}>{it.label || "Untitled"}</button>
+              </div>
+            );
+          })}
+          {dated.length === 0 && <div className="px-2.5" style={{ height: EMPTY_H }} aria-hidden />}
+        </div>
+
+        <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto">
+          <div style={{ width: totalWidth }}>
+            {/* axis */}
+            <div className="relative border-b border-line bg-bg" style={{ height: AXIS_H }}>
+              {majors.map((g) => (
+                <div key={g.key} className="absolute top-0 flex items-center overflow-hidden border-r border-line px-1.5" style={{ left: g.left, width: g.width, height: 19 }}>
+                  <span className="mono whitespace-nowrap text-[9px] font-semibold uppercase tracking-wide text-muted">{g.label}</span>
                 </div>
+              ))}
+              {minors.map((t) => (
+                <div
+                  key={t.key}
+                  className="absolute flex items-end pb-1"
+                  style={{ left: t.left, top: 19, bottom: 0, width: t.width ?? 26, paddingLeft: t.width ? 0 : 3, justifyContent: t.width ? "center" : "flex-start" }}
+                >
+                  <span className={`mono whitespace-nowrap text-[9px] ${t.weekend ? "text-muted/55" : "text-muted"}`}>{t.label}</span>
+                </div>
+              ))}
+              <div className="absolute -top-px flex flex-col items-center" style={{ left: todayX, transform: "translateX(-50%)" }}>
+                <span className="mono rounded-sm px-1 text-[8px] font-semibold uppercase tracking-wide text-white" style={{ background: "var(--signal)" }}>Today</span>
               </div>
             </div>
-          );
-        })}
+
+            {/* body */}
+            <div ref={bodyRef} className="relative" style={{ height: bodyHeight }}>
+              {/* background: weekend bands · gridlines · today */}
+              <div className="pointer-events-none absolute inset-0">
+                {weekends.map((w) => (
+                  <div key={w.key} className="absolute top-0 bottom-0" style={{ left: w.left, width: w.width, background: "color-mix(in srgb, var(--muted) 7%, transparent)" }} />
+                ))}
+                {minors.map((t) => (
+                  <div key={t.key} className="absolute top-0 bottom-0 w-px" style={{ left: t.left, background: t.strong ? "var(--line-strong)" : "color-mix(in srgb, var(--line) 55%, transparent)" }} />
+                ))}
+                <div className="absolute top-0 bottom-0 w-px" style={{ left: todayX, background: "var(--signal)", opacity: 0.7 }} />
+              </div>
+
+              {/* bars */}
+              {dated.map((it, row) => {
+                const live = drag && drag.id === it.id ? drag : null;
+                const sMs = live ? live.start : parse(it.start) ?? parse(it.end)!;
+                const eMs = live ? live.end : parse(it.end) ?? parse(it.start)!;
+                const a = Math.min(sMs, eMs);
+                const b = Math.max(sMs, eMs) + DAY; // end-inclusive
+                const left = x(a);
+                const width = Math.max(MIN_BAR, x(b) - left);
+                const editable = !!it.onChangeDates;
+                const wide = width > 64;
+                return (
+                  <div key={it.id} className="group absolute" style={{ top: row * ROW + 6, left, width, height: ROW - 12 }}>
+                    <div
+                      onPointerDown={editable ? (ev) => startBarDrag(it, "move", ev) : undefined}
+                      onClick={!editable ? it.onClick : undefined}
+                      className={`fast relative flex h-full items-center overflow-hidden rounded px-2 ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                      style={{ background: it.dim ? "var(--bg)" : `${it.color}26`, border: `1px solid ${it.color}`, opacity: it.dim ? 0.6 : 1 }}
+                      title={`${it.label}${it.start ? ` · ${fmtDate(it.start)}` : ""}${it.end ? ` → ${fmtDate(it.end)}` : ""} · ${it.progress}%`}
+                    >
+                      <div className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.max(0, Math.min(100, it.progress))}%`, background: `${it.color}33` }} />
+                      {wide ? (
+                        <>
+                          <span className="relative truncate text-[10px] text-ink">{it.label}</span>
+                          <span className="relative mono ml-auto pl-2 text-[9px] text-muted">{it.progress}%</span>
+                        </>
+                      ) : (
+                        <span className="relative mono text-[9px] text-muted">{it.progress > 0 ? `${it.progress}%` : ""}</span>
+                      )}
+                    </div>
+                    {editable && (
+                      <>
+                        <span onPointerDown={(ev) => startBarDrag(it, "start", ev)} className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-l opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the start" />
+                        <span onPointerDown={(ev) => startBarDrag(it, "end", ev)} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-r opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the target" />
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* tray-drop indicator */}
+              {tray && tray.ms != null && (() => {
+                const start = snapDay(tray.ms);
+                const gl = x(start);
+                const gw = Math.max(MIN_BAR, x(start + spec.dropSpanDays * DAY) - gl);
+                const it = undated.find((u) => u.id === tray.id);
+                const c = it?.color ?? "var(--accent)";
+                return (
+                  <>
+                    <div className="pointer-events-none absolute top-0 bottom-0 w-px" style={{ left: gl, background: "var(--accent)" }} />
+                    <div className="pointer-events-none absolute rounded border-2 border-dashed" style={{ left: gl, top: bodyRows * ROW + 6, width: gw, height: ROW - 12, borderColor: c, background: `${c}1f` }} />
+                    <div className="pointer-events-none absolute mono text-[9px] font-semibold text-accent" style={{ left: gl + 3, top: Math.max(0, bodyRows * ROW - 8) }}>{fmtDate(toISO(start))}</div>
+                  </>
+                );
+              })()}
+
+              {/* empty hint — the grid still renders so the surface never reads blank */}
+              {dated.length === 0 && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center">
+                  <span className="mono max-w-[420px] text-[11px] text-muted">
+                    {undated.length
+                      ? "Nothing scheduled yet — drag a card up from Unassigned onto the grid to give it dates."
+                      : "No dated work yet. Set a start/target date to place it on the timeline."}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* unassigned tray — find loose work and drag it in, Notion-style */}
+      {undated.length > 0 && <UnassignedTray items={undated} draggingId={tray?.id ?? null} onStart={startTrayDrag} />}
+
+      {/* floating ghost following the cursor during a tray drag */}
+      {tray && (() => {
+        const it = undated.find((u) => u.id === tray.id);
+        if (!it) return null;
+        return (
+          <div
+            className="pointer-events-none fixed z-[300] flex items-center gap-1.5 rounded border bg-surface px-2 py-1 text-[10px] shadow-lg"
+            style={{ left: tray.x + 12, top: tray.y + 12, borderColor: it.color }}
+          >
+            <span className="h-2 w-2 rounded-full" style={{ background: it.color }} />
+            <span className="max-w-[160px] truncate text-ink">{it.label || "Untitled"}</span>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function UnassignedTray({
+  items,
+  draggingId,
+  onStart,
+}: {
+  items: TimelineItem[];
+  draggingId: string | null;
+  onStart: (it: TimelineItem, e: ReactPointerEvent) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="border-t border-line bg-bg/60 px-2.5 py-2">
+      <button onClick={() => setOpen((o) => !o)} className="fast mono mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted hover:text-ink">
+        <span className="text-[8px]">{open ? "▾" : "▸"}</span>
+        Unassigned · {items.length}
+        <span className="ml-1 normal-case tracking-normal text-muted/70">drag onto the grid to schedule</span>
+      </button>
+      {open && (
+        <div className="flex flex-wrap gap-1.5">
+          {items.map((it) => {
+            const editable = !!it.onChangeDates;
+            return (
+              <div
+                key={it.id}
+                data-no-select
+                onPointerDown={editable ? (e) => onStart(it, e) : undefined}
+                onClick={!editable ? it.onClick : undefined}
+                className={`fast flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11px] ${editable ? "cursor-grab active:cursor-grabbing hover:border-muted" : "cursor-pointer"} ${draggingId === it.id ? "opacity-40" : ""}`}
+                title={editable ? `${it.label} — drag onto the grid to schedule` : it.label}
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: it.color }} />
+                <span className="max-w-[200px] truncate text-ink">{it.label || "Untitled"}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

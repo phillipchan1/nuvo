@@ -674,14 +674,13 @@ function TimelineView({ config, selection }: { config: CollectionConfig; selecti
     onClick: r.open,
     onChangeDates: (start, end) => { r.setStartDate(start); r.setTargetDate(end); },
   }));
-  const undated = config.records.filter((r) => !r.startDate && !r.targetDate).length;
   return (
     <SelectionSurface selection={selection}>
       <Timeline
         items={items}
         selection={config.selectable ? selection : undefined}
+        persistKey={config.storageKey}
       />
-      {undated > 0 && <div className="mono mt-2 shrink-0 text-[10px] text-muted">{undated} record{undated === 1 ? "" : "s"} hidden — no dates set.</div>}
       <div className="min-h-[10rem] flex-1" aria-hidden />
     </SelectionSurface>
   );
