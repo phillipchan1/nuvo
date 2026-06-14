@@ -48,6 +48,9 @@ export interface CollectionRecord {
   setDomain?: (domainId: string) => void;
   setStartDate: (v: string | null) => void;
   setTargetDate: (v: string | null) => void;
+  /** Set both dates in one write — avoids a refetch race when dragging a
+   *  timeline bar (which moves start + target together). */
+  setDates?: (start: string | null, target: string | null) => void;
   open: () => void;
 }
 
@@ -672,7 +675,10 @@ function TimelineView({ config, selection }: { config: CollectionConfig; selecti
     progress: r.progress,
     dim: r.status === "complete" || r.status === "done" || r.status === "shipped" || r.status === "dropped",
     onClick: r.open,
-    onChangeDates: (start, end) => { r.setStartDate(start); r.setTargetDate(end); },
+    onChangeDates: (start, end) => {
+      if (r.setDates) r.setDates(start, end);
+      else { r.setStartDate(start); r.setTargetDate(end); }
+    },
   }));
   return (
     <SelectionSurface selection={selection}>

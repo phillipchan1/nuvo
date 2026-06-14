@@ -540,7 +540,6 @@ export function Timeline({
 
   // live preview while dragging an existing bar (commit on release)
   const [drag, setDrag] = useState<{ id: string; start: number; end: number } | null>(null);
-  const session = useRef<{ mode: DragMode; startX: number; origStart: number; origEnd: number; moved: boolean } | null>(null);
 
   // live preview while dragging an undated item in from the tray
   const [tray, setTray] = useState<{ id: string; x: number; y: number; ms: number | null } | null>(null);
@@ -602,36 +601,35 @@ export function Timeline({
     if (!it.onChangeDates) return;
     e.preventDefault();
     e.stopPropagation();
+    const startX = e.clientX;
     const origStart = parse(it.start) ?? parse(it.end)!;
     const origEnd = parse(it.end) ?? parse(it.start)!;
     const msPerPx = DAY / pxPerDay;
-    session.current = { mode, startX: e.clientX, origStart, origEnd, moved: false };
+    let moved = false;
+    let liveStart = origStart;
+    let liveEnd = origEnd;
     setDrag({ id: it.id, start: origStart, end: origEnd });
 
     const onMove = (ev: PointerEvent) => {
-      const s = session.current;
-      if (!s) return;
-      const dms = (ev.clientX - s.startX) * msPerPx;
-      if (Math.abs(ev.clientX - s.startX) > 3) s.moved = true;
-      let start = s.origStart;
-      let endMs = s.origEnd;
-      if (s.mode === "move") { start = snapDay(s.origStart + dms); endMs = start + (s.origEnd - s.origStart); }
-      else if (s.mode === "start") { start = Math.min(snapDay(s.origStart + dms), s.origEnd); }
-      else { endMs = Math.max(snapDay(s.origEnd + dms), s.origStart); }
+      const dms = (ev.clientX - startX) * msPerPx;
+      if (Math.abs(ev.clientX - startX) > 3) moved = true;
+      let start = origStart;
+      let endMs = origEnd;
+      if (mode === "move") { start = snapDay(origStart + dms); endMs = start + (origEnd - origStart); }
+      else if (mode === "start") { start = Math.min(snapDay(origStart + dms), origEnd); }
+      else { endMs = Math.max(snapDay(origEnd + dms), origStart); }
+      liveStart = start;
+      liveEnd = endMs;
       setDrag({ id: it.id, start, end: endMs });
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      const s = session.current;
-      session.current = null;
-      setDrag((cur) => {
-        if (s && cur) {
-          if (s.moved) it.onChangeDates!(it.start ? toISO(cur.start) : null, it.end ? toISO(cur.end) : null);
-          else it.onClick?.();
-        }
-        return null;
-      });
+      setDrag(null);
+      // commit OUTSIDE the state updater — a side-effect in a reducer is
+      // double-invoked under StrictMode and writes twice
+      if (moved) it.onChangeDates!(it.start ? toISO(liveStart) : null, it.end ? toISO(liveEnd) : null);
+      else it.onClick?.();
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -794,13 +792,13 @@ export function Timeline({
                 const editable = !!it.onChangeDates;
                 const wide = width > 64;
                 return (
-                  <div key={it.id} className="group absolute" style={{ top: row * ROW + 6, left, width, height: ROW - 12 }}>
+                  <div key={it.id} data-no-select className="group absolute" style={{ top: row * ROW + 6, left, width, height: ROW - 12 }}>
                     <div
                       onPointerDown={editable ? (ev) => startBarDrag(it, "move", ev) : undefined}
                       onClick={!editable ? it.onClick : undefined}
                       className={`fast relative flex h-full items-center overflow-hidden rounded px-2 ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                       style={{ background: it.dim ? "var(--bg)" : `${it.color}26`, border: `1px solid ${it.color}`, opacity: it.dim ? 0.6 : 1 }}
-                      title={`${it.label}${it.start ? ` · ${fmtDate(it.start)}` : ""}${it.end ? ` → ${fmtDate(it.end)}` : ""} · ${it.progress}%`}
+                      title={`${it.label}${it.start ? ` · ${fmtDate(it.start)}` : ""}${it.end ? ` → ${fmtDate(it.end)}` : ""} · ${it.progress}%${editable ? " · drag to move, edges to resize" : ""}`}
                     >
                       <div className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.max(0, Math.min(100, it.progress))}%`, background: `${it.color}33` }} />
                       {wide ? (
@@ -814,8 +812,22 @@ export function Timeline({
                     </div>
                     {editable && (
                       <>
-                        <span onPointerDown={(ev) => startBarDrag(it, "start", ev)} className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-l opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the start" />
-                        <span onPointerDown={(ev) => startBarDrag(it, "end", ev)} className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize rounded-r opacity-0 group-hover:opacity-100" style={{ background: it.color }} title="Drag the target" />
+                        <span
+                          onPointerDown={(ev) => startBarDrag(it, "start", ev)}
+                          className="fast absolute -left-0.5 top-0 bottom-0 flex w-3 cursor-ew-resize items-center justify-center rounded-l opacity-0 group-hover:opacity-100"
+                          style={{ background: it.color }}
+                          title="Drag to change the start date"
+                        >
+                          <span className="h-2.5 w-px rounded bg-white/80" />
+                        </span>
+                        <span
+                          onPointerDown={(ev) => startBarDrag(it, "end", ev)}
+                          className="fast absolute -right-0.5 top-0 bottom-0 flex w-3 cursor-ew-resize items-center justify-center rounded-r opacity-0 group-hover:opacity-100"
+                          style={{ background: it.color }}
+                          title="Drag to change the target date"
+                        >
+                          <span className="h-2.5 w-px rounded bg-white/80" />
+                        </span>
                       </>
                     )}
                   </div>
