@@ -19,6 +19,7 @@ import { composeBrief, type Brief } from "../../lib/brief";
 import type { AgentMessage } from "../../lib/agentTypes";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { Btn } from "../ui";
+import Standback from "./Standback";
 
 const NAME = "Phil";
 
@@ -33,8 +34,13 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   const { data, toggleTask } = useVertical();
   const { settings } = useSettings();
   const [workingDays] = useWorkingDays();
-  const { nav, setNowMoment, back } = useAppNavigation();
+  const { nav, setNowMoment, back, openRecord, focusDomain, goRung } = useAppNavigation();
   const { nowMoment, nowTaskId } = nav;
+
+  // Today has two faces: the tactical "now" (what to start next) and the
+  // strategic "step back" (the board — bets, drift, blind spots). Same rung,
+  // one toggle between them. Local state: leaving Today resets to the now face.
+  const [mode, setMode] = useState<"now" | "standback">("now");
 
   // a live "now" — the floor can stay open for hours
   const [now, setNow] = useState(() => new Date());
@@ -131,6 +137,21 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   );
   const brief = useMemo(() => composeBrief({ now, name: NAME, dayRead, top, tired, restDay }), [now, dayRead, top, tired, restDay]);
 
+  // ── The strategic face: a step back to the board ──────────────────────────
+  if (mode === "standback") {
+    return (
+      <div className="mx-auto w-full max-w-[1080px]">
+        <ModeToggle mode={mode} setMode={setMode} />
+        <Standback
+          data={data}
+          now={now}
+          onOpenInitiative={(id) => openRecord("initiative", id)}
+          onOpenDomain={(id) => { focusDomain({ domainId: id, initiativeId: "", projectId: "" }); goRung("domain"); }}
+        />
+      </div>
+    );
+  }
+
   // ── Focusing / done are "moments": clear the day away, one thing only ──
   if (active && nowMoment === "focus") {
     return (
@@ -161,6 +182,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
 
   return (
     <div className={`mx-auto w-full ${chatOpen ? "max-w-[1460px] 2xl:max-w-[1720px]" : "max-w-[1080px]"}`}>
+      <ModeToggle mode={mode} setMode={setMode} />
       {/* Collapsed (default): one centered column, the day as the hero.
           Expanded: the chat earns a sticky right rail and reclaims the margin. */}
       <div className={chatOpen ? "xl:grid xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start xl:gap-x-10" : ""}>
@@ -288,6 +310,39 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
         </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// The two faces of Today: "Right now" (tactical — what to start) and "Step
+// back" (strategic — the board). A quiet segmented control, not a new rung, so
+// the altitude ladder keeps its muscle memory and the two reads stay paired.
+function ModeToggle({ mode, setMode }: { mode: "now" | "standback"; setMode: (m: "now" | "standback") => void }) {
+  const tabs: { id: "now" | "standback"; label: string }[] = [
+    { id: "now", label: "Right now" },
+    { id: "standback", label: "Step back" },
+  ];
+  return (
+    <div className="mb-4 inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
+      {tabs.map((t) => {
+        const on = t.id === mode;
+        return (
+          <button
+            key={t.id}
+            onClick={() => setMode(t.id)}
+            className="fast mono rounded-full px-3 py-1 text-[11px]"
+            style={{
+              background: on ? "var(--surface)" : "transparent",
+              color: on ? "var(--accent)" : "var(--muted)",
+              fontWeight: on ? 600 : 400,
+              boxShadow: on ? "var(--shadow-1)" : "none",
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
