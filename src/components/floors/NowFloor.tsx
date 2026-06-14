@@ -194,15 +194,18 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
           )}
 
           {restDay && !showPicks ? (
-            <div className={dayRead.current || dayRead.upcoming.length ? "mt-6" : ""}>
-              <RestPanel
-                weekday={now.toLocaleDateString([], { weekday: "long" })}
-                label={dayRead.current ? "The rest of today" : "Right now"}
-                hasPlans={Boolean(dayRead.current || dayRead.upcoming.length)}
-                canPick={suggestions.length > 0}
-                onPick={() => setShowPicks(true)}
-              />
-            </div>
+            // The brief above is already Nuvo's rest message — so here we add
+            // nothing that repeats it, only a quiet way in if you want one.
+            suggestions.length > 0 ? (
+              <div className={dayRead.current || dayRead.upcoming.length ? "mt-6" : "mt-1"}>
+                <button
+                  onClick={() => setShowPicks(true)}
+                  className="fast text-[12.5px] text-muted underline-offset-2 hover:text-accent hover:underline"
+                >
+                  Want to get a jump on something? →
+                </button>
+              </div>
+            ) : null
           ) : top ? (
             <div className={dayRead.current || dayRead.upcoming.length ? "mt-6" : ""}>
               <div className="section-label mb-2">
@@ -685,37 +688,6 @@ function GapAnchor({ activeGap, current, accent }: { activeGap: Gap | null; curr
   return (
     <div className="mono mt-2 flex items-center gap-1.5 text-[10.5px]" style={{ color: accent ?? "var(--accent)" }}>
       <span>↳</span> {text}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// A day off — so Now stops being a queue. Instead of the next task to start,
-// it holds the rest: today is yours, here's only what's actually planned. The
-// work backlog stays out of sight behind a quiet, deliberate opt-in.
-function RestPanel({
-  weekday, label, hasPlans, canPick, onPick,
-}: {
-  weekday: string;
-  label: string;
-  hasPlans: boolean;
-  canPick: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <div className="rounded-lg border border-line bg-surface-2 p-5">
-      <div className="section-label mb-1.5 text-muted">{label}</div>
-      <div className="text-[16px] font-medium">Enjoy your {weekday}.</div>
-      <p className="mt-1.5 max-w-[460px] text-[13px] leading-relaxed text-muted">
-        {hasPlans
-          ? "Just what's on your calendar — nothing else is asking for you. The work will keep."
-          : "Nothing's scheduled and nothing's due. Take the day — I'll have your week ready when you're back to it."}
-      </p>
-      {canPick && (
-        <button onClick={onPick} className="fast mt-3.5 text-[12px] text-muted underline-offset-2 hover:text-accent hover:underline">
-          Actually, show me something I could pick up →
-        </button>
-      )}
     </div>
   );
 }
