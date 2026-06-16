@@ -483,9 +483,14 @@ function BoardCard({
       data-select-id={r.id}
       ref={(el) => selection.registerRef(r.id, el)}
       onPointerDown={onStartDrag}
-      onClick={selectable ? selection.itemClickSelect(r.id) : undefined}
+      onClick={(e) => {
+        // Open card on click unless clicking an interactive element (checkbox, status pill, etc.)
+        if (!(e.target as HTMLElement).closest(SELECT_INTERACTIVE)) {
+          r.open();
+        }
+      }}
       onDoubleClick={r.open}
-      className={`fast group relative cursor-grab touch-none overflow-hidden rounded-md border bg-surface p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${
+      className={`fast group relative cursor-pointer touch-none overflow-hidden rounded-md border bg-surface p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${
         inProgress ? "border-accent/50 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_20%,transparent)]" : ""
       } ${visual === "selected" ? "border-accent/40" : visual === "preview" ? "border-accent/50 border-dashed" : inProgress ? "" : "border-line"}`}
       style={{
