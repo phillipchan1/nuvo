@@ -1,6 +1,7 @@
 // Google Calendar sync: initial full import, incremental sync-token pulls,
-// watch-channel setup/renewal, and a 5-minute polling fallback for accounts
-// whose webhook setup failed. Sync reliability beats elegance.
+// watch-channel setup/renewal, and a 5-minute polling fallback that catches up
+// any calendar a webhook didn't refresh (channels can go silent before they
+// expire). Sync reliability beats elegance.
 import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
 import {
   type CalendarEntry,
@@ -13,6 +14,10 @@ import {
 const WINDOW_PAST_DAYS = 30;
 const WINDOW_FUTURE_DAYS = 120;
 const CHANNEL_RENEW_AHEAD_MS = 48 * 3600_000;
+// Poll catches up any calendar not synced within this window. Just under the
+// 5-minute cron cadence so a calendar with a dead webhook is re-synced on the
+// next tick rather than skipped, while one a webhook just refreshed is left be.
+const POLL_STALE_MS = 4 * 60_000;
 
 async function saveCalendars(account: GoogleAccount) {
   const minExpiry = account.calendars
@@ -28,19 +33,29 @@ async function saveCalendars(account: GoogleAccount) {
 /** Import one calendar. Uses the stored sync token when present; on 410 the
  *  token has expired and we fall back to a windowed full import. */
 async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise<void> {
-  let pageToken: string | null = null;
-  let syncToken = cal.sync_token ?? null;
-  const fullParams = () => {
-    const p = new URLSearchParams({
+  const windowStartISO = new Date(Date.now() - WINDOW_PAST_DAYS * 86400_000).toISOString();
+  const windowEndISO = new Date(Date.now() + WINDOW_FUTURE_DAYS * 86400_000).toISOString();
+  const fullParams = () =>
+    new URLSearchParams({
       singleEvents: "true",
       maxResults: "250",
-      timeMin: new Date(Date.now() - WINDOW_PAST_DAYS * 86400_000).toISOString(),
-      timeMax: new Date(Date.now() + WINDOW_FUTURE_DAYS * 86400_000).toISOString(),
+      timeMin: windowStartISO,
+      timeMax: windowEndISO,
     });
-    return p;
-  };
 
+  let pageToken: string | null = null;
+  let syncToken = cal.sync_token ?? null;
   let usingToken = Boolean(syncToken);
+
+  // Watermark for reconciling a full window import. Captured before any upsert
+  // so every row we (re)write lands at/after it; rows we leave untouched were
+  // deleted upstream and get swept after the pass. A full import only ever
+  // *adds* events, so without this a window import never removes deletions —
+  // and once the sync token advances past a missed cancellation, incremental
+  // pulls never see it either, leaving the row permanently stuck.
+  const passStartedAt = new Date().toISOString();
+  let reconcileWindow = !usingToken;
+
   do {
     const params = usingToken
       ? new URLSearchParams({ syncToken: syncToken!, maxResults: "250" })
@@ -51,15 +66,11 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
       `/calendars/${encodeURIComponent(cal.id)}/events?${params}`,
     );
     if (res.status === 410 && usingToken) {
-      // sync token expired — restart with a full window
+      // sync token expired — restart with a full window and reconcile at the end
       usingToken = false;
       syncToken = null;
       pageToken = null;
-      await admin
-        .from("external_events")
-        .delete()
-        .eq("account_id", account.id)
-        .eq("calendar_id", cal.id);
+      reconcileWindow = true;
       continue;
     }
     if (!res.ok) throw new Error(`events list ${cal.id}: ${res.status} ${await res.text()}`);
@@ -82,17 +93,36 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
       if (error) throw error;
     }
     if (deletes.length) {
-      await admin
+      const { error: delErr } = await admin
         .from("external_events")
         .delete()
         .eq("account_id", account.id)
         .eq("calendar_id", cal.id)
         .in("provider_event_id", deletes);
+      if (delErr) throw delErr;
     }
 
     pageToken = body.nextPageToken ?? null;
     if (!pageToken && body.nextSyncToken) cal.sync_token = body.nextSyncToken;
   } while (pageToken);
+
+  // Full import: any in-window row we didn't just touch is gone upstream.
+  // Bounded to the import window so out-of-window rows (which we never fetched)
+  // survive, and only runs when the whole pass succeeded — a mid-pass throw
+  // skips this, so a partial import never deletes real events.
+  if (reconcileWindow) {
+    const { error } = await admin
+      .from("external_events")
+      .delete()
+      .eq("account_id", account.id)
+      .eq("calendar_id", cal.id)
+      .gte("start_at", windowStartISO)
+      .lt("start_at", windowEndISO)
+      .lt("last_synced_at", passStartedAt);
+    if (error) throw error;
+  }
+
+  cal.last_synced_at = new Date().toISOString();
 }
 
 /** Create (or renew) the push notification channel for one calendar. */
@@ -159,10 +189,16 @@ Deno.serve(async (req) => {
         await saveCalendars(account);
         await logSync("google", "incremental-sync", "ok", undefined, account.user_id);
       } else if (mode === "poll") {
-        // Fallback only for calendars without a live webhook channel
-        const stale = visible.filter(
-          (c) => !c.channel_expires_at || new Date(c.channel_expires_at) < new Date(),
-        );
+        // Safety net for calendars the webhook didn't refresh. A registered,
+        // unexpired channel is NOT proof Google is still delivering — channels
+        // go silent and sync then freezes with no error. So poll by freshness,
+        // not by channel state: catch up anything not synced this interval.
+        // Webhook-fresh calendars are skipped; the rest get a cheap incremental
+        // pull (sync token → usually an empty delta).
+        const stale = visible.filter((c) => {
+          const last = c.last_synced_at ? new Date(c.last_synced_at).getTime() : 0;
+          return Date.now() - last > POLL_STALE_MS;
+        });
         if (stale.length === 0) continue;
         for (const cal of stale) await syncCalendar(account, cal);
         await saveCalendars(account);

@@ -26,6 +26,8 @@ export interface Task {
   initiative_id: string | null;
   domain_id: string | null;
   sprint_id: string | null;
+  /** the priority (big rock) this task serves — see {@link BigRock}. */
+  big_rock_id: string | null;
   energy: Energy | null;
   assignee: "me" | "agent";
   prework: string;
@@ -118,13 +120,37 @@ export function restingStatus(
   return "inbox";
 }
 
-/** The week as a real entity: goal + lead initiatives + Sunday review state. */
+/**
+ * A "big rock" — one of the week's named OUTCOMES that sit above the task
+ * funnel (a rock is served by tasks and time, in service of a bet). Held on
+ * Today all week, read back in the Gain. Stored as `big_rocks` jsonb on the
+ * sprint row, so a rock is per-week, like the goal and the lead bets. How many
+ * you set is up to the week — some weeks two, some weeks five.
+ */
+export interface BigRock {
+  id: string;
+  title: string;
+  /** what winning looks like — the definition of done, in one line. */
+  win: string;
+  /** the lead bet it serves (the up-link that powers drift reads); optional. */
+  initiative_id: string | null;
+  /** an existing project this priority spotlights (its work = the project's); optional. */
+  project_id?: string | null;
+  /** set when it's checked off as moved this week. */
+  done_at: string | null;
+  /** weeks it has been carried forward unfinished — a rock that won't die. */
+  roll_count: number;
+}
+
+/** The week as a real entity: goal + lead initiatives + the three + review state. */
 export interface Sprint {
   id: string;
   user_id: string;
   week_start: string; // Monday, 'YYYY-MM-DD'
   goal: string;
   focus_initiative_ids: string[];
+  /** the week's big rocks — a small, varying set; see {@link BigRock}. */
+  big_rocks: BigRock[];
   reviewed_at: string | null;
   /** dayISO -> compose context ('normal' | 'light' | 'travel' | 'off'). */
   day_contexts: Record<string, string>;

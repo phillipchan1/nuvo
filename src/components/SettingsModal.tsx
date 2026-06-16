@@ -69,8 +69,8 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
 function PaneHeader({ title, sub }: { title: string; sub: string }) {
   return (
     <div className="mb-4">
-      <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
-      <p className="mt-0.5 text-[12px] leading-snug text-muted">{sub}</p>
+      <h2 className="text-head font-semibold text-ink">{title}</h2>
+      <p className="mt-0.5 text-caption leading-snug text-muted">{sub}</p>
     </div>
   );
 }
@@ -79,8 +79,8 @@ function Row({ title, desc, children }: { title: string; desc?: string; children
   return (
     <div className="flex items-center justify-between gap-4 py-3.5">
       <div className="min-w-0">
-        <div className="text-[13px] font-medium text-ink">{title}</div>
-        {desc && <div className="mt-0.5 text-[12px] leading-snug text-muted">{desc}</div>}
+        <div className="text-body font-medium text-ink">{title}</div>
+        {desc && <div className="mt-0.5 text-caption leading-snug text-muted">{desc}</div>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -102,7 +102,7 @@ function Segmented({
         <button
           key={o.value}
           onClick={() => onChange(o.value)}
-          className={`fast rounded-md px-3 py-1 text-[12px] font-medium ${
+          className={`fast rounded-md px-3 py-1 text-caption font-medium ${
             value === o.value
               ? "bg-surface text-ink shadow-sm"
               : "text-muted hover:text-ink"
@@ -174,7 +174,7 @@ function ThemeCard({
         )}
       </div>
       <div className="flex items-center justify-between border-t border-line bg-surface px-2.5 py-1.5">
-        <span className="text-[12px] font-medium capitalize text-ink">{theme}</span>
+        <span className="text-caption font-medium capitalize text-ink">{theme}</span>
         <span
           className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
             active ? "border-accent bg-accent text-white" : "border-line-strong"
@@ -224,8 +224,8 @@ function SchedulePane({
     const [h, mm] = e.target.value.split(":").map(Number);
     updateSettings({ [key]: h * 60 + mm });
   };
-  const selCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-[12px] outline-none focus:border-accent";
-  const timeCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-[12px] outline-none focus:border-accent";
+  const selCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent";
+  const timeCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent";
 
   const dayStart = settings?.day_start_hour ?? 6;
   const dayEnd = settings?.day_end_hour ?? 24;
@@ -252,7 +252,7 @@ function SchedulePane({
                 </option>
               ))}
             </select>
-            <span className="text-[12px] text-muted">to</span>
+            <span className="text-caption text-muted">to</span>
             <select
               value={settings?.day_end_hour ?? 24}
               onChange={(e) => updateSettings({ day_end_hour: Number(e.target.value) })}
@@ -276,7 +276,7 @@ function SchedulePane({
               onChange={setWork("work_start_minutes")}
               className={timeCls}
             />
-            <span className="text-[12px] text-muted">to</span>
+            <span className="text-caption text-muted">to</span>
             <input
               type="time"
               step={900}
@@ -295,16 +295,16 @@ function SchedulePane({
             <button
               onClick={() => updateSettings({ calendar_fit_hours: Math.max(6, fitClamped - 1) })}
               disabled={fitClamped <= 6}
-              className="fast px-2 py-1 text-[12px] leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
               title="Fewer hours (taller rows)"
             >
               −
             </button>
-            <span className="mono w-9 select-none text-center text-[12px] tabular-nums text-text">{fitClamped}h</span>
+            <span className="mono w-9 select-none text-center text-caption tabular-nums text-text">{fitClamped}h</span>
             <button
               onClick={() => updateSettings({ calendar_fit_hours: Math.min(windowHours, fitClamped + 1) })}
               disabled={fitClamped >= windowHours}
-              className="fast px-2 py-1 text-[12px] leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
               title="More hours (less scrolling)"
             >
               +
@@ -363,19 +363,19 @@ function ConnectionsPane({
           <div key={a.id} className="overflow-hidden rounded-lg border border-line">
             <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
               <span
-                className="flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-semibold text-white"
+                className="flex h-6 w-6 items-center justify-center rounded-md text-label font-semibold text-white"
                 style={{ background: a.provider === "google" ? "#4285F4" : "#2563EB" }}
               >
                 {a.provider === "google" ? "G" : "M"}
               </span>
               <div className="min-w-0">
-                <div className="text-[13px] font-medium leading-tight">
+                <div className="text-body font-medium leading-tight">
                   {a.provider === "google" ? "Google" : "Microsoft 365"}
                 </div>
-                <div className="mono truncate text-[11px] text-muted">{a.email}</div>
+                <div className="mono truncate text-label text-muted">{a.email}</div>
               </div>
               <span
-                className={`mono ml-1 rounded-full px-1.5 py-0.5 text-[10px] ${
+                className={`mono ml-1 rounded-full px-1.5 py-0.5 text-meta ${
                   a.sync_direction === "two_way"
                     ? "bg-accent-soft text-accent"
                     : "border border-line text-muted"
@@ -398,7 +398,7 @@ function ConnectionsPane({
                   <button
                     key={c.id}
                     onClick={() => toggleCalendar(c.id)}
-                    className="fast flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-surface-2"
+                    className="fast flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-caption hover:bg-surface-2"
                   >
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
@@ -419,7 +419,7 @@ function ConnectionsPane({
                 );
               })}
               {(a.calendars ?? []).length === 0 && (
-                <div className="px-2 py-1.5 text-[12px] text-muted">No calendars synced yet.</div>
+                <div className="px-2 py-1.5 text-caption text-muted">No calendars synced yet.</div>
               )}
             </div>
           </div>
@@ -462,7 +462,7 @@ function LabelsPane() {
                 e.target.value !== l.name &&
                 updateLabel({ id: l.id, name: e.target.value.trim() })
               }
-              className="flex-1 rounded-md border border-line bg-bg px-2 py-1 text-[13px] outline-none focus:border-accent"
+              className="flex-1 rounded-md border border-line bg-bg px-2 py-1 text-body outline-none focus:border-accent"
             />
             <button
               onClick={() => deleteLabel(l.id)}
@@ -475,7 +475,7 @@ function LabelsPane() {
             </button>
           </div>
         ))}
-        {labels.length === 0 && <div className="px-1 py-2 text-[12px] text-muted">No labels yet — add one below.</div>}
+        {labels.length === 0 && <div className="px-1 py-2 text-caption text-muted">No labels yet — add one below.</div>}
 
         <form
           className="mt-2 flex items-center gap-2 border-t border-line pt-3"
@@ -496,7 +496,7 @@ function LabelsPane() {
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="New label…"
-            className="flex-1 rounded-md border border-line bg-bg px-2 py-1 text-[13px] outline-none focus:border-accent"
+            className="flex-1 rounded-md border border-line bg-bg px-2 py-1 text-body outline-none focus:border-accent"
           />
           <Btn kind="primary">Add</Btn>
         </form>
@@ -515,12 +515,12 @@ function AccountPane() {
     <div>
       <PaneHeader title="Account" sub="You're signed in to Nuvo." />
       <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2 p-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-soft text-[14px] font-semibold uppercase text-accent">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-soft text-head font-semibold uppercase text-accent">
           {email ? email[0] : "?"}
         </span>
         <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-wider text-muted">Signed in as</div>
-          <div className="mono truncate text-[13px] text-ink">{email || "…"}</div>
+          <div className="text-label uppercase tracking-wider text-muted">Signed in as</div>
+          <div className="mono truncate text-body text-ink">{email || "…"}</div>
         </div>
         <div className="flex-1" />
         <Btn kind="signal" onClick={() => supabase.auth.signOut()}>
@@ -550,7 +550,7 @@ export default function SettingsModal({
   return (
     <Modal onClose={onClose} width="max-w-3xl">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div className="text-[14px] font-semibold">Settings</div>
+        <div className="text-head font-semibold">Settings</div>
         <button onClick={onClose} className="keycap">
           esc
         </button>
@@ -563,7 +563,7 @@ export default function SettingsModal({
             <button
               key={s.id}
               onClick={() => setSettingsSection(s.id)}
-              className={`fast flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium ${
+              className={`fast flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-body font-medium ${
                 section === s.id
                   ? "bg-accent-soft text-accent"
                   : "text-muted hover:bg-surface-2 hover:text-ink"

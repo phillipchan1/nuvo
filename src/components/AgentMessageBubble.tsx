@@ -10,7 +10,7 @@ export default function AgentMessageBubble({
   compact?: boolean;
 }) {
   const isUser = message.role === "user";
-  const textSize = compact ? "text-[12.5px]" : "text-[13px]";
+  const textSize = compact ? "text-caption" : "text-body";
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -37,7 +37,7 @@ export default function AgentMessageBubble({
               ) : (
                 <span
                   key={a.id}
-                  className="agent-attachment-chip mono flex items-center gap-1.5 rounded-md border border-line/60 bg-surface px-2 py-1 text-[10px] text-muted"
+                  className="agent-attachment-chip mono flex items-center gap-1.5 rounded-md border border-line/60 bg-surface px-2 py-1 text-meta text-muted"
                 >
                   <span aria-hidden>📄</span>
                   <span className="max-w-[140px] truncate">{a.name}</span>
@@ -61,7 +61,7 @@ export default function AgentMessageBubble({
         {message.actions && message.actions.length > 0 && (
           <ul className="mt-2 space-y-1 border-t border-line/50 pt-2">
             {message.actions.map((a) => (
-              <li key={a.summary} className="mono text-[10px] text-muted">
+              <li key={a.summary} className="mono text-meta text-muted">
                 ✓ {a.summary}
               </li>
             ))}

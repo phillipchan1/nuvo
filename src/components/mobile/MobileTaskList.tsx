@@ -128,7 +128,7 @@ export default function MobileTaskList({
       {vertical.sprintGoal && (
         <div className="border-b border-line px-4 py-3">
           <div className="section-label mb-0.5 !p-0">This week</div>
-          <div className="text-[14px] font-medium">{vertical.sprintGoal}</div>
+          <div className="text-head font-medium">{vertical.sprintGoal}</div>
         </div>
       )}
       {empty && <Empty text="Nothing committed this week yet." />}
@@ -146,7 +146,7 @@ export default function MobileTaskList({
                     mutations.planFor(t, todayISO(now));
                   }}
                   title="Pull onto today"
-                  className="tap fast mono shrink-0 rounded-md border border-line px-2 text-[12px] text-muted active:border-accent active:text-accent"
+                  className="tap fast mono shrink-0 rounded-md border border-line px-2 text-caption text-muted active:border-accent active:text-accent"
                 >
                   ▸ today
                 </button>,
@@ -176,7 +176,7 @@ export default function MobileTaskList({
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="px-4 py-10 text-center text-[13px] text-muted">{text}</div>;
+  return <div className="px-4 py-10 text-center text-body text-muted">{text}</div>;
 }
 
 function buildTodaySections(today: Task[], now: Date) {

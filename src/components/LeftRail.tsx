@@ -394,7 +394,7 @@ export default function LeftRail({
                           mutations.planFor(t, todayISO(now));
                         }}
                         title="Pull onto today"
-                        className="fast mono shrink-0 border border-line px-1 text-[10px] text-muted opacity-0 hover:border-accent hover:text-accent group-hover:opacity-100"
+                        className="fast mono shrink-0 border border-line px-1 text-meta text-muted opacity-0 hover:border-accent hover:text-accent group-hover:opacity-100"
                       >
                         ▸
                       </button>
@@ -438,14 +438,14 @@ export default function LeftRail({
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
             {todaySections.unblocked.length === 0 && (
-              <div className="px-3 py-2 text-[12px] text-muted">Nothing unblocked.</div>
+              <div className="px-3 py-2 text-caption text-muted">Nothing unblocked.</div>
             )}
             <SectionLabel>Scheduled on calendar</SectionLabel>
             {todaySections.scheduled.map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
             {todaySections.scheduled.length === 0 && (
-              <div className="px-3 py-2 text-[12px] text-muted">Drag tasks onto the calendar to block time.</div>
+              <div className="px-3 py-2 text-caption text-muted">Drag tasks onto the calendar to block time.</div>
             )}
             {todaySections.done.length > 0 && (
               <>
@@ -462,14 +462,14 @@ export default function LeftRail({
       {/* Bulk action bar — slides up when ≥2 tasks are multi-selected */}
       {selectedIds.size > 1 ? (
         <div className="rise flex shrink-0 items-center gap-2 border-t border-accent/30 bg-accent-soft px-3 py-2">
-          <span className="mono text-[11px] font-semibold text-accent">{selectedIds.size} selected</span>
+          <span className="mono text-label font-semibold text-accent">{selectedIds.size} selected</span>
           <div className="flex-1" />
           <button
             onClick={() => {
               visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.planFor(t, todayISO(now)));
               setSelectedIds(new Set());
             }}
-            className="fast rounded border border-line px-2 py-0.5 text-[11px] text-muted hover:border-accent hover:text-accent"
+            className="fast rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
           >
             → Today
           </button>
@@ -478,7 +478,7 @@ export default function LeftRail({
               visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.complete(t));
               setSelectedIds(new Set());
             }}
-            className="fast rounded border border-line px-2 py-0.5 text-[11px] text-muted hover:border-accent hover:text-accent"
+            className="fast rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
           >
             ✓ Done
           </button>
@@ -487,13 +487,13 @@ export default function LeftRail({
               visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.trash(t));
               setSelectedIds(new Set());
             }}
-            className="fast rounded border border-signal/30 px-2 py-0.5 text-[11px] text-signal hover:bg-signal-soft"
+            className="fast rounded border border-signal/30 px-2 py-0.5 text-label text-signal hover:bg-signal-soft"
           >
             Trash
           </button>
           <button
             onClick={() => setSelectedIds(new Set())}
-            className="ml-1 text-[11px] text-muted hover:text-ink"
+            className="ml-1 text-label text-muted hover:text-ink"
             aria-label="Clear selection"
           >
             ✕
@@ -501,7 +501,7 @@ export default function LeftRail({
         </div>
       ) : (
         /* Shortcut hints */
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-3 py-2 text-[10px] text-muted">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-3 py-2 text-meta text-muted">
           <span className="flex items-center gap-1"><Keycap>E</Keycap> today</span>
           <span className="flex items-center gap-1"><Keycap>T</Keycap> tomorrow</span>
           <span className="flex items-center gap-1"><Keycap>W</Keycap> next wk</span>
@@ -553,7 +553,7 @@ export default function LeftRail({
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="px-3 py-6 text-center text-[12px] text-muted">{text}</div>;
+  return <div className="px-3 py-6 text-center text-caption text-muted">{text}</div>;
 }
 
 // ── Right-click context menu ───────────────────────────────────────────────
@@ -656,13 +656,13 @@ function TaskContextMenu({
             <button
               key={i}
               onClick={item.action}
-              className={`fast flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-bg ${
+              className={`fast flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption hover:bg-bg ${
                 item.danger ? "text-signal" : "text-text"
               }`}
             >
               <span className="flex-1">{item.label}</span>
               {item.key && (
-                <span className="mono text-[10px] text-muted">{item.key}</span>
+                <span className="mono text-meta text-muted">{item.key}</span>
               )}
             </button>
           );
@@ -684,7 +684,7 @@ function GoalInput({ value, onCommit }: { value: string; onCommit: (v: string) =
       onBlur={commit}
       onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
       placeholder="What does a good week look like?"
-      className="w-full bg-transparent text-[12px] font-medium outline-none placeholder:text-muted/60"
+      className="w-full bg-transparent text-caption font-medium outline-none placeholder:text-muted/60"
     />
   );
 }
@@ -748,7 +748,7 @@ function WeekRing({ tasks }: { tasks: Task[] }) {
           style={{ transition: "stroke-dashoffset 300ms ease-out" }}
         />
       </svg>
-      <span className="mono absolute inset-0 flex items-center justify-center text-[8px] text-muted">
+      <span className="mono absolute inset-0 flex items-center justify-center text-micro text-muted">
         {Math.round(pct * 100)}
       </span>
     </div>
@@ -784,10 +784,10 @@ function LabelPicker({
   return (
     <Popover onClose={onClose} title={`Labels — ${task.title}`}>
       {labels.length === 0 && (
-        <div className="px-1 py-2 text-[12px] text-muted">No labels yet. Add them in Settings.</div>
+        <div className="px-1 py-2 text-caption text-muted">No labels yet. Add them in Settings.</div>
       )}
       {labels.map((l) => (
-        <label key={l.id} className="flex cursor-pointer items-center gap-2 px-1 py-1 text-[13px] hover:bg-bg">
+        <label key={l.id} className="flex cursor-pointer items-center gap-2 px-1 py-1 text-body hover:bg-bg">
           <input
             type="checkbox"
             defaultChecked={current.has(l.id)}
@@ -834,20 +834,20 @@ function SchedulePicker({
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="mono border border-line bg-bg px-2 py-1 text-[12px] outline-none focus:border-accent"
+          className="mono border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent"
         />
         <input
           type="time"
           value={time}
           step={900}
           onChange={(e) => setTime(e.target.value)}
-          className="mono border border-line bg-bg px-2 py-1 text-[12px] outline-none focus:border-accent"
+          className="mono border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent"
         />
-        <button onClick={apply} className="fast border border-accent bg-accent px-2.5 py-1 text-[12px] text-white">
+        <button onClick={apply} className="fast border border-accent bg-accent px-2.5 py-1 text-caption text-white">
           Set
         </button>
       </div>
-      <div className="pt-1 text-[11px] text-muted">Leave time empty to plan the day without a block.</div>
+      <div className="pt-1 text-label text-muted">Leave time empty to plan the day without a block.</div>
     </Popover>
   );
 }
@@ -869,8 +869,8 @@ function Popover({
   return (
     <div className="rise elev-3 absolute bottom-12 left-2 z-30 w-[330px] rounded-lg border border-line bg-surface p-2.5">
       <div className="mb-1 flex items-center justify-between">
-        <div className="truncate pr-2 text-[11px] font-medium text-muted">{title}</div>
-        <button onClick={onClose} className="text-[11px] text-muted hover:text-ink">esc</button>
+        <div className="truncate pr-2 text-label font-medium text-muted">{title}</div>
+        <button onClick={onClose} className="text-label text-muted hover:text-ink">esc</button>
       </div>
       {children}
     </div>

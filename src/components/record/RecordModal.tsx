@@ -28,12 +28,11 @@ import { ASSISTANT_NAME } from "../../lib/assistant";
 import {
   Bar,
   DeleteBtn,
+  DomainPicker,
   InlineDate,
   InlineNumber,
   InlineText,
   InlineTextarea,
-  INITIATIVE_STATUS,
-  INITIATIVE_STATUS_COLORS,
   MomentumChip,
   PROJECT_STATUS,
   PROJECT_STATUS_COLORS,
@@ -135,7 +134,7 @@ function Ring({ pct, color, size = 54, stroke = 5 }: { pct: number; color: strin
           style={{ transition: "stroke-dashoffset var(--d-slow) var(--ease-out)" }}
         />
       </svg>
-      <div className="mono absolute inset-0 flex items-center justify-center text-[13px] font-semibold" style={{ color }}>
+      <div className="mono absolute inset-0 flex items-center justify-center text-body font-semibold" style={{ color }}>
         {clamped}
       </div>
     </div>
@@ -168,13 +167,13 @@ function Header({
 }) {
   return (
     <div className="px-7 pt-5 pb-4">
-      <div className="mono mb-2.5 flex items-center gap-1.5 text-[10px]">
+      <div className="mono mb-2.5 flex items-center gap-1.5 text-meta">
         {crumbs}
         <div className="flex-1" />
         <button
           onClick={onExpand}
           title="Open as a full page"
-          className="fast flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[10px] text-muted hover:border-line-strong hover:text-ink"
+          className="fast flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-meta text-muted hover:border-line-strong hover:text-ink"
         >
           ⤢ full page
         </button>
@@ -183,10 +182,10 @@ function Header({
 
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[23px] font-semibold leading-tight tracking-tight">
+          <h1 className="text-display font-semibold leading-tight tracking-tight">
             <InlineText value={title} onChange={onTitle} placeholder="Untitled" />
           </h1>
-          <div className="mt-1.5 flex items-baseline gap-2 text-[14px]">
+          <div className="mt-1.5 flex items-baseline gap-2 text-head">
             <span className="section-label shrink-0" style={{ marginTop: 2 }}>Goal</span>
             <InlineText value={goal} onChange={onGoal} placeholder={goalPlaceholder} className="font-medium" />
           </div>
@@ -245,15 +244,15 @@ function SuggestionPanel({
   return (
     <section className="rounded-[var(--radius)] border border-line bg-surface-2/60 p-3.5">
       <div className="mb-1 flex items-center gap-2">
-        <span className="mono text-[9px] font-semibold tracking-widest" style={{ color: accent }}>✦ BELONGS HERE</span>
+        <span className="mono text-micro font-semibold tracking-widest" style={{ color: accent }}>✦ BELONGS HERE</span>
         <div className="h-px flex-1" style={{ background: "var(--line)" }} />
       </div>
 
       {suggestions.length === 0 ? (
-        <p className="text-[11.5px] leading-relaxed text-muted">{hint}</p>
+        <p className="text-label leading-relaxed text-muted">{hint}</p>
       ) : (
         <>
-          <p className="mb-2.5 text-[11px] leading-relaxed text-muted">
+          <p className="mb-2.5 text-label leading-relaxed text-muted">
             From your inbox & loose work — fold in what fits.
           </p>
           <div className="space-y-1.5">
@@ -262,17 +261,17 @@ function SuggestionPanel({
                 key={s.task.id}
                 className="group fast flex items-start gap-2 rounded-md border border-line bg-surface px-2.5 py-2 hover:border-line-strong"
               >
-                <span className="mt-px shrink-0 text-[12px]" style={{ color: accent }}>
+                <span className="mt-px shrink-0 text-caption" style={{ color: accent }}>
                   {s.task.energy ? ENERGY_META[s.task.energy].icon : "·"}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12.5px] leading-snug">{s.task.title || "Untitled"}</div>
+                  <div className="truncate text-caption leading-snug">{s.task.title || "Untitled"}</div>
                   {s.reasons.length > 0 && (
                     <div className="mt-1 flex flex-wrap items-center gap-1">
                       {s.reasons.map((r, i) => (
                         <span
                           key={i}
-                          className="rounded-full px-1.5 py-px text-[9.5px] leading-tight text-muted"
+                          className="rounded-full px-1.5 py-px text-micro leading-tight text-muted"
                           style={{ background: "var(--bg)" }}
                         >
                           {r}
@@ -284,7 +283,7 @@ function SuggestionPanel({
                 <button
                   onClick={() => onFold(s.task.id)}
                   title="Fold this task in"
-                  className="fast mt-px shrink-0 rounded-md border px-2 py-1 text-[10.5px] font-medium"
+                  className="fast mt-px shrink-0 rounded-md border px-2 py-1 text-meta font-medium"
                   style={{ borderColor: `${accent}55`, color: accent, background: `${accent}12` }}
                 >
                   + fold in
@@ -406,11 +405,11 @@ function ProjectRecord({
           colors={PROJECT_STATUS_COLORS}
           onChange={(s) => updateProject(project.id, { status: s })}
         />
-        <span className="mono text-[11px] text-muted">
+        <span className="mono text-label text-muted">
           {done}/{tasks.length} tasks{inSprint > 0 ? ` · ★ ${inSprint} this week` : ""}
         </span>
         <div className="flex-1" />
-        <div className="mono flex items-center gap-2 text-[11px] text-muted">
+        <div className="mono flex items-center gap-2 text-label text-muted">
           <span>start <InlineDate value={project.startDate} onChange={(v) => updateProject(project.id, { startDate: v })} /></span>
           <span className="opacity-50">→</span>
           <span>target <InlineDate value={project.targetDate} onChange={(v) => updateProject(project.id, { targetDate: v })} /></span>
@@ -425,7 +424,7 @@ function ProjectRecord({
                 value={project.description}
                 onChange={(v) => updateProject(project.id, { description: v })}
                 placeholder="Scope, what's in and out, the why… the more here, the sharper the suggestions →"
-                className="text-[13.5px] text-muted"
+                className="text-body text-muted"
               />
             </Section>
 
@@ -437,7 +436,7 @@ function ProjectRecord({
                     addProjectReadyToSprint(project.id);
                     setNote("Committed this project's open tasks to the week.");
                   }}
-                  className="fast mono text-[11px] text-muted hover:text-ink"
+                  className="fast mono text-label text-muted hover:text-ink"
                   title="Commit open tasks to this week"
                 >
                   ★ commit to week{inSprint > 0 ? ` (${inSprint})` : ""}
@@ -468,7 +467,7 @@ function ProjectRecord({
                 <button
                   onClick={() => void scaffold()}
                   disabled={scaffolding}
-                  className="fast flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-dashed border-line px-3 py-2.5 text-[12px] font-medium text-muted hover:border-accent/50 hover:text-accent disabled:opacity-50"
+                  className="fast flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-dashed border-line px-3 py-2.5 text-caption font-medium text-muted hover:border-accent/50 hover:text-accent disabled:opacity-50"
                 >
                   <span>✦</span>
                   {scaffolding ? "drafting…" : `Scaffold with ${ASSISTANT_NAME}`}
@@ -477,19 +476,19 @@ function ProjectRecord({
                 <div className="rounded-[var(--radius)] border p-3" style={{ borderColor: accent }}>
                   <div className="mb-2 flex items-baseline justify-between">
                     <span className="section-label" style={{ color: accent }}>✦ proposed</span>
-                    <span className="mono text-[10px] text-muted">{proposal.filter((d) => d.included).length}/{proposal.length}</span>
+                    <span className="mono text-meta text-muted">{proposal.filter((d) => d.included).length}/{proposal.length}</span>
                   </div>
                   {proposal.map((d, i) => (
                     <div key={i} className="flex items-center gap-2 border-b border-line py-1.5 last:border-0">
                       <button
                         onClick={() => setProposal((p) => p!.map((x, j) => (j === i ? { ...x, included: !x.included } : x)))}
-                        className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-[9px]"
+                        className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro"
                         style={{ borderColor: d.included ? accent : "var(--line)", background: d.included ? accent : "transparent", color: "#fff" }}
                       >
                         {d.included ? "✓" : ""}
                       </button>
-                      <span className={`min-w-0 flex-1 truncate text-[12px] ${d.included ? "" : "text-muted line-through"}`}>{d.title}</span>
-                      <span className="mono shrink-0 text-[10px] text-muted">{d.durationMins}m</span>
+                      <span className={`min-w-0 flex-1 truncate text-caption ${d.included ? "" : "text-muted line-through"}`}>{d.title}</span>
+                      <span className="mono shrink-0 text-meta text-muted">{d.durationMins}m</span>
                     </div>
                   ))}
                   <div className="mt-2.5 flex items-center gap-2">
@@ -536,6 +535,7 @@ function InitiativeRecord({
     updateInitiative,
     deleteInitiative,
     addProject,
+    updateProject,
     addKeyResult,
     updateKeyResult,
     deleteKeyResult,
@@ -550,6 +550,11 @@ function InitiativeRecord({
 
   const domain = domainById(data, initiative.domainId);
   const accent = domain?.color ?? "var(--accent)";
+  const domains = [...data.domains].sort((a, b) => a.sort - b.sort);
+  const changeDomain = (domainId: string) => {
+    updateInitiative(initiative.id, { domainId });
+    projectsOf(data, initiative.id).forEach((p) => updateProject(p.id, { domainId }));
+  };
   const projects = projectsOf(data, initiative.id);
   const loose = looseTasksOfInitiative(data, initiative.id);
   const pct = initiativeProgress(data, initiative);
@@ -577,18 +582,21 @@ function InitiativeRecord({
       />
 
       <Band>
+        <DomainPicker domains={domains} value={initiative.domainId} onChange={changeDomain} />
         <StatusPill
           value={initiative.status}
-          options={[...INITIATIVE_STATUS]}
-          colors={INITIATIVE_STATUS_COLORS}
+          options={[...PROJECT_STATUS]}
+          colors={PROJECT_STATUS_COLORS}
+          labels={PROJECT_STATUS_LABEL}
+          filled={initiative.status === "in_progress" ? new Set(["in_progress"]) : undefined}
           onChange={(s) => updateInitiative(initiative.id, { status: s })}
         />
         <MomentumChip value={initiative.momentum} onChange={(m) => updateInitiative(initiative.id, { momentum: m })} />
-        <span className="mono text-[11px] text-muted">
+        <span className="mono text-label text-muted">
           {projects.length} project{projects.length === 1 ? "" : "s"} · {initiative.keyResults.length} KR
         </span>
         <div className="flex-1" />
-        <div className="mono flex items-center gap-2 text-[11px] text-muted">
+        <div className="mono flex items-center gap-2 text-label text-muted">
           <span>start <InlineDate value={initiative.startDate} onChange={(v) => updateInitiative(initiative.id, { startDate: v })} /></span>
           <span className="opacity-50">→</span>
           <span>target <InlineDate value={initiative.targetDate} onChange={(v) => updateInitiative(initiative.id, { targetDate: v })} /></span>
@@ -603,7 +611,7 @@ function InitiativeRecord({
                 value={initiative.description}
                 onChange={(v) => updateInitiative(initiative.id, { description: v })}
                 placeholder="The why and the shape of it… the more here, the sharper the suggestions →"
-                className="text-[13.5px] text-muted"
+                className="text-body text-muted"
               />
             </Section>
 
@@ -612,7 +620,7 @@ function InitiativeRecord({
               action={
                 <button
                   onClick={() => void addProject(initiative.domainId, initiative.id).then((p) => onOpenProject(p.id))}
-                  className="fast mono text-[11px] text-muted hover:text-ink"
+                  className="fast mono text-label text-muted hover:text-ink"
                 >
                   + new project
                 </button>
@@ -629,25 +637,25 @@ function InitiativeRecord({
                         className="fast group flex flex-col rounded-[var(--radius)] border border-line bg-surface p-3 text-left hover:border-muted"
                       >
                         <div className="flex items-start gap-2">
-                          <span className="text-[12.5px] font-medium leading-snug">{p.name}</span>
+                          <span className="text-caption font-medium leading-snug">{p.name}</span>
                           <span
-                            className="mono ml-auto shrink-0 rounded-full border px-1.5 text-[9px]"
+                            className="mono ml-auto shrink-0 rounded-full border px-1.5 text-micro"
                             style={{ borderColor: PROJECT_STATUS_COLORS[p.status], color: PROJECT_STATUS_COLORS[p.status] }}
                           >
                             {PROJECT_STATUS_LABEL[p.status]}
                           </span>
                         </div>
-                        {p.outcome && <div className="mt-1 line-clamp-2 text-[11px] text-muted">{p.outcome}</div>}
+                        {p.outcome && <div className="mt-1 line-clamp-2 text-label text-muted">{p.outcome}</div>}
                         <div className="mt-auto pt-2">
                           <Bar pct={pp} color={accent} h={1} />
-                          <div className="mono text-[10px] text-muted">{pp}%{p.targetDate ? ` · by ${p.targetDate.slice(5)}` : ""}</div>
+                          <div className="mono text-meta text-muted">{pp}%{p.targetDate ? ` · by ${p.targetDate.slice(5)}` : ""}</div>
                         </div>
                       </button>
                     );
                   })}
                 </div>
               ) : (
-                <div className="rounded-[var(--radius)] border border-dashed border-line p-4 text-center text-[12px] text-muted">
+                <div className="rounded-[var(--radius)] border border-dashed border-line p-4 text-center text-caption text-muted">
                   No projects yet — add one, or keep small things as loose tasks below.
                 </div>
               )}
@@ -668,19 +676,19 @@ function InitiativeRecord({
             <Section
               label="Key results"
               action={
-                <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-[11px] text-muted hover:text-ink">+ add</button>
+                <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-label text-muted hover:text-ink">+ add</button>
               }
             >
               <div className="space-y-3">
                 {initiative.keyResults.map((kr) => (
                   <div key={kr.id} className="group rounded-[var(--radius)] border border-line bg-surface p-3">
                     <div className="flex items-center gap-2">
-                      <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-[12px] font-medium" />
+                      <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-caption font-medium" />
                       <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
                         <DeleteBtn what="result" onDelete={() => deleteKeyResult(initiative.id, kr.id)} />
                       </div>
                     </div>
-                    <div className="mono mt-1 flex items-center gap-1 text-[10px] text-muted">
+                    <div className="mono mt-1 flex items-center gap-1 text-meta text-muted">
                       <InlineNumber value={kr.baseline} onChange={(v) => updateKeyResult(initiative.id, kr.id, { baseline: v })} />
                       <span>→</span>
                       <span style={{ color: accent }}>
@@ -694,7 +702,7 @@ function InitiativeRecord({
                   </div>
                 ))}
                 {initiative.keyResults.length === 0 && (
-                  <div className="rounded-[var(--radius)] border border-dashed border-line p-3 text-center text-[11px] text-muted">
+                  <div className="rounded-[var(--radius)] border border-dashed border-line p-3 text-center text-label text-muted">
                     Add measurable outcomes — each framed from a baseline, so you read the Gain.
                   </div>
                 )}
@@ -738,7 +746,7 @@ function Footer({
   return (
     <div className="flex items-center gap-2 border-t border-line bg-bg/40 px-7 py-3.5">
       <DeleteBtn what={deleteWhat} onDelete={onDelete} />
-      {note && <span className="text-[11px] text-muted">{note}</span>}
+      {note && <span className="text-label text-muted">{note}</span>}
       <div className="flex-1" />
       <Btn onClick={onExpand}>Open full page ↗</Btn>
       <Btn kind="primary" onClick={onClose}>Done</Btn>

@@ -91,7 +91,7 @@ export default function CommandBar({
           }}
           onKeyDown={onKey}
           placeholder='Capture or command… "review PR tomorrow 2pm 45m #work !high"'
-          className="w-full bg-transparent py-3 text-[14px] outline-none placeholder:text-muted/60"
+          className="w-full bg-transparent py-3 text-head outline-none placeholder:text-muted/60"
         />
         <Keycap>esc</Keycap>
       </div>
@@ -104,12 +104,12 @@ export default function CommandBar({
             highlight === 0 ? "bg-accent-soft" : ""
           }`}
         >
-          <span className="text-[11px] font-semibold text-accent">＋</span>
-          <span className="min-w-0 flex-1 truncate text-[13px]">{parsed.title || text.trim()}</span>
+          <span className="text-label font-semibold text-accent">＋</span>
+          <span className="min-w-0 flex-1 truncate text-body">{parsed.title || text.trim()}</span>
           {parsed.chips.map((c, i) => (
             <span
               key={i}
-              className="mono shrink-0 border px-1 py-px text-[10px]"
+              className="mono shrink-0 border px-1 py-px text-meta"
               style={{ borderColor: chipColor(c.kind), color: chipColor(c.kind) }}
             >
               {c.text}
@@ -129,7 +129,7 @@ export default function CommandBar({
                 c.run();
               }}
               onMouseEnter={() => setHighlight(idx)}
-              className={`flex w-full items-center px-3 py-2 text-left text-[13px] ${
+              className={`flex w-full items-center px-3 py-2 text-left text-body ${
                 highlight === idx ? "bg-accent-soft" : ""
               }`}
             >
@@ -138,7 +138,7 @@ export default function CommandBar({
           );
         })}
         {matches.length === 0 && !parsed && (
-          <div className="px-3 py-3 text-[12px] text-muted">Type to capture a task or run a command.</div>
+          <div className="px-3 py-3 text-caption text-muted">Type to capture a task or run a command.</div>
         )}
       </div>
     </Modal>

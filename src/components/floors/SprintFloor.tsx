@@ -46,8 +46,8 @@ export default function SprintFloor() {
         eyebrow={`Weekly sprint · ${week}`}
         actions={<Btn kind="signal" onClick={clearSprint}>clear week</Btn>}
       >
-        <h1 className="text-[24px] font-semibold tracking-tight">This Week</h1>
-        <div className="mt-1 flex items-baseline gap-2 text-[14px]">
+        <h1 className="text-display font-semibold tracking-tight">This Week</h1>
+        <div className="mt-1 flex items-baseline gap-2 text-head">
           <span className="section-label shrink-0" style={{ marginTop: 2 }}>Goal</span>
           <InlineText
             value={data.sprintGoal ?? ""}
@@ -86,14 +86,14 @@ export function SprintFunnel() {
         <div>
           <div className="flex items-baseline justify-between">
             <span className="section-label">Committed load</span>
-            <span className="mono text-[11px]" style={{ color: over ? "var(--signal)" : "var(--accent)" }}>
+            <span className="mono text-label" style={{ color: over ? "var(--signal)" : "var(--accent)" }}>
               {hrs(loadMins)}h / {capacityHrs}h {over && "· over"}
             </span>
           </div>
           <div className="relative mt-1.5 h-2 rounded-full bg-bg">
             <div className="fast absolute left-0 top-0 bottom-0 rounded-full" style={{ width: `${overPct}%`, background: over ? "var(--signal)" : "var(--accent)" }} />
           </div>
-          <div className="mono mt-1 text-[10px] text-muted">{committed.length} tasks committed</div>
+          <div className="mono mt-1 text-meta text-muted">{committed.length} tasks committed</div>
         </div>
         <div>
           <div className="section-label mb-1.5">Domain balance</div>
@@ -105,16 +105,16 @@ export function SprintFunnel() {
       {showSuggestions && (
         <div className="mb-6 rounded-md border border-accent/40 bg-accent-soft px-4 py-3">
           <div className="flex items-baseline gap-2">
-            <span className="text-[12px] font-medium text-accent">✦ Suggested pull</span>
-            <span className="mono text-[10px] text-muted">{pullSummary(data, suggestions)}</span>
+            <span className="text-caption font-medium text-accent">✦ Suggested pull</span>
+            <span className="mono text-meta text-muted">{pullSummary(data, suggestions)}</span>
             <div className="flex-1" />
             <button
               onClick={() => commitTasksToSprint(suggestions.map((s) => s.task.id))}
-              className="fast mono text-[11px] font-medium text-accent hover:underline"
+              className="fast mono text-label font-medium text-accent hover:underline"
             >
               add all {suggestions.length}
             </button>
-            <button onClick={() => setSuggestionsDismissed(true)} className="fast mono text-[11px] text-muted hover:text-ink">
+            <button onClick={() => setSuggestionsDismissed(true)} className="fast mono text-label text-muted hover:text-ink">
               dismiss
             </button>
           </div>
@@ -122,17 +122,17 @@ export function SprintFunnel() {
             {suggestions.map((s) => {
               const domain = domainById(data, s.task.domainId);
               return (
-                <div key={s.task.id} className="flex items-center gap-2 text-[11px]">
+                <div key={s.task.id} className="flex items-center gap-2 text-label">
                   <button
                     onClick={() => toggleTaskSprint(s.task.id)}
-                    className="fast mono text-[10px] text-accent hover:underline"
+                    className="fast mono text-meta text-accent hover:underline"
                     title="Add to week"
                   >
                     + add
                   </button>
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: domain?.color }} />
                   <span className="min-w-0 truncate">{s.task.title}</span>
-                  <span className="mono shrink-0 text-[9px] text-muted">{s.reason} · {s.task.durationMins}m</span>
+                  <span className="mono shrink-0 text-micro text-muted">{s.reason} · {s.task.durationMins}m</span>
                 </div>
               );
             })}
@@ -149,7 +149,7 @@ export function SprintFunnel() {
               <button
                 key={s}
                 onClick={() => setSource(s)}
-                className="fast mono rounded-[5px] px-3 py-1 text-[11px]"
+                className="fast mono rounded-[5px] px-3 py-1 text-label"
                 style={{ background: source === s ? "var(--accent)" : "transparent", color: source === s ? "#fff" : "var(--muted)" }}
               >
                 {s === "inbox" ? "Inbox" : s === "backlog" ? "Backlogs" : "Projects"}
@@ -179,7 +179,7 @@ function DomainBalance() {
   const { data } = useVertical();
   const split = sprintMinsByDomain(data);
   const total = split.reduce((s, x) => s + x.mins, 0);
-  if (total === 0) return <div className="mono text-[10px] text-muted italic">Nothing committed yet.</div>;
+  if (total === 0) return <div className="mono text-meta text-muted italic">Nothing committed yet.</div>;
   return (
     <div>
       <div className="flex h-2.5 overflow-hidden rounded-full bg-bg">
@@ -189,7 +189,7 @@ function DomainBalance() {
       </div>
       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
         {split.map((x) => (
-          <span key={x.domain.id} className="mono flex items-center gap-1 text-[9px] text-muted">
+          <span key={x.domain.id} className="mono flex items-center gap-1 text-micro text-muted">
             <span className="h-2 w-2 rounded-full" style={{ background: x.domain.color }} />
             {x.domain.name} {hrs(x.mins)}h
           </span>
@@ -209,16 +209,16 @@ function CandidateRow({ task }: { task: VTask }) {
     <div className="group flex items-center gap-2.5 border-b border-line py-1.5">
       <button
         onClick={() => toggleTaskSprint(task.id)}
-        className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-[9px]"
+        className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro"
         style={{ borderColor: task.sprint ? "var(--signal)" : "var(--line)", background: task.sprint ? "var(--signal)" : "transparent", color: "#fff" }}
         title={task.sprint ? "Remove from week" : "Add to week"}
       >
         {task.sprint ? "★" : ""}
       </button>
-      <span className="shrink-0 text-[11px]" style={{ color: accent }} title={task.energy ?? ""}>{task.energy ? ENERGY_META[task.energy].icon : "·"}</span>
-      <span className={`min-w-0 flex-1 truncate text-[12px] ${task.sprint ? "text-muted" : ""}`}>{task.title || "untitled"}</span>
-      {project && <span className="mono hidden shrink-0 truncate text-[9px] text-muted sm:inline" style={{ maxWidth: 120 }}>{project.name}</span>}
-      <span className="mono shrink-0 text-[10px] text-muted">{task.durationMins}m</span>
+      <span className="shrink-0 text-label" style={{ color: accent }} title={task.energy ?? ""}>{task.energy ? ENERGY_META[task.energy].icon : "·"}</span>
+      <span className={`min-w-0 flex-1 truncate text-caption ${task.sprint ? "text-muted" : ""}`}>{task.title || "untitled"}</span>
+      {project && <span className="mono hidden shrink-0 truncate text-micro text-muted sm:inline" style={{ maxWidth: 120 }}>{project.name}</span>}
+      <span className="mono shrink-0 text-meta text-muted">{task.durationMins}m</span>
     </div>
   );
 }
@@ -275,12 +275,12 @@ function BacklogSource() {
             <div key={g.key}>
               <div className="mb-0.5 flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
-                <span className="text-[11px] font-medium">{g.label}</span>
-                {g.lead && <span className="mono text-[9px]" style={{ color: "var(--signal)" }}>★ lead</span>}
+                <span className="text-label font-medium">{g.label}</span>
+                {g.lead && <span className="mono text-micro" style={{ color: "var(--signal)" }}>★ lead</span>}
                 {remaining.length > 0 && (
                   <button
                     onClick={() => commitTasksToSprint(remaining.map((t) => t.id))}
-                    className="fast mono ml-auto text-[9px] text-muted hover:text-signal"
+                    className="fast mono ml-auto text-micro text-muted hover:text-signal"
                     title="Add all ready tasks"
                   >
                     + add all {remaining.length}
@@ -316,14 +316,14 @@ function ProjectsSource() {
             <div key={p.id} className="flex items-center gap-2.5 border-b border-line py-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: domain?.color }} />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px]">
+                <div className="truncate text-caption">
                   {p.name}
-                  {focus.has(p.initiativeId ?? "") && <span className="mono ml-1.5 text-[9px]" style={{ color: "var(--signal)" }}>★</span>}
+                  {focus.has(p.initiativeId ?? "") && <span className="mono ml-1.5 text-micro" style={{ color: "var(--signal)" }}>★</span>}
                 </div>
-                <div className="mono truncate text-[9px] text-muted">{initiative?.name ?? domain?.name} · {pct}%</div>
+                <div className="mono truncate text-micro text-muted">{initiative?.name ?? domain?.name} · {pct}%</div>
               </div>
-              {inSprint > 0 && <span className="mono shrink-0 text-[9px]" style={{ color: "var(--signal)" }}>★ {inSprint}</span>}
-              <button onClick={() => addProjectReadyToSprint(p.id)} className="fast mono shrink-0 rounded-sm border border-line px-1.5 py-0.5 text-[9px] text-muted hover:border-signal hover:text-signal">
+              {inSprint > 0 && <span className="mono shrink-0 text-micro" style={{ color: "var(--signal)" }}>★ {inSprint}</span>}
+              <button onClick={() => addProjectReadyToSprint(p.id)} className="fast mono shrink-0 rounded-sm border border-line px-1.5 py-0.5 text-micro text-muted hover:border-signal hover:text-signal">
                 ★ commit
               </button>
             </div>
@@ -341,8 +341,8 @@ function SprintColumn() {
   if (committed.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-line p-8 text-center">
-        <div className="text-[13px] text-muted">Your week is empty.</div>
-        <div className="mono mt-1 text-[11px] text-muted">Pull work from the sources on the left to commit it.</div>
+        <div className="text-body text-muted">Your week is empty.</div>
+        <div className="mono mt-1 text-label text-muted">Pull work from the sources on the left to commit it.</div>
       </div>
     );
   }
@@ -360,8 +360,8 @@ function SprintColumn() {
           <div key={domain.id} className="rounded-md border border-line bg-surface">
             <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
               <span className="h-2.5 w-2.5 rounded-full" style={{ background: domain.color }} />
-              <span className="text-[12px] font-medium">{domain.name}</span>
-              <span className="mono ml-auto text-[10px] text-muted">{tasks.length} · {hrs(mins)}h</span>
+              <span className="text-caption font-medium">{domain.name}</span>
+              <span className="mono ml-auto text-meta text-muted">{tasks.length} · {hrs(mins)}h</span>
             </div>
             <div className="px-3 py-1">
               {tasks.map((t) => <CommittedRow key={t.id} task={t} accent={domain.color} onToggleDone={() => toggleTask(t.id)} onRemove={() => toggleTaskSprint(t.id)} />)}
@@ -387,25 +387,25 @@ function CommittedRow({ task, accent, onToggleDone, onRemove }: { task: VTask; a
     <div className="group flex items-center gap-2.5 border-b border-line py-1.5 last:border-0">
       <button
         onClick={onToggleDone}
-        className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-[10px]"
+        className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-meta"
         style={{ borderColor: task.status === "done" ? accent : "var(--line)", background: task.status === "done" ? accent : "transparent", color: "#fff" }}
         title="Mark done"
       >
         {task.status === "done" ? "✓" : ""}
       </button>
-      <span className="shrink-0 text-[11px]" style={{ color: accent }}>{task.energy ? ENERGY_META[task.energy].icon : "·"}</span>
-      <span className={`min-w-0 flex-1 truncate text-[12px] ${task.status === "done" ? "text-muted line-through" : ""}`}>{task.title || "untitled"}</span>
-      <span className="mono hidden shrink-0 truncate text-[9px] text-muted sm:inline" style={{ maxWidth: 110 }}>{ctx}</span>
-      <span className="mono shrink-0 text-[10px] text-muted">{task.durationMins}m</span>
-      <button onClick={onRemove} className="fast shrink-0 text-[12px] text-muted opacity-0 hover:text-signal group-hover:opacity-100" title="Remove from week">×</button>
+      <span className="shrink-0 text-label" style={{ color: accent }}>{task.energy ? ENERGY_META[task.energy].icon : "·"}</span>
+      <span className={`min-w-0 flex-1 truncate text-caption ${task.status === "done" ? "text-muted line-through" : ""}`}>{task.title || "untitled"}</span>
+      <span className="mono hidden shrink-0 truncate text-micro text-muted sm:inline" style={{ maxWidth: 110 }}>{ctx}</span>
+      <span className="mono shrink-0 text-meta text-muted">{task.durationMins}m</span>
+      <button onClick={onRemove} className="fast shrink-0 text-caption text-muted opacity-0 hover:text-signal group-hover:opacity-100" title="Remove from week">×</button>
     </div>
   );
 }
 
 // ── tiny helpers ─────────────────────────────────────────────────────────────
 function Hint({ children }: { children: React.ReactNode }) {
-  return <div className="mb-2 text-[11px] text-muted">{children}</div>;
+  return <div className="mb-2 text-label text-muted">{children}</div>;
 }
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="py-6 text-center text-[12px] text-muted italic">{children}</div>;
+  return <div className="py-6 text-center text-caption text-muted italic">{children}</div>;
 }

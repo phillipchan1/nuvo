@@ -135,13 +135,13 @@ export default function MobileShell() {
     <div className="atmosphere flex h-full flex-col">
       {/* Top bar */}
       <header className="pt-safe flex shrink-0 items-center gap-2 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur">
-        <span className="wordmark wordmark-grad text-[17px]">Nuvo</span>
-        <span className="mono ml-0.5 text-[12px] text-muted">{format(now, "EEE MMM d")}</span>
+        <span className="wordmark wordmark-grad text-lead">Nuvo</span>
+        <span className="mono ml-0.5 text-caption text-muted">{format(now, "EEE MMM d")}</span>
         <div className="flex-1" />
         <button
           onClick={() => setChatOpen(true)}
           aria-label="Chat with Nuvo"
-          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-[15px] text-accent active:scale-95"
+          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-accent active:scale-95"
         >
           ✦
         </button>
@@ -152,14 +152,14 @@ export default function MobileShell() {
             })
           }
           aria-label="Toggle theme"
-          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-[15px] text-muted active:scale-95"
+          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
           ☾
         </button>
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
-          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-[15px] text-muted active:scale-95"
+          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
           ⚙
         </button>
@@ -209,11 +209,11 @@ export default function MobileShell() {
                 on ? "text-accent" : "text-muted"
               }`}
             >
-              <span className="text-[17px] leading-none">{t.glyph}</span>
-              <span className="text-[10px] font-medium leading-none">{t.label}</span>
+              <span className="text-lead leading-none">{t.glyph}</span>
+              <span className="text-meta font-medium leading-none">{t.label}</span>
               {c > 0 && (
                 <span
-                  className="mono absolute right-[22%] top-1 rounded-full px-1 text-[8px] font-semibold leading-[14px]"
+                  className="mono absolute right-[22%] top-1 rounded-full px-1 text-micro font-semibold leading-[14px]"
                   style={{
                     minWidth: 14,
                     height: 14,

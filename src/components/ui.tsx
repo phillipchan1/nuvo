@@ -69,7 +69,7 @@ export function Btn({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`fast rounded-md border px-2.5 py-1 text-[12px] font-medium active:translate-y-px disabled:opacity-40 ${styles} ${className}`}
+      className={`fast rounded-md border px-2.5 py-1 text-caption font-medium active:translate-y-px disabled:opacity-40 ${styles} ${className}`}
     >
       {children}
     </button>
@@ -92,7 +92,7 @@ export function PriorityDot({ priority }: { priority: string }) {
 export function RollBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="mono shrink-0 border border-signal px-1 py-px text-[10px] leading-none text-signal">
+    <span className="mono shrink-0 border border-signal px-1 py-px text-meta leading-none text-signal">
       ↻ {count}d
     </span>
   );

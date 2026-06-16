@@ -1,8 +1,12 @@
 @import "tailwindcss";
-@import "@fontsource/plus-jakarta-sans/400.css";
-@import "@fontsource/plus-jakarta-sans/500.css";
+/* Jakarta is kept for the wordmark only — the UI runs on the native system
+   font so the type recedes across every panel. */
 @import "@fontsource/plus-jakarta-sans/600.css";
 @import "@fontsource/plus-jakarta-sans/700.css";
+/* Fraunces — the editorial serif, reserved for ceremonial surfaces (the Domain
+   chapel). Variable: optical sizing + a touch of SOFT warms the terminals. */
+@import "@fontsource-variable/fraunces/full.css";
+@import "@fontsource-variable/fraunces/full-italic.css";
 
 @source "./**/*.{tsx,ts,jsx,js,html}";
 
@@ -73,10 +77,18 @@
   --color-signal: var(--signal);
   --color-accent-soft: var(--accent-soft);
   --color-signal-soft: var(--signal-soft);
-  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  /* The UI runs on the native system font so it recedes across every panel —
+     SF Pro on macOS, the calm/invisible workhorse (this is Spark's register). */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* The brand voice — Plus Jakarta, the wordmark only, so Nuvo keeps a distinct
+     logotype without lending its flair to the dense panels. */
+  --font-brand: "Plus Jakarta Sans", system-ui, sans-serif;
   /* Mono is reserved for genuine code (keycaps, code blocks) — never for the
      numerals/labels the user reads. Those use the sans with tabular figures. */
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  /* The editorial serif voice — ceremonial surfaces only. Degrades to the
+     warm macOS book serifs if Fraunces ever fails to load. */
+  --font-serif: "Fraunces Variable", "Iowan Old Style", Palatino, Georgia, serif;
 
   /* radius scale: hairline controls → cards → moments */
   --radius-sm: 4px;
@@ -96,6 +108,7 @@
    it shrinks. Weight stays explicit in the markup so it reads as the primary
    hierarchy lever (a 13px title leads by weight, not by a bespoke size).
        display  page / floor heroes
+       lead     secondary heroes — greetings, flow titles
        head     bar titles, the wordmark register, big day numbers
        body     primary content — task & event titles, prose
        caption  secondary headings, tabs, the date range
@@ -110,6 +123,10 @@
   --text-head: 15px;
   --text-head--line-height: 1.25;
   --text-head--letter-spacing: -0.015em;
+
+  --text-lead: 18px;
+  --text-lead--line-height: 1.18;
+  --text-lead--letter-spacing: -0.018em;
 
   --text-body: 13px;
   --text-body--line-height: 1.4;
@@ -150,11 +167,10 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
-  /* Jakarta is a touch wide; a hair of negative tracking makes running text
-     feel set rather than defaulted, and warms the rhythm. */
-  letter-spacing: -0.006em;
+  /* The system font is optically spaced by design — no manual tracking here. */
+  letter-spacing: normal;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -173,7 +189,7 @@ body {
 html.tauri-macos {
   --titlebar-inset-left: 78px;
   --titlebar-inset-top: 28px;
-  --spine-width: 78px;
+  --spine-width: 120px;
 }
 
 /* Top bars sit under the overlay titlebar; spine column owns the left inset. */
@@ -182,8 +198,20 @@ html.tauri-macos .app-topbar {
   padding-top: var(--titlebar-inset-top);
 }
 
+/* Empty drag region at the top of the spine — clears macOS traffic lights in
+   Tauri. Nothing is rendered inside it; the "n" home button is a sibling below. */
+.spine-top {
+  min-height: 0.75rem;
+}
+
 html.tauri-macos .spine-top {
-  min-height: calc(var(--titlebar-inset-top) + 0.5rem);
+  min-height: var(--titlebar-inset-top);
+}
+
+/* Right-side separator for the spine. Runs the full height — the spine is now
+   wide enough (120px) that the line sits clear of the macOS traffic lights. */
+.spine-separator {
+  top: 0;
 }
 
 /* Full-width top bars that span under the native window controls */
@@ -201,8 +229,18 @@ html.tauri-macos .spine-top {
   letter-spacing: -0.003em;
 }
 
+/* The ceremonial voice — Fraunces with optical sizing and softened terminals.
+   Reserved for the Domain chapel: vows set as inscriptions, names as plaques. */
+.serif {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  font-variation-settings: "SOFT" 40, "WONK" 0;
+  letter-spacing: -0.005em;
+}
+
 /* The wordmark — tightened tracking, the twilight gradient on brand surfaces. */
 .wordmark {
+  font-family: var(--font-brand);
   letter-spacing: -0.03em;
   font-weight: 700;
 }

@@ -14,6 +14,7 @@
     "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons"
   },
   "dependencies": {
+    "@fontsource-variable/fraunces": "^5.2.9",
     "@fontsource/plus-jakarta-sans": "^5.2.8",
     "@fullcalendar/core": "^6.1.15",
     "@fullcalendar/daygrid": "^6.1.20",

@@ -3,7 +3,7 @@
 // a parent, a progress, and a date range), so they share this component —
 // switch between Table · Board · Calendar · Timeline over the same data.
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   addMonths,
   eachDayOfInterval,
@@ -19,7 +19,7 @@ import {
 } from "date-fns";
 import { Bar, InlineDate, InlineText, StatusPill, Timeline, type TimelineItem } from "./parts";
 import { Btn } from "../ui";
-import { useCollectionSelection, type CollectionSelection } from "../../hooks/useCollectionSelection";
+import { SELECT_INTERACTIVE, useCollectionSelection, type CollectionSelection } from "../../hooks/useCollectionSelection";
 import {
   MarqueeOverlay,
   SelectCheckbox,
@@ -137,7 +137,7 @@ export default function Collection({ config }: { config: CollectionConfig }) {
             <button
               key={v.id}
               onClick={() => choose(v.id)}
-              className="fast mono rounded-[5px] px-3 py-1 text-[11px]"
+              className="fast mono rounded-[5px] px-3 py-1 text-label"
               style={{ background: view === v.id ? "var(--accent)" : "transparent", color: view === v.id ? "#fff" : "var(--muted)" }}
             >
               {v.label}
@@ -147,13 +147,13 @@ export default function Collection({ config }: { config: CollectionConfig }) {
 
         {view === "board" && (
           <div className="inline-flex items-center gap-1.5">
-            <span className="mono text-[10px] text-muted">group</span>
+            <span className="mono text-meta text-muted">group</span>
             <div className="inline-flex rounded-md border border-line p-0.5">
               {(["status", "domain"] as GroupBy[]).map((g) => (
                 <button
                   key={g}
                   onClick={() => chooseGroup(g)}
-                  className="fast mono rounded-[5px] px-2 py-0.5 text-[10px]"
+                  className="fast mono rounded-[5px] px-2 py-0.5 text-meta"
                   style={{ background: groupBy === g ? "var(--bg)" : "transparent", color: groupBy === g ? "var(--text)" : "var(--muted)" }}
                 >
                   {g}
@@ -166,7 +166,7 @@ export default function Collection({ config }: { config: CollectionConfig }) {
         <div className="flex-1" />
         <div className="relative flex h-7 shrink-0 items-center justify-end">
           <span
-            className={`mono text-[10px] leading-none text-muted ${selectionActive ? "invisible" : ""}`}
+            className={`mono text-meta leading-none text-muted ${selectionActive ? "invisible" : ""}`}
             aria-hidden={selectionActive}
           >
             {config.records.length} records
@@ -227,7 +227,7 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
       className={`section-label flex items-center gap-1 text-left ${k ? "hover:text-ink" : "cursor-default"} ${className}`}
     >
       {children}
-      {k && sort.key === k && <span className="text-[8px]">{sort.dir === 1 ? "▲" : "▼"}</span>}
+      {k && sort.key === k && <span className="text-micro">{sort.dir === 1 ? "▲" : "▼"}</span>}
     </button>
   );
 
@@ -271,25 +271,25 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
               />
             )}
             <div className="min-w-0" data-no-select onMouseDown={(e) => e.stopPropagation()}>
-              <InlineText value={r.title} onChange={r.setTitle} placeholder="Untitled" className="text-[13px] font-medium" />
+              <InlineText value={r.title} onChange={r.setTitle} placeholder="Untitled" className="text-body font-medium" />
             </div>
             <div data-no-select onMouseDown={(e) => e.stopPropagation()}>
               <StatusPill value={r.status} options={statusOptions} colors={statusColors} labels={config.statusLabels} onChange={r.setStatus} />
             </div>
-            <div className="mono flex items-center gap-1.5 truncate text-[11px] text-muted">
+            <div className="mono flex items-center gap-1.5 truncate text-label text-muted">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.accent }} />
               <span className="truncate">{r.subtitle}</span>
             </div>
             <div>
               <Bar pct={r.progress} color={r.accent} h={1} />
-              <span className="mono text-[10px] text-muted">{r.progress}%</span>
+              <span className="mono text-meta text-muted">{r.progress}%</span>
             </div>
             {extraColumns.map((c) => (
-              <div key={c.key} className="mono truncate text-[11px]" style={{ color: r.meta[c.key]?.color ?? "var(--muted)" }}>
+              <div key={c.key} className="mono truncate text-label" style={{ color: r.meta[c.key]?.color ?? "var(--muted)" }}>
                 {r.meta[c.key]?.value ?? "—"}
               </div>
             ))}
-            <div className="mono text-[11px] text-muted" data-no-select onMouseDown={(e) => e.stopPropagation()}>
+            <div className="mono text-label text-muted" data-no-select onMouseDown={(e) => e.stopPropagation()}>
               <InlineDate value={r.targetDate} onChange={r.setTargetDate} />
             </div>
             <button
@@ -297,14 +297,14 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
               onMouseDown={(e) => e.stopPropagation()}
               onClick={r.open}
               title="Open"
-              className="fast flex h-6 w-6 items-center justify-center rounded-full text-[12px] text-muted opacity-0 hover:bg-bg hover:text-ink group-hover:opacity-100"
+              className="fast flex h-6 w-6 items-center justify-center rounded-full text-caption text-muted opacity-0 hover:bg-bg hover:text-ink group-hover:opacity-100"
             >
               ↗
             </button>
           </div>
         );
       })}
-      {records.length === 0 && <div className="py-10 text-center text-[12px] text-muted italic">Nothing here yet.</div>}
+      {records.length === 0 && <div className="py-10 text-center text-caption text-muted italic">Nothing here yet.</div>}
       <div className="min-h-[12rem] flex-1" aria-hidden />
     </SelectionSurface>
   );
@@ -321,9 +321,13 @@ function BoardView({
   selection: CollectionSelection;
 }) {
   const { records, statusOptions, statusColors, statusLabels, selectable } = config;
-  const [dragId, setDragId] = useState<string | null>(null);
-  const dragIdRef = useRef<string | null>(null);
+  // Pointer-based drag — HTML5 drag-and-drop is swallowed by the Tauri webview,
+  // so we mirror the Timeline's pointer pattern (works in the desktop app AND
+  // the browser). Live drag lives in a ref; mirrored to state for the ghost.
+  const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
+  const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
   const [overLane, setOverLane] = useState<string | null>(null);
+  const laneRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const lanes = useMemo(() => {
     if (groupBy === "domain") {
@@ -341,27 +345,55 @@ function BoardView({
     }));
   }, [records, groupBy, statusOptions, statusColors, statusLabels]);
 
-  const beginDrag = (id: string) => {
-    dragIdRef.current = id;
-    setDragId(id);
+  const laneAtPoint = (x: number, y: number): string | null => {
+    for (const [key, el] of laneRefs.current) {
+      const b = el.getBoundingClientRect();
+      if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) return key;
+    }
+    return null;
   };
 
-  const endDrag = () => {
-    dragIdRef.current = null;
-    setDragId(null);
-    setOverLane(null);
+  // Start a drag from a card. Movement past a small threshold turns it into a
+  // real drag; a stationary press falls through to click / double-click.
+  const startCardDrag = (id: string, e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest(SELECT_INTERACTIVE)) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    dragRef.current = { id, moved: false };
+
+    const onMove = (ev: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      if (!d.moved && (Math.abs(ev.clientX - startX) > 4 || Math.abs(ev.clientY - startY) > 4)) {
+        d.moved = true;
+        selection.cancelPointer();
+      }
+      if (!d.moved) return;
+      ev.preventDefault();
+      setDrag({ id: d.id, x: ev.clientX, y: ev.clientY });
+      setOverLane(laneAtPoint(ev.clientX, ev.clientY));
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const d = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      setOverLane(null);
+      if (!d || !d.moved) return; // a click, not a drag — let click/dblclick run
+      const laneKey = laneAtPoint(ev.clientX, ev.clientY);
+      if (!laneKey) return;
+      const r = records.find((x) => x.id === d.id);
+      if (!r) return;
+      if (groupBy === "status" && r.status !== laneKey) r.setStatus(laneKey);
+      if (groupBy === "domain" && r.domainId !== laneKey) r.setDomain?.(laneKey);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
 
-  const dropOn = (laneKey: string, droppedId: string | null) => {
-    const id = droppedId ?? dragIdRef.current ?? dragId;
-    endDrag();
-    const r = records.find((x) => x.id === id);
-    if (!r) return;
-    if (groupBy === "status" && r.status !== laneKey) r.setStatus(laneKey);
-    if (groupBy === "domain" && r.domainId !== laneKey) r.setDomain?.(laneKey);
-  };
-
-  const dragging = dragIdRef.current ?? dragId;
+  const dragging = drag?.id ?? null;
 
   return (
     <SelectionSurface selection={selection}>
@@ -373,16 +405,7 @@ function BoardView({
           return (
             <div
               key={lane.key}
-              onDragOver={(e) => {
-                if (!dragging || !canDrop) return;
-                e.preventDefault();
-                setOverLane(lane.key);
-              }}
-              onDragLeave={() => setOverLane((l) => (l === lane.key ? null : l))}
-              onDrop={(e) => {
-                e.preventDefault();
-                dropOn(lane.key, e.dataTransfer.getData("text/plain") || null);
-              }}
+              ref={(el) => { if (el) laneRefs.current.set(lane.key, el); else laneRefs.current.delete(lane.key); }}
               className="fast flex min-h-full flex-col rounded-md p-1"
               style={{
                 background: over ? "var(--accent-soft)" : activeLane ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent",
@@ -392,7 +415,7 @@ function BoardView({
               <div className="mb-2 flex items-center gap-2 px-1">
                 <span className="h-2 w-2 rounded-full" style={{ background: lane.color, boxShadow: activeLane ? "0 0 6px var(--accent-glow)" : undefined }} />
                 <span className="section-label" style={{ color: activeLane ? "var(--accent)" : "var(--text)" }}>{lane.label}</span>
-                <span className="mono text-[10px] text-muted">{lane.items.length}</span>
+                <span className="mono text-meta text-muted">{lane.items.length}</span>
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-2.5">
                 {lane.items.map((r) => (
@@ -402,13 +425,12 @@ function BoardView({
                     config={config}
                     selectable={!!selectable}
                     selection={selection}
-                    dragging={dragId === r.id}
-                    onDragStart={() => beginDrag(r.id)}
-                    onDragEnd={endDrag}
+                    dragging={dragging === r.id}
+                    onStartDrag={(e) => startCardDrag(r.id, e)}
                   />
                 ))}
                 {lane.items.length === 0 ? (
-                  <div className="flex flex-1 flex-col rounded-md border border-dashed border-line py-6 text-center text-[11px] text-muted">
+                  <div className="flex flex-1 flex-col rounded-md border border-dashed border-line py-6 text-center text-label text-muted">
                     {over ? "drop here" : "empty"}
                   </div>
                 ) : (
@@ -419,6 +441,21 @@ function BoardView({
           );
         })}
       </div>
+
+      {/* floating ghost following the cursor during a drag */}
+      {drag && (() => {
+        const r = records.find((x) => x.id === drag.id);
+        if (!r) return null;
+        return (
+          <div
+            className="pointer-events-none fixed z-[300] flex max-w-[220px] items-center gap-1.5 rounded-md border bg-surface px-2.5 py-1.5 text-label shadow-lg"
+            style={{ left: drag.x + 12, top: drag.y + 12, borderColor: r.accent }}
+          >
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.accent }} />
+            <span className="truncate text-ink">{r.title || "Untitled"}</span>
+          </div>
+        );
+      })()}
     </SelectionSurface>
   );
 }
@@ -429,36 +466,26 @@ function BoardCard({
   selectable,
   selection,
   dragging,
-  onDragStart,
-  onDragEnd,
+  onStartDrag,
 }: {
   r: CollectionRecord;
   config: CollectionConfig;
   selectable: boolean;
   selection: CollectionSelection;
   dragging: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
+  onStartDrag: (e: ReactPointerEvent) => void;
 }) {
   const metaEntries = (config.extraColumns ?? []).map((c) => r.meta[c.key]?.value).filter(Boolean);
   const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
   const inProgress = r.status === "in_progress";
   return (
     <div
-      draggable
-      data-drag-item
       data-select-id={r.id}
       ref={(el) => selection.registerRef(r.id, el)}
-      onDragStart={(e) => {
-        selection.cancelPointer();
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", r.id);
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
+      onPointerDown={onStartDrag}
       onClick={selectable ? selection.itemClickSelect(r.id) : undefined}
       onDoubleClick={r.open}
-      className={`fast group relative cursor-grab overflow-hidden rounded-md border bg-surface p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${
+      className={`fast group relative cursor-grab touch-none overflow-hidden rounded-md border bg-surface p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${
         inProgress ? "border-accent/50 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_20%,transparent)]" : ""
       } ${visual === "selected" ? "border-accent/40" : visual === "preview" ? "border-accent/50 border-dashed" : inProgress ? "" : "border-line"}`}
       style={{
@@ -477,8 +504,8 @@ function BoardCard({
           />
         )}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium">{r.title || "Untitled"}</div>
-          <div className="mono mt-0.5 truncate text-[10px]" style={{ color: r.accent }}>{r.domainIcon} {r.subtitle}</div>
+          <div className="truncate text-body font-medium">{r.title || "Untitled"}</div>
+          <div className="mono mt-0.5 truncate text-meta" style={{ color: r.accent }}>{r.domainIcon} {r.subtitle}</div>
         </div>
         <div data-no-select onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
           <StatusPill
@@ -493,7 +520,7 @@ function BoardCard({
       </div>
       <div className="mt-2 pl-1.5">
         <Bar pct={r.progress} color={r.accent} h={1} />
-        <div className="mono flex items-center gap-2 text-[10px] text-muted">
+        <div className="mono flex items-center gap-2 text-meta text-muted">
           <span style={{ color: r.accent }}>{r.progress}%</span>
           {metaEntries.map((m, i) => <span key={i}>· {m}</span>)}
           {r.targetDate && <span className="ml-auto">{r.targetDate.slice(5)}</span>}
@@ -580,17 +607,17 @@ function CalendarView({ config, selection }: { config: CollectionConfig; selecti
   return (
     <SelectionSurface selection={selection}>
       <div className="mb-3 flex shrink-0 items-center gap-3">
-        <button onClick={() => setCursor((c) => addMonths(c, -1))} className="fast mono rounded border border-line px-2 py-0.5 text-[12px] text-muted hover:text-ink">‹</button>
-        <span className="text-[14px] font-medium">{format(cursor, "MMMM yyyy")}</span>
-        <button onClick={() => setCursor((c) => addMonths(c, 1))} className="fast mono rounded border border-line px-2 py-0.5 text-[12px] text-muted hover:text-ink">›</button>
-        <button onClick={() => setCursor(startOfMonth(new Date()))} className="fast mono text-[11px] text-muted hover:text-ink">today</button>
-        {dragId && <span className="mono text-[10px] text-muted">drag onto a day to reschedule</span>}
+        <button onClick={() => setCursor((c) => addMonths(c, -1))} className="fast mono rounded border border-line px-2 py-0.5 text-caption text-muted hover:text-ink">‹</button>
+        <span className="text-head font-medium">{format(cursor, "MMMM yyyy")}</span>
+        <button onClick={() => setCursor((c) => addMonths(c, 1))} className="fast mono rounded border border-line px-2 py-0.5 text-caption text-muted hover:text-ink">›</button>
+        <button onClick={() => setCursor(startOfMonth(new Date()))} className="fast mono text-label text-muted hover:text-ink">today</button>
+        {dragId && <span className="mono text-meta text-muted">drag onto a day to reschedule</span>}
       </div>
 
       <div className="overflow-hidden rounded-md border border-line bg-surface">
         <div className="grid grid-cols-7 border-b border-line bg-bg">
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-            <div key={d} className="mono px-2 py-1.5 text-[9px] uppercase text-muted">{d}</div>
+            <div key={d} className="mono px-2 py-1.5 text-micro uppercase text-muted">{d}</div>
           ))}
         </div>
         <div className="grid grid-cols-7">
@@ -608,7 +635,7 @@ function CalendarView({ config, selection }: { config: CollectionConfig; selecti
                 className="min-h-[96px] border-b border-r border-line p-1.5 last:border-r-0"
                 style={{ opacity: dim ? 0.45 : 1, background: over ? "var(--accent-soft)" : "transparent", outline: over ? "1px dashed var(--accent)" : "none", outlineOffset: -1 }}
               >
-                <div className="mono mb-1 flex items-center text-[10px]">
+                <div className="mono mb-1 flex items-center text-meta">
                   <span className="flex h-5 w-5 items-center justify-center rounded-full" style={{ background: isToday(day) ? "var(--signal)" : "transparent", color: isToday(day) ? "#fff" : "var(--muted)" }}>
                     {format(day, "d")}
                   </span>
@@ -623,11 +650,11 @@ function CalendarView({ config, selection }: { config: CollectionConfig; selecti
                       dragging={dragId === r.id}
                       onDragStart={() => setDragId(r.id)}
                       onDragEnd={() => { setDragId(null); setOverKey(null); }}
-                      className="fast flex w-full items-center truncate rounded-sm px-1 py-0.5 text-left text-[10px]"
+                      className="fast flex w-full items-center truncate rounded-sm px-1 py-0.5 text-left text-meta"
                       style={{ background: `${r.accent}1f`, color: "var(--text)", borderLeft: `2px solid ${r.accent}` }}
                     />
                   ))}
-                  {items.length > 3 && <div className="mono px-1 text-[9px] text-muted">+{items.length - 3} more</div>}
+                  {items.length > 3 && <div className="mono px-1 text-micro text-muted">+{items.length - 3} more</div>}
                 </div>
               </div>
             );
@@ -653,10 +680,10 @@ function CalendarView({ config, selection }: { config: CollectionConfig; selecti
               dragging={dragId === r.id}
               onDragStart={() => setDragId(r.id)}
               onDragEnd={() => { setDragId(null); setOverKey(null); }}
-              className="fast flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] hover:border-muted"
+              className="fast flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-label hover:border-muted"
             />
           ))}
-          {unscheduled.length === 0 && <span className="mono text-[11px] text-muted italic">Everything has a date.</span>}
+          {unscheduled.length === 0 && <span className="mono text-label text-muted italic">Everything has a date.</span>}
         </div>
       </div>
       <div className="min-h-[10rem] flex-1" aria-hidden />
@@ -673,7 +700,7 @@ function TimelineView({ config, selection }: { config: CollectionConfig; selecti
     start: r.startDate,
     end: r.targetDate,
     progress: r.progress,
-    dim: r.status === "complete" || r.status === "done" || r.status === "shipped" || r.status === "dropped",
+    dim: r.status === "complete" || r.status === "done" || r.status === "cancelled",
     onClick: r.open,
     onChangeDates: (start, end) => {
       if (r.setDates) r.setDates(start, end);

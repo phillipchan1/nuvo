@@ -25,14 +25,14 @@ export function MomentHeader({
     >
       <div className="flex items-start gap-3">
         <span
-          className="fast mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[16px]"
+          className="fast mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-head"
           style={{ background: `${accent}1f`, color: accent, boxShadow: `inset 0 0 0 1px ${accent}40` }}
         >
           {icon}
         </span>
         <div className="min-w-0 flex-1">
           <div className="section-label" style={{ color: accent }}>{eyebrow}</div>
-          <h2 className="mt-0.5 text-[17px] font-semibold leading-tight tracking-tight">{title}</h2>
+          <h2 className="mt-0.5 text-lead font-semibold leading-tight tracking-tight">{title}</h2>
         </div>
         <button onClick={onClose} className="keycap shrink-0">esc</button>
       </div>
@@ -67,7 +67,7 @@ export function Pill({
     <button
       onClick={onClick}
       title={title}
-      className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]"
+      className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label"
       style={{
         borderColor: active ? accent : "var(--line)",
         color: active ? "var(--text)" : "var(--muted)",

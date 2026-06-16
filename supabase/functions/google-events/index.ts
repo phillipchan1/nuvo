@@ -131,14 +131,16 @@ Deno.serve(async (req) => {
       }
 
       if (scope === "ALL" && recurringEventId) {
-        await admin
+        const { error: delErr } = await admin
           .from("external_events")
           .delete()
           .eq("account_id", evt.account_id)
           .eq("calendar_id", evt.calendar_id)
           .eq("recurring_event_id", recurringEventId);
+        if (delErr) throw delErr;
       } else {
-        await admin.from("external_events").delete().eq("id", eventId);
+        const { error: delErr } = await admin.from("external_events").delete().eq("id", eventId);
+        if (delErr) throw delErr;
       }
       await logSync("google", "event-delete", "ok", undefined, user.id);
       return json({ ok: true });

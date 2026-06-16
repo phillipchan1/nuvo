@@ -110,10 +110,10 @@ export default function AgentSidebar({
           title={`Open ${ASSISTANT_NAME} (⌘J)`}
           className="agent-rail-toggle fast group flex h-full w-full flex-col items-center gap-2 py-4 text-muted hover:text-accent"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg text-[14px] transition-colors group-hover:bg-accent-soft group-hover:text-accent">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg text-head transition-colors group-hover:bg-accent-soft group-hover:text-accent">
             ✦
           </span>
-          <span className="text-[10px] font-semibold tracking-tight [writing-mode:vertical-rl] rotate-180">
+          <span className="text-meta font-semibold tracking-tight [writing-mode:vertical-rl] rotate-180">
             {ASSISTANT_NAME}
           </span>
         </button>
@@ -130,21 +130,21 @@ export default function AgentSidebar({
         <div className="agent-drop-overlay pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-2 bg-accent-soft/75 backdrop-blur-[3px]">
           <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-accent bg-surface/90 px-8 py-6 shadow-lg">
             <span className="text-[28px] opacity-80">↓</span>
-            <span className="text-[13px] font-medium text-accent">Drop files to attach</span>
-            <span className="mono text-[10px] text-muted">Images, PDFs, text files</span>
+            <span className="text-body font-medium text-accent">Drop files to attach</span>
+            <span className="mono text-meta text-muted">Images, PDFs, text files</span>
           </div>
         </div>
       )}
 
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3.5">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-soft text-[12px] text-accent">✦</span>
-        <span className="text-[13px] font-semibold">{ASSISTANT_NAME}</span>
-        <span className="mono text-[10px] text-muted">your planner</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-soft text-caption text-accent">✦</span>
+        <span className="text-body font-semibold">{ASSISTANT_NAME}</span>
+        <span className="mono text-meta text-muted">your planner</span>
         <div className="flex-1" />
         {messages.length > 0 && (
           <button
             onClick={clear}
-            className="fast rounded-md px-2 py-1 text-[11px] text-muted hover:bg-surface-2 hover:text-ink"
+            className="fast rounded-md px-2 py-1 text-label text-muted hover:bg-surface-2 hover:text-ink"
             title="Clear chat"
           >
             Clear
@@ -162,7 +162,7 @@ export default function AgentSidebar({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3.5 py-3">
         {messages.length === 0 && !loading ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 text-center">
-            <p className="text-[13px] leading-relaxed text-muted">{hints.prompt}</p>
+            <p className="text-body leading-relaxed text-muted">{hints.prompt}</p>
             <div className="w-full max-w-[300px]">
               <AgentSuggestionChips
                 suggestions={hints.starters.map((s) => ({ label: s, message: s }))}
@@ -178,7 +178,7 @@ export default function AgentSidebar({
             ))}
             {loading && (
               <div className="agent-bubble agent-bubble-assistant w-fit">
-                <span className="mono shimmer text-[11px]">Thinking…</span>
+                <span className="mono shimmer text-label">Thinking…</span>
               </div>
             )}
             {activeSuggestions && (
@@ -197,7 +197,7 @@ export default function AgentSidebar({
       </div>
 
       {error && (
-        <div className="shrink-0 border-t border-line bg-signal-soft px-3.5 py-2 text-[11px] text-signal">
+        <div className="shrink-0 border-t border-line bg-signal-soft px-3.5 py-2 text-label text-signal">
           {error}
         </div>
       )}

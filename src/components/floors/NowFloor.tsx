@@ -8,18 +8,20 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { useVertical } from "../../hooks/useVertical";
 import { useExternalEvents } from "../../hooks/useCalendar";
-import { useScheduledTasks } from "../../hooks/useTasks";
+import { useScheduledTasks, useAllTasks } from "../../hooks/useTasks";
 import { useSettings } from "../../hooks/useSettings";
 import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useAgent } from "../../hooks/useAgent";
 import { endOf, todayISO } from "../../lib/dates";
-import { faithfulness, initiativeProgress, type Domain } from "../../lib/vertical";
+import { faithfulness, initiativeProgress, taskDomainColor, type Domain, type VerticalData } from "../../lib/vertical";
 import { fmtMins, rankNow, readDay, type BusyBlock, type DayRead, type Gap, type NowContext } from "../../lib/now";
+import { composeWeek, fmtSlot, type ComposeResult, type DayContext } from "../../lib/compose";
 import { composeBrief, type Brief } from "../../lib/brief";
 import type { AgentMessage } from "../../lib/agentTypes";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
-import { Btn } from "../ui";
+import { Btn, Modal } from "../ui";
 import Standback from "./Standback";
+import { BigRocksRibbon } from "./bigRocks";
 
 const NAME = "Phil";
 
@@ -31,7 +33,7 @@ const readChatOpen = (): boolean => {
 };
 
 export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
-  const { data, toggleTask } = useVertical();
+  const { data, toggleTask, applySchedule } = useVertical();
   const { settings } = useSettings();
   const [workingDays] = useWorkingDays();
   const { nav, setNowMoment, back, openRecord, focusDomain, goRung } = useAppNavigation();
@@ -70,6 +72,9 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   }, [now.getHours()]); // eslint-disable-line react-hooks/exhaustive-deps
   const { data: events = [] } = useExternalEvents(horizon.start, horizon.end);
   const { data: blocks = [] } = useScheduledTasks(horizon.start, horizon.end);
+  // raw rows for the "order my day" pool (inbox + backlog + today's untimed)
+  const { data: allTasks = [] } = useAllTasks();
+  const [order, setOrder] = useState<ComposeResult | null>(null);
 
   // How you're actually running today — set by talking to Nuvo. Re-voices the
   // brief and re-ranks the day toward low-friction work when you're spent.
@@ -137,6 +142,47 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   );
   const brief = useMemo(() => composeBrief({ now, name: NAME, dayRead, top, tired, restDay }), [now, dayRead, top, tired, restDay]);
 
+  // ── Order my day — pull from the inbox/week and time-block today around the
+  //    real calendar, reusing the week composer over a one-day window. ────────
+  const proposeOrder = () => {
+    const today = todayISO(now);
+    const pool = allTasks.filter(
+      (t) =>
+        t.status !== "done" && t.status !== "trashed" && !t.start_time &&
+        (t.do_date === today || (!t.do_date && (t.status === "inbox" || t.status === "backlog"))),
+    );
+    setOrder(
+      composeWeek({
+        weekStartISO: today,
+        todayISO: today,
+        now,
+        tasks: pool,
+        events: events.filter((e) => !(settings?.hidden_calendar_ids ?? []).includes(e.calendar_id)),
+        blocks,
+        workStartMin: settings?.work_start_minutes ?? 480,
+        workEndMin: settings?.work_end_minutes ?? 990,
+        focusInitiativeIds: data.focusInitiativeIds,
+        dayContexts: (data.sprint?.day_contexts ?? {}) as Record<string, DayContext>,
+        workingDays: [now.getDay()], // only today is "working" — every block lands today
+        weeklyBudgetMins: null,
+      }),
+    );
+  };
+  const applyOrder = async () => {
+    if (!order) return;
+    await applySchedule(
+      order.placements.map((p) => {
+        const [y, mo, d] = p.dayISO.split("-").map(Number);
+        return {
+          id: p.task.id,
+          doDateISO: p.dayISO,
+          startISO: new Date(y, mo - 1, d, Math.floor(p.startMin / 60), p.startMin % 60).toISOString(),
+        };
+      }),
+    );
+    setOrder(null);
+  };
+
   // ── The strategic face: a step back to the board ──────────────────────────
   if (mode === "standback") {
     return (
@@ -157,8 +203,8 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
     return (
       <Moment accent={active.domain?.color}>
         <div className="section-label">Focusing</div>
-        <div className="mt-1.5 text-[20px] font-medium">{active.task.title}</div>
-        <div className="mono mt-1 text-[11px] text-muted">{active.task.durationMins}m · everything else is quiet</div>
+        <div className="mt-1.5 text-display font-medium">{active.task.title}</div>
+        <div className="mono mt-1 text-label text-muted">{active.task.durationMins}m · everything else is quiet</div>
         <div className="mt-5 flex justify-center gap-2">
           <Btn kind="primary" onClick={() => { toggleTask(active.task.id); setNowMoment("done", active.task.id); }}>✓ done</Btn>
           <Btn onClick={back}>back</Btn>
@@ -169,9 +215,9 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   if (active && nowMoment === "done") {
     return (
       <Moment accent={active.domain?.color}>
-        <div className="text-[15px] font-medium" style={{ color: active.domain?.color }}>✓ logged as a gain</div>
-        <div className="mt-1.5 text-[13px] text-ink">{active.task.title}</div>
-        <div className="mt-2 space-y-0.5 text-[12px] text-muted">
+        <div className="text-head font-medium" style={{ color: active.domain?.color }}>✓ logged as a gain</div>
+        <div className="mt-1.5 text-body text-ink">{active.task.title}</div>
+        <div className="mt-2 space-y-0.5 text-caption text-muted">
           {active.initiative && <div>{active.initiative.name} — now {initiativeProgress(data, active.initiative)}%</div>}
           {active.domain && <div>{active.domain.name} tended · faithful again today</div>}
         </div>
@@ -183,6 +229,11 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   return (
     <div className={`mx-auto w-full ${chatOpen ? "max-w-[1460px] 2xl:max-w-[1720px]" : "max-w-[1080px]"}`}>
       <ModeToggle mode={mode} setMode={setMode} />
+      {/* big rocks — held all week, the first thing Today shows (when set) */}
+      <BigRocksRibbon />
+      {order && (
+        <OrderDayModal order={order} data={data} onApply={() => void applyOrder()} onClose={() => setOrder(null)} />
+      )}
       {/* Collapsed (default): one centered column, the day as the hero.
           Expanded: the chat earns a sticky right rail and reclaims the margin. */}
       <div className={chatOpen ? "xl:grid xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start xl:gap-x-10" : ""}>
@@ -200,7 +251,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
         )}
 
         <div className="mt-6 grid grid-cols-1 gap-x-9 gap-y-7 md:grid-cols-[248px_1fr] xl:col-start-1 xl:row-start-2">
-          <DaySpine now={now} busy={busy} gaps={dayRead.gaps} activeGap={activeGap} windowStart={windowStart} windowEnd={windowEnd} />
+          <DaySpine now={now} busy={busy} gaps={dayRead.gaps} activeGap={activeGap} windowStart={windowStart} windowEnd={windowEnd} onOrder={proposeOrder} />
 
         <div className="min-w-0">
           {/* RIGHT NOW — the meeting you're in, when you're in one; else the task to start */}
@@ -222,7 +273,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
               <div className={dayRead.current || dayRead.upcoming.length ? "mt-6" : "mt-1"}>
                 <button
                   onClick={() => setShowPicks(true)}
-                  className="fast text-[12.5px] text-muted underline-offset-2 hover:text-accent hover:underline"
+                  className="fast text-caption text-muted underline-offset-2 hover:text-accent hover:underline"
                 >
                   Want to get a jump on something? →
                 </button>
@@ -240,8 +291,8 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
                     : "Right now"}
               </div>
               <div className="rise rounded-lg border bg-surface p-4" style={{ borderColor: top.domain?.color, borderWidth: 1.5 }}>
-                <div className="text-[19px] font-medium leading-snug">{top.task.title}</div>
-                <div className="mono mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+                <div className="text-display font-medium leading-snug">{top.task.title}</div>
+                <div className="mono mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-label">
                   {top.domain && <span style={{ color: top.domain.color }}>{top.domain.name}</span>}
                   {top.initiative && <><span className="text-line">·</span><span className="text-muted">{top.initiative.name}</span></>}
                 </div>
@@ -250,7 +301,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
 
                 <div className="mt-3 space-y-1.5">
                   {top.reasons.map((r, i) => (
-                    <div key={i} className="flex items-center gap-2.5 text-[12px] text-muted">
+                    <div key={i} className="flex items-center gap-2.5 text-caption text-muted">
                       <span className="w-3 text-center" style={{ color: top.domain?.color }}>{r.glyph}</span>
                       {r.text}
                     </div>
@@ -285,11 +336,11 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
                         <button
                           key={s.task.id}
                           onClick={() => setIdx(i)}
-                          className="fast group flex w-full items-center gap-2 text-left text-[12.5px] text-muted hover:text-ink"
+                          className="fast group flex w-full items-center gap-2 text-left text-caption text-muted hover:text-ink"
                         >
                           <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: s.domain?.color ?? "var(--line-strong)" }} />
                           <span className="truncate group-hover:underline">{s.task.title}</span>
-                          <span className="mono shrink-0 text-[10px] text-line">{s.task.durationMins}m</span>
+                          <span className="mono shrink-0 text-meta text-line">{s.task.durationMins}m</span>
                         </button>
                       ),
                     )}
@@ -299,7 +350,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
             </div>
           ) : (
             !dayRead.current && (
-              <div className="rounded-lg border border-line bg-surface-2 p-6 text-center text-[13px] text-muted">
+              <div className="rounded-lg border border-line bg-surface-2 p-6 text-center text-body text-muted">
                 Nothing ready — inbox zero.
                 <div className="mt-3"><Btn onClick={onOpenDay}>open day planner</Btn></div>
               </div>
@@ -331,7 +382,7 @@ function ModeToggle({ mode, setMode }: { mode: "now" | "standback"; setMode: (m:
           <button
             key={t.id}
             onClick={() => setMode(t.id)}
-            className="fast mono rounded-full px-3 py-1 text-[11px]"
+            className="fast mono rounded-full px-3 py-1 text-label"
             style={{
               background: on ? "var(--surface)" : "transparent",
               color: on ? "var(--accent)" : "var(--muted)",
@@ -372,18 +423,12 @@ function NowBrief({
 
   return (
     <div className="border-b border-line pb-5">
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="wordmark wordmark-grad text-[13px]">Nuvo</span>
-          <span className="mono text-[10px] text-muted">your day</span>
-        </div>
-        <div className="mono text-[12px] text-muted">{weekday} · {clock}</div>
-      </div>
+      <div className="mono mb-2 text-meta text-muted">{weekday} · {clock}</div>
 
-      <h1 className="mt-2 text-[18px] font-semibold tracking-tight">{brief.greeting}</h1>
-      <p className="mt-1 max-w-[680px] text-[14px] leading-relaxed text-ink/90">{brief.body}</p>
+      <h1 className="text-lead font-semibold tracking-tight">{brief.greeting}</h1>
+      <p className="mt-1 max-w-[680px] text-head leading-relaxed text-ink/90">{brief.body}</p>
 
-      <div className="mono mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11px]">
+      <div className="mono mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-label">
         {chips.map((c, i) => (
           <span key={i} className="flex items-center gap-1.5" style={{ color: c.tone === "accent" ? "var(--accent)" : "var(--muted)" }}>
             <span>{c.glyph}</span>
@@ -406,7 +451,7 @@ function NuvoBar({
   onOpen: () => void;
 }) {
   const ask = (text: string) => { onOpen(); void agent.sendMessage(text); };
-  const pill = "fast rounded-full border px-2.5 py-1 text-[11px]";
+  const pill = "fast rounded-full border px-2.5 py-1 text-label";
   const ghost = `${pill} border-line text-muted hover:border-accent hover:text-accent`;
   return (
     <div className="mt-4 flex flex-wrap items-center gap-1.5">
@@ -456,7 +501,7 @@ function NowAssistant({
     <div className="rise rounded-lg border border-line bg-surface-2 p-3.5">
       <div className="mb-3 flex items-center justify-between">
         <span className="section-label">Ask Nuvo</span>
-        <button onClick={onCollapse} title="Collapse" className="fast mono text-[10px] text-muted hover:text-ink">collapse ›</button>
+        <button onClick={onCollapse} title="Collapse" className="fast mono text-meta text-muted hover:text-ink">collapse ›</button>
       </div>
 
       {messages.length > 0 ? (
@@ -464,17 +509,17 @@ function NowAssistant({
           {messages.map((m) => <Bubble key={m.id} message={m} />)}
           {loading && (
             <div className="agent-bubble agent-bubble-assistant w-fit">
-              <span className="mono shimmer text-[11px]">Nuvo's on it…</span>
+              <span className="mono shimmer text-label">Nuvo's on it…</span>
             </div>
           )}
         </div>
       ) : (
-        <p className="mb-2.5 text-[12px] leading-relaxed text-muted">
+        <p className="mb-2.5 text-caption leading-relaxed text-muted">
           I've read your day. Ask me to move things, prep you for what's next, or lighten the load.
         </p>
       )}
       {error && !loading && (
-        <div className="mb-2 rounded-md bg-signal-soft px-2.5 py-1.5 text-[11px] text-signal">{error}</div>
+        <div className="mb-2 rounded-md bg-signal-soft px-2.5 py-1.5 text-label text-signal">{error}</div>
       )}
 
       <div className="flex flex-wrap gap-1.5">
@@ -483,7 +528,7 @@ function NowAssistant({
             key={c.label}
             onClick={c.on}
             disabled={loading}
-            className="fast rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] text-muted hover:border-accent hover:text-accent disabled:opacity-40"
+            className="fast rounded-full border border-line bg-surface px-2.5 py-1 text-label text-muted hover:border-accent hover:text-accent disabled:opacity-40"
           >
             {c.label}
           </button>
@@ -491,7 +536,7 @@ function NowAssistant({
       </div>
 
       <div className="fast mt-2 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
-        <span className="mono shrink-0 text-[10px] text-accent">›</span>
+        <span className="mono shrink-0 text-meta text-accent">›</span>
         <input
           ref={inputRef}
           value={input}
@@ -499,12 +544,12 @@ function NowAssistant({
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); send(input); } }}
           placeholder="Tell Nuvo how you're running, or what to move…"
           disabled={loading}
-          className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted disabled:opacity-50"
+          className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted disabled:opacity-50"
         />
         <button
           onClick={() => send(input)}
           disabled={!input.trim() || loading}
-          className="fast shrink-0 rounded-md border border-accent bg-accent px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-30"
+          className="fast shrink-0 rounded-md border border-accent bg-accent px-2.5 py-1 text-label font-medium text-white disabled:opacity-30"
         >
           ↩
         </button>
@@ -519,14 +564,14 @@ function Bubble({ message }: { message: AgentMessage }) {
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div className={`agent-bubble max-w-[88%] ${isUser ? "agent-bubble-user" : "agent-bubble-assistant"}`}>
         {isUser ? (
-          <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed">{message.content}</p>
+          <p className="whitespace-pre-wrap text-caption leading-relaxed">{message.content}</p>
         ) : (
-          <div className="agent-markdown text-[12.5px] leading-relaxed"><ReactMarkdown>{message.content}</ReactMarkdown></div>
+          <div className="agent-markdown text-caption leading-relaxed"><ReactMarkdown>{message.content}</ReactMarkdown></div>
         )}
         {message.actions && message.actions.length > 0 && (
           <ul className="mt-2 space-y-1 border-t border-line/50 pt-2">
             {message.actions.map((a) => (
-              <li key={a.summary} className="mono text-[10px] text-muted">✓ {a.summary}</li>
+              <li key={a.summary} className="mono text-meta text-muted">✓ {a.summary}</li>
             ))}
           </ul>
         )}
@@ -551,17 +596,17 @@ function MeetingNow({ now, current, overlapping }: { now: Date; current: BusyBlo
           <span className="pulse-glow inline-block h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />
           In a meeting
         </span>
-        <span className="mono text-[12px]" style={{ color: "var(--signal)" }}>{fmtMins(minsLeft)} left</span>
+        <span className="mono text-caption" style={{ color: "var(--signal)" }}>{fmtMins(minsLeft)} left</span>
       </div>
-      <div className="mt-1.5 text-[19px] font-medium leading-snug">{current.title}</div>
-      <div className="mono mt-0.5 text-[11px] text-muted">
+      <div className="mt-1.5 text-display font-medium leading-snug">{current.title}</div>
+      <div className="mono mt-0.5 text-label text-muted">
         {range}{current.location ? ` · ${current.location}` : ""}
       </div>
       <div className="mt-3 h-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
         <div className="h-full rounded-full" style={{ width: `${(elapsed / total) * 100}%`, background: "var(--signal)" }} />
       </div>
       {overlapping.length > 0 && (
-        <div className="mono mt-3 flex items-start gap-1.5 text-[10.5px]" style={{ color: "var(--signal)" }}>
+        <div className="mono mt-3 flex items-start gap-1.5 text-meta" style={{ color: "var(--signal)" }}>
           <span>⚠</span>
           <span>
             {overlapping.length} more on your calendar now — {overlapping.map((o) => o.title).join(", ")}
@@ -581,8 +626,8 @@ function UpNext({ now, items, className = "" }: { now: Date; items: BusyBlock[];
         {items.map((b, i) => {
           const soon = b.start.getTime() - now.getTime() <= 15 * 60_000;
           return (
-            <div key={i} className="flex items-baseline gap-2.5 text-[12.5px]">
-              <span className="mono w-16 shrink-0 text-right text-[10.5px]" style={{ color: soon ? "var(--signal)" : "var(--muted)" }}>
+            <div key={i} className="flex items-baseline gap-2.5 text-caption">
+              <span className="mono w-16 shrink-0 text-right text-meta" style={{ color: soon ? "var(--signal)" : "var(--muted)" }}>
                 {b.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
               </span>
               <span className="h-1.5 w-1.5 shrink-0 translate-y-[3px] rounded-full" style={{ background: b.kind === "block" ? "var(--accent)" : "var(--line-strong)" }} />
@@ -626,9 +671,9 @@ function layoutColumns(blocks: BusyBlock[]): { b: BusyBlock; col: number; cols: 
 // the day: what's behind you dims, what you're in glows, open blocks read as
 // the breathing room they are.
 function DaySpine({
-  now, busy, activeGap, windowStart, windowEnd,
+  now, busy, activeGap, windowStart, windowEnd, onOrder,
 }: {
-  now: Date; busy: BusyBlock[]; gaps: Gap[]; activeGap: Gap | null; windowStart: Date; windowEnd: Date;
+  now: Date; busy: BusyBlock[]; gaps: Gap[]; activeGap: Gap | null; windowStart: Date; windowEnd: Date; onOrder: () => void;
 }) {
   const winMins = Math.max(60, (windowEnd.getTime() - windowStart.getTime()) / 60_000);
   // Fit the day into a comfortable band while keeping proportions honest.
@@ -651,12 +696,21 @@ function DaySpine({
 
   return (
     <div className="min-w-0">
-      <div className="section-label mb-2">Today</div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="section-label">Today</span>
+        <button
+          onClick={onOrder}
+          title="Pull from your inbox + week and time-block today around your calendar"
+          className="fast mono text-meta text-accent hover:underline"
+        >
+          ✦ order my day
+        </button>
+      </div>
       <div className="relative pl-11" style={{ height: H }}>
         {/* hour ticks + labels */}
         {hours.map((hr) => (
           <div key={hr.getTime()} className="pointer-events-none absolute left-0 right-0 flex items-center" style={{ top: y(hr) }}>
-            <span className="mono absolute left-0 -translate-y-1/2 text-[9.5px] text-line">
+            <span className="mono absolute left-0 -translate-y-1/2 text-micro text-line">
               {hr.toLocaleTimeString([], { hour: "numeric" }).replace(" ", "")}
             </span>
             <div className="ml-9 h-px flex-1" style={{ background: "color-mix(in srgb, var(--line) 60%, transparent)" }} />
@@ -677,7 +731,7 @@ function DaySpine({
               border: "1px dashed color-mix(in srgb, var(--accent) 40%, transparent)",
             }}
           >
-            <span className="mono absolute right-2 top-1 text-[9.5px] text-accent">open · {fmtMins(activeGap.mins)}</span>
+            <span className="mono absolute right-2 top-1 text-micro text-accent">open · {fmtMins(activeGap.mins)}</span>
           </div>
         )}
 
@@ -706,11 +760,11 @@ function DaySpine({
                 zIndex: ongoing ? 5 : 1,
               }}
             >
-              <div className="truncate text-[11px] font-medium leading-tight" style={{ textDecoration: b.done ? "line-through" : undefined }}>
+              <div className="truncate text-label font-medium leading-tight" style={{ textDecoration: b.done ? "line-through" : undefined }}>
                 {b.title}
               </div>
               {height > 30 && cols === 1 && (
-                <div className="mono text-[9px] text-muted">
+                <div className="mono text-micro text-muted">
                   {b.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </div>
               )}
@@ -741,7 +795,7 @@ function GapAnchor({ activeGap, current, accent }: { activeGap: Gap | null; curr
       : `${fmtMins(activeGap.mins)} free at ${at}`
     : `slots into your open ${fmtMins(activeGap.mins)} block`;
   return (
-    <div className="mono mt-2 flex items-center gap-1.5 text-[10.5px]" style={{ color: accent ?? "var(--accent)" }}>
+    <div className="mono mt-2 flex items-center gap-1.5 text-meta" style={{ color: accent ?? "var(--accent)" }}>
       <span>↳</span> {text}
     </div>
   );
@@ -769,8 +823,8 @@ function DomainBalance({ domains, restDay }: { domains: Domain[]; restDay: boole
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: d.color }} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-[11.5px]">{d.name}</span>
-                  <span className="mono shrink-0 text-[9px] text-muted">{f.note}</span>
+                  <span className="truncate text-label">{d.name}</span>
+                  <span className="mono shrink-0 text-micro text-muted">{f.note}</span>
                 </div>
                 <div className="mt-1 h-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
                   <div className="grow-x h-full rounded-full" style={{ width: `${Math.max(pct * 100, target > 0 ? 3 : 0)}%`, background: d.color }} />
@@ -781,7 +835,7 @@ function DomainBalance({ domains, restDay }: { domains: Domain[]; restDay: boole
         })}
       </div>
       {nudge && (
-        <div className="mono mt-3 flex items-center gap-1.5 text-[10.5px] text-muted">
+        <div className="mono mt-3 flex items-center gap-1.5 text-meta text-muted">
           <span style={{ color: nudge.color }}>⚖</span>
           {restDay
             ? nudge.lastTouchedDays >= 99
@@ -804,5 +858,67 @@ function Moment({ accent, children }: { accent?: string; children: ReactNode }) 
         {children}
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// "Order my day" — the proposed timeline, reviewed before it lands. Each row is
+// a placement with its reason (deep window, batched, due-pressure). You place
+// the lot or walk away; nothing changes until you say so.
+function OrderDayModal({
+  order,
+  data,
+  onApply,
+  onClose,
+}: {
+  order: ComposeResult;
+  data: VerticalData;
+  onApply: () => void;
+  onClose: () => void;
+}) {
+  const placed = order.placements;
+  return (
+    <Modal onClose={onClose} width="max-w-md">
+      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+        <div className="text-head font-semibold">Order my day</div>
+        <div className="mono text-caption text-muted">
+          {placed.length} placed{order.unplaced.length ? ` · ${order.unplaced.length} kept back` : ""}
+        </div>
+      </div>
+
+      {placed.length === 0 ? (
+        <div className="p-5 text-center text-body text-muted">
+          Nothing to place — your inbox and week pool are clear, or today's already full.
+        </div>
+      ) : (
+        <div className="max-h-[55vh] space-y-1 overflow-y-auto p-3">
+          {placed.map((p) => {
+            const color = taskDomainColor(data, p.task) ?? "var(--accent)";
+            return (
+              <div key={p.task.id} className="flex items-start gap-2.5 border-b border-line py-1.5 last:border-0">
+                <span className="mono mt-0.5 w-[96px] shrink-0 text-meta" style={{ color }}>{fmtSlot(p)}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body">{p.task.title || "untitled"}</div>
+                  <div className="mono truncate text-micro text-muted">{p.reason}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {order.unplaced.length > 0 && (
+        <div className="border-t border-line px-4 py-2 text-label text-muted">
+          {order.unplaced.length} didn't fit today — they stay in your pool.
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 border-t border-line p-3">
+        {placed.length > 0 && (
+          <Btn kind="primary" onClick={onApply}>Place {placed.length} on today →</Btn>
+        )}
+        <Btn onClick={onClose}>{placed.length > 0 ? "Cancel" : "Close"}</Btn>
+      </div>
+    </Modal>
   );
 }

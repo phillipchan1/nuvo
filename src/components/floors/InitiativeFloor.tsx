@@ -18,15 +18,15 @@ import type { Focus } from "../AppShell";
 import {
   Bar,
   DeleteBtn,
+  DomainPicker,
   FloorHeader,
   Hook,
   InlineDate,
   InlineNumber,
   InlineText,
   InlineTextarea,
-  INITIATIVE_STATUS,
-  INITIATIVE_STATUS_COLORS,
   MomentumChip,
+  PROJECT_STATUS,
   PROJECT_STATUS_COLORS,
   PROJECT_STATUS_LABEL,
   StatusPill,
@@ -55,10 +55,20 @@ export default function InitiativeFloor({
 }) {
   const { data, updateInitiative, deleteInitiative, addProject, updateProject, addKeyResult, updateKeyResult, deleteKeyResult } = useVertical();
   const initiative = initiativeById(data, focus.initiativeId);
-  const domain = domainById(data, focus.domainId);
-  const accent = domain?.color ?? "var(--accent)";
 
-  if (!initiative) return <div className="text-[13px] text-muted">No initiative selected.</div>;
+  if (!initiative) return <div className="text-body text-muted">No initiative selected.</div>;
+  // Read the domain off the initiative so a just-reassigned bet re-accents at once.
+  const domain = domainById(data, initiative.domainId);
+  const accent = domain?.color ?? "var(--accent)";
+  const domains = [...data.domains].sort((a, b) => a.sort - b.sort);
+
+  // Reassigning the bet's domain ripples down to its projects so the spine stays
+  // coherent — the same move the initiatives board makes.
+  const changeDomain = (domainId: string) => {
+    updateInitiative(initiative.id, { domainId });
+    projectsOf(data, initiative.id).forEach((p) => updateProject(p.id, { domainId }));
+  };
+
   const projects = projectsOf(data, initiative.id);
   const loose = looseTasksOfInitiative(data, initiative.id);
   const pct = initiativeProgress(data, initiative);
@@ -80,22 +90,30 @@ export default function InitiativeFloor({
       <FloorHeader
         eyebrow={
           <span className="flex items-center gap-2.5">
-            {onBack && <button onClick={onBack} className="fast mono text-[10px] text-muted hover:text-ink">‹ all initiatives</button>}
+            {onBack && <button onClick={onBack} className="fast mono text-meta text-muted hover:text-ink">‹ all initiatives</button>}
             <Hook dir="up" label={domain?.name ?? "domain"} onClick={onUp} />
           </span>
         }
         actions={
           <div className="flex items-center gap-2">
-            <StatusPill value={initiative.status} options={[...INITIATIVE_STATUS]} colors={INITIATIVE_STATUS_COLORS} onChange={(s) => updateInitiative(initiative.id, { status: s })} />
+            <DomainPicker domains={domains} value={initiative.domainId} onChange={changeDomain} align="right" />
+            <StatusPill
+              value={initiative.status}
+              options={PROJECT_STATUS}
+              colors={PROJECT_STATUS_COLORS}
+              labels={PROJECT_STATUS_LABEL}
+              filled={initiative.status === "in_progress" ? new Set(["in_progress"]) : undefined}
+              onChange={(s) => updateInitiative(initiative.id, { status: s })}
+            />
             <MomentumChip value={initiative.momentum} onChange={(m) => updateInitiative(initiative.id, { momentum: m })} />
             <DeleteBtn what="initiative" onDelete={() => { deleteInitiative(initiative.id); onUp(); }} />
           </div>
         }
       >
-        <h1 className="text-[24px] font-semibold tracking-tight">
+        <h1 className="text-display font-semibold tracking-tight">
           <InlineText value={initiative.name} onChange={(v) => updateInitiative(initiative.id, { name: v })} />
         </h1>
-        <div className="mt-1.5 flex items-baseline gap-2 text-[14px]">
+        <div className="mt-1.5 flex items-baseline gap-2 text-head">
           <span className="section-label shrink-0" style={{ marginTop: 2 }}>Goal</span>
           <InlineText
             value={initiative.outcome}
@@ -111,11 +129,11 @@ export default function InitiativeFloor({
         <div className="min-w-[200px] flex-1">
           <div className="flex items-baseline justify-between">
             <span className="section-label">Progress (rolled up from projects)</span>
-            <span className="mono text-[11px]" style={{ color: accent }}>{pct}%</span>
+            <span className="mono text-label" style={{ color: accent }}>{pct}%</span>
           </div>
           <Bar pct={pct} color={accent} />
         </div>
-        <div className="mono flex items-center gap-4 text-[11px] text-muted">
+        <div className="mono flex items-center gap-4 text-label text-muted">
           <span>start <InlineDate value={initiative.startDate} onChange={(v) => updateInitiative(initiative.id, { startDate: v })} /></span>
           <span>·</span>
           <span>target <InlineDate value={initiative.targetDate} onChange={(v) => updateInitiative(initiative.id, { targetDate: v })} /></span>
@@ -128,7 +146,7 @@ export default function InitiativeFloor({
           value={initiative.description}
           onChange={(v) => updateInitiative(initiative.id, { description: v })}
           placeholder="Describe the bet — the why and the shape of it…"
-          className="max-w-[760px] text-[14px] text-muted"
+          className="max-w-[760px] text-head text-muted"
         />
       </div>
 
@@ -155,9 +173,9 @@ export default function InitiativeFloor({
                   className="fast group flex flex-col rounded-md border border-line bg-surface p-3.5 text-left hover:border-muted"
                 >
                   <div className="flex items-start gap-2">
-                    <span className="text-[13px] font-medium leading-snug">{p.name}</span>
+                    <span className="text-body font-medium leading-snug">{p.name}</span>
                     <span
-                      className="mono ml-auto shrink-0 rounded-full border px-1.5 text-[9px]"
+                      className="mono ml-auto shrink-0 rounded-full border px-1.5 text-micro"
                       style={{
                         borderColor: PROJECT_STATUS_COLORS[p.status as keyof typeof PROJECT_STATUS_COLORS] ?? "var(--muted)",
                         color: p.status === "in_progress" ? "#fff" : PROJECT_STATUS_COLORS[p.status as keyof typeof PROJECT_STATUS_COLORS] ?? "var(--muted)",
@@ -167,17 +185,17 @@ export default function InitiativeFloor({
                       {PROJECT_STATUS_LABEL[p.status as keyof typeof PROJECT_STATUS_LABEL] ?? p.status}
                     </span>
                   </div>
-                  {p.outcome && <div className="mt-1 line-clamp-2 text-[11px] text-muted">{p.outcome}</div>}
+                  {p.outcome && <div className="mt-1 line-clamp-2 text-label text-muted">{p.outcome}</div>}
                   <div className="mt-auto pt-2">
                     <Bar pct={pp} color={accent} h={1} />
-                    <div className="mono text-[10px] text-muted">{pp}%{p.targetDate ? ` · by ${p.targetDate.slice(5)}` : ""}</div>
+                    <div className="mono text-meta text-muted">{pp}%{p.targetDate ? ` · by ${p.targetDate.slice(5)}` : ""}</div>
                   </div>
                 </button>
               );
             })}
           </div>
           {projects.length === 0 && (
-            <div className="rounded-md border border-dashed border-line p-5 text-center text-[12px] text-muted">
+            <div className="rounded-md border border-dashed border-line p-5 text-center text-caption text-muted">
               No projects yet. A project is a chunk of work with its own tasks — add one, or keep small things as loose tasks below.
             </div>
           )}
@@ -198,18 +216,18 @@ export default function InitiativeFloor({
         <section className="lg:col-span-5">
           <div className="mb-3 flex items-center justify-between">
             <div className="section-label">Key results</div>
-            <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-[11px] text-muted hover:text-ink">+ add</button>
+            <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-label text-muted hover:text-ink">+ add</button>
           </div>
           <div className="space-y-4">
             {initiative.keyResults.map((kr) => (
               <div key={kr.id} className="group rounded-md border border-line bg-surface p-3">
                 <div className="flex items-center gap-2">
-                  <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-[12px] font-medium" />
+                  <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-caption font-medium" />
                   <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
                     <DeleteBtn what="result" onDelete={() => deleteKeyResult(initiative.id, kr.id)} />
                   </div>
                 </div>
-                <div className="mono mt-1 flex items-center gap-1 text-[10px] text-muted">
+                <div className="mono mt-1 flex items-center gap-1 text-meta text-muted">
                   <InlineNumber value={kr.baseline} onChange={(v) => updateKeyResult(initiative.id, kr.id, { baseline: v })} />
                   <span>→</span>
                   <span style={{ color: accent }}><InlineNumber value={kr.current} onChange={(v) => updateKeyResult(initiative.id, kr.id, { current: v })} /></span>
@@ -221,7 +239,7 @@ export default function InitiativeFloor({
               </div>
             ))}
             {initiative.keyResults.length === 0 && (
-              <div className="rounded-md border border-dashed border-line p-4 text-center text-[11px] text-muted">
+              <div className="rounded-md border border-dashed border-line p-4 text-center text-label text-muted">
                 No key results. Add measurable outcomes — each framed from a baseline so you read the Gain, not just the gap.
               </div>
             )}

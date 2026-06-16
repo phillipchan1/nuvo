@@ -35,9 +35,24 @@ export default function Spine({
   openFlow: (f: FlowName) => void;
 }) {
   return (
-    <div className="spine relative z-40 flex w-[var(--spine-width,78px)] shrink-0 flex-col items-center border-r border-line bg-surface">
-      {/* drag region that also clears the macOS traffic lights */}
-      <div data-tauri-drag-region className="spine-top w-full shrink-0" />
+    <div className="spine relative z-40 flex w-[var(--spine-width,120px)] shrink-0 flex-col items-center bg-surface">
+      {/* Separator — starts below the traffic-light zone so it doesn't clip
+          the macOS window buttons. In a browser it runs from the top. */}
+      <div className="spine-separator pointer-events-none absolute bottom-0 right-0 w-px bg-line" />
+
+      {/* Pure drag region — exactly clears macOS traffic lights. Nothing lives
+          here so the "n" can't overlap the buttons. */}
+      <div data-tauri-drag-region className="spine-top shrink-0 w-full" />
+
+      {/* Wordmark home button — sits below the traffic-light zone */}
+      <button
+        onClick={() => setRung("now")}
+        title="Home"
+        className={`fast wordmark select-none py-3 text-[15px] leading-none ${rung === "now" ? "wordmark-grad" : ""}`}
+        style={rung === "now" ? {} : { color: "var(--muted)", opacity: 0.4 }}
+      >
+        Nuvo
+      </button>
 
       <div className="flex flex-1 flex-col items-center justify-center">
         <div className="relative flex flex-col items-center gap-7">
@@ -63,7 +78,7 @@ export default function Spine({
                   </div>
                 )}
 
-                <div className="group relative flex w-[var(--spine-width,78px)] flex-col items-center">
+                <div className="group relative flex w-[var(--spine-width,120px)] flex-col items-center">
                   <button
                     onClick={() => setRung(r.id)}
                     className="relative z-10 flex flex-col items-center gap-1.5"
@@ -83,7 +98,7 @@ export default function Spine({
                       }}
                     />
                     <span
-                      className="mono text-center text-[9px] leading-tight"
+                      className="mono text-center text-micro leading-tight"
                       style={{ color: on ? "var(--text)" : "var(--muted)" }}
                     >
                       {r.label}
@@ -97,7 +112,7 @@ export default function Spine({
                     <>
                       <span
                         aria-hidden
-                        className="fast pointer-events-none absolute z-20 -translate-y-1/2 text-[10px] leading-none group-hover:opacity-0"
+                        className="fast pointer-events-none absolute z-20 -translate-y-1/2 text-meta leading-none group-hover:opacity-0"
                         style={{ left: "calc(50% + 9px)", top: 6, color: on ? "var(--accent)" : "var(--muted)" }}
                       >
                         ◇
@@ -108,12 +123,12 @@ export default function Spine({
                         className="elev-3 fast invisible absolute z-40 flex -translate-y-1/2 translate-x-1.5 items-center gap-2 whitespace-nowrap rounded-lg border border-line bg-surface py-1.5 pl-2.5 pr-3 text-left opacity-0 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100"
                         style={{ left: 64, top: 6 }}
                       >
-                        <span className="text-[12px]" style={{ color: "var(--accent)" }}>◇</span>
+                        <span className="text-caption" style={{ color: "var(--accent)" }}>◇</span>
                         <span>
-                          <span className="block text-[11px] font-medium leading-tight text-ink">{rf.label}</span>
-                          <span className="mono block text-[8px] leading-tight text-muted">{rf.sub}</span>
+                          <span className="block text-label font-medium leading-tight text-ink">{rf.label}</span>
+                          <span className="mono block text-micro leading-tight text-muted">{rf.sub}</span>
                         </span>
-                        <span className="text-[11px] text-muted">▸</span>
+                        <span className="text-label text-muted">▸</span>
                       </button>
                     </>
                   )}
@@ -124,7 +139,7 @@ export default function Spine({
         </div>
       </div>
 
-      <div className="mono pb-3 text-center text-[9px] leading-tight text-muted">⌘1–5<br />⌘↓↑</div>
+      <div className="mono pb-3 text-center text-micro leading-tight text-muted">⌘1–5<br />⌘↓↑</div>
     </div>
   );
 }

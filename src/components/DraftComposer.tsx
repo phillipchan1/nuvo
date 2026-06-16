@@ -110,7 +110,7 @@ export default function DraftComposer({
               key={k.value}
               title={k.hint}
               onClick={() => setKind(k.value)}
-              className={`fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-[11px] font-medium transition-colors ${
+              className={`fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-label font-medium transition-colors ${
                 kind === k.value
                   ? "bg-accent text-white"
                   : "text-muted hover:text-ink"
@@ -129,11 +129,11 @@ export default function DraftComposer({
             if (e.key === "Enter") submit();
           }}
           placeholder={placeholder}
-          className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[13px] outline-none focus:border-accent"
+          className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-body outline-none focus:border-accent"
         />
 
         {/* Time read-out */}
-        <div className="mono flex items-center gap-1.5 text-[10.5px] text-muted">
+        <div className="mono flex items-center gap-1.5 text-meta text-muted">
           <svg width="11" height="11" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/70">
             <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2" />
             <path d="M6 3v3l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
@@ -146,7 +146,7 @@ export default function DraftComposer({
         <div className="flex flex-col gap-1">
           <RepeatControl anchorISO={anchorISO} value={repeat} onChange={setRepeat} />
           {startsLater && (
-            <span className="mono pl-0.5 text-[10px] text-muted">
+            <span className="mono pl-0.5 text-meta text-muted">
               First on {format(parseDateISO(firstOccurrence!), "EEE MMM d")} — not this day
             </span>
           )}
@@ -155,14 +155,14 @@ export default function DraftComposer({
         <div className="flex items-center justify-end gap-2">
           <button
             onClick={onCancel}
-            className="fast rounded-[var(--radius-sm)] px-2.5 py-1 text-[12px] text-muted hover:bg-bg"
+            className="fast rounded-[var(--radius-sm)] px-2.5 py-1 text-caption text-muted hover:bg-bg"
           >
             Cancel
           </button>
           <button
             onClick={submit}
             disabled={!canCreate}
-            className="fast rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-40"
+            className="fast rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-white hover:opacity-90 disabled:opacity-40"
           >
             Create
           </button>

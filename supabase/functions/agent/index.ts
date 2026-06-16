@@ -2,6 +2,7 @@ import { handleOptions, json, requireUser } from "../_shared/admin.ts";
 import { buildContext, contextToPrompt } from "./context.ts";
 import { scaffoldProject, scaffoldDraft } from "./scaffold.ts";
 import { blueprintInitiative } from "./blueprint.ts";
+import { parsePriorities, breakdownPriority } from "./priorities.ts";
 import { prepareTask } from "./prepare.ts";
 import { narrate } from "./narrate.ts";
 import { executeTool, TOOL_DEFINITIONS, type AgentAction } from "./tools.ts";
@@ -148,6 +149,15 @@ Deno.serve(async (req) => {
     }
     if (body.blueprint) {
       return json(await blueprintInitiative(user.id, body.blueprint));
+    }
+    // Free-text → the week's priorities (outcomes), inferring each win + the bet
+    // it serves. The client appends the parse to the sprint's big_rocks.
+    if (body.priorities) {
+      return json(await parsePriorities(user.id, body.priorities));
+    }
+    // "What moves this priority?" → propose this week's next actions.
+    if (body.breakdown) {
+      return json(await breakdownPriority(user.id, body.breakdown));
     }
     if (body.prepare?.taskId) {
       return json(await prepareTask(user.id, String(body.prepare.taskId)));

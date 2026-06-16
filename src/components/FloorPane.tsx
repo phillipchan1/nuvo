@@ -44,7 +44,7 @@ export default function FloorPane({
   openBlueprint: (seed: BlueprintSeed) => void;
 }) {
   const { data } = useVertical();
-  const { back, openRecord, toggleAgent, nav } = useAppNavigation();
+  const { openRecord, toggleAgent, nav } = useAppNavigation();
   const { agentOpen } = nav;
   const domain = domainById(data, focus.domainId);
   const accent = domain?.color ?? "var(--accent)";
@@ -55,6 +55,18 @@ export default function FloorPane({
   const openProjectRecord = (id: string) => openRecord("project", id);
   const openInitiativeRecord = (id: string) => openRecord("initiative", id);
 
+  // Direct navigation back to the portfolio list — does not rely on history.back()
+  // so it works regardless of how the user arrived at the detail view (e.g. via
+  // "full page ↗" from a Record modal, which would otherwise pop back to the modal).
+  const backToProjects = () => setProjectView("portfolio");
+  const backToInitiatives = () => setInitiativeView("portfolio");
+
+  // Show a back arrow in the top bar when a detail is open AND there's no
+  // natural breadcrumb (i.e. the user can't see which list to click back to).
+  const showBackBtn = (rung === "project" && projectView === "detail") ||
+                      (rung === "initiative" && initiativeView === "detail");
+  const onBackBtn = rung === "project" ? backToProjects : backToInitiatives;
+
   const viewKey = rung === "project" ? projectView : rung === "initiative" ? initiativeView : "";
 
   return (
@@ -63,12 +75,23 @@ export default function FloorPane({
         data-tauri-drag-region
         className="app-topbar flex h-11 shrink-0 items-center gap-1.5 border-b border-line bg-surface px-5"
       >
-        {rung === "now" && <span className="mono text-[11px] font-medium text-ink">Today</span>}
-        {rung === "domain" && <span className="mono text-[11px] font-medium text-ink">Domains</span>}
+        {/* Back arrow — always reachable, replaces the need to find the breadcrumb */}
+        {showBackBtn && (
+          <button
+            onClick={onBackBtn}
+            title="Back (⌘[)"
+            className="fast mono mr-1 flex items-center gap-0.5 text-body text-muted hover:text-ink"
+          >
+            ‹
+          </button>
+        )}
+
+        {rung === "now" && <span className="mono text-label font-medium text-ink">Today</span>}
+        {rung === "domain" && <span className="mono text-label font-medium text-ink">Domains</span>}
         {rung === "project" && (
           <RungTabs
             tabs={[
-              { id: "portfolio", label: "Portfolio", on: () => setProjectView("portfolio") },
+              { id: "portfolio", label: "Portfolio", on: backToProjects },
               { id: "sprint", label: "This Week", on: () => setProjectView("sprint") },
             ]}
             active={projectView}
@@ -78,7 +101,7 @@ export default function FloorPane({
         )}
         {rung === "initiative" && (
           <RungTabs
-            tabs={[{ id: "portfolio", label: "Initiatives", on: () => setInitiativeView("portfolio") }]}
+            tabs={[{ id: "portfolio", label: "Initiatives", on: backToInitiatives }]}
             active={initiativeView}
             detailName={initiativeView === "detail" ? initiativeById(data, focus.initiativeId)?.name ?? "Initiative" : null}
             accent={accent}
@@ -87,12 +110,12 @@ export default function FloorPane({
         <div className="flex-1" />
         <button
           onClick={toggleAgent}
-          className={`fast flex items-center gap-1 rounded-md px-2 py-1 text-[11px] ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
+          className={`fast flex items-center gap-1 rounded-md px-2 py-1 text-label ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
           title="Nuvo agent"
         >
           <Keycap>⌘J</Keycap>
         </button>
-        <button onClick={() => goRung("day")} className="mono text-[11px] text-muted hover:text-ink">Schedule ↓</button>
+        <button onClick={() => goRung("day")} className="mono text-label text-muted hover:text-ink">Schedule ↓</button>
       </div>
 
       <div key={`${rung}-${viewKey}`} className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7">
@@ -105,7 +128,7 @@ export default function FloorPane({
             focus={focus}
             accent={accent}
             onUp={() => focus.initiativeId && openInitiative(focus.initiativeId)}
-            onBack={back}
+            onBack={backToProjects}
           />
         )}
 
@@ -116,7 +139,7 @@ export default function FloorPane({
           <InitiativeFloor
             focus={focus}
             onUp={() => goRung("domain")}
-            onBack={back}
+            onBack={backToInitiatives}
             onOpenProject={openProjectRecord}
           />
         )}
@@ -146,7 +169,7 @@ function RungTabs({
         <button
           key={t.id}
           onClick={t.on}
-          className="fast mono text-[11px] hover:text-ink"
+          className="fast mono text-label hover:text-ink"
           style={{ color: active === t.id ? accent : "var(--muted)", fontWeight: active === t.id ? 600 : 400 }}
         >
           {t.label}
@@ -155,7 +178,7 @@ function RungTabs({
       {detailName && (
         <>
           <span className="text-muted">›</span>
-          <span className="mono max-w-[220px] truncate text-[11px] font-medium" style={{ color: accent }}>{detailName}</span>
+          <span className="mono max-w-[220px] truncate text-label font-medium" style={{ color: accent }}>{detailName}</span>
         </>
       )}
     </span>
