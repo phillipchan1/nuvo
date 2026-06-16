@@ -478,13 +478,18 @@ function BoardCard({
   const metaEntries = (config.extraColumns ?? []).map((c) => r.meta[c.key]?.value).filter(Boolean);
   const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
   const inProgress = r.status === "in_progress";
+
+  const handleClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest(SELECT_INTERACTIVE)) return;
+    r.open();
+  };
+
   return (
     <div
       data-select-id={r.id}
       ref={(el) => selection.registerRef(r.id, el)}
       onPointerDown={onStartDrag}
-      onClick={selectable ? selection.itemClickSelect(r.id) : undefined}
-      onDoubleClick={r.open}
+      onClick={handleClick}
       className={`fast group relative cursor-grab touch-none overflow-hidden rounded-md border bg-surface p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${
         inProgress ? "border-accent/50 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_20%,transparent)]" : ""
       } ${visual === "selected" ? "border-accent/40" : visual === "preview" ? "border-accent/50 border-dashed" : inProgress ? "" : "border-line"}`}
@@ -496,12 +501,14 @@ function BoardCard({
       <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: inProgress ? "var(--accent)" : r.accent }} />
       <div className="flex items-start gap-2 pl-1.5">
         {selectable && (
-          <SelectCheckbox
-            checked={visual === "selected"}
-            preview={visual === "preview"}
-            onToggle={() => selection.pick(r.id, { extend: true, range: false })}
-            className="mt-0.5"
-          />
+          <div data-no-select onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+            <SelectCheckbox
+              checked={visual === "selected"}
+              preview={visual === "preview"}
+              onToggle={() => selection.pick(r.id, { extend: true, range: false })}
+              className="mt-0.5"
+            />
+          </div>
         )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-body font-medium">{r.title || "Untitled"}</div>
