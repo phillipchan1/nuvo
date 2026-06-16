@@ -16,28 +16,11 @@ import {
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
-import NewProject from "./NewProject";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, updateProject, deleteProjects } = useVertical();
-  const { nav, openFloorModal, closeFloorModal } = useAppNavigation();
+  const { openFloorModal } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
-
-  const creating = nav.floorModal === "new-project";
-
-  // N → open new project
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-      if (e.key.toLowerCase() === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        openFloorModal("new-project");
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [openFloorModal]);
 
   const projects = data.projects.filter((p) => !domainFilter || p.domainId === domainFilter);
 
@@ -102,13 +85,6 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
         />
       </div>
 
-      {creating && (
-        <NewProject
-          initialDomainId={domainFilter}
-          onClose={closeFloorModal}
-          onCreated={(id) => onOpen(id)}
-        />
-      )}
     </div>
   );
 }

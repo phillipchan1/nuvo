@@ -164,9 +164,13 @@ After pulling: `supabase db push` (applies migrations 04-09 — incl. the
 
 ## Keyboard
 
-`⌘K` capture/command bar · `⌘J` Nuvo assistant · `C` focus capture · `1/2/3` inbox/week/today · `↑↓/jk` navigate ·
-`Enter` open · `E` today · `T` tomorrow · `W` next week · `S` pick date/time ·
-`D` done · `X` trash · `#` labels · `Esc` close
+`⌘K` capture/command bar · `⌘J` Nuvo assistant · `C` focus capture · `P` new project · `I` new initiative ·
+`1/2/3` inbox/week/today · `↑↓/jk` navigate · `Enter` open · `E` today · `T` tomorrow · `W` next week ·
+`S` pick date/time · `D` done · `X` trash · `#` labels · `Esc` close
+
+The fast composer (`P` / `I`, or any **+ new** button) is a Todoist-quick lane: pick a domain,
+name it, then rattle off subtasks — `⏎` drops the next line, `⌘⏎` saves the whole thing in one
+write. `more options…` swaps in the full moment (outcome, context, AI-drafted backlog).
 
 Capture syntax: `call David tomorrow 9am 30m #church !high` — chrono-node dates,
 `30m/1h/1h30` durations, `#label`, `!low/!medium/!high`.

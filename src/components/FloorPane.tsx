@@ -8,7 +8,6 @@ import { domainById, initiativeById, projectById } from "../lib/vertical";
 import type { Focus, Rung } from "./AppShell";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { Keycap } from "./ui";
-import type { BlueprintSeed } from "./rituals/BlueprintFlow";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativeFloor from "./floors/InitiativeFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
@@ -30,7 +29,6 @@ export default function FloorPane({
   setProjectView,
   initiativeView,
   setInitiativeView,
-  openBlueprint,
 }: {
   rung: Rung;
   focus: Focus;
@@ -41,7 +39,6 @@ export default function FloorPane({
   setProjectView: (v: ProjectView) => void;
   initiativeView: DetailView;
   setInitiativeView: (v: DetailView) => void;
-  openBlueprint: (seed: BlueprintSeed) => void;
 }) {
   const { data } = useVertical();
   const { openRecord, toggleAgent, nav } = useAppNavigation();
@@ -133,7 +130,7 @@ export default function FloorPane({
         )}
 
         {rung === "initiative" && initiativeView === "portfolio" && (
-          <InitiativesFloor onOpen={openInitiativeRecord} openBlueprint={openBlueprint} />
+          <InitiativesFloor onOpen={openInitiativeRecord} />
         )}
         {rung === "initiative" && initiativeView === "detail" && (
           <InitiativeFloor

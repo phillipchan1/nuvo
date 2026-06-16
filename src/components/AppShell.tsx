@@ -19,6 +19,9 @@ import { useAgentContext } from "../hooks/useAgentContext";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
 import BlueprintFlow, { type BlueprintSeed } from "./rituals/BlueprintFlow";
+import QuickCreate from "./floors/QuickCreate";
+import NewProject from "./floors/NewProject";
+import NewInitiative from "./floors/NewInitiative";
 
 export type Rung = "now" | "day" | "project" | "initiative" | "domain";
 export interface Focus {
@@ -62,6 +65,8 @@ function AppShellInner() {
     setInitiativeView,
     navigate,
     toggleAgent,
+    openFloorModal,
+    closeFloorModal,
     back,
     canGoBack,
   } = useAppNavigation();
@@ -72,6 +77,10 @@ function AppShellInner() {
   // a half-typed bet handed from the quick-create moment into Blueprint
   const [blueprintSeed, setBlueprintSeed] = useState<BlueprintSeed | null>(null);
   const [sundayNudge, setSundayNudge] = useState(false);
+  // the fast composer is the default create surface, summonable from anywhere;
+  // "more options" swaps in the full moment, carrying what's already typed.
+  const [createFull, setCreateFull] = useState<{ domainId: string; initiativeId: string | null; name: string } | null>(null);
+  const closeCreate = () => { setCreateFull(null); closeFloorModal(); };
 
   const openBlueprint = (seed: BlueprintSeed) => {
     setBlueprintSeed(seed);
@@ -187,6 +196,25 @@ function AppShellInner() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleAgent]);
 
+  // P / I summon the fast composer from anywhere (no modifier, so ⌘P print is
+  // untouched). Stay out of the way while typing or when another surface owns
+  // the screen — an overlay, a flow, or a composer already open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement;
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      const key = e.key.toLowerCase();
+      if (key !== "p" && key !== "i") return;
+      if (nav.overlay !== "none" || nav.flow || nav.floorModal) return;
+      e.preventDefault();
+      setCreateFull(null);
+      openFloorModal(key === "p" ? "new-project" : "new-initiative");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [nav.overlay, nav.flow, nav.floorModal, openFloorModal]);
+
   return (
     <div className="atmosphere flex h-full">
       <Spine rung={rung} setRung={goRung} openFlow={openFlowWithSeed} />
@@ -205,7 +233,6 @@ function AppShellInner() {
                 setProjectView={setProjectView}
                 initiativeView={initiativeView}
                 setInitiativeView={setInitiativeView}
-                openBlueprint={openBlueprint}
               />
             </div>
           )}
@@ -246,6 +273,48 @@ function AppShellInner() {
           onClose={() => { closeFlow(); setBlueprintSeed(null); }}
           onCreated={(id) => { setBlueprintSeed(null); openInitiativeDetail(id); }}
         />
+      )}
+
+      {/* The fast composer — summoned by P / I or any "+ new" button, mounted
+          globally so it works from any rung. "more options" swaps in the full
+          moment for the chunks of work that earn the ceremony. */}
+      {nav.floorModal === "new-project" && (
+        createFull ? (
+          <NewProject
+            initialDomainId={createFull.domainId}
+            initialInitiativeId={createFull.initiativeId}
+            initialName={createFull.name}
+            onClose={closeCreate}
+            onCreated={(id) => { setCreateFull(null); openProjectDetail(id); }}
+          />
+        ) : (
+          <QuickCreate
+            kind="project"
+            initialDomainId={focus.domainId || null}
+            onClose={closeCreate}
+            onCreated={(id) => { setCreateFull(null); openProjectDetail(id); }}
+            onExpand={setCreateFull}
+          />
+        )
+      )}
+      {nav.floorModal === "new-initiative" && (
+        createFull ? (
+          <NewInitiative
+            initialDomainId={createFull.domainId}
+            initialName={createFull.name}
+            onClose={closeCreate}
+            onCreated={(id) => { setCreateFull(null); openInitiativeDetail(id); }}
+            onBlueprint={openBlueprint}
+          />
+        ) : (
+          <QuickCreate
+            kind="initiative"
+            initialDomainId={focus.domainId || null}
+            onClose={closeCreate}
+            onCreated={(id) => { setCreateFull(null); openInitiativeDetail(id); }}
+            onExpand={({ domainId, name }) => setCreateFull({ domainId, initiativeId: null, name })}
+          />
+        )
       )}
 
       {/* The Record command center — a project / initiative opened as a modal. */}

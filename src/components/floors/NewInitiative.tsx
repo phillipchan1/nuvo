@@ -15,18 +15,22 @@ export default function NewInitiative({
   onClose,
   onCreated,
   initialDomainId,
+  initialName,
   onBlueprint,
 }: {
   onClose: () => void;
   onCreated: (initiativeId: string) => void;
   initialDomainId?: string | null;
+  /** Carried over when expanding from the fast composer. */
+  initialName?: string;
+  /** Hand the half-typed bet to the AI Blueprint flow instead. */
   onBlueprint?: (seed: BlueprintSeed) => void;
 }) {
   const { data, addInitiative, addDomain } = useVertical();
   const domains = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
 
   const [domainId, setDomainId] = useState(initialDomainId || domains[0]?.id || "");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [outcome, setOutcome] = useState("");
   const [finishLine, setFinishLine] = useState<string | null>(() =>
     format(endOfQuarter(new Date()), "yyyy-MM-dd"),

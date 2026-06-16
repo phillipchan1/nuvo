@@ -15,8 +15,6 @@ import {
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
-import NewInitiative from "./NewInitiative";
-import type { BlueprintSeed } from "../rituals/BlueprintFlow";
 
 const MOMENTUM = {
   up: { value: "↑ rising", color: "var(--accent)" },
@@ -26,30 +24,12 @@ const MOMENTUM = {
 
 export default function InitiativesFloor({
   onOpen,
-  openBlueprint,
 }: {
   onOpen: (id: string) => void;
-  openBlueprint?: (seed: BlueprintSeed) => void;
 }) {
   const { data, updateInitiative, updateProject, deleteInitiatives } = useVertical();
-  const { nav, openFloorModal, closeFloorModal } = useAppNavigation();
+  const { openFloorModal } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
-
-  const creating = nav.floorModal === "new-initiative";
-
-  // N → open new initiative
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-      if (e.key.toLowerCase() === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        openFloorModal("new-initiative");
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [openFloorModal]);
 
   const initiatives = data.initiatives.filter((i) => !domainFilter || i.domainId === domainFilter);
 
@@ -118,15 +98,6 @@ export default function InitiativesFloor({
         }}
         />
       </div>
-
-      {creating && (
-        <NewInitiative
-          initialDomainId={domainFilter}
-          onClose={closeFloorModal}
-          onCreated={(id) => { onOpen(id); }}
-          onBlueprint={openBlueprint}
-        />
-      )}
 
       {shipped.length > 0 && (
         <section className="mt-10">
