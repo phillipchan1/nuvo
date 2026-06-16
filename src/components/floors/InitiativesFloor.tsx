@@ -2,7 +2,7 @@
 // every initiative across every domain in Table · Board · Calendar · Timeline.
 // Click one to drill into its detail (goal, key results, project timeline).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
@@ -36,6 +36,20 @@ export default function InitiativesFloor({
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
 
   const creating = nav.floorModal === "new-initiative";
+
+  // N → open new initiative
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      if (e.key.toLowerCase() === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        openFloorModal("new-initiative");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openFloorModal]);
 
   const initiatives = data.initiatives.filter((i) => !domainFilter || i.domainId === domainFilter);
 
@@ -80,7 +94,7 @@ export default function InitiativesFloor({
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
       <FloorHeader eyebrow={`${data.initiatives.length} initiatives · ${data.initiatives.filter((i) => isProjectInFlight(i.status)).length} in flight`}>
         <h1 className="text-display font-semibold tracking-tight">Initiatives</h1>
-        <p className="mt-1 text-body text-muted">The bets with finish lines, across every domain — switch the view, click any to drill in.</p>
+        <p className="mt-1 text-body text-muted">The bets with finish lines, across every domain — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
 
       <DomainFilter value={domainFilter} onChange={setDomainFilter} />
