@@ -13,9 +13,6 @@ import {
 import { FloorHeader, INITIATIVE_STATUS, INITIATIVE_STATUS_COLORS } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
-import NewInitiative from "./NewInitiative";
-import QuickCreate from "./QuickCreate";
-import type { BlueprintSeed } from "../rituals/BlueprintFlow";
 
 const MOMENTUM = {
   up: { value: "↑ rising", color: "var(--accent)" },
@@ -25,19 +22,12 @@ const MOMENTUM = {
 
 export default function InitiativesFloor({
   onOpen,
-  openBlueprint,
 }: {
   onOpen: (id: string) => void;
-  openBlueprint?: (seed: BlueprintSeed) => void;
 }) {
   const { data, updateInitiative, updateProject, deleteInitiatives } = useVertical();
-  const { nav, openFloorModal, closeFloorModal } = useAppNavigation();
+  const { openFloorModal } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
-  // fast composer by default; "more options" expands into the full moment.
-  const [full, setFull] = useState<{ domainId: string; name: string } | null>(null);
-
-  const creating = nav.floorModal === "new-initiative";
-  const close = () => { setFull(null); closeFloorModal(); };
 
   const initiatives = data.initiatives.filter((i) => !domainFilter || i.domainId === domainFilter);
 
@@ -105,25 +95,6 @@ export default function InitiativesFloor({
         }}
         />
       </div>
-
-      {creating && !full && (
-        <QuickCreate
-          kind="initiative"
-          initialDomainId={domainFilter}
-          onClose={close}
-          onCreated={(id) => { setFull(null); onOpen(id); }}
-          onExpand={({ domainId, name }) => setFull({ domainId, name })}
-        />
-      )}
-      {creating && full && (
-        <NewInitiative
-          initialDomainId={full.domainId}
-          initialName={full.name}
-          onClose={close}
-          onCreated={(id) => { setFull(null); onOpen(id); }}
-          onBlueprint={openBlueprint}
-        />
-      )}
 
       {shipped.length > 0 && (
         <section className="mt-10">
