@@ -3,7 +3,8 @@
 // a parent, a progress, and a date range), so they share this component —
 // switch between Table · Board · Calendar · Timeline over the same data.
 
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   addMonths,
   eachDayOfInterval,
@@ -328,6 +329,14 @@ function BoardView({
   const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
   const [overLane, setOverLane] = useState<string | null>(null);
   const laneRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const [ctxMenu, setCtxMenu] = useState<{ r: CollectionRecord; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setCtxMenu(null); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [!!ctxMenu]);
 
   const lanes = useMemo(() => {
     if (groupBy === "domain") {
@@ -396,6 +405,7 @@ function BoardView({
   const dragging = drag?.id ?? null;
 
   return (
+    <>
     <SelectionSurface selection={selection}>
       <div className="grid min-h-full flex-1 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         {lanes.map((lane) => {
@@ -427,6 +437,7 @@ function BoardView({
                     selection={selection}
                     dragging={dragging === r.id}
                     onStartDrag={(e) => startCardDrag(r.id, e)}
+                    onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ r, x: e.clientX, y: e.clientY }); }}
                   />
                 ))}
                 {lane.items.length === 0 ? (
@@ -457,6 +468,54 @@ function BoardView({
         );
       })()}
     </SelectionSurface>
+    {ctxMenu && createPortal(
+      <>
+        <div className="fixed inset-0 z-[299]" onMouseDown={() => setCtxMenu(null)} />
+        <div
+          className="fixed z-[300] min-w-[200px] overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-xl"
+          style={{
+            left: Math.min(ctxMenu.x, window.innerWidth - 216),
+            top: Math.min(ctxMenu.y, window.innerHeight - (config.statusOptions.length * 34 + 100)),
+          }}
+        >
+          <button
+            className="fast flex w-full items-center justify-between gap-6 px-3 py-1.5 text-left text-label hover:bg-accent-soft"
+            onClick={() => { ctxMenu.r.open(); setCtxMenu(null); }}
+          >
+            <span>Open</span>
+            <span className="mono text-meta text-muted">↗</span>
+          </button>
+          <div className="my-1 border-t border-line" />
+          {config.statusOptions.map((s) => {
+            const active = ctxMenu.r.status === s;
+            return (
+              <button
+                key={s}
+                className="fast flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-label hover:bg-accent-soft"
+                onClick={() => { ctxMenu.r.setStatus(s); setCtxMenu(null); }}
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: config.statusColors[s] ?? "var(--muted)" }} />
+                <span className="flex-1">{config.statusLabels?.[s] ?? s}</span>
+                {active && <span className="mono text-meta" style={{ color: "var(--accent)" }}>✓</span>}
+              </button>
+            );
+          })}
+          {config.onBulkDelete && (
+            <>
+              <div className="my-1 border-t border-line" />
+              <button
+                className="fast flex w-full items-center px-3 py-1.5 text-left text-label text-signal hover:bg-signal/10"
+                onClick={() => { config.onBulkDelete?.([ctxMenu.r.id]); setCtxMenu(null); }}
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      </>,
+      document.body
+    )}
+  </>
   );
 }
 
@@ -467,6 +526,7 @@ function BoardCard({
   selection,
   dragging,
   onStartDrag,
+  onContextMenu,
 }: {
   r: CollectionRecord;
   config: CollectionConfig;
@@ -474,6 +534,7 @@ function BoardCard({
   selection: CollectionSelection;
   dragging: boolean;
   onStartDrag: (e: ReactPointerEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const metaEntries = (config.extraColumns ?? []).map((c) => r.meta[c.key]?.value).filter(Boolean);
   const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
@@ -483,6 +544,7 @@ function BoardCard({
       data-select-id={r.id}
       ref={(el) => selection.registerRef(r.id, el)}
       onPointerDown={onStartDrag}
+      onContextMenu={onContextMenu}
       onClick={(e) => {
         // Open card on click unless clicking an interactive element (checkbox, status pill, etc.)
         if (!(e.target as HTMLElement).closest(SELECT_INTERACTIVE)) {
