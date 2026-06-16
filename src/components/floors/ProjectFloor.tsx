@@ -52,7 +52,7 @@ export default function ProjectFloor({
   const [scaffolding, setScaffolding] = useState(false);
   const [proposal, setProposal] = useState<ScaffoldDraft[] | null>(null);
 
-  if (!project) return <div className="text-[13px] text-muted">No project selected.</div>;
+  if (!project) return <div className="text-body text-muted">No project selected.</div>;
   const tasks = tasksOf(data, project.id);
   const pct = projectProgress(data, project);
   const inSprint = projectSprintCount(data, project.id);
@@ -99,8 +99,8 @@ export default function ProjectFloor({
       <FloorHeader
         eyebrow={
           <span className="flex items-center gap-2.5">
-            {onBack && <button onClick={onBack} className="fast mono text-[10px] text-muted hover:text-ink">‹ all projects</button>}
-            {domain && <span className="mono text-[10px]" style={{ color: domain.color }}>{domain.icon} {domain.name}</span>}
+            {onBack && <button onClick={onBack} className="fast mono text-meta text-muted hover:text-ink">‹ all projects</button>}
+            {domain && <span className="mono text-meta" style={{ color: domain.color }}>{domain.icon} {domain.name}</span>}
             <Hook dir="up" label={initiative?.name ?? "no initiative"} onClick={initiative ? onUp : undefined} />
           </span>
         }
@@ -118,10 +118,10 @@ export default function ProjectFloor({
           </div>
         }
       >
-        <h1 className="text-[23px] font-semibold tracking-tight">
+        <h1 className="text-display font-semibold tracking-tight">
           <InlineText value={project.name} onChange={(v) => updateProject(project.id, { name: v })} />
         </h1>
-        <div className="mt-1.5 flex items-baseline gap-2 text-[14px]">
+        <div className="mt-1.5 flex items-baseline gap-2 text-head">
           <span className="section-label shrink-0" style={{ marginTop: 2 }}>Goal</span>
           <InlineText
             value={project.outcome}
@@ -137,11 +137,11 @@ export default function ProjectFloor({
         <div className="min-w-[200px] flex-1">
           <div className="flex items-baseline justify-between">
             <span className="section-label">Progress ({tasks.filter((t) => t.status === "done").length}/{tasks.length} tasks)</span>
-            <span className="mono text-[11px]" style={{ color: accent }}>{pct}%</span>
+            <span className="mono text-label" style={{ color: accent }}>{pct}%</span>
           </div>
           <Bar pct={pct} color={accent} />
         </div>
-        <div className="mono flex items-center gap-4 text-[11px] text-muted">
+        <div className="mono flex items-center gap-4 text-label text-muted">
           <span>start <InlineDate value={project.startDate} onChange={(v) => updateProject(project.id, { startDate: v })} /></span>
           <span>·</span>
           <span>target <InlineDate value={project.targetDate} onChange={(v) => updateProject(project.id, { targetDate: v })} /></span>
@@ -154,7 +154,7 @@ export default function ProjectFloor({
           value={project.description}
           onChange={(v) => updateProject(project.id, { description: v })}
           placeholder="Notes, scope, what's in and out…"
-          className="max-w-[720px] text-[14px] text-muted"
+          className="max-w-[720px] text-head text-muted"
         />
       </div>
 
@@ -163,11 +163,11 @@ export default function ProjectFloor({
         <div className="section-label mb-2">Task timeline</div>
         <div className="rounded-md border border-line bg-surface p-4">
           <div className="mb-1.5 flex pl-[150px]">
-            {["W1", "W2", "W3", "W4"].map((w) => <div key={w} className="mono flex-1 text-[9px] text-muted">{w}</div>)}
+            {["W1", "W2", "W3", "W4"].map((w) => <div key={w} className="mono flex-1 text-micro text-muted">{w}</div>)}
           </div>
           {positioned.map(({ t, tl }) => (
             <div key={t.id} className="mb-1 flex items-center">
-              <span className="w-[146px] truncate pr-2 text-[11px]" title={t.title}>
+              <span className="w-[146px] truncate pr-2 text-label" title={t.title}>
                 <span className="mr-1" style={{ color: accent }}>{t.energy ? ENERGY_META[t.energy].icon : "·"}</span>
                 {t.title || "untitled"}
               </span>
@@ -181,7 +181,7 @@ export default function ProjectFloor({
               </div>
             </div>
           ))}
-          {tasks.length === 0 && <div className="py-3 text-center text-[11px] text-muted italic">Add tasks below to populate the timeline.</div>}
+          {tasks.length === 0 && <div className="py-3 text-center text-label text-muted italic">Add tasks below to populate the timeline.</div>}
         </div>
       </section>
 
@@ -201,7 +201,7 @@ export default function ProjectFloor({
         <div className="mt-5 rounded-md border p-4" style={{ borderColor: accent }}>
           <div className="mb-2 flex items-baseline justify-between">
             <span className="section-label">✦ proposed scaffold — review before it lands</span>
-            <span className="mono text-[10px] text-muted">
+            <span className="mono text-meta text-muted">
               {proposal.filter((d) => d.included).length}/{proposal.length} included
             </span>
           </div>
@@ -211,7 +211,7 @@ export default function ProjectFloor({
                 onClick={() =>
                   setProposal((p) => p!.map((x, j) => (j === i ? { ...x, included: !x.included } : x)))
                 }
-                className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-[9px]"
+                className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro"
                 style={{
                   borderColor: d.included ? accent : "var(--line)",
                   background: d.included ? accent : "transparent",
@@ -220,18 +220,18 @@ export default function ProjectFloor({
               >
                 {d.included ? "✓" : ""}
               </button>
-              <span className="shrink-0 text-[11px]" style={{ color: accent }}>
+              <span className="shrink-0 text-label" style={{ color: accent }}>
                 {d.energy ? ENERGY_META[d.energy].icon : "·"}
               </span>
-              <span className={`min-w-0 flex-1 truncate text-[12px] ${d.included ? "" : "text-muted line-through"}`}>
+              <span className={`min-w-0 flex-1 truncate text-caption ${d.included ? "" : "text-muted line-through"}`}>
                 {d.title}
               </span>
               {d.rationale && (
-                <span className="mono hidden max-w-[260px] shrink-0 truncate text-[9px] text-muted lg:inline" title={d.rationale}>
+                <span className="mono hidden max-w-[260px] shrink-0 truncate text-micro text-muted lg:inline" title={d.rationale}>
                   {d.rationale}
                 </span>
               )}
-              <span className="mono shrink-0 text-[10px] text-muted">{d.durationMins}m</span>
+              <span className="mono shrink-0 text-meta text-muted">{d.durationMins}m</span>
             </div>
           ))}
           <div className="mt-3 flex items-center gap-2">
@@ -250,7 +250,7 @@ export default function ProjectFloor({
         <Btn onClick={() => { addProjectReadyToSprint(project.id); setNote("Committed this project's open tasks to the week — they're in the Week rail now."); }}>
           ★ commit to week{inSprint > 0 ? ` (${inSprint} in)` : ""}
         </Btn>
-        {note && <span className="text-[11px] text-muted">{note}</span>}
+        {note && <span className="text-label text-muted">{note}</span>}
       </div>
     </div>
   );

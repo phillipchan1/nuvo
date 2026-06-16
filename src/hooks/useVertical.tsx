@@ -8,9 +8,10 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import { planningWeekStartISO } from "../lib/dates";
-import { restingStatus, type Sprint, type Task } from "../lib/types";
+import { restingStatus, type BigRock, type Sprint, type Task } from "../lib/types";
 import {
   buildVertical,
+  normalizeInitiativeStatus,
   type Domain,
   type DomainRow,
   type Initiative,
@@ -62,7 +63,12 @@ export interface VerticalStore {
   /** Bulk insert (AI scaffold accept): ordered drafts land in `backlog`. */
   addTasks: (
     parent: TaskParent,
-    drafts: { title: string; energy: VTask["energy"]; durationMins: number }[],
+    drafts: { title: string; energy: VTask["energy"]; durationMins: number; bigRockId?: string | null }[],
+  ) => Promise<void>;
+  /** Like addTasks, but the drafts also land in the current week's sprint (and may carry a deadline / big rock). */
+  addTasksToWeek: (
+    parent: TaskParent,
+    drafts: { title: string; energy: VTask["energy"]; durationMins: number; deadline?: string | null; bigRockId?: string | null }[],
   ) => Promise<void>;
   updateTask: (id: string, patch: Partial<VTask>) => void;
   deleteTask: (id: string) => void;
@@ -86,12 +92,26 @@ export interface VerticalStore {
   clearSprint: () => void;
   setSprintGoal: (goal: string) => void;
   setFocusInitiatives: (ids: string[]) => void;
+
+  // big rocks — the week's named outcomes (a small, varying set), on the sprint row
+  /** Add a blank rock to author by hand. */
+  addBigRock: () => void;
+  /** Append parsed priorities (from the agent's free-text shaping); pass `id` to control the rock's id (so its tasks can link to it). */
+  addBigRocks: (items: { id?: string; title: string; win?: string; initiative_id?: string | null }[]) => void;
+  updateBigRock: (id: string, patch: Partial<Omit<BigRock, "id">>) => void;
+  removeBigRock: (id: string) => void;
+  /** Check a rock off as moved this week (or un-check it). */
+  toggleBigRockDone: (id: string) => void;
   /** Per-day compose contexts (normal/light/travel/off) for the planning week. */
   setDayContexts: (map: Record<string, string>) => void;
   markSprintReviewed: () => void;
 
   /** The Composer's accept: write the proposed blocks in one pass. */
   applySchedule: (placements: { id: string; doDateISO: string; startISO: string }[]) => Promise<void>;
+  /** Materialize batched focus blocks: create slot rows and move their tasks inside. */
+  applySlots: (
+    slots: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; taskIds: string[] }[],
+  ) => Promise<void>;
   /** The Plan flow's one commit: commit the kept candidates to the week,
    *  schedule the placed ones, and stamp the sprint goal + reviewed — all
    *  against the current planning week's sprint, in order, one await. */
@@ -214,6 +234,36 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
     const patchRows = <R extends { id: string }>(key: string[], id: string, rowPatch: Partial<R>) =>
       qc.setQueryData<R[]>(key, (old) => old?.map((r) => (r.id === id ? { ...r, ...rowPatch } : r)));
 
+    const removeRows = <R extends { id: string }>(key: string[], ids: string[]) => {
+      if (!ids.length) return;
+      const drop = new Set(ids);
+      qc.setQueryData<R[]>(key, (old) => old?.filter((r) => !drop.has(r.id)));
+    };
+
+    const deleteProjectRows = async (ids: string[]) => {
+      if (!ids.length) return;
+      removeRows<ProjectRow>(["vertical", "projects"], ids);
+      try {
+        const uid = await userId();
+        // Detach children first — clearer than relying on FK + RLS during cascade.
+        for (const table of ["tasks", "slots", "recurrences"] as const) {
+          const q = supabase.from(table).update({ project_id: null }).eq("user_id", uid);
+          const { error } = ids.length === 1
+            ? await q.eq("project_id", ids[0])
+            : await q.in("project_id", ids);
+          if (error) throw error;
+        }
+        const { error } = ids.length === 1
+          ? await supabase.from("projects").delete().eq("id", ids[0]).eq("user_id", uid)
+          : await supabase.from("projects").delete().in("id", ids).eq("user_id", uid);
+        if (error) throw error;
+        invalidate(["vertical", "projects"], ["tasks"], ["slots"], ["recurrences"]);
+      } catch (err) {
+        console.error("[vertical] delete project(s) failed", err);
+        invalidate(["vertical", "projects"], ["tasks"], ["slots"], ["recurrences"]);
+      }
+    };
+
     const writeTable = async (table: string, id: string, rowPatch: Record<string, unknown>) => {
       const { error } = await supabase.from(table).update(rowPatch).eq("id", id);
       if (error) console.error(`[vertical] update ${table} failed`, error);
@@ -292,7 +342,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         return {
           id: row.id, name: row.name, color: row.color, icon: row.icon,
           intention: row.intention, weeklyTargetHours: row.weekly_target_hours ?? 0,
-          investedThisWeek: 0, quarterHours: 0, lastTouchedDays: 99, sort,
+          investedThisWeek: 0, quarterHours: 0, lastTouchedDays: 99, weeks: new Array(13).fill(0), sort,
         };
       },
       updateDomain: (id, patch) => {
@@ -336,7 +386,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           id: row.id, domainId, name: row.name, outcome: row.outcome ?? "",
           description: row.description ?? "", startDate: row.start_date ?? null,
           targetDate: row.target_date ?? null,
-          status: (row.status ?? "active") as Initiative["status"], progress: row.progress ?? 0,
+          status: normalizeInitiativeStatus(row.status ?? "in_progress"), progress: row.progress ?? 0,
           momentum: (row.momentum ?? "flat") as Initiative["momentum"], keyResults: [],
         };
       },
@@ -438,13 +488,10 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         void writeTable("projects", id, rowPatch).then(() => invalidate(["vertical"]));
       },
       deleteProject: (id) => {
-        void supabase.from("projects").delete().eq("id", id)
-          .then(() => invalidate(["vertical"], ["tasks"]));
+        void deleteProjectRows([id]);
       },
       deleteProjects: (ids) => {
-        if (!ids.length) return;
-        void supabase.from("projects").delete().in("id", ids)
-          .then(() => invalidate(["vertical"], ["tasks"]));
+        void deleteProjectRows(ids);
       },
 
       // ── tasks ────────────────────────────────────────────────────────────
@@ -476,6 +523,31 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             project_id: parent.projectId ?? null,
             initiative_id: parent.initiativeId ?? null,
             domain_id: parent.domainId ?? null,
+            big_rock_id: d.bigRockId ?? null,
+            energy: d.energy,
+            duration_minutes: d.durationMins,
+            sort_order: baseSort + i,
+          })),
+        );
+        if (error) throw error;
+        invalidate(["tasks"]);
+      },
+      addTasksToWeek: async (parent, drafts) => {
+        if (!drafts.length) return;
+        const uid = await userId();
+        const sprint = await ensureSprint();
+        const baseSort = Date.now();
+        const { error } = await supabase.from("tasks").insert(
+          drafts.map((d, i) => ({
+            user_id: uid,
+            title: d.title,
+            status: "backlog",
+            project_id: parent.projectId ?? null,
+            initiative_id: parent.initiativeId ?? null,
+            domain_id: parent.domainId ?? null,
+            sprint_id: sprint.id,
+            big_rock_id: d.bigRockId ?? null,
+            deadline: d.deadline ?? null,
             energy: d.energy,
             duration_minutes: d.durationMins,
             sort_order: baseSort + i,
@@ -593,6 +665,44 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       setSprintGoal: (goal) => void patchSprint({ goal }),
       setFocusInitiatives: (ids) => void patchSprint({ focus_initiative_ids: ids }),
       setDayContexts: (map) => void patchSprint({ day_contexts: map }),
+
+      // ── big rocks — the week's named outcomes, jsonb on the sprint row ───
+      addBigRock: () => {
+        const rocks = data.bigRocks;
+        const rock: BigRock = {
+          id: crypto.randomUUID(),
+          title: "",
+          win: "",
+          initiative_id: null,
+          done_at: null,
+          roll_count: 0,
+        };
+        void patchSprint({ big_rocks: [...rocks, rock] });
+      },
+      addBigRocks: (items) => {
+        if (!items.length) return;
+        const rocks: BigRock[] = items.map((it) => ({
+          id: it.id ?? crypto.randomUUID(),
+          title: it.title,
+          win: it.win ?? "",
+          initiative_id: it.initiative_id ?? null,
+          done_at: null,
+          roll_count: 0,
+        }));
+        void patchSprint({ big_rocks: [...data.bigRocks, ...rocks] });
+      },
+      updateBigRock: (id, patch) =>
+        void patchSprint({
+          big_rocks: data.bigRocks.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+        }),
+      removeBigRock: (id) =>
+        void patchSprint({ big_rocks: data.bigRocks.filter((r) => r.id !== id) }),
+      toggleBigRockDone: (id) =>
+        void patchSprint({
+          big_rocks: data.bigRocks.map((r) =>
+            r.id === id ? { ...r, done_at: r.done_at ? null : new Date().toISOString() } : r,
+          ),
+        }),
       markSprintReviewed: () => void patchSprint({ reviewed_at: new Date().toISOString() }),
 
       applySchedule: async (placements) => {
@@ -605,6 +715,37 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           else invokeQuiet("task-mirror", { taskId: p.id });
         }
         invalidate(["tasks"]);
+      },
+
+      applySlots: async (specs) => {
+        if (!specs.length) return;
+        const uid = await userId();
+        for (const s of specs) {
+          const { data: slot, error } = await supabase
+            .from("slots")
+            .insert({
+              user_id: uid,
+              title: s.title,
+              do_date: s.doDateISO,
+              start_time: s.startISO,
+              duration_minutes: s.durationMins,
+              domain_id: s.domainId,
+              color: s.color,
+            })
+            .select("id")
+            .single();
+          if (error) { console.error("[batch] slot insert failed", error); continue; }
+          if (s.taskIds.length) {
+            // children lose their own block (start_time null), keep the slot's day
+            const { error: tErr } = await supabase
+              .from("tasks")
+              .update({ slot_id: slot.id, do_date: s.doDateISO, start_time: null, status: "planned" })
+              .in("id", s.taskIds);
+            if (tErr) console.error("[batch] slot task assign failed", tErr);
+          }
+          invokeQuiet("slot-mirror", { slotId: slot.id });
+        }
+        invalidate(["slots"], ["tasks"]);
       },
 
       planWeek: async ({ commitTaskIds, placements, goal }) => {

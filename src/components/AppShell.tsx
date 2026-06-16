@@ -67,6 +67,8 @@ function AppShellInner() {
     toggleAgent,
     openFloorModal,
     closeFloorModal,
+    back,
+    canGoBack,
   } = useAppNavigation();
 
   const { rung, projectView, initiativeView, focus, flow, flowStep, agentOpen } = nav;
@@ -143,12 +145,20 @@ function AppShellInner() {
     setSundayNudge(false);
   };
 
-  // ⌘1–5 jump to a rung; ⌘↑ / ⌘↓ travel the ladder.
+  // ⌘1–5 jump to a rung; ⌘↑ / ⌘↓ travel the ladder; ⌘[ goes back.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
       if (!(e.metaKey || e.ctrlKey)) return;
+
+      // ⌘[ — back navigation (standard macOS convention)
+      if (e.key === "[") {
+        e.preventDefault();
+        if (canGoBack()) back();
+        else closeOverlay();
+        return;
+      }
 
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
@@ -166,7 +176,7 @@ function AppShellInner() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goRung, rung]);
+  }, [goRung, rung, back, canGoBack, closeOverlay]);
 
   const openFlowWithSeed = (f: FlowName) => {
     if (f === "blueprint") setBlueprintSeed(null);
@@ -230,14 +240,14 @@ function AppShellInner() {
           {sundayNudge && !flow && (
           <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2">
             <div className="rise elev-3 flex items-center gap-3 rounded-full border border-line bg-surface px-4 py-2">
-              <span className="text-[12px]">A new week is here — plan it?</span>
+              <span className="text-caption">A new week is here — plan it?</span>
               <button
                 onClick={() => { openFlow("sunday"); setSundayNudge(false); }}
-                className="fast rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
+                className="fast rounded-full bg-accent px-3 py-1 text-label font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
               >
                 Plan the week ▸
               </button>
-              <button onClick={dismissSundayNudge} className="fast text-[11px] text-muted hover:text-ink">
+              <button onClick={dismissSundayNudge} className="fast text-label text-muted hover:text-ink">
                 not now
               </button>
             </div>

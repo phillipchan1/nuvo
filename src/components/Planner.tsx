@@ -21,6 +21,7 @@ import CommandBar, { type Command } from "./CommandBar";
 import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
+import { BigRocksBar } from "./floors/bigRocks";
 import { EveningShutdown, MorningPlan } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
 import { Keycap } from "./ui";
@@ -78,7 +79,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
   const { data: slotChildTasks = [] } = useSlotTasks(slotIds);
   const { data: accounts = [] } = useCalendarAccounts();
-  const { refresh: refreshCalendars, refreshing: refreshingCalendars } = useCalendarRefresh();
+  const { refresh: refreshCalendars, fullRefresh: fullRefreshCalendars, refreshing: refreshingCalendars } = useCalendarRefresh();
   const { data: recurrences = [] } = useRecurrences();
   const { labels } = useLabels();
   const mutations = useTaskMutations();
@@ -227,7 +228,6 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
         data-tauri-drag-region
         className="app-topbar flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"
       >
-        <span className="wordmark wordmark-grad text-head">Nuvo</span>
         <span className="mono text-meta text-muted">{format(now, "EEE MMM d")}</span>
         <span className="mono rounded border border-signal px-1 text-meta leading-snug text-signal">
           {format(now, "h:mm a")}
@@ -273,6 +273,9 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
       <ReconnectBanner accounts={accounts} />
 
+      {/* the week's plan, docked above the calendar — big rocks live with the week */}
+      <BigRocksBar />
+
       <div className="relative flex min-h-0 flex-1">
         <LeftRail
           tab={tab}
@@ -304,6 +307,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             slotMutations={slotMutations}
             recurrenceMutations={recurrenceMutations}
             onRefreshCalendars={accounts.length > 0 ? refreshCalendars : undefined}
+            onFullRefreshCalendars={accounts.length > 0 ? fullRefreshCalendars : undefined}
             refreshingCalendars={refreshingCalendars}
             onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor)}
             onOpenEvent={(e, anchor) => openOverlay("event", e.id, anchor)}

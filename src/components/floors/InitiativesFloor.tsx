@@ -8,9 +8,11 @@ import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
   domainById,
   initiativeProgress,
+  isProjectComplete,
+  isProjectInFlight,
   projectsOf,
 } from "../../lib/vertical";
-import { FloorHeader, INITIATIVE_STATUS, INITIATIVE_STATUS_COLORS } from "./parts";
+import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
 
@@ -65,14 +67,14 @@ export default function InitiativesFloor({
   });
 
   const shipped = data.initiatives.filter(
-    (i) => i.status === "shipped" && (!domainFilter || i.domainId === domainFilter),
+    (i) => isProjectComplete(i.status) && (!domainFilter || i.domainId === domainFilter),
   );
 
   return (
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
-      <FloorHeader eyebrow={`${data.initiatives.length} initiatives · ${data.initiatives.filter((i) => i.status === "active").length} active`}>
-        <h1 className="text-[24px] font-semibold tracking-tight">Initiatives</h1>
-        <p className="mt-1 text-[13px] text-muted">The bets with finish lines, across every domain — switch the view, click any to drill in.</p>
+      <FloorHeader eyebrow={`${data.initiatives.length} initiatives · ${data.initiatives.filter((i) => isProjectInFlight(i.status)).length} in flight`}>
+        <h1 className="text-display font-semibold tracking-tight">Initiatives</h1>
+        <p className="mt-1 text-body text-muted">The bets with finish lines, across every domain — switch the view, click any to drill in.</p>
       </FloorHeader>
 
       <DomainFilter value={domainFilter} onChange={setDomainFilter} />
@@ -81,8 +83,9 @@ export default function InitiativesFloor({
         <Collection
         config={{
           records,
-          statusOptions: [...INITIATIVE_STATUS],
-          statusColors: INITIATIVE_STATUS_COLORS,
+          statusOptions: [...PROJECT_STATUS],
+          statusColors: PROJECT_STATUS_COLORS,
+          statusLabels: PROJECT_STATUS_LABEL,
           extraColumns: [
             { key: "momentum", label: "Momentum" },
             { key: "projects", label: "Projects" },
@@ -98,7 +101,7 @@ export default function InitiativesFloor({
 
       {shipped.length > 0 && (
         <section className="mt-10">
-          <div className="section-label mb-2">The shelf · {shipped.length} shipped</div>
+          <div className="section-label mb-2">The shelf · {shipped.length} complete</div>
           <div className="flex flex-wrap gap-2.5">
             {shipped.map((i) => {
               const domain = domainById(data, i.domainId);
@@ -108,9 +111,9 @@ export default function InitiativesFloor({
                   onClick={() => onOpen(i.id)}
                   className="fast flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-left hover:border-muted"
                 >
-                  <span className="text-[13px]" style={{ color: domain?.color }}>✓</span>
-                  <span className="text-[12px] font-medium">{i.name}</span>
-                  {i.targetDate && <span className="mono text-[9px] text-muted">{i.targetDate.slice(0, 7)}</span>}
+                  <span className="text-body" style={{ color: domain?.color }}>✓</span>
+                  <span className="text-caption font-medium">{i.name}</span>
+                  {i.targetDate && <span className="mono text-micro text-muted">{i.targetDate.slice(0, 7)}</span>}
                 </button>
               );
             })}

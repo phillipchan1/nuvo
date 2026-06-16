@@ -39,11 +39,11 @@ export function SelectionBulkBar({
 
   return (
     <div className={shell}>
-      <span className="mono text-[10px] font-medium leading-none text-accent">{label}</span>
+      <span className="mono text-meta font-medium leading-none text-accent">{label}</span>
       {onBulkDelete && selection.count > 0 && (
         <button
           onClick={selection.bulkDelete}
-          className={`fast flex h-5 items-center rounded border px-1.5 text-[10px] leading-none ${
+          className={`fast flex h-5 items-center rounded border px-1.5 text-meta leading-none ${
             selection.deleteArmed
               ? "border-signal bg-signal text-white"
               : "border-signal/30 text-signal hover:bg-signal-soft"
@@ -57,7 +57,7 @@ export function SelectionBulkBar({
           selection.clear();
           selection.setDeleteArmed(false);
         }}
-        className="fast flex h-5 items-center rounded border border-line px-1.5 text-[10px] leading-none text-muted hover:text-ink"
+        className="fast flex h-5 items-center rounded border border-line px-1.5 text-meta leading-none text-muted hover:text-ink"
       >
         Clear
       </button>
@@ -94,7 +94,7 @@ export function SelectCheckbox({
             : "border-line bg-surface hover:border-accent"
       } ${className}`}
     >
-      {(checked || preview) && <span className="text-[10px]">{checked ? "✓" : "◦"}</span>}
+      {(checked || preview) && <span className="text-meta">{checked ? "✓" : "◦"}</span>}
     </button>
   );
 }
@@ -108,7 +108,7 @@ export function SelectionHint({ enabled, count, recordCount, previewCount }: {
   if (!enabled || recordCount === 0) return null;
   if (count > 0 || (previewCount ?? 0) > 0) return null;
   return (
-    <p className="mono mt-2 text-[10px] text-muted">
+    <p className="mono mt-2 text-meta text-muted">
       Table/Timeline: click or drag to select · Board/Calendar: drag cards to move · checkboxes · ⌘/⇧+click · Delete to remove · double-click to open
     </p>
   );

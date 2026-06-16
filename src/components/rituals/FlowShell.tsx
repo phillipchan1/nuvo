@@ -75,8 +75,8 @@ export default function FlowShell({
       {/* the pipeline header: inputs → stages → output, all live */}
       <header className="flex shrink-0 items-center gap-4 border-b border-line bg-surface px-5 py-2 elev-1">
         <div className="w-[108px] shrink-0">
-          <div className="wordmark text-[14px]">{title}</div>
-          <div className="mono text-[10px] text-muted">{sub}</div>
+          <div className="wordmark text-head">{title}</div>
+          <div className="mono text-meta text-muted">{sub}</div>
         </div>
 
         <div className="flex min-w-0 flex-1 items-stretch justify-center gap-1.5 overflow-x-auto">
@@ -146,7 +146,7 @@ export default function FlowShell({
           >
             ‹ back
           </Btn>
-          <span className="mono text-[10px] text-muted">
+          <span className="mono text-meta text-muted">
             {step + 1} / {stages.length} · {stages[step]?.label} · ← →
           </span>
           {step < last ? (
@@ -154,7 +154,7 @@ export default function FlowShell({
           ) : lastCta ? (
             <Btn kind="primary" onClick={lastCta.onClick}>{lastCta.label}</Btn>
           ) : (
-            <span className="mono text-[10px] text-muted">{lastHint ?? ""}</span>
+            <span className="mono text-meta text-muted">{lastHint ?? ""}</span>
           )}
         </footer>
       )}
@@ -200,12 +200,12 @@ function PipelineNode({
       }}
     >
       <div
-        className="mono whitespace-nowrap text-[8px] uppercase tracking-wider"
+        className="mono whitespace-nowrap text-micro uppercase tracking-wider"
         style={{ color: active || reached ? "var(--accent)" : "var(--muted)" }}
       >
         {kicker}
       </div>
-      <div className="mono max-w-[150px] truncate whitespace-nowrap text-[10px]" style={{ color: "var(--text)" }}>
+      <div className="mono max-w-[150px] truncate whitespace-nowrap text-meta" style={{ color: "var(--text)" }}>
         {value}
       </div>
     </button>
@@ -215,7 +215,7 @@ function PipelineNode({
 function Arrow({ lit }: { lit: boolean }) {
   return (
     <span
-      className={`self-center text-[11px] ${lit ? "pulse-arrow" : ""}`}
+      className={`self-center text-label ${lit ? "pulse-arrow" : ""}`}
       style={{ color: lit ? "var(--accent)" : "var(--line)", transition: "color var(--d-base) var(--ease-out)" }}
     >
       →

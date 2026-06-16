@@ -55,10 +55,10 @@ export default function MobileTaskSheet({
             onChange={(e) => setTitle(e.target.value)}
             onBlur={commitTitle}
             rows={1}
-            className="w-full resize-none bg-transparent text-[16px] font-medium outline-none"
+            className="w-full resize-none bg-transparent text-head font-medium outline-none"
           />
           {(task.duration_minutes || task.start_time) && (
-            <div className="mono mt-1 text-[12px] text-muted">
+            <div className="mono mt-1 text-caption text-muted">
               {task.duration_minutes ? fmtDuration(task.duration_minutes) : null}
               {task.start_time ? ` · ${new Date(task.start_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : null}
             </div>
@@ -70,7 +70,7 @@ export default function MobileTaskSheet({
             done ? mutations.uncomplete(task) : mutations.complete(task);
             onClose();
           }}
-          className={`tap fast mt-3 w-full rounded-xl border py-3 text-[15px] font-semibold active:translate-y-px ${
+          className={`tap fast mt-3 w-full rounded-xl border py-3 text-head font-semibold active:translate-y-px ${
             done
               ? "border-line text-muted"
               : "border-accent bg-accent text-white"
@@ -125,7 +125,7 @@ export default function MobileTaskSheet({
                       on ? next.delete(l.id) : next.add(l.id);
                       mutations.setLabels(task.id, [...next]);
                     }}
-                    className="tap fast rounded-full border px-3 py-2 text-[13px] font-medium"
+                    className="tap fast rounded-full border px-3 py-2 text-body font-medium"
                     style={{
                       borderColor: on ? l.color : "var(--line)",
                       background: on ? `color-mix(in srgb, ${l.color} 15%, var(--surface))` : "transparent",
@@ -145,7 +145,7 @@ export default function MobileTaskSheet({
             mutations.trash(task);
             onClose();
           }}
-          className="tap fast mt-5 w-full rounded-xl border border-signal/30 py-3 text-[14px] font-medium text-signal active:translate-y-px"
+          className="tap fast mt-5 w-full rounded-xl border border-signal/30 py-3 text-head font-medium text-signal active:translate-y-px"
         >
           Trash
         </button>
@@ -175,7 +175,7 @@ function Chip({
   return (
     <button
       onClick={onClick}
-      className={`tap fast rounded-full border px-3.5 py-2 text-[13px] font-medium ${
+      className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
         on
           ? "border-accent bg-accent text-white"
           : "border-line text-muted hover:border-accent hover:text-accent"
@@ -215,18 +215,18 @@ function DateTimePicker({
         type="date"
         value={date}
         onChange={(e) => setDate(e.target.value)}
-        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-[15px] outline-none focus:border-accent"
+        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-head outline-none focus:border-accent"
       />
       <input
         type="time"
         value={time}
         step={900}
         onChange={(e) => setTime(e.target.value)}
-        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-[15px] outline-none focus:border-accent"
+        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-head outline-none focus:border-accent"
       />
       <button
         onClick={apply}
-        className="tap fast rounded-lg border border-accent bg-accent px-4 py-2 text-[14px] font-medium text-white"
+        className="tap fast rounded-lg border border-accent bg-accent px-4 py-2 text-head font-medium text-white"
       >
         Set
       </button>

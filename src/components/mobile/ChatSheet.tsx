@@ -63,7 +63,7 @@ export default function ChatSheet({
   const title = (
     <span className="flex items-center gap-2">
       {ASSISTANT_NAME}
-      <span className="mono text-[11px] font-normal text-muted">your planner</span>
+      <span className="mono text-label font-normal text-muted">your planner</span>
     </span>
   );
 
@@ -73,15 +73,15 @@ export default function ChatSheet({
         {dragging && (
           <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-accent-soft/75 backdrop-blur-[2px]">
             <div className="rounded-2xl border-2 border-dashed border-accent bg-surface px-6 py-5 text-center shadow-lg">
-              <span className="text-[24px]">↓</span>
-              <p className="mt-1 text-[13px] font-medium text-accent">Drop to attach</p>
+              <span className="text-display">↓</span>
+              <p className="mt-1 text-body font-medium text-accent">Drop to attach</p>
             </div>
           </div>
         )}
 
         {messages.length > 0 && (
           <div className="flex shrink-0 justify-end px-4 pb-1">
-            <button onClick={clear} className="fast text-[12px] text-muted hover:text-ink">
+            <button onClick={clear} className="fast text-caption text-muted hover:text-ink">
               Clear
             </button>
           </div>
@@ -90,7 +90,7 @@ export default function ChatSheet({
         <div className="mobile-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-2">
           {messages.length === 0 && !loading ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-2 text-center">
-              <p className="text-[14px] text-muted">{hints.prompt}</p>
+              <p className="text-head text-muted">{hints.prompt}</p>
               <div className="w-full max-w-sm">
                 <AgentSuggestionChips
                   suggestions={hints.starters.map((s) => ({ label: s, message: s }))}
@@ -106,7 +106,7 @@ export default function ChatSheet({
               ))}
               {loading && (
                 <div className="agent-bubble agent-bubble-assistant w-fit">
-                  <span className="mono shimmer text-[12px]">Thinking…</span>
+                  <span className="mono shimmer text-caption">Thinking…</span>
                 </div>
               )}
               {activeSuggestions && (
@@ -123,7 +123,7 @@ export default function ChatSheet({
         </div>
 
         {error && (
-          <div className="shrink-0 border-t border-line bg-signal-soft px-4 py-2 text-[12px] text-signal">
+          <div className="shrink-0 border-t border-line bg-signal-soft px-4 py-2 text-caption text-signal">
             {error}
           </div>
         )}

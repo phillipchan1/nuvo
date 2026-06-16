@@ -17,7 +17,7 @@ import {
   startOfYear,
 } from "date-fns";
 import { ENERGY_META, ENERGY_ORDER, type Energy } from "../../lib/energy";
-import type { Momentum, ProjectStatus } from "../../lib/vertical";
+import type { Domain, Momentum, ProjectStatus } from "../../lib/vertical";
 import type { CollectionSelection } from "../../hooks/useCollectionSelection";
 import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
 
@@ -37,10 +37,8 @@ export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
   cancelled: "Cancelled",
   complete: "Complete",
 };
-export const INITIATIVE_STATUS = ["active", "paused", "shipped", "dropped"] as const;
-export const INITIATIVE_STATUS_COLORS: Record<string, string> = {
-  active: "var(--accent)", paused: "var(--muted)", shipped: "#059669", dropped: "var(--signal)",
-};
+// Initiatives speak the same status vocabulary as projects now — reuse
+// PROJECT_STATUS / PROJECT_STATUS_COLORS / PROJECT_STATUS_LABEL above.
 
 // ── Progress bar with optional baseline marker (the Gain frame) ──────────────
 export function Bar({ pct, color, baseline, h = 1.5 }: { pct: number; color: string; baseline?: number; h?: number }) {
@@ -57,7 +55,7 @@ export function Bar({ pct, color, baseline, h = 1.5 }: { pct: number; color: str
 // ── Up/down traversal hook ───────────────────────────────────────────────────
 export function Hook({ dir, label, onClick }: { dir: "up" | "down"; label: string; onClick?: () => void }) {
   return (
-    <button onClick={onClick} disabled={!onClick} className="fast mono text-[10px] text-muted hover:text-ink disabled:cursor-default">
+    <button onClick={onClick} disabled={!onClick} className="fast mono text-meta text-muted hover:text-ink disabled:cursor-default">
       {dir === "up" ? "↑" : "↓"} {label}
     </button>
   );
@@ -232,7 +230,7 @@ export function InlineDate({ value, onChange, placeholder = "set date" }: { valu
     <span className="relative inline-flex items-center">
       <button
         onClick={() => { const el = ref.current; if (el) { try { el.showPicker(); } catch { el.focus(); } } }}
-        className={`fast mono rounded-sm px-1 text-[11px] hover:bg-accent-soft ${value ? "text-ink" : "text-muted italic"}`}
+        className={`fast mono rounded-sm px-1 text-label hover:bg-accent-soft ${value ? "text-ink" : "text-muted italic"}`}
       >
         {value ? fmtDate(value) : placeholder}
       </button>
@@ -244,7 +242,7 @@ export function InlineDate({ value, onChange, placeholder = "set date" }: { valu
         className="pointer-events-none absolute left-0 h-0 w-0 opacity-0"
       />
       {value && (
-        <button onClick={() => onChange(null)} className="fast ml-0.5 text-[10px] text-muted hover:text-signal" title="Clear">×</button>
+        <button onClick={() => onChange(null)} className="fast ml-0.5 text-meta text-muted hover:text-signal" title="Clear">×</button>
       )}
     </span>
   );
@@ -274,7 +272,7 @@ export function StatusPill<T extends string>({
     <span className="relative inline-block">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="fast mono rounded-full border px-2 py-0.5 text-[10px]"
+        className="fast mono rounded-full border px-2 py-0.5 text-meta"
         style={{
           borderColor: color,
           color: isFilled ? "#fff" : color,
@@ -291,7 +289,7 @@ export function StatusPill<T extends string>({
               <button
                 key={o}
                 onClick={() => { onChange(o); setOpen(false); }}
-                className="fast mono block w-full px-2.5 py-1 text-left text-[11px] hover:bg-accent-soft"
+                className="fast mono block w-full px-2.5 py-1 text-left text-label hover:bg-accent-soft"
                 style={{ color: colors[o] ?? "var(--muted)" }}
               >
                 {labels?.[o] ?? o}
@@ -309,9 +307,61 @@ export function MomentumChip({ value, onChange }: { value: Momentum; onChange: (
   const glyph = value === "up" ? "↑ rising" : value === "down" ? "↓ stalled" : "→ steady";
   const color = value === "up" ? "var(--accent)" : value === "down" ? "var(--signal)" : "var(--muted)";
   return (
-    <button onClick={() => onChange(next[value])} className="fast mono text-[10px]" style={{ color }} title="Cycle momentum">
+    <button onClick={() => onChange(next[value])} className="fast mono text-meta" style={{ color }} title="Cycle momentum">
       {glyph}
     </button>
+  );
+}
+
+// ── Domain picker — reassign which domain a record lives under ────────────────
+export function DomainPicker({
+  domains,
+  value,
+  onChange,
+  align = "left",
+}: {
+  domains: Domain[];
+  value: string;
+  onChange: (domainId: string) => void;
+  /** Which edge the menu hangs from — "left" opens inward (safe inside an
+   *  overflow-clipped modal), "right" keeps a right-aligned trigger on-screen. */
+  align?: "left" | "right";
+}) {
+  const [open, setOpen] = useState(false);
+  const cur = domains.find((d) => d.id === value);
+  const color = cur?.color ?? "var(--muted)";
+  return (
+    <span className="relative inline-block">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="fast flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-meta"
+        style={{ color, borderColor: `${color}66`, background: `${color}12` }}
+        title="Change domain"
+      >
+        <span>{cur?.icon ?? "◇"}</span>
+        <span className="font-medium">{cur?.name ?? "Domain"}</span>
+        <span className="opacity-40">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className={`rise elev-2 absolute ${align === "right" ? "right-0" : "left-0"} top-full z-50 mt-1 min-w-[150px] rounded-md border border-line bg-surface py-1`}>
+            {domains.map((d) => (
+              <button
+                key={d.id}
+                onClick={() => { onChange(d.id); setOpen(false); }}
+                className="fast flex w-full items-center gap-2 px-2.5 py-1 text-left text-label hover:bg-accent-soft"
+                style={{ color: d.id === value ? d.color : "var(--text)" }}
+              >
+                <span style={{ color: d.color }}>{d.icon}</span>
+                <span className="truncate">{d.name}</span>
+                {d.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </span>
   );
 }
 
@@ -324,7 +374,7 @@ export function EnergyPicker({ value, onChange, color }: { value: Energy | null;
           key={e}
           onClick={() => onChange(e)}
           title={`${ENERGY_META[e].label} — ${ENERGY_META[e].blurb}`}
-          className="fast h-5 w-5 rounded-sm text-[11px]"
+          className="fast h-5 w-5 rounded-sm text-label"
           style={{
             color: value === e ? "#fff" : "var(--muted)",
             background: value === e ? color : "transparent",
@@ -344,7 +394,7 @@ export function IconBtn({ children, onClick, title, danger }: { children: ReactN
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       title={title}
-      className={`fast flex h-6 w-6 items-center justify-center rounded-full border border-line text-[12px] hover:border-muted ${danger ? "hover:border-signal hover:text-signal" : "hover:text-ink"} text-muted`}
+      className={`fast flex h-6 w-6 items-center justify-center rounded-full border border-line text-caption hover:border-muted ${danger ? "hover:border-signal hover:text-signal" : "hover:text-ink"} text-muted`}
     >
       {children}
     </button>
@@ -361,7 +411,7 @@ export function DeleteBtn({ onDelete, what }: { onDelete: () => void; what: stri
   }, [armed]);
   if (armed)
     return (
-      <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="fast mono rounded-sm border border-signal px-1.5 py-0.5 text-[10px] text-signal">
+      <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="fast mono rounded-sm border border-signal px-1.5 py-0.5 text-meta text-signal">
         delete {what}?
       </button>
     );
@@ -690,7 +740,7 @@ export function Timeline({
             <button
               key={z.id}
               onClick={() => choose(z.id)}
-              className="fast mono rounded-[5px] px-2 py-0.5 text-[10px]"
+              className="fast mono rounded-[5px] px-2 py-0.5 text-meta"
               style={{ background: zoom === z.id ? "var(--accent)" : "transparent", color: zoom === z.id ? "#fff" : "var(--muted)" }}
             >
               {z.label}
@@ -698,12 +748,12 @@ export function Timeline({
           ))}
         </div>
         <div className="inline-flex items-center gap-0.5">
-          <button onClick={() => nudge(-1)} title="Earlier" className="fast mono flex h-6 w-6 items-center justify-center rounded border border-line text-[12px] text-muted hover:text-ink">‹</button>
-          <button onClick={centerToday} title="Jump to today" className="fast mono rounded border border-line px-2 py-0.5 text-[10px] text-muted hover:text-ink">Today</button>
-          <button onClick={() => nudge(1)} title="Later" className="fast mono flex h-6 w-6 items-center justify-center rounded border border-line text-[12px] text-muted hover:text-ink">›</button>
+          <button onClick={() => nudge(-1)} title="Earlier" className="fast mono flex h-6 w-6 items-center justify-center rounded border border-line text-caption text-muted hover:text-ink">‹</button>
+          <button onClick={centerToday} title="Jump to today" className="fast mono rounded border border-line px-2 py-0.5 text-meta text-muted hover:text-ink">Today</button>
+          <button onClick={() => nudge(1)} title="Later" className="fast mono flex h-6 w-6 items-center justify-center rounded border border-line text-caption text-muted hover:text-ink">›</button>
         </div>
         <div className="flex-1" />
-        <span className="mono text-[10px] text-muted">
+        <span className="mono text-meta text-muted">
           {dated.length} scheduled{undated.length ? ` · ${undated.length} unscheduled` : ""}
         </span>
       </div>
@@ -712,7 +762,7 @@ export function Timeline({
       <div className="flex">
         <div className="shrink-0 border-r border-line" style={{ width: LABEL_W }}>
           <div className="border-b border-line bg-bg" style={{ height: AXIS_H }}>
-            <div className="mono flex h-full items-end px-2.5 pb-1 text-[9px] uppercase text-muted">Name</div>
+            <div className="mono flex h-full items-end px-2.5 pb-1 text-micro uppercase text-muted">Name</div>
           </div>
           {dated.map((it) => {
             const picked = selection?.isSelected(it.id);
@@ -737,7 +787,7 @@ export function Timeline({
                   </span>
                 )}
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: it.color, opacity: it.dim ? 0.5 : 1 }} />
-                <button onClick={it.onClick} className="fast truncate text-left text-[11px] text-ink hover:text-accent" title={it.label}>{it.label || "Untitled"}</button>
+                <button onClick={it.onClick} className="fast truncate text-left text-label text-ink hover:text-accent" title={it.label}>{it.label || "Untitled"}</button>
               </div>
             );
           })}
@@ -750,7 +800,7 @@ export function Timeline({
             <div className="relative border-b border-line bg-bg" style={{ height: AXIS_H }}>
               {majors.map((g) => (
                 <div key={g.key} className="absolute top-0 flex items-center overflow-hidden border-r border-line px-1.5" style={{ left: g.left, width: g.width, height: 19 }}>
-                  <span className="mono whitespace-nowrap text-[9px] font-semibold uppercase tracking-wide text-muted">{g.label}</span>
+                  <span className="mono whitespace-nowrap text-micro font-semibold uppercase tracking-wide text-muted">{g.label}</span>
                 </div>
               ))}
               {minors.map((t) => (
@@ -759,11 +809,11 @@ export function Timeline({
                   className="absolute flex items-end pb-1"
                   style={{ left: t.left, top: 19, bottom: 0, width: t.width ?? 26, paddingLeft: t.width ? 0 : 3, justifyContent: t.width ? "center" : "flex-start" }}
                 >
-                  <span className={`mono whitespace-nowrap text-[9px] ${t.weekend ? "text-muted/55" : "text-muted"}`}>{t.label}</span>
+                  <span className={`mono whitespace-nowrap text-micro ${t.weekend ? "text-muted/55" : "text-muted"}`}>{t.label}</span>
                 </div>
               ))}
               <div className="absolute -top-px flex flex-col items-center" style={{ left: todayX, transform: "translateX(-50%)" }}>
-                <span className="mono rounded-sm px-1 text-[8px] font-semibold uppercase tracking-wide text-white" style={{ background: "var(--signal)" }}>Today</span>
+                <span className="mono rounded-sm px-1 text-micro font-semibold uppercase tracking-wide text-white" style={{ background: "var(--signal)" }}>Today</span>
               </div>
             </div>
 
@@ -803,11 +853,11 @@ export function Timeline({
                       <div className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.max(0, Math.min(100, it.progress))}%`, background: `${it.color}33` }} />
                       {wide ? (
                         <>
-                          <span className="relative truncate text-[10px] text-ink">{it.label}</span>
-                          <span className="relative mono ml-auto pl-2 text-[9px] text-muted">{it.progress}%</span>
+                          <span className="relative truncate text-meta text-ink">{it.label}</span>
+                          <span className="relative mono ml-auto pl-2 text-micro text-muted">{it.progress}%</span>
                         </>
                       ) : (
-                        <span className="relative mono text-[9px] text-muted">{it.progress > 0 ? `${it.progress}%` : ""}</span>
+                        <span className="relative mono text-micro text-muted">{it.progress > 0 ? `${it.progress}%` : ""}</span>
                       )}
                     </div>
                     {editable && (
@@ -845,7 +895,7 @@ export function Timeline({
                   <>
                     <div className="pointer-events-none absolute top-0 bottom-0 w-px" style={{ left: gl, background: "var(--accent)" }} />
                     <div className="pointer-events-none absolute rounded border-2 border-dashed" style={{ left: gl, top: bodyRows * ROW + 6, width: gw, height: ROW - 12, borderColor: c, background: `${c}1f` }} />
-                    <div className="pointer-events-none absolute mono text-[9px] font-semibold text-accent" style={{ left: gl + 3, top: Math.max(0, bodyRows * ROW - 8) }}>{fmtDate(toISO(start))}</div>
+                    <div className="pointer-events-none absolute mono text-micro font-semibold text-accent" style={{ left: gl + 3, top: Math.max(0, bodyRows * ROW - 8) }}>{fmtDate(toISO(start))}</div>
                   </>
                 );
               })()}
@@ -853,7 +903,7 @@ export function Timeline({
               {/* empty hint — the grid still renders so the surface never reads blank */}
               {dated.length === 0 && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center">
-                  <span className="mono max-w-[420px] text-[11px] text-muted">
+                  <span className="mono max-w-[420px] text-label text-muted">
                     {undated.length
                       ? "Nothing scheduled yet — drag a card up from Unassigned onto the grid to give it dates."
                       : "No dated work yet. Set a start/target date to place it on the timeline."}
@@ -874,7 +924,7 @@ export function Timeline({
         if (!it) return null;
         return (
           <div
-            className="pointer-events-none fixed z-[300] flex items-center gap-1.5 rounded border bg-surface px-2 py-1 text-[10px] shadow-lg"
+            className="pointer-events-none fixed z-[300] flex items-center gap-1.5 rounded border bg-surface px-2 py-1 text-meta shadow-lg"
             style={{ left: tray.x + 12, top: tray.y + 12, borderColor: it.color }}
           >
             <span className="h-2 w-2 rounded-full" style={{ background: it.color }} />
@@ -898,8 +948,8 @@ function UnassignedTray({
   const [open, setOpen] = useState(true);
   return (
     <div className="border-t border-line bg-bg/60 px-2.5 py-2">
-      <button onClick={() => setOpen((o) => !o)} className="fast mono mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted hover:text-ink">
-        <span className="text-[8px]">{open ? "▾" : "▸"}</span>
+      <button onClick={() => setOpen((o) => !o)} className="fast mono mb-1.5 flex items-center gap-1.5 text-meta uppercase tracking-wide text-muted hover:text-ink">
+        <span className="text-micro">{open ? "▾" : "▸"}</span>
         Unassigned · {items.length}
         <span className="ml-1 normal-case tracking-normal text-muted/70">drag onto the grid to schedule</span>
       </button>
@@ -913,7 +963,7 @@ function UnassignedTray({
                 data-no-select
                 onPointerDown={editable ? (e) => onStart(it, e) : undefined}
                 onClick={!editable ? it.onClick : undefined}
-                className={`fast flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11px] ${editable ? "cursor-grab active:cursor-grabbing hover:border-muted" : "cursor-pointer"} ${draggingId === it.id ? "opacity-40" : ""}`}
+                className={`fast flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-label ${editable ? "cursor-grab active:cursor-grabbing hover:border-muted" : "cursor-pointer"} ${draggingId === it.id ? "opacity-40" : ""}`}
                 title={editable ? `${it.label} — drag onto the grid to schedule` : it.label}
               >
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: it.color }} />

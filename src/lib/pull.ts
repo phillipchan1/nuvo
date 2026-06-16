@@ -10,6 +10,7 @@ import {
   inboxTasks,
   initiativeById,
   isProjectComplete,
+  isProjectInFlight,
   nextUpTask,
   projectById,
   weeklyCapacityHours,
@@ -33,7 +34,7 @@ export function suggestPull(d: VerticalData): PullSuggestion[] {
   //     focus initiative — the right next step, not a random middle.
   for (const initId of d.focusInitiativeIds) {
     const init = initiativeById(d, initId);
-    if (!init || init.status !== "active") continue;
+    if (!init || !isProjectInFlight(init.status)) continue;
     for (const p of d.projects.filter((p) => p.initiativeId === initId && !isProjectComplete(p.status))) {
       add(nextUpTask(d, p.id), `next up in ${p.name} (★ lead)`);
     }

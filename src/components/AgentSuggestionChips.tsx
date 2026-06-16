@@ -25,14 +25,14 @@ export default function AgentSuggestionChips({
             type="button"
             disabled={disabled}
             onClick={() => (isOther ? onOther() : onPick(s.message))}
-            className={`agent-suggestion-chip fast group flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-[12.5px] transition-all disabled:opacity-40 ${
+            className={`agent-suggestion-chip fast group flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-caption transition-all disabled:opacity-40 ${
               isOther
                 ? "border-dashed border-line bg-transparent text-muted hover:border-accent/50 hover:bg-accent-soft/20 hover:text-accent"
                 : "border-line bg-surface text-ink shadow-sm hover:border-accent/40 hover:bg-accent-soft/30 hover:shadow-[0_2px_12px_-4px_var(--accent-glow)]"
             }`}
           >
             <span
-              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold ${
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-meta font-semibold ${
                 isOther ? "bg-surface-2 text-muted group-hover:text-accent" : "bg-accent-soft text-accent"
               }`}
             >
@@ -40,7 +40,7 @@ export default function AgentSuggestionChips({
             </span>
             <span className="min-w-0 flex-1 leading-snug">{s.label}</span>
             {!isOther && (
-              <span className="text-[11px] text-muted opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="text-label text-muted opacity-0 transition-opacity group-hover:opacity-100">
                 ↵
               </span>
             )}

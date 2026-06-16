@@ -19,7 +19,7 @@ function Chip({ active, onClick, color, label }: { active: boolean; onClick: () 
   return (
     <button
       onClick={onClick}
-      className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]"
+      className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label"
       style={{ borderColor: active ? color : "var(--line)", color: active ? "var(--text)" : "var(--muted)", background: active ? `${color}14` : "transparent" }}
     >
       {label}

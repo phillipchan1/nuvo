@@ -59,8 +59,8 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
   return (
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
       <FloorHeader eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => isProjectInFlight(p.status)).length} in flight`}>
-        <h1 className="text-[24px] font-semibold tracking-tight">Projects</h1>
-        <p className="mt-1 text-[13px] text-muted">Every project at a glance — switch the view, click any to drill in.</p>
+        <h1 className="text-display font-semibold tracking-tight">Projects</h1>
+        <p className="mt-1 text-body text-muted">Every project at a glance — switch the view, click any to drill in.</p>
       </FloorHeader>
 
       <DomainFilter value={domainFilter} onChange={setDomainFilter} />

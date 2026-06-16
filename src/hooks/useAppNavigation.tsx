@@ -266,8 +266,11 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   );
 
   const closeFloorModal = useCallback(() => {
-    if (navRef.current.floorModal) back();
-  }, [back]);
+    if (navRef.current.floorModal) {
+      if (canGoBack()) back();
+      else navigate({ floorModal: null }, "replace");
+    }
+  }, [back, canGoBack, navigate]);
 
   const openRecord = useCallback(
     (kind: "project" | "initiative", id: string) =>
@@ -280,11 +283,21 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   );
 
   const closeOverlay = useCallback(() => {
-    if (navRef.current.overlay !== "none") back();
-    else if (navRef.current.floorModal) back();
-    else if (navRef.current.flow) closeFlow();
-    else if (navRef.current.rung !== "day") setRung("day");
-  }, [back, closeFlow, setRung]);
+    if (navRef.current.overlay !== "none") {
+      // Prefer history.back() so the overlay open is removed from the stack.
+      // Fall back to a direct replace when there's nowhere to go back to
+      // (e.g. the app was reloaded mid-session with an overlay already open).
+      if (canGoBack()) back();
+      else navigate({ overlay: "none", overlayId: null, floorModal: null }, "replace");
+    } else if (navRef.current.floorModal) {
+      if (canGoBack()) back();
+      else navigate({ floorModal: null }, "replace");
+    } else if (navRef.current.flow) {
+      closeFlow();
+    } else if (navRef.current.rung !== "day") {
+      setRung("day");
+    }
+  }, [back, canGoBack, navigate, closeFlow, setRung]);
 
   const toggleAgent = useCallback(() => {
     navigate({ agentOpen: !navRef.current.agentOpen });

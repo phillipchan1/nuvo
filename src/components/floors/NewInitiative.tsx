@@ -1,14 +1,13 @@
-// New initiative — the focused "moment" for starting a bet. Pick the domain
-// (its color tints the whole moment), name the bet, say what done looks like,
-// draw the finish line. Create it bare here, or hand what you've typed to Nuvo
-// to shape the whole subtree (Blueprint). Nothing lands until you commit.
+// New initiative — a composer, not a form. Type the bet name, pick the domain,
+// set a finish line. Hand to Blueprint if you want the full AI shape-up.
+// ⏎ moves focus through name → outcome → creates.
 
-import { useMemo, useRef, useState } from "react";
-import { addDays, endOfQuarter, format } from "date-fns";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { endOfQuarter, format } from "date-fns";
+import * as chrono from "chrono-node";
 import { useVertical } from "../../hooks/useVertical";
 import { ASSISTANT_NAME } from "../../lib/assistant";
 import { fmtDate } from "./parts";
-import { Field, MomentHeader, Pill } from "./createParts";
 import { Modal } from "../ui";
 import type { BlueprintSeed } from "../rituals/BlueprintFlow";
 
@@ -21,7 +20,6 @@ export default function NewInitiative({
 }: {
   onClose: () => void;
   onCreated: (initiativeId: string) => void;
-  /** The domain to pre-select (e.g. the active filter on the floor). */
   initialDomainId?: string | null;
   /** Carried over when expanding from the fast composer. */
   initialName?: string;
@@ -34,29 +32,39 @@ export default function NewInitiative({
   const [domainId, setDomainId] = useState(initialDomainId || domains[0]?.id || "");
   const [name, setName] = useState(initialName ?? "");
   const [outcome, setOutcome] = useState("");
-  const [description, setDescription] = useState("");
-  // default the finish line to quarter end — nudge every bet toward a deadline
   const [finishLine, setFinishLine] = useState<string | null>(() =>
     format(endOfQuarter(new Date()), "yyyy-MM-dd"),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanding, setExpanding] = useState(false);
+
+  const nameRef = useRef<HTMLInputElement>(null);
+  const outcomeRef = useRef<HTMLInputElement>(null);
   const dateRef = useRef<HTMLInputElement>(null);
 
   const domain = domains.find((d) => d.id === domainId);
   const accent = domain?.color ?? "var(--accent)";
   const canCreate = Boolean(domainId && name.trim());
-
   const today = useMemo(() => new Date(), []);
-  const presets = useMemo(
-    () => [
-      { label: "Quarter end", iso: format(endOfQuarter(today), "yyyy-MM-dd") },
-      { label: "30 days", iso: format(addDays(today, 30), "yyyy-MM-dd") },
-      { label: "90 days", iso: format(addDays(today, 90), "yyyy-MM-dd") },
-    ],
-    [today],
-  );
-  const isCustom = finishLine != null && !presets.some((p) => p.iso === finishLine);
+
+  // Extract a target date from whatever the user typed in the name.
+  const sniffDate = useCallback((text: string) => {
+    const results = chrono.parse(text, new Date(), { forwardDate: true });
+    if (results.length > 0) {
+      setFinishLine(format(results[0].start.date(), "yyyy-MM-dd"));
+    }
+  }, []);
+
+  // Collapse domain picker on outside click
+  useEffect(() => {
+    if (!expanding) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-chip-picker]")) setExpanding(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [expanding]);
 
   const submit = async () => {
     if (!canCreate || busy) return;
@@ -66,8 +74,6 @@ export default function NewInitiative({
       const init = await addInitiative(domainId, {
         name: name.trim(),
         outcome: outcome.trim(),
-        description: description.trim(),
-        // anchor the timeline at today so the bet reads as a span, not a point
         startDate: format(today, "yyyy-MM-dd"),
         targetDate: finishLine,
       });
@@ -78,34 +84,19 @@ export default function NewInitiative({
     }
   };
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey || e.currentTarget.tagName === "INPUT")) {
-      e.preventDefault();
-      void submit();
-    }
-  };
-
-  // No domains yet — the button can't be dead. Point the way to a domain first.
   if (domains.length === 0) {
     return (
       <Modal onClose={onClose} width="max-w-[460px]">
         <div className="p-7 text-center">
-          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full border border-line text-[18px] text-muted">◇</div>
-          <h2 className="text-[17px] font-semibold tracking-tight">Start with a domain</h2>
-          <p className="mx-auto mt-1.5 max-w-[320px] text-[13px] leading-relaxed text-muted">
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full border border-line text-lead text-muted">◇</div>
+          <h2 className="text-lead font-semibold tracking-tight">Start with a domain</h2>
+          <p className="mx-auto mt-1.5 max-w-[320px] text-body leading-relaxed text-muted">
             Initiatives are bets you place inside a life domain — Health, Craft, Family.
             Create your first domain, then the bets have somewhere to live.
           </p>
           <div className="mt-5 flex items-center justify-center gap-2">
-            <button onClick={onClose} className="fast rounded-md border border-line px-3 py-1.5 text-[12px] font-medium text-ink hover:border-line-strong hover:bg-surface-2">
-              Not now
-            </button>
-            <button
-              onClick={() => void addDomain().then(onClose)}
-              className="fast rounded-md border border-accent bg-accent px-3 py-1.5 text-[12px] font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
-            >
-              Create a domain →
-            </button>
+            <button onClick={onClose} className="fast rounded-md border border-line px-3 py-1.5 text-caption font-medium text-ink hover:border-line-strong hover:bg-surface-2">Not now</button>
+            <button onClick={() => void addDomain().then(onClose)} className="fast rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-white shadow-sm hover:brightness-110">Create a domain →</button>
           </div>
         </div>
       </Modal>
@@ -114,113 +105,126 @@ export default function NewInitiative({
 
   return (
     <Modal onClose={onClose} width="max-w-[560px]">
-      <MomentHeader accent={accent} icon={domain?.icon ?? "◆"} eyebrow="New initiative" title="A bet with a finish line" onClose={onClose} />
+      {/* Accent edge */}
+      <div className="h-[3px] w-full shrink-0 rounded-t-[inherit]" style={{ background: `linear-gradient(90deg, ${accent}, ${accent}55 60%, transparent)` }} />
 
-      <div className="px-6 py-5">
-        {/* domain — pick where the bet lives; its color carries the moment */}
-        <Field label="Domain">
-          <div className="flex flex-wrap gap-1.5">
-            {domains.map((d) => (
-              <Pill key={d.id} active={d.id === domainId} accent={d.color} onClick={() => setDomainId(d.id)}>
-                <span style={{ color: d.color }}>{d.icon}</span>
-                {d.name}
-              </Pill>
-            ))}
-          </div>
-        </Field>
-
-        {/* the bet, named */}
-        <div className="mt-4">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Name the bet…"
-            autoFocus
-            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-[16px] font-semibold outline-none transition placeholder:font-normal placeholder:text-muted/55 focus:border-transparent"
-            style={{ boxShadow: `inset 0 0 0 1px transparent` }}
-            onFocus={(e) => (e.currentTarget.style.boxShadow = `0 0 0 3px ${accent}26, inset 0 0 0 1px ${accent}`)}
-            onBlur={(e) => (e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent")}
-          />
-          <input
-            value={outcome}
-            onChange={(e) => setOutcome(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="What does done look like, in one line?"
-            className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-[13px] outline-none transition placeholder:text-muted/60 focus:border-line-strong"
-          />
-        </div>
-
-        {/* finish line — the thing that makes it an initiative, not a wish */}
-        <Field label="Finish line" className="mt-4">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {presets.map((p) => (
-              <Pill key={p.iso} active={finishLine === p.iso} accent={accent} onClick={() => setFinishLine(p.iso)}>
-                {p.label}
-              </Pill>
-            ))}
-            <span className="relative inline-flex">
-              <Pill
-                active={isCustom}
-                accent={accent}
-                onClick={() => {
-                  const el = dateRef.current;
-                  if (el) { try { el.showPicker(); } catch { el.focus(); } }
-                }}
-              >
-                {isCustom ? fmtDate(finishLine!) : "Pick a date"}
-              </Pill>
-              <input
-                ref={dateRef}
-                type="date"
-                value={finishLine ?? ""}
-                onChange={(e) => setFinishLine(e.target.value || null)}
-                className="pointer-events-none absolute left-0 h-0 w-0 opacity-0"
-              />
-            </span>
-            {finishLine && (
-              <button onClick={() => setFinishLine(null)} className="fast mono text-[11px] text-muted hover:text-signal" title="Clear the finish line">
-                clear
-              </button>
-            )}
-          </div>
-        </Field>
-
-        {/* context — the why and the shape, optional */}
-        <Field label="Context" className="mt-4">
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Optional — the why, the shape, the constraints…"
-            rows={2}
-            className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted outline-none transition placeholder:text-muted/50 focus:border-line-strong"
-          />
-        </Field>
-
-        {error && <div className="mt-3 text-[12px] text-signal">{error}</div>}
+      {/* ── Composer ── */}
+      <div className="px-6 pt-5 pb-4">
+        <input
+          ref={nameRef}
+          value={name}
+          onChange={(e) => { setName(e.target.value); sniffDate(e.target.value); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); outcomeRef.current?.focus(); }
+            if (e.key === "Escape") onClose();
+          }}
+          placeholder="Name this bet…"
+          autoFocus
+          className="w-full bg-transparent text-display font-semibold tracking-tight text-ink outline-none placeholder:font-normal placeholder:text-muted/35"
+        />
+        <input
+          ref={outcomeRef}
+          value={outcome}
+          onChange={(e) => setOutcome(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); if (canCreate) void submit(); }
+            if (e.key === "Escape") onClose();
+          }}
+          placeholder="What does done look like? (optional)"
+          className="mt-1.5 w-full bg-transparent text-body text-muted outline-none placeholder:text-muted/30"
+        />
       </div>
 
-      {/* footer — bare create, or hand it to Nuvo */}
+      {/* ── Context chips ── */}
+      <div className="relative border-t border-line px-6 py-3" data-chip-picker>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Domain chip */}
+          <div className="relative">
+            <button
+              onClick={() => setExpanding(!expanding)}
+              className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label"
+              style={{ color: accent, borderColor: `${accent}55`, background: `${accent}12` }}
+            >
+              <span>{domain?.icon ?? "◆"}</span>
+              <span className="font-medium">{domain?.name ?? "Domain"}</span>
+              <span className="opacity-40">▾</span>
+            </button>
+            {expanding && (
+              <div className="elev-3 absolute top-full mt-1.5 left-0 z-50 flex flex-col gap-0.5 rounded-lg border border-line bg-surface p-1.5 min-w-[140px]">
+                {domains.map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => { setDomainId(d.id); setExpanding(false); }}
+                    className="fast flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-caption hover:bg-bg"
+                    style={{ color: d.id === domainId ? d.color : "var(--text)", background: d.id === domainId ? `${d.color}12` : "transparent" }}
+                  >
+                    <span style={{ color: d.color }}>{d.icon}</span>
+                    {d.name}
+                    {d.id === domainId && <span className="ml-auto text-micro opacity-60">✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Finish-line chip */}
+          <div className="relative inline-flex">
+            <button
+              onClick={() => { try { dateRef.current?.showPicker(); } catch { dateRef.current?.focus(); } }}
+              className="fast flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-label text-muted hover:border-line-strong hover:text-ink"
+              style={finishLine ? { color: accent, borderColor: `${accent}40`, background: `${accent}0d` } : {}}
+            >
+              <span className="opacity-50">⬡</span>
+              {finishLine ? fmtDate(finishLine) : "no finish line"}
+              {finishLine && (
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); setFinishLine(null); }}
+                  className="ml-0.5 opacity-40 hover:opacity-100"
+                >×</span>
+              )}
+            </button>
+            <input
+              ref={dateRef}
+              type="date"
+              value={finishLine ?? ""}
+              onChange={(e) => setFinishLine(e.target.value || null)}
+              className="pointer-events-none absolute left-0 h-0 w-0 opacity-0"
+            />
+          </div>
+
+          {/* NLP hint */}
+          {!finishLine && name.length === 0 && (
+            <span className="text-meta text-muted/40 italic">— type "by Dec" to set a date</span>
+          )}
+        </div>
+      </div>
+
+      {error && <div className="px-6 pb-3 text-caption text-signal">{error}</div>}
+
+      {/* ── Footer ── */}
       <div className="flex items-center gap-2 border-t border-line bg-bg/40 px-6 py-3.5">
         {onBlueprint && (
           <button
-            onClick={() => onBlueprint({ domainId, name: name.trim(), outcome: outcome.trim(), description: description.trim() })}
-            className="fast group flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-muted hover:text-ink"
+            onClick={() => onBlueprint({ domainId, name: name.trim(), outcome: outcome.trim(), description: "" })}
+            className="fast flex items-center gap-1.5 rounded-md px-2 py-1 text-caption text-muted hover:text-ink"
             title={`Let ${ASSISTANT_NAME} draft key results, projects, and first tasks`}
           >
             <span style={{ color: accent }}>✦</span>
-            Shape it with {ASSISTANT_NAME}
+            Shape with {ASSISTANT_NAME}
           </button>
         )}
         <div className="flex-1" />
-        <button onClick={onClose} className="fast rounded-md border border-line px-3 py-1.5 text-[12px] font-medium text-ink hover:border-line-strong hover:bg-surface-2">
+        <button
+          onClick={onClose}
+          className="fast rounded-md border border-line px-3 py-1.5 text-caption font-medium text-ink hover:border-line-strong hover:bg-surface-2"
+        >
           Cancel
         </button>
         <button
           onClick={() => void submit()}
           disabled={!canCreate || busy}
-          className="fast rounded-md px-3.5 py-1.5 text-[12px] font-medium text-white shadow-sm transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
+          className="fast rounded-md px-3.5 py-1.5 text-caption font-medium text-white shadow-sm transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
           style={{ background: accent, boxShadow: canCreate ? `0 6px 16px -6px ${accent}` : "none" }}
         >
           {busy ? "Creating…" : "Create initiative →"}

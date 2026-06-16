@@ -51,11 +51,11 @@ export default function Sheet({
         </div>
         {title != null && (
           <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3">
-            <div className="text-[15px] font-semibold tracking-tight">{title}</div>
+            <div className="text-head font-semibold tracking-tight">{title}</div>
             <button
               onClick={onClose}
               aria-label="Close"
-              className="fast -mr-1 flex h-8 w-8 items-center justify-center rounded-full text-[18px] text-muted hover:bg-bg hover:text-ink"
+              className="fast -mr-1 flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted hover:bg-bg hover:text-ink"
             >
               ✕
             </button>

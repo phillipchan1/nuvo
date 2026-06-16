@@ -94,8 +94,8 @@ export default function BlueprintFlow({
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-bg">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
-        <span className="text-[14px] font-semibold tracking-tight">Blueprint</span>
-        <span className="mono text-[11px] text-muted">state the bet → {ASSISTANT_NAME} shapes it → you accept it</span>
+        <span className="text-head font-semibold tracking-tight">Blueprint</span>
+        <span className="mono text-label text-muted">state the bet → {ASSISTANT_NAME} shapes it → you accept it</span>
         <div className="flex-1" />
         <button onClick={onClose} className="keycap">esc</button>
       </header>
@@ -112,7 +112,7 @@ export default function BlueprintFlow({
                     key={d.id}
                     onClick={() => setDomainId(d.id)}
                     title={d.name}
-                    className="fast flex h-7 w-7 items-center justify-center rounded-md text-[13px]"
+                    className="fast flex h-7 w-7 items-center justify-center rounded-md text-body"
                     style={{
                       background: d.id === domainId ? `${d.color}26` : "transparent",
                       color: d.color,
@@ -128,28 +128,28 @@ export default function BlueprintFlow({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Name the initiative — the bet with a finish line"
-              className="w-full bg-transparent text-[18px] font-semibold outline-none placeholder:text-muted/50"
+              className="w-full bg-transparent text-lead font-semibold outline-none placeholder:text-muted/50"
               autoFocus
             />
             <input
               value={outcome}
               onChange={(e) => setOutcome(e.target.value)}
               placeholder="What does done look like, in one line?"
-              className="mt-2 w-full bg-transparent text-[13px] outline-none placeholder:text-muted/60"
+              className="mt-2 w-full bg-transparent text-body outline-none placeholder:text-muted/60"
             />
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional: the why, the shape, the constraints…"
               rows={2}
-              className="mt-2 w-full resize-y bg-transparent text-[12px] text-muted outline-none placeholder:text-muted/50"
+              className="mt-2 w-full resize-y bg-transparent text-caption text-muted outline-none placeholder:text-muted/50"
             />
             <div className="mt-3 flex items-center gap-2">
               <Btn kind="primary" onClick={() => void draft()} disabled={drafting}>
                 {drafting ? "✦ shaping…" : drafted ? "✦ reshape" : `✦ shape it with ${ASSISTANT_NAME}`}
               </Btn>
-              {domain && <span className="mono text-[10px] text-muted">into {domain.name}</span>}
-              {error && <span className="text-[11px] text-signal">{error}</span>}
+              {domain && <span className="mono text-meta text-muted">into {domain.name}</span>}
+              {error && <span className="text-label text-signal">{error}</span>}
             </div>
           </div>
 
@@ -162,11 +162,11 @@ export default function BlueprintFlow({
                   {(krs ?? []).map((k, i) => (
                     <div key={i} className="flex items-center gap-2.5 rounded-md border border-line bg-surface px-3 py-2">
                       <IncludeBox on={k.included} accent={domain?.color} onToggle={() => setKrs((p) => p!.map((x, j) => (j === i ? { ...x, included: !x.included } : x)))} />
-                      <span className={`min-w-0 flex-1 truncate text-[12px] ${k.included ? "" : "text-muted line-through"}`}>{k.name}</span>
-                      <span className="mono shrink-0 text-[10px] text-muted">{k.baseline} → {k.target}{k.unit}</span>
+                      <span className={`min-w-0 flex-1 truncate text-caption ${k.included ? "" : "text-muted line-through"}`}>{k.name}</span>
+                      <span className="mono shrink-0 text-meta text-muted">{k.baseline} → {k.target}{k.unit}</span>
                     </div>
                   ))}
-                  {(krs ?? []).length === 0 && <div className="text-[12px] text-muted italic">No key results proposed.</div>}
+                  {(krs ?? []).length === 0 && <div className="text-caption text-muted italic">No key results proposed.</div>}
                 </div>
               </section>
 
@@ -177,16 +177,16 @@ export default function BlueprintFlow({
                     <div key={i} className="rounded-md border border-line bg-surface" style={{ opacity: p.included ? 1 : 0.5 }}>
                       <div className="flex items-center gap-2.5 border-b border-line px-3 py-2">
                         <IncludeBox on={p.included} accent={domain?.color} onToggle={() => setProjects((prev) => prev!.map((x, j) => (j === i ? { ...x, included: !x.included } : x)))} />
-                        <span className="text-[13px] font-medium">{p.name}</span>
-                        <span className="mono ml-auto hidden truncate text-[10px] text-muted sm:inline" style={{ maxWidth: 320 }}>{p.outcome}</span>
+                        <span className="text-body font-medium">{p.name}</span>
+                        <span className="mono ml-auto hidden truncate text-meta text-muted sm:inline" style={{ maxWidth: 320 }}>{p.outcome}</span>
                       </div>
                       <div className="px-3 py-1.5">
                         {p.tasks.map((t, ti) => (
-                          <div key={ti} className="flex items-center gap-2.5 border-b border-line py-1 text-[12px] last:border-0">
-                            <span className="mono w-4 shrink-0 text-right text-[9px] text-muted">{String.fromCharCode(97 + ti)}</span>
-                            <span className="shrink-0 text-[11px]" style={{ color: domain?.color }}>{ENERGY_META[t.energy]?.icon ?? "·"}</span>
+                          <div key={ti} className="flex items-center gap-2.5 border-b border-line py-1 text-caption last:border-0">
+                            <span className="mono w-4 shrink-0 text-right text-micro text-muted">{String.fromCharCode(97 + ti)}</span>
+                            <span className="shrink-0 text-label" style={{ color: domain?.color }}>{ENERGY_META[t.energy]?.icon ?? "·"}</span>
                             <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                            <span className="mono shrink-0 text-[10px] text-muted">{t.durationMins}m</span>
+                            <span className="mono shrink-0 text-meta text-muted">{t.durationMins}m</span>
                           </div>
                         ))}
                       </div>
@@ -223,7 +223,7 @@ function IncludeBox({ on, accent, onToggle }: { on: boolean; accent?: string; on
   return (
     <button
       onClick={onToggle}
-      className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-[9px]"
+      className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro"
       style={{ borderColor: on ? color : "var(--line)", background: on ? color : "transparent", color: "#fff" }}
     >
       {on ? "✓" : ""}

@@ -5,8 +5,8 @@ import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleRawEvent, La
 export function useCalendarRefresh() {
   const qc = useQueryClient();
   const mutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase.functions.invoke("calendar-refresh", { body: {} });
+    mutationFn: async ({ fullSync = false }: { fullSync?: boolean } = {}) => {
+      const { error } = await supabase.functions.invoke("calendar-refresh", { body: { fullSync } });
       if (error) throw error;
     },
     onSettled: () => {
@@ -14,7 +14,12 @@ export function useCalendarRefresh() {
       qc.invalidateQueries({ queryKey: ["calendar_accounts"] });
     },
   });
-  return { refresh: mutation.mutate, refreshing: mutation.isPending, error: mutation.error };
+  return {
+    refresh: () => mutation.mutate({}),
+    fullRefresh: () => mutation.mutate({ fullSync: true }),
+    refreshing: mutation.isPending,
+    error: mutation.error,
+  };
 }
 
 export function useCalendarAccounts() {

@@ -77,7 +77,7 @@ export default function QuickTaskSheet({
     <Sheet onClose={onClose} title="Quick task">
       <div className="px-4 pb-4">
         <div className="fast flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 py-2.5 focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
-          <span className="text-[15px] text-accent">＋</span>
+          <span className="text-head text-accent">＋</span>
           <input
             ref={inputRef}
             value={text}
@@ -93,7 +93,7 @@ export default function QuickTaskSheet({
             }}
             enterKeyHint="done"
             placeholder="What needs doing?"
-            className="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-muted/70"
+            className="min-w-0 flex-1 bg-transparent text-head outline-none placeholder:text-muted/70"
           />
         </div>
 
@@ -102,7 +102,7 @@ export default function QuickTaskSheet({
             {parsed.chips.map((c, i) => (
               <span
                 key={i}
-                className="mono rounded-md border px-1.5 py-0.5 text-[11px]"
+                className="mono rounded-md border px-1.5 py-0.5 text-label"
                 style={{ borderColor: chipColor(c.kind), color: chipColor(c.kind) }}
               >
                 {c.text}
@@ -115,7 +115,7 @@ export default function QuickTaskSheet({
           <div className="section-label mb-1.5 !p-0">{dayLocked ? "From your text" : "When"}</div>
           <div className="flex flex-wrap gap-1.5">
             {dayLocked ? (
-              <span className="rounded-full border border-accent bg-accent-soft px-3 py-1.5 text-[13px] font-medium text-accent">
+              <span className="rounded-full border border-accent bg-accent-soft px-3 py-1.5 text-body font-medium text-accent">
                 {parsed?.doDate}
               </span>
             ) : (
@@ -125,7 +125,7 @@ export default function QuickTaskSheet({
                   <button
                     key={c.label}
                     onClick={() => setDay(c.value)}
-                    className={`tap fast rounded-full border px-3.5 py-2 text-[13px] font-medium ${
+                    className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
                       on
                         ? "border-accent bg-accent text-white"
                         : "border-line text-muted hover:border-accent hover:text-accent"
@@ -140,18 +140,18 @@ export default function QuickTaskSheet({
         </div>
 
         {error && (
-          <div className="mt-3 rounded-md bg-signal-soft px-3 py-2 text-[12px] text-signal">{error}</div>
+          <div className="mt-3 rounded-md bg-signal-soft px-3 py-2 text-caption text-signal">{error}</div>
         )}
 
         <button
           onClick={() => void submit()}
           disabled={!text.trim() || saving}
-          className="tap fast mt-4 w-full rounded-xl bg-accent py-3 text-[15px] font-semibold text-white shadow-sm active:translate-y-px disabled:opacity-40"
+          className="tap fast mt-4 w-full rounded-xl bg-accent py-3 text-head font-semibold text-white shadow-sm active:translate-y-px disabled:opacity-40"
         >
           {saving ? "Saving…" : "Add task"}
         </button>
 
-        <p className="mono mt-2.5 text-center text-[11px] text-muted">
+        <p className="mono mt-2.5 text-center text-label text-muted">
           Try “review PR tomorrow 2pm 45m #work !high”
         </p>
       </div>

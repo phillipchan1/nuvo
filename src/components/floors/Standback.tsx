@@ -8,6 +8,7 @@
 import { useMemo } from "react";
 import type { VerticalData } from "../../lib/vertical";
 import { readStandback, type Forward, type Pace, type Win } from "../../lib/standback";
+import { BigRocksReckoning } from "./bigRocks";
 
 const NAME = "Phil";
 
@@ -54,26 +55,29 @@ export default function Standback({
       <div className="border-b border-line pb-5">
         <div className="flex items-baseline justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="wordmark wordmark-grad text-[13px]">Nuvo</span>
-            <span className="mono text-[10px] text-muted">the gain</span>
+            <span className="wordmark wordmark-grad text-body">Nuvo</span>
+            <span className="mono text-meta text-muted">the gain</span>
           </div>
-          <div className="mono text-[12px] text-muted">{weekday} · {clock}</div>
+          <div className="mono text-caption text-muted">{weekday} · {clock}</div>
         </div>
-        <h1 className="mt-2 text-[18px] font-semibold tracking-tight">{part}, {NAME}. Look how far you've come.</h1>
-        <p className="mt-1 max-w-[680px] text-[14px] leading-relaxed text-ink/90">{read.greeting}</p>
+        <h1 className="mt-2 text-lead font-semibold tracking-tight">{part}, {NAME}. Look how far you've come.</h1>
+        <p className="mt-1 max-w-[680px] text-head leading-relaxed text-ink/90">{read.greeting}</p>
 
-        <div className="mono mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11px]">
+        <div className="mono mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-label">
           <span className="flex items-center gap-1.5 text-accent"><span>⏱</span>{fmtH(read.hoursThisWeek)} this week</span>
           {read.betsMoved > 0 && <span className="flex items-center gap-1.5 text-muted"><span>↗</span>{read.betsMoved} bet{read.betsMoved === 1 ? "" : "s"} moved</span>}
           {read.wins.length > 0 && <span className="flex items-center gap-1.5 text-muted"><span>✓</span>{read.wins.length} win{read.wins.length === 1 ? "" : "s"}</span>}
         </div>
       </div>
 
+      {/* Big rocks — the week's reckoning: which ones moved. */}
+      <BigRocksReckoning data={data} />
+
       {/* The wins themselves — each gain with the intelligence of what it means. */}
       <div className="mt-7">
         <div className="section-label mb-2.5">The gain · this week</div>
         {read.wins.length === 0 ? (
-          <div className="rounded-lg border border-line bg-surface-2 p-6 text-center text-[13px] text-muted">
+          <div className="rounded-lg border border-line bg-surface-2 p-6 text-center text-body text-muted">
             Nothing's crossed the line yet this week — the next pull starts the streak.
           </div>
         ) : (
@@ -98,7 +102,7 @@ export default function Standback({
       {(invitation.investedMost || invitation.readyForYou) && (
         <div className="mt-7 border-t border-line pt-4">
           <div className="section-label mb-2">When you're ready</div>
-          <p className="max-w-[640px] text-[13px] leading-relaxed text-ink/85">
+          <p className="max-w-[640px] text-body leading-relaxed text-ink/85">
             {invitation.investedMost && (
               <>You leaned into <span className="font-medium" style={{ color: invitation.investedMost.domain.color }}>{invitation.investedMost.domain.name}</span> this week — {fmtH(invitation.investedMost.hours)}, and that focus is what moved things. </>
             )}
@@ -122,11 +126,11 @@ function WinRow({ win }: { win: Win }) {
   return (
     <div className="rise rounded-lg border border-line bg-surface p-3.5">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 w-4 shrink-0 text-center text-[13px]" style={{ color: accent }}>{WIN_GLYPH[win.kind]}</span>
+        <span className="mt-0.5 w-4 shrink-0 text-center text-body" style={{ color: accent }}>{WIN_GLYPH[win.kind]}</span>
         <div className="min-w-0">
-          <div className="text-[14px] font-medium leading-snug">{win.headline}</div>
+          <div className="text-head font-medium leading-snug">{win.headline}</div>
           {win.implication && (
-            <div className="mt-0.5 text-[12.5px] leading-relaxed text-muted">{win.implication}</div>
+            <div className="mt-0.5 text-caption leading-relaxed text-muted">{win.implication}</div>
           )}
         </div>
       </div>
@@ -138,9 +142,9 @@ function CompassRow({ fwd, onOpen }: { fwd: Forward; onOpen: () => void }) {
   return (
     <button onClick={onOpen} className="fast group flex w-full items-center gap-2.5 text-left">
       <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: fwd.domain?.color ?? "var(--line-strong)" }} />
-      <span className="truncate text-[12.5px] text-ink group-hover:underline">{fwd.initiative.name}</span>
-      <span className="mono shrink-0 text-[10.5px] text-muted">{fwd.progress}%</span>
-      <span className="mono ml-auto shrink-0 text-[10.5px]" style={{ color: PACE_COLOR[fwd.pace] }}>{fwd.line}</span>
+      <span className="truncate text-caption text-ink group-hover:underline">{fwd.initiative.name}</span>
+      <span className="mono shrink-0 text-meta text-muted">{fwd.progress}%</span>
+      <span className="mono ml-auto shrink-0 text-meta" style={{ color: PACE_COLOR[fwd.pace] }}>{fwd.line}</span>
     </button>
   );
 }

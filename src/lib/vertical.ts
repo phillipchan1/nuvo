@@ -10,7 +10,7 @@
 
 import { differenceInCalendarDays, startOfWeek, subDays } from "date-fns";
 import type { Energy } from "./energy";
-import type { Sprint, Task } from "./types";
+import type { BigRock, Sprint, Task } from "./types";
 import { parseDateISO, todayISO } from "./dates";
 
 export type Momentum = "up" | "flat" | "down";
@@ -25,6 +25,7 @@ export interface Domain {
   investedThisWeek: number; // derived: hours of blocks completed this week
   quarterHours: number; // derived: the long arc (Gain), last 90 days
   lastTouchedDays: number; // derived: days since last completed task → faithfulness
+  weeks: number[]; // derived: invested hours per week, last 13 weeks (oldest → now) — the faithfulness pulse
   sort: number;
 }
 
@@ -45,7 +46,8 @@ export interface Initiative {
   description: string; // the fuller why / shape of the bet
   startDate: string | null; // anchors the timeline
   targetDate: string | null; // the finish line
-  status: "active" | "paused" | "shipped" | "dropped";
+  /** Shares the project vocabulary now — see {@link ProjectStatus}. */
+  status: ProjectStatus;
   progress: number; // 0..100 — fallback when no projects yet
   momentum: Momentum;
   keyResults: KeyResult[];
@@ -72,6 +74,8 @@ export interface VTask {
   projectId: string | null;
   initiativeId: string | null;
   domainId: string | null;
+  /** the priority (big rock) this task serves, if any. */
+  bigRockId: string | null;
   title: string;
   energy: Energy | null;
   durationMins: number;
@@ -103,6 +107,8 @@ export interface VerticalData {
   sprintGoal?: string;
   /** The week's lead initiatives (≤3), from the Sunday ritual. */
   focusInitiativeIds: string[];
+  /** The week's big rocks — the plan above the schedule (a small, varying set). */
+  bigRocks: BigRock[];
 }
 
 // ── Row shapes (snake_case, as they come from Supabase) ─────────────────────
@@ -158,7 +164,6 @@ export interface ProjectRow {
 
 // ── Row → view mapping ───────────────────────────────────────────────────────
 
-const INITIATIVE_STATUSES = new Set(["active", "paused", "shipped", "dropped"]);
 const PROJECT_STATUSES = new Set(["backlog", "in_progress", "waiting", "cancelled", "complete"]);
 
 const LEGACY_PROJECT_STATUS: Record<string, ProjectStatus> = {
@@ -173,6 +178,20 @@ export function normalizeProjectStatus(raw: string): ProjectStatus {
   return LEGACY_PROJECT_STATUS[raw] ?? "backlog";
 }
 
+// Initiatives share the project vocabulary now. Old rows (active | paused |
+// shipped | dropped) map onto it; the DB migration backfills, this guards reads.
+const LEGACY_INITIATIVE_STATUS: Record<string, ProjectStatus> = {
+  active: "in_progress",
+  paused: "waiting",
+  shipped: "complete",
+  dropped: "cancelled",
+};
+
+export function normalizeInitiativeStatus(raw: string): ProjectStatus {
+  if (PROJECT_STATUSES.has(raw)) return raw as ProjectStatus;
+  return LEGACY_INITIATIVE_STATUS[raw] ?? "in_progress";
+}
+
 export function isProjectComplete(status: string) {
   return status === "complete" || status === "done";
 }
@@ -181,12 +200,19 @@ export function isProjectInFlight(status: string) {
   return status === "in_progress" || status === "active";
 }
 
+/** Still in play — anything that hasn't been completed or cancelled. Shared by
+ *  projects and initiatives now that they speak one status vocabulary. */
+export function isOpenStatus(status: string) {
+  return !isProjectComplete(status) && status !== "cancelled" && status !== "dropped";
+}
+
 export function toVTask(t: Task, currentSprintId: string | null, today: string): VTask {
   return {
     id: t.id,
     projectId: t.project_id,
     initiativeId: t.initiative_id,
     domainId: t.domain_id,
+    bigRockId: t.big_rock_id ?? null,
     title: t.title,
     energy: t.energy,
     durationMins: t.duration_minutes ?? 30,
@@ -233,7 +259,7 @@ export function buildVertical(
       description: i.description,
       startDate: i.start_date,
       targetDate: i.target_date,
-      status: (INITIATIVE_STATUSES.has(i.status) ? i.status : "active") as Initiative["status"],
+      status: normalizeInitiativeStatus(i.status),
       progress: i.progress,
       momentum: (["up", "flat", "down"].includes(i.momentum) ? i.momentum : "flat") as Momentum,
       keyResults: [...(i.key_results ?? [])]
@@ -281,7 +307,12 @@ export function buildVertical(
   });
 
   // ── derive the domain gain ledger from completed blocks ────────────────────
+  // Alongside the week/quarter/last totals, bucket each completed block into one
+  // of the last 13 weeks — the faithfulness "pulse" the chapel renders as an arc.
+  const WEEK_MS = 7 * 86_400_000;
+  const seriesStart = weekStart.getTime() - 12 * WEEK_MS;
   const ledger = new Map<string, { week: number; quarter: number; last: number | null }>();
+  const weekly = new Map<string, number[]>();
   for (const t of tasks) {
     if (t.status !== "done" || !t.completedAt || !t.domainId) continue;
     const at = new Date(t.completedAt).getTime();
@@ -290,6 +321,15 @@ export function buildVertical(
     if (at >= quarterStart.getTime()) entry.quarter += t.durationMins;
     if (entry.last == null || at > entry.last) entry.last = at;
     ledger.set(t.domainId, entry);
+
+    if (at >= seriesStart) {
+      const wk = Math.floor((at - seriesStart) / WEEK_MS);
+      if (wk >= 0 && wk <= 12) {
+        const arr = weekly.get(t.domainId) ?? new Array(13).fill(0);
+        arr[wk] += t.durationMins;
+        weekly.set(t.domainId, arr);
+      }
+    }
   }
 
   const domains: Domain[] = [...domainRows]
@@ -308,6 +348,7 @@ export function buildVertical(
         lastTouchedDays: led?.last != null
           ? Math.max(0, Math.floor((now.getTime() - led.last) / 86_400_000))
           : 99,
+        weeks: (weekly.get(d.id) ?? new Array(13).fill(0)).map((m: number) => m / 60),
         sort: d.sort_order ?? idx,
       };
     });
@@ -320,6 +361,7 @@ export function buildVertical(
     sprint,
     sprintGoal: sprint?.goal ?? "",
     focusInitiativeIds: sprint?.focus_initiative_ids ?? [],
+    bigRocks: sprint?.big_rocks ?? [],
   };
 }
 
@@ -411,7 +453,7 @@ export function projectProgress(d: VerticalData, p: Project): number {
 
 /** An initiative's progress = mean of its projects' progress, else its stored %. */
 export function initiativeProgress(d: VerticalData, i: Initiative): number {
-  if (i.status === "shipped") return 100;
+  if (isProjectComplete(i.status)) return 100;
   const ps = projectsOf(d, i.id);
   if (ps.length === 0) return i.progress;
   const sum = ps.reduce((acc, p) => acc + projectProgress(d, p), 0);
@@ -420,7 +462,7 @@ export function initiativeProgress(d: VerticalData, i: Initiative): number {
 
 /** A domain's rolled-up progress = mean of its active initiatives' progress. */
 export function domainProgress(d: VerticalData, domainId: string): number {
-  const is = initiativesOf(d, domainId).filter((i) => i.status === "active" || i.status === "paused");
+  const is = initiativesOf(d, domainId).filter((i) => isOpenStatus(i.status));
   if (is.length === 0) return 0;
   const sum = is.reduce((acc, i) => acc + initiativeProgress(d, i), 0);
   return Math.round(sum / is.length);
@@ -432,7 +474,7 @@ export function domainProgress(d: VerticalData, domainId: string): number {
  * the Sunday ritual show real week-over-week deltas with no snapshot table.
  */
 export function initiativeProgressAt(d: VerticalData, i: Initiative, cutoff: Date): number {
-  if (i.status === "shipped") return 100;
+  if (isProjectComplete(i.status)) return 100;
   const ps = projectsOf(d, i.id);
   if (ps.length === 0) return i.progress;
   const cut = cutoff.getTime();

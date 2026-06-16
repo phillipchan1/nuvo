@@ -45,14 +45,14 @@ export function RecurrenceDeleteButton({
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
           <div className="absolute bottom-full right-0 z-[61] mb-1 w-44 overflow-hidden rounded-md border border-line bg-surface elev-3">
-            <div className="mono px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-widest text-muted">
+            <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
               Delete
             </div>
             {items.map((o) => (
               <button
                 key={o.label}
                 onClick={() => { o.fn(); setOpen(false); }}
-                className="fast block w-full px-3 py-2 text-left text-[12px] text-text hover:bg-bg"
+                className="fast block w-full px-3 py-2 text-left text-caption text-text hover:bg-bg"
               >
                 {o.label}
               </button>
@@ -98,7 +98,7 @@ export function RepeatControl({
         disabled={disabled}
         onClick={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
         title={value ? describeRule(value, anchorISO) : "Set a repeat"}
-        className={`fast inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] disabled:opacity-40 ${
+        className={`fast inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-label disabled:opacity-40 ${
           on
             ? "bg-accent-soft font-medium text-accent"
             : "bg-bg text-muted hover:brightness-95 dark:hover:brightness-110"
@@ -209,7 +209,7 @@ export default function RecurrencePicker({
     setWeekdays((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]));
 
   const seg = (active: boolean) =>
-    `fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-[11px] font-medium transition-colors ${
+    `fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-label font-medium transition-colors ${
       active ? "bg-accent text-white" : "text-muted hover:text-ink"
     }`;
 
@@ -226,7 +226,7 @@ export default function RecurrencePicker({
             <path d="M3 5a4 4 0 016.9-2.7M11 9a4 4 0 01-6.9 2.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             <path d="M10 1.5V4H7.5M4 12.5V10h2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span className="text-[12px] font-semibold text-text">Repeat</span>
+          <span className="text-caption font-semibold text-text">Repeat</span>
         </div>
 
         {/* Presets */}
@@ -240,7 +240,7 @@ export default function RecurrencePicker({
                 className="fast flex items-center gap-2.5 rounded-[var(--radius-sm)] px-2 py-1.5 text-left hover:bg-bg"
               >
                 <Dot on={on} />
-                <span className={`text-[12.5px] ${on ? "font-medium text-text" : "text-text"}`}>{p.label}</span>
+                <span className={`text-caption ${on ? "font-medium text-text" : "text-text"}`}>{p.label}</span>
               </button>
             );
           })}
@@ -251,7 +251,7 @@ export default function RecurrencePicker({
             className="fast flex items-center gap-2.5 rounded-[var(--radius-sm)] px-2 py-1.5 text-left hover:bg-bg"
           >
             <Dot on={custom} />
-            <span className={`text-[12.5px] ${custom ? "font-medium text-text" : "text-text"}`}>Custom…</span>
+            <span className={`text-caption ${custom ? "font-medium text-text" : "text-text"}`}>Custom…</span>
           </button>
         </div>
 
@@ -259,13 +259,13 @@ export default function RecurrencePicker({
         {custom && (
           <div className="space-y-2.5 border-t border-line px-3.5 py-3">
             <div className="flex items-center gap-2">
-              <span className="text-[11.5px] text-muted">Every</span>
+              <span className="text-label text-muted">Every</span>
               <input
                 type="number"
                 min={1}
                 value={interval}
                 onChange={(e) => setInterval(Math.max(1, Number(e.target.value) || 1))}
-                className="w-12 rounded-md border border-line bg-surface-2 px-1.5 py-1 text-center text-[12px] outline-none focus:border-accent"
+                className="w-12 rounded-md border border-line bg-surface-2 px-1.5 py-1 text-center text-caption outline-none focus:border-accent"
               />
               <div className="flex flex-1 gap-1 rounded-[var(--radius)] bg-bg p-0.5">
                 {(["daily", "weekly", "monthly"] as const).map((f) => (
@@ -284,7 +284,7 @@ export default function RecurrencePicker({
                     <button
                       key={d}
                       onClick={() => toggleWeekday(d)}
-                      className={`fast grid h-7 w-7 place-items-center rounded-full text-[10.5px] font-semibold transition-colors ${
+                      className={`fast grid h-7 w-7 place-items-center rounded-full text-meta font-semibold transition-colors ${
                         on ? "bg-accent text-white" : "bg-bg text-muted hover:text-ink"
                       }`}
                     >
@@ -296,12 +296,12 @@ export default function RecurrencePicker({
             )}
 
             {freq === "monthly" && (
-              <p className="text-[11px] text-muted">On the {anchorDay}{ordinalSuffix(anchorDay)} of the month</p>
+              <p className="text-label text-muted">On the {anchorDay}{ordinalSuffix(anchorDay)} of the month</p>
             )}
 
             {/* End condition */}
             <div className="space-y-1.5 pt-0.5">
-              <span className="text-[11px] text-muted">Ends</span>
+              <span className="text-label text-muted">Ends</span>
               <div className="flex gap-1 rounded-[var(--radius)] bg-bg p-0.5">
                 {(["never", "on", "after"] as const).map((m) => (
                   <button key={m} onClick={() => setEndMode(m)} className={seg(endMode === m)}>
@@ -315,7 +315,7 @@ export default function RecurrencePicker({
                   value={untilDate}
                   min={anchorISO}
                   onChange={(e) => setUntilDate(e.target.value)}
-                  className="w-full rounded-md border border-line bg-surface-2 px-2 py-1 text-[12px] outline-none focus:border-accent"
+                  className="w-full rounded-md border border-line bg-surface-2 px-2 py-1 text-caption outline-none focus:border-accent"
                 />
               )}
               {endMode === "after" && (
@@ -325,18 +325,18 @@ export default function RecurrencePicker({
                     min={1}
                     value={count}
                     onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
-                    className="w-14 rounded-md border border-line bg-surface-2 px-1.5 py-1 text-center text-[12px] outline-none focus:border-accent"
+                    className="w-14 rounded-md border border-line bg-surface-2 px-1.5 py-1 text-center text-caption outline-none focus:border-accent"
                   />
-                  <span className="text-[11.5px] text-muted">occurrences</span>
+                  <span className="text-label text-muted">occurrences</span>
                 </div>
               )}
             </div>
 
             <div className="flex items-center justify-between gap-2 pt-0.5">
-              <span className="truncate text-[10.5px] text-muted">{describeRule(buildCustom(), anchorISO)}</span>
+              <span className="truncate text-meta text-muted">{describeRule(buildCustom(), anchorISO)}</span>
               <button
                 onClick={() => onPick(buildCustom())}
-                className="fast shrink-0 rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-[12px] font-medium text-white hover:opacity-90"
+                className="fast shrink-0 rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-white hover:opacity-90"
               >
                 Done
               </button>

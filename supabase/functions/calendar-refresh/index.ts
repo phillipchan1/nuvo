@@ -8,6 +8,9 @@ Deno.serve(async (req) => {
 
   try {
     const user = await requireUser(req);
+    const reqBody = await req.json().catch(() => ({}));
+    const fullSync = reqBody?.fullSync === true;
+
     const { data: accounts, error } = await admin
       .from("calendar_accounts")
       .select("id, provider")
@@ -26,7 +29,7 @@ Deno.serve(async (req) => {
     for (const account of accounts ?? []) {
       const fn = account.provider === "google" ? "google-sync" : "m365-sync";
       const body = account.provider === "google"
-        ? { mode: "incremental", accountId: account.id }
+        ? { mode: fullSync ? "full" : "incremental", accountId: account.id }
         : { accountId: account.id };
       const res = await fetch(`${base}/functions/v1/${fn}`, {
         method: "POST",

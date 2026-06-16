@@ -64,10 +64,10 @@ function RecurrenceDialog({
       />
       <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
         <div className="moment pointer-events-auto bg-surface border border-line rounded-[var(--radius-lg)] w-[300px] p-5 elev-3">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted mb-1">
+          <p className="text-label font-semibold uppercase tracking-widest text-muted mb-1">
             Recurring event
           </p>
-          <h2 className="text-[14px] font-semibold mb-4 text-text leading-snug">
+          <h2 className="text-head font-semibold mb-4 text-text leading-snug">
             Edit this event or the whole series?
           </h2>
 
@@ -88,10 +88,10 @@ function RecurrenceDialog({
                   }`}
                 />
                 <span>
-                  <span className={`block text-[12px] font-medium leading-tight ${scope === opt.value ? "text-text" : "text-text"}`}>
+                  <span className={`block text-caption font-medium leading-tight ${scope === opt.value ? "text-text" : "text-text"}`}>
                     {opt.label}
                   </span>
-                  <span className="block text-[10.5px] text-muted mt-0.5 leading-snug">{opt.sub}</span>
+                  <span className="block text-meta text-muted mt-0.5 leading-snug">{opt.sub}</span>
                 </span>
               </button>
             ))}
@@ -100,13 +100,13 @@ function RecurrenceDialog({
           <div className="flex justify-end gap-2">
             <button
               onClick={onCancel}
-              className="fast px-3 py-1.5 text-[12px] text-muted rounded-[var(--radius-sm)] hover:bg-bg transition-colors"
+              className="fast px-3 py-1.5 text-caption text-muted rounded-[var(--radius-sm)] hover:bg-bg transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={() => onConfirm(scope)}
-              className="fast px-3 py-1.5 text-[12px] font-medium bg-accent text-white rounded-[var(--radius-sm)] hover:opacity-90"
+              className="fast px-3 py-1.5 text-caption font-medium bg-accent text-white rounded-[var(--radius-sm)] hover:opacity-90"
             >
               Done
             </button>
@@ -134,6 +134,7 @@ export default function CalendarPane({
   slotMutations,
   recurrenceMutations,
   onRefreshCalendars,
+  onFullRefreshCalendars,
   refreshingCalendars = false,
   onOpenTask,
   onOpenEvent,
@@ -159,6 +160,7 @@ export default function CalendarPane({
   slotMutations: ReturnType<typeof useSlotMutations>;
   recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
   onRefreshCalendars?: () => void;
+  onFullRefreshCalendars?: () => void;
   refreshingCalendars?: boolean;
   onOpenTask: (t: Task, anchor: DOMRect) => void;
   onOpenEvent: (e: ExternalEvent, anchor: DOMRect) => void;
@@ -675,10 +677,10 @@ export default function CalendarPane({
       />
     );
     const TimeLine = !compact ? (
-      <div className="mono mt-px truncate text-[9.5px] leading-none text-muted">{arg.timeText}</div>
+      <div className="mono mt-px truncate text-micro leading-none text-muted">{arg.timeText}</div>
     ) : null;
     const Recur = recurring ? <RecurMark className="shrink-0 opacity-45" /> : null;
-    const titleCls = "truncate text-[11.5px] font-semibold leading-[1.2]";
+    const titleCls = "truncate text-label font-semibold leading-[1.2]";
 
     // ── Slot: container with a progress badge + child task peek ────────────
     if (kind === "slot") {
@@ -691,7 +693,7 @@ export default function CalendarPane({
               <span className={titleCls}>{arg.event.title}</span>
               {Recur}
               {slotTotal > 0 && (
-                <span className="mono ml-auto shrink-0 rounded-full bg-bg px-1 text-[9px] leading-snug text-muted">
+                <span className="mono ml-auto shrink-0 rounded-full bg-bg px-1 text-micro leading-snug text-muted">
                   {slotDone}/{slotTotal}
                 </span>
               )}
@@ -699,7 +701,7 @@ export default function CalendarPane({
             {showChildren && slotChildren.length > 0 && (
               <div className="mt-1 flex min-h-0 flex-col gap-0.5 overflow-hidden">
                 {slotChildren.slice(0, 4).map((c, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-[10px] leading-tight">
+                  <div key={i} className="flex items-center gap-1.5 text-meta leading-tight">
                     <span
                       className="h-[3px] w-[3px] shrink-0 rounded-full"
                       style={{ background: c.done ? "var(--muted)" : bar }}
@@ -710,12 +712,12 @@ export default function CalendarPane({
                   </div>
                 ))}
                 {slotChildren.length > 4 && (
-                  <span className="pl-[9px] text-[9px] text-muted">+{slotChildren.length - 4} more</span>
+                  <span className="pl-[9px] text-micro text-muted">+{slotChildren.length - 4} more</span>
                 )}
               </div>
             )}
             {showChildren && slotChildren.length === 0 && (
-              <span className="mt-1 text-[10px] italic text-muted/70">empty — click to add</span>
+              <span className="mt-1 text-meta italic text-muted/70">empty — click to add</span>
             )}
           </div>
         </div>
@@ -787,7 +789,7 @@ export default function CalendarPane({
   return (
     <div className="relative flex h-full min-w-0 flex-1 flex-col bg-surface">
       {createError && (
-        <div className="flex shrink-0 items-start gap-2 border-b border-signal bg-signal-soft px-3 py-2 text-[12px] text-signal">
+        <div className="flex shrink-0 items-start gap-2 border-b border-signal bg-signal-soft px-3 py-2 text-caption text-signal">
           <span className="mt-px shrink-0">⚠</span>
           <span className="min-w-0 flex-1 break-words">{createError}</span>
           <button
@@ -859,10 +861,10 @@ export default function CalendarPane({
 
         {onRefreshCalendars && (
           <button
-            onClick={onRefreshCalendars}
+            onClick={(e) => e.shiftKey && onFullRefreshCalendars ? onFullRefreshCalendars() : onRefreshCalendars()}
             disabled={refreshingCalendars}
             className="fast ml-1 flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink disabled:opacity-40"
-            title="Refresh calendars"
+            title="Refresh calendars (Shift+click to force full sync)"
           >
             <svg
               width="14"
@@ -927,7 +929,7 @@ export default function CalendarPane({
           nowIndicator={!isMonth}
           nowIndicatorContent={(arg) =>
             arg.isAxis ? (
-              <span className="mono whitespace-nowrap border border-signal bg-surface px-1 text-[9px] leading-none text-signal">
+              <span className="mono whitespace-nowrap border border-signal bg-surface px-1 text-micro leading-none text-signal">
                 {format(now, "h:mma").toLowerCase()}
               </span>
             ) : null

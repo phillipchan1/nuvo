@@ -25,7 +25,7 @@ function Shell() {
   if (loading) {
     return (
       <div className="atmosphere flex h-full items-center justify-center">
-        <span className="wordmark shimmer text-[16px]">nuvo</span>
+        <span className="wordmark shimmer text-head">nuvo</span>
       </div>
     );
   }

@@ -273,7 +273,7 @@ export const VERTICAL_TOOL_DEFINITIONS = [
           description: { type: "string" },
           target_date: { type: "string", description: "YYYY-MM-DD finish line" },
           start_date: { type: "string", description: "YYYY-MM-DD" },
-          status: { type: "string", enum: ["active", "paused", "shipped", "dropped"] },
+          status: { type: "string", enum: ["backlog", "in_progress", "waiting", "cancelled", "complete"] },
         },
         required: ["name"],
       },
@@ -294,7 +294,7 @@ export const VERTICAL_TOOL_DEFINITIONS = [
           description: { type: "string" },
           target_date: { type: "string" },
           start_date: { type: "string" },
-          status: { type: "string", enum: ["active", "paused", "shipped", "dropped"] },
+          status: { type: "string", enum: ["backlog", "in_progress", "waiting", "cancelled", "complete"] },
           domain_id: { type: "string" },
           domain_name: { type: "string" },
         },
@@ -550,7 +550,7 @@ export async function executeVerticalTool(
           description: (args.description as string) ?? "",
           target_date: args.target_date ?? null,
           start_date: args.start_date ?? null,
-          status: (args.status as string) ?? "active",
+          status: (args.status as string) ?? "in_progress",
           sort_order: sort,
         })
         .select("id, name, domain_id, outcome")

@@ -66,14 +66,14 @@ export default function AgentChatInput({
               {isImageAttachment(a) && a.dataUrl ? (
                 <img src={a.dataUrl} alt="" className="h-7 w-7 rounded object-cover" />
               ) : (
-                <span className="flex h-7 w-7 items-center justify-center rounded bg-surface text-[12px]">📄</span>
+                <span className="flex h-7 w-7 items-center justify-center rounded bg-surface text-caption">📄</span>
               )}
-              <span className="max-w-[100px] truncate text-[11px] text-ink">{a.name}</span>
-              <span className="mono text-[9px] text-muted">{formatBytes(a.size)}</span>
+              <span className="max-w-[100px] truncate text-label text-ink">{a.name}</span>
+              <span className="mono text-micro text-muted">{formatBytes(a.size)}</span>
               <button
                 type="button"
                 onClick={() => removeAttachment(a.id)}
-                className="fast ml-0.5 flex h-5 w-5 items-center justify-center rounded text-[11px] text-muted opacity-60 hover:bg-surface hover:text-signal hover:opacity-100"
+                className="fast ml-0.5 flex h-5 w-5 items-center justify-center rounded text-label text-muted opacity-60 hover:bg-surface hover:text-signal hover:opacity-100"
                 aria-label={`Remove ${a.name}`}
               >
                 ×
@@ -84,7 +84,7 @@ export default function AgentChatInput({
       )}
 
       {attachError && (
-        <p className="mb-1.5 text-[10px] text-signal">{attachError}</p>
+        <p className="mb-1.5 text-meta text-signal">{attachError}</p>
       )}
 
       <div
@@ -97,7 +97,7 @@ export default function AgentChatInput({
           onClick={() => fileRef.current?.click()}
           disabled={loading}
           title="Attach files"
-          className="agent-attach-btn fast mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[15px] text-muted transition-colors hover:bg-surface hover:text-accent disabled:opacity-40"
+          className="agent-attach-btn fast mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-head text-muted transition-colors hover:bg-surface hover:text-accent disabled:opacity-40"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -125,7 +125,7 @@ export default function AgentChatInput({
           disabled={loading}
           autoFocus={autoFocus}
           className={`max-h-32 min-w-0 flex-1 resize-none bg-transparent leading-relaxed outline-none placeholder:text-muted/70 disabled:opacity-50 ${
-            compact ? "py-1 text-[13px]" : "py-0.5 text-[13px]"
+            compact ? "py-1 text-body" : "py-0.5 text-body"
           }`}
         />
 
@@ -134,7 +134,7 @@ export default function AgentChatInput({
           onClick={onSubmit}
           disabled={!canSend}
           aria-label="Send"
-          className="agent-send-btn fast mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-[14px] font-medium text-white shadow-sm transition-[transform,filter,box-shadow] hover:brightness-110 hover:shadow-[0_4px_12px_-4px_var(--accent-glow)] active:translate-y-px disabled:opacity-30 disabled:shadow-none"
+          className="agent-send-btn fast mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-head font-medium text-white shadow-sm transition-[transform,filter,box-shadow] hover:brightness-110 hover:shadow-[0_4px_12px_-4px_var(--accent-glow)] active:translate-y-px disabled:opacity-30 disabled:shadow-none"
         >
           ↑
         </button>
@@ -142,7 +142,7 @@ export default function AgentChatInput({
 
       {!compact && (
         <div className="mt-1.5 px-0.5">
-          <span className="mono text-[10px] text-muted">
+          <span className="mono text-meta text-muted">
             Enter to send · Shift+Enter newline · drag files anywhere
           </span>
         </div>

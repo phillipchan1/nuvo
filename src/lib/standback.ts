@@ -16,6 +16,7 @@ import { parseDateISO, todayISO } from "./dates";
 import {
   initiativeProgress,
   initiativeProgressAt,
+  isProjectInFlight,
   projectsOf,
   tasksOf,
   type Domain,
@@ -227,7 +228,7 @@ export function readStandback(d: VerticalData, now: Date = new Date()): Standbac
   ).length;
 
   const compass = d.initiatives
-    .filter((i) => i.status === "active")
+    .filter((i) => isProjectInFlight(i.status))
     .map((i) => readForward(d, i, now))
     .sort((a, b) => (a.daysLeft ?? 99999) - (b.daysLeft ?? 99999));
 

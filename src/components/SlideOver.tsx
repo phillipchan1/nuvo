@@ -245,7 +245,7 @@ export function TaskPopover({
         <div className="flex shrink-0 items-start gap-2 px-4 pt-4 pb-2">
           <div className="min-w-0 flex-1">
             {(domain || initiative || project) && (
-              <div className="mono mb-1.5 flex items-center gap-1 text-[10px]">
+              <div className="mono mb-1.5 flex items-center gap-1 text-meta">
                 {domain && <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span>}
                 {initiative && <><span className="text-muted">›</span><span className="text-muted">{initiative.name}</span></>}
                 {project && <><span className="text-muted">›</span><span className="text-muted">{project.name}</span></>}
@@ -256,7 +256,7 @@ export function TaskPopover({
               onChange={(e) => setTitle(e.target.value)}
               onBlur={commitTitle}
               onKeyDown={(e) => e.key === "Enter" && commitTitle()}
-              className="w-full border-0 bg-transparent text-[15px] font-semibold leading-snug outline-none placeholder:text-muted"
+              className="w-full border-0 bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted"
               placeholder="Task title…"
             />
           </div>
@@ -275,7 +275,7 @@ export function TaskPopover({
         <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-line px-3 py-2">
           {/* Domain chip wrapping invisible select */}
           <label
-            className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium hover:bg-bg"
+            className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
             style={{ color: domain?.color ?? "var(--muted)" }}
           >
             {domain ? <><span>{domain.icon}</span><span>{domain.name}</span></> : <span>+ domain</span>}
@@ -291,10 +291,10 @@ export function TaskPopover({
             </select>
           </label>
 
-          <span className="text-[10px] text-muted">›</span>
+          <span className="text-meta text-muted">›</span>
 
           {/* Project chip */}
-          <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-muted hover:bg-bg hover:text-ink">
+          <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label text-muted hover:bg-bg hover:text-ink">
             <span>{project?.name ?? "+ project"}</span>
             <select
               value={task.project_id ?? ""}
@@ -337,7 +337,7 @@ export function TaskPopover({
         {/* ── Schedule chips ── */}
         <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-line px-3 py-2.5">
           {/* Date chip */}
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-[11.5px] hover:brightness-95 dark:hover:brightness-110">
+          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/70">
               <rect x="1" y="2" width="10" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
               <path d="M1 5h10" stroke="currentColor" strokeWidth="1.2"/>
@@ -359,7 +359,7 @@ export function TaskPopover({
           </label>
 
           {/* Time chip */}
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-[11.5px] hover:brightness-95 dark:hover:brightness-110">
+          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/70">
               <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2"/>
               <path d="M6 3v3l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
@@ -377,7 +377,7 @@ export function TaskPopover({
           </label>
 
           {/* Duration chip */}
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-[11.5px] hover:brightness-95 dark:hover:brightness-110">
+          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/70">
               <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2"/>
               <path d="M6 4v2.5h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
@@ -398,7 +398,7 @@ export function TaskPopover({
           </label>
 
           {/* Deadline chip */}
-          <label className={`relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] hover:bg-signal-soft ${task.deadline ? "text-signal" : "text-muted hover:text-signal"}`}>
+          <label className={`relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-label hover:bg-signal-soft ${task.deadline ? "text-signal" : "text-muted hover:text-signal"}`}>
             <span>⚑</span>
             <span>{task.deadline ? task.deadline.slice(5).replace("-", "/") : "deadline"}</span>
             <input
@@ -423,7 +423,7 @@ export function TaskPopover({
           <button
             onClick={() => toggleTaskSprint(task.id)}
             title={inWeek ? "In this week's sprint — click to release" : "Commit to this week"}
-            className={`fast text-[15px] leading-none ${inWeek ? "text-signal" : "text-muted hover:text-ink"}`}
+            className={`fast text-head leading-none ${inWeek ? "text-signal" : "text-muted hover:text-ink"}`}
           >
             {inWeek ? "★" : "☆"}
           </button>
@@ -438,7 +438,7 @@ export function TaskPopover({
               onChange={(e) => setNotes(e.target.value)}
               onBlur={commitNotes}
               rows={3}
-              className="w-full resize-none border-0 bg-transparent text-[13px] leading-relaxed text-text outline-none placeholder:text-muted/50"
+              className="w-full resize-none border-0 bg-transparent text-body leading-relaxed text-text outline-none placeholder:text-muted/50"
               placeholder="Notes…"
             />
           </div>
@@ -446,17 +446,17 @@ export function TaskPopover({
           {/* ✦ Nuvo agentic section */}
           <div className="space-y-2 border-t border-line px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="mono text-[9px] font-semibold tracking-widest text-accent">✦ NUVO</span>
+              <span className="mono text-micro font-semibold tracking-widest text-accent">✦ NUVO</span>
               <div className="h-px flex-1 bg-line" />
             </div>
 
             {/* Auto-domain suggestion */}
             {suggestedDomain && (
               <div className="flex items-center gap-2 rounded-lg border border-line bg-bg px-3 py-2">
-                <span className="flex-1 text-[11.5px] text-muted">Assign to</span>
+                <span className="flex-1 text-label text-muted">Assign to</span>
                 <button
                   onClick={() => setDomain(suggestedDomain.id)}
-                  className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
+                  className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-label font-medium"
                   style={{
                     borderColor: suggestedDomain.color + "50",
                     color: suggestedDomain.color,
@@ -466,14 +466,14 @@ export function TaskPopover({
                   {suggestedDomain.icon && <span>{suggestedDomain.icon}</span>}
                   {suggestedDomain.name}
                 </button>
-                <span className="text-[11px] text-muted">?</span>
+                <span className="text-label text-muted">?</span>
               </div>
             )}
 
             {/* Pre-work */}
             {task.prework && task.prework_at ? (
               <div className="rounded-lg bg-bg px-3 py-2.5">
-                <div className="max-h-[160px] overflow-y-auto text-[12px] leading-relaxed text-text [&_h1]:mb-1 [&_h1]:text-[13px] [&_h1]:font-semibold [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-[12px] [&_h2]:font-semibold [&_h3]:mb-0.5 [&_h3]:mt-1.5 [&_h3]:text-[11.5px] [&_h3]:font-semibold [&_li]:ml-3 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc">
+                <div className="max-h-[160px] overflow-y-auto text-caption leading-relaxed text-text [&_h1]:mb-1 [&_h1]:text-body [&_h1]:font-semibold [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-caption [&_h2]:font-semibold [&_h3]:mb-0.5 [&_h3]:mt-1.5 [&_h3]:text-label [&_h3]:font-semibold [&_li]:ml-3 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc">
                   <ReactMarkdown>{task.prework ?? ""}</ReactMarkdown>
                 </div>
                 <div className="mt-2 flex items-center gap-2">
@@ -489,14 +489,14 @@ export function TaskPopover({
               <button
                 onClick={() => void prepare()}
                 disabled={preparing}
-                className="fast w-full rounded-lg border border-dashed border-line px-3 py-2.5 text-left text-[12px] text-muted hover:border-accent/50 hover:text-accent disabled:opacity-50"
+                className="fast w-full rounded-lg border border-dashed border-line px-3 py-2.5 text-left text-caption text-muted hover:border-accent/50 hover:text-accent disabled:opacity-50"
               >
                 {preparing
                   ? "✦ preparing — approach, drafts, pitfalls…"
                   : `✦ delegate pre-work to ${ASSISTANT_NAME}`}
               </button>
             )}
-            {prepError && <div className="text-[11px] text-signal">{prepError}</div>}
+            {prepError && <div className="text-label text-signal">{prepError}</div>}
           </div>
 
           {/* Labels */}
@@ -512,7 +512,7 @@ export function TaskPopover({
                       on ? next.delete(l.id) : next.add(l.id);
                       void mutations.setLabels(task.id, [...next]);
                     }}
-                    className="fast rounded-full border px-2 py-0.5 text-[11px]"
+                    className="fast rounded-full border px-2 py-0.5 text-label"
                     style={{
                       borderColor: on ? l.color : "var(--line)",
                       color: on ? l.color : "var(--muted)",
@@ -527,7 +527,7 @@ export function TaskPopover({
           )}
 
           {/* Timestamps */}
-          <div className="mono border-t border-line px-4 py-2.5 text-[10.5px] text-muted">
+          <div className="mono border-t border-line px-4 py-2.5 text-meta text-muted">
             created {format(new Date(task.created_at), "MMM d yyyy")}
             {task.completed_at && (
               <span className="ml-3">completed {format(new Date(task.completed_at), "MMM d yyyy")}</span>
@@ -581,11 +581,11 @@ function AttendeeRow({ a }: { a: GoogleAttendee }) {
   const { icon, cls } = statusIcon(a.responseStatus);
   return (
     <div className="flex items-center gap-2 py-0.5">
-      <span className={`mono w-3 shrink-0 text-center text-[11px] font-bold ${cls}`}>{icon}</span>
-      <span className="min-w-0 truncate text-[12px] text-text">
+      <span className={`mono w-3 shrink-0 text-center text-label font-bold ${cls}`}>{icon}</span>
+      <span className="min-w-0 truncate text-caption text-text">
         {a.displayName ?? a.email}
-        {a.organizer && <span className="ml-1 text-[10px] text-muted">(organizer)</span>}
-        {a.optional && <span className="ml-1 text-[10px] text-muted">(optional)</span>}
+        {a.organizer && <span className="ml-1 text-meta text-muted">(organizer)</span>}
+        {a.optional && <span className="ml-1 text-meta text-muted">(optional)</span>}
       </span>
     </div>
   );
@@ -645,7 +645,7 @@ function DescriptionHtml({ html }: { html: string }) {
     return Array.from(doc.body.childNodes).map((n, i) => domToReact(n, i));
   }, [html]);
   return (
-    <div className="space-y-1.5 text-[12px] leading-relaxed text-text [&_p]:mb-1 [&_ul]:my-1 [&_ol]:my-1">
+    <div className="space-y-1.5 text-caption leading-relaxed text-text [&_p]:mb-1 [&_ul]:my-1 [&_ol]:my-1">
       {nodes}
     </div>
   );
@@ -669,6 +669,8 @@ export function EventPopover({
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(event.title);
+  const [startAt, setStartAt] = useState(event.start_at);
+  const [endAt, setEndAt] = useState(event.end_at);
   const [notify, setNotify] = useState(true);
   const [pendingRsvp, setPendingRsvp] = useState<AttendeeStatus | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -679,9 +681,11 @@ export function EventPopover({
 
   useEffect(() => {
     setTitle(event.title);
+    setStartAt(event.start_at);
+    setEndAt(event.end_at);
     setPendingRsvp(null);
     setConfirmDelete(false);
-  }, [event.id, event.title]);
+  }, [event.id, event.title, event.start_at, event.end_at]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -732,6 +736,17 @@ export function EventPopover({
   ];
 
   const hasAttendees = (raw?.attendees?.length ?? 0) > 0;
+
+  const toTimeInput = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+  const applyTime = (iso: string, hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    const d = new Date(iso);
+    d.setHours(h, m, 0, 0);
+    return d.toISOString();
+  };
 
   return createPortal(
     <>
@@ -788,10 +803,10 @@ export function EventPopover({
                   title !== event.title &&
                   eventMutations.updateEvent({ id: event.id, patch: { title: title.trim() } })
                 }
-                className="w-full border-0 bg-transparent text-[14px] font-semibold leading-snug outline-none placeholder:text-muted"
+                className="w-full border-0 border-b border-transparent bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted transition-colors hover:border-line focus:border-ink"
               />
             ) : (
-              <div className="text-[14px] font-semibold leading-snug">{event.title}</div>
+              <div className="text-head font-semibold leading-snug">{event.title}</div>
             )}
           </div>
           <button
@@ -810,20 +825,43 @@ export function EventPopover({
           <div className="space-y-3">
 
             {/* Time */}
-            <div className="mono flex items-center gap-2 text-[11.5px] text-muted">
+            <div className="mono flex items-center gap-2 text-label text-muted">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/60">
                 <rect x="1" y="2" width="10" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
                 <path d="M1 5h10" stroke="currentColor" strokeWidth="1.2"/>
                 <path d="M4 1v2M8 1v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
               </svg>
-              {format(new Date(event.start_at), "EEE MMM d · h:mm a")}
-              {" – "}
-              {format(new Date(event.end_at), "h:mm a")}
+              {editable ? (
+                <span className="flex items-center gap-1">
+                  <span>{format(new Date(startAt), "EEE MMM d ·")}</span>
+                  <input
+                    type="time"
+                    value={toTimeInput(startAt)}
+                    onChange={(e) => setStartAt(applyTime(startAt, e.target.value))}
+                    onBlur={() => startAt !== event.start_at && eventMutations.updateEvent({ id: event.id, patch: { start_at: startAt } })}
+                    className="mono border-b border-transparent bg-transparent text-label text-muted outline-none transition-colors hover:border-muted focus:border-ink focus:text-ink"
+                  />
+                  <span>–</span>
+                  <input
+                    type="time"
+                    value={toTimeInput(endAt)}
+                    onChange={(e) => setEndAt(applyTime(endAt, e.target.value))}
+                    onBlur={() => endAt !== event.end_at && eventMutations.updateEvent({ id: event.id, patch: { end_at: endAt } })}
+                    className="mono border-b border-transparent bg-transparent text-label text-muted outline-none transition-colors hover:border-muted focus:border-ink focus:text-ink"
+                  />
+                </span>
+              ) : (
+                <>
+                  {format(new Date(event.start_at), "EEE MMM d · h:mm a")}
+                  {" – "}
+                  {format(new Date(event.end_at), "h:mm a")}
+                </>
+              )}
             </div>
 
             {/* Location */}
             {event.location && (
-              <div className="flex items-start gap-2 text-[12px] text-muted">
+              <div className="flex items-start gap-2 text-caption text-muted">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="mt-[1px] shrink-0">
                   <path d="M6 1C4.067 1 2.5 2.567 2.5 4.5c0 2.917 3.5 6.5 3.5 6.5s3.5-3.583 3.5-6.5C9.5 2.567 7.933 1 6 1z" stroke="currentColor" strokeWidth="1.2"/>
                   <circle cx="6" cy="4.5" r="1.2" stroke="currentColor" strokeWidth="1.1"/>
@@ -838,7 +876,7 @@ export function EventPopover({
                 href={joinEntry.uri}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="fast inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-1.5 text-[12px] font-medium text-accent hover:bg-accent hover:text-white"
+                className="fast inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-1.5 text-caption font-medium text-accent hover:bg-accent hover:text-white"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0">
                   <path d="M2 6h8M6 2l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -859,7 +897,7 @@ export function EventPopover({
                       <button
                         key={status}
                         onClick={() => handleRsvp(status)}
-                        className={`fast flex flex-1 items-center justify-center gap-1 rounded-md border py-1.5 text-[12px] font-medium ${
+                        className={`fast flex flex-1 items-center justify-center gap-1 rounded-md border py-1.5 text-caption font-medium ${
                           active
                             ? status === "accepted"
                               ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
@@ -875,7 +913,7 @@ export function EventPopover({
                     );
                   })}
                 </div>
-                <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted">
+                <label className="flex cursor-pointer items-center gap-2 text-label text-muted">
                   <input
                     type="checkbox"
                     checked={notify}
@@ -891,8 +929,8 @@ export function EventPopover({
             {(raw?.organizer || hasAttendees) && (
               <div className="space-y-2 border-t border-line pt-3">
                 {raw?.organizer && (
-                  <div className="flex items-center gap-2 text-[12px]">
-                    <span className="shrink-0 text-[10px] text-muted uppercase tracking-wider font-semibold w-14">Organizer</span>
+                  <div className="flex items-center gap-2 text-caption">
+                    <span className="shrink-0 text-meta text-muted uppercase tracking-wider font-semibold w-14">Organizer</span>
                     <span className="text-text">{raw.organizer.displayName ?? raw.organizer.email}</span>
                   </div>
                 )}
@@ -911,7 +949,7 @@ export function EventPopover({
                       const maybe = list.filter((a) => a.responseStatus === "tentative").length;
                       const waiting = list.filter((a) => a.responseStatus === "needsAction").length;
                       return (
-                        <div className="mono mt-1.5 flex gap-3 text-[10px] text-muted">
+                        <div className="mono mt-1.5 flex gap-3 text-meta text-muted">
                           {yes > 0 && <span className="text-green-600 dark:text-green-400">✓ {yes}</span>}
                           {maybe > 0 && <span className="text-yellow-600">? {maybe}</span>}
                           {no > 0 && <span className="text-signal">✗ {no}</span>}
@@ -933,58 +971,74 @@ export function EventPopover({
             )}
 
             {detailsLoading && (
-              <div className="shimmer text-[11px] pt-1">Loading details…</div>
+              <div className="shimmer text-label pt-1">Loading details…</div>
             )}
 
           </div>
         </div>
 
-        {/* Footer — delete (with this/series choice for recurring events) */}
-        {editable && (
+        {/* Footer — open in Google / delete */}
+        {(editable || raw?.htmlLink) && (
           <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
-            {!confirmDelete ? (
-              <>
-                <div className="flex-1" />
-                <Btn kind="signal" onClick={() => setConfirmDelete(true)}>Delete</Btn>
-              </>
-            ) : recurring ? (
-              <>
-                <span className="text-[11.5px] text-muted">Delete…</span>
-                <div className="flex-1" />
-                <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
-                <Btn
-                  onClick={() => {
-                    eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
-                    onClose();
-                  }}
-                >
-                  This event
-                </Btn>
-                <Btn
-                  kind="signal"
-                  onClick={() => {
-                    eventMutations.deleteEvent({ id: event.id, scope: "ALL" });
-                    onClose();
-                  }}
-                >
-                  All events
-                </Btn>
-              </>
-            ) : (
-              <>
-                <span className="text-[11.5px] text-muted">Delete this event?</span>
-                <div className="flex-1" />
-                <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
-                <Btn
-                  kind="signal"
-                  onClick={() => {
-                    eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
-                    onClose();
-                  }}
-                >
-                  Delete
-                </Btn>
-              </>
+            {raw?.htmlLink && (
+              <a
+                href={raw.htmlLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="fast text-label text-muted hover:text-ink"
+                title="Open in Google Calendar"
+              >
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className="inline-block align-middle">
+                  <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8M8 1h4m0 0v4m0-4L5.5 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span className="ml-1 align-middle">Google Cal</span>
+              </a>
+            )}
+            {editable && (
+              !confirmDelete ? (
+                <>
+                  <div className="flex-1" />
+                  <Btn kind="signal" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+                </>
+              ) : recurring ? (
+                <>
+                  <span className="text-label text-muted">Delete…</span>
+                  <div className="flex-1" />
+                  <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+                  <Btn
+                    onClick={() => {
+                      eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
+                      onClose();
+                    }}
+                  >
+                    This event
+                  </Btn>
+                  <Btn
+                    kind="signal"
+                    onClick={() => {
+                      eventMutations.deleteEvent({ id: event.id, scope: "ALL" });
+                      onClose();
+                    }}
+                  >
+                    All events
+                  </Btn>
+                </>
+              ) : (
+                <>
+                  <span className="text-label text-muted">Delete this event?</span>
+                  <div className="flex-1" />
+                  <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+                  <Btn
+                    kind="signal"
+                    onClick={() => {
+                      eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
+                      onClose();
+                    }}
+                  >
+                    Delete
+                  </Btn>
+                </>
+              )
             )}
           </div>
         )}
@@ -1155,7 +1209,7 @@ export function SlotPopover({
         {/* Header */}
         <div className="flex shrink-0 items-start gap-2 px-4 pt-4 pb-2">
           <div className="min-w-0 flex-1">
-            <div className="mono mb-1 text-[9px] font-semibold uppercase tracking-widest text-muted">
+            <div className="mono mb-1 text-micro font-semibold uppercase tracking-widest text-muted">
               🗂 Time slot
             </div>
             <input
@@ -1163,11 +1217,11 @@ export function SlotPopover({
               onChange={(e) => setTitle(e.target.value)}
               onBlur={commitTitle}
               onKeyDown={(e) => e.key === "Enter" && commitTitle()}
-              className="w-full border-0 bg-transparent text-[15px] font-semibold leading-snug outline-none placeholder:text-muted/70"
+              className="w-full border-0 bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted/70"
               placeholder={derivedTitle}
             />
             {!slot.title.trim() && (
-              <div className="mono mt-0.5 text-[10px] text-muted/70">✦ auto-named — type to override</div>
+              <div className="mono mt-0.5 text-meta text-muted/70">✦ auto-named — type to override</div>
             )}
           </div>
           <button
@@ -1183,7 +1237,7 @@ export function SlotPopover({
 
         {/* Schedule chips */}
         <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-line px-3 py-2.5">
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-[11.5px] hover:brightness-95 dark:hover:brightness-110">
+          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
             <span className="text-ink">{format(new Date(slot.do_date + "T12:00:00"), "MMM d")}</span>
             <input
               type="date"
@@ -1192,7 +1246,7 @@ export function SlotPopover({
               className="absolute inset-0 w-full cursor-pointer opacity-0"
             />
           </label>
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-[11.5px] hover:brightness-95 dark:hover:brightness-110">
+          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
             <span className="text-ink">{format(startDate, "h:mm a")}</span>
             <input
               type="time"
@@ -1202,7 +1256,7 @@ export function SlotPopover({
               className="absolute inset-0 w-full cursor-pointer opacity-0"
             />
           </label>
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-[11.5px] hover:brightness-95 dark:hover:brightness-110">
+          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
             <span className="text-ink">{fmtDuration(slot.duration_minutes)}</span>
             <select
               value={slot.duration_minutes}
@@ -1222,7 +1276,7 @@ export function SlotPopover({
 
           {/* Project chip — drives color/inheritance */}
           <label
-            className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium hover:bg-bg"
+            className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
             style={{ color: domain?.color ?? "var(--muted)" }}
           >
             <span>{project?.name ?? "+ project"}</span>
@@ -1250,7 +1304,7 @@ export function SlotPopover({
         </div>
 
         {/* Progress */}
-        <div className="mono flex shrink-0 items-center gap-2 border-t border-line px-4 py-2 text-[10.5px] text-muted">
+        <div className="mono flex shrink-0 items-center gap-2 border-t border-line px-4 py-2 text-meta text-muted">
           <span>{doneCount}/{ordered.length} done</span>
           {totalMins > 0 && <span>· {fmtDuration(totalMins)} of tasks</span>}
         </div>
@@ -1279,7 +1333,7 @@ export function SlotPopover({
                 </button>
                 <button
                   onClick={() => onOpenTask(t)}
-                  className={`min-w-0 flex-1 truncate text-left text-[12.5px] ${
+                  className={`min-w-0 flex-1 truncate text-left text-caption ${
                     done ? "text-muted line-through" : "text-text"
                   }`}
                 >
@@ -1299,7 +1353,7 @@ export function SlotPopover({
             );
           })}
           {ordered.length === 0 && (
-            <div className="px-2 py-3 text-[12px] italic text-muted/70">No tasks yet — add one below.</div>
+            <div className="px-2 py-3 text-caption italic text-muted/70">No tasks yet — add one below.</div>
           )}
         </div>
 
@@ -1310,7 +1364,7 @@ export function SlotPopover({
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addTask()}
             placeholder="+ Add task to slot…"
-            className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[12.5px] outline-none focus:border-accent"
+            className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-caption outline-none focus:border-accent"
           />
         </div>
 

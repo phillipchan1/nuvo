@@ -35,8 +35,8 @@ export function MorningPlan({
   return (
     <Modal onClose={onClose} width="max-w-md">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div className="text-[14px] font-semibold">Morning plan</div>
-        <div className="mono text-[12px] text-muted">
+        <div className="text-head font-semibold">Morning plan</div>
+        <div className="mono text-caption text-muted">
           Inbox {startCount} → {inbox.length}
         </div>
       </div>
@@ -44,10 +44,10 @@ export function MorningPlan({
       {/* what came back prepared — the lowest-friction starts of the day */}
       {prepared.length > 0 && (
         <div className="border-b border-line px-4 py-2.5">
-          <div className="text-[11px]" style={{ color: "var(--accent)" }}>
+          <div className="text-label" style={{ color: "var(--accent)" }}>
             ✦ {prepared.length} task{prepared.length === 1 ? "" : "s"} came back prepared:
           </div>
-          <div className="mono mt-0.5 truncate text-[11px] text-muted">
+          <div className="mono mt-0.5 truncate text-label text-muted">
             {prepared.map((t) => t.title).join(" · ")}
           </div>
         </div>
@@ -56,21 +56,21 @@ export function MorningPlan({
       {/* the week pool first — you already decided this matters */}
       {weekPool.length > 0 && (
         <div className="border-b border-line p-4">
-          <div className="mb-1.5 text-[11px] text-muted">
+          <div className="mb-1.5 text-label text-muted">
             From your week — {weekPool.length} committed, not yet placed. Pull today's:
           </div>
           <div className="max-h-[30vh] space-y-1 overflow-y-auto">
             {weekPool.map((t) => {
               const isPulled = pulled.has(t.id);
               return (
-                <div key={t.id} className="flex items-center gap-2 text-[13px]">
+                <div key={t.id} className="flex items-center gap-2 text-body">
                   <button
                     onClick={() => {
                       if (isPulled) return;
                       mutations.planFor(t, todayISO());
                       setPulled((p) => new Set(p).add(t.id));
                     }}
-                    className={`fast mono shrink-0 border px-1.5 py-0.5 text-[10px] ${
+                    className={`fast mono shrink-0 border px-1.5 py-0.5 text-meta ${
                       isPulled
                         ? "border-accent text-accent"
                         : "border-line text-muted hover:border-accent hover:text-accent"
@@ -79,7 +79,7 @@ export function MorningPlan({
                     {isPulled ? "✓ today" : "▸ today"}
                   </button>
                   <span className={`min-w-0 flex-1 truncate ${isPulled ? "text-muted" : ""}`}>{t.title}</span>
-                  <span className="mono shrink-0 text-[10px] text-muted">{fmtDuration(t.duration_minutes)}</span>
+                  <span className="mono shrink-0 text-meta text-muted">{fmtDuration(t.duration_minutes)}</span>
                 </div>
               );
             })}
@@ -89,8 +89,8 @@ export function MorningPlan({
 
       {current ? (
         <div className="p-4">
-          <div className="mb-1 text-[11px] text-muted">Inbox — decide, one at a time:</div>
-          <div className="mb-4 border border-line bg-bg px-3 py-2.5 text-[14px] font-medium">
+          <div className="mb-1 text-label text-muted">Inbox — decide, one at a time:</div>
+          <div className="mb-4 border border-line bg-bg px-3 py-2.5 text-head font-medium">
             {current.title}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -107,7 +107,7 @@ export function MorningPlan({
           {datePick && (
             <input
               type="date"
-              className="mono mt-3 border border-line bg-bg px-2 py-1 text-[12px]"
+              className="mono mt-3 border border-line bg-bg px-2 py-1 text-caption"
               onChange={(e) => {
                 if (e.target.value) {
                   mutations.planFor(current, e.target.value);
@@ -119,8 +119,8 @@ export function MorningPlan({
         </div>
       ) : (
         <div className="p-4">
-          <div className="mb-2 text-[14px] font-medium">Inbox zero.</div>
-          <div className="mb-4 text-[13px] text-muted">
+          <div className="mb-2 text-head font-medium">Inbox zero.</div>
+          <div className="mb-4 text-body text-muted">
             {todayCount} task{todayCount === 1 ? "" : "s"} on Today. Drag them onto the calendar to
             block time.
           </div>
@@ -167,15 +167,15 @@ export function EveningShutdown({
   return (
     <Modal onClose={onClose} width="max-w-md">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div className="text-[14px] font-semibold">Evening shutdown</div>
-        <div className="mono text-[12px] text-muted">{remaining.length} open</div>
+        <div className="text-head font-semibold">Evening shutdown</div>
+        <div className="mono text-caption text-muted">{remaining.length} open</div>
       </div>
 
       {/* the gain, before the gap */}
       <div className="border-b border-line px-4 py-3">
         {gain.count > 0 ? (
           <>
-            <div className="text-[13px] font-medium">
+            <div className="text-body font-medium">
               Today's gain: {gain.count} done · {fmtDuration(gain.mins)} logged.
             </div>
             {gain.byColor.length > 0 && gain.mins > 0 && (
@@ -187,19 +187,19 @@ export function EveningShutdown({
             )}
           </>
         ) : (
-          <div className="text-[12px] text-muted">Nothing checked off today — tomorrow is a fresh pull.</div>
+          <div className="text-caption text-muted">Nothing checked off today — tomorrow is a fresh pull.</div>
         )}
       </div>
 
       <div className="max-h-[55vh] overflow-y-auto p-3">
         {remaining.length === 0 && (
-          <div className="px-1 py-4 text-center text-[13px] text-muted">
+          <div className="px-1 py-4 text-center text-body text-muted">
             Clean slate. See you tomorrow.
           </div>
         )}
         {remaining.map((t) => (
           <div key={t.id} className="flex items-center gap-2 border-b border-line px-1 py-2">
-            <span className="min-w-0 flex-1 truncate text-[13px]">{t.title}</span>
+            <span className="min-w-0 flex-1 truncate text-body">{t.title}</span>
             <Btn onClick={() => mutations.complete(t)}>Done</Btn>
             <Btn onClick={() => mutations.planFor(t, tomorrowISO())}>Tomorrow</Btn>
             {/* only for THIS week's commitments — a stale sprint_id must not
@@ -212,7 +212,7 @@ export function EveningShutdown({
             <input
               type="date"
               title="Reschedule"
-              className="mono w-[120px] border border-line bg-bg px-1 py-1 text-[11px]"
+              className="mono w-[120px] border border-line bg-bg px-1 py-1 text-label"
               onChange={(e) => e.target.value && mutations.planFor(t, e.target.value)}
             />
             <Btn kind="signal" onClick={() => mutations.trash(t)}>
@@ -221,7 +221,7 @@ export function EveningShutdown({
           </div>
         ))}
       </div>
-      <div className="border-t border-line p-3 text-[11px] text-muted">
+      <div className="border-t border-line p-3 text-label text-muted">
         ↩ week keeps the commitment without a date. Anything left rolls to tomorrow at midnight (↻ badge).
       </div>
     </Modal>

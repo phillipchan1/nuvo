@@ -7,6 +7,7 @@
 import { useMemo, useRef, useState } from "react";
 import { addDays, endOfQuarter, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
+import { isOpenStatus } from "../../lib/vertical";
 import { fmtDate } from "./parts";
 import { MomentHeader, Pill } from "./createParts";
 import { Modal } from "../ui";
@@ -61,10 +62,7 @@ export default function QuickCreate({
 
   // initiatives in the chosen domain that can still take a project under them
   const inits = useMemo(
-    () =>
-      data.initiatives.filter(
-        (i) => i.domainId === domainId && i.status !== "shipped" && i.status !== "dropped",
-      ),
+    () => data.initiatives.filter((i) => i.domainId === domainId && isOpenStatus(i.status)),
     [data.initiatives, domainId],
   );
 

@@ -1,18 +1,17 @@
-// New project — the focused "moment" for starting a chunk of work. Pick where
-// it lives (a domain, optionally nested under an initiative), name it, say what
-// done looks like, draw a target. Then — the intelligence — hand the typed
-// context to Nuvo to draft an ordered first backlog you can prune. One commit
-// writes the project AND the accepted tasks (quiet in backlog until you pull
-// them into a week). Nothing lands until you create.
+// New project — a composer, not a form. Type the name; context chips for
+// domain / initiative / target live below the text. The intelligence starts
+// drafting tasks as soon as there's something to work with — no button needed.
+// ⏎ moves focus through title → outcome → creates.
 
-import { useMemo, useRef, useState } from "react";
-import { addDays, endOfQuarter, format } from "date-fns";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { format } from "date-fns";
+import * as chrono from "chrono-node";
 import { useVertical } from "../../hooks/useVertical";
 import { supabase } from "../../lib/supabase";
 import { ASSISTANT_NAME } from "../../lib/assistant";
 import { ENERGY_META, type Energy } from "../../lib/energy";
+import { isOpenStatus } from "../../lib/vertical";
 import { fmtDate } from "./parts";
-import { Field, MomentHeader, Pill } from "./createParts";
 import { Modal } from "../ui";
 
 interface DraftTask {
@@ -44,72 +43,82 @@ export default function NewProject({
   const [initiativeId, setInitiativeId] = useState<string | null>(initialInitiativeId ?? null);
   const [name, setName] = useState(initialName ?? "");
   const [outcome, setOutcome] = useState("");
-  const [description, setDescription] = useState("");
   const [finishLine, setFinishLine] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [drafting, setDrafting] = useState(false);
   const [proposal, setProposal] = useState<DraftTask[] | null>(null);
-  const [aiNote, setAiNote] = useState<string | null>(null);
+  const [draftPhase, setDraftPhase] = useState<"idle" | "thinking" | "ready">("idle");
+  // which chip row is expanded: "domain" | "initiative" | null
+  const [expanding, setExpanding] = useState<"domain" | "initiative" | null>(null);
+
+  const titleRef = useRef<HTMLInputElement>(null);
+  const outcomeRef = useRef<HTMLInputElement>(null);
   const dateRef = useRef<HTMLInputElement>(null);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastDraftKey = useRef("");
 
   const domain = domains.find((d) => d.id === domainId);
   const accent = domain?.color ?? "var(--accent)";
   const canCreate = Boolean(domainId && name.trim());
 
-  // initiatives in the chosen domain that can still take work
   const inits = useMemo(
-    () => data.initiatives.filter((i) => i.domainId === domainId && i.status !== "shipped" && i.status !== "dropped"),
+    () => data.initiatives.filter((i) => i.domainId === domainId && isOpenStatus(i.status)),
     [data.initiatives, domainId],
   );
+  const selectedInit = inits.find((i) => i.id === initiativeId) ?? null;
 
   const pickDomain = (id: string) => {
     setDomainId(id);
-    setInitiativeId(null); // an initiative belongs to a domain — drop a stale link
+    setInitiativeId(null);
+    setExpanding(null);
   };
+
+  // Extract a target date from whatever the user typed in the title.
+  const sniffDate = useCallback((text: string) => {
+    const results = chrono.parse(text, new Date(), { forwardDate: true });
+    if (results.length > 0) {
+      setFinishLine(format(results[0].start.date(), "yyyy-MM-dd"));
+    }
+  }, []);
+
+  const scheduleDraft = useCallback((nameVal: string, outcomeVal: string) => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    if (nameVal.trim().length < 4) return;
+    draftTimer.current = setTimeout(async () => {
+      const key = `${nameVal.trim()}|${outcomeVal.trim()}`;
+      if (key === lastDraftKey.current) return;
+      lastDraftKey.current = key;
+      setDraftPhase("thinking");
+      try {
+        const { data: res, error: fnErr } = await supabase.functions.invoke("agent", {
+          body: { scaffoldDraft: { name: nameVal.trim(), outcome: outcomeVal.trim(), initiativeId, domainId } },
+        });
+        if (fnErr) throw fnErr;
+        const drafts = (res?.tasks ?? []) as Omit<DraftTask, "included">[];
+        setProposal(drafts.map((d) => ({ ...d, included: true })));
+        setDraftPhase("ready");
+      } catch {
+        setDraftPhase("idle");
+        lastDraftKey.current = "";
+      }
+    }, 1500);
+  }, [domainId, initiativeId]);
+
+  useEffect(() => () => { if (draftTimer.current) clearTimeout(draftTimer.current); }, []);
+
+  // Collapse chip picker when clicking elsewhere
+  useEffect(() => {
+    if (!expanding) return;
+    const close = (e: MouseEvent) => {
+      const el = e.target as HTMLElement;
+      if (!el.closest("[data-chip-picker]")) setExpanding(null);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [expanding]);
 
   const today = useMemo(() => new Date(), []);
-  const presets = useMemo(
-    () => [
-      { label: "2 weeks", iso: format(addDays(today, 14), "yyyy-MM-dd") },
-      { label: "30 days", iso: format(addDays(today, 30), "yyyy-MM-dd") },
-      { label: "Quarter end", iso: format(endOfQuarter(today), "yyyy-MM-dd") },
-    ],
-    [today],
-  );
-  const isCustom = finishLine != null && !presets.some((p) => p.iso === finishLine);
   const acceptCount = (proposal ?? []).filter((d) => d.included).length;
-
-  const draftTasks = async () => {
-    if (!name.trim()) {
-      setError("Name the project first.");
-      return;
-    }
-    setDrafting(true);
-    setError(null);
-    setAiNote(null);
-    try {
-      const { data: res, error: fnErr } = await supabase.functions.invoke("agent", {
-        body: {
-          scaffoldDraft: {
-            name: name.trim(),
-            outcome: outcome.trim(),
-            description: description.trim(),
-            initiativeId,
-            domainId,
-          },
-        },
-      });
-      if (fnErr) throw fnErr;
-      const drafts = (res?.tasks ?? []) as Omit<DraftTask, "included">[];
-      if (!drafts.length) setAiNote(`${ASSISTANT_NAME} had nothing to add yet — say a bit more about the outcome.`);
-      setProposal(drafts.map((d) => ({ ...d, included: true })));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Drafting failed.");
-    } finally {
-      setDrafting(false);
-    }
-  };
 
   const submit = async () => {
     if (!canCreate || busy) return;
@@ -119,7 +128,6 @@ export default function NewProject({
       const p = await addProject(domainId, initiativeId, {
         name: name.trim(),
         outcome: outcome.trim(),
-        description: description.trim(),
         startDate: format(today, "yyyy-MM-dd"),
         targetDate: finishLine,
       });
@@ -137,32 +145,18 @@ export default function NewProject({
     }
   };
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey || e.currentTarget.tagName === "INPUT")) {
-      e.preventDefault();
-      void submit();
-    }
-  };
-
   if (domains.length === 0) {
     return (
       <Modal onClose={onClose} width="max-w-[460px]">
         <div className="p-7 text-center">
-          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full border border-line text-[18px] text-muted">◇</div>
-          <h2 className="text-[17px] font-semibold tracking-tight">Start with a domain</h2>
-          <p className="mx-auto mt-1.5 max-w-[320px] text-[13px] leading-relaxed text-muted">
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full border border-line text-lead text-muted">◇</div>
+          <h2 className="text-lead font-semibold tracking-tight">Start with a domain</h2>
+          <p className="mx-auto mt-1.5 max-w-[320px] text-body leading-relaxed text-muted">
             Projects live inside a life domain. Create your first domain, then the work has somewhere to land.
           </p>
           <div className="mt-5 flex items-center justify-center gap-2">
-            <button onClick={onClose} className="fast rounded-md border border-line px-3 py-1.5 text-[12px] font-medium text-ink hover:border-line-strong hover:bg-surface-2">
-              Not now
-            </button>
-            <button
-              onClick={() => void addDomain().then(onClose)}
-              className="fast rounded-md border border-accent bg-accent px-3 py-1.5 text-[12px] font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
-            >
-              Create a domain →
-            </button>
+            <button onClick={onClose} className="fast rounded-md border border-line px-3 py-1.5 text-caption font-medium text-ink hover:border-line-strong hover:bg-surface-2">Not now</button>
+            <button onClick={() => void addDomain().then(onClose)} className="fast rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-white shadow-sm hover:brightness-110">Create a domain →</button>
           </div>
         </div>
       </Modal>
@@ -170,172 +164,217 @@ export default function NewProject({
   }
 
   return (
-    <Modal onClose={onClose} width="max-w-[560px]">
-      <MomentHeader accent={accent} icon={domain?.icon ?? "◆"} eyebrow="New project" title="A chunk of work with its own tasks" onClose={onClose} />
+    <Modal onClose={onClose} width="max-w-[580px]">
+      {/* Accent edge */}
+      <div className="h-[3px] w-full shrink-0 rounded-t-[inherit]" style={{ background: `linear-gradient(90deg, ${accent}, ${accent}55 60%, transparent)` }} />
 
-      <div className="px-6 py-5">
-        {/* where it lives — domain, then optionally an initiative within it */}
-        <Field label="Domain">
-          <div className="flex flex-wrap gap-1.5">
-            {domains.map((d) => (
-              <Pill key={d.id} active={d.id === domainId} accent={d.color} onClick={() => pickDomain(d.id)}>
-                <span style={{ color: d.color }}>{d.icon}</span>
-                {d.name}
-              </Pill>
-            ))}
-          </div>
-        </Field>
+      {/* ── Composer ── */}
+      <div className="px-6 pt-5 pb-4">
+        <input
+          ref={titleRef}
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            sniffDate(e.target.value);
+            scheduleDraft(e.target.value, outcome);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); outcomeRef.current?.focus(); }
+            if (e.key === "Escape") onClose();
+          }}
+          placeholder="Name this project…"
+          autoFocus
+          className="w-full bg-transparent text-display font-semibold tracking-tight text-ink outline-none placeholder:font-normal placeholder:text-muted/35"
+        />
+        <input
+          ref={outcomeRef}
+          value={outcome}
+          onChange={(e) => {
+            setOutcome(e.target.value);
+            scheduleDraft(name, e.target.value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); if (canCreate) void submit(); }
+            if (e.key === "Escape") onClose();
+          }}
+          placeholder="What does done look like? (optional)"
+          className="mt-1.5 w-full bg-transparent text-body text-muted outline-none placeholder:text-muted/30"
+        />
+      </div>
 
-        <Field label="Initiative" className="mt-4">
-          {inits.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              <Pill active={initiativeId === null} accent={accent} onClick={() => setInitiativeId(null)}>
-                No initiative
-              </Pill>
-              {inits.map((i) => (
-                <Pill key={i.id} active={initiativeId === i.id} accent={accent} onClick={() => setInitiativeId(i.id)}>
-                  {i.name}
-                </Pill>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[12px] text-muted italic">
-              No initiatives in {domain?.name ?? "this domain"} yet — it’ll sit loose under the domain.
-            </p>
-          )}
-        </Field>
-
-        {/* the project, named */}
-        <div className="mt-4">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Name the project…"
-            autoFocus
-            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-[16px] font-semibold outline-none transition placeholder:font-normal placeholder:text-muted/55"
-            style={{ boxShadow: "inset 0 0 0 1px transparent" }}
-            onFocus={(e) => (e.currentTarget.style.boxShadow = `0 0 0 3px ${accent}26, inset 0 0 0 1px ${accent}`)}
-            onBlur={(e) => (e.currentTarget.style.boxShadow = "inset 0 0 0 1px transparent")}
-          />
-          <input
-            value={outcome}
-            onChange={(e) => setOutcome(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="What does done look like, in one line?"
-            className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-[13px] outline-none transition placeholder:text-muted/60 focus:border-line-strong"
-          />
-        </div>
-
-        {/* target — optional for a project, but a date sharpens it */}
-        <Field label="Target" className="mt-4">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {presets.map((p) => (
-              <Pill key={p.iso} active={finishLine === p.iso} accent={accent} onClick={() => setFinishLine(p.iso)}>
-                {p.label}
-              </Pill>
-            ))}
-            <span className="relative inline-flex">
-              <Pill
-                active={isCustom}
-                accent={accent}
-                onClick={() => {
-                  const el = dateRef.current;
-                  if (el) { try { el.showPicker(); } catch { el.focus(); } }
-                }}
-              >
-                {isCustom ? fmtDate(finishLine!) : "Pick a date"}
-              </Pill>
-              <input
-                ref={dateRef}
-                type="date"
-                value={finishLine ?? ""}
-                onChange={(e) => setFinishLine(e.target.value || null)}
-                className="pointer-events-none absolute left-0 h-0 w-0 opacity-0"
-              />
-            </span>
-            {finishLine && (
-              <button onClick={() => setFinishLine(null)} className="fast mono text-[11px] text-muted hover:text-signal" title="Clear the target">
-                clear
-              </button>
+      {/* ── Context chips ── */}
+      <div className="relative border-t border-line px-6 py-3" data-chip-picker>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Domain chip */}
+          <div className="relative">
+            <button
+              onClick={() => setExpanding(expanding === "domain" ? null : "domain")}
+              className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label"
+              style={{ color: accent, borderColor: `${accent}55`, background: `${accent}12` }}
+            >
+              <span>{domain?.icon ?? "◆"}</span>
+              <span className="font-medium">{domain?.name ?? "Domain"}</span>
+              <span className="opacity-40">▾</span>
+            </button>
+            {expanding === "domain" && (
+              <div className="elev-3 absolute top-full mt-1.5 left-0 z-50 flex flex-col gap-0.5 rounded-lg border border-line bg-surface p-1.5 min-w-[140px]">
+                {domains.map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => pickDomain(d.id)}
+                    className="fast flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-caption hover:bg-bg"
+                    style={{ color: d.id === domainId ? d.color : "var(--text)", background: d.id === domainId ? `${d.color}12` : "transparent" }}
+                  >
+                    <span style={{ color: d.color }}>{d.icon}</span>
+                    {d.name}
+                    {d.id === domainId && <span className="ml-auto text-micro opacity-60">✓</span>}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
-        </Field>
 
-        <Field label="Context" className="mt-4">
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Optional — scope, what's in and out…"
-            rows={2}
-            className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted outline-none transition placeholder:text-muted/50 focus:border-line-strong"
-          />
-        </Field>
-
-        {/* the intelligence — draft the first tasks, prune before they land */}
-        <div className="mt-4 rounded-md border border-dashed border-line p-3" style={{ borderColor: proposal ? accent : "var(--line)" }}>
-          {!proposal && (
-            <div className="flex items-center gap-2.5">
+          {/* Initiative chip */}
+          {inits.length > 0 && (
+            <div className="relative">
               <button
-                onClick={() => void draftTasks()}
-                disabled={drafting || !name.trim()}
-                className="fast flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium disabled:opacity-40"
-                style={{ background: `${accent}1a`, color: accent }}
+                onClick={() => setExpanding(expanding === "initiative" ? null : "initiative")}
+                className="fast flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-label text-muted hover:border-line-strong hover:text-ink"
+                style={selectedInit ? { color: accent, borderColor: `${accent}40`, background: `${accent}0d` } : {}}
               >
-                <span>✦</span>
-                {drafting ? "drafting…" : `Draft the first tasks with ${ASSISTANT_NAME}`}
+                <span className="opacity-50">◇</span>
+                <span>{selectedInit ? selectedInit.name : "no initiative"}</span>
+                <span className="opacity-40">▾</span>
               </button>
-              <span className="text-[11px] text-muted">optional — a starter backlog, yours to prune</span>
+              {expanding === "initiative" && (
+                <div className="elev-3 absolute top-full mt-1.5 left-0 z-50 flex flex-col gap-0.5 rounded-lg border border-line bg-surface p-1.5 min-w-[180px]">
+                  <button
+                    onClick={() => { setInitiativeId(null); setExpanding(null); }}
+                    className="fast flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-caption hover:bg-bg"
+                    style={{ color: !initiativeId ? "var(--text)" : "var(--muted)", background: !initiativeId ? "var(--bg)" : "transparent" }}
+                  >
+                    <span className="opacity-40">◇</span>
+                    no initiative
+                    {!initiativeId && <span className="ml-auto text-micro opacity-60">✓</span>}
+                  </button>
+                  {inits.map((i) => (
+                    <button
+                      key={i.id}
+                      onClick={() => { setInitiativeId(i.id); setExpanding(null); }}
+                      className="fast flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-caption hover:bg-bg"
+                      style={{ color: i.id === initiativeId ? accent : "var(--text)", background: i.id === initiativeId ? `${accent}12` : "transparent" }}
+                    >
+                      <span style={{ color: accent }} className="opacity-60">◇</span>
+                      <span className="min-w-0 truncate">{i.name}</span>
+                      {i.id === initiativeId && <span className="ml-auto shrink-0 text-micro opacity-60">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {proposal && (
+          {/* Target date chip */}
+          <div className="relative inline-flex">
+            <button
+              onClick={() => { try { dateRef.current?.showPicker(); } catch { dateRef.current?.focus(); } }}
+              className="fast flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-label text-muted hover:border-line-strong hover:text-ink"
+              style={finishLine ? { color: accent, borderColor: `${accent}40`, background: `${accent}0d` } : {}}
+            >
+              <span className="opacity-50">📅</span>
+              {finishLine ? fmtDate(finishLine) : "no deadline"}
+              {finishLine && (
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); setFinishLine(null); }}
+                  className="ml-0.5 opacity-40 hover:opacity-100"
+                >×</span>
+              )}
+            </button>
+            <input
+              ref={dateRef}
+              type="date"
+              value={finishLine ?? ""}
+              onChange={(e) => setFinishLine(e.target.value || null)}
+              className="pointer-events-none absolute left-0 h-0 w-0 opacity-0"
+            />
+          </div>
+
+          {/* Hint that you can type dates naturally */}
+          {!finishLine && name.length === 0 && (
+            <span className="text-meta text-muted/40 italic">— type "by Dec" to set a date</span>
+          )}
+        </div>
+      </div>
+
+      {/* ── AI draft panel ── */}
+      {draftPhase !== "idle" && (
+        <div className="border-t border-line px-6 py-3">
+          {draftPhase === "thinking" && (
+            <div className="flex items-center gap-2">
+              <span className="shimmer inline-block text-body" style={{ color: accent }}>✦</span>
+              <span className="text-label text-muted">
+                {ASSISTANT_NAME} is drafting first tasks…
+              </span>
+            </div>
+          )}
+          {draftPhase === "ready" && proposal && proposal.length > 0 && (
             <div>
-              <div className="mb-2 flex items-baseline justify-between">
-                <span className="section-label" style={{ color: accent }}>✦ proposed backlog — uncheck what doesn’t fit</span>
-                <span className="mono text-[10px] text-muted">{acceptCount}/{proposal.length} included</span>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-meta font-semibold uppercase tracking-wide" style={{ color: accent }}>
+                  ✦ starter tasks
+                </span>
+                <span className="mono text-meta text-muted">{acceptCount}/{proposal.length} included</span>
               </div>
-              <div>
+              <div className="space-y-0.5">
                 {proposal.map((d, i) => (
-                  <div key={i} className="flex items-center gap-2.5 border-b border-line py-1.5 last:border-0">
+                  <div key={i} className="group flex items-center gap-2.5 rounded-md px-1 py-1 hover:bg-bg">
                     <button
-                      onClick={() => setProposal((p) => p!.map((x, j) => (j === i ? { ...x, included: !x.included } : x)))}
-                      className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-[9px]"
-                      style={{ borderColor: d.included ? accent : "var(--line)", background: d.included ? accent : "transparent", color: "#fff" }}
+                      onClick={() => setProposal((p) => p!.map((x, j) => j === i ? { ...x, included: !x.included } : x))}
+                      className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro text-white"
+                      style={{ borderColor: d.included ? accent : "var(--line)", background: d.included ? accent : "transparent" }}
                     >
                       {d.included ? "✓" : ""}
                     </button>
-                    <span className="shrink-0 text-[11px]" style={{ color: accent }}>{d.energy ? ENERGY_META[d.energy].icon : "·"}</span>
-                    <span className={`min-w-0 flex-1 truncate text-[12px] ${d.included ? "" : "text-muted line-through"}`}>{d.title}</span>
-                    {d.rationale && <span className="mono hidden max-w-[180px] shrink-0 truncate text-[9px] text-muted lg:inline" title={d.rationale}>{d.rationale}</span>}
-                    <span className="mono shrink-0 text-[10px] text-muted">{d.durationMins}m</span>
+                    <span className="shrink-0 text-label" style={{ color: accent }}>
+                      {d.energy ? ENERGY_META[d.energy].icon : "·"}
+                    </span>
+                    <span className={`min-w-0 flex-1 truncate text-caption ${d.included ? "text-ink" : "text-muted line-through"}`}>
+                      {d.title}
+                    </span>
+                    <span className="mono shrink-0 text-meta text-muted">{d.durationMins}m</span>
                   </div>
                 ))}
               </div>
-              <button onClick={() => void draftTasks()} disabled={drafting} className="fast mono mt-2 text-[10px] text-muted hover:text-ink disabled:opacity-40">
-                {drafting ? "reshaping…" : "↻ reshape"}
+              <button
+                onClick={() => { lastDraftKey.current = ""; scheduleDraft(name, outcome); }}
+                className="fast mono mt-1.5 text-meta text-muted hover:text-ink"
+              >
+                ↻ reshape
               </button>
             </div>
           )}
-          {aiNote && <div className="mt-2 text-[11px] text-muted">{aiNote}</div>}
         </div>
+      )}
 
-        {error && <div className="mt-3 text-[12px] text-signal">{error}</div>}
-      </div>
+      {error && <div className="px-6 pb-3 text-caption text-signal">{error}</div>}
 
+      {/* ── Footer ── */}
       <div className="flex items-center gap-2 border-t border-line bg-bg/40 px-6 py-3.5">
         <div className="flex-1" />
-        <button onClick={onClose} className="fast rounded-md border border-line px-3 py-1.5 text-[12px] font-medium text-ink hover:border-line-strong hover:bg-surface-2">
+        <button
+          onClick={onClose}
+          className="fast rounded-md border border-line px-3 py-1.5 text-caption font-medium text-ink hover:border-line-strong hover:bg-surface-2"
+        >
           Cancel
         </button>
         <button
           onClick={() => void submit()}
           disabled={!canCreate || busy}
-          className="fast rounded-md px-3.5 py-1.5 text-[12px] font-medium text-white shadow-sm transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
+          className="fast rounded-md px-3.5 py-1.5 text-caption font-medium text-white shadow-sm transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
           style={{ background: accent, boxShadow: canCreate ? `0 6px 16px -6px ${accent}` : "none" }}
         >
-          {busy ? "Creating…" : acceptCount > 0 ? `Create project + ${acceptCount} task${acceptCount === 1 ? "" : "s"} →` : "Create project →"}
+          {busy ? "Creating…" : acceptCount > 0 ? `Create + ${acceptCount} task${acceptCount === 1 ? "" : "s"} →` : "Create project →"}
         </button>
       </div>
     </Modal>

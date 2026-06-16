@@ -12,6 +12,9 @@ import {
   domainById,
   initiativeProgress,
   initiativeProgressAt,
+  isOpenStatus,
+  isProjectComplete,
+  isProjectInFlight,
   type VerticalData,
 } from "../../lib/vertical";
 import { fmtHours as hrs } from "../../lib/dates";
@@ -53,8 +56,8 @@ export default function SummitRitual({
 
   // header pipeline: live outputs along the canvas
   const gain = useMemo(() => quarterGain(data), [data]);
-  const active = data.initiatives.filter((i) => i.status === "active");
-  const paused = data.initiatives.filter((i) => i.status === "paused");
+  const active = data.initiatives.filter((i) => isProjectInFlight(i.status));
+  const paused = data.initiatives.filter((i) => i.status === "waiting");
   const dated = active.filter((i) => i.startDate || i.targetDate);
   const targetSum = Math.round(data.domains.reduce((s, d) => s + d.weeklyTargetHours, 0));
 
@@ -103,8 +106,8 @@ export default function SummitRitual({
         done ? (
           <div className="flex min-h-[50vh] items-center justify-center">
             <div className="max-w-[460px] text-center">
-              <div className="text-[22px] font-semibold tracking-tight">The quarter is shaped.</div>
-              <div className="mt-2 text-[13px] text-muted">
+              <div className="text-display font-semibold tracking-tight">The quarter is shaped.</div>
+              <div className="mt-2 text-body text-muted">
                 Vows re-affirmed, bets decided, months rough-cut. The Sunday flow takes it from here, week by week.
               </div>
               <div className="mt-6"><Btn kind="primary" onClick={onClose}>Back to the week</Btn></div>
@@ -126,9 +129,9 @@ function quarterGain(data: VerticalData) {
     (t) => t.status === "done" && t.completedAt && new Date(t.completedAt) >= cutoff,
   );
   const doneMins = done.reduce((s, t) => s + t.durationMins, 0);
-  const shipped = data.initiatives.filter((i) => i.status === "shipped");
+  const shipped = data.initiatives.filter((i) => isProjectComplete(i.status));
   const moved = data.initiatives
-    .filter((i) => i.status === "active")
+    .filter((i) => isProjectInFlight(i.status))
     .map((initiative) => ({
       initiative,
       from: initiativeProgressAt(data, initiative, cutoff),
@@ -165,10 +168,10 @@ function QuarterGainStep() {
       <StepTitle title="The Quarter's Gain" sub="Ninety days, measured from where you started. Including what shipped — gains need a place to live." />
 
       <div className="mb-6 rounded-md border border-line bg-surface px-5 py-4">
-        <div className="text-[16px] font-medium">
+        <div className="text-head font-medium">
           {gain.done.length} tasks done · {hrs(gain.doneMins)}h invested · {gain.shipped.length} initiative{gain.shipped.length === 1 ? "" : "s"} shipped
         </div>
-        {narrated && <div className="mt-1 text-[13px] text-muted">{narrated}</div>}
+        {narrated && <div className="mt-1 text-body text-muted">{narrated}</div>}
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -180,9 +183,9 @@ function QuarterGainStep() {
               const pct = target > 0 ? Math.min(100, (d.quarterHours / target) * 100) : 0;
               return (
                 <div key={d.id}>
-                  <div className="flex items-baseline justify-between text-[12px]">
+                  <div className="flex items-baseline justify-between text-caption">
                     <span><span style={{ color: d.color }}>{d.icon}</span> {d.name}</span>
-                    <span className="mono text-[10px] text-muted">{d.quarterHours}h / ~{Math.round(target)}h</span>
+                    <span className="mono text-meta text-muted">{d.quarterHours}h / ~{Math.round(target)}h</span>
                   </div>
                   <div className="mt-1 h-1.5 rounded-full bg-surface">
                     <div className="h-full rounded-full" style={{ width: `${pct}%`, background: d.color }} />
@@ -201,14 +204,14 @@ function QuarterGainStep() {
                 const domain = domainById(data, i.domainId);
                 return (
                   <div key={i.id} className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2">
-                    <span className="text-[13px]" style={{ color: domain?.color }}>✓</span>
-                    <span className="text-[12px] font-medium">{i.name}</span>
+                    <span className="text-body" style={{ color: domain?.color }}>✓</span>
+                    <span className="text-caption font-medium">{i.name}</span>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="text-[12px] text-muted italic">Nothing shipped yet this season — the bets below are how that changes.</div>
+            <div className="text-caption text-muted italic">Nothing shipped yet this season — the bets below are how that changes.</div>
           )}
 
           {gain.moved.length > 0 && (
@@ -218,8 +221,8 @@ function QuarterGainStep() {
                 {gain.moved.slice(0, 6).map(({ initiative, from, to }) => (
                   <div key={initiative.id} className="flex items-center gap-2.5 rounded-md border border-line bg-surface px-3 py-2">
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: domainById(data, initiative.domainId)?.color }} />
-                    <span className="min-w-0 flex-1 truncate text-[12px]">{initiative.name}</span>
-                    <span className="mono shrink-0 text-[11px]" style={{ color: "var(--accent)" }}>{from}% → {to}%</span>
+                    <span className="min-w-0 flex-1 truncate text-caption">{initiative.name}</span>
+                    <span className="mono shrink-0 text-label" style={{ color: "var(--accent)" }}>{from}% → {to}%</span>
                   </div>
                 ))}
               </div>
@@ -241,11 +244,11 @@ function VowsStep() {
         {data.domains.map((d) => (
           <div key={d.id} className="rounded-md border border-line bg-surface p-4">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-md text-[15px]" style={{ background: `${d.color}1a`, color: d.color }}>
+              <span className="flex h-8 w-8 items-center justify-center rounded-md text-head" style={{ background: `${d.color}1a`, color: d.color }}>
                 {d.icon}
               </span>
-              <span className="text-[14px] font-semibold">{d.name}</span>
-              <span className="mono ml-auto text-[10px] text-muted">
+              <span className="text-head font-semibold">{d.name}</span>
+              <span className="mono ml-auto text-meta text-muted">
                 <InlineNumber value={d.weeklyTargetHours} onChange={(v) => updateDomain(d.id, { weeklyTargetHours: v })} suffix="h/wk" />
               </span>
             </div>
@@ -254,10 +257,10 @@ function VowsStep() {
                 value={d.intention}
                 onChange={(v) => updateDomain(d.id, { intention: v })}
                 placeholder="State the standing intention…"
-                className="text-[13px] italic text-muted"
+                className="text-body italic text-muted"
               />
             </div>
-            <div className="mono mt-2 text-[10px] text-muted">{d.quarterHours}h this quarter</div>
+            <div className="mono mt-2 text-meta text-muted">{d.quarterHours}h this quarter</div>
           </div>
         ))}
       </div>
@@ -268,7 +271,7 @@ function VowsStep() {
 // ── 3 · The Portfolio — every bet gets a verdict; new bets get a blueprint ──
 function PortfolioStep({ onOpenBlueprint }: { onOpenBlueprint: () => void }) {
   const { data, updateInitiative } = useVertical();
-  const rows = data.initiatives.filter((i) => i.status === "active" || i.status === "paused");
+  const rows = data.initiatives.filter((i) => isOpenStatus(i.status));
 
   return (
     <div>
@@ -280,31 +283,31 @@ function PortfolioStep({ onOpenBlueprint }: { onOpenBlueprint: () => void }) {
         {rows.map((i) => {
           const domain = domainById(data, i.domainId);
           const pct = initiativeProgress(data, i);
-          const paused = i.status === "paused";
+          const paused = i.status === "waiting";
           return (
             <div key={i.id} className="flex items-center gap-3 rounded-md border border-line bg-surface px-3.5 py-2.5" style={{ opacity: paused ? 0.55 : 1 }}>
               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: domain?.color }} />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium">{i.name}</div>
-                <div className="mono truncate text-[9px] text-muted">{domain?.name}{i.outcome && ` · ${i.outcome}`}</div>
+                <div className="truncate text-body font-medium">{i.name}</div>
+                <div className="mono truncate text-micro text-muted">{domain?.name}{i.outcome && ` · ${i.outcome}`}</div>
               </div>
               <div className="hidden w-[120px] shrink-0 sm:block"><Bar pct={pct} color={domain?.color ?? "var(--accent)"} h={2} /></div>
-              <span className="mono shrink-0 text-[11px] text-muted">{pct}%</span>
+              <span className="mono shrink-0 text-label text-muted">{pct}%</span>
               <MomentumChip value={i.momentum} onChange={(m) => updateInitiative(i.id, { momentum: m })} />
               {paused ? (
-                <Btn onClick={() => updateInitiative(i.id, { status: "active" })}>resume</Btn>
+                <Btn onClick={() => updateInitiative(i.id, { status: "in_progress" })}>resume</Btn>
               ) : (
                 <>
-                  <Btn onClick={() => updateInitiative(i.id, { status: "shipped" })} title="Done — onto the trophy shelf">✓ ship</Btn>
-                  <Btn onClick={() => updateInitiative(i.id, { status: "paused" })}>pause</Btn>
-                  <Btn kind="signal" onClick={() => updateInitiative(i.id, { status: "dropped" })}>drop</Btn>
+                  <Btn onClick={() => updateInitiative(i.id, { status: "complete" })} title="Done — onto the trophy shelf">✓ ship</Btn>
+                  <Btn onClick={() => updateInitiative(i.id, { status: "waiting" })}>pause</Btn>
+                  <Btn kind="signal" onClick={() => updateInitiative(i.id, { status: "cancelled" })}>drop</Btn>
                 </>
               )}
             </div>
           );
         })}
         {rows.length === 0 && (
-          <div className="rounded-md border border-dashed border-line p-8 text-center text-[12px] text-muted">
+          <div className="rounded-md border border-dashed border-line p-8 text-center text-caption text-muted">
             No live bets. Blueprint the first one above.
           </div>
         )}
@@ -317,7 +320,7 @@ function PortfolioStep({ onOpenBlueprint }: { onOpenBlueprint: () => void }) {
 function MonthsStep() {
   const { data, updateInitiative } = useVertical();
   const items: TimelineItem[] = data.initiatives
-    .filter((i) => i.status === "active")
+    .filter((i) => isProjectInFlight(i.status))
     .map((i) => {
       const domain = domainById(data, i.domainId);
       return {
@@ -335,8 +338,8 @@ function MonthsStep() {
     <div>
       <StepTitle title="The Months" sub="Drag the bars: target dates staggered on purpose are plans; stacked on the same month they're wishes. Undated bets wait in the tray below — drag them onto the grid. Projects inherit the rhythm in their own floors." />
       <Timeline items={items} defaultZoom="quarter" persistKey="summit-months" />
-      {data.initiatives.filter((i) => i.status === "active").length === 0 && (
-        <div className="mt-3 text-[12px] text-muted italic">Nothing active to place.</div>
+      {data.initiatives.filter((i) => isProjectInFlight(i.status)).length === 0 && (
+        <div className="mt-3 text-caption text-muted italic">Nothing in flight to place.</div>
       )}
     </div>
   );
@@ -345,8 +348,8 @@ function MonthsStep() {
 function StepTitle({ title, sub }: { title: string; sub: string }) {
   return (
     <div className="mb-6">
-      <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
-      <p className="mt-1 max-w-[680px] text-[13px] text-muted">{sub}</p>
+      <h1 className="text-display font-semibold tracking-tight">{title}</h1>
+      <p className="mt-1 max-w-[680px] text-body text-muted">{sub}</p>
     </div>
   );
 }

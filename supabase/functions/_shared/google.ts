@@ -26,6 +26,10 @@ export interface CalendarEntry {
   channel_id?: string | null;
   resource_id?: string | null;
   channel_expires_at?: string | null;
+  /** When this calendar was last successfully synced. The poll fallback uses
+   *  it to catch up calendars whose webhook channel has gone silent — a
+   *  registered, unexpired channel is NOT proof Google is still delivering. */
+  last_synced_at?: string | null;
 }
 
 export async function markReconnect(accountId: string, userId: string, why: string) {

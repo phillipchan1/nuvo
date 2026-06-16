@@ -30,7 +30,7 @@ export default function TaskList({
         <div key={t.id} className="group flex items-center gap-2.5 border-b border-line py-2">
           <button
             onClick={() => toggleTask(t.id)}
-            className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-[10px]"
+            className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-meta"
             style={{
               borderColor: t.status === "done" ? accent : "var(--line)",
               background: t.status === "done" ? accent : "transparent",
@@ -48,17 +48,17 @@ export default function TaskList({
             onChange={(v) => updateTask(t.id, { title: v })}
             placeholder="Untitled task"
             autoFocusEmpty
-            className={`min-w-0 flex-1 text-[13px] ${t.status === "done" ? "text-muted line-through" : ""}`}
+            className={`min-w-0 flex-1 text-body ${t.status === "done" ? "text-muted line-through" : ""}`}
           />
 
-          <span className="mono shrink-0 text-[10px] text-muted">
+          <span className="mono shrink-0 text-meta text-muted">
             <InlineNumber value={t.durationMins} onChange={(v) => updateTask(t.id, { durationMins: v })} suffix="m" />
           </span>
 
           {/* the Week gate: ★ = committed to the current sprint */}
           <button
             onClick={() => toggleTaskSprint(t.id)}
-            className="mono w-10 shrink-0 text-right text-[11px]"
+            className="mono w-10 shrink-0 text-right text-label"
             style={{ color: t.sprint ? "var(--signal)" : "var(--line)" }}
             title={t.sprint ? "Remove from this week" : "Commit to this week"}
           >
@@ -71,9 +71,9 @@ export default function TaskList({
         </div>
       ))}
 
-      {tasks.length === 0 && <div className="py-2 text-[12px] text-muted italic">{emptyHint}</div>}
+      {tasks.length === 0 && <div className="py-2 text-caption text-muted italic">{emptyHint}</div>}
 
-      <button onClick={add} className="fast mono mt-2 text-[11px] text-muted hover:text-ink">+ add task</button>
+      <button onClick={add} className="fast mono mt-2 text-label text-muted hover:text-ink">+ add task</button>
     </div>
   );
 }
