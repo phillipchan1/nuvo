@@ -542,6 +542,15 @@ textarea:focus {
 .fc-event.evt-ics { cursor: default; }
 /* Slots: a dashed container (tint + border set inline) holding tasks */
 .fc-event.evt-slot { border-style: dashed !important; }
+
+/* RSVP status: dim events the user hasn't confirmed yet.
+   needsAction = invite received, no response → noticeably dimmed
+   tentative   = "maybe" → slightly dimmed + dashed border (mirrors slot style)
+   declined    = said no → heavily dimmed (still visible so the block shows as busy) */
+.fc-event.evt-pending  { opacity: 0.5; }
+.fc-event.evt-tentative { opacity: 0.7; border-style: dashed !important; }
+.fc-event.evt-declined  { opacity: 0.3; }
+
 /* Draft preview ghost block — shown while the DraftComposer popover is open */
 .fc-event.evt-draft-preview {
   opacity: 0.65;

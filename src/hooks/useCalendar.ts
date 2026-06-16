@@ -43,7 +43,7 @@ export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
     queryFn: async (): Promise<ExternalEvent[]> => {
       const { data, error } = await supabase
         .from("external_events")
-        .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy")
+        .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp")
         .lt("start_at", rangeEndISO)
         .gt("end_at", rangeStartISO);
       if (error) throw error;
@@ -95,7 +95,33 @@ export function useExternalEventMutations() {
       responseStatus: AttendeeStatus;
       sendNotifications?: boolean;
     }) => {
-      invokeQuiet("google-events", { action: "rsvp", eventId: id, responseStatus, sendNotifications });
+      const { error } = await supabase.functions.invoke("google-events", {
+        body: { action: "rsvp", eventId: id, responseStatus, sendNotifications },
+      });
+      if (error) throw error;
+    },
+    // Optimistically flip self_rsvp in the grid cache so the event de-dims
+    // immediately without waiting for the edge function round-trip.
+    onMutate: async ({ id, responseStatus }) => {
+      await qc.cancelQueries({ queryKey: ["external_events"] });
+      const previous = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
+      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
+        old?.map((e) => (e.id === id ? { ...e, self_rsvp: responseStatus } : e)),
+      );
+      return { previous };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.previous) {
+        ctx.previous.forEach(([key, data]) => qc.setQueryData(key, data));
+      }
+    },
+    onSuccess: (_d, vars) => {
+      // Confirm the optimistic value directly — don't invalidate external_events,
+      // which would trigger a re-fetch that could race with the DB write and
+      // flash the event back to its old opacity.
+      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
+        old?.map((e) => (e.id === vars.id ? { ...e, self_rsvp: vars.responseStatus } : e)),
+      );
     },
     onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: ["event_details", vars.id] });
@@ -165,7 +191,7 @@ export function useExternalEventMutations() {
 
   return {
     updateEvent: update.mutate,
-    rsvpEvent: rsvp.mutate,
+    rsvpEvent: rsvp.mutateAsync,
     createEvent: create.mutateAsync,
     deleteEvent: del.mutate,
     inviteToEvent: invite.mutateAsync,

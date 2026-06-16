@@ -193,6 +193,8 @@ export interface ExternalEvent {
   /** Master series event ID from Google — present on recurring instances.
    *  Populated once migration 00000000000007 is applied; omitted before that. */
   recurring_event_id?: string | null;
+  /** The user's own RSVP on this event (null = organizer / no attendees = confirmed). */
+  self_rsvp?: AttendeeStatus | null;
 }
 
 export type RecurrenceScope = "THIS" | "FOLLOWING" | "ALL";

@@ -120,31 +120,47 @@ Deno.serve(async (req) => {
     // ── RSVP: accept / decline / tentative ───────────────────────────────
     if (action === "rsvp") {
       const responseStatus = body.responseStatus as string;
-      const sendNotifications = body.sendNotifications !== false;
+      const sendUpdates = body.sendNotifications !== false ? "all" : "none";
       if (!["accepted", "declined", "tentative"].includes(responseStatus)) {
         return json({ error: "invalid responseStatus" }, 400);
       }
 
       // Fetch current event from Google to get the full attendees array.
-      const getRes = await gFetch(
-        account,
-        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(evt.provider_event_id)}`,
-      );
-      if (!getRes.ok) throw new Error(`fetch event: ${getRes.status}`);
-      const googleEvent = await getRes.json();
+      // Try calendar_id first; fall back to "primary" (invited events sometimes
+      // only appear under the user's primary calendar alias).
+      let googleEvent: Record<string, unknown> | null = null;
+      let rsvpCalId = evt.calendar_id;
+      for (const tryId of [evt.calendar_id, "primary"]) {
+        const getRes = await gFetch(
+          account,
+          `/calendars/${encodeURIComponent(tryId)}/events/${encodeURIComponent(evt.provider_event_id)}`,
+        );
+        if (getRes.ok) { googleEvent = await getRes.json(); rsvpCalId = tryId; break; }
+      }
+      if (!googleEvent) throw new Error("event not found in Google Calendar");
 
-      // Update only the self-attendee's responseStatus.
       // deno-lint-ignore no-explicit-any
-      const attendees = (googleEvent.attendees ?? []).map((a: any) =>
-        a.self ? { ...a, responseStatus } : a,
-      );
+      const attendees: any[] = (googleEvent.attendees as any[]) ?? [];
+      const hasSelf = attendees.some((a: any) => a.self);
+      const updated = hasSelf
+        ? attendees.map((a: any) => (a.self ? { ...a, responseStatus } : a))
+        : [...attendees, { email: account.email, responseStatus, self: true }];
 
       const patchRes = await gFetch(
         account,
-        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(evt.provider_event_id)}?sendNotifications=${sendNotifications}`,
-        { method: "PATCH", body: JSON.stringify({ attendees }) },
+        `/calendars/${encodeURIComponent(rsvpCalId)}/events/${encodeURIComponent(evt.provider_event_id)}?sendUpdates=${sendUpdates}`,
+        { method: "PATCH", body: JSON.stringify({ attendees: updated }) },
       );
-      if (!patchRes.ok) throw new Error(`rsvp: ${patchRes.status} ${await patchRes.text()}`);
+      if (!patchRes.ok) throw new Error(`rsvp failed (${patchRes.status}): ${await patchRes.text()}`);
+
+      // Refresh raw + self_rsvp so the slide-over and calendar grid update
+      // immediately without waiting for the next background sync.
+      const refreshed = await patchRes.json().catch(() => null);
+      await admin
+        .from("external_events")
+        .update({ self_rsvp: responseStatus, ...(refreshed ? { raw: refreshed } : {}) })
+        .eq("id", eventId)
+        .eq("user_id", user.id);
 
       await logSync("google", "event-rsvp", "ok", undefined, user.id);
       return json({ ok: true });
@@ -238,15 +254,15 @@ Deno.serve(async (req) => {
     }
 
     // scope="THIS" (or ALL fallback when recurringEventId is missing)
-    const body: Record<string, unknown> = {};
-    if (patch.title) body.summary = patch.title;
-    if (patch.start_at) body.start = { dateTime: patch.start_at };
-    if (patch.end_at) body.end = { dateTime: patch.end_at };
+    const gPatch: Record<string, unknown> = {};
+    if (patch.title) gPatch.summary = patch.title;
+    if (patch.start_at) gPatch.start = { dateTime: patch.start_at };
+    if (patch.end_at) gPatch.end = { dateTime: patch.end_at };
 
     const res = await gFetch(
       account,
       `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(evt.provider_event_id)}`,
-      { method: "PATCH", body: JSON.stringify(body) },
+      { method: "PATCH", body: JSON.stringify(gPatch) },
     );
     if (!res.ok) throw new Error(`google patch failed: ${res.status} ${await res.text()}`);
 

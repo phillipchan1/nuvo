@@ -31,6 +31,8 @@ type ExtendedProps = {
   slotDone?: number;
   slotTotal?: number;
   slotChildren?: { title: string; done: boolean }[];
+  /** User's own RSVP on this event. Null/undefined = organizer (treat as confirmed). */
+  selfRsvp?: string | null;
 };
 
 /** One consistent fill + border, tinted from an item's own color. */
@@ -308,6 +310,14 @@ export default function CalendarPane({
         const isIcs = account?.provider === "ics";
         const calColor =
           account?.calendars?.find((c) => c.id === e.calendar_id)?.color ?? "#7986cb";
+        // Dim events where the user hasn't confirmed yet.
+        const rsvp = e.self_rsvp ?? null;
+        const rsvpClass =
+          rsvp === "needsAction" ? "evt-pending"
+          : rsvp === "tentative" ? "evt-tentative"
+          : rsvp === "declined" ? "evt-declined"
+          : null;
+
         return {
           id: `evt:${e.id}`,
           title: e.title,
@@ -315,7 +325,10 @@ export default function CalendarPane({
           end: e.end_at,
           editable: isGoogle,
           durationEditable: isGoogle,
-          classNames: [isGoogle ? "evt-google" : isIcs ? "evt-ics" : "evt-m365"],
+          classNames: [
+            isGoogle ? "evt-google" : isIcs ? "evt-ics" : "evt-m365",
+            ...(rsvpClass ? [rsvpClass] : []),
+          ],
           // Google + ICS render as solid tinted blocks; only M365 keeps the
           // read-only diagonal hatch.
           ...(isGoogle || isIcs ? blockColors(calColor) : {}),
@@ -324,6 +337,7 @@ export default function CalendarPane({
             refId: e.id,
             calColor,
             barColor: calColor,
+            selfRsvp: rsvp,
             // Prefer the DB-derived field (post-migration); fall back to
             // detecting the Google instance ID pattern: base_YYYYMMDDTHHMMSSZ
             recurringEventId:

@@ -674,6 +674,7 @@ export function EventPopover({
   const [endAt, setEndAt] = useState(event.end_at);
   const [notify, setNotify] = useState(true);
   const [pendingRsvp, setPendingRsvp] = useState<AttendeeStatus | null>(null);
+  const [rsvpError, setRsvpError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [addingGuests, setAddingGuests] = useState(false);
   const [newGuests, setNewGuests] = useState<string[]>([]);
@@ -726,9 +727,15 @@ export function EventPopover({
   const myAttendee = raw?.attendees?.find((a) => a.self);
   const myResponse: AttendeeStatus = pendingRsvp ?? (myAttendee?.responseStatus ?? "needsAction");
 
-  const handleRsvp = (status: AttendeeStatus) => {
+  const handleRsvp = async (status: AttendeeStatus) => {
     setPendingRsvp(status);
-    eventMutations.rsvpEvent({ id: event.id, responseStatus: status, sendNotifications: notify });
+    setRsvpError(null);
+    try {
+      await eventMutations.rsvpEvent({ id: event.id, responseStatus: status, sendNotifications: notify });
+    } catch (e) {
+      setRsvpError(e instanceof Error ? e.message : "RSVP failed");
+      setPendingRsvp(null);
+    }
   };
 
   const joinEntry = raw?.conferenceData?.entryPoints?.find((ep) => ep.entryPointType === "video");
@@ -926,24 +933,30 @@ export function EventPopover({
                   />
                   Notify organizer
                 </label>
+                {rsvpError && (
+                  <p className="text-meta text-signal">{rsvpError}</p>
+                )}
               </div>
             )}
 
             {/* Organizer + Guests */}
             {(raw?.organizer || hasAttendees || editable) && (
-              <div className="space-y-2 border-t border-line pt-3">
+              <div className="space-y-3 border-t border-line pt-3">
                 {raw?.organizer && (
-                  <div className="flex items-center gap-2 text-caption">
-                    <span className="shrink-0 text-meta text-muted uppercase tracking-wider font-semibold w-14">Organizer</span>
-                    <span className="text-text">{raw.organizer.displayName ?? raw.organizer.email}</span>
+                  <div className="space-y-0.5">
+                    <div className="section-label">Organizer</div>
+                    <span className="text-body text-text">
+                      {raw.organizer.displayName ?? raw.organizer.email}
+                    </span>
                   </div>
                 )}
                 {hasAttendees && (
                   <div className="space-y-0.5">
-                    <div className="section-label !p-0 mb-1">
+                    <div className="section-label mb-1">
                       Guests ({raw!.attendees!.length})
                     </div>
-                    {raw!.attendees!.map((a) => (
+                    {/* Filter out the organizer — they're already shown above */}
+                    {raw!.attendees!.filter((a) => !a.organizer).map((a) => (
                       <AttendeeRow key={a.email} a={a} />
                     ))}
                     {(() => {
