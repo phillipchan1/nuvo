@@ -2,7 +2,7 @@
 // your whole day, and now tells it to you like a person. Deterministic and
 // instant (no model round-trip); the numbers underneath are the real day.
 
-import { fmtMins, type DayRead, type Suggestion } from "./now";
+import { fmtMins, OPEN_OFFER_MINS, type DayRead, type Suggestion } from "./now";
 
 export interface Brief {
   greeting: string;
@@ -93,22 +93,13 @@ export function composeBrief({
     parts.push(s);
   }
 
-  // the plan I'm holding for you
+  // Nuvo doesn't push unplanned work. It only flags a genuinely big open block —
+  // and leaves the choice to you. No big block → the day speaks for itself.
   if (top) {
-    const due = top.task.deadlineDaysAway != null && top.task.deadlineDaysAway <= 1 ? ", since it's due tomorrow" : "";
-    if (!firstGap) {
-      // no open block left today — it's a tomorrow item
-      parts.push(
-        dayRead.current
-          ? `Nothing opens up before you're done — "${top.task.title}" is one to carry to tomorrow.`
-          : `No open block left today — "${top.task.title}" is first up tomorrow.`,
-      );
-    } else if (dayRead.current) {
-      parts.push(`Your first clear block is ${at(firstGap.start)} — I'm holding it for "${top.task.title}"${due}.`);
-    } else if (firstGap.start.getTime() > now.getTime() + 60_000) {
-      parts.push(`At ${at(firstGap.start)} you're free — "${top.task.title}" is what I'd line up${due}.`);
-    } else {
-      parts.push(`Right now I'd start "${top.task.title}"${due}.`);
+    const focusGap = dayRead.gaps.reduce<typeof firstGap>((best, g) => (!best || g.mins > best.mins ? g : best), null);
+    if (focusGap && focusGap.mins >= OPEN_OFFER_MINS) {
+      const whenStr = focusGap.start.getTime() <= now.getTime() + 60_000 ? "right now" : `at ${at(focusGap.start)}`;
+      parts.push(`You've a ${fmtMins(focusGap.mins)} open block ${whenStr} — say the word and I'll line something up.`);
     }
   }
 

@@ -14,7 +14,7 @@ import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useAgent } from "../../hooks/useAgent";
 import { endOf, todayISO } from "../../lib/dates";
 import { domainById, faithfulness, initiativeById, initiativeProgress, taskDomainColor, type Domain, type VerticalData } from "../../lib/vertical";
-import { fmtMins, rankNow, readDay, type BusyBlock, type DayRead, type Gap, type NowContext, type Suggestion } from "../../lib/now";
+import { fmtMins, OPEN_OFFER_MINS, rankNow, readDay, type BusyBlock, type DayRead, type Gap, type NowContext, type Suggestion } from "../../lib/now";
 import { composeWeek, fmtSlot, type ComposeResult, type DayContext } from "../../lib/compose";
 import { composeBrief, type Brief } from "../../lib/brief";
 import type { AgentMessage } from "../../lib/agentTypes";
@@ -121,21 +121,44 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
 
   const dayRead = useMemo(() => readDay(now, busy, windowStart, windowEnd), [now, busy, windowStart, windowEnd]);
   const activeGap = dayRead.gaps[0] ?? null;
+  // The block worth filling: the largest open stretch ahead. "Now" only offers
+  // a suggestion when this is genuinely big — otherwise it stays out of the way
+  // and just reflects the planned day, rather than pushing unplanned work.
+  const focusGap = useMemo(
+    () => dayRead.gaps.reduce<Gap | null>((best, g) => (!best || g.mins > best.mins ? g : best), null),
+    [dayRead.gaps],
+  );
+  const worthOffering = !!focusGap && focusGap.mins >= OPEN_OFFER_MINS;
 
   const ctx = useMemo<NowContext>(() => {
     const clockLabel = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    const gapMins = activeGap?.mins ?? (now.getHours() >= 18 ? 90 : 120);
+    const gapMins = (focusGap ?? activeGap)?.mins ?? (now.getHours() >= 18 ? 90 : 120);
     const gapLabel = dayRead.current
       ? `in “${dayRead.current.title}” for ${Math.max(1, Math.round((dayRead.current.end.getTime() - now.getTime()) / 60_000))}m more`
       : dayRead.next
         ? `${Math.max(1, Math.round((dayRead.next.start.getTime() - now.getTime()) / 60_000))}m till ${dayRead.next.title}`
         : "open horizon — nothing scheduled";
     return { gapMins, deepWindow: dayRead.deepWindow, clockLabel, gapLabel, tired };
-  }, [now, activeGap, dayRead, tired]);
+  }, [now, focusGap, activeGap, dayRead, tired]);
 
   const suggestions = useMemo(() => rankNow(data, ctx), [data, ctx]);
+  // A suggestion (only ever shown on opt-in) targets the big open block and must
+  // fit it; fall back to the full list only when nothing fits.
+  const gapMins = focusGap?.mins ?? Number.POSITIVE_INFINITY;
+  const fitting = useMemo(() => suggestions.filter((s) => s.task.durationMins <= gapMins), [suggestions, gapMins]);
+  const pool = fitting.length ? fitting : suggestions;
   const [idx, setIdx] = useState(0);
-  const top = suggestions[Math.min(idx, Math.max(0, suggestions.length - 1))] ?? null;
+  const top = pool[Math.min(idx, Math.max(0, pool.length - 1))] ?? null;
+  const topFits = !!top && top.task.durationMins <= gapMins;
+  const focusIsNow = !!focusGap && focusGap.start.getTime() <= now.getTime() + 60_000;
+  // Frame as a future block when you're mid-meeting, the big block is later, or
+  // the best task needs more room than that block — never a misfit "start now".
+  const futureFrame = !!dayRead.current || !focusIsNow || (!!top && !topFits);
+  const targetGap = topFits
+    ? focusGap
+    : top
+      ? dayRead.gaps.find((g) => g.mins >= top.task.durationMins) ?? focusGap
+      : focusGap;
   const derivedActive = useMemo<Suggestion | null>(() => {
     if (!nowTaskId) return null;
     const inSug = suggestions.find((s) => s.task.id === nowTaskId);
@@ -277,25 +300,14 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
             <UpNext now={now} items={dayRead.upcoming} className={dayRead.current ? "mt-5" : ""} />
           )}
 
-          {restDay && !showPicks ? (
-            // The brief above is already Nuvo's rest message — so here we add
-            // nothing that repeats it, only a quiet way in if you want one.
-            suggestions.length > 0 ? (
-              <div className={dayRead.current || dayRead.upcoming.length ? "mt-6" : "mt-1"}>
-                <button
-                  onClick={() => setShowPicks(true)}
-                  className="fast text-caption text-muted underline-offset-2 hover:text-accent hover:underline"
-                >
-                  Want to get a jump on something? →
-                </button>
-              </div>
-            ) : null
-          ) : top ? (
+          {/* By default Now does NOT push unplanned work — it only suggests when
+              you've opted in (showPicks). The card targets the big open block. */}
+          {showPicks && top ? (
             <div className={dayRead.current || dayRead.upcoming.length ? "mt-6" : ""}>
               <div className="section-label mb-2">
-                {dayRead.current
-                  ? activeGap
-                    ? `When you're free · ${activeGap.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${fmtMins(activeGap.mins)}`
+                {futureFrame
+                  ? targetGap
+                    ? `${dayRead.current ? "When you're free" : "Your next block"} · ${targetGap.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${fmtMins(targetGap.mins)}`
                     : "Line up next"
                   : restDay
                     ? "If you want to pick something up"
@@ -321,7 +333,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
                   </div>
                 </div>
 
-                {!dayRead.current && <GapAnchor activeGap={activeGap} current={dayRead.current} accent={top.domain?.color} />}
+                {!futureFrame && <GapAnchor activeGap={activeGap} current={dayRead.current} accent={top.domain?.color} />}
 
                 <div className="mt-3 space-y-1.5">
                   {top.reasons.map((r, i) => (
@@ -333,18 +345,18 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {dayRead.current ? (
+                  {futureFrame ? (
                     <>
                       <Btn kind="primary" onClick={onOpenDay}>
-                        {activeGap ? `plan for ${activeGap.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} →` : "open day planner"}
+                        {targetGap ? `plan for ${targetGap.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} →` : "open day planner"}
                       </Btn>
-                      <Btn onClick={() => top && setNowMoment("focus", top.task.id)}>start now</Btn>
-                      <Btn onClick={() => setIdx((i) => (i + 1) % suggestions.length)}>not this</Btn>
+                      <Btn onClick={() => top && setNowMoment("focus", top.task.id)}>start anyway</Btn>
+                      <Btn onClick={() => setIdx((i) => (i + 1) % pool.length)}>not this</Btn>
                     </>
                   ) : (
                     <>
                       <Btn kind="primary" onClick={() => top && setNowMoment("focus", top.task.id)}>▶ start · {top.task.durationMins}m</Btn>
-                      <Btn onClick={() => setIdx((i) => (i + 1) % suggestions.length)}>not now</Btn>
+                      <Btn onClick={() => setIdx((i) => (i + 1) % pool.length)}>not now</Btn>
                       <Btn onClick={onOpenDay}>open day planner</Btn>
                     </>
                   )}
@@ -352,29 +364,33 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
               </div>
 
               {suggestions.length > 1 && (() => {
-                // Now is a decision, not a list: show at most two ranked
-                // alternates, and tuck the rest of the backlog behind one quiet
-                // link to the day planner (where browsing belongs).
-                const alts = suggestions.map((s, i) => ({ s, i })).filter((x) => x.i !== idx).slice(0, 2);
+                // Now is a decision, not a list: at most two ranked alternates
+                // that also fit the window, then the rest of the backlog behind
+                // one quiet link to the day planner (where browsing belongs).
+                const alts = pool.map((s, i) => ({ s, i })).filter((x) => x.i !== idx).slice(0, 2);
                 const more = suggestions.length - 1 - alts.length;
                 return (
                   <div className="mt-3.5">
-                    <div className="section-label mb-1.5">Or</div>
-                    <div className="space-y-1">
-                      {alts.map(({ s, i }) => (
-                        <button
-                          key={s.task.id}
-                          onClick={() => setIdx(i)}
-                          className="fast group flex w-full items-center gap-2 text-left text-caption text-muted hover:text-ink"
-                        >
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: s.domain?.color ?? "var(--line-strong)" }} />
-                          <span className="truncate group-hover:underline">{s.task.title}</span>
-                          <span className="mono shrink-0 text-meta text-line">{s.task.durationMins}m</span>
-                        </button>
-                      ))}
-                    </div>
+                    {alts.length > 0 && (
+                      <>
+                        <div className="section-label mb-1.5">Or</div>
+                        <div className="space-y-1">
+                          {alts.map(({ s, i }) => (
+                            <button
+                              key={s.task.id}
+                              onClick={() => setIdx(i)}
+                              className="fast group flex w-full items-center gap-2 text-left text-caption text-muted hover:text-ink"
+                            >
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: s.domain?.color ?? "var(--line-strong)" }} />
+                              <span className="truncate group-hover:underline">{s.task.title}</span>
+                              <span className="mono shrink-0 text-meta text-line">{s.task.durationMins}m</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                     {more > 0 && (
-                      <button onClick={onOpenDay} className="fast mono mt-2 text-meta text-muted hover:text-accent">
+                      <button onClick={onOpenDay} className={`fast mono text-meta text-muted hover:text-accent ${alts.length ? "mt-2" : ""}`}>
                         + {more} more ready · open day planner →
                       </button>
                     )}
@@ -382,14 +398,22 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
                 );
               })()}
             </div>
-          ) : (
-            !dayRead.current && (
-              <div className="rounded-lg border border-line bg-surface-2 p-6 text-center text-body text-muted">
-                Nothing ready — inbox zero.
-                <div className="mt-3"><Btn onClick={onOpenDay}>open day planner</Btn></div>
-              </div>
-            )
-          )}
+          ) : suggestions.length > 0 && (restDay || worthOffering) && focusGap ? (
+            // A genuinely big open block — Nuvo offers, it doesn't push.
+            <OpenInvite
+              focusGap={focusGap}
+              now={now}
+              restDay={restDay}
+              inMeeting={!!dayRead.current}
+              spaced={!!(dayRead.current || dayRead.upcoming.length)}
+              onAccept={() => setShowPicks(true)}
+            />
+          ) : suggestions.length === 0 && !dayRead.current ? (
+            <div className="mt-6 rounded-lg border border-line bg-surface-2 p-6 text-center text-body text-muted">
+              Nothing ready — inbox zero.
+              <div className="mt-3"><Btn onClick={onOpenDay}>open day planner</Btn></div>
+            </div>
+          ) : null}
 
           <DomainBalance domains={data.domains} restDay={restDay} />
         </div>
@@ -609,6 +633,41 @@ function Bubble({ message }: { message: AgentMessage }) {
             ))}
           </ul>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// When you've a genuinely big open block, Nuvo doesn't push a task — it asks.
+// The default Now stays out of your way; this is the only door into a pick.
+function OpenInvite({
+  focusGap, now, restDay, inMeeting, spaced, onAccept,
+}: {
+  focusGap: Gap;
+  now: Date;
+  restDay: boolean;
+  inMeeting: boolean;
+  spaced: boolean;
+  onAccept: () => void;
+}) {
+  const isNow = focusGap.start.getTime() <= now.getTime() + 60_000;
+  const at = focusGap.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const when = isNow ? "right now" : inMeeting ? `at ${at}, once you're free` : `at ${at}`;
+  return (
+    <div className={spaced ? "mt-6" : "mt-2"}>
+      <div className="rounded-lg border border-dashed border-line bg-surface-2/50 p-4">
+        <div className="text-body">
+          {restDay
+            ? `It's a day off — but you've ${fmtMins(focusGap.mins)} clear ${when} if you want it.`
+            : `You've a ${fmtMins(focusGap.mins)} open block ${when}.`}
+        </div>
+        <button
+          onClick={onAccept}
+          className="fast mt-2.5 inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft px-2.5 py-1 text-label font-medium text-accent hover:bg-accent/15"
+        >
+          <span>✦</span> Want me to find something valuable? →
+        </button>
       </div>
     </div>
   );

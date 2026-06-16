@@ -92,6 +92,10 @@ export interface DayRead {
 
 const MIN_GAP = 10; // spans shorter than this aren't worth offering as focus time
 
+/** Now stays out of your way until you have a genuinely big open block. Below
+ *  this, it doesn't push unplanned work — it just reflects the day. Tunable. */
+export const OPEN_OFFER_MINS = 90;
+
 export function readDay(now: Date, busy: BusyBlock[], windowStart: Date, windowEnd: Date): DayRead {
   const sorted = [...busy].sort((a, b) => a.start.getTime() - b.start.getTime());
   const onNow = sorted.filter((b) => b.start <= now && now < b.end);
