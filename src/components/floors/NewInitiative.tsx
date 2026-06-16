@@ -16,12 +16,15 @@ export default function NewInitiative({
   onClose,
   onCreated,
   initialDomainId,
+  initialName,
   onBlueprint,
 }: {
   onClose: () => void;
   onCreated: (initiativeId: string) => void;
   /** The domain to pre-select (e.g. the active filter on the floor). */
   initialDomainId?: string | null;
+  /** Carried over when expanding from the fast composer. */
+  initialName?: string;
   /** Hand the half-typed bet to the AI Blueprint flow instead. */
   onBlueprint?: (seed: BlueprintSeed) => void;
 }) {
@@ -29,7 +32,7 @@ export default function NewInitiative({
   const domains = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
 
   const [domainId, setDomainId] = useState(initialDomainId || domains[0]?.id || "");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [outcome, setOutcome] = useState("");
   const [description, setDescription] = useState("");
   // default the finish line to quarter end — nudge every bet toward a deadline

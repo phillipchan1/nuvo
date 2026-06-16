@@ -28,18 +28,21 @@ export default function NewProject({
   onCreated,
   initialDomainId,
   initialInitiativeId,
+  initialName,
 }: {
   onClose: () => void;
   onCreated: (projectId: string) => void;
   initialDomainId?: string | null;
   initialInitiativeId?: string | null;
+  /** Carried over when expanding from the fast composer. */
+  initialName?: string;
 }) {
   const { data, addProject, addTasks, addDomain } = useVertical();
   const domains = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
 
   const [domainId, setDomainId] = useState(initialDomainId || domains[0]?.id || "");
   const [initiativeId, setInitiativeId] = useState<string | null>(initialInitiativeId ?? null);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [outcome, setOutcome] = useState("");
   const [description, setDescription] = useState("");
   const [finishLine, setFinishLine] = useState<string | null>(null);
