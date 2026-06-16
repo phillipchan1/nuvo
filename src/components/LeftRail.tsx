@@ -198,7 +198,7 @@ export default function LeftRail({
         .filter((id): id is string => Boolean(id));
       const input: NewTaskInput = {
         title: p.title || text,
-        do_date: p.doDate,
+        do_date: p.doDate ?? (tab === "today" ? todayISO(now) : null),
         start_time: p.startTime?.toISOString() ?? null,
         duration_minutes: p.durationMinutes,
         priority: p.priority,

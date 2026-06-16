@@ -27,7 +27,11 @@ Deno.serve(async (req) => {
 
     const errors: string[] = [];
     for (const account of accounts ?? []) {
-      const fn = account.provider === "google" ? "google-sync" : "m365-sync";
+      const fn = account.provider === "google"
+        ? "google-sync"
+        : account.provider === "m365"
+        ? "m365-sync"
+        : "ics-sync";
       const body = account.provider === "google"
         ? { mode: fullSync ? "full" : "incremental", accountId: account.id }
         : { accountId: account.id };

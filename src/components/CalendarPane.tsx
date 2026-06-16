@@ -4,7 +4,7 @@ import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { Draggable } from "@fullcalendar/interaction";
-import type { DatesSetArg, DateSelectArg, EventClickArg, EventContentArg, EventDropArg } from "@fullcalendar/core";
+import type { DatesSetArg, DateClickArg, DateSelectArg, EventClickArg, EventContentArg, EventDropArg } from "@fullcalendar/core";
 import type { EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
@@ -20,7 +20,7 @@ import DraftComposer, { type CreateKind } from "./DraftComposer";
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth";
 
 type ExtendedProps = {
-  kind: "task" | "google" | "m365" | "slot";
+  kind: "task" | "google" | "m365" | "ics" | "slot";
   refId: string;
   calColor?: string;
   /** Solid color of the 3px accent bar (domain / calendar / slot color). */
@@ -305,6 +305,7 @@ export default function CalendarPane({
       .map((e) => {
         const account = accountById.get(e.account_id);
         const isGoogle = account?.provider === "google";
+        const isIcs = account?.provider === "ics";
         const calColor =
           account?.calendars?.find((c) => c.id === e.calendar_id)?.color ?? "#7986cb";
         return {
@@ -314,11 +315,12 @@ export default function CalendarPane({
           end: e.end_at,
           editable: isGoogle,
           durationEditable: isGoogle,
-          classNames: [isGoogle ? "evt-google" : "evt-m365"],
-          // Google gets the unified tint; M365 leaves fill/border to CSS (hatch).
-          ...(isGoogle ? blockColors(calColor) : {}),
+          classNames: [isGoogle ? "evt-google" : isIcs ? "evt-ics" : "evt-m365"],
+          // Google + ICS render as solid tinted blocks; only M365 keeps the
+          // read-only diagonal hatch.
+          ...(isGoogle || isIcs ? blockColors(calColor) : {}),
           extendedProps: {
-            kind: isGoogle ? ("google" as const) : ("m365" as const),
+            kind: isGoogle ? ("google" as const) : isIcs ? ("ics" as const) : ("m365" as const),
             refId: e.id,
             calColor,
             barColor: calColor,
@@ -369,6 +371,21 @@ export default function CalendarPane({
 
     return [...taskEvents, ...externalEvents, ...slotEvents];
   }, [tasks, events, slots, slotTasks, hidden, accountById, now, taskAccent, slotTitle]);
+
+  // Ghost block shown while the DraftComposer popover is open from a click
+  // (drag already gets selectMirror; click has no selection on the grid).
+  const draftPreviewEvent = draft
+    ? {
+        id: "draft:preview",
+        title: "",
+        start: draft.start.toISOString(),
+        end: draft.end.toISOString(),
+        editable: false,
+        classNames: ["evt-task", "evt-draft-preview"],
+        ...blockColors("var(--accent)"),
+        extendedProps: { kind: "task" as const, refId: "", barColor: "var(--accent)", recurring: false },
+      }
+    : null;
 
   const findTask = (id: string) => tasksRef.current.find((t) => t.id === id);
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
@@ -545,7 +562,19 @@ export default function CalendarPane({
     });
   };
 
-  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null) => {
+  const onDateClick = (arg: DateClickArg) => {
+    if (isMonth || draft) return;
+    const start = arg.date;
+    const end = new Date(start.getTime() + 30 * 60_000);
+    const je = arg.jsEvent;
+    let kind: CreateKind = createMode;
+    if (je?.altKey) kind = "event";
+    else if (je?.metaKey || je?.ctrlKey) kind = "slot";
+    if (kind === "event" && !googleAvailable) kind = "task";
+    setDraft({ start, end, kind, point: { x: je.clientX, y: je.clientY } });
+  };
+
+  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[] = []) => {
     if (!draft) return;
     const { start, end, point } = draft;
     const duration = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
@@ -588,6 +617,7 @@ export default function CalendarPane({
           start_at: start.toISOString(),
           end_at: end.toISOString(),
           ...(recurrence ? { recurrence: toGoogleRRULE(recurrence) } : {}),
+          ...(attendees.length ? { attendees } : {}),
         });
       } else if (recurrence) {
         await recurrenceMutations.createSeries({
@@ -753,9 +783,13 @@ export default function CalendarPane({
               done ? "border-accent bg-accent text-white" : "bg-surface"
             }`}
             style={done ? undefined : { borderColor: bar }}
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+            }}
             onClick={(e) => {
               e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
               if (task) done ? mutations.uncomplete(task) : mutations.complete(task);
             }}
           >
@@ -966,7 +1000,7 @@ export default function CalendarPane({
           height="100%"
           expandRows={!isMonth}
           dayMaxEvents={isMonth ? 4 : false}
-          events={fcEvents}
+          events={draftPreviewEvent ? [...fcEvents, draftPreviewEvent] : fcEvents}
           editable
           droppable
           selectable={!isMonth}
@@ -974,6 +1008,7 @@ export default function CalendarPane({
           unselectAuto={false}
           selectMinDistance={5}
           select={onSelect}
+          dateClick={onDateClick}
           eventReceive={onReceive}
           eventDrop={onDrop}
           eventResize={onResize}

@@ -5,7 +5,7 @@ import type { RecurrenceRule } from "./recurrence";
 // inbox, never on Today, never rolls) · planned = dated · done/trashed.
 export type TaskStatus = "inbox" | "backlog" | "planned" | "done" | "trashed";
 export type TaskPriority = "none" | "low" | "medium" | "high";
-export type CalendarProvider = "google" | "m365";
+export type CalendarProvider = "google" | "m365" | "ics";
 
 export interface Task {
   id: string;

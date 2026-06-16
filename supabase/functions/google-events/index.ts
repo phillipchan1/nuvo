@@ -30,13 +30,16 @@ Deno.serve(async (req) => {
       const account = (await loadGoogleAccounts()).find((a) => a.user_id === user.id);
       if (!account) return json({ error: "no google account connected" }, 400);
 
-      const res = await gFetch(account, `/calendars/primary/events`, {
+      const attendees = Array.isArray(body.attendees) ? (body.attendees as string[]) : [];
+
+      const res = await gFetch(account, `/calendars/primary/events?sendUpdates=all`, {
         method: "POST",
         body: JSON.stringify({
           summary: title,
           start: { dateTime: new Date(start_at).toISOString() },
           end: { dateTime: new Date(end_at).toISOString() },
           ...(recurrence?.length ? { recurrence } : {}),
+          ...(attendees.length ? { attendees: attendees.map((email) => ({ email })) } : {}),
         }),
       });
       if (!res.ok) throw new Error(`create event failed: ${res.status} ${await res.text()}`);
@@ -74,6 +77,45 @@ Deno.serve(async (req) => {
 
     const account = evt.calendar_accounts as unknown as GoogleAccount & { provider: string };
     if (account.provider !== "google") return json({ error: "event is read-only" }, 400);
+
+    // ── Invite: add guests to an existing event ──────────────────────────
+    if (action === "invite") {
+      const newEmails = Array.isArray(body.attendees) ? (body.attendees as string[]) : [];
+      if (!newEmails.length) return json({ error: "attendees required" }, 400);
+
+      const getRes = await gFetch(
+        account,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(evt.provider_event_id)}`,
+      );
+      if (!getRes.ok) throw new Error(`fetch event: ${getRes.status}`);
+      const googleEvent = await getRes.json();
+
+      // deno-lint-ignore no-explicit-any
+      const existingEmails = new Set((googleEvent.attendees ?? []).map((a: any) => a.email as string));
+      const merged = [
+        ...(googleEvent.attendees ?? []),
+        ...newEmails.filter((e) => !existingEmails.has(e)).map((email) => ({ email })),
+      ];
+
+      const patchRes = await gFetch(
+        account,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(evt.provider_event_id)}?sendUpdates=all`,
+        { method: "PATCH", body: JSON.stringify({ attendees: merged }) },
+      );
+      if (!patchRes.ok) throw new Error(`invite: ${patchRes.status} ${await patchRes.text()}`);
+
+      // Refresh local raw so the attendees list updates without waiting for sync.
+      const refreshed = await patchRes.json().catch(() => null);
+      if (refreshed) {
+        await admin
+          .from("external_events")
+          .update({ raw: refreshed })
+          .eq("id", eventId);
+      }
+
+      await logSync("google", "event-invite", "ok", undefined, user.id);
+      return json({ ok: true });
+    }
 
     // ── RSVP: accept / decline / tentative ───────────────────────────────
     if (action === "rsvp") {

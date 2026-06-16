@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { formatHourLabel } from "../lib/dates";
 import type { CalendarAccount, UserSettings } from "../lib/types";
@@ -336,6 +337,7 @@ function ConnectionsPane({
   updateSettings: (patch: Partial<UserSettings>) => void;
   accounts: CalendarAccount[];
 }) {
+  const qc = useQueryClient();
   const connect = async (provider: "google" | "m365") => {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
@@ -346,7 +348,49 @@ function ConnectionsPane({
   };
   const disconnect = async (id: string) => {
     await supabase.from("calendar_accounts").delete().eq("id", id);
+    qc.invalidateQueries({ queryKey: ["calendar_accounts"] });
   };
+
+  // ── ICS subscription (read-only, no OAuth) ──
+  const [showIcs, setShowIcs] = useState(false);
+  const [icsUrl, setIcsUrl] = useState("");
+  const [icsLabel, setIcsLabel] = useState("");
+  const [icsBusy, setIcsBusy] = useState(false);
+  const [icsError, setIcsError] = useState<string | null>(null);
+
+  const subscribeIcs = async () => {
+    const url = icsUrl.trim();
+    if (!url || icsBusy) return;
+    setIcsBusy(true);
+    setIcsError(null);
+    const { error } = await supabase.functions.invoke("ics-subscribe", {
+      body: { url, label: icsLabel.trim() || undefined },
+    });
+    if (error) {
+      let msg = error.message;
+      // The function returns { error } with a 4xx — pull the real message out.
+      // deno-lint-ignore no-explicit-any
+      try {
+        const body = await (error as any).context?.json?.();
+        if (body?.error) msg = body.error;
+      } catch { /* keep the generic message */ }
+      setIcsError(msg);
+      setIcsBusy(false);
+      return;
+    }
+    setIcsBusy(false);
+    setIcsUrl("");
+    setIcsLabel("");
+    setShowIcs(false);
+    qc.invalidateQueries({ queryKey: ["calendar_accounts"] });
+  };
+
+  const providerMeta = (p: CalendarAccount["provider"]) =>
+    p === "google"
+      ? { letter: "G", name: "Google", color: "#4285F4" }
+      : p === "m365"
+        ? { letter: "M", name: "Microsoft 365", color: "#2563EB" }
+        : { letter: "↻", name: "Subscribed calendar", color: "#0EA5E9" };
 
   const hidden = new Set(settings?.hidden_calendar_ids ?? []);
   const toggleCalendar = (calId: string) => {
@@ -364,13 +408,13 @@ function ConnectionsPane({
             <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
               <span
                 className="flex h-6 w-6 items-center justify-center rounded-md text-label font-semibold text-white"
-                style={{ background: a.provider === "google" ? "#4285F4" : "#2563EB" }}
+                style={{ background: providerMeta(a.provider).color }}
               >
-                {a.provider === "google" ? "G" : "M"}
+                {providerMeta(a.provider).letter}
               </span>
               <div className="min-w-0">
                 <div className="text-body font-medium leading-tight">
-                  {a.provider === "google" ? "Google" : "Microsoft 365"}
+                  {providerMeta(a.provider).name}
                 </div>
                 <div className="mono truncate text-label text-muted">{a.email}</div>
               </div>
@@ -384,9 +428,20 @@ function ConnectionsPane({
                 {a.sync_direction === "two_way" ? "two-way" : "read-only"}
               </span>
               <div className="flex-1" />
-              {a.needs_reconnect && (
-                <Btn kind="signal" onClick={() => connect(a.provider)}>
+              {a.needs_reconnect && a.provider !== "ics" && (
+                <Btn kind="signal" onClick={() => connect(a.provider as "google" | "m365")}>
                   Reconnect
+                </Btn>
+              )}
+              {a.needs_reconnect && a.provider === "ics" && (
+                <Btn
+                  kind="signal"
+                  onClick={() => {
+                    setIcsLabel(a.email);
+                    setShowIcs(true);
+                  }}
+                >
+                  Update link
                 </Btn>
               )}
               <Btn onClick={() => disconnect(a.id)}>Disconnect</Btn>
@@ -425,14 +480,57 @@ function ConnectionsPane({
           </div>
         ))}
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Btn kind="primary" onClick={() => connect("google")}>
             {accounts.some((a) => a.provider === "google") ? "+ Add Google account" : "Connect Google"}
           </Btn>
           {!accounts.some((a) => a.provider === "m365") && (
             <Btn onClick={() => connect("m365")}>Connect Microsoft 365</Btn>
           )}
+          {!showIcs && (
+            <Btn onClick={() => setShowIcs(true)}>Subscribe via calendar link</Btn>
+          )}
         </div>
+
+        {showIcs && (
+          <div className="space-y-2 rounded-lg border border-line bg-surface-2 p-3">
+            <div className="text-caption font-medium">Subscribe via calendar link</div>
+            <p className="text-label text-muted">
+              Paste a published <span className="mono">.ics</span> URL (e.g. Outlook → Settings → Calendar →
+              Shared calendars → Publish). Read-only, refreshes every ~15 min. The link grants full read
+              access to that calendar, so treat it like a password — it's stored encrypted.
+            </p>
+            <input
+              value={icsUrl}
+              onChange={(e) => setIcsUrl(e.target.value)}
+              placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics"
+              className="mono w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-label outline-none focus:border-accent"
+              autoFocus
+            />
+            <input
+              value={icsLabel}
+              onChange={(e) => setIcsLabel(e.target.value)}
+              placeholder="Label (optional) — e.g. Work calendar"
+              className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-label outline-none focus:border-accent"
+              onKeyDown={(e) => e.key === "Enter" && subscribeIcs()}
+            />
+            {icsError && <div className="text-label text-signal">{icsError}</div>}
+            <div className="flex gap-2">
+              <Btn kind="primary" disabled={icsBusy || !icsUrl.trim()} onClick={subscribeIcs}>
+                {icsBusy ? "Subscribing…" : "Subscribe"}
+              </Btn>
+              <Btn
+                disabled={icsBusy}
+                onClick={() => {
+                  setShowIcs(false);
+                  setIcsError(null);
+                }}
+              >
+                Cancel
+              </Btn>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

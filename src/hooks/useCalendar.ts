@@ -132,15 +132,18 @@ export function useExternalEventMutations() {
       start_at,
       end_at,
       recurrence,
+      attendees,
     }: {
       title: string;
       start_at: string;
       end_at: string;
       /** Google RRULE lines, e.g. ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"]. */
       recurrence?: string[];
+      /** Email addresses to invite. */
+      attendees?: string[];
     }) => {
       const { data, error } = await supabase.functions.invoke("google-events", {
-        body: { action: "create", title, start_at, end_at, recurrence },
+        body: { action: "create", title, start_at, end_at, recurrence, attendees },
       });
       if (error) throw error;
       return data;
@@ -148,11 +151,24 @@ export function useExternalEventMutations() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });
 
+  const invite = useMutation({
+    mutationFn: async ({ id, attendees }: { id: string; attendees: string[] }) => {
+      const { error } = await supabase.functions.invoke("google-events", {
+        body: { action: "invite", eventId: id, attendees },
+      });
+      if (error) throw error;
+    },
+    onSettled: (_d, _e, vars) => {
+      qc.invalidateQueries({ queryKey: ["event_details", vars.id] });
+    },
+  });
+
   return {
     updateEvent: update.mutate,
     rsvpEvent: rsvp.mutate,
     createEvent: create.mutateAsync,
     deleteEvent: del.mutate,
+    inviteToEvent: invite.mutateAsync,
   };
 }
 

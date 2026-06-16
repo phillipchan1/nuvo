@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { GuestsInput } from "./GuestsInput";
 import ReactMarkdown from "react-markdown";
 import { createPortal } from "react-dom";
 import { format } from "date-fns";
@@ -674,6 +675,9 @@ export function EventPopover({
   const [notify, setNotify] = useState(true);
   const [pendingRsvp, setPendingRsvp] = useState<AttendeeStatus | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [addingGuests, setAddingGuests] = useState(false);
+  const [newGuests, setNewGuests] = useState<string[]>([]);
+  const [inviting, setInviting] = useState(false);
   const popRef = useRef<HTMLDivElement>(null);
 
   const { data: raw, isLoading: detailsLoading } = useEventDetails(event.id);
@@ -926,7 +930,7 @@ export function EventPopover({
             )}
 
             {/* Organizer + Guests */}
-            {(raw?.organizer || hasAttendees) && (
+            {(raw?.organizer || hasAttendees || editable) && (
               <div className="space-y-2 border-t border-line pt-3">
                 {raw?.organizer && (
                   <div className="flex items-center gap-2 text-caption">
@@ -957,6 +961,59 @@ export function EventPopover({
                         </div>
                       );
                     })()}
+                  </div>
+                )}
+
+                {/* Add guest (editable Google events only) */}
+                {editable && (
+                  <div>
+                    {!addingGuests ? (
+                      <button
+                        type="button"
+                        onClick={() => setAddingGuests(true)}
+                        className="fast flex items-center gap-1.5 text-meta text-accent hover:opacity-80"
+                      >
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                          <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                        </svg>
+                        Add guest
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <GuestsInput
+                          value={newGuests}
+                          onChange={setNewGuests}
+                          placeholder="Name or email…"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={newGuests.length === 0 || inviting}
+                            onClick={async () => {
+                              if (!newGuests.length) return;
+                              setInviting(true);
+                              try {
+                                await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests });
+                                setNewGuests([]);
+                                setAddingGuests(false);
+                              } finally {
+                                setInviting(false);
+                              }
+                            }}
+                            className="fast rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-white hover:opacity-90 disabled:opacity-40"
+                          >
+                            {inviting ? "Sending…" : "Send invite"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setAddingGuests(false); setNewGuests([]); }}
+                            className="fast text-caption text-muted hover:text-ink"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
