@@ -150,7 +150,13 @@ export function fmtMins(mins: number): string {
 const ENERGY_GLYPH: Record<string, string> = { deep: "◆", decide: "▲", delegate: "⇢", quick: "•" };
 
 export function rankNow(data: VerticalData, ctx: NowContext): Suggestion[] {
-  const candidates = data.tasks.filter((t) => t.status === "ready");
+  // Now recommends from work you've actually considered — filed backlog,
+  // committed, or parented — not the raw inbox capture pile (that's the Sweep's
+  // job, a different altitude). Fall back to everything ready only if filtering
+  // would leave you with nothing to do.
+  const ready = data.tasks.filter((t) => t.status === "ready");
+  const considered = ready.filter((t) => !t.inbox);
+  const candidates = considered.length ? considered : ready;
 
   const scored = candidates.map((task): Suggestion => {
     const domain = domainById(data, task.domainId);

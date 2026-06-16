@@ -13,8 +13,8 @@ import { useSettings } from "../../hooks/useSettings";
 import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useAgent } from "../../hooks/useAgent";
 import { endOf, todayISO } from "../../lib/dates";
-import { faithfulness, initiativeProgress, taskDomainColor, type Domain, type VerticalData } from "../../lib/vertical";
-import { fmtMins, rankNow, readDay, type BusyBlock, type DayRead, type Gap, type NowContext } from "../../lib/now";
+import { domainById, faithfulness, initiativeById, initiativeProgress, taskDomainColor, type Domain, type VerticalData } from "../../lib/vertical";
+import { fmtMins, rankNow, readDay, type BusyBlock, type DayRead, type Gap, type NowContext, type Suggestion } from "../../lib/now";
 import { composeWeek, fmtSlot, type ComposeResult, type DayContext } from "../../lib/compose";
 import { composeBrief, type Brief } from "../../lib/brief";
 import type { AgentMessage } from "../../lib/agentTypes";
@@ -136,10 +136,21 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
   const suggestions = useMemo(() => rankNow(data, ctx), [data, ctx]);
   const [idx, setIdx] = useState(0);
   const top = suggestions[Math.min(idx, Math.max(0, suggestions.length - 1))] ?? null;
-  const active = useMemo(
-    () => (nowTaskId ? suggestions.find((s) => s.task.id === nowTaskId) ?? null : null),
-    [nowTaskId, suggestions],
-  );
+  const derivedActive = useMemo<Suggestion | null>(() => {
+    if (!nowTaskId) return null;
+    const inSug = suggestions.find((s) => s.task.id === nowTaskId);
+    if (inSug) return inSug;
+    // The task may have just left the ready pool (you completed it) — rebuild a
+    // minimal suggestion from the full task list so the focus/done moment holds.
+    const t = data.tasks.find((x) => x.id === nowTaskId);
+    if (!t) return null;
+    return { task: t, domain: domainById(data, t.domainId), initiative: initiativeById(data, t.initiativeId), score: 0, reasons: [] };
+  }, [nowTaskId, suggestions, data]);
+  // Keep the last resolved suggestion so the focus/done moment survives even if
+  // the task drops out of both the ready pool AND the cache mid-completion.
+  const lastActiveRef = useRef<Suggestion | null>(null);
+  if (derivedActive) lastActiveRef.current = derivedActive;
+  const active = derivedActive ?? (nowTaskId && lastActiveRef.current?.task.id === nowTaskId ? lastActiveRef.current : null);
   const brief = useMemo(() => composeBrief({ now, name: NAME, dayRead, top, tired, restDay }), [now, dayRead, top, tired, restDay]);
 
   // ── Order my day — pull from the inbox/week and time-block today around the
@@ -291,10 +302,23 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
                     : "Right now"}
               </div>
               <div className="rise rounded-lg border bg-surface p-4" style={{ borderColor: top.domain?.color, borderWidth: 1.5 }}>
-                <div className="text-display font-medium leading-snug">{top.task.title}</div>
-                <div className="mono mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-label">
-                  {top.domain && <span style={{ color: top.domain.color }}>{top.domain.name}</span>}
-                  {top.initiative && <><span className="text-line">·</span><span className="text-muted">{top.initiative.name}</span></>}
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => { toggleTask(top.task.id); setNowMoment("done", top.task.id); }}
+                    title="Mark done"
+                    aria-label="Mark done"
+                    className="group/check fast mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 hover:scale-105"
+                    style={{ borderColor: top.domain?.color ?? "var(--line-strong)" }}
+                  >
+                    <span className="text-[11px] leading-none opacity-0 transition-opacity group-hover/check:opacity-100" style={{ color: top.domain?.color }}>✓</span>
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-display font-medium leading-snug">{top.task.title}</div>
+                    <div className="mono mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-label">
+                      {top.domain && <span style={{ color: top.domain.color }}>{top.domain.name}</span>}
+                      {top.initiative && <><span className="text-line">·</span><span className="text-muted">{top.initiative.name}</span></>}
+                    </div>
+                  </div>
                 </div>
 
                 {!dayRead.current && <GapAnchor activeGap={activeGap} current={dayRead.current} accent={top.domain?.color} />}
@@ -327,12 +351,17 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
                 </div>
               </div>
 
-              {suggestions.length > 1 && (
-                <div className="mt-3.5">
-                  <div className="section-label mb-1.5">Or, also ready</div>
-                  <div className="space-y-1">
-                    {suggestions.map((s, i) =>
-                      i === idx ? null : (
+              {suggestions.length > 1 && (() => {
+                // Now is a decision, not a list: show at most two ranked
+                // alternates, and tuck the rest of the backlog behind one quiet
+                // link to the day planner (where browsing belongs).
+                const alts = suggestions.map((s, i) => ({ s, i })).filter((x) => x.i !== idx).slice(0, 2);
+                const more = suggestions.length - 1 - alts.length;
+                return (
+                  <div className="mt-3.5">
+                    <div className="section-label mb-1.5">Or</div>
+                    <div className="space-y-1">
+                      {alts.map(({ s, i }) => (
                         <button
                           key={s.task.id}
                           onClick={() => setIdx(i)}
@@ -342,11 +371,16 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
                           <span className="truncate group-hover:underline">{s.task.title}</span>
                           <span className="mono shrink-0 text-meta text-line">{s.task.durationMins}m</span>
                         </button>
-                      ),
+                      ))}
+                    </div>
+                    {more > 0 && (
+                      <button onClick={onOpenDay} className="fast mono mt-2 text-meta text-muted hover:text-accent">
+                        + {more} more ready · open day planner →
+                      </button>
                     )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           ) : (
             !dayRead.current && (
