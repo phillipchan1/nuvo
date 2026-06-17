@@ -15,6 +15,7 @@ export default function TaskRow({
   selected,
   multiSelected,
   draggable,
+  dragGroup,
   onSelect,
   onOpen,
   onToggleDone,
@@ -30,6 +31,9 @@ export default function TaskRow({
   selected: boolean;
   multiSelected?: boolean;
   draggable: boolean;
+  /** Comma-joined ids of the whole multi-selection, set on each selected row so
+   *  dragging any one of them carries the group onto the calendar. */
+  dragGroup?: string;
   onSelect: () => void;
   onOpen: (anchor: DOMRect) => void;
   onToggleDone: () => void;
@@ -109,6 +113,7 @@ export default function TaskRow({
   return (
     <div
       data-task-drag={draggable ? task.id : undefined}
+      data-task-drag-group={dragGroup}
       data-task-title={task.title}
       data-task-duration={task.duration_minutes ?? ""}
       onMouseDown={handleMouseDown}

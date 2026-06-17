@@ -269,12 +269,19 @@ export default function LeftRail({
     setSelectedId(t.id);
   };
 
+  // When ≥2 rows are selected, every selected row carries the full group (in
+  // list order) so dragging any one of them drops the whole set on the calendar.
+  const dragGroupIds =
+    selectedIds.size > 1 ? visible.filter((t) => selectedIds.has(t.id)).map((t) => t.id) : [];
+  const dragGroupStr = dragGroupIds.length > 1 ? dragGroupIds.join(",") : undefined;
+
   const rowProps = (t: Task) => ({
     task: t,
     labels,
     selected: t.id === selectedId,
     multiSelected: selectedIds.has(t.id),
     draggable: true,
+    dragGroup: selectedIds.has(t.id) ? dragGroupStr : undefined,
     accent: accentOf(t),
     meta: metaOf(t),
     onSelect: () => plainSelect(t.id),

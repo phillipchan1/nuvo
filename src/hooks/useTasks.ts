@@ -176,16 +176,17 @@ export function useTaskMutations() {
     create: create.mutateAsync,
     patchTask,
 
-    /** Plan a task for a day without a time block. */
+    /** Plan a task for a day without a time block (and out of any slot). */
     planFor: (t: Task, dateISO: string) =>
-      patchTask(t.id, { status: "planned", do_date: dateISO, start_time: null }),
+      patchTask(t.id, { status: "planned", do_date: dateISO, start_time: null, slot_id: null }),
 
-    /** Block a task on the calendar at a concrete start. */
+    /** Block a task on the calendar at a concrete start (and out of any slot). */
     block: (t: Task, start: Date, durationMinutes?: number) =>
       patchTask(t.id, {
         status: "planned",
         do_date: todayLocalISO(start),
         start_time: start.toISOString(),
+        slot_id: null,
         duration_minutes: durationMinutes ?? t.duration_minutes ?? DEFAULT_DURATION_MINUTES,
       }),
 

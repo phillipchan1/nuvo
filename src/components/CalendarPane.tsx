@@ -35,11 +35,12 @@ type ExtendedProps = {
   selfRsvp?: string | null;
 };
 
-/** One consistent fill + border, tinted from an item's own color. */
-function blockColors(c: string) {
+/** One consistent fill + border, tinted from an item's own color. `fillPct`
+ *  lets a class read stronger (tasks/slots) or quieter (events) than the base. */
+function blockColors(c: string, fillPct = 14) {
   return {
-    backgroundColor: `color-mix(in srgb, ${c} 14%, var(--surface))`,
-    borderColor: `color-mix(in srgb, ${c} 30%, var(--line))`,
+    backgroundColor: `color-mix(in srgb, ${c} ${fillPct}%, var(--surface))`,
+    borderColor: `color-mix(in srgb, ${c} ${Math.round(fillPct * 2.1)}%, var(--line))`,
   };
 }
 
@@ -197,6 +198,10 @@ export default function CalendarPane({
     point: { x: number; y: number };
   } | null>(null);
 
+  // The clicked block, brought to the front of any overlap (full width, on top)
+  // so it's readable. Click-driven (not hover); cleared by clicking empty grid.
+  const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
+
   // Pending recurrence scope choice — set when a recurring event is
   // dropped or resized; cleared on confirm/cancel.
   const [recurrencePrompt, setRecurrencePrompt] = useState<null | {
@@ -260,35 +265,67 @@ export default function CalendarPane({
       // A few px of slop so a click (or a cmd/shift multi-select) on a rail row
       // isn't misread as the start of a drag onto the grid.
       minDistance: 6,
-      eventData: (el) => ({
-        title: el.getAttribute("data-task-title") ?? "task",
-        duration: minutesToDuration(
-          Number(el.getAttribute("data-task-duration")) || DEFAULT_DURATION_MINUTES,
-        ),
-        create: true,
-      }),
+      eventData: (el) => {
+        const groupCount = el.getAttribute("data-task-drag-group")?.split(",").length ?? 1;
+        return {
+          title:
+            groupCount > 1 ? `${groupCount} tasks` : (el.getAttribute("data-task-title") ?? "task"),
+          duration: minutesToDuration(
+            Number(el.getAttribute("data-task-duration")) || DEFAULT_DURATION_MINUTES,
+          ),
+          create: true,
+        };
+      },
     });
     return () => draggable.destroy();
   }, [railRef]);
 
-  // While a task is being dragged, light up the day cell under the cursor so the
-  // "anytime" drop target is obvious. Tracked at the document level so it covers
-  // both an in-calendar block and an external rail row; armed only for tasks
-  // (the only thing the all-day row accepts), so dragging a slot/event is quiet.
-  const [dragging, setDragging] = useState(false);
+  // Live drop-target feedback while a task is being dragged. Classes are toggled
+  // imperatively (no React state) so a drag never re-renders CalendarPane
+  // mid-gesture (which could disturb FullCalendar's own drag/drop):
+  //   body.cal-dragging        → the day cells glow as "anytime" drop targets
+  //   body.over-slot           → fade the drag ghost (it's "dropping into" a slot)
+  //   .evt-slot.slot-drop-target → the hovered slot lights up, ready to accept
+  //   .rail-drop-active        → the left rail is highlighted as the Inbox zone
+  // The slot/rail are hit-tested per move via elementFromPoint (the ghost is
+  // pointer-events:none, so it sees the element underneath). Armed for tasks
+  // only — dragging an event/slot itself stays quiet.
   useEffect(() => {
     let armed = false;
     let active = false;
+    let overSlot: HTMLElement | null = null;
+    const reset = () => {
+      document.body.classList.remove("cal-dragging", "over-slot");
+      overSlot?.classList.remove("slot-drop-target");
+      overSlot = null;
+      railRef.current?.classList.remove("rail-drop-active");
+    };
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement | null;
       armed = Boolean(el?.closest?.("[data-task-drag], .evt-task"));
     };
-    const onMove = () => {
-      if (armed && !active) { active = true; setDragging(true); }
+    const onMove = (e: PointerEvent) => {
+      if (!armed) return;
+      if (!active) { active = true; document.body.classList.add("cal-dragging"); }
+      const under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const slotEl = (under?.closest?.(".fc-event.evt-slot") ?? null) as HTMLElement | null;
+      if (slotEl !== overSlot) {
+        overSlot?.classList.remove("slot-drop-target");
+        slotEl?.classList.add("slot-drop-target");
+        overSlot = slotEl;
+      }
+      document.body.classList.toggle("over-slot", Boolean(slotEl));
+      const rail = railRef.current;
+      if (rail) {
+        const rr = rail.getBoundingClientRect();
+        const onRail =
+          e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom;
+        rail.classList.toggle("rail-drop-active", onRail && !slotEl);
+      }
     };
     const onUp = () => {
       armed = false;
-      if (active) { active = false; setDragging(false); }
+      if (active) { active = false; reset(); }
     };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("pointermove", onMove, true);
@@ -297,8 +334,9 @@ export default function CalendarPane({
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("pointerup", onUp, true);
+      reset();
     };
-  }, []);
+  }, [railRef]);
 
   useEffect(() => {
     const api = calRef.current?.getApi();
@@ -316,7 +354,11 @@ export default function CalendarPane({
       .filter((t) => t.start_time)
       .map((t) => {
         const overdue = t.status !== "done" && isOverdue(t, now);
-        const color = overdue ? "var(--signal)" : (taskAccent(t) ?? "var(--accent)");
+        // Tasks share one identity — the violet accent — so "this is my work"
+        // reads at a glance against the calendar's own (arbitrarily coloured)
+        // events. The domain thread lives on in the thin bar; overdue goes ember.
+        const fill = overdue ? "var(--signal)" : "var(--accent)";
+        const bar = overdue ? "var(--signal)" : (taskAccent(t) ?? "var(--accent)");
         return {
           id: `task:${t.id}`,
           title: t.title,
@@ -324,11 +366,11 @@ export default function CalendarPane({
           end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }).toISOString(),
           editable: true,
           classNames: ["evt-task", t.status === "done" ? "evt-done" : ""].filter(Boolean),
-          ...blockColors(color),
+          ...blockColors(fill, 22),
           extendedProps: {
             kind: "task" as const,
             refId: t.id,
-            barColor: color,
+            barColor: bar,
             recurring: Boolean(t.recurrence_id),
           },
         };
@@ -348,7 +390,6 @@ export default function CalendarPane({
           t.status !== "trashed",
       )
       .map((t) => {
-        const color = taskAccent(t) ?? "var(--accent)";
         return {
           id: `task:${t.id}`,
           title: t.title,
@@ -357,11 +398,11 @@ export default function CalendarPane({
           editable: true,
           durationEditable: false,
           classNames: ["evt-task", "evt-allday"],
-          ...blockColors(color),
+          ...blockColors("var(--accent)", 20),
           extendedProps: {
             kind: "task" as const,
             refId: t.id,
-            barColor: color,
+            barColor: taskAccent(t) ?? "var(--accent)",
             recurring: Boolean(t.recurrence_id),
           },
         };
@@ -394,9 +435,9 @@ export default function CalendarPane({
             isGoogle ? "evt-google" : isIcs ? "evt-ics" : "evt-m365",
             ...(rsvpClass ? [rsvpClass] : []),
           ],
-          // Google + ICS render as solid tinted blocks; only M365 keeps the
-          // read-only diagonal hatch.
-          ...(isGoogle || isIcs ? blockColors(calColor) : {}),
+          // Google + ICS render as quiet tinted blocks (the "given" calendar, so
+          // your bolder tasks read on top); only M365 keeps the read-only hatch.
+          ...(isGoogle || isIcs ? blockColors(calColor, 13) : {}),
           extendedProps: {
             kind: isGoogle ? ("google" as const) : isIcs ? ("ics" as const) : ("m365" as const),
             refId: e.id,
@@ -436,7 +477,10 @@ export default function CalendarPane({
         editable: true,
         durationEditable: true,
         classNames: ["evt-slot"],
-        ...blockColors("var(--slot)"),
+        // A clearly teal container — stronger than a task/event tint (14%) so a
+        // slot is unmistakable. Border comes from .evt-slot (dashed teal) in CSS.
+        backgroundColor: "color-mix(in srgb, var(--slot) 26%, var(--surface))",
+        borderColor: "color-mix(in srgb, var(--slot) 55%, var(--line))",
         extendedProps: {
           kind: "slot" as const,
           refId: s.id,
@@ -468,6 +512,19 @@ export default function CalendarPane({
       }
     : null;
 
+  // Tag the clicked block so CSS can lift it to full width above its overlap.
+  const eventsWithFocus = useMemo(
+    () =>
+      focusedEventId
+        ? fcEvents.map((e) =>
+            e.id === focusedEventId
+              ? { ...e, classNames: [...(e.classNames ?? []), "evt-focused"] }
+              : e,
+          )
+        : fcEvents,
+    [fcEvents, focusedEventId],
+  );
+
   const findTask = (id: string) => tasksRef.current.find((t) => t.id === id);
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
   const findSlot = (id: string) => slotsRef.current.find((s) => s.id === id);
@@ -493,26 +550,39 @@ export default function CalendarPane({
   };
 
   const onReceive = (info: EventReceiveArg) => {
-    const taskId = info.draggedEl.getAttribute("data-task-drag");
+    const el = info.draggedEl;
     const start = info.event.start;
     const allDay = info.event.allDay;
     info.revert();
-    const task = taskId ? findTask(taskId) : undefined;
-    if (!task || !start) return;
+    // A multi-selection drags as a group (data-task-drag-group); a single row is
+    // just its own id. Resolve to the list of tasks being dropped.
+    const group = el.getAttribute("data-task-drag-group");
+    const ids = group ? group.split(",") : [el.getAttribute("data-task-drag") ?? ""];
+    const tasks = ids.map((id) => findTask(id)).filter((t): t is Task => Boolean(t));
+    if (!tasks.length || !start) return;
+
     // Dropped on the all-day row → planned for that day, time TBD (no block).
     if (allDay) {
-      mutations.planFor(task, toDateISO(start));
+      const date = toDateISO(start);
+      tasks.forEach((t) => mutations.planFor(t, date));
       return;
     }
-    // Dropped onto a slot's time range → it joins the slot (no block of its
-    // own); otherwise it becomes a normal time block at the drop time.
-    const t = start.getTime();
+    // Dropped onto a slot's time range → join the slot (no block of their own).
+    const t0 = start.getTime();
     const slot = slotsRef.current.find((s) => {
       const ss = new Date(s.start_time).getTime();
-      return t >= ss && t < ss + s.duration_minutes * 60_000;
+      return t0 >= ss && t0 < ss + s.duration_minutes * 60_000;
     });
-    if (slot) mutations.assignToSlot(task, slot);
-    else mutations.block(task, start);
+    if (slot) {
+      tasks.forEach((t) => mutations.assignToSlot(t, slot));
+      return;
+    }
+    // Otherwise time-block them — a group stacks back-to-back from the drop time.
+    let cursor = new Date(start);
+    tasks.forEach((t) => {
+      mutations.block(t, cursor);
+      cursor = new Date(cursor.getTime() + (t.duration_minutes ?? DEFAULT_DURATION_MINUTES) * 60_000);
+    });
   };
 
   const onDrop = (info: EventDropArg) => {
@@ -626,7 +696,8 @@ export default function CalendarPane({
     info.revert();
   };
 
-  // Drag a block back onto the left rail → unblock (keeps do_date)
+  // Drag a block (or "anytime" chip) back onto the left rail → return it to the
+  // Inbox. (To just drop the time but keep the day, drag it to the anytime row.)
   const onDragStop = (info: EventDragStopArg) => {
     const rail = railRef.current;
     if (!rail) return;
@@ -636,7 +707,7 @@ export default function CalendarPane({
       const { kind, refId } = info.event.extendedProps as ExtendedProps;
       if (kind === "task") {
         const task = findTask(refId);
-        if (task) mutations.unblock(task);
+        if (task) mutations.backToInbox(task);
       }
     }
   };
@@ -645,6 +716,7 @@ export default function CalendarPane({
   // type up front (⌥ event, ⌘/Ctrl slot); otherwise the toolbar create mode.
   const onSelect = (arg: DateSelectArg) => {
     if (arg.allDay) return; // the all-day row is a drop target, not a create surface
+    setFocusedEventId(null);
     const je = arg.jsEvent;
     let kind: CreateKind = createMode;
     if (je?.altKey) kind = "event";
@@ -659,6 +731,7 @@ export default function CalendarPane({
   };
 
   const onDateClick = (arg: DateClickArg) => {
+    setFocusedEventId(null); // clicking empty space drops the focused block
     if (isMonth || draft || arg.allDay) return;
     const start = arg.date;
     const end = new Date(start.getTime() + 30 * 60_000);
@@ -746,6 +819,17 @@ export default function CalendarPane({
 
   const onClick = (info: EventClickArg) => {
     const { kind, refId } = info.event.extendedProps as ExtendedProps;
+    // Clicking the checkbox toggles done — handle it in FullCalendar's own click
+    // (FC's native eventClick fires before React's onClick on the rendered
+    // checkbox, and opening the detail re-renders it away), and never focus/open.
+    if (kind === "task" && (info.jsEvent?.target as HTMLElement | null)?.closest("[data-done-toggle]")) {
+      const task = findTask(refId);
+      if (task) task.status === "done" ? mutations.uncomplete(task) : mutations.complete(task);
+      return;
+    }
+    // A click brings the block to the front of any overlap (full width, on top)
+    // and opens its detail.
+    setFocusedEventId(info.event.id);
     if (kind === "task") {
       const task = findTask(refId);
       if (task) onOpenTask(task, info.el.getBoundingClientRect());
@@ -890,18 +974,15 @@ export default function CalendarPane({
         <div className={`flex min-w-0 flex-1 gap-1.5 overflow-hidden px-1.5 ${padY} ${compact ? "items-center" : "items-start"}`}>
           <button
             aria-label="toggle done"
+            data-done-toggle
             className={`fast mt-[1px] flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border ${
               done ? "border-accent bg-accent text-white" : "bg-surface"
             }`}
             style={done ? undefined : { borderColor: bar }}
             onMouseDown={(e) => {
+              // Don't let a press on the checkbox begin an event drag.
               e.stopPropagation();
               e.nativeEvent.stopImmediatePropagation();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
-              if (task) done ? mutations.uncomplete(task) : mutations.complete(task);
             }}
           >
             {done && (
@@ -1061,7 +1142,7 @@ export default function CalendarPane({
       {/* ── FullCalendar ────────────────────────────────────────────────── */}
       <div
         ref={wrapRef}
-        className={`min-h-0 flex-1 p-2 ${dragging ? "cal-dragging" : ""}`}
+        className="min-h-0 flex-1 p-2"
         style={{ "--nuvo-hour": `${pxPerHour}px` } as React.CSSProperties}
       >
         <FullCalendar
@@ -1112,7 +1193,7 @@ export default function CalendarPane({
           height="100%"
           expandRows={!isMonth}
           dayMaxEvents={isMonth ? 4 : false}
-          events={draftPreviewEvent ? [...fcEvents, draftPreviewEvent] : fcEvents}
+          events={draftPreviewEvent ? [...eventsWithFocus, draftPreviewEvent] : eventsWithFocus}
           editable
           droppable
           selectable={!isMonth}

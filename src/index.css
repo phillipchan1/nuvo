@@ -533,6 +533,19 @@ textarea:focus {
   box-shadow: var(--shadow-1);
   filter: brightness(1.015);
 }
+/* Overlapping blocks get sliced into thin columns you can't read. CLICKING one
+   marks it `.evt-focused`, which lifts its harness to the FULL column width, on
+   top of its neighbours, so its title and time are legible — it stays there
+   until you click another block or empty grid. FC sets `inset: top right% bottom
+   left%` per slice; we override the horizontal slice to 0 and raise z-index. */
+.fc-timegrid-event-harness:has(.evt-focused) {
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 50 !important;
+}
+.fc-event.evt-focused {
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-2);
+}
 .fc-event.evt-done { opacity: 0.5; }
 
 /* M365: striped, dashed, display-only (fill + border come from CSS here, not
@@ -584,11 +597,11 @@ textarea:focus {
   pointer-events: none;
 }
 
-/* ── Drop-target highlight while dragging a task ─────────────────────────
-   `.cal-dragging` is set on the wrapper for the duration of a task drag. Because
-   FullCalendar drags with pointer (not HTML5) events, :hover keeps updating, so
-   the day cell under the cursor lights up — making the "anytime" drop target
-   (the all-day row in week/day, the whole cell in month) obvious. */
+/* ── Drop-target feedback while dragging a task ──────────────────────────
+   `body.cal-dragging` is set for the duration of a task drag. FullCalendar drags
+   with pointer (not HTML5) events, so :hover keeps updating — the day cell under
+   the cursor lights up as the "anytime" drop target (all-day row in week/day,
+   the whole cell in month). */
 .cal-dragging .fc-daygrid-day {
   transition: background-color var(--d-fast) var(--ease-out);
 }
@@ -599,6 +612,28 @@ textarea:focus {
 /* And a quieter column glow when aiming at a specific time in the grid. */
 .cal-dragging .fc-timegrid-col:hover {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+/* Dragging over a slot → the slot lights up solid teal (ready to accept) and the
+   drag ghost fades to almost nothing, so the item reads as "dropping into" it.
+   The slot under the cursor is hit-tested in JS (`.slot-drop-target`), and
+   `body.over-slot` drives the ghost fade — both set together by the drag tracker. */
+.fc-event.evt-slot {
+  transition: background-color var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+}
+.fc-event.evt-slot.slot-drop-target {
+  background: color-mix(in srgb, var(--slot) 45%, var(--surface)) !important;
+  border-style: solid !important;
+  border-color: var(--slot) !important;
+  box-shadow: 0 0 0 2px var(--slot), var(--shadow-2);
+}
+.over-slot .fc-event-mirror,
+.over-slot .fc-event-dragging {
+  opacity: 0.1 !important;
+}
+/* The left rail as the Inbox drop zone while dragging a calendar item over it. */
+.rail-drop-active {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface)) !important;
 }
 
 /* ── All-day row: "anytime" — tasks planned for the day, not yet time-blocked.
