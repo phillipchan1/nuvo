@@ -18,7 +18,7 @@ import { deriveSlotTitle } from "../lib/slots";
 import { rulesEqual, type RecurrenceRule } from "../lib/recurrence";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import { supabase } from "../lib/supabase";
-import { RecurrenceDeleteButton, RepeatControl } from "./RecurrencePicker";
+import { RecurrenceDeleteButton, RepeatControl, SlotDeleteButton, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn, RollBadge } from "./ui";
 
 /** Minutes after local midnight for an ISO instant (for series templates). */
@@ -1441,20 +1441,26 @@ export function SlotPopover({
         {/* Footer */}
         <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
           <div className="flex-1" />
-          <RecurrenceDeleteButton
+          <SlotDeleteButton
             recurring={Boolean(slot.recurrence_id && recurrence)}
-            label="Delete slot"
-            onSimple={() => { slotMutations.removeSlot(slot); onClose(); }}
-            onThis={() => {
-              if (recurrence && slot.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, slot.recurrence_date);
-              slotMutations.removeSlot(slot);
+            taskCount={ordered.length}
+            dayLabel={format(new Date(slot.do_date + "T12:00:00"), "MMM d")}
+            onDelete={(scope: SlotDeleteScope, deleteTasks: boolean) => {
+              // Keep (default): children fall back onto the day, un-slotted (the
+              // FK sets slot_id null). Delete: trash them with the slot.
+              if (deleteTasks) ordered.forEach((t) => taskMutations.trash(t));
+              if (scope === "series") {
+                if (recurrence) recurrenceMutations.deleteSeries(recurrence);
+              } else if (scope === "following") {
+                if (recurrence) recurrenceMutations.deleteFollowing(recurrence, slot.do_date);
+              } else {
+                // "simple" (non-recurring) or "this" occurrence
+                if (scope === "this" && recurrence && slot.recurrence_date)
+                  recurrenceMutations.skipOccurrence(recurrence, slot.recurrence_date);
+                slotMutations.removeSlot(slot);
+              }
               onClose();
             }}
-            onFollowing={() => {
-              if (recurrence) recurrenceMutations.deleteFollowing(recurrence, slot.do_date);
-              onClose();
-            }}
-            onSeries={() => { if (recurrence) recurrenceMutations.deleteSeries(recurrence); onClose(); }}
           />
         </div>
       </div>

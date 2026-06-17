@@ -257,6 +257,9 @@ export default function CalendarPane({
     if (!railRef.current) return;
     const draggable = new Draggable(railRef.current, {
       itemSelector: "[data-task-drag]",
+      // A few px of slop so a click (or a cmd/shift multi-select) on a rail row
+      // isn't misread as the start of a drag onto the grid.
+      minDistance: 6,
       eventData: (el) => ({
         title: el.getAttribute("data-task-title") ?? "task",
         duration: minutesToDuration(
@@ -267,6 +270,35 @@ export default function CalendarPane({
     });
     return () => draggable.destroy();
   }, [railRef]);
+
+  // While a task is being dragged, light up the day cell under the cursor so the
+  // "anytime" drop target is obvious. Tracked at the document level so it covers
+  // both an in-calendar block and an external rail row; armed only for tasks
+  // (the only thing the all-day row accepts), so dragging a slot/event is quiet.
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    let armed = false;
+    let active = false;
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as HTMLElement | null;
+      armed = Boolean(el?.closest?.("[data-task-drag], .evt-task"));
+    };
+    const onMove = () => {
+      if (armed && !active) { active = true; setDragging(true); }
+    };
+    const onUp = () => {
+      armed = false;
+      if (active) { active = false; setDragging(false); }
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("pointermove", onMove, true);
+    document.addEventListener("pointerup", onUp, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("pointermove", onMove, true);
+      document.removeEventListener("pointerup", onUp, true);
+    };
+  }, []);
 
   useEffect(() => {
     const api = calRef.current?.getApi();
@@ -387,7 +419,9 @@ export default function CalendarPane({
 
     const slotEvents = slots.map((s) => {
       const end = new Date(new Date(s.start_time).getTime() + s.duration_minutes * 60_000);
-      const color = s.color ?? "var(--accent)";
+      // The container reads as a slot (teal) regardless of domain; the thin bar
+      // still carries the project/domain thread when one is set.
+      const barColor = s.color ?? "var(--slot)";
       const children = (slotTasks[s.id] ?? [])
         .filter((t) => t.status !== "trashed")
         .map((t) => ({ title: t.title, done: t.status === "done" }))
@@ -402,12 +436,12 @@ export default function CalendarPane({
         editable: true,
         durationEditable: true,
         classNames: ["evt-slot"],
-        ...blockColors(color),
+        ...blockColors("var(--slot)"),
         extendedProps: {
           kind: "slot" as const,
           refId: s.id,
-          calColor: color,
-          barColor: color,
+          calColor: "var(--slot)",
+          barColor,
           recurring: Boolean(s.recurrence_id),
           slotDone: done,
           slotTotal: children.length,
@@ -1027,7 +1061,7 @@ export default function CalendarPane({
       {/* ── FullCalendar ────────────────────────────────────────────────── */}
       <div
         ref={wrapRef}
-        className="min-h-0 flex-1 p-2"
+        className={`min-h-0 flex-1 p-2 ${dragging ? "cal-dragging" : ""}`}
         style={{ "--nuvo-hour": `${pxPerHour}px` } as React.CSSProperties}
       >
         <FullCalendar

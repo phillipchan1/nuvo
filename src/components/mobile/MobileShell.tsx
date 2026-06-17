@@ -233,17 +233,20 @@ export default function MobileShell() {
         <NavTab tab={NAV[0]} active={tab === NAV[0].id} onClick={() => setTab(NAV[0].id)} />
         <NavTab tab={NAV[1]} active={tab === NAV[1].id} onClick={() => setTab(NAV[1].id)} />
 
-        {/* Raised center capture */}
+        {/* Raised center capture — docked in a surface ring so the button reads
+            as sitting on the bar, not floating over the timeline behind it. The
+            ＋ glyph is self-evident, so it carries no label. */}
         <button
           onClick={() => setQuickOpen(true)}
           aria-label="Quick task"
-          className="tap relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2"
+          className="tap relative flex flex-1 flex-col items-center justify-center py-2"
         >
-          <span className="elev-3 fast absolute -top-6 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95">
-            ＋
+          <span className="absolute -top-6 rounded-full bg-surface p-[3px]">
+            <span className="elev-3 fast flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95">
+              ＋
+            </span>
           </span>
           <span className="invisible text-lead leading-none">＋</span>
-          <span className="text-meta font-medium leading-none text-accent">New</span>
         </button>
 
         <NavTab

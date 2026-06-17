@@ -51,17 +51,31 @@ export default function DraftComposer({
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  // Re-clamp to the viewport whenever the card *or* the window changes size, not
+  // just on mount: switching to Event adds the Guests section (and the picker can
+  // expand), which would otherwise grow the fixed card past the bottom edge with
+  // no way to scroll to it. A ResizeObserver pulls it back up so it always fits.
   useLayoutEffect(() => {
     const card = cardRef.current;
     if (!card) return;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const h = card.offsetHeight;
-    let left = point.x + 12;
-    if (left + COMPOSER_W > vw - 8) left = point.x - 12 - COMPOSER_W;
-    left = Math.max(8, left);
-    const top = Math.max(8, Math.min(point.y - 20, vh - h - 8));
-    setPos({ top, left });
+    const place = () => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const h = card.offsetHeight;
+      let left = point.x + 12;
+      if (left + COMPOSER_W > vw - 8) left = point.x - 12 - COMPOSER_W;
+      left = Math.max(8, left);
+      const top = Math.max(8, Math.min(point.y - 20, vh - h - 8));
+      setPos({ top, left });
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(card);
+    window.addEventListener("resize", place);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", place);
+    };
   }, [point]);
 
   useEffect(() => {
@@ -94,8 +108,14 @@ export default function DraftComposer({
       <div className="fixed inset-0 z-40" onClick={onCancel} />
       <div
         ref={cardRef}
-        className="moment fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
-        style={{ top: pos.top, left: pos.left, width: COMPOSER_W, boxShadow: "var(--shadow-3)" }}
+        className="moment fixed z-50 flex flex-col overflow-y-auto overscroll-contain rounded-[var(--radius-lg)] border border-line bg-surface"
+        style={{
+          top: pos.top,
+          left: pos.left,
+          width: COMPOSER_W,
+          maxHeight: "calc(100vh - 16px)",
+          boxShadow: "var(--shadow-3)",
+        }}
       >
         {/* ── Kind switcher ── */}
         <div className="p-3 pb-2">

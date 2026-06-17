@@ -60,6 +60,7 @@
   --accent-soft: rgba(139, 128, 255, 0.13);
   --signal-soft: rgba(255, 138, 76, 0.14);
   --accent-glow: rgba(139, 128, 255, 0.28);
+  --slot: #2bb6c4;
 
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -201,11 +202,11 @@ html.tauri-macos .app-topbar {
   padding-top: var(--titlebar-inset-top);
 }
 
-/* When the mobile shell is previewed inside the Tauri window (narrow desktop),
-   keep its header clear of the macOS traffic lights. Harmless on a real phone —
-   html.tauri-macos is only set inside Tauri. */
+/* Niche case only: the desktop Tauri window shrunk below 768px so the mobile
+   shell renders. Drop the header below the macOS traffic lights with a top inset
+   (no left indent — the wordmark stays at the edge, just under the lights). A
+   real iPhone PWA never sets html.tauri-macos, so it gets no inset at all. */
 html.tauri-macos .mobile-topbar {
-  padding-left: var(--titlebar-inset-left);
   padding-top: var(--titlebar-inset-top);
 }
 
@@ -551,8 +552,12 @@ textarea:focus {
    (fill + border come inline via blockColors) — no hatch, just a non-edit
    cursor so it reads as a normal event rather than a busy placeholder. */
 .fc-event.evt-ics { cursor: default; }
-/* Slots: a dashed container (tint + border set inline) holding tasks */
-.fc-event.evt-slot { border-style: dashed !important; }
+/* Slots: a dashed teal container holding tasks — a distinct class from the
+   solid violet task/event blocks, so "this is a slot" reads at a glance. */
+.fc-event.evt-slot {
+  border-style: dashed !important;
+  border-color: color-mix(in srgb, var(--slot) 55%, transparent) !important;
+}
 
 /* RSVP status: dim events the user hasn't confirmed yet.
    needsAction = invite received, no response → noticeably dimmed
@@ -574,6 +579,26 @@ textarea:focus {
 .fc-event-mirror {
   opacity: 0.8;
   box-shadow: var(--shadow-2);
+  /* The ghost trails the cursor; let :hover fall through to the cell beneath so
+     the drop-target highlight (below) tracks the day under the pointer. */
+  pointer-events: none;
+}
+
+/* ── Drop-target highlight while dragging a task ─────────────────────────
+   `.cal-dragging` is set on the wrapper for the duration of a task drag. Because
+   FullCalendar drags with pointer (not HTML5) events, :hover keeps updating, so
+   the day cell under the cursor lights up — making the "anytime" drop target
+   (the all-day row in week/day, the whole cell in month) obvious. */
+.cal-dragging .fc-daygrid-day {
+  transition: background-color var(--d-fast) var(--ease-out);
+}
+.cal-dragging .fc-daygrid-day:hover {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+/* And a quieter column glow when aiming at a specific time in the grid. */
+.cal-dragging .fc-timegrid-col:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 /* ── All-day row: "anytime" — tasks planned for the day, not yet time-blocked.

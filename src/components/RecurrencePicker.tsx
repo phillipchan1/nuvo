@@ -64,6 +64,87 @@ export function RecurrenceDeleteButton({
   );
 }
 
+export type SlotDeleteScope = "simple" | "this" | "following" | "series";
+
+/**
+ * Deleting a slot is never just deleting the slot when it holds tasks: the user
+ * has to decide their fate. This control gates the delete behind that choice —
+ * keep the tasks (they fall back onto the day, un-slotted) or trash them too —
+ * and folds in the recurrence scopes when the slot repeats.
+ */
+export function SlotDeleteButton({
+  recurring,
+  taskCount,
+  dayLabel,
+  onDelete,
+}: {
+  recurring: boolean;
+  taskCount: number;
+  dayLabel: string;
+  onDelete: (scope: SlotDeleteScope, deleteTasks: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [deleteTasks, setDeleteTasks] = useState(false);
+
+  // Nothing to decide — a plain, empty, non-recurring slot deletes outright.
+  if (!recurring && taskCount === 0) {
+    return <Btn kind="signal" onClick={() => onDelete("simple", false)}>Delete slot</Btn>;
+  }
+
+  const scopes: { scope: SlotDeleteScope; label: string }[] = recurring
+    ? [
+        { scope: "this", label: "This occurrence" },
+        { scope: "following", label: "This & following" },
+        { scope: "series", label: "Whole series" },
+      ]
+    : [{ scope: "simple", label: "Delete slot" }];
+
+  return (
+    <div className="relative">
+      <Btn kind="signal" onClick={() => setOpen((o) => !o)}>Delete slot ▾</Btn>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full right-0 z-[61] mb-1 w-60 overflow-hidden rounded-md border border-line bg-surface elev-3">
+            {taskCount > 0 && (
+              <div className="border-b border-line px-3 py-2.5">
+                <label className="flex cursor-pointer items-start gap-2 text-caption text-text">
+                  <input
+                    type="checkbox"
+                    checked={deleteTasks}
+                    onChange={(e) => setDeleteTasks(e.target.checked)}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <span>
+                    Also delete {taskCount} task{taskCount === 1 ? "" : "s"} inside
+                    <span className="mt-0.5 block text-label text-muted">
+                      {deleteTasks
+                        ? "The tasks are trashed with the slot."
+                        : `Kept on ${dayLabel}, just un-slotted.`}
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+            <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
+              Delete
+            </div>
+            {scopes.map((s) => (
+              <button
+                key={s.scope}
+                onClick={() => { onDelete(s.scope, taskCount > 0 && deleteTasks); setOpen(false); }}
+                className="fast block w-full px-3 py-2 text-left text-caption text-text hover:bg-bg"
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** A small repeat icon shared by the chip and the picker header. */
 function RepeatGlyph({ className = "" }: { className?: string }) {
   return (
@@ -75,38 +156,64 @@ function RepeatGlyph({ className = "" }: { className?: string }) {
 }
 
 /**
- * The pill the user clicks to set/edit a repeat — owns the picker's open state.
- * Shows the humanized rule when one is set, "Repeat" otherwise. Drop it among
- * the schedule chips in any composer or detail popover.
+ * The control the user clicks to set/edit a repeat — owns the picker's open
+ * state. Shows the humanized rule when one is set, "Repeat" otherwise.
+ * Default `chip` variant drops among the schedule chips in a detail popover;
+ * `block` is a full-width, tall row for composers where it's a primary action.
  */
 export function RepeatControl({
   anchorISO,
   value,
   onChange,
   disabled,
+  variant = "chip",
 }: {
   anchorISO: string;
   value: RecurrenceRule | null;
   onChange: (rule: RecurrenceRule | null) => void;
   disabled?: boolean;
+  variant?: "chip" | "block";
 }) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const on = Boolean(value);
+  const open = (e: React.MouseEvent<HTMLButtonElement>) =>
+    setAnchor(e.currentTarget.getBoundingClientRect());
+  const label = value ? describeRule(value, anchorISO) : "Repeat";
   return (
     <>
-      <button
-        disabled={disabled}
-        onClick={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
-        title={value ? describeRule(value, anchorISO) : "Set a repeat"}
-        className={`fast inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-label disabled:opacity-40 ${
-          on
-            ? "bg-accent-soft font-medium text-accent"
-            : "bg-bg text-muted hover:brightness-95 dark:hover:brightness-110"
-        }`}
-      >
-        <RepeatGlyph />
-        <span className="max-w-[150px] truncate">{value ? describeRule(value, anchorISO) : "Repeat"}</span>
-      </button>
+      {variant === "block" ? (
+        <button
+          disabled={disabled}
+          onClick={open}
+          title={value ? describeRule(value, anchorISO) : "Set a repeat"}
+          className={`tap fast flex w-full items-center gap-3 rounded-[var(--radius)] border px-3.5 text-body disabled:opacity-40 ${
+            on
+              ? "border-accent/35 bg-accent-soft text-accent"
+              : "border-line bg-surface-2 text-ink hover:border-line-strong hover:bg-bg"
+          }`}
+        >
+          <RepeatGlyph className="shrink-0" />
+          <span className={`flex-1 truncate text-left ${on ? "font-medium" : ""}`}>{label}</span>
+          {!on && <span className="shrink-0 text-meta text-muted">Does not repeat</span>}
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 text-muted">
+            <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          disabled={disabled}
+          onClick={open}
+          title={value ? describeRule(value, anchorISO) : "Set a repeat"}
+          className={`fast inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-label disabled:opacity-40 ${
+            on
+              ? "bg-accent-soft font-medium text-accent"
+              : "bg-bg text-muted hover:brightness-95 dark:hover:brightness-110"
+          }`}
+        >
+          <RepeatGlyph />
+          <span className="max-w-[150px] truncate">{label}</span>
+        </button>
+      )}
       {anchor && (
         <RecurrencePicker
           anchorISO={anchorISO}

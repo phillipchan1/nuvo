@@ -68,6 +68,9 @@ export default function LeftRail({
   const accentOf = (t: Task) => taskDomainColor(vertical, t);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // The pivot for shift-click range selection — the last row touched plainly
+  // or cmd-toggled. Range runs from here to the shift-clicked row.
+  const [anchorId, setAnchorId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ task: Task; x: number; y: number } | null>(null);
   const [labelPickerFor, setLabelPickerFor] = useState<Task | null>(null);
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);
@@ -237,9 +240,30 @@ export default function LeftRail({
       return next;
     });
     setSelectedId(id);
+    setAnchorId(id);
+  };
+
+  // Shift-click: select every row between the anchor and this one, inclusive.
+  const selectRangeTo = (id: string) => {
+    const ids = visible.map((t) => t.id);
+    const from = anchorId && ids.includes(anchorId) ? ids.indexOf(anchorId) : ids.indexOf(id);
+    const to = ids.indexOf(id);
+    if (from === -1 || to === -1) return;
+    const [lo, hi] = from <= to ? [from, to] : [to, from];
+    setSelectedIds(new Set(ids.slice(lo, hi + 1)));
+    setSelectedId(id);
+    // anchor stays put, so you can re-shift-click to grow/shrink the range
+  };
+
+  const plainSelect = (id: string) => {
+    setSelectedId(id);
+    setAnchorId(id);
   };
 
   const openContextMenu = (t: Task, e: React.MouseEvent) => {
+    // cmd/ctrl-click is multi-select, not a context-menu request (on macOS a
+    // ctrl-click also fires contextmenu — don't let it hijack the toggle).
+    if (e.metaKey || e.ctrlKey) return;
     e.preventDefault();
     setContextMenu({ task: t, x: e.clientX, y: e.clientY });
     setSelectedId(t.id);
@@ -253,13 +277,14 @@ export default function LeftRail({
     draggable: true,
     accent: accentOf(t),
     meta: metaOf(t),
-    onSelect: () => setSelectedId(t.id),
+    onSelect: () => plainSelect(t.id),
     onOpen: (anchor: DOMRect) => {
       setSelectedIds(new Set());
       onOpenTask(t, anchor);
     },
     onToggleDone: () => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t)),
     onMultiToggle: () => toggleMultiSelect(t.id),
+    onRangeSelect: () => selectRangeTo(t.id),
     onContextMenu: (e: React.MouseEvent) => openContextMenu(t, e),
   });
 

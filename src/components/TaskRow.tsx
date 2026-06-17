@@ -19,6 +19,7 @@ export default function TaskRow({
   onOpen,
   onToggleDone,
   onMultiToggle,
+  onRangeSelect,
   onContextMenu,
   accent,
   meta,
@@ -33,6 +34,8 @@ export default function TaskRow({
   onOpen: (anchor: DOMRect) => void;
   onToggleDone: () => void;
   onMultiToggle?: () => void;
+  /** Shift-click: extend the selection from the anchor to this row. */
+  onRangeSelect?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   /** Domain color — the task's thread back up the vertical. */
   accent?: string | null;
@@ -56,13 +59,31 @@ export default function TaskRow({
     }
   };
 
-  const handleClick = (e: React.MouseEvent) => {
-    if (e.metaKey || e.ctrlKey) {
+  // Selection is resolved on mousedown (not click) so a modifier-press always
+  // registers even when FullCalendar's rail Draggable is watching for a drag —
+  // a tiny pointer wobble would otherwise turn the click into a (no-op) drag and
+  // swallow it. shift = range from the anchor, cmd/ctrl = toggle one.
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      onRangeSelect?.();
+    } else if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
       e.stopPropagation();
       onMultiToggle?.();
     } else {
-      onOpen(e.currentTarget.getBoundingClientRect());
+      onSelect();
     }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Modifier selection already handled on mousedown; just don't open here.
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      e.stopPropagation();
+      return;
+    }
+    onOpen(e.currentTarget.getBoundingClientRect());
   };
 
   // Format do_date relative
@@ -90,10 +111,7 @@ export default function TaskRow({
       data-task-drag={draggable ? task.id : undefined}
       data-task-title={task.title}
       data-task-duration={task.duration_minutes ?? ""}
-      onMouseDown={(e) => {
-        // Always set keyboard cursor; don't reset multi-select here
-        if (!e.metaKey && !e.ctrlKey) onSelect();
-      }}
+      onMouseDown={handleMouseDown}
       onClick={handleClick}
       onContextMenu={onContextMenu}
       className={`fast group flex cursor-pointer select-none items-start gap-2 border-b border-line px-3 py-2 ${
