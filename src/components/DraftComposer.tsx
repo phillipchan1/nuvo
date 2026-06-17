@@ -14,7 +14,7 @@ const KINDS: { value: CreateKind; label: string; hint: string }[] = [
   { value: "slot", label: "Slot", hint: "a container for many tasks" },
 ];
 
-const COMPOSER_W = 360;
+const COMPOSER_W = 384;
 
 /** The quick-create card that appears after a click-drag on the grid. */
 export default function DraftComposer({
@@ -79,10 +79,19 @@ export default function DraftComposer({
   }, [point]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onCancel(); return; }
+      // ⌘/Ctrl+Enter creates from anywhere in the card (title, guests, picker…),
+      // not only the title field. No-ops if there's nothing valid to create yet.
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        if (kind !== "slot" && !title.trim()) return;
+        e.preventDefault();
+        onCreate(kind, title.trim(), repeat, attendees);
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  }, [onCancel, onCreate, kind, title, repeat, attendees]);
 
   const durationMins = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
 
@@ -117,16 +126,18 @@ export default function DraftComposer({
           boxShadow: "var(--shadow-3)",
         }}
       >
-        {/* ── Kind switcher ── */}
-        <div className="p-3 pb-2">
-          <div className="flex gap-1 rounded-[var(--radius)] bg-bg p-0.5">
+        {/* ── Kind switcher — a roomy segmented control ── */}
+        <div className="p-3.5 pb-0">
+          <div className="flex gap-1 rounded-[var(--radius)] bg-bg p-1">
             {kinds.map((k) => (
               <button
                 key={k.value}
                 title={k.hint}
                 onClick={() => setKind(k.value)}
-                className={`fast flex-1 rounded-[var(--radius-sm)] px-2 py-1.5 text-body font-medium transition-colors ${
-                  kind === k.value ? "bg-accent text-white" : "text-muted hover:text-ink"
+                className={`tap fast flex flex-1 items-center justify-center rounded-[var(--radius-sm)] px-3 text-body font-semibold transition-colors ${
+                  kind === k.value
+                    ? "bg-surface text-accent shadow-[var(--shadow-1)]"
+                    : "text-muted hover:text-ink"
                 }`}
               >
                 {k.label}
@@ -135,49 +146,46 @@ export default function DraftComposer({
           </div>
         </div>
 
-        {/* ── Title ── */}
-        <div className="px-4 pb-3">
+        {/* ── Title — the hero: a big, obvious field, not a hairline ── */}
+        <div className="px-3.5 pt-3.5">
           <input
             ref={inputRef}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
             placeholder={placeholder}
-            className="w-full bg-transparent text-[15px] font-medium text-ink outline-none placeholder:text-muted/40"
+            className="tap w-full rounded-[var(--radius)] border border-line bg-surface-2 px-4 text-head font-medium text-ink outline-none transition-colors placeholder:font-normal placeholder:text-muted/50 focus:border-accent focus:bg-surface focus:shadow-[0_0_0_3px_var(--accent-soft)]"
           />
         </div>
 
-        {/* ── Time + Repeat ── */}
-        <div className="flex flex-col gap-2.5 border-t border-line px-4 py-3">
-          {/* Time */}
-          <div className="mono flex items-center gap-2 text-meta text-muted">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/60">
-              <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2" />
-              <path d="M6 3v3l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            </svg>
-            <span>
-              {format(start, "EEE, MMM d")}
-              <span className="mx-1 text-muted/40">·</span>
-              {format(start, "h:mm")}–{format(end, "h:mm a")}
-              <span className="ml-2 text-muted/50">{fmtDuration(durationMins)}</span>
-            </span>
-          </div>
+        {/* ── When ── */}
+        <div className="flex items-center gap-2.5 px-4 pt-3.5 text-caption">
+          <svg width="13" height="13" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/70">
+            <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2" />
+            <path d="M6 3v3l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+          <span className="font-medium text-ink">{format(start, "EEE, MMM d")}</span>
+          <span className="text-muted/40">·</span>
+          <span className="text-muted">{format(start, "h:mm")}–{format(end, "h:mm a")}</span>
+          <span className="ml-auto rounded-full bg-bg px-2 py-0.5 text-meta font-medium text-muted">
+            {fmtDuration(durationMins)}
+          </span>
+        </div>
 
-          {/* Repeat */}
-          <div className="flex flex-col gap-1">
-            <RepeatControl anchorISO={anchorISO} value={repeat} onChange={setRepeat} />
-            {startsLater && (
-              <span className="mono pl-0.5 text-meta text-muted">
-                First on {format(parseDateISO(firstOccurrence!), "EEE MMM d")} — not this day
-              </span>
-            )}
-          </div>
+        {/* ── Repeat — a full-width row you can't miss ── */}
+        <div className="flex flex-col gap-1.5 px-3.5 pt-3">
+          <RepeatControl anchorISO={anchorISO} value={repeat} onChange={setRepeat} variant="block" />
+          {startsLater && (
+            <span className="pl-1 text-meta text-muted">
+              First on {format(parseDateISO(firstOccurrence!), "EEE MMM d")} — not this day
+            </span>
+          )}
         </div>
 
         {/* ── Guests — only for Google calendar events ── */}
         {kind === "event" && (
-          <div className="border-t border-line px-4 py-3">
-            <div className="mb-2.5 flex items-center gap-1.5 text-meta font-semibold uppercase tracking-wider text-muted">
+          <div className="px-3.5 pt-4">
+            <div className="mb-2 flex items-center gap-1.5 text-label font-semibold uppercase tracking-wider text-muted">
               <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
                 <circle cx="5" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.2" />
                 <path d="M1 10.5c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
@@ -190,19 +198,20 @@ export default function DraftComposer({
         )}
 
         {/* ── Actions ── */}
-        <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
+        <div className="mt-4 flex items-center justify-end gap-2 border-t border-line p-3.5">
           <button
             onClick={onCancel}
-            className="fast rounded-[var(--radius-sm)] px-3 py-1.5 text-body text-muted hover:bg-bg"
+            className="tap fast inline-flex items-center justify-center rounded-[var(--radius)] px-4 text-body font-medium text-muted hover:bg-bg"
           >
             Cancel
           </button>
           <button
             onClick={submit}
             disabled={!canCreate}
-            className="fast rounded-[var(--radius-sm)] bg-accent px-4 py-1.5 text-body font-medium text-white hover:opacity-90 disabled:opacity-40"
+            className="tap fast inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-accent px-6 text-body font-semibold text-white shadow-[var(--shadow-1)] transition-opacity hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
           >
             Create
+            <span className="text-meta font-normal text-white/65">⌘↵</span>
           </button>
         </div>
       </div>
