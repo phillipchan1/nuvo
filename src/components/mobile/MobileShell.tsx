@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { format } from "date-fns";
 import { todayISO } from "../../lib/dates";
 import { useSettings } from "../../hooks/useSettings";
 import { useVertical } from "../../hooks/useVertical";
@@ -176,10 +175,11 @@ export default function MobileShell() {
 
   return (
     <div className="atmosphere flex h-full flex-col">
-      {/* Top bar */}
-      <header className="mobile-topbar pt-safe flex shrink-0 items-center gap-2 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur">
+      {/* Top bar — airy: no slab/border, blends into the atmosphere so the
+          status-bar safe area doesn't read as wasted white space. The date is
+          dropped here (the brief already shows the day just below). */}
+      <header className="mobile-topbar pt-safe flex shrink-0 items-center gap-2 px-4 py-1.5">
         <span className="wordmark wordmark-grad text-lead">Nuvo</span>
-        <span className="mono ml-0.5 text-caption text-muted">{format(now, "EEE MMM d")}</span>
         <div className="flex-1" />
         <button
           onClick={() =>
@@ -204,7 +204,7 @@ export default function MobileShell() {
       {/* Content */}
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         {tab === "now" ? (
-          <div className="px-4 pt-4 pb-10">
+          <div className="px-4 pt-2 pb-10">
             <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={askNuvo} />
           </div>
         ) : tab === "calendar" ? (
