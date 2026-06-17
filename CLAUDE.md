@@ -89,13 +89,33 @@ not the front door.** Use plain text `<input>`s so iOS dictation works out of th
   Supabase anon key (`VITE_SUPABASE_*`) is baked at build time and is safe to embed.
   `start_url` / `scope` = "/". Icons live in `public/`.
 
+### Test against live code — always (don't ship UI you couldn't see)
+
+**The app is auth-gated, but `npm run dev` is not — there is a dev-only auto-login.**
+Set `VITE_DEV_EMAIL` / `VITE_DEV_PASSWORD` in `.env.local` (gitignored) and the dev server
+signs in automatically (see `useAuth.ts`; guarded by `import.meta.env.DEV`, so it is
+**tree-shaken out of every production build** and can never weaken the deployed login).
+
+So: **verify every change against the running dev app with real data, not against a mockup
+or a typecheck alone.** Start the dev server, drive the real screen, confirm the behavior,
+then report. This is the default loop — reach for it before guessing.
+- Start it / reuse it via the preview tooling (`preview_start npm run dev`), then
+  `preview_screenshot` / `preview_eval` / `preview_snapshot` to inspect and exercise the
+  real component. Auto-login means you land straight in the app, not the login wall.
+- Prefer this over visual mockups when proving a UI change — the mockup is for *proposing*
+  a design; the dev app is for *verifying* it.
+- Don't mutate the user's real data gratuitously (e.g. firing synthetic drag-drops that
+  move their tasks). Verify wiring + non-destructive gestures; leave the final
+  data-changing action for the user, or ask first.
+
 ### Verification checklist (run before calling a UI task done)
 1. `npm run typecheck` clean.
-2. Renders at 375px — no horizontal overflow, tap targets ok, safe areas respected,
+2. **Driven in the running dev app** (auto-login) — the actual behavior observed, not assumed.
+3. Renders at 375px — no horizontal overflow, tap targets ok, safe areas respected,
    content clears the bottom bar.
-3. Renders correctly in the desktop layout.
-4. Calendar/availability work reuses `readDay` / `toBusyBlocks`.
-5. `npm run build` green.
+4. Renders correctly in the desktop layout.
+5. Calendar/availability work reuses `readDay` / `toBusyBlocks`.
+6. `npm run build` green.
 
 ## Stack quick-reference
 

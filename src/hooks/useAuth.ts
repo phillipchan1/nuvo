@@ -7,7 +7,22 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
+      // Dev-only convenience: skip the login wall by auto-signing-in a test
+      // account from .env.local (gitignored). `import.meta.env.DEV` is false in
+      // any production build, so Vite tree-shakes this out — it can never run in
+      // the shipped app. Set VITE_DEV_EMAIL / VITE_DEV_PASSWORD to enable.
+      if (!data.session && import.meta.env.DEV) {
+        const email = import.meta.env.VITE_DEV_EMAIL as string | undefined;
+        const password = import.meta.env.VITE_DEV_PASSWORD as string | undefined;
+        if (email && password) {
+          const { data: signedIn, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) console.warn("[nuvo] dev auto-login failed:", error.message);
+          setSession(signedIn?.session ?? null);
+          setLoading(false);
+          return;
+        }
+      }
       setSession(data.session);
       setLoading(false);
     });

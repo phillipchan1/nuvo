@@ -67,6 +67,18 @@ If a user can reach it on a phone, it must work on a phone.
 - Tauri build sets `TAURI_BUILD=1` → no SW/manifest in the desktop app.
 - iOS PWA install needs HTTPS (Vercel). `VITE_SUPABASE_*` baked at build; icons in `public/`.
 
+## Test against live code — always
+
+The app is auth-gated, but `npm run dev` has a **dev-only auto-login**: set
+`VITE_DEV_EMAIL`/`VITE_DEV_PASSWORD` in `.env.local` (gitignored) and `useAuth.ts` signs in
+automatically. Guarded by `import.meta.env.DEV` → tree-shaken from prod, can't weaken the
+shipped login. **Verify every UI change in the running dev app with real data** (drive it via
+the preview tooling: screenshot / eval / snapshot), not via a mockup or typecheck alone — a
+mockup proposes a design, the dev app proves it. Don't fire data-mutating gestures (e.g.
+synthetic drag-drops) against the user's real data; verify wiring + leave the final
+destructive action to the user.
+
 ## Done-checklist
-1. `npm run typecheck` clean → 2. 375px no overflow, tap targets, safe areas → 3. desktop ok
-→ 4. availability work reuses `readDay`/`toBusyBlocks` → 5. `npm run build` green.
+1. `npm run typecheck` clean → 2. **driven in the running dev app** (auto-login), behavior
+observed → 3. 375px no overflow, tap targets, safe areas → 4. desktop ok → 5. availability
+reuses `readDay`/`toBusyBlocks` → 6. `npm run build` green.
