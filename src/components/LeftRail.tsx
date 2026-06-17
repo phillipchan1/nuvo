@@ -160,6 +160,9 @@ export default function LeftRail({
           setSelectedId(null);
           setSelectedIds(new Set());
           break;
+        case "i":
+          targets.filter((t) => t.status !== "inbox").forEach((t) => mutations.backToInbox(t));
+          break;
         case "s":
           if (targets.length === 1) setSchedulePickerFor(targets[0]);
           break;
@@ -538,6 +541,7 @@ export default function LeftRail({
           <span className="flex items-center gap-1"><Keycap>E</Keycap> today</span>
           <span className="flex items-center gap-1"><Keycap>T</Keycap> tomorrow</span>
           <span className="flex items-center gap-1"><Keycap>W</Keycap> next wk</span>
+          <span className="flex items-center gap-1"><Keycap>I</Keycap> inbox</span>
           <span className="flex items-center gap-1"><Keycap>S</Keycap> pick</span>
           <span className="flex items-center gap-1"><Keycap>D</Keycap> done</span>
           <span className="flex items-center gap-1"><Keycap>X</Keycap> trash</span>
@@ -648,6 +652,7 @@ function TaskContextMenu({
     { kind: "action", label: "Tomorrow", key: "T", action: () => { mutations.planFor(task, tomorrowISO()); onClose(); } },
     { kind: "action", label: "Next week", key: "W", action: () => { mutations.planFor(task, nextWeekISO()); onClose(); } },
     { kind: "action", label: "Schedule…", key: "S", action: onSchedule },
+    ...(task.status !== "inbox" ? [{ kind: "action" as const, label: "Return to inbox", key: "I", action: () => { mutations.backToInbox(task); onClose(); } }] : []),
     { kind: "sep" },
     {
       kind: "action",

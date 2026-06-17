@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
-import { DEFAULT_DURATION_MINUTES, restingStatus, type Slot, type Task, type TaskPriority } from "../lib/types";
+import { DEFAULT_DURATION_MINUTES, restingStatus, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 
 const TASK_COLS = "*, task_labels(label_id)";
@@ -151,6 +151,62 @@ export function useTaskMutations() {
       if (data.start_time) invokeQuiet("task-mirror", { taskId: data.id });
       return data as Task;
     },
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: ["tasks"] });
+      const tempId = crypto.randomUUID();
+      const status: TaskStatus = input.do_date ? "planned" : "inbox";
+      const duration = input.start_time != null
+        ? (input.duration_minutes ?? DEFAULT_DURATION_MINUTES)
+        : input.duration_minutes;
+      const optimistic: Task = {
+        id: tempId,
+        user_id: "",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        title: input.title,
+        notes: input.notes ?? "",
+        status,
+        do_date: input.do_date ?? null,
+        start_time: input.start_time ?? null,
+        duration_minutes: duration ?? null,
+        deadline: input.deadline ?? null,
+        priority: input.priority ?? "none",
+        roll_count: 0,
+        completed_at: null,
+        project_id: input.project_id ?? null,
+        initiative_id: null,
+        domain_id: input.domain_id ?? null,
+        sprint_id: null,
+        big_rock_id: null,
+        energy: null,
+        assignee: "me",
+        prework: "",
+        prework_at: null,
+        google_event_id: null,
+        sort_order: 9999,
+        slot_id: input.slot_id ?? null,
+        recurrence_id: null,
+        recurrence_date: null,
+        recurrence_overridden: false,
+        task_labels: input.labelIds?.map((label_id) => ({ label_id })) ?? [],
+      };
+      qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+        old ? [...old, optimistic] : [optimistic],
+      );
+      return { tempId };
+    },
+    onSuccess: (realTask, _, ctx) => {
+      if (!ctx) return;
+      qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+        old?.map((t) => (t.id === ctx.tempId ? realTask : t)),
+      );
+    },
+    onError: (_, __, ctx) => {
+      if (!ctx) return;
+      qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+        old?.filter((t) => t.id !== ctx.tempId),
+      );
+    },
     onSettled: () => invalidateTasks(qc),
   });
 
@@ -223,7 +279,7 @@ export function useTaskMutations() {
     trash: (t: Task) => patchTask(t.id, { status: "trashed" }),
 
     backToInbox: (t: Task) =>
-      patchTask(t.id, { status: "inbox", do_date: null, start_time: null }),
+      patchTask(t.id, { status: "inbox", do_date: null, start_time: null, slot_id: null }),
 
     /** An over-planned day degrades into the week pool, not into guilt-rolling:
      *  drop the date, keep the sprint commitment. */

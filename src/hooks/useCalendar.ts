@@ -150,8 +150,9 @@ export function useExternalEventMutations() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });
 
-  // Create a real Google event on the primary calendar. The edge function does
-  // the POST and writes the external_events row, so we just refetch on settle.
+  // Create a real Google event on the primary calendar. Optimistically show the
+  // event immediately; the edge function POSTs to Google and writes the DB row,
+  // then onSettled refetches to swap in the real record.
   const create = useMutation({
     mutationFn: async ({
       title,
@@ -173,6 +174,33 @@ export function useExternalEventMutations() {
       });
       if (error) throw error;
       return data;
+    },
+    onMutate: async ({ title, start_at, end_at }) => {
+      await qc.cancelQueries({ queryKey: ["external_events"] });
+      const tempId = crypto.randomUUID();
+      const optimistic: ExternalEvent = {
+        id: tempId,
+        account_id: "",
+        provider_event_id: tempId,
+        calendar_id: "",
+        title,
+        start_at,
+        end_at,
+        all_day: false,
+        location: null,
+        busy: true,
+        self_rsvp: null,
+      };
+      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
+        old ? [...old, optimistic] : [optimistic],
+      );
+      return { tempId };
+    },
+    onError: (_, __, ctx) => {
+      if (!ctx) return;
+      qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
+        old?.filter((e) => e.id !== ctx.tempId),
+      );
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });

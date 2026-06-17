@@ -78,6 +78,43 @@ export function useSlotMutations() {
       invokeQuiet("slot-mirror", { slotId: data.id });
       return data as Slot;
     },
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: ["slots"] });
+      const tempId = crypto.randomUUID();
+      const optimistic: Slot = {
+        id: tempId,
+        user_id: "",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        title: input.title,
+        do_date: input.do_date,
+        start_time: input.start_time,
+        duration_minutes: input.duration_minutes ?? DEFAULT_DURATION_MINUTES,
+        project_id: input.project_id ?? null,
+        domain_id: input.domain_id ?? null,
+        color: input.color ?? null,
+        google_event_id: null,
+        recurrence_id: null,
+        recurrence_date: null,
+        recurrence_overridden: false,
+      };
+      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+        old ? [...old, optimistic] : [optimistic],
+      );
+      return { tempId };
+    },
+    onSuccess: (realSlot, _, ctx) => {
+      if (!ctx) return;
+      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+        old?.map((s) => (s.id === ctx.tempId ? realSlot : s)),
+      );
+    },
+    onError: (_, __, ctx) => {
+      if (!ctx) return;
+      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+        old?.filter((s) => s.id !== ctx.tempId),
+      );
+    },
     onSettled: () => qc.invalidateQueries({ queryKey: ["slots"] }),
   });
 
