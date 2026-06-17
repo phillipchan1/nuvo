@@ -11,6 +11,8 @@ import {
   type VerticalData,
   type VTask,
 } from "./vertical";
+import { endOf } from "./dates";
+import type { ExternalEvent, Task } from "./types";
 
 export interface Reason {
   glyph: string;
@@ -141,6 +143,38 @@ export function readDay(now: Date, busy: BusyBlock[], windowStart: Date, windowE
     deepWindow,
     deepEndsLabel,
   };
+}
+
+/** Fold the live calendar — external events + your own scheduled task blocks —
+ *  into the BusyBlock list readDay() consumes. Skips all-day events, anything
+ *  marked free, and any calendar the user has hidden in settings. Shared by the
+ *  Now view and the mobile Calendar so the "what counts as busy" rule lives once. */
+export function toBusyBlocks(
+  events: ExternalEvent[],
+  blocks: Task[],
+  hiddenCalendarIds: Iterable<string> = [],
+): BusyBlock[] {
+  const hidden = new Set(hiddenCalendarIds);
+  return [
+    ...events
+      .filter((e) => e.busy && !e.all_day && !hidden.has(e.calendar_id))
+      .map((e): BusyBlock => ({
+        title: e.title,
+        start: new Date(e.start_at),
+        end: new Date(e.end_at),
+        kind: "event",
+        location: e.location,
+      })),
+    ...blocks
+      .filter((t) => t.start_time)
+      .map((t): BusyBlock => ({
+        title: t.title,
+        start: new Date(t.start_time!),
+        end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }),
+        kind: "block",
+        done: t.status === "done",
+      })),
+  ];
 }
 
 /** "1h 42m" · "45m" · "0m" — compact human duration for stat chips. */

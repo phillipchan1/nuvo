@@ -2,7 +2,7 @@
 // every initiative across every domain in Table · Board · Calendar · Timeline.
 // Click one to drill into its detail (goal, key results, project timeline).
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {

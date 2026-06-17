@@ -4,8 +4,8 @@ import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { Draggable } from "@fullcalendar/interaction";
-import type { DatesSetArg, DateClickArg, DateSelectArg, EventClickArg, EventContentArg, EventDropArg } from "@fullcalendar/core";
-import type { EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
+import type { DatesSetArg, DateSelectArg, EventClickArg, EventContentArg, EventDropArg } from "@fullcalendar/core";
+import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
@@ -302,6 +302,39 @@ export default function CalendarPane({
         };
       });
 
+    // Planned for a day but not yet time-blocked → an all-day chip at the top of
+    // its day. Drag it down to a time to block it, or onto another day's all-day
+    // row to re-plan it. Dropping a task on the all-day row (vs a time slot) is
+    // how you say "do it that day, time TBD".
+    const plannedTaskEvents = tasks
+      .filter(
+        (t) =>
+          !t.start_time &&
+          t.do_date &&
+          !t.slot_id &&
+          t.status !== "done" &&
+          t.status !== "trashed",
+      )
+      .map((t) => {
+        const color = taskAccent(t) ?? "var(--accent)";
+        return {
+          id: `task:${t.id}`,
+          title: t.title,
+          start: t.do_date!,
+          allDay: true,
+          editable: true,
+          durationEditable: false,
+          classNames: ["evt-task", "evt-allday"],
+          ...blockColors(color),
+          extendedProps: {
+            kind: "task" as const,
+            refId: t.id,
+            barColor: color,
+            recurring: Boolean(t.recurrence_id),
+          },
+        };
+      });
+
     const externalEvents = events
       .filter((e) => !hidden.has(e.calendar_id) && !e.all_day)
       .map((e) => {
@@ -383,7 +416,7 @@ export default function CalendarPane({
       };
     });
 
-    return [...taskEvents, ...externalEvents, ...slotEvents];
+    return [...taskEvents, ...plannedTaskEvents, ...externalEvents, ...slotEvents];
   }, [tasks, events, slots, slotTasks, hidden, accountById, now, taskAccent, slotTitle]);
 
   // Ghost block shown while the DraftComposer popover is open from a click
@@ -428,9 +461,15 @@ export default function CalendarPane({
   const onReceive = (info: EventReceiveArg) => {
     const taskId = info.draggedEl.getAttribute("data-task-drag");
     const start = info.event.start;
+    const allDay = info.event.allDay;
     info.revert();
     const task = taskId ? findTask(taskId) : undefined;
     if (!task || !start) return;
+    // Dropped on the all-day row → planned for that day, time TBD (no block).
+    if (allDay) {
+      mutations.planFor(task, toDateISO(start));
+      return;
+    }
     // Dropped onto a slot's time range → it joins the slot (no block of its
     // own); otherwise it becomes a normal time block at the drop time.
     const t = start.getTime();
@@ -446,10 +485,18 @@ export default function CalendarPane({
     const extProps = info.event.extendedProps as ExtendedProps;
     const { kind, refId } = extProps;
 
+    // The all-day row holds tasks only — block events/slots from landing there.
+    if (info.event.allDay && kind !== "task") {
+      info.revert();
+      return;
+    }
+
     if (kind === "task") {
       const task = findTask(refId);
       if (task && info.event.start) {
-        mutations.block(task, info.event.start);
+        // All-day row → planned for that day, no time block; a time slot → block.
+        if (info.event.allDay) mutations.planFor(task, toDateISO(info.event.start));
+        else mutations.block(task, info.event.start);
         if (task.recurrence_id && !task.recurrence_overridden)
           mutations.patchTask(task.id, { recurrence_overridden: true });
       }
@@ -563,6 +610,7 @@ export default function CalendarPane({
   // Click-drag on empty grid → open the quick-create card. Modifiers pick the
   // type up front (⌥ event, ⌘/Ctrl slot); otherwise the toolbar create mode.
   const onSelect = (arg: DateSelectArg) => {
+    if (arg.allDay) return; // the all-day row is a drop target, not a create surface
     const je = arg.jsEvent;
     let kind: CreateKind = createMode;
     if (je?.altKey) kind = "event";
@@ -577,7 +625,7 @@ export default function CalendarPane({
   };
 
   const onDateClick = (arg: DateClickArg) => {
-    if (isMonth || draft) return;
+    if (isMonth || draft || arg.allDay) return;
     const start = arg.date;
     const end = new Date(start.getTime() + 30 * 60_000);
     const je = arg.jsEvent;
@@ -696,6 +744,21 @@ export default function CalendarPane({
           >
             {arg.event.title}
           </span>
+        </div>
+      );
+    }
+
+    // ── All-day task chip: "planned for the day, time TBD" — a compact pill ─
+    if (arg.event.allDay && kind === "task") {
+      const dotColor = (arg.event.extendedProps as ExtendedProps).barColor ?? "var(--accent)";
+      return (
+        <div className="flex h-full min-w-0 items-center gap-1.5 overflow-hidden px-1.5">
+          <span
+            className="h-[6px] w-[6px] shrink-0 rounded-full"
+            style={{ background: dotColor }}
+          />
+          <span className="truncate text-label font-medium leading-none">{arg.event.title}</span>
+          {recurring ? <RecurMark className="shrink-0 opacity-45" /> : null}
         </div>
       );
     }
@@ -972,7 +1035,8 @@ export default function CalendarPane({
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
           initialView={view}
           headerToolbar={false}
-          allDaySlot={false}
+          allDaySlot={!isMonth}
+          allDayText="anytime"
           firstDay={settings?.week_start ?? 0}
           nowIndicator={!isMonth}
           nowIndicatorContent={(arg) =>

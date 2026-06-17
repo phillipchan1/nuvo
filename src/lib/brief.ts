@@ -96,7 +96,7 @@ export function composeBrief({
   // Nuvo doesn't push unplanned work. It only flags a genuinely big open block —
   // and leaves the choice to you. No big block → the day speaks for itself.
   if (top) {
-    const focusGap = dayRead.gaps.reduce<typeof firstGap>((best, g) => (!best || g.mins > best.mins ? g : best), null);
+    const focusGap = dayRead.gaps.reduce<typeof firstGap | null>((best, g) => (!best || g.mins > best.mins ? g : best), null);
     if (focusGap && focusGap.mins >= OPEN_OFFER_MINS) {
       const whenStr = focusGap.start.getTime() <= now.getTime() + 60_000 ? "right now" : `at ${at(focusGap.start)}`;
       parts.push(`You've a ${fmtMins(focusGap.mins)} open block ${whenStr} — say the word and I'll line something up.`);

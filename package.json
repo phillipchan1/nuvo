@@ -6,12 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:web": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons"
+    "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons",
+    "app:install": "npm run tauri build && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app",
+    "app:install:live": "tauri build --config '{\"build\":{\"frontendDist\":\"http://localhost:5173\",\"beforeBuildCommand\":\"\"},\"bundle\":{\"targets\":[\"app\"]}}' && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.2.9",
@@ -42,6 +45,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "tailwindcss": "^4.0.0",
     "typescript": "~5.6.3",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vite-plugin-pwa": "^1.3.0"
   }
 }

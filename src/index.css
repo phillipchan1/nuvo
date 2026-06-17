@@ -35,6 +35,9 @@
   --accent-soft: rgba(90, 75, 226, 0.11);
   --signal-soft: rgba(224, 98, 15, 0.11);
   --accent-glow: rgba(90, 75, 226, 0.18);
+  /* Slots are a class of their own — a time *container*, not a task or event.
+     This dedicated teal sets them apart from the violet accent at a glance. */
+  --slot: #0d8f9c;
 
   /* soft, low, faintly violet-warm elevation — never a hard drop shadow */
   --shadow-1: 0 1px 2px rgba(26, 22, 48, 0.05);
@@ -195,6 +198,14 @@ html.tauri-macos {
 /* Top bars sit under the overlay titlebar; spine column owns the left inset. */
 html.tauri-macos .app-topbar {
   min-height: calc(2.75rem + var(--titlebar-inset-top));
+  padding-top: var(--titlebar-inset-top);
+}
+
+/* When the mobile shell is previewed inside the Tauri window (narrow desktop),
+   keep its header clear of the macOS traffic lights. Harmless on a real phone —
+   html.tauri-macos is only set inside Tauri. */
+html.tauri-macos .mobile-topbar {
+  padding-left: var(--titlebar-inset-left);
   padding-top: var(--titlebar-inset-top);
 }
 
@@ -563,6 +574,34 @@ textarea:focus {
 .fc-event-mirror {
   opacity: 0.8;
   box-shadow: var(--shadow-2);
+}
+
+/* ── All-day row: "anytime" — tasks planned for the day, not yet time-blocked.
+   Drop a task here to schedule it for the day without committing to a time;
+   drag it down into the grid to block a slot. Kept tall enough to stay an easy
+   drop target even when empty. */
+.fc .fc-timegrid-axis-cushion {
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+.fc .fc-timegrid-axis-frame {
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+.fc .fc-daygrid-body .fc-daygrid-day-events {
+  min-height: 22px;
+}
+.fc .fc-daygrid-event.evt-allday {
+  margin: 1px 3px !important;
+  border-radius: 5px !important;
+  border: 1px solid transparent;
+}
+.fc .fc-daygrid-event.evt-allday .fc-event-main {
+  padding: 2px 0 !important;
+}
+.fc .fc-daygrid-event.evt-allday:hover {
+  box-shadow: var(--shadow-1);
+  filter: brightness(1.015);
 }
 
 /* ── Month view: compact pills + overflow popover ────────────────────── */

@@ -12,9 +12,9 @@ import { useScheduledTasks, useAllTasks } from "../../hooks/useTasks";
 import { useSettings } from "../../hooks/useSettings";
 import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useAgent } from "../../hooks/useAgent";
-import { endOf, todayISO } from "../../lib/dates";
+import { todayISO } from "../../lib/dates";
 import { domainById, faithfulness, initiativeById, initiativeProgress, taskDomainColor, type Domain, type VerticalData } from "../../lib/vertical";
-import { fmtMins, OPEN_OFFER_MINS, rankNow, readDay, type BusyBlock, type DayRead, type Gap, type NowContext, type Suggestion } from "../../lib/now";
+import { fmtMins, OPEN_OFFER_MINS, rankNow, readDay, toBusyBlocks, type BusyBlock, type DayRead, type Gap, type NowContext, type Suggestion } from "../../lib/now";
 import { composeWeek, fmtSlot, type ComposeResult, type DayContext } from "../../lib/compose";
 import { composeBrief, type Brief } from "../../lib/brief";
 import type { AgentMessage } from "../../lib/agentTypes";
@@ -32,7 +32,15 @@ const readChatOpen = (): boolean => {
   try { return localStorage.getItem(CHAT_KEY) === "1"; } catch { return false; }
 };
 
-export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
+export default function NowFloor({
+  onOpenDay,
+  onAskNuvo,
+}: {
+  onOpenDay: () => void;
+  /** Mobile: route "Ask Nuvo" to the global chat sheet instead of the inline
+   *  rail. Optional — desktop leaves it unset and keeps the inline rail. */
+  onAskNuvo?: (seed?: string) => void;
+}) {
   const { data, toggleTask, applySchedule } = useVertical();
   const { settings } = useSettings();
   const [workingDays] = useWorkingDays();
@@ -84,25 +92,15 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
     try { localStorage.setItem(CHAT_KEY, chatOpen ? "1" : "0"); } catch { /* ignore */ }
   }, [chatOpen]);
   const agent = useAgent({ start: horizon.start, end: horizon.end });
+  // "Ask Nuvo": on mobile hand off to the global chat sheet (onAskNuvo); on
+  // desktop open the inline rail and seed the shared agent.
+  const askBar = onAskNuvo ?? ((seed?: string) => { setChatOpen(true); if (seed) void agent.sendMessage(seed); });
 
-  const busy = useMemo<BusyBlock[]>(() => {
+  const busy = useMemo<BusyBlock[]>(
     // respect the calendars the user has toggled off in settings
-    const hidden = new Set(settings?.hidden_calendar_ids ?? []);
-    return [
-      ...events
-        .filter((e) => e.busy && !e.all_day && !hidden.has(e.calendar_id))
-        .map((e): BusyBlock => ({ title: e.title, start: new Date(e.start_at), end: new Date(e.end_at), kind: "event", location: e.location })),
-      ...blocks
-        .filter((t) => t.start_time)
-        .map((t): BusyBlock => ({
-          title: t.title,
-          start: new Date(t.start_time!),
-          end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }),
-          kind: "block",
-          done: t.status === "done",
-        })),
-    ];
-  }, [events, blocks, settings]);
+    () => toBusyBlocks(events, blocks, settings?.hidden_calendar_ids ?? []),
+    [events, blocks, settings],
+  );
 
   // The work window (the part of the day where focus lives), stretched to hold
   // anything scheduled outside it so nothing falls off the spine.
@@ -274,7 +272,7 @@ export default function NowFloor({ onOpenDay }: { onOpenDay: () => void }) {
         <div className="xl:col-start-1 xl:row-start-1">
           <NowBrief now={now} dayRead={dayRead} brief={brief} tired={tired} restDay={restDay} />
           {!chatOpen && (
-            <NuvoBar agent={agent} tired={tired} setTired={setTired} onOpen={() => setChatOpen(true)} />
+            <NuvoBar tired={tired} setTired={setTired} onAsk={askBar} />
           )}
         </div>
 
@@ -500,28 +498,28 @@ function NowBrief({
 
 // Collapsed launcher — a single calm row under the brief: open Nuvo, or fire a
 // common ask straight away. Keeps control one tap away without holding space.
+// onAsk(seed?) opens the conversation (inline rail on desktop, global sheet on
+// mobile) and optionally seeds it with a message.
 function NuvoBar({
-  agent, tired, setTired, onOpen,
+  tired, setTired, onAsk,
 }: {
-  agent: ReturnType<typeof useAgent>;
   tired: boolean;
   setTired: (v: boolean) => void;
-  onOpen: () => void;
+  onAsk: (seed?: string) => void;
 }) {
-  const ask = (text: string) => { onOpen(); void agent.sendMessage(text); };
   const pill = "fast rounded-full border px-2.5 py-1 text-label";
   const ghost = `${pill} border-line text-muted hover:border-accent hover:text-accent`;
   return (
     <div className="mt-4 flex flex-wrap items-center gap-1.5">
-      <button onClick={onOpen} className={`${pill} flex items-center gap-1.5 border-accent/40 bg-accent-soft font-medium text-accent hover:bg-accent/15`}>
+      <button onClick={() => onAsk()} className={`${pill} flex items-center gap-1.5 border-accent/40 bg-accent-soft font-medium text-accent hover:bg-accent/15`}>
         <span>✦</span> Ask Nuvo
       </button>
       <button onClick={() => setTired(!tired)} className={ghost}>
         {tired ? "↑ back to full energy" : "☾ I'm wiped — lighten today"}
       </button>
-      <button onClick={() => ask("What should I prep for my next meeting? Give me a quick preread.")} className={ghost}>what should I prep?</button>
-      <button onClick={() => ask("I'm short on time — push my non-urgent afternoon tasks to tomorrow.")} className={ghost}>move my afternoon</button>
-      <button onClick={() => ask("Where are my open blocks for the rest of today?")} className={ghost}>what's open later?</button>
+      <button onClick={() => onAsk("What should I prep for my next meeting? Give me a quick preread.")} className={ghost}>what should I prep?</button>
+      <button onClick={() => onAsk("I'm short on time — push my non-urgent afternoon tasks to tomorrow.")} className={ghost}>move my afternoon</button>
+      <button onClick={() => onAsk("Where are my open blocks for the rest of today?")} className={ghost}>what's open later?</button>
     </div>
   );
 }

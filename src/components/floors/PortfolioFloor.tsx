@@ -2,7 +2,7 @@
 // data in Table · Board · Calendar · Timeline. Click any record to drill into
 // its detail. Filter the set by domain along the top.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {

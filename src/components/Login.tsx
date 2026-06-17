@@ -23,7 +23,7 @@ export default function Login() {
 
   return (
     <div className="atmosphere flex h-full items-center justify-center">
-      <div className="moment elev-3 w-80 rounded-lg border border-line bg-surface p-7">
+      <div className="moment elev-3 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-7">
         <div className="mb-5 flex items-center gap-2.5">
           <TwilightMark />
           <span className="wordmark wordmark-grad text-display leading-none">Nuvo</span>

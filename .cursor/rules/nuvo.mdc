@@ -1,0 +1,72 @@
+---
+description: Nuvo project conventions — mobile-ready by default, stack, patterns. Full detail in CLAUDE.md.
+alwaysApply: true
+---
+
+# Nuvo conventions
+
+Single-user daily planner. **One React SPA, two shells:** a Tauri macOS app *and* an
+installable iOS PWA from the same `dist/`. Full detail lives in `CLAUDE.md` — this is the
+enforced summary.
+
+## Golden rule: every UI change ships mobile-ready
+
+The same components serve desktop and a 375–430px phone. Not done until:
+
+- Reflows to a **single column at ≤767px with no horizontal scroll** (where `useIsMobile()`
+  / `MobileShell` engages; breakpoint 768 in `src/hooks/useIsMobile.ts`).
+- Tap targets ≥44px (`.tap`); safe areas respected (`pt-safe`/`pb-safe`); content clears
+  the bottom bar + raised capture button.
+- Mobile overlays use the bottom `Sheet` (`src/components/mobile/Sheet.tsx`) — never
+  cursor-anchored popovers (`SlideOver`) on a phone. Shared modals: the responsive `Modal`
+  in `ui.tsx` (mobile-first base, desktop restored at `sm:`).
+- No hover-only affordances. Verify at **375px AND** desktop before finishing.
+
+If a user can reach it on a phone, it must work on a phone.
+
+## Architecture
+
+- `AppShell` → `ResponsiveShell` picks `MobileShell` (<768) vs `AppShellInner` (desktop).
+- Mobile UI in `src/components/mobile/`. Bottom bar = **Now · Calendar · ＋ · Tasks · Nuvo**;
+  capture and Nuvo chat are permanent. Today/Week/Inbox = segmented control in Tasks.
+- Shared "floors" (e.g. `NowFloor`) render in both shells: keep responsive, add *optional*
+  mobile-routing props (e.g. `onAskNuvo`) instead of forking; desktop unchanged when omitted.
+- Desktop-only (not on mobile): rituals, Record screens, Domain chapel, Project/Initiative
+  floors, Collection board/table/timeline, FullCalendar `CalendarPane`. Mobile uses
+  `MobileCalendar` (agenda + availability) instead of FullCalendar.
+
+## Reuse, don't duplicate
+
+- Day shape / availability: `readDay`, `toBusyBlocks`, `fmtMins`, `Gap`, `BusyBlock` in
+  `src/lib/now.ts`. "What counts as busy" lives once in `toBusyBlocks`.
+- Calendar data: `useExternalEvents`, `useScheduledTasks`; settings via `useSettings`
+  (`work_start_minutes`/`work_end_minutes` 480/990, `hidden_calendar_ids`).
+- A scheduled task IS a time block (one `tasks` row); no separate event entity.
+- Capture = free text via `parseCapture` (`src/lib/nlp.ts`); forms are the fallback. Use
+  plain text inputs so iOS dictation works.
+
+## Style
+
+- CSS variable tokens only — never hardcode hex (`--accent`, `--line`, `--surface`,
+  `--muted`, `--signal`, `--accent-soft`, …). Respect light/dark via `data-theme`.
+- Semantic type scale (`text-display/lead/head/body/caption/meta/micro`, `section-label`);
+  `.mono` for numerics. Native system font; Jakarta wordmark; Fraunces for ceremony.
+
+## Tauri
+
+- HTML5 drag is swallowed by the webview — **use pointer events for all drag**.
+- Service worker never runs in Tauri: `main.tsx` guards on `'__TAURI_INTERNALS__' in
+  window` + `isSecureContext`, and the PWA plugin is disabled at build time via
+  `TAURI_BUILD=1`. macOS titlebar insets via `html.tauri-macos` / `.mobile-topbar`.
+
+## Build & deploy
+
+- `npm run build` (desktop: `tsc -b && vite build`) — **keep green**.
+- `npm run build:web` (web/PWA: `vite build`, no tsc) — what Vercel runs (`vercel.json`).
+- `npm run typecheck` — clean before shipping.
+- Tauri build sets `TAURI_BUILD=1` → no SW/manifest in the desktop app.
+- iOS PWA install needs HTTPS (Vercel). `VITE_SUPABASE_*` baked at build; icons in `public/`.
+
+## Done-checklist
+1. `npm run typecheck` clean → 2. 375px no overflow, tap targets, safe areas → 3. desktop ok
+→ 4. availability work reuses `readDay`/`toBusyBlocks` → 5. `npm run build` green.

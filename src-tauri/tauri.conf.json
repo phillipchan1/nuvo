@@ -6,7 +6,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "TAURI_BUILD=1 npm run build"
   },
   "app": {
     "windows": [
@@ -14,7 +14,7 @@
         "title": "Nuvo",
         "width": 1280,
         "height": 800,
-        "minWidth": 900,
+        "minWidth": 380,
         "minHeight": 600,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
