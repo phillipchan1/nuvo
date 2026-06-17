@@ -178,6 +178,8 @@ export default function CalendarPane({
   eventsRef.current = events;
   const slotsRef = useRef(slots);
   slotsRef.current = slots;
+  const mutationsRef = useRef(mutations);
+  mutationsRef.current = mutations;
 
   const [viewTitle, setViewTitle] = useState("");
 
@@ -294,6 +296,9 @@ export default function CalendarPane({
     let armed = false;
     let active = false;
     let overSlot: HTMLElement | null = null;
+    let dragId: string | null = null; // external [data-task-drag] id (rail / slot popover row)
+    let fromRail = false; // did this drag start inside the rail itself?
+    let overRail = false; // is the pointer currently over the rail?
     const reset = () => {
       document.body.classList.remove("cal-dragging", "over-slot");
       overSlot?.classList.remove("slot-drop-target");
@@ -303,6 +308,9 @@ export default function CalendarPane({
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement | null;
       armed = Boolean(el?.closest?.("[data-task-drag], .evt-task"));
+      const dragEl = el?.closest?.("[data-task-drag]") as HTMLElement | null;
+      dragId = dragEl?.getAttribute("data-task-drag") ?? null;
+      fromRail = Boolean(dragEl && railRef.current?.contains(dragEl));
     };
     const onMove = (e: PointerEvent) => {
       if (!armed) return;
@@ -320,12 +328,27 @@ export default function CalendarPane({
         const rr = rail.getBoundingClientRect();
         const onRail =
           e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom;
-        rail.classList.toggle("rail-drop-active", onRail && !slotEl);
+        overRail = onRail && !slotEl;
+        // Only an item dragged *in* from elsewhere (a slot popover row) is an
+        // inbox candidate; dragging a rail row back onto the rail just cancels.
+        rail.classList.toggle("rail-drop-active", overRail && !fromRail && Boolean(dragId));
       }
     };
     const onUp = () => {
       armed = false;
-      if (active) { active = false; reset(); }
+      if (active) {
+        active = false;
+        // A slot/popover item dropped on the rail → back to the Inbox. (Calendar
+        // blocks use onDragStop; rail rows dropped on the rail just cancel.)
+        if (overRail && dragId && !fromRail) {
+          const task = tasksRef.current.find((t) => t.id === dragId);
+          if (task) mutationsRef.current.backToInbox(task);
+        }
+        reset();
+      }
+      dragId = null;
+      fromRail = false;
+      overRail = false;
     };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("pointermove", onMove, true);

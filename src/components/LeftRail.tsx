@@ -328,6 +328,7 @@ export default function LeftRail({
   return (
     <div
       ref={railRef}
+      data-rail-drop
       className="relative flex h-full shrink-0 flex-col border-r border-line bg-surface"
       style={{ width: railWidth }}
     >

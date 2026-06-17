@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import { GuestsInput } from "./GuestsInput";
 import ReactMarkdown from "react-markdown";
 import { createPortal } from "react-dom";
+import { Draggable } from "@fullcalendar/interaction";
 import { format } from "date-fns";
 import type { AttendeeStatus, ExternalEvent, GoogleAttendee, Label, Recurrence, Slot, Task } from "../lib/types";
 import { ruleOf } from "../lib/types";
@@ -1145,7 +1146,26 @@ export function SlotPopover({
   const [title, setTitle] = useState(slot.title);
   const [newTitle, setNewTitle] = useState("");
   const popRef = useRef<HTMLDivElement>(null);
+  // Live reorder state: { id: dragged, index: target insertion slot }.
+  const [reorder, setReorder] = useState<{ id: string; index: number } | null>(null);
   const { data: vertical } = useVertical();
+
+  // Slot children are draggable OUT onto the calendar (or rail → inbox), reusing
+  // FullCalendar's drop geometry. The reorder handle sits outside [data-task-drag]
+  // so grabbing it never starts an FC drag — only the row body drags out.
+  useEffect(() => {
+    if (!popRef.current) return;
+    const d = new Draggable(popRef.current, {
+      itemSelector: "[data-task-drag]",
+      minDistance: 6,
+      eventData: (el) => ({
+        title: el.getAttribute("data-task-title") ?? "task",
+        duration: { minutes: Number(el.getAttribute("data-task-duration")) || 30 },
+        create: true,
+      }),
+    });
+    return () => d.destroy();
+  }, []);
 
   // What the slot shows when unnamed — derived from its contents.
   const derivedTitle = deriveSlotTitle(slot, childTasks, vertical);
@@ -1201,12 +1221,99 @@ export function SlotPopover({
     title.trim() !== slot.title &&
     slotMutations.updateSlot({ id: slot.id, patch: { title: title.trim() } });
 
-  // sorted for display: open tasks first, completed sink to the bottom
+  // sorted for display: open first, completed at the bottom, then by sort_order.
+  // Sorting by sort_order (not just array position) means an optimistic reorder
+  // re-sorts instantly — no glitch waiting for the refetch to return new order.
   const ordered = [...childTasks].sort(
-    (a, b) => Number(a.status === "done") - Number(b.status === "done"),
+    (a, b) =>
+      Number(a.status === "done") - Number(b.status === "done") || a.sort_order - b.sort_order,
   );
   const doneCount = ordered.filter((t) => t.status === "done").length;
   const totalMins = ordered.reduce((sum, t) => sum + (t.duration_minutes ?? 30), 0);
+
+  // While the grip is dragged, show the list with the dragged row lifted out and
+  // re-inserted at the target slot, so the reorder previews live.
+  const displayOrder = (() => {
+    if (!reorder) return ordered;
+    const moved = ordered.find((t) => t.id === reorder.id);
+    if (!moved) return ordered;
+    const rest = ordered.filter((t) => t.id !== reorder.id);
+    const idx = Math.max(0, Math.min(reorder.index, rest.length));
+    rest.splice(idx, 0, moved);
+    return rest;
+  })();
+
+  // The grip is the universal handle: drag within the list to reorder, or out of
+  // the popover onto the rail (→ Inbox) or a calendar day (→ planned, un-slotted).
+  const startReorder = (id: string, e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const task = childTasks.find((t) => t.id === id);
+    if (!task) return;
+    // Capture each row's vertical midpoint ONCE. Computing the insert index from
+    // these fixed positions (not the live, re-ordering DOM) keeps it stable — no
+    // feedback loop where moving the row changes what's under the cursor.
+    const mids = ordered.map((t) => {
+      const r = popRef.current
+        ?.querySelector(`[data-slot-row="${t.id}"]`)
+        ?.getBoundingClientRect();
+      return r ? r.top + r.height / 2 : Number.POSITIVE_INFINITY;
+    });
+    let index = ordered.findIndex((t) => t.id === id);
+    let out: null | { kind: "inbox" } | { kind: "day"; date: string } = null;
+    const railEl = () => document.querySelector<HTMLElement>("[data-rail-drop]");
+    setReorder({ id, index });
+    const onMove = (ev: PointerEvent) => {
+      const pop = popRef.current?.getBoundingClientRect();
+      const inside =
+        !!pop &&
+        ev.clientX >= pop.left && ev.clientX <= pop.right &&
+        ev.clientY >= pop.top && ev.clientY <= pop.bottom;
+      if (inside) {
+        // Reorder mode — insert index = how many *other* rows start above the
+        // cursor, measured against the captured (fixed) midpoints.
+        out = null;
+        railEl()?.classList.remove("rail-drop-active");
+        let i = 0;
+        ordered.forEach((t, k) => {
+          if (t.id !== id && mids[k] < ev.clientY) i++;
+        });
+        if (i !== index) {
+          index = i;
+          setReorder({ id, index });
+        }
+      } else {
+        // Drag-out mode — figure out the destination under the pointer.
+        setReorder(null);
+        const under = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+        if (under?.closest("[data-rail-drop]")) {
+          out = { kind: "inbox" };
+          railEl()?.classList.add("rail-drop-active");
+        } else {
+          railEl()?.classList.remove("rail-drop-active");
+          const date = under?.closest("[data-date]")?.getAttribute("data-date");
+          out = date ? { kind: "day", date } : null;
+        }
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setReorder(null);
+      railEl()?.classList.remove("rail-drop-active");
+      if (out?.kind === "inbox") return void taskMutations.backToInbox(task);
+      if (out?.kind === "day") return void taskMutations.planFor(task, out.date);
+      // Otherwise: reorder within the slot, committing fresh sort_order.
+      const rest = ordered.filter((t) => t.id !== id);
+      const idx = Math.max(0, Math.min(index, rest.length));
+      rest.splice(idx, 0, task);
+      rest.forEach((t, i) => {
+        if (t.sort_order !== i) taskMutations.patchTask(t.id, { sort_order: i });
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   const startDate = new Date(slot.start_time);
   const startHHMM = format(startDate, "HH:mm");
@@ -1379,36 +1486,63 @@ export function SlotPopover({
           {totalMins > 0 && <span>· {fmtDuration(totalMins)} of tasks</span>}
         </div>
 
-        {/* Child tasks */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1">
-          {ordered.map((t) => {
+        {/* Child tasks — grip to reorder, body drags out (calendar / inbox) */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
+          {displayOrder.map((t) => {
             const done = t.status === "done";
+            const dragging = reorder?.id === t.id;
             return (
               <div
                 key={t.id}
-                className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-bg"
+                data-slot-row={t.id}
+                className={`group flex items-center gap-0.5 rounded-md pr-1 hover:bg-bg ${
+                  dragging
+                    ? "pointer-events-none bg-accent-soft text-accent shadow-[inset_0_3px_0_0_var(--accent)]"
+                    : ""
+                }`}
               >
                 <button
-                  aria-label="toggle done"
-                  onClick={() => (done ? taskMutations.uncomplete(t) : taskMutations.complete(t))}
-                  className={`fast flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[3px] border ${
-                    done ? "border-accent bg-accent text-white" : "border-line-strong bg-surface"
-                  }`}
+                  aria-label="Drag to reorder, or out to the inbox or a day"
+                  title="Drag to reorder · drag out to the rail (inbox) or a calendar day"
+                  onPointerDown={(e) => startReorder(t.id, e)}
+                  className="fast flex h-8 w-4 shrink-0 cursor-grab touch-none items-center justify-center text-muted/40 opacity-0 group-hover:opacity-100 hover:text-muted"
                 >
-                  {done && (
-                    <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                      <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.8" />
-                    </svg>
-                  )}
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <circle cx="3" cy="2" r="1" /><circle cx="7" cy="2" r="1" />
+                    <circle cx="3" cy="5" r="1" /><circle cx="7" cy="5" r="1" />
+                    <circle cx="3" cy="8" r="1" /><circle cx="7" cy="8" r="1" />
+                  </svg>
                 </button>
-                <button
-                  onClick={() => onOpenTask(t)}
-                  className={`min-w-0 flex-1 truncate text-left text-caption ${
-                    done ? "text-muted line-through" : "text-text"
-                  }`}
+                <div
+                  data-task-drag={t.id}
+                  data-task-title={t.title}
+                  data-task-duration={t.duration_minutes ?? ""}
+                  className="flex min-w-0 flex-1 cursor-grab items-center gap-2 py-1.5"
+                  title="Drag onto the calendar, or the rail to send to Inbox"
                 >
-                  {t.title}
-                </button>
+                  <button
+                    aria-label="toggle done"
+                    onClick={() => (done ? taskMutations.uncomplete(t) : taskMutations.complete(t))}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className={`fast flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[3px] border ${
+                      done ? "border-accent bg-accent text-white" : "border-line-strong bg-surface"
+                    }`}
+                  >
+                    {done && (
+                      <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                        <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.8" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => onOpenTask(t)}
+                    className={`min-w-0 flex-1 truncate text-left text-caption ${
+                      done ? "text-muted line-through" : "text-text"
+                    }`}
+                  >
+                    {t.title}
+                  </button>
+                </div>
                 <button
                   aria-label="remove from slot"
                   title="Remove from slot"
@@ -1422,7 +1556,7 @@ export function SlotPopover({
               </div>
             );
           })}
-          {ordered.length === 0 && (
+          {displayOrder.length === 0 && (
             <div className="px-2 py-3 text-caption italic text-muted/70">No tasks yet — add one below.</div>
           )}
         </div>
