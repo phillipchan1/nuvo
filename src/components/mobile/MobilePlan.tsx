@@ -135,7 +135,7 @@ export default function MobilePlan({ target }: { target?: PlanTarget | null }) {
   const openProject = (id: string) => push({ level: "project", id });
 
   return (
-    <div className="pb-10">
+    <div className="pb-24">
       {/* Sticky header: the lens switch at the base, Back + title in a detail. */}
       <div className="sticky top-0 z-10 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
         {frame.level === "list" ? (

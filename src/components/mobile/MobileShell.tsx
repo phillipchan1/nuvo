@@ -251,7 +251,7 @@ export default function MobileShell() {
       ) : (
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         {tab === "now" ? (
-          <div className="px-4 pt-4 pb-10">
+          <div className="px-4 pt-4 pb-24">
             <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
           </div>
         ) : tab === "calendar" ? (
@@ -259,7 +259,7 @@ export default function MobileShell() {
         ) : tab === "plan" ? (
           <MobilePlan target={planTarget} />
         ) : (
-          <div className="pb-10">
+          <div className="pb-24">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
             <MobileTaskList
               tab={sub}
@@ -277,39 +277,35 @@ export default function MobileShell() {
       </main>
       )}
 
-      {/* Bottom bar — Now · Calendar · ＋ capture · Tasks · Nuvo. The center
-          capture and Nuvo are permanent first-class actions. */}
+      {/* Bottom bar — five equal navigation destinations: Now · Calendar · Plan ·
+          Tasks · Nuvo. Capture is an *action*, not a place, so it doesn't take a
+          tab slot: it floats as the single primary ＋ (below), which keeps the
+          nav row even and lets the one bold accent belong to the one action.
+          Nuvo is a permanent chat destination. */}
       <nav className="pb-safe relative flex shrink-0 items-stretch border-t border-line bg-surface">
+        {/* Capture — the one primary action, floated above the bar in the
+            bottom-right thumb arc so it reads as a verb, not a destination.
+            Hidden on the Nuvo tab, where it would collide with the composer. */}
+        {tab !== "nuvo" && (
+          <button
+            onClick={() => setQuickOpen(true)}
+            aria-label="Quick task"
+            className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95"
+          >
+            ＋
+          </button>
+        )}
+
         <NavTab tab={NAV[0]} active={tab === NAV[0].id} onClick={() => setTab(NAV[0].id)} />
         <NavTab tab={NAV[1]} active={tab === NAV[1].id} onClick={() => setTab(NAV[1].id)} />
-
-        {/* Raised center capture — docked in a surface ring so the button reads
-            as sitting on the bar, not floating over the timeline behind it. The
-            ＋ glyph is self-evident, so it carries no label. */}
-        <button
-          onClick={() => setQuickOpen(true)}
-          aria-label="Quick task"
-          className="tap relative flex flex-1 flex-col items-center justify-center py-2"
-        >
-          <span className="absolute -top-6 rounded-full bg-surface p-[3px]">
-            <span className="elev-3 fast flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95">
-              ＋
-            </span>
-          </span>
-          <span className="invisible text-lead leading-none">＋</span>
-        </button>
-
-        {/* Plan — the strategic vertical. Sits between capture and Tasks so the
-            ＋ keeps its exact spot and strategy reads next to execution. */}
+        {/* Plan — the strategic vertical. */}
         <NavTab tab={NAV[3]} active={tab === NAV[3].id} onClick={() => setTab(NAV[3].id)} />
-
         <NavTab
           tab={NAV[2]}
           active={tab === NAV[2].id}
           onClick={() => setTab(NAV[2].id)}
           badge={inbox.length}
         />
-
         {/* Nuvo — permanent chat destination */}
         <button
           onClick={() => openChat()}
@@ -318,7 +314,7 @@ export default function MobileShell() {
             tab === "nuvo" ? "text-accent" : "text-muted"
           }`}
         >
-          <span className="text-lead leading-none">✦</span>
+          <span className="flex h-7 items-center text-lead leading-none">✦</span>
           <span className="text-meta font-medium leading-none">Nuvo</span>
         </button>
       </nav>
@@ -382,7 +378,7 @@ function NavTab({
         active ? "text-accent" : "text-muted"
       }`}
     >
-      <span className="text-lead leading-none">{tab.glyph}</span>
+      <span className="flex h-7 items-center text-lead leading-none">{tab.glyph}</span>
       <span className="text-meta font-medium leading-none">{tab.label}</span>
       {badge > 0 && (
         <span

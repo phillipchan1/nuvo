@@ -20,7 +20,26 @@ if (isTauri) {
 // context (https / localhost). The virtual module exists only in web builds.
 if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
   import("virtual:pwa-register")
-    .then(({ registerSW }) => registerSW({ immediate: true }))
+    .then(({ registerSW }) => {
+      registerSW({
+        immediate: true,
+        // The SW uses `autoUpdate`, but the browser only looks for a new one on
+        // navigation or ~daily — and an installed iOS PWA never checks on resume.
+        // That left fresh deploys hidden behind the cached app. Nudge the SW to
+        // check on launch, whenever the app regains focus, and hourly while open;
+        // autoUpdate then activates the new build (and reloads) on its own.
+        onRegisteredSW(_swUrl, registration) {
+          if (!registration) return;
+          const check = () => void registration.update();
+          check();
+          setInterval(check, 60 * 60 * 1_000);
+          document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") check();
+          });
+          window.addEventListener("focus", check);
+        },
+      });
+    })
     .catch(() => {
       /* no SW in this build (e.g. Tauri bundle) — ignore */
     });
