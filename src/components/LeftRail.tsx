@@ -360,23 +360,36 @@ export default function LeftRail({
 
       {/* Capture */}
       <form onSubmit={(e) => void submitCapture(e)} className="p-2">
-        <input
-          ref={captureRef}
-          value={capture}
-          disabled={capturing}
-          onChange={(e) => {
-            setCapture(e.target.value);
-            if (captureError) setCaptureError(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void submitCapture();
-            }
-          }}
-          placeholder='Capture… try "call David tomorrow 9am 30m #work !high"'
-          className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-body outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
-        />
+        <div className="relative">
+          {/* A quill — capture is organic free text, the front door, not a form. */}
+          <svg
+            aria-hidden
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-accent"
+            width="15" height="15" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+          >
+            <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
+            <line x1="16" y1="8" x2="2" y2="22" />
+            <line x1="17.5" y1="15" x2="9" y2="15" />
+          </svg>
+          <input
+            ref={captureRef}
+            value={capture}
+            disabled={capturing}
+            onChange={(e) => {
+              setCapture(e.target.value);
+              if (captureError) setCaptureError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void submitCapture();
+              }
+            }}
+            placeholder='Capture… try "call David tomorrow 9am 30m #work !high"'
+            className="w-full rounded-lg border border-line bg-surface-2 py-2 pl-9 pr-3 text-body outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
+          />
+        </div>
         {captureError && (
           <div className="mt-1 px-0.5 text-label text-signal">{captureError}</div>
         )}

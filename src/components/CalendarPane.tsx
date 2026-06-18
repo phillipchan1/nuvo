@@ -1088,7 +1088,7 @@ export default function CalendarPane({
 
       {/* ── Navigation bar — also fills the macOS titlebar zone (titlebar-pad)
             and hosts the window-drag handle on its empty spacer. ──────────── */}
-      <div className="titlebar-pad flex shrink-0 items-center gap-1 px-3 py-1.5">
+      <div className="titlebar-pad relative flex shrink-0 items-center gap-1 px-3 py-1.5">
         <button
           onClick={() => calRef.current?.getApi().prev()}
           className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
@@ -1108,7 +1108,10 @@ export default function CalendarPane({
           </svg>
         </button>
 
-        <span className="masthead mx-1.5 select-none text-lead leading-none text-text">
+        {/* Editorial masthead, centered in the bar like the mockup. Absolute so
+            it's window-centered regardless of the nav/toggle widths, and
+            pointer-events-none so the drag region beneath it still drags. */}
+        <span className="masthead pointer-events-none absolute left-1/2 -translate-x-1/2 select-none text-lead leading-none text-text">
           {viewTitle}
         </span>
 
@@ -1199,7 +1202,7 @@ export default function CalendarPane({
             slotDuration: "00:15:00",
             snapDuration: "00:15:00",
             slotLabelInterval: "01:00",
-            slotLabelFormat: { hour: "numeric", minute: "2-digit", hour12: true, meridiem: "short" },
+            slotLabelFormat: { hour: "numeric", hour12: true, meridiem: "short" },
             eventTimeFormat: { hour: "numeric", minute: "2-digit", hour12: true, meridiem: "short" },
             scrollTime: `${String(Math.max(viewStart, Math.min(now.getHours() - 1, viewEnd - 1))).padStart(2, "0")}:00:00`,
           })}
