@@ -1084,8 +1084,9 @@ export default function CalendarPane({
         />
       )}
 
-      {/* ── Navigation bar ──────────────────────────────────────────────── */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-line px-3 py-1.5">
+      {/* ── Navigation bar — also fills the macOS titlebar zone (titlebar-pad)
+            and hosts the window-drag handle on its empty spacer. ──────────── */}
+      <div className="titlebar-pad flex shrink-0 items-center gap-1 border-b border-line bg-surface px-3 py-1.5">
         <button
           onClick={() => calRef.current?.getApi().prev()}
           className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
@@ -1142,7 +1143,7 @@ export default function CalendarPane({
           </button>
         )}
 
-        <div className="flex-1" />
+        <div data-tauri-drag-region className="flex-1 self-stretch" />
 
         {onViewChange && (
           <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">

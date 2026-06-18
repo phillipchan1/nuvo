@@ -221,14 +221,12 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* No standalone header — the calendar's own toolbar carries the view
-          toggle (Day/Week/Month), and the date/today/now-line live on the grid.
-          All that's left at the very top is a thin drag strip: it collapses to
-          nothing on the web, and in the desktop app it's exactly the macOS
-          titlebar height so the window stays draggable and clears the traffic
-          lights. Plan/Shutdown live in ⌘K + the morning prompt; Nuvo on the
-          right edge (⌘J); settings on the spine (⌘,). */}
-      <div data-tauri-drag-region className="app-titlebar shrink-0" />
+      {/* No header bar at all. The macOS titlebar zone is filled by the rail and
+          the calendar toolbar themselves (each carries `titlebar-pad` so its own
+          surface rises to the window top, with the traffic lights floating over
+          the spine) — nothing reads as an empty band. Window-drag lives on the
+          spine top + the toolbar's empty spacer. Plan/Shutdown → ⌘K + the morning
+          prompt; Nuvo → right edge (⌘J); settings → spine (⌘,). */}
 
       <ReconnectBanner accounts={accounts} />
 

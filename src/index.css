@@ -296,12 +296,12 @@ html.tauri-macos .app-topbar {
   padding-top: var(--titlebar-inset-top);
 }
 
-/* The Schedule has no chrome header — only a thin drag strip at the very top.
-   On the web there's no window chrome, so it collapses to nothing; in the Tauri
-   macOS window it's exactly the overlay-titlebar height, keeping the window
-   draggable and clearing the traffic lights. */
-.app-titlebar {
-  height: var(--titlebar-inset-top, 0px);
+/* The Schedule has no chrome header. Instead the rail + the calendar toolbar
+   carry this inset so their own surfaces rise to fill the macOS titlebar zone
+   (traffic lights float over the spine; nothing reads as an empty bar). On the
+   web there's no window chrome, so it collapses to zero. */
+.titlebar-pad {
+  padding-top: var(--titlebar-inset-top, 0px);
 }
 
 /* Niche case only: the desktop Tauri window shrunk below 768px so the mobile
