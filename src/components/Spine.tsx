@@ -10,13 +10,16 @@ const RUNGS: { id: Rung; label: string }[] = [
   { id: "domain", label: "Domain" },
 ];
 
-export type FlowName = "sunday" | "summit" | "blueprint";
+export type FlowName = "sunday" | "summit" | "tending";
 
 // A flow is the *act* of deciding at an altitude. Floors are for looking;
 // flows are for deciding — so each ritual lives on the rung it operates on.
+// Tending spans both Build rungs (projects AND initiatives), so it hangs off
+// each — it surfaces whatever is ripest across the two.
 const RUNG_FLOW: Partial<Record<Rung, { flow: FlowName; label: string; sub: string }>> = {
   day: { flow: "sunday", label: "Sunday", sub: "compose the week" },
-  initiative: { flow: "blueprint", label: "Blueprint", sub: "shape a new bet" },
+  project: { flow: "tending", label: "Tending", sub: "ripen what's ready" },
+  initiative: { flow: "tending", label: "Tending", sub: "ripen what's ready" },
   domain: { flow: "summit", label: "Summit", sub: "decide the quarter" },
 };
 

@@ -67,10 +67,13 @@ export default function FloorPane({
   const viewKey = rung === "project" ? projectView : rung === "initiative" ? initiativeView : "";
 
   return (
-    <div className="flex h-full flex-col bg-bg">
+    // Transparent: the floor overlay (AppShell) already paints .atmosphere, the
+    // one continuous warm-paper canvas. Painting an opaque bg here covered it and
+    // made each floor read as a flat panel instead of the same paper as Schedule.
+    <div className="flex h-full flex-col">
       <div
         data-tauri-drag-region
-        className="app-topbar flex h-11 shrink-0 items-center gap-1.5 border-b border-line bg-surface px-5"
+        className="app-topbar flex h-11 shrink-0 items-center gap-1.5 border-b border-line px-5"
       >
         {/* Back arrow — always reachable, replaces the need to find the breadcrumb */}
         {showBackBtn && (

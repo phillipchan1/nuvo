@@ -33,6 +33,8 @@ import {
   type VTask,
   type VerticalData,
 } from "../../lib/vertical";
+import { ripenessOfInitiative, ripenessOfProject } from "../../lib/tending";
+import { RipenessPip } from "../floors/parts";
 
 type Store = ReturnType<typeof useVertical>;
 
@@ -252,7 +254,12 @@ function ListScreen({
             leading={<StatusDot status={p.status} />}
             title={p.name}
             subtitle={projectContext(d, p)}
-            meta={<span className="mono shrink-0 text-caption text-muted">{projectProgress(d, p)}%</span>}
+            meta={
+              <span className="mono flex shrink-0 items-center gap-1.5 text-caption text-muted">
+                <RipenessPip stage={ripenessOfProject(d, p).stage} />
+                {projectProgress(d, p)}%
+              </span>
+            }
           />
         ))}
       </div>
@@ -278,6 +285,7 @@ function ListScreen({
               subtitle={domainById(d, i.domainId)?.name ?? undefined}
               meta={
                 <span className="mono flex shrink-0 items-center gap-1.5 text-caption text-muted">
+                  <RipenessPip stage={ripenessOfInitiative(d, i).stage} />
                   <span>{mom?.glyph}</span>
                   <span>{initiativeProgress(d, i)}%</span>
                 </span>

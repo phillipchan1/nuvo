@@ -60,7 +60,7 @@ export default function Standback({
           </div>
           <div className="mono text-caption text-muted">{weekday} · {clock}</div>
         </div>
-        <h1 className="mt-2 text-lead font-semibold tracking-tight">{part}, {NAME}. Look how far you've come.</h1>
+        <h1 className="mt-2 text-lead masthead">{part}, {NAME}. Look how far you've come.</h1>
         <p className="mt-1 max-w-[680px] text-head leading-relaxed text-ink/90">{read.greeting}</p>
 
         <div className="mono mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-label">

@@ -18,6 +18,7 @@ import {
 } from "date-fns";
 import { ENERGY_META, ENERGY_ORDER, type Energy } from "../../lib/energy";
 import type { Domain, Momentum, ProjectStatus } from "../../lib/vertical";
+import { RIPENESS_HINT, RIPENESS_LABEL, type Ripeness } from "../../lib/tending";
 import type { CollectionSelection } from "../../hooks/useCollectionSelection";
 import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
 
@@ -40,10 +41,42 @@ export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
 // Initiatives speak the same status vocabulary as projects now — reuse
 // PROJECT_STATUS / PROJECT_STATUS_COLORS / PROJECT_STATUS_LABEL above.
 
+// ── Ripeness pip — ambient readiness, gray (raw) → green (active) ────────────
+// The one source for the dot is the computed Ripeness; the ramp leans on the
+// "complete" teal already in the status vocab, so no new green is introduced.
+const RIPE_GREEN = PROJECT_STATUS_COLORS.complete;
+const RIPE_FILL: Record<Ripeness, string> = {
+  raw: "var(--muted)",
+  shaped: `color-mix(in srgb, ${RIPE_GREEN} 40%, var(--muted))`,
+  scaffolded: `color-mix(in srgb, ${RIPE_GREEN} 72%, var(--muted))`,
+  active: RIPE_GREEN,
+  resting: "var(--line-strong)",
+};
+
+export function RipenessPip({ stage, size = 7 }: { stage: Ripeness; size?: number }) {
+  const fill = RIPE_FILL[stage];
+  const resting = stage === "resting";
+  return (
+    <span
+      title={`${RIPENESS_LABEL[stage]} — ${RIPENESS_HINT[stage]}`}
+      aria-label={`Ripeness: ${RIPENESS_LABEL[stage]}`}
+      className="inline-block shrink-0 rounded-full"
+      style={{
+        width: size,
+        height: size,
+        background: resting ? "transparent" : fill,
+        border: resting ? `1.5px solid ${fill}` : "none",
+        opacity: resting ? 0.7 : stage === "raw" ? 0.5 : 1,
+        boxShadow: stage === "active" ? `0 0 5px color-mix(in srgb, ${RIPE_GREEN} 55%, transparent)` : "none",
+      }}
+    />
+  );
+}
+
 // ── Progress bar with optional baseline marker (the Gain frame) ──────────────
 export function Bar({ pct, color, baseline, h = 1.5 }: { pct: number; color: string; baseline?: number; h?: number }) {
   return (
-    <div className="relative my-1.5 rounded-full bg-bg" style={{ height: h * 4 }}>
+    <div className="relative my-1.5 rounded-full" style={{ height: h * 4, background: "var(--line)" }}>
       <div className="fast absolute left-0 top-0 bottom-0 rounded-full" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }} />
       {baseline != null && (
         <div className="absolute top-[-2px] bottom-[-2px] w-px bg-muted" style={{ left: `${baseline}%` }} />
@@ -562,11 +595,10 @@ function loadZoom(key: string | undefined, fallback: TimelineZoom): TimelineZoom
   }
 }
 
-const ROW = 34;
-const AXIS_H = 42;
-const LABEL_W = 172;
-const MIN_BAR = 10;
-const EMPTY_H = 132;
+const ROW = 44;
+const AXIS_H = 50;
+const LABEL_W = 208;
+const MIN_BAR = 14;
 
 export function Timeline({
   items,
@@ -617,7 +649,9 @@ export function Timeline({
   const todayX = x(snapDay(todayMs) + DAY / 2);
 
   const bodyRows = dated.length;
-  const bodyHeight = Math.max(bodyRows * ROW + (tray ? ROW : 0), EMPTY_H);
+  // The grid fills the floor (the body is flex-1 below); this is just the minimum
+  // height the placed bars need so they never collapse.
+  const contentHeight = bodyRows * ROW + (tray ? ROW : 0) + 16;
 
   // re-centre on today when the zoom changes (and on first paint)
   useLayoutEffect(() => {
@@ -732,72 +766,73 @@ export function Timeline({
   };
 
   return (
-    <div className="overflow-hidden rounded-md border border-line bg-surface" style={{ userSelect: drag || tray ? "none" : "auto" }}>
-      {/* toolbar — zoom · navigation · counts */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-bg px-2.5 py-1.5">
-        <div className="inline-flex rounded-md border border-line p-0.5">
+    <div className="flex min-h-0 flex-1 flex-col" style={{ userSelect: drag || tray ? "none" : "auto" }}>
+      {/* toolbar — zoom · navigation · counts. Floats on the paper, no frame. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2.5">
+        <div className="inline-flex rounded-lg border border-line p-1">
           {ZOOMS.map((z) => (
             <button
               key={z.id}
               onClick={() => choose(z.id)}
-              className="fast mono rounded-[5px] px-2 py-0.5 text-meta"
+              className="fast rounded-md px-3 py-1.5 text-label font-medium"
               style={{ background: zoom === z.id ? "var(--accent)" : "transparent", color: zoom === z.id ? "#fff" : "var(--muted)" }}
             >
               {z.label}
             </button>
           ))}
         </div>
-        <div className="inline-flex items-center gap-0.5">
-          <button onClick={() => nudge(-1)} title="Earlier" className="fast mono flex h-6 w-6 items-center justify-center rounded border border-line text-caption text-muted hover:text-ink">‹</button>
-          <button onClick={centerToday} title="Jump to today" className="fast mono rounded border border-line px-2 py-0.5 text-meta text-muted hover:text-ink">Today</button>
-          <button onClick={() => nudge(1)} title="Later" className="fast mono flex h-6 w-6 items-center justify-center rounded border border-line text-caption text-muted hover:text-ink">›</button>
+        <div className="inline-flex items-center gap-1">
+          <button onClick={() => nudge(-1)} title="Earlier" className="fast flex h-9 w-9 items-center justify-center rounded-lg border border-line text-body text-muted hover:border-line-strong hover:text-ink">‹</button>
+          <button onClick={centerToday} title="Jump to today" className="fast rounded-lg border border-line px-3.5 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink">Today</button>
+          <button onClick={() => nudge(1)} title="Later" className="fast flex h-9 w-9 items-center justify-center rounded-lg border border-line text-body text-muted hover:border-line-strong hover:text-ink">›</button>
         </div>
         <div className="flex-1" />
-        <span className="mono text-meta text-muted">
+        <span className="mono text-label text-muted">
           {dated.length} scheduled{undated.length ? ` · ${undated.length} unscheduled` : ""}
         </span>
       </div>
 
       {/* chart — fixed name column + horizontally-scrolling grid */}
-      <div className="flex">
-        <div className="shrink-0 border-r border-line" style={{ width: LABEL_W }}>
-          <div className="border-b border-line bg-bg" style={{ height: AXIS_H }}>
-            <div className="mono flex h-full items-end px-2.5 pb-1 text-micro uppercase text-muted">Name</div>
+      <div className="flex min-h-0 flex-1">
+        <div className="flex shrink-0 flex-col border-r border-line" style={{ width: LABEL_W }}>
+          <div className="shrink-0 border-b border-line" style={{ height: AXIS_H }}>
+            <div className="section-label flex h-full items-end px-3 pb-2">Name</div>
           </div>
-          {dated.map((it) => {
-            const picked = selection?.isSelected(it.id);
-            const preview = selection?.isPreviewSelected(it.id);
-            const visual = picked ? "selected" : preview ? "preview" : "none";
-            return (
-              <div
-                key={it.id}
-                data-select-id={selection ? it.id : undefined}
-                ref={selection ? (el) => selection.registerRef(it.id, el) : undefined}
-                onMouseDown={selection ? selection.itemPointerDown(it.id) : undefined}
-                className={`flex items-center gap-1.5 px-2.5 ${selection ? itemSelectRowClass(selection, it.id) : "hover:bg-accent-soft/50"}`}
-                style={{ height: ROW }}
-              >
-                {selection && (
-                  <span data-no-select>
-                    <SelectCheckbox
-                      checked={visual === "selected"}
-                      preview={visual === "preview"}
-                      onToggle={() => selection.pick(it.id, { extend: true, range: false })}
-                    />
-                  </span>
-                )}
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: it.color, opacity: it.dim ? 0.5 : 1 }} />
-                <button onClick={it.onClick} className="fast truncate text-left text-label text-ink hover:text-accent" title={it.label}>{it.label || "Untitled"}</button>
-              </div>
-            );
-          })}
-          {dated.length === 0 && <div className="px-2.5" style={{ height: EMPTY_H }} aria-hidden />}
+          <div className="relative flex-1">
+            {dated.map((it, row) => {
+              const picked = selection?.isSelected(it.id);
+              const preview = selection?.isPreviewSelected(it.id);
+              const visual = picked ? "selected" : preview ? "preview" : "none";
+              return (
+                <div
+                  key={it.id}
+                  data-select-id={selection ? it.id : undefined}
+                  ref={selection ? (el) => selection.registerRef(it.id, el) : undefined}
+                  onMouseDown={selection ? selection.itemPointerDown(it.id) : undefined}
+                  className={`rise lift-anim flex items-center gap-2 px-3 ${selection ? itemSelectRowClass(selection, it.id) : "hover:bg-accent-soft/50"}`}
+                  style={{ height: ROW, animationDelay: `${row * 35}ms` }}
+                >
+                  {selection && (
+                    <span data-no-select>
+                      <SelectCheckbox
+                        checked={visual === "selected"}
+                        preview={visual === "preview"}
+                        onToggle={() => selection.pick(it.id, { extend: true, range: false })}
+                      />
+                    </span>
+                  )}
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: it.color, opacity: it.dim ? 0.5 : 1 }} />
+                  <button onClick={it.onClick} className="fast truncate text-left text-body text-ink hover:text-accent" title={it.label}>{it.label || "Untitled"}</button>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto">
-          <div style={{ width: totalWidth }}>
+          <div className="flex min-h-full flex-col" style={{ width: totalWidth }}>
             {/* axis */}
-            <div className="relative border-b border-line bg-bg" style={{ height: AXIS_H }}>
+            <div className="relative shrink-0 border-b border-line" style={{ height: AXIS_H }}>
               {majors.map((g) => (
                 <div key={g.key} className="absolute top-0 flex items-center overflow-hidden border-r border-line px-1.5" style={{ left: g.left, width: g.width, height: 19 }}>
                   <span className="mono whitespace-nowrap text-micro font-semibold uppercase tracking-wide text-muted">{g.label}</span>
@@ -818,7 +853,7 @@ export function Timeline({
             </div>
 
             {/* body */}
-            <div ref={bodyRef} className="relative" style={{ height: bodyHeight }}>
+            <div ref={bodyRef} className="relative flex-1" style={{ minHeight: contentHeight }}>
               {/* background: weekend bands · gridlines · today */}
               <div className="pointer-events-none absolute inset-0">
                 {weekends.map((w) => (
@@ -827,7 +862,7 @@ export function Timeline({
                 {minors.map((t) => (
                   <div key={t.key} className="absolute top-0 bottom-0 w-px" style={{ left: t.left, background: t.strong ? "var(--line-strong)" : "color-mix(in srgb, var(--line) 55%, transparent)" }} />
                 ))}
-                <div className="absolute top-0 bottom-0 w-px" style={{ left: todayX, background: "var(--signal)", opacity: 0.7 }} />
+                <div className="absolute top-0 bottom-0 w-px" style={{ left: todayX, background: "var(--signal)", opacity: 0.7, boxShadow: "0 0 10px var(--signal)" }} />
               </div>
 
               {/* bars */}
@@ -842,7 +877,7 @@ export function Timeline({
                 const editable = !!it.onChangeDates;
                 const wide = width > 64;
                 return (
-                  <div key={it.id} data-no-select className="group absolute" style={{ top: row * ROW + 6, left, width, height: ROW - 12 }}>
+                  <div key={it.id} data-no-select className="rise group absolute" style={{ top: row * ROW + 8, left, width, height: ROW - 16, animationDelay: `${row * 45}ms` }}>
                     <div
                       onPointerDown={editable ? (ev) => startBarDrag(it, "move", ev) : undefined}
                       onClick={!editable ? it.onClick : undefined}
@@ -905,7 +940,7 @@ export function Timeline({
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center">
                   <span className="mono max-w-[420px] text-label text-muted">
                     {undated.length
-                      ? "Nothing scheduled yet — drag a card up from Unassigned onto the grid to give it dates."
+                      ? "Nothing scheduled yet — drag a card up from the tray below onto the grid to give it dates."
                       : "No dated work yet. Set a start/target date to place it on the timeline."}
                   </span>
                 </div>
@@ -924,8 +959,8 @@ export function Timeline({
         if (!it) return null;
         return (
           <div
-            className="pointer-events-none fixed z-[300] flex items-center gap-1.5 rounded border bg-surface px-2 py-1 text-meta shadow-lg"
-            style={{ left: tray.x + 12, top: tray.y + 12, borderColor: it.color }}
+            className="glass-grab pointer-events-none fixed z-[300] flex items-center gap-2 rounded-lg px-3 py-2 text-label"
+            style={{ left: tray.x + 12, top: tray.y + 12 }}
           >
             <span className="h-2 w-2 rounded-full" style={{ background: it.color }} />
             <span className="max-w-[160px] truncate text-ink">{it.label || "Untitled"}</span>
@@ -947,15 +982,15 @@ function UnassignedTray({
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="border-t border-line bg-bg/60 px-2.5 py-2">
-      <button onClick={() => setOpen((o) => !o)} className="fast mono mb-1.5 flex items-center gap-1.5 text-meta uppercase tracking-wide text-muted hover:text-ink">
+    <div className="mt-3 shrink-0 border-t border-line pt-3">
+      <button onClick={() => setOpen((o) => !o)} className="fast mb-2 flex items-center gap-2 text-muted hover:text-ink">
         <span className="text-micro">{open ? "▾" : "▸"}</span>
-        Unassigned · {items.length}
-        <span className="ml-1 normal-case tracking-normal text-muted/70">drag onto the grid to schedule</span>
+        <span className="section-label">Unscheduled · {items.length}</span>
+        <span className="text-meta text-muted/70">drag a card up onto the grid to give it dates</span>
       </button>
       {open && (
-        <div className="flex flex-wrap gap-1.5">
-          {items.map((it) => {
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {items.map((it, i) => {
             const editable = !!it.onChangeDates;
             return (
               <div
@@ -963,11 +998,13 @@ function UnassignedTray({
                 data-no-select
                 onPointerDown={editable ? (e) => onStart(it, e) : undefined}
                 onClick={!editable ? it.onClick : undefined}
-                className={`fast flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-label ${editable ? "cursor-grab active:cursor-grabbing hover:border-muted" : "cursor-pointer"} ${draggingId === it.id ? "opacity-40" : ""}`}
+                className={`rise fast group flex shrink-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 ${editable ? "cursor-grab active:cursor-grabbing hover:-translate-y-px hover:border-line-strong" : "cursor-pointer"} ${draggingId === it.id ? "opacity-40" : ""}`}
+                style={{ animationDelay: `${i * 40}ms` }}
                 title={editable ? `${it.label} — drag onto the grid to schedule` : it.label}
               >
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: it.color }} />
-                <span className="max-w-[200px] truncate text-ink">{it.label || "Untitled"}</span>
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: it.color }} />
+                <span className="max-w-[220px] truncate text-caption text-ink">{it.label || "Untitled"}</span>
+                {editable && <span className="text-meta text-muted/40 group-hover:text-muted">⠿</span>}
               </div>
             );
           })}

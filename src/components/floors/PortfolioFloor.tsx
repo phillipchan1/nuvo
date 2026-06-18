@@ -13,6 +13,7 @@ import {
   projectSprintCount,
   tasksOf,
 } from "../../lib/vertical";
+import { ripenessOfProject } from "../../lib/tending";
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
@@ -39,6 +40,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
       domainIcon: domain?.icon,
       accent: domain?.color ?? "var(--accent)",
       status: p.status,
+      ripeness: ripenessOfProject(data, p).stage,
       progress: projectProgress(data, p),
       startDate: p.startDate,
       targetDate: p.targetDate,
@@ -59,7 +61,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
   return (
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
       <FloorHeader eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => isProjectInFlight(p.status)).length} in flight`}>
-        <h1 className="text-display font-semibold tracking-tight">Projects</h1>
+        <h1 className="text-display masthead">Projects</h1>
         <p className="mt-1 text-body text-muted">Every project at a glance — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
 

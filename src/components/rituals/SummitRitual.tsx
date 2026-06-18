@@ -38,12 +38,12 @@ export default function SummitRitual({
   step,
   setStep,
   onClose,
-  onOpenBlueprint,
+  onNewBet,
 }: {
   step: number;
   setStep: (s: number) => void;
   onClose: () => void;
-  onOpenBlueprint: () => void;
+  onNewBet: () => void;
 }) {
   const { data } = useVertical();
   const { back } = useAppNavigation();
@@ -78,7 +78,7 @@ export default function SummitRitual({
       id: "portfolio",
       label: "The Portfolio",
       value: `${active.length} live · ${paused.length} paused`,
-      body: <PortfolioStep onOpenBlueprint={onOpenBlueprint} />,
+      body: <PortfolioStep onNewBet={onNewBet} />,
     },
     {
       id: "months",
@@ -269,15 +269,15 @@ function VowsStep() {
 }
 
 // ── 3 · The Portfolio — every bet gets a verdict; new bets get a blueprint ──
-function PortfolioStep({ onOpenBlueprint }: { onOpenBlueprint: () => void }) {
+function PortfolioStep({ onNewBet }: { onNewBet: () => void }) {
   const { data, updateInitiative } = useVertical();
   const rows = data.initiatives.filter((i) => isOpenStatus(i.status));
 
   return (
     <div>
-      <StepTitle title="The Portfolio" sub="Every bet gets a verdict — ship it, keep it, pause it, or drop it. No zombies into the new quarter. Start the next bet with a blueprint." />
+      <StepTitle title="The Portfolio" sub="Every bet gets a verdict — ship it, keep it, pause it, or drop it. No zombies into the new quarter. Name the next bet here, then ripen it in Tending." />
       <div className="mb-4">
-        <Btn kind="primary" onClick={onOpenBlueprint}>✦ blueprint a new bet</Btn>
+        <Btn kind="primary" onClick={onNewBet}>✦ name a new bet</Btn>
       </div>
       <div className="space-y-1.5">
         {rows.map((i) => {

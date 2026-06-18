@@ -5,6 +5,32 @@ Single-user daily planner. **One React SPA, two shells:** a Tauri macOS desktop 
 product model and backend; this file is how we build so the app stays consistent and
 **mobile-ready by default.**
 
+## Design language — "Warm Paper"
+
+The app is converging on one design language; the full grammar + token vocabulary is in
+**`docs/design-language.md`** — read it before building any new surface. The reference
+screens are **Today** (`NowFloor`) and the **Domain** wall/chapel. The rules that prevent
+regressions:
+
+- **Never paint an opaque `bg-*` over the `.atmosphere` canvas.** Full-bleed structural
+  containers (floor wrappers, the calendar pane, the agent rail) stay **transparent** and
+  separate with a `border-l/-r` hairline — the one warm-paper gradient must read
+  continuously across spine · rail · calendar · floors. An opaque `bg-surface`/`bg-bg`
+  there is the "frost seam."
+- **Floor / record / day heroes are Fraunces** (`text-display masthead`) — never
+  `font-semibold`.
+- **Dissolve, don't frame.** Default to hairline-separated rows on the paper; a bordered
+  `bg-surface` card is only for things that genuinely *float* (records, modals, board /
+  Today cards). Progress tracks use `--line`, never `bg-bg`.
+- **Color is semantic and low-saturation** — always a token (`--accent` = intent,
+  `--signal` = now, domain color = identity, `--slot` = open/unclaimed). Never a raw hex.
+- **Focus lifts, it doesn't outline.** Floating things rest as glass (`.glass-card` —
+  translucent + frost), and the focal element (selected/active/dragged/open) *lifts* from
+  it with `--shadow-lift` + a small rise, **no flat ring**: `.glass-lift` (cards/chips),
+  `.glass-lift-row` (table/timeline rows), `.glass-grab` (drag ghosts). Colored items
+  (calendar events) keep their fill and apply the shadow/transform inline; on the Schedule
+  the lift is instant (no transition).
+
 ## Golden rule: every UI change ships mobile-ready
 
 The same components serve desktop and a 375–430px phone. A UI change is not done until:

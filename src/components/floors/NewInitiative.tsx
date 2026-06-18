@@ -1,30 +1,26 @@
 // New initiative — a composer, not a form. Type the bet name, pick the domain,
-// set a finish line. Hand to Blueprint if you want the full AI shape-up.
+// set a finish line, create. Shaping it (key results, projects, first tasks) is
+// the ◇ Tending ritual's job — create the bet bare here, ripen it there.
 // ⏎ moves focus through name → outcome → creates.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { endOfQuarter, format } from "date-fns";
 import * as chrono from "chrono-node";
 import { useVertical } from "../../hooks/useVertical";
-import { ASSISTANT_NAME } from "../../lib/assistant";
 import { fmtDate } from "./parts";
 import { Modal } from "../ui";
-import type { BlueprintSeed } from "../rituals/BlueprintFlow";
 
 export default function NewInitiative({
   onClose,
   onCreated,
   initialDomainId,
   initialName,
-  onBlueprint,
 }: {
   onClose: () => void;
   onCreated: (initiativeId: string) => void;
   initialDomainId?: string | null;
   /** Carried over when expanding from the fast composer. */
   initialName?: string;
-  /** Hand the half-typed bet to the AI Blueprint flow instead. */
-  onBlueprint?: (seed: BlueprintSeed) => void;
 }) {
   const { data, addInitiative, addDomain } = useVertical();
   const domains = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
@@ -204,16 +200,7 @@ export default function NewInitiative({
 
       {/* ── Footer ── */}
       <div className="flex items-center gap-2 border-t border-line bg-bg/40 px-6 py-3.5">
-        {onBlueprint && (
-          <button
-            onClick={() => onBlueprint({ domainId, name: name.trim(), outcome: outcome.trim(), description: "" })}
-            className="fast flex items-center gap-1.5 rounded-md px-2 py-1 text-caption text-muted hover:text-ink"
-            title={`Let ${ASSISTANT_NAME} draft key results, projects, and first tasks`}
-          >
-            <span style={{ color: accent }}>✦</span>
-            Shape with {ASSISTANT_NAME}
-          </button>
-        )}
+        <span className="hidden text-meta text-muted/70 sm:inline">Shape it later in ◇ Tending</span>
         <div className="flex-1" />
         <button
           onClick={onClose}

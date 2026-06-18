@@ -46,7 +46,7 @@ export default function SprintFloor() {
         eyebrow={`Weekly sprint · ${week}`}
         actions={<Btn kind="signal" onClick={clearSprint}>clear week</Btn>}
       >
-        <h1 className="text-display font-semibold tracking-tight">This Week</h1>
+        <h1 className="text-display masthead">This Week</h1>
         <div className="mt-1 flex items-baseline gap-2 text-head">
           <span className="section-label shrink-0" style={{ marginTop: 2 }}>Goal</span>
           <InlineText

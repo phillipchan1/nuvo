@@ -27,6 +27,8 @@ interface ScaffoldInput {
   initiative?: { name: string; outcome: string } | null;
   domain?: { name: string; intention: string } | null;
   existing?: { title: string; status: string }[];
+  /** A one-line redirect from Tending's reshape loop — steers the next draft. */
+  guidance?: string;
 }
 
 /** The shared proposer — grounds the LLM in the project's place in the
@@ -43,6 +45,7 @@ ${input.domain ? `Life domain: ${input.domain.name}. Standing intention: ${input
 
 Existing tasks (do NOT duplicate these):
 ${existing.length ? existing.map((t) => `- [${t.status}] ${t.title}`).join("\n") : "(none yet)"}
+${input.guidance ? `\nThe person redirected: "${input.guidance}". Honor this redirection.` : ""}
 
 Propose the missing tasks that get this project from its current state to the outcome.
 Rules:
@@ -92,6 +95,7 @@ Respond with JSON only: {"tasks":[{"title":string,"energy":string,"duration_minu
 export async function scaffoldProject(
   userId: string,
   projectId: string,
+  guidance?: string,
 ): Promise<{ tasks: ScaffoldDraft[] }> {
   const { data: project, error } = await admin
     .from("projects")
@@ -123,6 +127,7 @@ export async function scaffoldProject(
     initiative: initiativeRes.data,
     domain: domainRes.data,
     existing: tasksRes.data ?? [],
+    guidance,
   });
 }
 

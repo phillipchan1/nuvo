@@ -5,7 +5,6 @@
 
 import { useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
-import { supabase } from "../../lib/supabase";
 import {
   domainById,
   initiativeById,
@@ -14,8 +13,7 @@ import {
   projectSprintCount,
   tasksOf,
 } from "../../lib/vertical";
-import { ENERGY_META, type Energy } from "../../lib/energy";
-import { ASSISTANT_NAME } from "../../lib/assistant";
+import { ENERGY_META } from "../../lib/energy";
 import type { Focus } from "../AppShell";
 import {
   Bar,
@@ -28,8 +26,10 @@ import {
   PROJECT_STATUS,
   PROJECT_STATUS_COLORS,
   PROJECT_STATUS_LABEL,
+  RipenessPip,
   StatusPill,
 } from "./parts";
+import { RIPENESS_HINT, RIPENESS_LABEL, ripenessOfProject } from "../../lib/tending";
 import TaskList from "./TaskList";
 import { Btn } from "../ui";
 
@@ -44,18 +44,17 @@ export default function ProjectFloor({
   onUp: () => void;
   onBack?: () => void;
 }) {
-  const { data, updateProject, deleteProject, addTasks, addProjectReadyToSprint } = useVertical();
+  const { data, updateProject, deleteProject, addProjectReadyToSprint } = useVertical();
   const project = projectById(data, focus.projectId);
   const initiative = initiativeById(data, focus.initiativeId);
   const domain = domainById(data, focus.domainId);
   const [note, setNote] = useState<string | null>(null);
-  const [scaffolding, setScaffolding] = useState(false);
-  const [proposal, setProposal] = useState<ScaffoldDraft[] | null>(null);
 
   if (!project) return <div className="text-body text-muted">No project selected.</div>;
   const tasks = tasksOf(data, project.id);
   const pct = projectProgress(data, project);
   const inSprint = projectSprintCount(data, project.id);
+  const ripe = ripenessOfProject(data, project);
 
   const barColor = (status: string) => (status === "complete" || status === "done" ? "var(--muted)" : accent);
 
@@ -65,34 +64,6 @@ export default function ProjectFloor({
     t,
     tl: { start: (i / n) * 0.92, span: Math.max(0.12, 0.85 / n) },
   }));
-
-  const scaffold = async () => {
-    setScaffolding(true);
-    setNote(null);
-    try {
-      const { data: res, error } = await supabase.functions.invoke("agent", {
-        body: { scaffold: { projectId: project.id } },
-      });
-      if (error) throw error;
-      const drafts = (res?.tasks ?? []) as ScaffoldDraft[];
-      if (!drafts.length) setNote("The agent had nothing to add — the project looks fully scaffolded.");
-      else setProposal(drafts.map((d) => ({ ...d, included: true })));
-    } catch (e) {
-      setNote(`Scaffolding failed: ${e instanceof Error ? e.message : "unknown error"}`);
-    } finally {
-      setScaffolding(false);
-    }
-  };
-
-  const acceptProposal = async () => {
-    const accepted = (proposal ?? []).filter((d) => d.included);
-    await addTasks(
-      { projectId: project.id, initiativeId: project.initiativeId, domainId: project.domainId },
-      accepted.map((d) => ({ title: d.title, energy: d.energy, durationMins: d.durationMins })),
-    );
-    setProposal(null);
-    setNote(`Added ${accepted.length} task${accepted.length === 1 ? "" : "s"} to the backlog — quiet until you commit them to a week.`);
-  };
 
   return (
     <div className="mx-auto max-w-[1080px]">
@@ -106,6 +77,10 @@ export default function ProjectFloor({
         }
         actions={
           <div className="flex items-center gap-2">
+            <span className="mono flex items-center gap-1.5 text-meta text-muted" title={RIPENESS_HINT[ripe.stage]}>
+              <RipenessPip stage={ripe.stage} />
+              {RIPENESS_LABEL[ripe.stage]}
+            </span>
             <StatusPill
               value={project.status}
               options={PROJECT_STATUS}
@@ -118,7 +93,7 @@ export default function ProjectFloor({
           </div>
         }
       >
-        <h1 className="text-display font-semibold tracking-tight">
+        <h1 className="text-display masthead">
           <InlineText value={project.name} onChange={(v) => updateProject(project.id, { name: v })} />
         </h1>
         <div className="mt-1.5 flex items-baseline gap-2 text-head">
@@ -196,70 +171,13 @@ export default function ProjectFloor({
         />
       </section>
 
-      {/* AI proposal — a draft diff. Nothing lands until you accept. */}
-      {proposal && (
-        <div className="mt-5 rounded-md border p-4" style={{ borderColor: accent }}>
-          <div className="mb-2 flex items-baseline justify-between">
-            <span className="section-label">✦ proposed scaffold — review before it lands</span>
-            <span className="mono text-meta text-muted">
-              {proposal.filter((d) => d.included).length}/{proposal.length} included
-            </span>
-          </div>
-          {proposal.map((d, i) => (
-            <div key={i} className="flex items-center gap-2.5 border-b border-line py-1.5 last:border-0">
-              <button
-                onClick={() =>
-                  setProposal((p) => p!.map((x, j) => (j === i ? { ...x, included: !x.included } : x)))
-                }
-                className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro"
-                style={{
-                  borderColor: d.included ? accent : "var(--line)",
-                  background: d.included ? accent : "transparent",
-                  color: "#fff",
-                }}
-              >
-                {d.included ? "✓" : ""}
-              </button>
-              <span className="shrink-0 text-label" style={{ color: accent }}>
-                {d.energy ? ENERGY_META[d.energy].icon : "·"}
-              </span>
-              <span className={`min-w-0 flex-1 truncate text-caption ${d.included ? "" : "text-muted line-through"}`}>
-                {d.title}
-              </span>
-              {d.rationale && (
-                <span className="mono hidden max-w-[260px] shrink-0 truncate text-micro text-muted lg:inline" title={d.rationale}>
-                  {d.rationale}
-                </span>
-              )}
-              <span className="mono shrink-0 text-meta text-muted">{d.durationMins}m</span>
-            </div>
-          ))}
-          <div className="mt-3 flex items-center gap-2">
-            <Btn kind="primary" onClick={() => void acceptProposal()}>
-              accept {proposal.filter((d) => d.included).length} → backlog
-            </Btn>
-            <Btn onClick={() => setProposal(null)}>discard</Btn>
-          </div>
-        </div>
-      )}
-
       <div className="mt-6 flex items-center gap-2">
-        <Btn kind="signal" onClick={() => void scaffold()} disabled={scaffolding}>
-          {scaffolding ? "✦ thinking…" : `✦ scaffold with ${ASSISTANT_NAME}`}
-        </Btn>
         <Btn onClick={() => { addProjectReadyToSprint(project.id); setNote("Committed this project's open tasks to the week — they're in the Week rail now."); }}>
           ★ commit to week{inSprint > 0 ? ` (${inSprint} in)` : ""}
         </Btn>
         {note && <span className="text-label text-muted">{note}</span>}
+        <span className="mono ml-auto text-meta text-muted">Grooming moved to ◇ Tending — ripen this from the spine.</span>
       </div>
     </div>
   );
-}
-
-interface ScaffoldDraft {
-  title: string;
-  energy: Energy | null;
-  durationMins: number;
-  rationale?: string;
-  included: boolean;
 }

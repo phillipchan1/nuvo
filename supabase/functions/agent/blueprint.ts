@@ -19,7 +19,7 @@ export interface BlueprintProposal {
 
 export async function blueprintInitiative(
   userId: string,
-  input: { name: string; outcome: string; description?: string; domainId?: string },
+  input: { name: string; outcome: string; description?: string; domainId?: string; guidance?: string },
 ): Promise<BlueprintProposal> {
   const domain = input.domainId
     ? (await admin.from("domains").select("name, intention").eq("id", input.domainId).eq("user_id", userId).maybeSingle()).data
@@ -31,6 +31,7 @@ Initiative: ${input.name}
 Outcome (what "done" looks like): ${input.outcome || "(not stated — infer a crisp one)"}
 ${input.description ? `Notes: ${input.description}` : ""}
 ${domain ? `Life domain: ${domain.name}. Standing intention: ${domain.intention}` : ""}
+${input.guidance ? `The person redirected: "${input.guidance}". Honor this redirection.` : ""}
 
 Propose:
 - 2-3 key results: measurable, each with a numeric baseline (usually the current state, often 0), a target, and a short unit ("%", "mo", "d", "" for counts).

@@ -44,7 +44,10 @@ type ExtendedProps = {
 function blockColors(c: string, fillPct = 14) {
   const base = `color-mix(in srgb, ${c} 80%, var(--muted))`;
   return {
-    backgroundColor: `color-mix(in srgb, ${base} ${fillPct}%, var(--surface))`,
+    // Translucent (over transparent, not surface) so the block is a pane of
+    // tinted glass — the gridlines/atmosphere read through it, frosted by the
+    // .fc-event backdrop blur. The solid 3px left bar still carries the true hue.
+    backgroundColor: `color-mix(in srgb, ${base} ${fillPct + 10}%, transparent)`,
     // No outline — the soft fill + the 3px left bar carry the block. Outlines
     // were the main thing making the calendar feel busy.
     borderColor: "transparent",
@@ -214,6 +217,19 @@ export default function CalendarPane({
   // The clicked block, brought to the front of any overlap (full width, on top)
   // so it's readable. Click-driven (not hover); cleared by clicking empty grid.
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
+
+  // A focused block stays lifted/expanded until you move on — so a pointerdown
+  // anywhere that ISN'T a calendar block (the rail, another floor, a button)
+  // drops the focus, instead of it lingering once you've clicked elsewhere.
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest(".fc-event")) return;
+      setFocusedEventId((cur) => (cur ? null : cur));
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, []);
 
   // Pending recurrence scope choice — set when a recurring event is
   // dropped or resized; cleared on confirm/cancel.
@@ -1047,7 +1063,11 @@ export default function CalendarPane({
   };
 
   return (
-    <div className="relative flex h-full min-w-0 flex-1 flex-col bg-surface">
+    // Transparent so the single .atmosphere canvas (laid down by AppShellInner)
+    // reads continuously across the spine, the rail, and the calendar grid —
+    // the grid IS the paper. A solid surface here is the "frost" seam that made
+    // the calendar read lighter than the rail.
+    <div className="relative flex h-full min-w-0 flex-1 flex-col">
       {createError && (
         <div className="flex shrink-0 items-start gap-2 border-b border-signal bg-signal-soft px-3 py-2 text-caption text-signal">
           <span className="mt-px shrink-0">⚠</span>

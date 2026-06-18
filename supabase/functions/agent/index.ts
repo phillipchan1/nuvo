@@ -2,6 +2,7 @@ import { handleOptions, json, requireUser } from "../_shared/admin.ts";
 import { buildContext, contextToPrompt } from "./context.ts";
 import { scaffoldProject, scaffoldDraft } from "./scaffold.ts";
 import { blueprintInitiative } from "./blueprint.ts";
+import { draftOutcome } from "./draftOutcome.ts";
 import { parsePriorities, breakdownPriority } from "./priorities.ts";
 import { prepareTask } from "./prepare.ts";
 import { narrate } from "./narrate.ts";
@@ -140,7 +141,12 @@ Deno.serve(async (req) => {
     // One-shot intelligence endpoints. All of them propose; only `prepare`
     // writes (to the task's own prework field — never to the plan).
     if (body.scaffold?.projectId) {
-      return json(await scaffoldProject(user.id, String(body.scaffold.projectId)));
+      return json(await scaffoldProject(user.id, String(body.scaffold.projectId), body.scaffold.guidance));
+    }
+    // Tending's "raw → shaped" advance: draft one outcome line for a project /
+    // initiative that has a name but no goal yet.
+    if (body.draftOutcome?.id) {
+      return json(await draftOutcome(user.id, body.draftOutcome));
     }
     // The create-moment variant: draft a project's first tasks from typed
     // context, before the project row exists.

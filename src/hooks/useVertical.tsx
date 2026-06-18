@@ -123,6 +123,21 @@ export interface VerticalStore {
   /** The Blueprint's accept: create a whole initiative subtree (KRs,
    *  projects, ordered backlog tasks) and return the initiative id. */
   addInitiativeTree: (domainId: string, tree: BlueprintTree) => Promise<string>;
+
+  /** Tending's accept for a Shaped initiative: attach KRs + sub-projects (with
+   *  ordered tasks) to an EXISTING initiative — the in-place sibling of
+   *  addInitiativeTree. */
+  addInitiativeSubtree: (initiativeId: string, tree: InitiativeSubtree) => Promise<void>;
+  /** Stamp an item as tended (the grooming-recency / snooze marker); `rest`
+   *  parks it (status → waiting / "Resting") in the same write. */
+  tend: (kind: "project" | "initiative", id: string, opts?: { rest?: boolean }) => Promise<void>;
+}
+
+/** The attachable half of a BlueprintTree — what Tending grows under an
+ *  already-existing initiative. */
+export interface InitiativeSubtree {
+  keyResults: BlueprintTree["keyResults"];
+  projects: BlueprintTree["projects"];
 }
 
 export interface BlueprintTree {
@@ -388,6 +403,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           targetDate: row.target_date ?? null,
           status: normalizeInitiativeStatus(row.status ?? "in_progress"), progress: row.progress ?? 0,
           momentum: (row.momentum ?? "flat") as Initiative["momentum"], keyResults: [],
+          createdAt: row.created_at ?? null, tendedAt: row.tended_at ?? null,
         };
       },
       updateInitiative: (id, patch) => {
@@ -470,6 +486,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           description: row.description ?? "", startDate: row.start_date ?? null,
           targetDate: row.target_date ?? null,
           status: (row.status ?? "backlog") as Project["status"], progress: row.progress ?? 0,
+          createdAt: row.created_at ?? null, tendedAt: row.tended_at ?? null,
         };
       },
       updateProject: (id, patch) => {
@@ -824,6 +841,54 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         }
         invalidate(["vertical"], ["tasks"]);
         return init.id as string;
+      },
+
+      addInitiativeSubtree: async (initiativeId, tree) => {
+        const uid = await userId();
+        const init = data.initiatives.find((i) => i.id === initiativeId);
+        const domainId = init?.domainId ?? "";
+        if (tree.keyResults.length) {
+          const base = init?.keyResults.length ?? 0;
+          await supabase.from("key_results").insert(
+            tree.keyResults.map((k, i) => ({
+              user_id: uid, initiative_id: initiativeId, name: k.name,
+              baseline_value: k.baseline, current_value: k.baseline,
+              target_value: k.target, unit: k.unit, sort_order: base + i,
+            })),
+          );
+        }
+        const baseSort = data.projects.filter((p) => p.initiativeId === initiativeId).length;
+        for (const [pi, p] of tree.projects.entries()) {
+          const { data: proj, error: pErr } = await supabase
+            .from("projects")
+            .insert({
+              user_id: uid, domain_id: domainId, initiative_id: initiativeId,
+              name: p.name, outcome: p.outcome, status: "backlog", sort_order: baseSort + pi,
+            })
+            .select("id")
+            .single();
+          if (pErr) throw pErr;
+          if (p.tasks.length) {
+            await supabase.from("tasks").insert(
+              p.tasks.map((t, ti) => ({
+                user_id: uid, title: t.title, status: "backlog",
+                project_id: proj.id, initiative_id: initiativeId, domain_id: domainId,
+                energy: t.energy, duration_minutes: t.durationMins, sort_order: ti,
+              })),
+            );
+          }
+        }
+        invalidate(["vertical"], ["tasks"]);
+      },
+
+      tend: async (kind, id, opts) => {
+        const table = kind === "project" ? "projects" : "initiatives";
+        const key = kind === "project" ? ["vertical", "projects"] : ["vertical", "initiatives"];
+        const rowPatch: Record<string, unknown> = { tended_at: new Date().toISOString() };
+        if (opts?.rest) rowPatch.status = "waiting";
+        patchRows(key, id, rowPatch);
+        await writeTable(table, id, rowPatch);
+        invalidate(["vertical"]);
       },
     };
   }, [data, ready, qc, weekStart, domainsQ.data, tasksQ.data]);

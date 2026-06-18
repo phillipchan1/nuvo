@@ -199,7 +199,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
     { id: "sunday", title: "Sunday — compose the week", run: () => openFlow("sunday") },
     { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
-    { id: "blueprint", title: "Blueprint — shape a new bet", run: () => openFlow("blueprint") },
+    { id: "tending", title: "Tending — ripen what's ready", run: () => openFlow("tending") },
     { id: "plan", title: "Plan my day (morning ritual)", run: () => { morningAutoRef.current = false; openOverlay("morning"); } },
     { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
     { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },

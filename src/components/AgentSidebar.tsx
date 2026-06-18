@@ -104,7 +104,7 @@ export default function AgentSidebar({
 
   if (!open) {
     return (
-      <aside className="agent-rail-collapsed flex w-11 shrink-0 flex-col items-center border-l border-line bg-surface">
+      <aside className="agent-rail-collapsed flex w-11 shrink-0 flex-col items-center border-l border-line">
         <button
           onClick={onToggle}
           title={`Open ${ASSISTANT_NAME} (⌘J)`}
@@ -123,7 +123,7 @@ export default function AgentSidebar({
 
   return (
     <aside
-      className="agent-rail relative flex w-[380px] shrink-0 flex-col border-l border-line bg-surface shadow-[-8px_0_24px_-12px_rgba(0,0,0,0.08)]"
+      className="agent-rail relative flex w-[380px] shrink-0 flex-col border-l border-line"
       {...dropHandlers}
     >
       {dragging && (

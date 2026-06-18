@@ -63,6 +63,7 @@
   --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(60, 42, 20, 0.13), 0 1px 2px rgba(60, 42, 20, 0.06);
   --shadow-3: 0 24px 60px -16px rgba(74, 52, 24, 0.26), 0 4px 12px -4px rgba(60, 42, 20, 0.12);
+  --shadow-lift: 0 30px 60px -18px rgba(74, 52, 24, 0.36), 0 10px 24px -10px rgba(60, 42, 20, 0.22);
 }
 [data-theme="dark"],
 [data-palette="daybreak"][data-theme="dark"] {
@@ -82,6 +83,7 @@
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-3: 0 28px 64px -16px rgba(0, 0, 0, 0.7), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
+  --shadow-lift: 0 32px 68px -16px rgba(0, 0, 0, 0.75), 0 10px 26px -10px rgba(0, 0, 0, 0.58);
 }
 
 /* ── Fog — cool morning grey. Crisp indigo, teal slot, cool events. ───────── */
@@ -102,6 +104,7 @@
   --shadow-1: 0 1px 2px rgba(40, 38, 70, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(40, 38, 70, 0.12), 0 1px 2px rgba(40, 38, 70, 0.05);
   --shadow-3: 0 24px 60px -16px rgba(46, 40, 80, 0.24), 0 4px 12px -4px rgba(40, 38, 70, 0.1);
+  --shadow-lift: 0 30px 60px -18px rgba(46, 40, 80, 0.32), 0 10px 24px -10px rgba(40, 38, 70, 0.2);
 }
 [data-palette="fog"][data-theme="dark"] {
   --bg: #141320;
@@ -137,6 +140,7 @@
   --shadow-1: 0 1px 2px rgba(45, 40, 60, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(45, 40, 60, 0.12), 0 1px 2px rgba(45, 40, 60, 0.05);
   --shadow-3: 0 24px 60px -16px rgba(50, 42, 78, 0.24), 0 4px 12px -4px rgba(45, 40, 60, 0.1);
+  --shadow-lift: 0 30px 60px -18px rgba(50, 42, 78, 0.32), 0 10px 24px -10px rgba(45, 40, 60, 0.2);
 }
 [data-palette="dusk"][data-theme="dark"] {
   --bg: #16151c;
@@ -434,6 +438,78 @@ html.tauri-macos .spine-top {
   box-shadow: var(--shadow-2);
 }
 
+/* ── Focal lift — the one "this element is in focus" treatment ───────────
+   The focal element (selected, active, or the open record) doesn't get a flat
+   outline — it physically lifts: a frosted-glass translucent surface, a real
+   shadow, and a small rise toward the viewer, with a faint accent halo. Calm,
+   present, deliberate. `.glass-grab` is the stronger "picked up" variant for the
+   thing being dragged. Compose by adding the class to the element in focus.
+   (For colored items like calendar events, apply the shadow + transform inline
+   so the item keeps its own fill — see .evt-focused / .fc-event-mirror.) */
+/* The resting glass material. Translucent so the atmosphere gradient reads
+   through, with a faint top-light sheen — the focal element then LIFTS from this
+   (.glass-lift), so elevation reads as elevation, not a sudden new colour. Pair
+   it with .lift-anim so the lift springs. */
+.glass-card {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 12%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface) 56%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  backdrop-filter: blur(10px) saturate(1.3);
+}
+.glass-lift {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 16%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface) 66%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  backdrop-filter: blur(16px) saturate(1.5);
+  border-color: transparent !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 34%, transparent),
+    var(--shadow-lift);
+  transform: translateY(-3px) scale(1.015);
+}
+.glass-grab {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 18%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface) 90%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  backdrop-filter: blur(16px) saturate(1.6);
+  border-color: transparent !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    var(--shadow-lift);
+  transform: scale(1.04) rotate(-0.5deg);
+}
+/* Spring the lift in and out, so focus feels deliberate, not snapped. */
+.lift-anim {
+  transition:
+    transform var(--d-base) var(--ease-spring),
+    box-shadow var(--d-base) var(--ease-out),
+    background-color var(--d-fast) var(--ease-out),
+    border-color var(--d-fast) var(--ease-out),
+    opacity var(--d-fast) var(--ease-out);
+}
+/* The vacated slot left behind while a card is being dragged. */
+.is-dragging {
+  opacity: 0.4;
+  border-style: dashed !important;
+}
+/* The focal lift for a full-width row (table / timeline name column) — the same
+   glass + shadow as a card, minus the horizontal scale so a wide row can't
+   overflow its container. Selection then reads identically across every view. */
+.glass-lift-row {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 14%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 28%, transparent),
+    var(--shadow-3);
+  transform: translateY(-2px);
+}
+
 /* Entrances */
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px); }
@@ -668,7 +744,13 @@ textarea:focus {
   border: 1px solid transparent;
   background-clip: padding-box;
   box-shadow: none;
-  transition: box-shadow var(--d-fast) var(--ease-out), filter var(--d-fast) var(--ease-out);
+  /* Frosted colour-glass: the translucent fill (blockColors) + this blur let the
+     gridlines read through, so an event is a pane of tinted glass, not a slab. */
+  -webkit-backdrop-filter: blur(5px) saturate(1.2);
+  backdrop-filter: blur(5px) saturate(1.2);
+  /* Only the hover brightness eases — the lift (shadow + transform) is instant, so
+     selecting a block snaps it forward with no perceptible delay. */
+  transition: filter var(--d-fast) var(--ease-out);
 }
 .fc .fc-event:focus { outline: none; box-shadow: none; }
 .fc .fc-event .fc-event-main {
@@ -679,7 +761,8 @@ textarea:focus {
 }
 .fc .fc-timegrid-event { box-shadow: none; }
 .fc .fc-timegrid-event-harness .fc-event:hover {
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
   filter: brightness(1.015);
 }
 /* Overlapping blocks get sliced into thin columns you can't read. CLICKING one
@@ -692,8 +775,15 @@ textarea:focus {
   right: 0 !important;
   z-index: 50 !important;
 }
+/* Selecting a block lifts it toward you — pure depth, no ring, no scale (so it never
+   grows past its harness and flashes a white edge). A heavier frost when focused turns
+   whatever it overlaps into a soft blur, so it reads clean on top without a solid
+   backing or bleed-through. */
 .fc-event.evt-focused {
-  box-shadow: 0 0 0 2px var(--accent), var(--shadow-2);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lift);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
 }
 .fc-event.evt-done { opacity: 0.5; }
 
@@ -739,8 +829,9 @@ textarea:focus {
 /* External-drag mirror element */
 .fc-event-dragging,
 .fc-event-mirror {
-  opacity: 0.8;
-  box-shadow: var(--shadow-2);
+  opacity: 1;
+  box-shadow: var(--shadow-lift);
+  transform: scale(1.03);
   /* The ghost trails the cursor; let :hover fall through to the cell beneath so
      the drop-target highlight (below) tracks the day under the pointer. */
   pointer-events: none;

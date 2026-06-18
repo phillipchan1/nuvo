@@ -51,6 +51,8 @@ export interface Initiative {
   progress: number; // 0..100 — fallback when no projects yet
   momentum: Momentum;
   keyResults: KeyResult[];
+  createdAt: string | null; // when the bet was made — the "recently created" grooming prior
+  tendedAt: string | null; // last groomed/rested in a Tending session — the snooze
 }
 
 export type ProjectStatus = "backlog" | "in_progress" | "waiting" | "cancelled" | "complete";
@@ -66,6 +68,8 @@ export interface Project {
   targetDate: string | null;
   status: ProjectStatus;
   progress: number; // 0..100 — fallback when no tasks yet
+  createdAt: string | null; // when created — the "recently created" grooming prior
+  tendedAt: string | null; // last groomed/rested in a Tending session — the snooze
 }
 
 /** A task as the floors see it — a thin view over a live `tasks` row. */
@@ -145,6 +149,8 @@ export interface InitiativeRow {
   momentum: string;
   progress: number;
   sort_order: number;
+  created_at?: string;
+  tended_at?: string | null;
   key_results?: KeyResultRow[];
 }
 
@@ -160,6 +166,8 @@ export interface ProjectRow {
   status: string;
   progress: number;
   sort_order: number;
+  created_at?: string;
+  tended_at?: string | null;
 }
 
 // ── Row → view mapping ───────────────────────────────────────────────────────
@@ -262,6 +270,8 @@ export function buildVertical(
       status: normalizeInitiativeStatus(i.status),
       progress: i.progress,
       momentum: (["up", "flat", "down"].includes(i.momentum) ? i.momentum : "flat") as Momentum,
+      createdAt: i.created_at ?? null,
+      tendedAt: i.tended_at ?? null,
       keyResults: [...(i.key_results ?? [])]
         .sort((a, b) => a.sort_order - b.sort_order)
         .map((k) => ({
@@ -289,6 +299,8 @@ export function buildVertical(
       targetDate: p.target_date,
       status: normalizeProjectStatus(p.status),
       progress: p.progress,
+      createdAt: p.created_at ?? null,
+      tendedAt: p.tended_at ?? null,
     }));
 
   const projectById = new Map(projects.map((p) => [p.id, p]));

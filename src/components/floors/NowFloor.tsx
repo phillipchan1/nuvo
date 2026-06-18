@@ -311,7 +311,7 @@ export default function NowFloor({
                     ? "If you want to pick something up"
                     : "Right now"}
               </div>
-              <div className="rise rounded-lg border bg-surface p-4" style={{ borderColor: top.domain?.color, borderWidth: 1.5 }}>
+              <div className="rise rounded-lg border glass-card p-4" style={{ borderColor: top.domain?.color, borderWidth: 1.5 }}>
                 <div className="flex items-start gap-3">
                   <button
                     onClick={() => { toggleTask(top.task.id); setNowMoment("done", top.task.id); }}
@@ -703,7 +703,7 @@ function MeetingNow({ now, current, overlapping }: { now: Date; current: BusyBlo
   const range = `${current.start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} – ${current.end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 
   return (
-    <div className="rise rounded-lg border bg-surface p-4" style={{ borderColor: "var(--signal)", borderWidth: 1.5 }}>
+    <div className="rise rounded-lg border glass-card p-4" style={{ borderColor: "var(--signal)", borderWidth: 1.5 }}>
       <div className="flex items-center justify-between gap-3">
         <span className="section-label flex items-center gap-2" style={{ color: "var(--signal)" }}>
           <span className="pulse-glow inline-block h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />
@@ -967,7 +967,7 @@ function DomainBalance({ domains, restDay }: { domains: Domain[]; restDay: boole
 function Moment({ accent, children }: { accent?: string; children: ReactNode }) {
   return (
     <div className="mx-auto mt-10 max-w-[460px]">
-      <div className="moment rounded-lg border bg-surface p-7 text-center" style={{ borderColor: accent ?? "var(--accent)", borderWidth: 1.5 }}>
+      <div className="moment rounded-lg border glass-card p-7 text-center" style={{ borderColor: accent ?? "var(--accent)", borderWidth: 1.5 }}>
         {children}
       </div>
     </div>

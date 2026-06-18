@@ -11,14 +11,14 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import MobileShell from "./mobile/MobileShell";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import Planner from "./Planner";
-import Spine, { type FlowName } from "./Spine";
+import Spine from "./Spine";
 import FloorPane from "./FloorPane";
 import RecordModal from "./record/RecordModal";
 import AgentSidebar from "./AgentSidebar";
 import { useAgentContext } from "../hooks/useAgentContext";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
-import BlueprintFlow, { type BlueprintSeed } from "./rituals/BlueprintFlow";
+import TendingFlow from "./rituals/TendingFlow";
 import QuickCreate from "./floors/QuickCreate";
 import NewProject from "./floors/NewProject";
 import NewInitiative from "./floors/NewInitiative";
@@ -75,18 +75,11 @@ function AppShellInner() {
   const { rung, projectView, initiativeView, focus, flow, flowStep, agentOpen } = nav;
   const { agent } = useAgentContext();
 
-  // a half-typed bet handed from the quick-create moment into Blueprint
-  const [blueprintSeed, setBlueprintSeed] = useState<BlueprintSeed | null>(null);
   const [sundayNudge, setSundayNudge] = useState(false);
   // the fast composer is the default create surface, summonable from anywhere;
   // "more options" swaps in the full moment, carrying what's already typed.
   const [createFull, setCreateFull] = useState<{ domainId: string; initiativeId: string | null; name: string } | null>(null);
   const closeCreate = () => { setCreateFull(null); closeFloorModal(); };
-
-  const openBlueprint = (seed: BlueprintSeed) => {
-    setBlueprintSeed(seed);
-    openFlow("blueprint");
-  };
 
   const focusDomain = (id: string) => {
     const init = initiativesOf(data, id)[0];
@@ -179,11 +172,6 @@ function AppShellInner() {
     return () => window.removeEventListener("keydown", onKey);
   }, [goRung, rung, back, canGoBack, closeOverlay]);
 
-  const openFlowWithSeed = (f: FlowName) => {
-    if (f === "blueprint") setBlueprintSeed(null);
-    openFlow(f);
-  };
-
   // ⌘J toggles Nuvo from any floor — not just the schedule view.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -218,10 +206,10 @@ function AppShellInner() {
 
   return (
     <div className="atmosphere flex h-full">
-      <Spine rung={rung} setRung={goRung} openFlow={openFlowWithSeed} openSettings={() => openOverlay("settings")} />
+      <Spine rung={rung} setRung={goRung} openFlow={openFlow} openSettings={() => openOverlay("settings")} />
       <div className="flex min-w-0 flex-1">
         <div className="relative min-w-0 flex-1">
-          <Planner openFlow={openFlowWithSeed} />
+          <Planner openFlow={openFlow} />
           {rung !== "day" && (
             <div className="atmosphere floor-enter absolute inset-0 z-30">
               <FloorPane
@@ -265,14 +253,16 @@ function AppShellInner() {
           step={flowStep}
           setStep={(s) => navigate({ flowStep: s })}
           onClose={closeFlow}
-          onOpenBlueprint={() => openFlowWithSeed("blueprint")}
+          onNewBet={() => openFloorModal("new-initiative")}
         />
       )}
-      {flow === "blueprint" && (
-        <BlueprintFlow
-          seed={blueprintSeed ?? undefined}
-          onClose={() => { closeFlow(); setBlueprintSeed(null); }}
-          onCreated={(id) => { setBlueprintSeed(null); openInitiativeDetail(id); }}
+      {flow === "tending" && (
+        <TendingFlow
+          step={flowStep}
+          setStep={(s) => navigate({ flowStep: s })}
+          onClose={closeFlow}
+          onOpenSunday={() => openFlow("sunday")}
+          onStepBack={back}
         />
       )}
 
@@ -305,7 +295,6 @@ function AppShellInner() {
             initialName={createFull.name}
             onClose={closeCreate}
             onCreated={(id) => { setCreateFull(null); openInitiativeDetail(id); }}
-            onBlueprint={openBlueprint}
           />
         ) : (
           <QuickCreate

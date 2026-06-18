@@ -9,7 +9,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVertical } from "../../hooks/useVertical";
-import { supabase } from "../../lib/supabase";
 import {
   domainById,
   initiativeById,
@@ -23,8 +22,7 @@ import {
   type KeyResult,
 } from "../../lib/vertical";
 import { suggestForInitiative, suggestForProject, type Suggestion } from "../../lib/belonging";
-import { ENERGY_META, type Energy } from "../../lib/energy";
-import { ASSISTANT_NAME } from "../../lib/assistant";
+import { ENERGY_META } from "../../lib/energy";
 import {
   Bar,
   DeleteBtn,
@@ -102,7 +100,7 @@ export default function RecordModal({
 // ── The raised card every record shares ──────────────────────────────────────
 function Card({ accent, children }: { accent: string; children: ReactNode }) {
   return (
-    <div className="moment elev-3 relative flex max-h-[90vh] w-full max-w-[940px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line bg-surface">
+    <div className="moment elev-3 relative flex max-h-[90vh] w-full max-w-[940px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line bg-bg">
       <div
         className="h-[3px] w-full shrink-0"
         style={{ background: `linear-gradient(90deg, ${accent}, ${accent}66 65%, transparent)` }}
@@ -182,7 +180,7 @@ function Header({
 
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="text-display font-semibold leading-tight tracking-tight">
+          <h1 className="text-display masthead leading-tight">
             <InlineText value={title} onChange={onTitle} placeholder="Untitled" />
           </h1>
           <div className="mt-1.5 flex items-baseline gap-2 text-head">
@@ -199,7 +197,7 @@ function Header({
 // ── Status band (status, momentum, counts, dates) ─────────────────────────────
 function Band({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-line bg-bg/40 px-7 py-2.5">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-line bg-surface/50 px-7 py-2.5">
       {children}
     </div>
   );
@@ -298,14 +296,6 @@ function SuggestionPanel({
 }
 
 // ── Project record ────────────────────────────────────────────────────────────
-interface ScaffoldDraft {
-  title: string;
-  energy: Energy | null;
-  durationMins: number;
-  rationale?: string;
-  included: boolean;
-}
-
 function ProjectRecord({
   id,
   onClose,
@@ -317,11 +307,8 @@ function ProjectRecord({
   onExpand: () => void;
   onOpenInitiative: (id: string) => void;
 }) {
-  const { data, updateProject, deleteProject, addTasks, routeTask, addProjectReadyToSprint } = useVertical();
+  const { data, updateProject, deleteProject, routeTask, addProjectReadyToSprint } = useVertical();
   const project = projectById(data, id);
-
-  const [scaffolding, setScaffolding] = useState(false);
-  const [proposal, setProposal] = useState<ScaffoldDraft[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
   // Record vanished (deleted elsewhere) — close rather than show an empty shell.
@@ -338,34 +325,6 @@ function ProjectRecord({
   const pct = projectProgress(data, project);
   const inSprint = projectSprintCount(data, project.id);
   const suggestions = suggestForProject(data, project);
-
-  const scaffold = async () => {
-    setScaffolding(true);
-    setNote(null);
-    try {
-      const { data: res, error } = await supabase.functions.invoke("agent", {
-        body: { scaffold: { projectId: project.id } },
-      });
-      if (error) throw error;
-      const drafts = (res?.tasks ?? []) as Omit<ScaffoldDraft, "included">[];
-      if (!drafts.length) setNote("Nothing to add — this looks fully scaffolded.");
-      else setProposal(drafts.map((d) => ({ ...d, included: true })));
-    } catch (e) {
-      setNote(`Scaffolding failed: ${e instanceof Error ? e.message : "unknown error"}`);
-    } finally {
-      setScaffolding(false);
-    }
-  };
-
-  const acceptProposal = async () => {
-    const accepted = (proposal ?? []).filter((d) => d.included);
-    await addTasks(
-      { projectId: project.id, initiativeId: project.initiativeId, domainId: project.domainId },
-      accepted.map((d) => ({ title: d.title, energy: d.energy, durationMins: d.durationMins })),
-    );
-    setProposal(null);
-    setNote(`Added ${accepted.length} task${accepted.length === 1 ? "" : "s"} to the backlog.`);
-  };
 
   return (
     <Card accent={accent}>
@@ -453,52 +412,12 @@ function ProjectRecord({
           </>
         }
         side={
-          <>
-            <SuggestionPanel
-              suggestions={suggestions}
-              accent={accent}
-              onFold={(taskId) => routeTask(taskId, { projectId: project.id })}
-              hint="Nothing loose matches yet. Capture tasks to your inbox or describe the project above, and matches surface here."
-            />
-
-            {/* ✦ scaffold — draft an ordered backlog, prune before it lands */}
-            <section>
-              {!proposal ? (
-                <button
-                  onClick={() => void scaffold()}
-                  disabled={scaffolding}
-                  className="fast flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-dashed border-line px-3 py-2.5 text-caption font-medium text-muted hover:border-accent/50 hover:text-accent disabled:opacity-50"
-                >
-                  <span>✦</span>
-                  {scaffolding ? "drafting…" : `Scaffold with ${ASSISTANT_NAME}`}
-                </button>
-              ) : (
-                <div className="rounded-[var(--radius)] border p-3" style={{ borderColor: accent }}>
-                  <div className="mb-2 flex items-baseline justify-between">
-                    <span className="section-label" style={{ color: accent }}>✦ proposed</span>
-                    <span className="mono text-meta text-muted">{proposal.filter((d) => d.included).length}/{proposal.length}</span>
-                  </div>
-                  {proposal.map((d, i) => (
-                    <div key={i} className="flex items-center gap-2 border-b border-line py-1.5 last:border-0">
-                      <button
-                        onClick={() => setProposal((p) => p!.map((x, j) => (j === i ? { ...x, included: !x.included } : x)))}
-                        className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro"
-                        style={{ borderColor: d.included ? accent : "var(--line)", background: d.included ? accent : "transparent", color: "#fff" }}
-                      >
-                        {d.included ? "✓" : ""}
-                      </button>
-                      <span className={`min-w-0 flex-1 truncate text-caption ${d.included ? "" : "text-muted line-through"}`}>{d.title}</span>
-                      <span className="mono shrink-0 text-meta text-muted">{d.durationMins}m</span>
-                    </div>
-                  ))}
-                  <div className="mt-2.5 flex items-center gap-2">
-                    <Btn kind="primary" onClick={() => void acceptProposal()}>accept → backlog</Btn>
-                    <Btn onClick={() => setProposal(null)}>discard</Btn>
-                  </div>
-                </div>
-              )}
-            </section>
-          </>
+          <SuggestionPanel
+            suggestions={suggestions}
+            accent={accent}
+            onFold={(taskId) => routeTask(taskId, { projectId: project.id })}
+            hint="Nothing loose matches yet. Capture tasks to your inbox or describe the project above, and matches surface here."
+          />
         }
       />
 
@@ -744,7 +663,7 @@ function Footer({
   note?: string | null;
 }) {
   return (
-    <div className="flex items-center gap-2 border-t border-line bg-bg/40 px-7 py-3.5">
+    <div className="flex items-center gap-2 border-t border-line bg-surface/50 px-7 py-3.5">
       <DeleteBtn what={deleteWhat} onDelete={onDelete} />
       {note && <span className="text-label text-muted">{note}</span>}
       <div className="flex-1" />

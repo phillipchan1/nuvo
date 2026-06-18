@@ -29,10 +29,12 @@ import {
   PROJECT_STATUS,
   PROJECT_STATUS_COLORS,
   PROJECT_STATUS_LABEL,
+  RipenessPip,
   StatusPill,
   Timeline,
   type TimelineItem,
 } from "./parts";
+import { RIPENESS_HINT, RIPENESS_LABEL, ripenessOfInitiative } from "../../lib/tending";
 import TaskList from "./TaskList";
 import { Btn } from "../ui";
 
@@ -72,6 +74,7 @@ export default function InitiativeFloor({
   const projects = projectsOf(data, initiative.id);
   const loose = looseTasksOfInitiative(data, initiative.id);
   const pct = initiativeProgress(data, initiative);
+  const ripe = ripenessOfInitiative(data, initiative);
 
   const timelineItems: TimelineItem[] = projects.map((p) => ({
     id: p.id,
@@ -96,6 +99,10 @@ export default function InitiativeFloor({
         }
         actions={
           <div className="flex items-center gap-2">
+            <span className="mono flex items-center gap-1.5 text-meta text-muted" title={RIPENESS_HINT[ripe.stage]}>
+              <RipenessPip stage={ripe.stage} />
+              {RIPENESS_LABEL[ripe.stage]}
+            </span>
             <DomainPicker domains={domains} value={initiative.domainId} onChange={changeDomain} align="right" />
             <StatusPill
               value={initiative.status}
@@ -110,7 +117,7 @@ export default function InitiativeFloor({
           </div>
         }
       >
-        <h1 className="text-display font-semibold tracking-tight">
+        <h1 className="text-display masthead">
           <InlineText value={initiative.name} onChange={(v) => updateInitiative(initiative.id, { name: v })} />
         </h1>
         <div className="mt-1.5 flex items-baseline gap-2 text-head">

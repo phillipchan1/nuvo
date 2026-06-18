@@ -124,14 +124,18 @@ export function itemSelectVisual(selection: CollectionSelection, id: string): It
 
 export function itemSelectClass(selection: CollectionSelection, id: string) {
   const v = itemSelectVisual(selection, id);
-  if (v === "selected") return "outline outline-2 outline-accent/50 bg-accent-soft -outline-offset-2";
+  // The focal element lifts — frosted glass + shadow + rise — instead of a flat
+  // outline. Preview (will-select) stays a light dashed hint, not a full lift.
+  if (v === "selected") return "glass-lift relative z-10";
   if (v === "preview") return "outline outline-2 outline-dashed outline-accent/70 bg-accent-soft/45 -outline-offset-2";
   return "";
 }
 
 export function itemSelectRowClass(selection: CollectionSelection, id: string) {
   const v = itemSelectVisual(selection, id);
-  if (v === "selected") return "bg-accent-soft";
+  // Same focal lift as a card, in a row variant — so a selected table/timeline row
+  // reads identically to a selected board card (glass + shadow, no flat tint).
+  if (v === "selected") return "glass-lift-row relative z-10";
   if (v === "preview") return "bg-accent-soft/45 outline outline-1 outline-dashed outline-accent/70 -outline-offset-1";
   return "hover:bg-accent-soft/60";
 }
