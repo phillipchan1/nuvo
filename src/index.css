@@ -328,10 +328,6 @@ html.tauri-macos .spine-top {
   top: 0;
 }
 
-/* Full-width top bars that span under the native window controls */
-.titlebar-pad {
-  padding-left: var(--titlebar-inset-left, 0px);
-}
 
 /* The app's small-label voice. Historically Plex Mono — now the sans with
    tabular, lining figures so times and durations still align in a column,
