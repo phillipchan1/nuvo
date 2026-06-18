@@ -194,10 +194,10 @@ function ThemeCard({
 }
 
 // ── Appearance: the warmth axis (a swatch per mood) ───────────────────────
-const PALETTE_SWATCH: Record<PaletteMood, { bg: string; surface: string; line: string }> = {
-  daybreak: { bg: "#f4f1ea", surface: "#fffdf8", line: "#e7e0d2" },
-  dusk: { bg: "#f1f0f3", surface: "#ffffff", line: "#e6e4ec" },
-  fog: { bg: "#eef0f5", surface: "#ffffff", line: "#e4e6ef" },
+const PALETTE_SWATCH: Record<PaletteMood, { bg: string; surface: string; line: string; accent: string }> = {
+  daybreak: { bg: "#f4f1ea", surface: "#fffdf8", line: "#e7e0d2", accent: "#92568a" },
+  dusk: { bg: "#f1f0f3", surface: "#ffffff", line: "#e6e4ec", accent: "#6d54c0" },
+  fog: { bg: "#eef0f5", surface: "#ffffff", line: "#e4e6ef", accent: "#5a4be2" },
 };
 
 function PaletteCard({
@@ -220,7 +220,7 @@ function PaletteCard({
     >
       <div className="flex h-[46px] items-center gap-1.5 px-2.5" style={{ background: sw.bg }}>
         <div className="flex flex-1 flex-col gap-1 rounded-[4px] border p-1.5" style={{ background: sw.surface, borderColor: sw.line }}>
-          <div className="h-1 w-3/5 rounded-full" style={{ background: "#5a4be2" }} />
+          <div className="h-1 w-3/5 rounded-full" style={{ background: sw.accent }} />
           <div className="h-1 w-full rounded-full" style={{ background: sw.line }} />
         </div>
       </div>

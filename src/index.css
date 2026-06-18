@@ -20,38 +20,30 @@
    ════════════════════════════════════════════════════════════════════════ */
 
 /* ════════════════════════════════════════════════════════════════════════
-   PALETTES — Daybook ships three moods on a warmth axis (Daybreak · Dusk ·
-   Fog) set on <html data-palette>, crossed with the usual light/dark axis on
-   <html data-theme>. The neutral ramp + elevation tint carry the mood; the
-   indigo accent, ember signal and teal slot stay constant so the brand reads
-   the same in every mood. Base (no data-palette) = Daybreak.
+   PALETTES — three moods on a warmth axis (Daybreak · Dusk · Fog) set on
+   <html data-palette>, crossed with light/dark on <html data-theme>. Each mood
+   declares a COMPLETE, temperature-matched palette — not just neutrals but the
+   accent, slot, and default-event colours too — so the app is beautiful in any
+   theme, whatever's on the calendar. Only the ember "signal" (now / overdue /
+   urgent) stays constant: urgency should read warm everywhere.
+   Base (no data-palette) = Daybreak.
    ════════════════════════════════════════════════════════════════════════ */
 
-/* ── Shared across every palette: accent · signal · slot ─────────────────── */
+/* ── Signal — the one constant: warm ember in light, coral in dark ───────── */
 :root,
 [data-theme="light"] {
-  --accent: #5a4be2;
-  --accent-2: #8a6cf0;
   --signal: #e0620f;
-  --accent-soft: rgba(90, 75, 226, 0.11);
   --signal-soft: rgba(224, 98, 15, 0.11);
-  --accent-glow: rgba(90, 75, 226, 0.18);
-  /* Slots are a class of their own — a time *container*, not a task or event.
-     This dedicated teal sets them apart from the violet accent at a glance. */
-  --slot: #0d8f9c;
 }
 [data-theme="dark"] {
-  --accent: #8b80ff;
-  --accent-2: #a892ff;
   --signal: #ff8a4c;
-  --accent-soft: rgba(139, 128, 255, 0.13);
   --signal-soft: rgba(255, 138, 76, 0.14);
-  --accent-glow: rgba(139, 128, 255, 0.28);
-  --slot: #2bb6c4;
   color-scheme: dark;
 }
 
-/* ── Daybreak — warm paper (the default mood) ───────────────────────────── */
+/* ── Daybreak — warm paper (the default mood) ────────────────────────────────
+   Accent is a warm mulberry (not blue), the slot a dusty teal, and uncoloured
+   events default to warm stone — so the whole surface reads warm, not cold. */
 :root,
 [data-theme="light"],
 [data-palette="daybreak"][data-theme="light"] {
@@ -62,13 +54,12 @@
   --line-strong: #d8cfbc;
   --text: #1f1a16;
   --muted: #847b6b;
-  /* A calmer iris than crisp indigo — desaturated and a touch warmer so it
-     sits gently on warm paper instead of clashing blue-on-cream. */
-  --accent: #6f62c4;
-  --accent-2: #8c79e0;
-  --accent-soft: rgba(111, 98, 196, 0.10);
-  --accent-glow: rgba(111, 98, 196, 0.16);
-  /* warm, low elevation — never a hard drop shadow */
+  --accent: #92568a;
+  --accent-2: #b07fa8;
+  --accent-soft: rgba(146, 86, 138, 0.11);
+  --accent-glow: rgba(146, 86, 138, 0.20);
+  --slot: #2f8d86;
+  --event-default: #a98a6f;
   --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(60, 42, 20, 0.13), 0 1px 2px rgba(60, 42, 20, 0.06);
   --shadow-3: 0 24px 60px -16px rgba(74, 52, 24, 0.26), 0 4px 12px -4px rgba(60, 42, 20, 0.12);
@@ -82,12 +73,18 @@
   --line-strong: #443b2c;
   --text: #f1ece2;
   --muted: #a99c87;
+  --accent: #c692bf;
+  --accent-2: #d6abce;
+  --accent-soft: rgba(198, 146, 191, 0.14);
+  --accent-glow: rgba(198, 146, 191, 0.30);
+  --slot: #37b1a4;
+  --event-default: #b89a7e;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-3: 0 28px 64px -16px rgba(0, 0, 0, 0.7), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
 }
 
-/* ── Fog — cool morning grey ─────────────────────────────────────────────── */
+/* ── Fog — cool morning grey. Crisp indigo, teal slot, cool events. ───────── */
 [data-palette="fog"][data-theme="light"] {
   --bg: #eef0f5;
   --surface: #ffffff;
@@ -96,11 +93,12 @@
   --line-strong: #d3d7e3;
   --text: #1b1c24;
   --muted: #6b6f7e;
-  /* Cool paper carries the crisp indigo cleanly — no clash to soften here. */
   --accent: #5a4be2;
   --accent-2: #8a6cf0;
   --accent-soft: rgba(90, 75, 226, 0.11);
   --accent-glow: rgba(90, 75, 226, 0.18);
+  --slot: #0d8f9c;
+  --event-default: #6b7bb0;
   --shadow-1: 0 1px 2px rgba(40, 38, 70, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(40, 38, 70, 0.12), 0 1px 2px rgba(40, 38, 70, 0.05);
   --shadow-3: 0 24px 60px -16px rgba(46, 40, 80, 0.24), 0 4px 12px -4px rgba(40, 38, 70, 0.1);
@@ -113,9 +111,15 @@
   --line-strong: #3b3850;
   --text: #ecebf3;
   --muted: #95909f;
+  --accent: #8b80ff;
+  --accent-2: #a892ff;
+  --accent-soft: rgba(139, 128, 255, 0.13);
+  --accent-glow: rgba(139, 128, 255, 0.28);
+  --slot: #2bb6c4;
+  --event-default: #7986cb;
 }
 
-/* ── Dusk — balanced neutral, between warm and cool ──────────────────────── */
+/* ── Dusk — balanced, between warm and cool ──────────────────────────────── */
 [data-palette="dusk"][data-theme="light"] {
   --bg: #f1f0f3;
   --surface: #ffffff;
@@ -124,11 +128,12 @@
   --line-strong: #d6d3df;
   --text: #1c1b22;
   --muted: #6f6c7b;
-  /* Halfway between Fog's crisp indigo and Daybreak's calmer iris. */
-  --accent: #6457d4;
+  --accent: #6d54c0;
   --accent-2: #8a72e6;
-  --accent-soft: rgba(100, 87, 212, 0.10);
-  --accent-glow: rgba(100, 87, 212, 0.17);
+  --accent-soft: rgba(109, 84, 192, 0.10);
+  --accent-glow: rgba(109, 84, 192, 0.17);
+  --slot: #1b9099;
+  --event-default: #8a8499;
   --shadow-1: 0 1px 2px rgba(45, 40, 60, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(45, 40, 60, 0.12), 0 1px 2px rgba(45, 40, 60, 0.05);
   --shadow-3: 0 24px 60px -16px rgba(50, 42, 78, 0.24), 0 4px 12px -4px rgba(45, 40, 60, 0.1);
@@ -141,6 +146,12 @@
   --line-strong: #3e3b4c;
   --text: #edecf2;
   --muted: #9893a3;
+  --accent: #9a86f0;
+  --accent-2: #b3a3f5;
+  --accent-soft: rgba(154, 134, 240, 0.14);
+  --accent-glow: rgba(154, 134, 240, 0.28);
+  --slot: #2bb6c4;
+  --event-default: #8088a8;
 }
 
 @theme inline {
