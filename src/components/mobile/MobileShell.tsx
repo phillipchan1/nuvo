@@ -20,6 +20,7 @@ import NowFloor from "../floors/NowFloor";
 import SettingsModal from "../SettingsModal";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
+import MobilePlan from "./MobilePlan";
 import QuickTaskSheet from "./QuickTaskSheet";
 import ChatSheet from "./ChatSheet";
 import MobileTaskSheet from "./MobileTaskSheet";
@@ -27,7 +28,7 @@ import MobileTaskSheet from "./MobileTaskSheet";
 // Top-level destinations: the three jobs you do on the phone. Today/Week/Inbox
 // collapse into one "Tasks" screen (three lenses on one backlog) so the bar can
 // give Calendar a slot and make capture + Nuvo permanent first-class actions.
-type Tab = "now" | "calendar" | "tasks";
+type Tab = "now" | "calendar" | "tasks" | "plan";
 const TAB_KEY = "nuvo-mobile-tab-v2";
 const SUB_KEY = "nuvo-mobile-tasksub";
 const LEGACY_KEY = "nuvo-mobile-tab"; // pre-refactor: now|today|week|inbox
@@ -36,6 +37,9 @@ const NAV: { id: Tab; label: string; glyph: string }[] = [
   { id: "now", label: "Now", glyph: "◉" },
   { id: "calendar", label: "Calendar", glyph: "▦" },
   { id: "tasks", label: "Tasks", glyph: "▤" },
+  // The strategic vertical — Domains › Initiatives › Projects, the "why" above
+  // the schedule. Browsed top-down as a drill-down stack (see MobilePlan).
+  { id: "plan", label: "Plan", glyph: "❖" },
 ];
 
 const SUBTABS: { id: MobileTab; label: string }[] = [
@@ -209,6 +213,8 @@ export default function MobileShell() {
           </div>
         ) : tab === "calendar" ? (
           <MobileCalendar now={now} />
+        ) : tab === "plan" ? (
+          <MobilePlan />
         ) : (
           <div className="pb-10">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
@@ -248,6 +254,10 @@ export default function MobileShell() {
           </span>
           <span className="invisible text-lead leading-none">＋</span>
         </button>
+
+        {/* Plan — the strategic vertical. Sits between capture and Tasks so the
+            ＋ keeps its exact spot and strategy reads next to execution. */}
+        <NavTab tab={NAV[3]} active={tab === NAV[3].id} onClick={() => setTab(NAV[3].id)} />
 
         <NavTab
           tab={NAV[2]}
