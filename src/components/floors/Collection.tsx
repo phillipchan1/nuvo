@@ -18,7 +18,8 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { Bar, InlineDate, InlineText, StatusPill, Timeline, type TimelineItem } from "./parts";
+import { Bar, InlineDate, InlineText, RipenessPip, StatusPill, Timeline, type TimelineItem } from "./parts";
+import type { Ripeness } from "../../lib/tending";
 import { Btn } from "../ui";
 import { SELECT_INTERACTIVE, useCollectionSelection, type CollectionSelection } from "../../hooks/useCollectionSelection";
 import {
@@ -40,6 +41,8 @@ export interface CollectionRecord {
   domainIcon?: string;
   accent: string;
   status: string;
+  /** computed grooming maturity — renders the ambient ripeness pip. */
+  ripeness?: Ripeness;
   progress: number;
   startDate: string | null;
   targetDate: string | null;
@@ -235,9 +238,9 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
   return (
     <SelectionSurface
       selection={selection}
-      className="overflow-hidden rounded-md border border-line bg-surface"
+      className=""
     >
-      <div className="grid shrink-0 items-center gap-3 border-b border-line bg-bg px-3 py-2" style={{ gridTemplateColumns: cols }}>
+      <div className="grid shrink-0 items-center gap-3 border-b border-line px-2 py-2.5" style={{ gridTemplateColumns: cols }}>
         {selectable && (
           <SelectCheckbox checked={selection.allSelected} onToggle={selection.toggleAll} />
         )}
@@ -259,7 +262,7 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
             ref={(el) => selection.registerRef(r.id, el)}
             onMouseDown={selection.itemPointerDown(r.id)}
             onDoubleClick={r.open}
-            className={`group grid cursor-default items-center gap-3 border-b border-line px-3 py-2 last:border-0 ${
+            className={`lift-anim group grid cursor-default items-center gap-3 border-b border-line px-2 py-2.5 last:border-0 ${
               selectable ? itemSelectRowClass(selection, r.id) : "hover:bg-accent-soft/60"
             }`}
             style={{ gridTemplateColumns: cols }}
@@ -271,7 +274,8 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
                 onToggle={() => selection.pick(r.id, { extend: true, range: false })}
               />
             )}
-            <div className="min-w-0" data-no-select onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex min-w-0 items-center gap-2" data-no-select onMouseDown={(e) => e.stopPropagation()}>
+              {r.ripeness && <RipenessPip stage={r.ripeness} />}
               <InlineText value={r.title} onChange={r.setTitle} placeholder="Untitled" className="text-body font-medium" />
             </div>
             <div data-no-select onMouseDown={(e) => e.stopPropagation()}>
@@ -327,6 +331,7 @@ function BoardView({
   // the browser). Live drag lives in a ref; mirrored to state for the ghost.
   const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
   const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
+  const justDraggedRef = useRef<boolean>(false);
   const [overLane, setOverLane] = useState<string | null>(null);
   const laneRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [ctxMenu, setCtxMenu] = useState<{ r: CollectionRecord; x: number; y: number } | null>(null);
@@ -391,6 +396,7 @@ function BoardView({
       setDrag(null);
       setOverLane(null);
       if (!d || !d.moved) return; // a click, not a drag — let click/dblclick run
+      justDraggedRef.current = true;
       const laneKey = laneAtPoint(ev.clientX, ev.clientY);
       if (!laneKey) return;
       const r = records.find((x) => x.id === d.id);
@@ -438,6 +444,7 @@ function BoardView({
                     dragging={dragging === r.id}
                     onStartDrag={(e) => startCardDrag(r.id, e)}
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ r, x: e.clientX, y: e.clientY }); }}
+                    justDraggedRef={justDraggedRef}
                   />
                 ))}
                 {lane.items.length === 0 ? (
@@ -459,11 +466,15 @@ function BoardView({
         if (!r) return null;
         return (
           <div
-            className="pointer-events-none fixed z-[300] flex max-w-[220px] items-center gap-1.5 rounded-md border bg-surface px-2.5 py-1.5 text-label shadow-lg"
-            style={{ left: drag.x + 12, top: drag.y + 12, borderColor: r.accent }}
+            className="glass-grab pointer-events-none fixed z-[300] w-[240px] overflow-hidden rounded-lg p-3"
+            style={{ left: drag.x - 16, top: drag.y - 14 }}
           >
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.accent }} />
-            <span className="truncate text-ink">{r.title || "Untitled"}</span>
+            <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: r.accent }} />
+            <div className="pl-1.5">
+              <div className="truncate text-body font-medium text-ink">{r.title || "Untitled"}</div>
+              <div className="mono mt-0.5 truncate text-meta" style={{ color: r.accent }}>{r.domainIcon} {r.subtitle}</div>
+              <div className="mt-2"><Bar pct={r.progress} color={r.accent} h={1} /></div>
+            </div>
           </div>
         );
       })()}
@@ -527,6 +538,7 @@ function BoardCard({
   dragging,
   onStartDrag,
   onContextMenu,
+  justDraggedRef,
 }: {
   r: CollectionRecord;
   config: CollectionConfig;
@@ -535,6 +547,7 @@ function BoardCard({
   dragging: boolean;
   onStartDrag: (e: ReactPointerEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  justDraggedRef: React.MutableRefObject<boolean>;
 }) {
   const metaEntries = (config.extraColumns ?? []).map((c) => r.meta[c.key]?.value).filter(Boolean);
   const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
@@ -546,19 +559,20 @@ function BoardCard({
       onPointerDown={onStartDrag}
       onContextMenu={onContextMenu}
       onClick={(e) => {
+        // Don't open if we just finished a drag
+        if (justDraggedRef.current) {
+          justDraggedRef.current = false;
+          return;
+        }
         // Open card on click unless clicking an interactive element (checkbox, status pill, etc.)
         if (!(e.target as HTMLElement).closest(SELECT_INTERACTIVE)) {
           r.open();
         }
       }}
       onDoubleClick={r.open}
-      className={`fast group relative cursor-pointer touch-none overflow-hidden rounded-md border bg-surface p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${
-        inProgress ? "border-accent/50 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_20%,transparent)]" : ""
-      } ${visual === "selected" ? "border-accent/40" : visual === "preview" ? "border-accent/50 border-dashed" : inProgress ? "" : "border-line"}`}
-      style={{
-        opacity: dragging ? 0.4 : 1,
-        background: inProgress ? "color-mix(in srgb, var(--accent) 6%, var(--surface))" : undefined,
-      }}
+      className={`lift-anim group relative cursor-pointer touch-none overflow-hidden rounded-lg border glass-card p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${
+        inProgress ? "border-accent/50" : ""
+      } ${visual === "selected" ? "" : visual === "preview" ? "border-accent/50 border-dashed" : inProgress ? "" : "border-line"} ${dragging ? "is-dragging" : ""}`}
     >
       <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: inProgress ? "var(--accent)" : r.accent }} />
       <div className="flex items-start gap-2 pl-1.5">
@@ -571,7 +585,10 @@ function BoardCard({
           />
         )}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-body font-medium">{r.title || "Untitled"}</div>
+          <div className="flex items-center gap-1.5">
+            {r.ripeness && <RipenessPip stage={r.ripeness} />}
+            <span className="truncate text-body font-medium">{r.title || "Untitled"}</span>
+          </div>
           <div className="mono mt-0.5 truncate text-meta" style={{ color: r.accent }}>{r.domainIcon} {r.subtitle}</div>
         </div>
         <div data-no-select onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
@@ -673,21 +690,25 @@ function CalendarView({ config, selection }: { config: CollectionConfig; selecti
 
   return (
     <SelectionSurface selection={selection}>
-      <div className="mb-3 flex shrink-0 items-center gap-3">
-        <button onClick={() => setCursor((c) => addMonths(c, -1))} className="fast mono rounded border border-line px-2 py-0.5 text-caption text-muted hover:text-ink">‹</button>
-        <span className="text-head font-medium">{format(cursor, "MMMM yyyy")}</span>
-        <button onClick={() => setCursor((c) => addMonths(c, 1))} className="fast mono rounded border border-line px-2 py-0.5 text-caption text-muted hover:text-ink">›</button>
-        <button onClick={() => setCursor(startOfMonth(new Date()))} className="fast mono text-label text-muted hover:text-ink">today</button>
-        {dragId && <span className="mono text-meta text-muted">drag onto a day to reschedule</span>}
-      </div>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* month nav — floats on the paper, no frame */}
+        <div className="mb-3 flex shrink-0 items-center gap-3">
+          <button onClick={() => setCursor((c) => addMonths(c, -1))} title="Previous month" className="fast flex h-9 w-9 items-center justify-center rounded-lg border border-line text-body text-muted hover:border-line-strong hover:text-ink">‹</button>
+          <button onClick={() => setCursor((c) => addMonths(c, 1))} title="Next month" className="fast flex h-9 w-9 items-center justify-center rounded-lg border border-line text-body text-muted hover:border-line-strong hover:text-ink">›</button>
+          <span className="masthead text-lead">{format(cursor, "MMMM yyyy")}</span>
+          <button onClick={() => setCursor(startOfMonth(new Date()))} className="fast rounded-lg border border-line px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink">Today</button>
+          {dragId && <span className="mono text-meta text-muted">drag onto a day to reschedule</span>}
+        </div>
 
-      <div className="overflow-hidden rounded-md border border-line bg-surface">
-        <div className="grid grid-cols-7 border-b border-line bg-bg">
+        {/* weekday header */}
+        <div className="grid shrink-0 grid-cols-7 border-b border-line">
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-            <div key={d} className="mono px-2 py-1.5 text-micro uppercase text-muted">{d}</div>
+            <div key={d} className="section-label px-2.5 py-2">{d}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7">
+
+        {/* days — the grid IS the paper; rows stretch to fill the floor */}
+        <div className="grid min-h-0 flex-1 grid-cols-7" style={{ gridAutoRows: "minmax(72px, 1fr)" }}>
           {days.map((day, i) => {
             const items = onDay(day);
             const dim = !isSameMonth(day, cursor);
@@ -699,16 +720,16 @@ function CalendarView({ config, selection }: { config: CollectionConfig; selecti
                 onDragOver={(e) => { if (dragId) { e.preventDefault(); setOverKey(key); } }}
                 onDragLeave={() => setOverKey((k) => (k === key ? null : k))}
                 onDrop={(e) => { e.preventDefault(); setTarget(key); }}
-                className="min-h-[96px] border-b border-r border-line p-1.5 last:border-r-0"
-                style={{ opacity: dim ? 0.45 : 1, background: over ? "var(--accent-soft)" : "transparent", outline: over ? "1px dashed var(--accent)" : "none", outlineOffset: -1 }}
+                className="overflow-hidden border-b border-r border-line p-1.5 last:border-r-0"
+                style={{ opacity: dim ? 0.4 : 1, background: over ? "var(--accent-soft)" : "transparent", outline: over ? "1px dashed var(--accent)" : "none", outlineOffset: -1 }}
               >
-                <div className="mono mb-1 flex items-center text-meta">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full" style={{ background: isToday(day) ? "var(--signal)" : "transparent", color: isToday(day) ? "#fff" : "var(--muted)" }}>
+                <div className="mb-1 flex items-center">
+                  <span className="mono flex h-6 w-6 items-center justify-center rounded-full text-meta" style={{ background: isToday(day) ? "var(--signal)" : "transparent", color: isToday(day) ? "#fff" : "var(--muted)" }}>
                     {format(day, "d")}
                   </span>
                 </div>
                 <div className="space-y-1">
-                  {items.slice(0, 3).map((r) => (
+                  {items.slice(0, 4).map((r) => (
                     <CalendarChip
                       key={r.id}
                       r={r}
@@ -717,43 +738,43 @@ function CalendarView({ config, selection }: { config: CollectionConfig; selecti
                       dragging={dragId === r.id}
                       onDragStart={() => setDragId(r.id)}
                       onDragEnd={() => { setDragId(null); setOverKey(null); }}
-                      className="fast flex w-full items-center truncate rounded-sm px-1 py-0.5 text-left text-meta"
+                      className="fast flex w-full items-center truncate rounded-sm px-1.5 py-1 text-left text-meta"
                       style={{ background: `${r.accent}1f`, color: "var(--text)", borderLeft: `2px solid ${r.accent}` }}
                     />
                   ))}
-                  {items.length > 3 && <div className="mono px-1 text-micro text-muted">+{items.length - 3} more</div>}
+                  {items.length > 4 && <div className="mono px-1 text-micro text-muted">+{items.length - 4} more</div>}
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
 
-      <div
-        onDragOver={(e) => { if (dragId) { e.preventDefault(); setOverKey("unscheduled"); } }}
-        onDragLeave={() => setOverKey((k) => (k === "unscheduled" ? null : k))}
-        onDrop={(e) => { e.preventDefault(); setTarget(null); }}
-        className="fast mt-4 rounded-md p-2"
-        style={{ outline: overKey === "unscheduled" && dragId ? "1px dashed var(--muted)" : "none", background: overKey === "unscheduled" && dragId ? "var(--bg)" : "transparent" }}
-      >
-        <div className="section-label mb-2">No target date ({unscheduled.length}){dragId ? " · drop here to clear" : ""}</div>
-        <div className="flex flex-wrap gap-2">
-          {unscheduled.map((r) => (
-            <CalendarChip
-              key={r.id}
-              r={r}
-              selectable={!!selectable}
-              selection={selection}
-              dragging={dragId === r.id}
-              onDragStart={() => setDragId(r.id)}
-              onDragEnd={() => { setDragId(null); setOverKey(null); }}
-              className="fast flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-label hover:border-muted"
-            />
-          ))}
-          {unscheduled.length === 0 && <span className="mono text-label text-muted italic">Everything has a date.</span>}
+        {/* unscheduled tray — matches the Timeline tray */}
+        <div
+          onDragOver={(e) => { if (dragId) { e.preventDefault(); setOverKey("unscheduled"); } }}
+          onDragLeave={() => setOverKey((k) => (k === "unscheduled" ? null : k))}
+          onDrop={(e) => { e.preventDefault(); setTarget(null); }}
+          className="fast mt-3 shrink-0 border-t border-line pt-3"
+          style={{ background: overKey === "unscheduled" && dragId ? "var(--accent-soft)" : "transparent" }}
+        >
+          <div className="section-label mb-2">No target date · {unscheduled.length}{dragId ? " · drop here to clear" : ""}</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {unscheduled.map((r) => (
+              <CalendarChip
+                key={r.id}
+                r={r}
+                selectable={!!selectable}
+                selection={selection}
+                dragging={dragId === r.id}
+                onDragStart={() => setDragId(r.id)}
+                onDragEnd={() => { setDragId(null); setOverKey(null); }}
+                className="fast flex shrink-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-caption hover:border-line-strong"
+              />
+            ))}
+            {unscheduled.length === 0 && <span className="mono text-label text-muted italic">Everything has a date.</span>}
+          </div>
         </div>
       </div>
-      <div className="min-h-[10rem] flex-1" aria-hidden />
     </SelectionSurface>
   );
 }
@@ -781,7 +802,6 @@ function TimelineView({ config, selection }: { config: CollectionConfig; selecti
         selection={config.selectable ? selection : undefined}
         persistKey={config.storageKey}
       />
-      <div className="min-h-[10rem] flex-1" aria-hidden />
     </SelectionSurface>
   );
 }
