@@ -220,7 +220,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   ];
 
   return (
-    <div className="flex h-full flex-col bg-bg">
+    <div className="flex h-full flex-col">
       {/* No header bar at all. The macOS titlebar zone is filled by the rail and
           the calendar toolbar themselves (each carries `titlebar-pad` so its own
           surface rises to the window top, with the traffic lights floating over

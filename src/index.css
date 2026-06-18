@@ -589,7 +589,9 @@ textarea:focus {
      the spine, so the day reads as a single canvas, not a boxed widget. */
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: transparent;
-  --fc-today-bg-color: color-mix(in srgb, var(--accent) 5%, var(--bg));
+  /* No today wash — it filled the whole day in Day view and split the canvas.
+     Today is marked by its date number alone. */
+  --fc-today-bg-color: transparent;
   --fc-now-indicator-color: var(--signal);
   --fc-event-border-color: transparent;
   --fc-event-text-color: var(--text);
@@ -655,6 +657,8 @@ textarea:focus {
 }
 .fc .fc-timegrid-now-indicator-line {
   border-width: 1.5px 0 0;
+  /* The now-line glows like a horizon — the one warm pulse on the canvas. */
+  box-shadow: 0 0 8px 0 color-mix(in srgb, var(--signal) 55%, transparent);
 }
 .fc .fc-timegrid-now-indicator-arrow {
   white-space: nowrap;

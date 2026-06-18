@@ -45,7 +45,9 @@ function blockColors(c: string, fillPct = 14) {
   const base = `color-mix(in srgb, ${c} 80%, var(--muted))`;
   return {
     backgroundColor: `color-mix(in srgb, ${base} ${fillPct}%, var(--surface))`,
-    borderColor: `color-mix(in srgb, ${base} ${Math.round(fillPct * 2.1)}%, var(--line))`,
+    // No outline — the soft fill + the 3px left bar carry the block. Outlines
+    // were the main thing making the calendar feel busy.
+    borderColor: "transparent",
   };
 }
 
@@ -1086,7 +1088,7 @@ export default function CalendarPane({
 
       {/* ── Navigation bar — also fills the macOS titlebar zone (titlebar-pad)
             and hosts the window-drag handle on its empty spacer. ──────────── */}
-      <div className="titlebar-pad flex shrink-0 items-center gap-1 bg-bg px-3 py-1.5">
+      <div className="titlebar-pad flex shrink-0 items-center gap-1 px-3 py-1.5">
         <button
           onClick={() => calRef.current?.getApi().prev()}
           className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
@@ -1106,7 +1108,7 @@ export default function CalendarPane({
           </svg>
         </button>
 
-        <span className="mx-1 select-none text-caption font-semibold text-text">
+        <span className="masthead mx-1.5 select-none text-lead leading-none text-text">
           {viewTitle}
         </span>
 
@@ -1186,7 +1188,7 @@ export default function CalendarPane({
           nowIndicator={!isMonth}
           nowIndicatorContent={(arg) =>
             arg.isAxis ? (
-              <span className="mono whitespace-nowrap border border-signal bg-surface px-1 text-micro leading-none text-signal">
+              <span className="whitespace-nowrap pr-1 text-micro font-semibold leading-none tabular-nums text-signal">
                 {format(now, "h:mma").toLowerCase()}
               </span>
             ) : null
@@ -1210,13 +1212,17 @@ export default function CalendarPane({
                 <span className="text-micro font-semibold tracking-widest text-muted">
                   {weekday}
                 </span>
+                {/* Editorial serif numerals — judicious Fraunces, the day's anchor.
+                    Today is marked by accent ink + a small dot, not a heavy chip. */}
                 <span
-                  className={`mono flex h-7 w-7 items-center justify-center rounded-full text-head font-semibold tabular-nums leading-none transition-colors ${
-                    isToday ? "bg-accent text-white" : "text-text"
-                  }`}
+                  className="masthead tabular-nums leading-none"
+                  style={{ fontSize: "20px", color: isToday ? "var(--accent)" : "var(--text)" }}
                 >
                   {dateNum}
                 </span>
+                {isToday && (
+                  <span className="h-1 w-1 rounded-full" style={{ background: "var(--accent)" }} />
+                )}
               </div>
             );
           }}
