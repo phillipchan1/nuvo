@@ -1086,7 +1086,7 @@ export default function CalendarPane({
 
       {/* ── Navigation bar — also fills the macOS titlebar zone (titlebar-pad)
             and hosts the window-drag handle on its empty spacer. ──────────── */}
-      <div className="titlebar-pad flex shrink-0 items-center gap-1 border-b border-line bg-surface px-3 py-1.5">
+      <div className="titlebar-pad flex shrink-0 items-center gap-1 bg-bg px-3 py-1.5">
         <button
           onClick={() => calRef.current?.getApi().prev()}
           className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"

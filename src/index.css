@@ -585,14 +585,23 @@ textarea:focus {
 /* ── FullCalendar restyle to Twilight ────────────────────────────────── */
 .fc {
   --fc-border-color: var(--line);
-  --fc-page-bg-color: var(--surface);
-  --fc-neutral-bg-color: var(--bg);
-  --fc-today-bg-color: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  /* One continuous paper — the grid lives on the same surface as the rail and
+     the spine, so the day reads as a single canvas, not a boxed widget. */
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: transparent;
+  --fc-today-bg-color: color-mix(in srgb, var(--accent) 5%, var(--bg));
   --fc-now-indicator-color: var(--signal);
   --fc-event-border-color: transparent;
   --fc-event-text-color: var(--text);
   font-size: 12px;
   height: 100%;
+}
+
+/* No frame around the grid — it isn't a widget sitting on the page, it IS the
+   page. Only the faint inner guides remain. */
+.fc .fc-scrollgrid,
+.fc .fc-scrollgrid > * > * {
+  border: none;
 }
 
 .fc .fc-timegrid-slot {
@@ -618,22 +627,31 @@ textarea:focus {
   font-weight: 500;
   text-decoration: none !important;
 }
-/* Today column header: a whisper of accent, not a band */
+/* Today column header: just a soft accent underline — no band. */
 .fc .fc-col-header-cell.fc-day-today {
-  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
-  border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  background: transparent;
+  border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 28%, transparent);
 }
-/* Column dividers: faint — the grid should recede, not cage the day */
+/* Column dividers: barely there — the grid recedes, the blocks carry the eye. */
 .fc .fc-timegrid-col {
-  border-left-color: color-mix(in srgb, var(--line) 42%, transparent);
+  border-left-color: color-mix(in srgb, var(--line) 22%, transparent);
 }
-/* A hint of glass on the sticky day header — refined, and it lets the grid
-   slide gently beneath it. */
+/* The sticky day header is frosted *paper* (same canvas), so the grid slides
+   gently beneath it without introducing a second surface. */
 .fc .fc-col-header,
 .fc .fc-timegrid-axis {
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
   -webkit-backdrop-filter: blur(8px) saturate(1.05);
   backdrop-filter: blur(8px) saturate(1.05);
+}
+/* Day-header cells and the all-day ("anytime") divider share the paper — drop
+   their borders so only the today underline + faint hour guides remain. */
+.fc .fc-col-header-cell {
+  border-bottom: none;
+}
+.fc .fc-timegrid-divider {
+  border: none;
+  background: transparent;
 }
 .fc .fc-timegrid-now-indicator-line {
   border-width: 1.5px 0 0;

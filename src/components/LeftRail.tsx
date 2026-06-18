@@ -332,7 +332,7 @@ export default function LeftRail({
     <div
       ref={railRef}
       data-rail-drop
-      className="titlebar-pad relative flex h-full shrink-0 flex-col border-r border-line bg-surface"
+      className="titlebar-pad relative flex h-full shrink-0 flex-col border-r border-line"
       style={{ width: railWidth }}
     >
       <div
@@ -343,7 +343,7 @@ export default function LeftRail({
         className="absolute -right-1 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35"
       />
       {/* Tabs */}
-      <div className="flex border-b border-line">
+      <div className="flex">
         {(["inbox", "week", "today"] as const).map((t) => (
           <button
             key={t}
@@ -359,7 +359,7 @@ export default function LeftRail({
       </div>
 
       {/* Capture */}
-      <form onSubmit={(e) => void submitCapture(e)} className="border-b border-line p-2">
+      <form onSubmit={(e) => void submitCapture(e)} className="p-2">
         <input
           ref={captureRef}
           value={capture}
