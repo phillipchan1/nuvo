@@ -286,7 +286,7 @@ body {
 html.tauri-macos {
   --titlebar-inset-left: 78px;
   --titlebar-inset-top: 28px;
-  --spine-width: 120px;
+  --spine-width: 140px;
 }
 
 /* Top bars sit under the overlay titlebar; spine column owns the left inset. */

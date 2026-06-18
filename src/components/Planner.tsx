@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { format } from "date-fns";
 import { todayISO } from "../lib/dates";
 import { fallbackPanelAnchor } from "../lib/appNav";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
@@ -222,30 +221,33 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* A quiet masthead — just the day, the hour, and the view. Plan/Shutdown
-          live in the command bar (⌘K) + the morning prompt; Nuvo on the right
-          edge (⌘J); settings on the spine (⌘,). The Schedule earns its calm. */}
+      {/* A near-bare titlebar: the calendar already shows the date, marks today,
+          and draws the now-line, so the bar carries only the view toggle — the
+          rest is drag region. Plan/Shutdown live in ⌘K + the morning prompt;
+          Nuvo on the right edge (⌘J); settings on the spine (⌘,). */}
       <header
         data-tauri-drag-region
-        className="app-topbar flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"
+        className="app-topbar flex h-11 shrink-0 items-center justify-end border-b border-line bg-surface px-3"
       >
-        <span className="mono text-meta text-muted">{format(now, "EEE MMM d")}</span>
-        <span className="mono rounded border border-signal px-1 text-meta leading-snug text-signal">
-          {format(now, "h:mm a")}
-        </span>
-        <div className="flex-1" />
-        <div className="flex overflow-hidden rounded-md border border-line">
-          {(["timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setCalView(v)}
-              className={`fast px-2.5 py-1 text-label font-medium ${
-                view === v ? "bg-accent text-white" : "text-muted hover:text-ink"
-              }`}
-            >
-              {v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
-            </button>
-          ))}
+        <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
+          {(["timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
+            const on = view === v;
+            return (
+              <button
+                key={v}
+                onClick={() => setCalView(v)}
+                className="fast rounded-full px-3 py-1 text-label leading-none"
+                style={{
+                  background: on ? "var(--surface)" : "transparent",
+                  color: on ? "var(--accent)" : "var(--muted)",
+                  fontWeight: on ? 600 : 500,
+                  boxShadow: on ? "var(--shadow-1)" : "none",
+                }}
+              >
+                {v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
+              </button>
+            );
+          })}
         </div>
       </header>
 

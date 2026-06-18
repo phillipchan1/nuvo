@@ -111,7 +111,7 @@ export default function Spine({
 
   return (
     <div
-      className="spine relative z-40 flex w-[var(--spine-width,120px)] shrink-0 flex-col"
+      className="spine relative z-40 flex w-[var(--spine-width,140px)] shrink-0 flex-col"
       style={{ background: "transparent" }}
     >
       {/* Right separator — runs the full height (spine is wide enough to clear
