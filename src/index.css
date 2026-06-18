@@ -19,16 +19,17 @@
    for the moments that matter.
    ════════════════════════════════════════════════════════════════════════ */
 
-/* ── Daybreak (light) ────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════
+   PALETTES — Daybook ships three moods on a warmth axis (Daybreak · Dusk ·
+   Fog) set on <html data-palette>, crossed with the usual light/dark axis on
+   <html data-theme>. The neutral ramp + elevation tint carry the mood; the
+   indigo accent, ember signal and teal slot stay constant so the brand reads
+   the same in every mood. Base (no data-palette) = Daybreak.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Shared across every palette: accent · signal · slot ─────────────────── */
 :root,
 [data-theme="light"] {
-  --bg: #f3f2f7;
-  --surface: #ffffff;
-  --surface-2: #faf9fd;
-  --line: #e5e3ee;
-  --line-strong: #d4d0e0;
-  --text: #1a1822;
-  --muted: #6c6880;
   --accent: #5a4be2;
   --accent-2: #8a6cf0;
   --signal: #e0620f;
@@ -38,22 +39,8 @@
   /* Slots are a class of their own — a time *container*, not a task or event.
      This dedicated teal sets them apart from the violet accent at a glance. */
   --slot: #0d8f9c;
-
-  /* soft, low, faintly violet-warm elevation — never a hard drop shadow */
-  --shadow-1: 0 1px 2px rgba(26, 22, 48, 0.05);
-  --shadow-2: 0 6px 20px -6px rgba(26, 22, 48, 0.12), 0 1px 2px rgba(26, 22, 48, 0.05);
-  --shadow-3: 0 24px 60px -16px rgba(46, 32, 96, 0.24), 0 4px 12px -4px rgba(26, 22, 48, 0.1);
 }
-
-/* ── Twilight (dark) ─────────────────────────────────────────────────── */
 [data-theme="dark"] {
-  --bg: #141320;
-  --surface: #1c1a28;
-  --surface-2: #232133;
-  --line: #2d2b3d;
-  --line-strong: #3b3850;
-  --text: #ecebf3;
-  --muted: #95909f;
   --accent: #8b80ff;
   --accent-2: #a892ff;
   --signal: #ff8a4c;
@@ -61,11 +48,83 @@
   --signal-soft: rgba(255, 138, 76, 0.14);
   --accent-glow: rgba(139, 128, 255, 0.28);
   --slot: #2bb6c4;
+  color-scheme: dark;
+}
 
+/* ── Daybreak — warm paper (the default mood) ───────────────────────────── */
+:root,
+[data-theme="light"],
+[data-palette="daybreak"][data-theme="light"] {
+  --bg: #f4f1ea;
+  --surface: #fffdf8;
+  --surface-2: #faf6ee;
+  --line: #e7e0d2;
+  --line-strong: #d8cfbc;
+  --text: #1f1a16;
+  --muted: #847b6b;
+  /* warm, low elevation — never a hard drop shadow */
+  --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(60, 42, 20, 0.13), 0 1px 2px rgba(60, 42, 20, 0.06);
+  --shadow-3: 0 24px 60px -16px rgba(74, 52, 24, 0.26), 0 4px 12px -4px rgba(60, 42, 20, 0.12);
+}
+[data-theme="dark"],
+[data-palette="daybreak"][data-theme="dark"] {
+  --bg: #17130e;
+  --surface: #201b14;
+  --surface-2: #29231a;
+  --line: #332c20;
+  --line-strong: #443b2c;
+  --text: #f1ece2;
+  --muted: #a99c87;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-3: 0 28px 64px -16px rgba(0, 0, 0, 0.7), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
-  color-scheme: dark;
+}
+
+/* ── Fog — cool morning grey ─────────────────────────────────────────────── */
+[data-palette="fog"][data-theme="light"] {
+  --bg: #eef0f5;
+  --surface: #ffffff;
+  --surface-2: #f7f8fc;
+  --line: #e4e6ef;
+  --line-strong: #d3d7e3;
+  --text: #1b1c24;
+  --muted: #6b6f7e;
+  --shadow-1: 0 1px 2px rgba(40, 38, 70, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(40, 38, 70, 0.12), 0 1px 2px rgba(40, 38, 70, 0.05);
+  --shadow-3: 0 24px 60px -16px rgba(46, 40, 80, 0.24), 0 4px 12px -4px rgba(40, 38, 70, 0.1);
+}
+[data-palette="fog"][data-theme="dark"] {
+  --bg: #141320;
+  --surface: #1c1a28;
+  --surface-2: #232133;
+  --line: #2d2b3d;
+  --line-strong: #3b3850;
+  --text: #ecebf3;
+  --muted: #95909f;
+}
+
+/* ── Dusk — balanced neutral, between warm and cool ──────────────────────── */
+[data-palette="dusk"][data-theme="light"] {
+  --bg: #f1f0f3;
+  --surface: #ffffff;
+  --surface-2: #f8f7fb;
+  --line: #e6e4ec;
+  --line-strong: #d6d3df;
+  --text: #1c1b22;
+  --muted: #6f6c7b;
+  --shadow-1: 0 1px 2px rgba(45, 40, 60, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(45, 40, 60, 0.12), 0 1px 2px rgba(45, 40, 60, 0.05);
+  --shadow-3: 0 24px 60px -16px rgba(50, 42, 78, 0.24), 0 4px 12px -4px rgba(45, 40, 60, 0.1);
+}
+[data-palette="dusk"][data-theme="dark"] {
+  --bg: #16151c;
+  --surface: #1e1d26;
+  --surface-2: #262430;
+  --line: #302e3b;
+  --line-strong: #3e3b4c;
+  --text: #edecf2;
+  --muted: #9893a3;
 }
 
 @theme inline {
@@ -248,6 +307,28 @@ html.tauri-macos .spine-top {
   font-optical-sizing: auto;
   font-variation-settings: "SOFT" 40, "WONK" 0;
   letter-spacing: -0.005em;
+}
+
+/* The editorial voice for everyday surfaces — Fraunces on greetings, flow &
+   ritual titles, day numerals. Pairs with the existing size classes: just add
+   `masthead` alongside text-lead / text-head / text-display. This is how the
+   chapel's craft reaches the screens you live in. */
+.masthead {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  font-variation-settings: "SOFT" 32, "WONK" 0;
+  font-weight: 500;
+  letter-spacing: -0.014em;
+}
+
+/* Glass — reserved for surfaces that genuinely float above the work: the
+   command bar, modals, bottom sheets, the active spine chapter. Kept high-
+   opacity so dense content stays crisp; never used to elevate in-list rows
+   (that would make hierarchy too stark on a dense planner). */
+.glass {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: blur(16px) saturate(1.08);
 }
 
 /* The wordmark — tightened tracking, the twilight gradient on brand surfaces. */

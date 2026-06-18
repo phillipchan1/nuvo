@@ -311,7 +311,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
           <section className="min-w-0 flex-1">
             <div className="mb-2 flex items-baseline justify-between gap-3">
               <div className="flex items-baseline gap-3">
-                <h2 className="text-head font-semibold tracking-tight">The week</h2>
+                <h2 className="text-head masthead">The week</h2>
                 <button onClick={proposeBatch} className="fast mono text-meta text-accent hover:underline" title="Group the week's committed work into a few intelligent focus blocks">
                   ✦ batch into focus blocks
                 </button>
@@ -502,7 +502,7 @@ function BetsStrip() {
   return (
     <section>
       <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-head font-semibold tracking-tight">
+        <h2 className="text-head masthead">
           The bets <span className="mono text-meta font-normal text-muted">★ {leads.length}/3 leads</span>
         </h2>
         {rows.length > 0 && (
@@ -674,7 +674,7 @@ function Candidates({
   return (
     <section>
       <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-head font-semibold tracking-tight">
+        <h2 className="text-head masthead">
           Pulled for you <span className="mono text-meta font-normal text-muted">{keptCount}/{suggestions.length} in the week</span>
         </h2>
         <button onClick={() => setShowMore((s) => !s)} className="fast mono text-meta text-muted hover:text-ink">
@@ -1157,7 +1157,7 @@ function DoneState({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex min-h-[50vh] items-center justify-center">
       <div className="max-w-[460px] text-center">
-        <div className="text-display font-semibold tracking-tight">Your week is set.</div>
+        <div className="text-display masthead">Your week is set.</div>
         {data.sprintGoal && <div className="mt-2 text-head text-muted">“{data.sprintGoal}”</div>}
         <div className="mono mt-3 text-label text-muted">
           {hrs(totalMins)}h committed · {committed.length} tasks · {split.length} domain{split.length === 1 ? "" : "s"} · ★ {data.focusInitiativeIds.length} lead bet{data.focusInitiativeIds.length === 1 ? "" : "s"}

@@ -106,7 +106,7 @@ export default function SummitRitual({
         done ? (
           <div className="flex min-h-[50vh] items-center justify-center">
             <div className="max-w-[460px] text-center">
-              <div className="text-display font-semibold tracking-tight">The quarter is shaped.</div>
+              <div className="text-display masthead">The quarter is shaped.</div>
               <div className="mt-2 text-body text-muted">
                 Vows re-affirmed, bets decided, months rough-cut. The Sunday flow takes it from here, week by week.
               </div>
@@ -348,7 +348,7 @@ function MonthsStep() {
 function StepTitle({ title, sub }: { title: string; sub: string }) {
   return (
     <div className="mb-6">
-      <h1 className="text-display font-semibold tracking-tight">{title}</h1>
+      <h1 className="text-display masthead">{title}</h1>
       <p className="mt-1 max-w-[680px] text-body text-muted">{sub}</p>
     </div>
   );

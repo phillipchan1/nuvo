@@ -44,7 +44,7 @@ export default function NowFloor({
   const { data, toggleTask, applySchedule } = useVertical();
   const { settings } = useSettings();
   const [workingDays] = useWorkingDays();
-  const { nav, setNowMoment, back, openRecord, focusDomain, goRung } = useAppNavigation();
+  const { nav, setNowMoment, back, openRecord, focusDomain, goRung, openOverlay } = useAppNavigation();
   const { nowMoment, nowTaskId } = nav;
 
   // Today has two faces: the tactical "now" (what to start next) and the
@@ -270,7 +270,7 @@ export default function NowFloor({
           Expanded: the chat earns a sticky right rail and reclaims the margin. */}
       <div className={chatOpen ? "xl:grid xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start xl:gap-x-10" : ""}>
         <div className="xl:col-start-1 xl:row-start-1">
-          <NowBrief now={now} dayRead={dayRead} brief={brief} tired={tired} restDay={restDay} />
+          <NowBrief now={now} dayRead={dayRead} brief={brief} tired={tired} restDay={restDay} onPlan={() => openOverlay("morning")} onShutdown={() => openOverlay("evening")} />
           {!chatOpen && (
             <NuvoBar tired={tired} setTired={setTired} onAsk={askBar} />
           )}
@@ -458,16 +458,22 @@ function ModeToggle({ mode, setMode }: { mode: "now" | "standback"; setMode: (m:
 // The brief — Nuvo talking to you. A first-person read of the whole day, the
 // scannable stats underneath, and a composer so you can just say what you need.
 function NowBrief({
-  now, dayRead, brief, tired, restDay,
+  now, dayRead, brief, tired, restDay, onPlan, onShutdown,
 }: {
   now: Date;
   dayRead: DayRead;
   brief: Brief;
   tired: boolean;
   restDay: boolean;
+  /** The day's rituals, relocated here from the Schedule top bar — Plan in the
+   *  morning, shut down in the evening. They live in Today now. */
+  onPlan: () => void;
+  onShutdown: () => void;
 }) {
   const weekday = now.toLocaleDateString([], { weekday: "short" });
   const clock = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  // Lead with the ritual that fits the hour, but keep both reachable.
+  const evening = now.getHours() >= 17;
 
   const chips: { glyph: string; text: string; tone?: "accent" | "muted" }[] = [];
   // On a day off, open time isn't a number to fill — so we don't headline it.
@@ -479,10 +485,26 @@ function NowBrief({
 
   return (
     <div className="border-b border-line pb-5">
-      <div className="mono mb-2 text-meta text-muted">{weekday} · {clock}</div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="mono text-meta text-muted">{weekday} · {clock}</div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onPlan}
+            className={`fast rounded-full border px-2.5 py-1 text-label ${evening ? "border-line text-muted hover:border-accent hover:text-accent" : "border-accent/40 bg-accent-soft font-medium text-accent hover:bg-accent/15"}`}
+          >
+            ✷ Plan
+          </button>
+          <button
+            onClick={onShutdown}
+            className={`fast rounded-full border px-2.5 py-1 text-label ${evening ? "border-accent/40 bg-accent-soft font-medium text-accent hover:bg-accent/15" : "border-line text-muted hover:border-accent hover:text-accent"}`}
+          >
+            ☾ Shut down
+          </button>
+        </div>
+      </div>
 
-      <h1 className="text-lead font-semibold tracking-tight">{brief.greeting}</h1>
-      <p className="mt-1 max-w-[680px] text-head leading-relaxed text-ink/90">{brief.body}</p>
+      <h1 className="text-display masthead">{brief.greeting}</h1>
+      <p className="mt-1.5 max-w-[680px] text-head leading-relaxed text-ink/90">{brief.body}</p>
 
       <div className="mono mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-label">
         {chips.map((c, i) => (
@@ -971,7 +993,7 @@ function OrderDayModal({
   return (
     <Modal onClose={onClose} width="max-w-md">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div className="text-head font-semibold">Order my day</div>
+        <div className="text-lead masthead">Order my day</div>
         <div className="mono text-caption text-muted">
           {placed.length} placed{order.unplaced.length ? ` · ${order.unplaced.length} kept back` : ""}
         </div>

@@ -38,7 +38,7 @@ export function Modal({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className={`moment elev-3 w-full ${width} max-h-[90vh] overflow-y-auto rounded-lg border border-line bg-surface sm:max-h-none sm:overflow-hidden`}
+        className={`moment glass elev-3 w-full ${width} max-h-[90vh] overflow-y-auto rounded-lg border border-line sm:max-h-none sm:overflow-hidden`}
       >
         {children}
       </div>

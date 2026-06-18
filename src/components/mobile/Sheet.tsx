@@ -42,9 +42,9 @@ export default function Sheet({
       onTouchStart={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className={`sheet-up flex ${
+        className={`sheet-up glass flex ${
           tall ? "h-[92vh]" : "max-h-[88vh]"
-        } flex-col rounded-t-2xl border-t border-line bg-surface pb-safe`}
+        } flex-col rounded-t-2xl border-t border-line pb-safe`}
       >
         <div className="flex shrink-0 flex-col items-center pt-2">
           <span className="h-1 w-9 rounded-full bg-line-strong" />

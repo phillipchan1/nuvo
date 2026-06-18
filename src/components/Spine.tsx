@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { LADDER, type Rung } from "./AppShell";
 
 // Top-to-bottom: Now (immediate) → Domain (widest). ⌘1 at top, ⌘5 at bottom.
@@ -12,134 +13,145 @@ const RUNGS: { id: Rung; label: string }[] = [
 export type FlowName = "sunday" | "summit" | "blueprint";
 
 // A flow is the *act* of deciding at an altitude. Floors are for looking;
-// flows are for deciding — so each ritual now lives on the rung it operates on,
-// instead of hiding in a corner menu. (Today / Project have no ritual yet —
-// the natural next one is a daily "Plan today" docked on Now.)
+// flows are for deciding — so each ritual lives on the rung it operates on.
 const RUNG_FLOW: Partial<Record<Rung, { flow: FlowName; label: string; sub: string }>> = {
   day: { flow: "sunday", label: "Sunday", sub: "compose the week" },
   initiative: { flow: "blueprint", label: "Blueprint", sub: "shape a new bet" },
   domain: { flow: "summit", label: "Summit", sub: "decide the quarter" },
 };
 
-// The ladder bends at a seam: Now/Day are time horizons (execution); Project
-// and below are structure. A faint joint makes the L-bend legible.
-const SEAM_BEFORE: Rung = "project";
+// The spine reads like a table of contents for your life. Two zones:
+// Execute (Today · Schedule — time horizons) and Build (Project · Initiative ·
+// Domain — structure). The seam between them is the Week, the only gate from
+// the vertical to the calendar.
+const EXECUTE = RUNGS.slice(0, 2);
+const BUILD = RUNGS.slice(2);
+
+// The one whisper of glass in the app's chrome: the active chapter rises on a
+// frosted pane over the atmosphere — present, never stark.
+const activePill: CSSProperties = {
+  background: "color-mix(in srgb, var(--surface) 72%, transparent)",
+  backdropFilter: "blur(8px)",
+  WebkitBackdropFilter: "blur(8px)",
+  boxShadow: "var(--shadow-1)",
+  borderColor: "color-mix(in srgb, var(--line) 85%, transparent)",
+};
 
 export default function Spine({
   rung,
   setRung,
   openFlow,
+  openSettings,
 }: {
   rung: Rung;
   setRung: (r: Rung) => void;
   openFlow: (f: FlowName) => void;
+  openSettings: () => void;
 }) {
+  const renderRung = (r: { id: Rung; label: string }) => {
+    const on = r.id === rung;
+    const rf = RUNG_FLOW[r.id];
+    const n = LADDER.indexOf(r.id) + 1;
+    return (
+      <div key={r.id} className="group relative">
+        <button
+          onClick={() => setRung(r.id)}
+          title={`${r.label} (⌘${n})`}
+          className="fast relative flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left"
+          style={on ? activePill : undefined}
+        >
+          <span
+            className="w-3.5 shrink-0 text-center leading-none"
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: "14px",
+              fontWeight: on ? 500 : 400,
+              color: on ? "var(--accent)" : "var(--muted)",
+            }}
+          >
+            {n}
+          </span>
+          <span
+            className="text-caption leading-none"
+            style={{ color: on ? "var(--text)" : "var(--muted)", fontWeight: on ? 600 : 400 }}
+          >
+            {r.label}
+          </span>
+          {rf && (
+            <span
+              aria-hidden
+              className="fast ml-auto text-meta leading-none group-hover:opacity-0"
+              style={{ color: on ? "var(--accent)" : "var(--muted)" }}
+            >
+              ◇
+            </span>
+          )}
+        </button>
+
+        {/* Hover reveals the ritual that lives at this altitude — a card that
+            floats clear of the rail, out over the floor. */}
+        {rf && (
+          <button
+            onClick={() => openFlow(rf.flow)}
+            title={`${rf.label} — ${rf.sub}`}
+            className="elev-3 fast invisible absolute top-1/2 z-40 flex -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-lg border border-line bg-surface py-1.5 pl-2.5 pr-3 text-left opacity-0 group-hover:visible group-hover:opacity-100"
+            style={{ left: "calc(100% - 8px)" }}
+          >
+            <span className="text-caption" style={{ color: "var(--accent)" }}>◇</span>
+            <span>
+              <span className="block text-label font-medium leading-tight text-ink">{rf.label}</span>
+              <span className="mono block text-micro leading-tight text-muted">{rf.sub}</span>
+            </span>
+            <span className="text-label text-muted">▸</span>
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="spine relative z-40 flex w-[var(--spine-width,120px)] shrink-0 flex-col items-center bg-surface">
-      {/* Separator — starts below the traffic-light zone so it doesn't clip
-          the macOS window buttons. In a browser it runs from the top. */}
+    <div
+      className="spine relative z-40 flex w-[var(--spine-width,120px)] shrink-0 flex-col"
+      style={{ background: "transparent" }}
+    >
+      {/* Right separator — runs the full height (spine is wide enough to clear
+          the macOS traffic lights). */}
       <div className="spine-separator pointer-events-none absolute bottom-0 right-0 w-px bg-line" />
 
-      {/* Pure drag region — exactly clears macOS traffic lights. Nothing lives
-          here so the "n" can't overlap the buttons. */}
+      {/* Pure drag region — clears the macOS traffic lights. */}
       <div data-tauri-drag-region className="spine-top shrink-0 w-full" />
 
-      {/* Wordmark home button — sits below the traffic-light zone */}
+      {/* Wordmark home — brand + a tap back to Today. */}
       <button
         onClick={() => setRung("now")}
         title="Home"
-        className={`fast wordmark select-none py-3 text-[15px] leading-none ${rung === "now" ? "wordmark-grad" : ""}`}
-        style={rung === "now" ? {} : { color: "var(--muted)", opacity: 0.4 }}
+        className={`fast wordmark select-none px-4 py-3 text-left text-[15px] leading-none ${rung === "now" ? "wordmark-grad" : ""}`}
+        style={rung === "now" ? {} : { color: "var(--muted)", opacity: 0.5 }}
       >
         Nuvo
       </button>
 
-      <div className="flex flex-1 flex-col items-center justify-center">
-        <div className="relative flex flex-col items-center gap-7">
-          {/* connector line behind the rungs */}
-          <div
-            className="pointer-events-none absolute left-1/2 w-px -translate-x-1/2 bg-line"
-            style={{ top: 6, bottom: 22 }}
-          />
+      <nav className="flex flex-1 flex-col px-2 pt-3">
+        <div className="section-label px-2.5 pb-1.5">Execute</div>
+        {EXECUTE.map(renderRung)}
 
-          {RUNGS.map((r) => {
-            const on = r.id === rung;
-            const rf = RUNG_FLOW[r.id];
-            return (
-              <div key={r.id} className="contents">
-                {r.id === SEAM_BEFORE && (
-                  // execution above · structure below
-                  <div
-                    aria-hidden
-                    title="Execution above · structure below"
-                    className="relative z-10 flex h-1 w-full items-center justify-center"
-                  >
-                    <span className="h-px w-5" style={{ background: "var(--line-strong)" }} />
-                  </div>
-                )}
+        <div className="mx-2.5 my-3 border-t border-line" />
 
-                <div className="group relative flex w-[var(--spine-width,120px)] flex-col items-center">
-                  <button
-                    onClick={() => setRung(r.id)}
-                    className="relative z-10 flex flex-col items-center gap-1.5"
-                    title={`${r.label} (⌘${LADDER.indexOf(r.id) + 1})`}
-                  >
-                    <span
-                      className="rounded-full"
-                      style={{
-                        width: on ? 12 : 8,
-                        height: on ? 12 : 8,
-                        background: on ? "var(--accent)" : "var(--line-strong)",
-                        boxShadow: on
-                          ? "0 0 0 4px var(--accent-soft), 0 0 12px 1px var(--accent-glow)"
-                          : "none",
-                        transition:
-                          "width 320ms var(--ease-spring), height 320ms var(--ease-spring), background-color 180ms var(--ease-out), box-shadow 280ms var(--ease-out)",
-                      }}
-                    />
-                    <span
-                      className="mono text-center text-micro leading-tight"
-                      style={{ color: on ? "var(--text)" : "var(--muted)" }}
-                    >
-                      {r.label}
-                    </span>
-                  </button>
+        <div className="section-label px-2.5 pb-1.5">Build</div>
+        {BUILD.map(renderRung)}
+      </nav>
 
-                  {/* The act of this altitude. A quiet ◇ marks "a ritual lives
-                      here"; hover slides out a named card that floats clear of
-                      the rail (the spine sits above the floor, z-40). */}
-                  {rf && (
-                    <>
-                      <span
-                        aria-hidden
-                        className="fast pointer-events-none absolute z-20 -translate-y-1/2 text-meta leading-none group-hover:opacity-0"
-                        style={{ left: "calc(50% + 9px)", top: 6, color: on ? "var(--accent)" : "var(--muted)" }}
-                      >
-                        ◇
-                      </span>
-                      <button
-                        onClick={() => openFlow(rf.flow)}
-                        title={`${rf.label} — ${rf.sub}`}
-                        className="elev-3 fast invisible absolute z-40 flex -translate-y-1/2 translate-x-1.5 items-center gap-2 whitespace-nowrap rounded-lg border border-line bg-surface py-1.5 pl-2.5 pr-3 text-left opacity-0 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100"
-                        style={{ left: 64, top: 6 }}
-                      >
-                        <span className="text-caption" style={{ color: "var(--accent)" }}>◇</span>
-                        <span>
-                          <span className="block text-label font-medium leading-tight text-ink">{rf.label}</span>
-                          <span className="mono block text-micro leading-tight text-muted">{rf.sub}</span>
-                        </span>
-                        <span className="text-label text-muted">▸</span>
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      <div className="mt-auto px-2 pb-3">
+        <button
+          onClick={openSettings}
+          title="Settings (⌘,)"
+          className="fast flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left text-muted hover:text-ink"
+        >
+          <span className="w-3.5 shrink-0 text-center text-caption leading-none">⚙</span>
+          <span className="text-caption leading-none">Settings</span>
+        </button>
+        <div className="mono px-2.5 pt-2 text-micro leading-tight text-muted">⌘1–5 · ⌘↓↑</div>
       </div>
-
-      <div className="mono pb-3 text-center text-micro leading-tight text-muted">⌘1–5<br />⌘↓↑</div>
     </div>
   );
 }
