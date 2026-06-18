@@ -19,34 +19,91 @@
    for the moments that matter.
    ════════════════════════════════════════════════════════════════════════ */
 
-/* ── Daybreak (light) ────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════
+   PALETTES — three moods on a warmth axis (Daybreak · Dusk · Fog) set on
+   <html data-palette>, crossed with light/dark on <html data-theme>. Each mood
+   declares a COMPLETE, temperature-matched palette — not just neutrals but the
+   accent, slot, and default-event colours too — so the app is beautiful in any
+   theme, whatever's on the calendar. Only the ember "signal" (now / overdue /
+   urgent) stays constant: urgency should read warm everywhere.
+   Base (no data-palette) = Daybreak.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Signal — the one constant: warm ember in light, coral in dark ───────── */
 :root,
 [data-theme="light"] {
-  --bg: #f3f2f7;
-  --surface: #ffffff;
-  --surface-2: #faf9fd;
-  --line: #e5e3ee;
-  --line-strong: #d4d0e0;
-  --text: #1a1822;
-  --muted: #6c6880;
-  --accent: #5a4be2;
-  --accent-2: #8a6cf0;
   --signal: #e0620f;
-  --accent-soft: rgba(90, 75, 226, 0.11);
   --signal-soft: rgba(224, 98, 15, 0.11);
-  --accent-glow: rgba(90, 75, 226, 0.18);
-  /* Slots are a class of their own — a time *container*, not a task or event.
-     This dedicated teal sets them apart from the violet accent at a glance. */
-  --slot: #0d8f9c;
-
-  /* soft, low, faintly violet-warm elevation — never a hard drop shadow */
-  --shadow-1: 0 1px 2px rgba(26, 22, 48, 0.05);
-  --shadow-2: 0 6px 20px -6px rgba(26, 22, 48, 0.12), 0 1px 2px rgba(26, 22, 48, 0.05);
-  --shadow-3: 0 24px 60px -16px rgba(46, 32, 96, 0.24), 0 4px 12px -4px rgba(26, 22, 48, 0.1);
+}
+[data-theme="dark"] {
+  --signal: #ff8a4c;
+  --signal-soft: rgba(255, 138, 76, 0.14);
+  color-scheme: dark;
 }
 
-/* ── Twilight (dark) ─────────────────────────────────────────────────── */
-[data-theme="dark"] {
+/* ── Daybreak — warm paper (the default mood) ────────────────────────────────
+   Accent is a warm mulberry (not blue), the slot a dusty teal, and uncoloured
+   events default to warm stone — so the whole surface reads warm, not cold. */
+:root,
+[data-theme="light"],
+[data-palette="daybreak"][data-theme="light"] {
+  --bg: #f4f1ea;
+  --surface: #fffdf8;
+  --surface-2: #faf6ee;
+  --line: #e7e0d2;
+  --line-strong: #d8cfbc;
+  --text: #1f1a16;
+  --muted: #847b6b;
+  --accent: #92568a;
+  --accent-2: #b07fa8;
+  --accent-soft: rgba(146, 86, 138, 0.11);
+  --accent-glow: rgba(146, 86, 138, 0.20);
+  --slot: #2f8d86;
+  --event-default: #a98a6f;
+  --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(60, 42, 20, 0.13), 0 1px 2px rgba(60, 42, 20, 0.06);
+  --shadow-3: 0 24px 60px -16px rgba(74, 52, 24, 0.26), 0 4px 12px -4px rgba(60, 42, 20, 0.12);
+}
+[data-theme="dark"],
+[data-palette="daybreak"][data-theme="dark"] {
+  --bg: #17130e;
+  --surface: #201b14;
+  --surface-2: #29231a;
+  --line: #332c20;
+  --line-strong: #443b2c;
+  --text: #f1ece2;
+  --muted: #a99c87;
+  --accent: #c692bf;
+  --accent-2: #d6abce;
+  --accent-soft: rgba(198, 146, 191, 0.14);
+  --accent-glow: rgba(198, 146, 191, 0.30);
+  --slot: #37b1a4;
+  --event-default: #b89a7e;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-3: 0 28px 64px -16px rgba(0, 0, 0, 0.7), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Fog — cool morning grey. Crisp indigo, teal slot, cool events. ───────── */
+[data-palette="fog"][data-theme="light"] {
+  --bg: #eef0f5;
+  --surface: #ffffff;
+  --surface-2: #f7f8fc;
+  --line: #e4e6ef;
+  --line-strong: #d3d7e3;
+  --text: #1b1c24;
+  --muted: #6b6f7e;
+  --accent: #5a4be2;
+  --accent-2: #8a6cf0;
+  --accent-soft: rgba(90, 75, 226, 0.11);
+  --accent-glow: rgba(90, 75, 226, 0.18);
+  --slot: #0d8f9c;
+  --event-default: #6b7bb0;
+  --shadow-1: 0 1px 2px rgba(40, 38, 70, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(40, 38, 70, 0.12), 0 1px 2px rgba(40, 38, 70, 0.05);
+  --shadow-3: 0 24px 60px -16px rgba(46, 40, 80, 0.24), 0 4px 12px -4px rgba(40, 38, 70, 0.1);
+}
+[data-palette="fog"][data-theme="dark"] {
   --bg: #141320;
   --surface: #1c1a28;
   --surface-2: #232133;
@@ -56,16 +113,45 @@
   --muted: #95909f;
   --accent: #8b80ff;
   --accent-2: #a892ff;
-  --signal: #ff8a4c;
   --accent-soft: rgba(139, 128, 255, 0.13);
-  --signal-soft: rgba(255, 138, 76, 0.14);
   --accent-glow: rgba(139, 128, 255, 0.28);
   --slot: #2bb6c4;
+  --event-default: #7986cb;
+}
 
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-3: 0 28px 64px -16px rgba(0, 0, 0, 0.7), 0 4px 14px -4px rgba(0, 0, 0, 0.5);
-  color-scheme: dark;
+/* ── Dusk — balanced, between warm and cool ──────────────────────────────── */
+[data-palette="dusk"][data-theme="light"] {
+  --bg: #f1f0f3;
+  --surface: #ffffff;
+  --surface-2: #f8f7fb;
+  --line: #e6e4ec;
+  --line-strong: #d6d3df;
+  --text: #1c1b22;
+  --muted: #6f6c7b;
+  --accent: #6d54c0;
+  --accent-2: #8a72e6;
+  --accent-soft: rgba(109, 84, 192, 0.10);
+  --accent-glow: rgba(109, 84, 192, 0.17);
+  --slot: #1b9099;
+  --event-default: #8a8499;
+  --shadow-1: 0 1px 2px rgba(45, 40, 60, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(45, 40, 60, 0.12), 0 1px 2px rgba(45, 40, 60, 0.05);
+  --shadow-3: 0 24px 60px -16px rgba(50, 42, 78, 0.24), 0 4px 12px -4px rgba(45, 40, 60, 0.1);
+}
+[data-palette="dusk"][data-theme="dark"] {
+  --bg: #16151c;
+  --surface: #1e1d26;
+  --surface-2: #262430;
+  --line: #302e3b;
+  --line-strong: #3e3b4c;
+  --text: #edecf2;
+  --muted: #9893a3;
+  --accent: #9a86f0;
+  --accent-2: #b3a3f5;
+  --accent-soft: rgba(154, 134, 240, 0.14);
+  --accent-glow: rgba(154, 134, 240, 0.28);
+  --slot: #2bb6c4;
+  --event-default: #8088a8;
 }
 
 @theme inline {
@@ -255,6 +341,28 @@ html.tauri-macos .spine-top {
   font-optical-sizing: auto;
   font-variation-settings: "SOFT" 40, "WONK" 0;
   letter-spacing: -0.005em;
+}
+
+/* The editorial voice for everyday surfaces — Fraunces on greetings, flow &
+   ritual titles, day numerals. Pairs with the existing size classes: just add
+   `masthead` alongside text-lead / text-head / text-display. This is how the
+   chapel's craft reaches the screens you live in. */
+.masthead {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  font-variation-settings: "SOFT" 32, "WONK" 0;
+  font-weight: 500;
+  letter-spacing: -0.014em;
+}
+
+/* Glass — reserved for surfaces that genuinely float above the work: the
+   command bar, modals, bottom sheets, the active spine chapter. Kept high-
+   opacity so dense content stays crisp; never used to elevate in-list rows
+   (that would make hierarchy too stark on a dense planner). */
+.glass {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: blur(16px) saturate(1.08);
 }
 
 /* The wordmark — tightened tracking, the twilight gradient on brand surfaces. */
@@ -470,7 +578,7 @@ textarea:focus {
   --fc-border-color: var(--line);
   --fc-page-bg-color: var(--surface);
   --fc-neutral-bg-color: var(--bg);
-  --fc-today-bg-color: var(--accent-soft);
+  --fc-today-bg-color: color-mix(in srgb, var(--accent) 4%, var(--surface));
   --fc-now-indicator-color: var(--signal);
   --fc-event-border-color: transparent;
   --fc-event-text-color: var(--text);
@@ -480,7 +588,7 @@ textarea:focus {
 
 .fc .fc-timegrid-slot {
   height: calc(var(--nuvo-hour, 52px) / 4);
-  border-top-color: color-mix(in srgb, var(--line) 55%, transparent);
+  border-top-color: color-mix(in srgb, var(--line) 34%, transparent);
 }
 /* Hide 15-min minor dividers — only hour guides remain */
 .fc .fc-timegrid-slot-minor {
@@ -501,14 +609,22 @@ textarea:focus {
   font-weight: 500;
   text-decoration: none !important;
 }
-/* Today column header: accent background band */
+/* Today column header: a whisper of accent, not a band */
 .fc .fc-col-header-cell.fc-day-today {
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
-  border-bottom: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 24%, transparent);
 }
-/* Column dividers: slightly softer than the hour lines */
+/* Column dividers: faint — the grid should recede, not cage the day */
 .fc .fc-timegrid-col {
-  border-left-color: color-mix(in srgb, var(--line) 70%, transparent);
+  border-left-color: color-mix(in srgb, var(--line) 42%, transparent);
+}
+/* A hint of glass on the sticky day header — refined, and it lets the grid
+   slide gently beneath it. */
+.fc .fc-col-header,
+.fc .fc-timegrid-axis {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
+  backdrop-filter: blur(8px) saturate(1.05);
 }
 .fc .fc-timegrid-now-indicator-line {
   border-width: 1.5px 0 0;
@@ -522,7 +638,7 @@ textarea:focus {
    3px accent bar and ALL text padding live in the React render (eventContent),
    so tasks, events and slots share identical spacing, radius and type. */
 .fc .fc-event {
-  border-radius: 6px;
+  border-radius: 7px;
   border: 1px solid transparent;
   background-clip: padding-box;
   box-shadow: none;

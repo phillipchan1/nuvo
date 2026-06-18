@@ -36,11 +36,16 @@ type ExtendedProps = {
 };
 
 /** One consistent fill + border, tinted from an item's own color. `fillPct`
- *  lets a class read stronger (tasks/slots) or quieter (events) than the base. */
+ *  lets a class read stronger (tasks/slots) or quieter (events) than the base.
+ *  Every colour is first pulled ~20% toward the active theme's neutral (--muted),
+ *  so a cool-blue Google event warms up on warm paper — and stays cool on Fog —
+ *  keeping the calendar cohesive whatever's on it, without losing each hue's
+ *  identity (the solid bar still carries the true colour). */
 function blockColors(c: string, fillPct = 14) {
+  const base = `color-mix(in srgb, ${c} 80%, var(--muted))`;
   return {
-    backgroundColor: `color-mix(in srgb, ${c} ${fillPct}%, var(--surface))`,
-    borderColor: `color-mix(in srgb, ${c} ${Math.round(fillPct * 2.1)}%, var(--line))`,
+    backgroundColor: `color-mix(in srgb, ${base} ${fillPct}%, var(--surface))`,
+    borderColor: `color-mix(in srgb, ${base} ${Math.round(fillPct * 2.1)}%, var(--line))`,
   };
 }
 
@@ -190,7 +195,9 @@ export default function CalendarPane({
 
   // What a plain (no-modifier) click-drag creates. ⌥-drag forces event,
   // ⌘/Ctrl-drag forces slot regardless of this.
-  const [createMode, setCreateMode] = useState<CreateKind>("task");
+  // Plain drag always creates a task now (the segmented control was removed for
+  // calm). Power overrides still apply: ⌥-drag = event, ⌘-drag = slot.
+  const [createMode] = useState<CreateKind>("task");
 
   // The in-flight click-drag draft → renders the DraftComposer card.
   const [draft, setDraft] = useState<{
@@ -438,7 +445,7 @@ export default function CalendarPane({
         const isGoogle = account?.provider === "google";
         const isIcs = account?.provider === "ics";
         const calColor =
-          account?.calendars?.find((c) => c.id === e.calendar_id)?.color ?? "#7986cb";
+          account?.calendars?.find((c) => c.id === e.calendar_id)?.color ?? "var(--event-default)";
         // Dim events where the user hasn't confirmed yet.
         const rsvp = e.self_rsvp ?? null;
         const rsvpClass =
@@ -1134,32 +1141,6 @@ export default function CalendarPane({
         )}
 
         <div className="flex-1" />
-
-        {/* Drag-to-create mode — what a plain click-drag makes. Power users can
-            also ⌥-drag (event) or ⌘-drag (slot) to override this. */}
-        {!isMonth && (
-          <div
-            className="flex items-center gap-1.5"
-            title="What a plain drag creates · ⌥-drag = event · ⌘-drag = slot"
-          >
-            <span className="text-meta text-muted">drag adds</span>
-            <div className="flex overflow-hidden rounded-md border border-line">
-              {(["task", "event", "slot"] as const)
-                .filter((k) => k !== "event" || googleAvailable)
-                .map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => setCreateMode(k)}
-                    className={`fast px-2 py-0.5 text-meta font-medium capitalize ${
-                      createMode === k ? "bg-accent text-white" : "text-muted hover:text-ink"
-                    }`}
-                  >
-                    {k}
-                  </button>
-                ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── FullCalendar ────────────────────────────────────────────────── */}

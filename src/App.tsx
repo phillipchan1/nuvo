@@ -2,6 +2,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@ta
 import { Toaster, toast } from "sonner";
 import { useAuth } from "./hooks/useAuth";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
+import { usePalette } from "./hooks/usePalette";
 import Login from "./components/Login";
 import AppShell from "./components/AppShell";
 import UpdateToast from "./components/UpdateToast";
@@ -32,6 +33,7 @@ function Shell() {
   const { session, loading } = useAuth();
   const { settings } = useSettings();
   useApplyTheme(settings?.theme);
+  usePalette(); // keep <html data-palette> applied (warmth axis of the theme)
 
   if (loading) {
     return (

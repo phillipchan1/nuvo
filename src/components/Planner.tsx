@@ -21,10 +21,8 @@ import CommandBar, { type Command } from "./CommandBar";
 import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
-import { BigRocksBar } from "./floors/bigRocks";
 import { EveningShutdown, MorningPlan } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
-import { Keycap } from "./ui";
 
 export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void }) {
   const railRef = useRef<HTMLDivElement | null>(null);
@@ -224,6 +222,9 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   return (
     <div className="flex h-full flex-col bg-bg">
+      {/* A quiet masthead — just the day, the hour, and the view. Plan/Shutdown
+          live in the command bar (⌘K) + the morning prompt; Nuvo on the right
+          edge (⌘J); settings on the spine (⌘,). The Schedule earns its calm. */}
       <header
         data-tauri-drag-region
         className="app-topbar flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3"
@@ -233,18 +234,12 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           {format(now, "h:mm a")}
         </span>
         <div className="flex-1" />
-        <button onClick={() => { morningAutoRef.current = false; openOverlay("morning"); }} className="fast rounded-md border border-line px-2 py-1 text-label font-medium text-muted hover:border-line-strong hover:text-ink">
-          Plan
-        </button>
-        <button onClick={() => openOverlay("evening")} className="fast rounded-md border border-line px-2 py-1 text-label font-medium text-muted hover:border-line-strong hover:text-ink">
-          Shutdown
-        </button>
         <div className="flex overflow-hidden rounded-md border border-line">
           {(["timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => (
             <button
               key={v}
               onClick={() => setCalView(v)}
-              className={`fast px-2 py-1 text-label font-medium ${
+              className={`fast px-2.5 py-1 text-label font-medium ${
                 view === v ? "bg-accent text-white" : "text-muted hover:text-ink"
               }`}
             >
@@ -252,29 +247,12 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             </button>
           ))}
         </div>
-        <button
-          onClick={handleToggleAgent}
-          className={`flex items-center gap-1.5 text-label ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
-          title="Nuvo agent"
-        >
-          <Keycap>⌘J</Keycap>
-        </button>
-        <button onClick={() => openOverlay("cmd")} className="flex items-center gap-1.5 text-label text-muted hover:text-ink">
-          <Keycap>⌘K</Keycap>
-        </button>
-        <button
-          onClick={() => openOverlay("settings")}
-          title="Settings"
-          className="fast text-head text-muted hover:text-ink"
-        >
-          ⚙
-        </button>
       </header>
 
       <ReconnectBanner accounts={accounts} />
 
-      {/* the week's plan, docked above the calendar — big rocks live with the week */}
-      <BigRocksBar />
+      {/* Priorities moved off Schedule — too much for the workspace. They live on
+          Today (the ribbon) for now; a dedicated dashboard view is TBD. */}
 
       <div className="relative flex min-h-0 flex-1">
         <LeftRail

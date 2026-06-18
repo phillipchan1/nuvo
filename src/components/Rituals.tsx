@@ -35,7 +35,7 @@ export function MorningPlan({
   return (
     <Modal onClose={onClose} width="max-w-md">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div className="text-head font-semibold">Morning plan</div>
+        <div className="text-lead masthead">Morning plan</div>
         <div className="mono text-caption text-muted">
           Inbox {startCount} → {inbox.length}
         </div>
@@ -167,7 +167,7 @@ export function EveningShutdown({
   return (
     <Modal onClose={onClose} width="max-w-md">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div className="text-head font-semibold">Evening shutdown</div>
+        <div className="text-lead masthead">Evening shutdown</div>
         <div className="mono text-caption text-muted">{remaining.length} open</div>
       </div>
 

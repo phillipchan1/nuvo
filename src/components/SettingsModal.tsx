@@ -9,6 +9,7 @@ import { Btn, Modal } from "./ui";
 import type { SettingsSection } from "../lib/appNav";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { usePalette, PALETTE_LABELS, type Palette as PaletteMood } from "../hooks/usePalette";
 
 // ── Section registry ──────────────────────────────────────────────────────
 type SectionId = "appearance" | "schedule" | "connections" | "labels" | "account";
@@ -195,6 +196,58 @@ function ThemeCard({
   );
 }
 
+// ── Appearance: the warmth axis (a swatch per mood) ───────────────────────
+const PALETTE_SWATCH: Record<PaletteMood, { bg: string; surface: string; line: string; accent: string }> = {
+  daybreak: { bg: "#f4f1ea", surface: "#fffdf8", line: "#e7e0d2", accent: "#92568a" },
+  dusk: { bg: "#f1f0f3", surface: "#ffffff", line: "#e6e4ec", accent: "#6d54c0" },
+  fog: { bg: "#eef0f5", surface: "#ffffff", line: "#e4e6ef", accent: "#5a4be2" },
+};
+
+function PaletteCard({
+  palette,
+  active,
+  onSelect,
+}: {
+  palette: PaletteMood;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const sw = PALETTE_SWATCH[palette];
+  const meta = PALETTE_LABELS[palette];
+  return (
+    <button
+      onClick={onSelect}
+      className={`fast group overflow-hidden rounded-lg border text-left ${
+        active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
+      }`}
+    >
+      <div className="flex h-[46px] items-center gap-1.5 px-2.5" style={{ background: sw.bg }}>
+        <div className="flex flex-1 flex-col gap-1 rounded-[4px] border p-1.5" style={{ background: sw.surface, borderColor: sw.line }}>
+          <div className="h-1 w-3/5 rounded-full" style={{ background: sw.accent }} />
+          <div className="h-1 w-full rounded-full" style={{ background: sw.line }} />
+        </div>
+      </div>
+      <div className="flex items-center justify-between border-t border-line bg-surface px-2.5 py-1.5">
+        <span className="flex flex-col leading-tight">
+          <span className="text-caption font-medium text-ink">{meta.name}</span>
+          <span className="mono text-micro text-muted">{meta.hint}</span>
+        </span>
+        <span
+          className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
+            active ? "border-accent bg-accent text-white" : "border-line-strong"
+          }`}
+        >
+          {active && (
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+              <path d="M2 5l2 2 4-4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </span>
+      </div>
+    </button>
+  );
+}
+
 // ── Section panes ─────────────────────────────────────────────────────────
 function AppearancePane({
   settings,
@@ -204,12 +257,21 @@ function AppearancePane({
   updateSettings: (patch: Partial<UserSettings>) => void;
 }) {
   const theme = settings?.theme ?? "system";
+  const [palette, setPalette] = usePalette();
   return (
     <div>
       <PaneHeader title="Appearance" sub="How Nuvo looks. System follows your device's light or dark mode." />
       <div className="grid grid-cols-3 gap-2.5">
         {(["system", "light", "dark"] as const).map((t) => (
           <ThemeCard key={t} theme={t} active={theme === t} onSelect={() => updateSettings({ theme: t })} />
+        ))}
+      </div>
+
+      <div className="section-label mb-2 mt-6">Mood</div>
+      <p className="text-caption mb-2.5 text-muted">The warmth of the paper. Switch it whenever the day calls for it.</p>
+      <div className="grid grid-cols-3 gap-2.5">
+        {(["daybreak", "dusk", "fog"] as const).map((p) => (
+          <PaletteCard key={p} palette={p} active={palette === p} onSelect={() => setPalette(p)} />
         ))}
       </div>
     </div>
