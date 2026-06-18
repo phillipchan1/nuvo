@@ -82,7 +82,7 @@ export default function MobilePlan() {
           : d.projects.find((x) => x.id === frame.id)?.name ?? "Project";
 
   return (
-    <div className="pb-10">
+    <div className="pb-24">
       <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
         {stack.length > 1 ? (
           <button

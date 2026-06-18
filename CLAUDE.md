@@ -13,7 +13,7 @@ The same components serve desktop and a 375–430px phone. A UI change is not do
    `useIsMobile()` swaps in the mobile shell — breakpoint `MOBILE_BREAKPOINT = 768` in
    `src/hooks/useIsMobile.ts`).
 2. Tap targets are ≥44px (`.tap`), safe areas are respected (`pt-safe` / `pb-safe`), and
-   content clears the bottom bar + raised capture button.
+   content clears the bottom bar + the floating capture (＋) button.
 3. Mobile overlays use the bottom **`Sheet`** (`src/components/mobile/Sheet.tsx`) — never
    cursor-anchored popovers (`SlideOver`) on a phone. Shared modals use the responsive
    `Modal` in `ui.tsx` (mobile-first base, desktop restored at `sm:`).
@@ -27,9 +27,12 @@ it needs to work on a phone.
 
 - `AppShell` → `ResponsiveShell` renders `MobileShell` (<768px) or `AppShellInner`
   (desktop) via `useIsMobile()`.
-- **Mobile UI lives in `src/components/mobile/`.** Bottom bar = **Now · Calendar · ＋
-  (capture) · Tasks · Nuvo**; capture and Nuvo chat are *permanent first-class actions*.
-  Today/Week/Inbox are a segmented control inside the Tasks screen.
+- **Mobile UI lives in `src/components/mobile/`.** Bottom bar = five equal navigation
+  destinations **Now · Calendar · Plan · Tasks · Nuvo**. Capture is an *action*, not a
+  place, so it isn't a tab: it's the **floating ＋ (FAB)** anchored above the bar
+  (bottom-right), hidden only on the Nuvo tab where it would hit the composer. Capture
+  and the Nuvo chat are *permanent first-class actions*. Today/Week/Inbox are a segmented
+  control inside the Tasks screen.
 - **Shared "floors"** (e.g. `NowFloor`) render in both shells. Keep them responsive with
   Tailwind `md:`/`xl:` collapse; add *optional* mobile-routing props (e.g. `onAskNuvo`)
   rather than forking the component. Desktop behavior must stay unchanged when the prop is

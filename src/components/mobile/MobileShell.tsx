@@ -215,7 +215,7 @@ export default function MobileShell() {
       ) : (
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         {tab === "now" ? (
-          <div className="px-4 pt-4 pb-10">
+          <div className="px-4 pt-4 pb-24">
             <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
           </div>
         ) : tab === "calendar" ? (
@@ -223,7 +223,7 @@ export default function MobileShell() {
         ) : tab === "plan" ? (
           <MobilePlan />
         ) : (
-          <div className="pb-10">
+          <div className="pb-24">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
             <MobileTaskList
               tab={sub}
@@ -241,39 +241,35 @@ export default function MobileShell() {
       </main>
       )}
 
-      {/* Bottom bar — Now · Calendar · ＋ · Plan · Tasks · Nuvo. Six equal cells:
-          once there are five destinations a raised center button can't stay
-          symmetric, so capture rides in the row as an equal cell (kept the
-          loudest target by its accent disc). Capture and Nuvo are permanent
-          first-class actions. */}
+      {/* Bottom bar — five equal navigation destinations: Now · Calendar · Plan ·
+          Tasks · Nuvo. Capture is an *action*, not a place, so it doesn't take a
+          tab slot: it floats as the single primary ＋ (below), which keeps the
+          nav row even and lets the one bold accent belong to the one action.
+          Nuvo is a permanent chat destination. */}
       <nav className="pb-safe relative flex shrink-0 items-stretch border-t border-line bg-surface">
+        {/* Capture — the one primary action, floated above the bar in the
+            bottom-right thumb arc so it reads as a verb, not a destination.
+            Hidden on the Nuvo tab, where it would collide with the composer. */}
+        {tab !== "nuvo" && (
+          <button
+            onClick={() => setQuickOpen(true)}
+            aria-label="Quick task"
+            className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95"
+          >
+            ＋
+          </button>
+        )}
+
         <NavTab tab={NAV[0]} active={tab === NAV[0].id} onClick={() => setTab(NAV[0].id)} />
         <NavTab tab={NAV[1]} active={tab === NAV[1].id} onClick={() => setTab(NAV[1].id)} />
-
-        {/* Capture — an equal cell, not a floating button, so the row stays even.
-            The accent disc (matched to the other cells' icon height) keeps it the
-            most prominent target without breaking the grid. */}
-        <button
-          onClick={() => setQuickOpen(true)}
-          aria-label="Quick task"
-          className="tap fast relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-muted"
-        >
-          <span className="fast flex h-7 w-7 items-center justify-center rounded-full bg-accent text-[20px] font-light leading-none text-white active:scale-95">
-            ＋
-          </span>
-          <span className="text-meta font-medium leading-none">Add</span>
-        </button>
-
-        {/* Plan — the strategic vertical, between capture and Tasks. */}
+        {/* Plan — the strategic vertical. */}
         <NavTab tab={NAV[3]} active={tab === NAV[3].id} onClick={() => setTab(NAV[3].id)} />
-
         <NavTab
           tab={NAV[2]}
           active={tab === NAV[2].id}
           onClick={() => setTab(NAV[2].id)}
           badge={inbox.length}
         />
-
         {/* Nuvo — permanent chat destination */}
         <button
           onClick={() => openChat()}
