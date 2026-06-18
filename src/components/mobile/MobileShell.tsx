@@ -241,30 +241,30 @@ export default function MobileShell() {
       </main>
       )}
 
-      {/* Bottom bar — Now · Calendar · ＋ capture · Tasks · Nuvo. The center
-          capture and Nuvo are permanent first-class actions. */}
+      {/* Bottom bar — Now · Calendar · ＋ · Plan · Tasks · Nuvo. Six equal cells:
+          once there are five destinations a raised center button can't stay
+          symmetric, so capture rides in the row as an equal cell (kept the
+          loudest target by its accent disc). Capture and Nuvo are permanent
+          first-class actions. */}
       <nav className="pb-safe relative flex shrink-0 items-stretch border-t border-line bg-surface">
         <NavTab tab={NAV[0]} active={tab === NAV[0].id} onClick={() => setTab(NAV[0].id)} />
         <NavTab tab={NAV[1]} active={tab === NAV[1].id} onClick={() => setTab(NAV[1].id)} />
 
-        {/* Raised center capture — docked in a surface ring so the button reads
-            as sitting on the bar, not floating over the timeline behind it. The
-            ＋ glyph is self-evident, so it carries no label. */}
+        {/* Capture — an equal cell, not a floating button, so the row stays even.
+            The accent disc (matched to the other cells' icon height) keeps it the
+            most prominent target without breaking the grid. */}
         <button
           onClick={() => setQuickOpen(true)}
           aria-label="Quick task"
-          className="tap relative flex flex-1 flex-col items-center justify-center py-2"
+          className="tap fast relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-muted"
         >
-          <span className="absolute -top-6 rounded-full bg-surface p-[3px]">
-            <span className="elev-3 fast flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95">
-              ＋
-            </span>
+          <span className="fast flex h-7 w-7 items-center justify-center rounded-full bg-accent text-[20px] font-light leading-none text-white active:scale-95">
+            ＋
           </span>
-          <span className="invisible text-lead leading-none">＋</span>
+          <span className="text-meta font-medium leading-none">Add</span>
         </button>
 
-        {/* Plan — the strategic vertical. Sits between capture and Tasks so the
-            ＋ keeps its exact spot and strategy reads next to execution. */}
+        {/* Plan — the strategic vertical, between capture and Tasks. */}
         <NavTab tab={NAV[3]} active={tab === NAV[3].id} onClick={() => setTab(NAV[3].id)} />
 
         <NavTab
@@ -282,7 +282,7 @@ export default function MobileShell() {
             tab === "nuvo" ? "text-accent" : "text-muted"
           }`}
         >
-          <span className="text-lead leading-none">✦</span>
+          <span className="flex h-7 items-center text-lead leading-none">✦</span>
           <span className="text-meta font-medium leading-none">Nuvo</span>
         </button>
       </nav>
@@ -337,7 +337,7 @@ function NavTab({
         active ? "text-accent" : "text-muted"
       }`}
     >
-      <span className="text-lead leading-none">{tab.glyph}</span>
+      <span className="flex h-7 items-center text-lead leading-none">{tab.glyph}</span>
       <span className="text-meta font-medium leading-none">{tab.label}</span>
       {badge > 0 && (
         <span

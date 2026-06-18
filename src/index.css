@@ -168,6 +168,13 @@ body,
   height: 100%;
 }
 
+/* The canvas behind the safe-area insets (e.g. the iOS PWA home-indicator strip
+   under the bottom bar). Painted with --surface so those insets match the top
+   bar and bottom nav — not the gray --bg, which otherwise shows as a stray bar. */
+html {
+  background: var(--surface);
+}
+
 body {
   background: var(--bg);
   color: var(--text);
