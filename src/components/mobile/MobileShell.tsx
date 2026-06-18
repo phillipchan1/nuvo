@@ -7,6 +7,7 @@ import {
   useInboxTasks,
   useDayTasks,
   useSprintTasks,
+  useAllTasks,
   useTaskMutations,
   useRolloverGuard,
 } from "../../hooks/useTasks";
@@ -20,7 +21,8 @@ import NowFloor from "../floors/NowFloor";
 import SettingsModal from "../SettingsModal";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
-import MobilePlan from "./MobilePlan";
+import MobilePlan, { type PlanTarget } from "./MobilePlan";
+import MobileSearch, { type JumpKind } from "./MobileSearch";
 import QuickTaskSheet from "./QuickTaskSheet";
 import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
@@ -101,6 +103,9 @@ export default function MobileShell() {
   const [chatFrom, setChatFrom] = useState<"now" | MobileTab | undefined>(undefined);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // A detail to open in the Plan tab, set when you jump from global search.
+  const [planTarget, setPlanTarget] = useState<PlanTarget | null>(null);
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -120,6 +125,7 @@ export default function MobileShell() {
   const { data: inbox = [] } = useInboxTasks();
   const { data: todayTasks = [] } = useDayTasks(today);
   const { data: weekTasks = [] } = useSprintTasks(vertical.sprint?.id ?? null);
+  const { data: allTasks = [] } = useAllTasks();
   const { labels } = useLabels();
   const { data: accounts = [] } = useCalendarAccounts();
   const mutations = useTaskMutations();
@@ -153,11 +159,13 @@ export default function MobileShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoaded, today]);
 
+  // Include every task so a global-search result (which can be any task) always
+  // resolves to a row the task sheet can open.
   const taskById = useMemo(() => {
     const m = new Map<string, Task>();
-    for (const t of [...inbox, ...todayTasks, ...weekTasks]) m.set(t.id, t);
+    for (const t of [...inbox, ...todayTasks, ...weekTasks, ...allTasks]) m.set(t.id, t);
     return m;
-  }, [inbox, todayTasks, weekTasks]);
+  }, [inbox, todayTasks, weekTasks, allTasks]);
   const openTask = taskId ? taskById.get(taskId) ?? null : null;
 
   const subCount = (s: MobileTab) =>
@@ -172,6 +180,12 @@ export default function MobileShell() {
     scrollRef.current?.scrollTo({ top: 0 });
   }, [tab, sub]);
 
+  // Opening Plan by hand starts at the flat list; only a search jump (which sets
+  // the target in the same tick it switches to Plan) opens a detail.
+  useEffect(() => {
+    if (tab !== "plan") setPlanTarget(null);
+  }, [tab]);
+
   // Open the permanent Nuvo tab. Capture the tab we came from (for context-aware
   // starter hints) before switching, and optionally seed a first message — e.g.
   // "Ask Nuvo" from the Now view, instead of NowFloor's cramped inline rail.
@@ -181,6 +195,18 @@ export default function MobileShell() {
     if (seed) void agent.sendMessage(seed);
   };
 
+  // Global-search jumps: a vertical item opens its Plan detail (nonce so the same
+  // id re-fires); a task opens the task sheet.
+  const openPlanItem = (kind: JumpKind, id: string) => {
+    setPlanTarget({ kind, id, n: Date.now() });
+    setTab("plan");
+    setSearchOpen(false);
+  };
+  const openTaskFromSearch = (id: string) => {
+    setSearchOpen(false);
+    setTaskId(id);
+  };
+
   return (
     <div className="atmosphere flex h-full flex-col">
       {/* Top bar */}
@@ -188,6 +214,16 @@ export default function MobileShell() {
         <span className="wordmark wordmark-grad text-lead">Nuvo</span>
         <span className="mono ml-0.5 text-caption text-muted">{format(now, "EEE MMM d")}</span>
         <div className="flex-1" />
+        <button
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search"
+          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-muted active:scale-95"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.4-3.4" />
+          </svg>
+        </button>
         <button
           onClick={() =>
             updateSettings({
@@ -221,7 +257,7 @@ export default function MobileShell() {
         ) : tab === "calendar" ? (
           <MobileCalendar now={now} />
         ) : tab === "plan" ? (
-          <MobilePlan />
+          <MobilePlan target={planTarget} />
         ) : (
           <div className="pb-10">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
@@ -303,6 +339,15 @@ export default function MobileShell() {
           mutations={mutations}
           accent={taskDomainColor(vertical, openTask)}
           onClose={() => setTaskId(null)}
+        />
+      )}
+      {searchOpen && (
+        <MobileSearch
+          vertical={vertical}
+          tasks={allTasks}
+          onOpenItem={openPlanItem}
+          onOpenTask={openTaskFromSearch}
+          onClose={() => setSearchOpen(false)}
         />
       )}
       {settingsOpen && (

@@ -1,20 +1,23 @@
-// The mobile "Plan" screen — the strategic vertical (Domains › Initiatives ›
-// Projects) the desktop floors own, browsed top-down as a drill-down stack so a
-// thumb can reach the why behind the work. Viewing is rich (progress, the
-// faithfulness pulse, key results); editing is deliberately light — the fields
-// you actually retouch from a phone: name, outcome, status, momentum, dates,
-// and a domain's standing vow / weekly target. Heavier authoring (key results,
-// reparenting, deletion) stays on the desktop floors.
+// The mobile "Plan" screen — the strategic vertical (Domains · Initiatives ·
+// Projects) the desktop floors own. Reachable two ways, both fast:
+//   • a flat, segmented list (Projects / Initiatives / Domains) so you tap
+//     straight to any one item — no forced walk down the hierarchy, and
+//   • a `target` jumped in from global search, which opens a detail directly.
+// The hierarchy isn't gone — it lives in each detail as TAPPABLE breadcrumbs
+// (Domain › Initiative) so you can climb up when you actually want to.
 //
-// No new data layer: every read is a pure selector over the live VerticalData
-// snapshot and every write goes through the same useVertical() mutations the
-// desktop uses, so edits made here ripple everywhere at once.
+// Viewing is rich (progress, the 13-week faithfulness pulse, key results);
+// editing stays light — name, outcome, status, momentum, dates, and a domain's
+// vow + weekly target. No new data layer: every read is a pure selector over the
+// live VerticalData snapshot, every write goes through useVertical()'s mutations.
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { format, parseISO } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import {
+  domainById,
   faithfulness,
+  initiativeById,
   initiativeProgress,
   initiativesOf,
   looseProjectsOf,
@@ -33,6 +36,10 @@ import {
 
 type Store = ReturnType<typeof useVertical>;
 
+/** A jump requested from global search — open this detail directly. `n` is a
+ *  nonce so repeated jumps to the same id re-fire the effect. */
+export type PlanTarget = { kind: "domain" | "initiative" | "project"; id: string; n: number };
+
 // One status vocabulary, shared with the desktop floors (parts.tsx).
 const STATUS: ProjectStatus[] = ["backlog", "in_progress", "waiting", "cancelled", "complete"];
 const STATUS_LABEL: Record<ProjectStatus, string> = {
@@ -49,6 +56,14 @@ const STATUS_COLOR: Record<ProjectStatus, string> = {
   cancelled: "var(--signal)",
   complete: "#0D9488",
 };
+// Active work floats to the top of the flat lists; finished/abandoned sinks.
+const STATUS_RANK: Record<ProjectStatus, number> = {
+  in_progress: 0,
+  waiting: 1,
+  backlog: 2,
+  complete: 3,
+  cancelled: 4,
+};
 
 const MOMENTUM: { value: Momentum; glyph: string; label: string }[] = [
   { value: "up", glyph: "↗", label: "Rising" },
@@ -56,58 +71,134 @@ const MOMENTUM: { value: Momentum; glyph: string; label: string }[] = [
   { value: "down", glyph: "↘", label: "Slipping" },
 ];
 
-// ── The drill-down stack ─────────────────────────────────────────────────────
+type Lens = "projects" | "initiatives" | "domains";
+const LENS_KEY = "nuvo-mobile-plan-lens";
+const LENSES: { id: Lens; label: string }[] = [
+  { id: "projects", label: "Projects" },
+  { id: "initiatives", label: "Initiatives" },
+  { id: "domains", label: "Domains" },
+];
+function readLens(): Lens {
+  try {
+    const v = localStorage.getItem(LENS_KEY) as Lens | null;
+    if (v && LENSES.some((l) => l.id === v)) return v;
+  } catch {
+    /* ignore */
+  }
+  return "projects";
+}
+
+// ── The navigation stack: a flat list at the base, details pushed on top ──────
 type Frame =
-  | { level: "domains" }
+  | { level: "list" }
   | { level: "domain"; id: string }
   | { level: "initiative"; id: string }
   | { level: "project"; id: string };
 
-export default function MobilePlan() {
+const frameFor = (t: PlanTarget): Frame => ({ level: t.kind, id: t.id });
+
+export default function MobilePlan({ target }: { target?: PlanTarget | null }) {
   const store = useVertical();
   const d = store.data;
-  const [stack, setStack] = useState<Frame[]>([{ level: "domains" }]);
+  const [lens, setLensState] = useState<Lens>(readLens);
+  const setLens = (l: Lens) => {
+    setLensState(l);
+    try {
+      localStorage.setItem(LENS_KEY, l);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const [stack, setStack] = useState<Frame[]>(() => (target ? [{ level: "list" }, frameFor(target)] : [{ level: "list" }]));
+  // A search jump while the tab is already mounted: open that detail.
+  useEffect(() => {
+    if (target) setStack([{ level: "list" }, frameFor(target)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.n]);
+
   const frame = stack[stack.length - 1];
   const push = (f: Frame) => setStack((s) => [...s, f]);
   const pop = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
 
-  // Title for the sticky header, read live so edits to a name show immediately.
-  const title =
-    frame.level === "domains"
-      ? "Plan"
-      : frame.level === "domain"
-        ? d.domains.find((x) => x.id === frame.id)?.name ?? "Domain"
-        : frame.level === "initiative"
-          ? d.initiatives.find((x) => x.id === frame.id)?.name ?? "Initiative"
-          : d.projects.find((x) => x.id === frame.id)?.name ?? "Project";
+  const detailTitle =
+    frame.level === "domain"
+      ? d.domains.find((x) => x.id === frame.id)?.name ?? "Domain"
+      : frame.level === "initiative"
+        ? d.initiatives.find((x) => x.id === frame.id)?.name ?? "Initiative"
+        : frame.level === "project"
+          ? d.projects.find((x) => x.id === frame.id)?.name ?? "Project"
+          : "";
+
+  const openDomain = (id: string) => push({ level: "domain", id });
+  const openInitiative = (id: string) => push({ level: "initiative", id });
+  const openProject = (id: string) => push({ level: "project", id });
 
   return (
     <div className="pb-10">
-      <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
-        {stack.length > 1 ? (
-          <button
-            onClick={pop}
-            className="tap fast -ml-1 flex items-center gap-0.5 rounded-lg px-2 text-head font-medium text-muted active:bg-surface-2"
-          >
-            ‹ Back
-          </button>
+      {/* Sticky header: the lens switch at the base, Back + title in a detail. */}
+      <div className="sticky top-0 z-10 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
+        {frame.level === "list" ? (
+          <div className="flex gap-1">
+            {LENSES.map((l) => {
+              const on = lens === l.id;
+              const count =
+                l.id === "projects" ? d.projects.length : l.id === "initiatives" ? d.initiatives.length : d.domains.length;
+              return (
+                <button
+                  key={l.id}
+                  onClick={() => setLens(l.id)}
+                  className={`tap fast flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-body font-medium ${
+                    on ? "bg-accent text-white" : "text-muted active:bg-surface-2"
+                  }`}
+                >
+                  {l.label}
+                  {count > 0 && (
+                    <span
+                      className="mono rounded-full px-1 text-micro font-semibold leading-[14px]"
+                      style={{
+                        minWidth: 14,
+                        height: 14,
+                        background: on ? "rgba(255,255,255,0.25)" : "var(--line-strong)",
+                        color: on ? "#fff" : "var(--surface)",
+                      }}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         ) : (
-          <span className="section-label !p-0 px-2">The vertical</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={pop}
+              className="tap fast -ml-1 flex items-center gap-0.5 rounded-lg px-2 text-head font-medium text-muted active:bg-surface-2"
+            >
+              ‹ Back
+            </button>
+            <span className="ml-1 min-w-0 flex-1 truncate text-head font-semibold">{detailTitle}</span>
+          </div>
         )}
-        <span className="ml-1 min-w-0 flex-1 truncate text-head font-semibold">{title}</span>
       </div>
 
-      {/* key on the frame so inline edit fields reset when you change item */}
-      {frame.level === "domains" ? (
-        <DomainsScreen d={d} onOpen={(id) => push({ level: "domain", id })} />
+      {frame.level === "list" ? (
+        <ListScreen
+          d={d}
+          lens={lens}
+          onOpenProject={openProject}
+          onOpenInitiative={openInitiative}
+          onOpenDomain={openDomain}
+        />
       ) : frame.level === "domain" ? (
         <DomainScreen
           key={frame.id}
           d={d}
           store={store}
           id={frame.id}
-          onOpenInitiative={(id) => push({ level: "initiative", id })}
-          onOpenProject={(id) => push({ level: "project", id })}
+          onOpenInitiative={openInitiative}
+          onOpenProject={openProject}
         />
       ) : frame.level === "initiative" ? (
         <InitiativeScreen
@@ -115,18 +206,90 @@ export default function MobilePlan() {
           d={d}
           store={store}
           id={frame.id}
-          onOpenProject={(id) => push({ level: "project", id })}
+          onOpenProject={openProject}
+          onOpenDomain={openDomain}
         />
       ) : (
-        <ProjectScreen key={frame.id} d={d} store={store} id={frame.id} />
+        <ProjectScreen
+          key={frame.id}
+          d={d}
+          store={store}
+          id={frame.id}
+          onOpenInitiative={openInitiative}
+          onOpenDomain={openDomain}
+        />
       )}
     </div>
   );
 }
 
-// ── Domains list ─────────────────────────────────────────────────────────────
-function DomainsScreen({ d, onOpen }: { d: VerticalData; onOpen: (id: string) => void }) {
-  if (d.domains.length === 0) return <Empty>No domains yet. Add them on the desktop.</Empty>;
+// ── The flat, segmented list — tap straight to any item ──────────────────────
+function ListScreen({
+  d,
+  lens,
+  onOpenProject,
+  onOpenInitiative,
+  onOpenDomain,
+}: {
+  d: VerticalData;
+  lens: Lens;
+  onOpenProject: (id: string) => void;
+  onOpenInitiative: (id: string) => void;
+  onOpenDomain: (id: string) => void;
+}) {
+  if (lens === "projects") {
+    const projects = [...d.projects].sort(
+      (a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.name.localeCompare(b.name),
+    );
+    if (projects.length === 0) return <Empty>No projects yet.</Empty>;
+    return (
+      <div>
+        {projects.map((p) => (
+          <Row
+            key={p.id}
+            onClick={() => onOpenProject(p.id)}
+            chevron
+            leading={<StatusDot status={p.status} />}
+            title={p.name}
+            subtitle={projectContext(d, p)}
+            meta={<span className="mono shrink-0 text-caption text-muted">{projectProgress(d, p)}%</span>}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (lens === "initiatives") {
+    const inits = [...d.initiatives].sort(
+      (a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.name.localeCompare(b.name),
+    );
+    if (inits.length === 0) return <Empty>No initiatives yet.</Empty>;
+    return (
+      <div>
+        {inits.map((i) => {
+          const mom = MOMENTUM.find((m) => m.value === i.momentum);
+          return (
+            <Row
+              key={i.id}
+              onClick={() => onOpenInitiative(i.id)}
+              chevron
+              leading={<StatusDot status={i.status} />}
+              title={i.name}
+              subtitle={domainById(d, i.domainId)?.name ?? undefined}
+              meta={
+                <span className="mono flex shrink-0 items-center gap-1.5 text-caption text-muted">
+                  <span>{mom?.glyph}</span>
+                  <span>{initiativeProgress(d, i)}%</span>
+                </span>
+              }
+            />
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (d.domains.length === 0) return <Empty>No domains yet.</Empty>;
   return (
     <div>
       {d.domains.map((dom) => {
@@ -135,7 +298,7 @@ function DomainsScreen({ d, onOpen }: { d: VerticalData; onOpen: (id: string) =>
         return (
           <Row
             key={dom.id}
-            onClick={() => onOpen(dom.id)}
+            onClick={() => onOpenDomain(dom.id)}
             chevron
             leading={
               <span
@@ -174,7 +337,6 @@ function DomainScreen({
   const inits = initiativesOf(d, dom.id);
   const loose = looseProjectsOf(d, dom.id);
   const looseTasks = looseTasksOfDomain(d, dom.id);
-  const target = dom.weeklyTargetHours;
 
   return (
     <div className="px-4 pt-4" style={{ ["--accent" as string]: dom.color }}>
@@ -191,7 +353,6 @@ function DomainScreen({
         />
       </Card>
 
-      {/* Faithfulness pulse — the 13-week read, view-only. */}
       <Section label="Faithfulness">
         <div className="rounded-xl border border-line bg-surface-2 p-3">
           <Pulse weeks={dom.weeks} color={dom.color} />
@@ -205,7 +366,7 @@ function DomainScreen({
 
       <Section label="Weekly target">
         <div className="flex items-center gap-2">
-          <NumberField value={target} onCommit={(v) => store.updateDomain(dom.id, { weeklyTargetHours: v })} />
+          <NumberField value={dom.weeklyTargetHours} onCommit={(v) => store.updateDomain(dom.id, { weeklyTargetHours: v })} />
           <span className="text-body text-muted">hours / week</span>
         </div>
       </Section>
@@ -251,11 +412,13 @@ function InitiativeScreen({
   store,
   id,
   onOpenProject,
+  onOpenDomain,
 }: {
   d: VerticalData;
   store: Store;
   id: string;
   onOpenProject: (id: string) => void;
+  onOpenDomain: (id: string) => void;
 }) {
   const i = d.initiatives.find((x) => x.id === id);
   if (!i) return <Empty>This initiative is gone.</Empty>;
@@ -263,11 +426,14 @@ function InitiativeScreen({
   const accent = dom?.color ?? "var(--accent)";
   const projects = projectsOf(d, i.id);
   const looseTasks = looseTasksOfInitiative(d, i.id);
-  const pct = initiativeProgress(d, i);
 
   return (
     <div className="px-4 pt-4">
-      {dom && <Breadcrumb>{dom.icon} {dom.name}</Breadcrumb>}
+      {dom && (
+        <Breadcrumb>
+          <Crumb onClick={() => onOpenDomain(dom.id)}>{dom.icon} {dom.name}</Crumb>
+        </Breadcrumb>
+      )}
       <Card accent={accent}>
         <TextField className="text-head font-semibold" value={i.name} onCommit={(v) => store.updateInitiative(i.id, { name: v })} />
         <AreaField
@@ -276,7 +442,7 @@ function InitiativeScreen({
           placeholder="The goal — what 'done' looks like in one line…"
           onCommit={(v) => store.updateInitiative(i.id, { outcome: v })}
         />
-        <ProgressBar pct={pct} color={accent} />
+        <ProgressBar pct={initiativeProgress(d, i)} color={accent} />
       </Card>
 
       <Section label="Status">
@@ -351,22 +517,40 @@ function InitiativeScreen({
 }
 
 // ── A single project ─────────────────────────────────────────────────────────
-function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store; id: string }) {
+function ProjectScreen({
+  d,
+  store,
+  id,
+  onOpenInitiative,
+  onOpenDomain,
+}: {
+  d: VerticalData;
+  store: Store;
+  id: string;
+  onOpenInitiative: (id: string) => void;
+  onOpenDomain: (id: string) => void;
+}) {
   const p = d.projects.find((x) => x.id === id);
   if (!p) return <Empty>This project is gone.</Empty>;
   const dom = d.domains.find((x) => x.id === p.domainId);
   const init = p.initiativeId ? d.initiatives.find((x) => x.id === p.initiativeId) : null;
   const accent = dom?.color ?? "var(--accent)";
   const tasks = tasksOf(d, p.id);
-  const pct = projectProgress(d, p);
   const doneCount = tasks.filter((t) => t.status === "done").length;
 
   return (
     <div className="px-4 pt-4">
-      <Breadcrumb>
-        {dom ? `${dom.icon} ${dom.name}` : ""}
-        {init ? ` › ${init.name}` : ""}
-      </Breadcrumb>
+      {(dom || init) && (
+        <Breadcrumb>
+          {dom && <Crumb onClick={() => onOpenDomain(dom.id)}>{dom.icon} {dom.name}</Crumb>}
+          {init && (
+            <>
+              <span className="text-muted/60">›</span>
+              <Crumb onClick={() => onOpenInitiative(init.id)}>{init.name}</Crumb>
+            </>
+          )}
+        </Breadcrumb>
+      )}
       <Card accent={accent}>
         <TextField className="text-head font-semibold" value={p.name} onCommit={(v) => store.updateProject(p.id, { name: v })} />
         <AreaField
@@ -375,7 +559,7 @@ function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store; id: st
           placeholder="The goal in one line…"
           onCommit={(v) => store.updateProject(p.id, { outcome: v })}
         />
-        <ProgressBar pct={pct} color={accent} />
+        <ProgressBar pct={projectProgress(d, p)} color={accent} />
       </Card>
 
       <Section label="Status">
@@ -406,9 +590,16 @@ function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store; id: st
   );
 }
 
+// ── Context line for the flat project list (where it lives) ───────────────────
+function projectContext(d: VerticalData, p: Project): string {
+  const dom = domainById(d, p.domainId);
+  const init = p.initiativeId ? initiativeById(d, p.initiativeId) : null;
+  const head = dom ? `${dom.icon} ${dom.name}` : "—";
+  return init ? `${head} · ${init.name}` : head;
+}
+
 // ── Rows ─────────────────────────────────────────────────────────────────────
 function InitiativeRow({ d, i, onClick }: { d: VerticalData; i: Initiative; onClick: () => void }) {
-  const pct = initiativeProgress(d, i);
   const mom = MOMENTUM.find((m) => m.value === i.momentum);
   return (
     <Row
@@ -420,7 +611,7 @@ function InitiativeRow({ d, i, onClick }: { d: VerticalData; i: Initiative; onCl
       meta={
         <span className="mono flex shrink-0 items-center gap-1.5 text-caption text-muted">
           <span>{mom?.glyph}</span>
-          <span>{pct}%</span>
+          <span>{initiativeProgress(d, i)}%</span>
         </span>
       }
     />
@@ -428,7 +619,6 @@ function InitiativeRow({ d, i, onClick }: { d: VerticalData; i: Initiative; onCl
 }
 
 function ProjectRow({ d, p, onClick }: { d: VerticalData; p: Project; onClick: () => void }) {
-  const pct = projectProgress(d, p);
   return (
     <Row
       onClick={onClick}
@@ -436,7 +626,7 @@ function ProjectRow({ d, p, onClick }: { d: VerticalData; p: Project; onClick: (
       leading={<StatusDot status={p.status} />}
       title={p.name}
       subtitle={p.outcome || undefined}
-      meta={<span className="mono shrink-0 text-caption text-muted">{pct}%</span>}
+      meta={<span className="mono shrink-0 text-caption text-muted">{projectProgress(d, p)}%</span>}
     />
   );
 }
@@ -681,5 +871,14 @@ function Empty({ children }: { children: ReactNode }) {
 }
 
 function Breadcrumb({ children }: { children: ReactNode }) {
-  return <div className="mono mb-2 truncate text-caption text-muted">{children}</div>;
+  return <div className="mono mb-2 flex flex-wrap items-center gap-1.5 text-caption text-muted">{children}</div>;
+}
+
+// A tappable breadcrumb segment — climb up the hierarchy on demand.
+function Crumb({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="tap fast -my-1 truncate py-1 active:text-accent">
+      {children}
+    </button>
+  );
 }
