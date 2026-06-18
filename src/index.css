@@ -62,6 +62,12 @@
   --line-strong: #d8cfbc;
   --text: #1f1a16;
   --muted: #847b6b;
+  /* A calmer iris than crisp indigo — desaturated and a touch warmer so it
+     sits gently on warm paper instead of clashing blue-on-cream. */
+  --accent: #6f62c4;
+  --accent-2: #8c79e0;
+  --accent-soft: rgba(111, 98, 196, 0.10);
+  --accent-glow: rgba(111, 98, 196, 0.16);
   /* warm, low elevation — never a hard drop shadow */
   --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(60, 42, 20, 0.13), 0 1px 2px rgba(60, 42, 20, 0.06);
@@ -90,6 +96,11 @@
   --line-strong: #d3d7e3;
   --text: #1b1c24;
   --muted: #6b6f7e;
+  /* Cool paper carries the crisp indigo cleanly — no clash to soften here. */
+  --accent: #5a4be2;
+  --accent-2: #8a6cf0;
+  --accent-soft: rgba(90, 75, 226, 0.11);
+  --accent-glow: rgba(90, 75, 226, 0.18);
   --shadow-1: 0 1px 2px rgba(40, 38, 70, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(40, 38, 70, 0.12), 0 1px 2px rgba(40, 38, 70, 0.05);
   --shadow-3: 0 24px 60px -16px rgba(46, 40, 80, 0.24), 0 4px 12px -4px rgba(40, 38, 70, 0.1);
@@ -113,6 +124,11 @@
   --line-strong: #d6d3df;
   --text: #1c1b22;
   --muted: #6f6c7b;
+  /* Halfway between Fog's crisp indigo and Daybreak's calmer iris. */
+  --accent: #6457d4;
+  --accent-2: #8a72e6;
+  --accent-soft: rgba(100, 87, 212, 0.10);
+  --accent-glow: rgba(100, 87, 212, 0.17);
   --shadow-1: 0 1px 2px rgba(45, 40, 60, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(45, 40, 60, 0.12), 0 1px 2px rgba(45, 40, 60, 0.05);
   --shadow-3: 0 24px 60px -16px rgba(50, 42, 78, 0.24), 0 4px 12px -4px rgba(45, 40, 60, 0.1);
@@ -544,7 +560,7 @@ textarea:focus {
   --fc-border-color: var(--line);
   --fc-page-bg-color: var(--surface);
   --fc-neutral-bg-color: var(--bg);
-  --fc-today-bg-color: var(--accent-soft);
+  --fc-today-bg-color: color-mix(in srgb, var(--accent) 4%, var(--surface));
   --fc-now-indicator-color: var(--signal);
   --fc-event-border-color: transparent;
   --fc-event-text-color: var(--text);
@@ -554,7 +570,7 @@ textarea:focus {
 
 .fc .fc-timegrid-slot {
   height: calc(var(--nuvo-hour, 52px) / 4);
-  border-top-color: color-mix(in srgb, var(--line) 55%, transparent);
+  border-top-color: color-mix(in srgb, var(--line) 34%, transparent);
 }
 /* Hide 15-min minor dividers — only hour guides remain */
 .fc .fc-timegrid-slot-minor {
@@ -575,14 +591,22 @@ textarea:focus {
   font-weight: 500;
   text-decoration: none !important;
 }
-/* Today column header: accent background band */
+/* Today column header: a whisper of accent, not a band */
 .fc .fc-col-header-cell.fc-day-today {
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
-  border-bottom: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 24%, transparent);
 }
-/* Column dividers: slightly softer than the hour lines */
+/* Column dividers: faint — the grid should recede, not cage the day */
 .fc .fc-timegrid-col {
-  border-left-color: color-mix(in srgb, var(--line) 70%, transparent);
+  border-left-color: color-mix(in srgb, var(--line) 42%, transparent);
+}
+/* A hint of glass on the sticky day header — refined, and it lets the grid
+   slide gently beneath it. */
+.fc .fc-col-header,
+.fc .fc-timegrid-axis {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
+  backdrop-filter: blur(8px) saturate(1.05);
 }
 .fc .fc-timegrid-now-indicator-line {
   border-width: 1.5px 0 0;
@@ -596,7 +620,7 @@ textarea:focus {
    3px accent bar and ALL text padding live in the React render (eventContent),
    so tasks, events and slots share identical spacing, radius and type. */
 .fc .fc-event {
-  border-radius: 6px;
+  border-radius: 7px;
   border: 1px solid transparent;
   background-clip: padding-box;
   box-shadow: none;

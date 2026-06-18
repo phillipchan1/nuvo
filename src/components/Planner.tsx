@@ -21,7 +21,6 @@ import CommandBar, { type Command } from "./CommandBar";
 import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
-import { BigRocksBar } from "./floors/bigRocks";
 import { EveningShutdown, MorningPlan } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
 
@@ -252,8 +251,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
       <ReconnectBanner accounts={accounts} />
 
-      {/* the week's plan, docked above the calendar — big rocks live with the week */}
-      <BigRocksBar />
+      {/* Priorities moved off Schedule — too much for the workspace. They live on
+          Today (the ribbon) for now; a dedicated dashboard view is TBD. */}
 
       <div className="relative flex min-h-0 flex-1">
         <LeftRail
