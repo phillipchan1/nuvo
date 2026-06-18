@@ -8,6 +8,7 @@ import { useLabels } from "../hooks/useCalendar";
 import { Btn, Modal } from "./ui";
 import type { SettingsSection } from "../lib/appNav";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 // ── Section registry ──────────────────────────────────────────────────────
 type SectionId = "appearance" | "schedule" | "connections" | "labels" | "account";
@@ -78,7 +79,9 @@ function PaneHeader({ title, sub }: { title: string; sub: string }) {
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3.5">
+    // Stacks on a phone so the controls get full width and never collide with the
+    // label; sm+ restores the desktop label-left / control-right row.
+    <div className="flex flex-col items-start gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0">
         <div className="text-body font-medium text-ink">{title}</div>
         {desc && <div className="mt-0.5 text-caption leading-snug text-muted">{desc}</div>}
@@ -644,7 +647,92 @@ export default function SettingsModal({
   onClose: () => void;
 }) {
   const { setSettingsSection } = useAppNavigation();
+  const isMobile = useIsMobile();
 
+  // The active section is owned here so it works in both shells. Desktop seeds it
+  // from the nav (deep-links / URL), the mobile shell mounts at the section list.
+  // (The mobile shell can't drive `section` through global nav, so relying on the
+  // prop alone left tapping a section a no-op — hence local state.)
+  const [active, setActive] = useState<SectionId>(section as SectionId);
+  useEffect(() => setActive(section as SectionId), [section]);
+  // On a phone, start at the index list rather than dropped inside a pane.
+  const [drilled, setDrilled] = useState(!isMobile);
+
+  const select = (id: SectionId) => {
+    setActive(id);
+    setSettingsSection(id); // keep desktop nav / URL in sync
+    setDrilled(true);
+  };
+
+  const pane = (
+    <>
+      {active === "appearance" && <AppearancePane settings={settings} updateSettings={updateSettings} />}
+      {active === "schedule" && <SchedulePane settings={settings} updateSettings={updateSettings} />}
+      {active === "connections" && (
+        <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
+      )}
+      {active === "labels" && <LabelsPane />}
+      {active === "account" && <AccountPane />}
+    </>
+  );
+
+  // ── Mobile: full-height master-detail (iOS-style list → drill into pane) ──
+  if (isMobile) {
+    return (
+      <Modal onClose={onClose} width="max-w-md">
+        <div className="flex h-[85vh] flex-col">
+          <div className="flex items-center gap-1 border-b border-line px-2 py-2.5">
+            {drilled ? (
+              <button onClick={() => setDrilled(false)} className="tap flex items-center gap-1 pr-2 text-body font-medium text-accent">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <path d="M11 4l-5 5 5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Settings
+              </button>
+            ) : (
+              <div className="px-1 text-head font-semibold">Settings</div>
+            )}
+            <div className="flex-1" />
+            <button
+              onClick={onClose}
+              aria-label="Close settings"
+              className="tap flex h-10 w-10 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path d="M5 5l8 8M13 5l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          {drilled ? (
+            <div key={active} className="floor-enter flex-1 overflow-y-auto px-4 pb-safe pt-4">
+              {pane}
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto p-2 pb-safe">
+              {SECTIONS.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => select(s.id)}
+                  className="tap fast flex w-full items-center gap-3 rounded-lg px-3 text-left text-body font-medium text-ink hover:bg-surface-2"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-2 text-muted">
+                    {s.icon}
+                  </span>
+                  <span className="flex-1">{s.label}</span>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted">
+                    <path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── Desktop: side-by-side nav + pane (unchanged) ──
   return (
     <Modal onClose={onClose} width="max-w-3xl">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
@@ -660,28 +748,22 @@ export default function SettingsModal({
           {SECTIONS.map((s) => (
             <button
               key={s.id}
-              onClick={() => setSettingsSection(s.id)}
+              onClick={() => select(s.id)}
               className={`fast flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-body font-medium ${
-                section === s.id
+                active === s.id
                   ? "bg-accent-soft text-accent"
                   : "text-muted hover:bg-surface-2 hover:text-ink"
               }`}
             >
-              <span className={section === s.id ? "text-accent" : "text-muted"}>{s.icon}</span>
+              <span className={active === s.id ? "text-accent" : "text-muted"}>{s.icon}</span>
               {s.label}
             </button>
           ))}
         </nav>
 
         {/* Active pane */}
-        <div key={section} className="floor-enter flex-1 overflow-y-auto p-5">
-          {section === "appearance" && <AppearancePane settings={settings} updateSettings={updateSettings} />}
-          {section === "schedule" && <SchedulePane settings={settings} updateSettings={updateSettings} />}
-          {section === "connections" && (
-            <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
-          )}
-          {section === "labels" && <LabelsPane />}
-          {section === "account" && <AccountPane />}
+        <div key={active} className="floor-enter flex-1 overflow-y-auto p-5">
+          {pane}
         </div>
       </div>
     </Modal>
