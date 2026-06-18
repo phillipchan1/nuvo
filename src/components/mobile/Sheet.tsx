@@ -43,7 +43,7 @@ export default function Sheet({
     >
       <div
         className={`sheet-up flex ${
-          tall ? "h-[92vh]" : "max-h-[88vh]"
+          tall ? "h-[92vh] pt-safe" : "max-h-[88vh]"
         } flex-col rounded-t-2xl border-t border-line bg-surface pb-safe`}
       >
         <div className="flex shrink-0 flex-col items-center pt-2">

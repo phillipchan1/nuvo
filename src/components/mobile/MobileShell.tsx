@@ -22,13 +22,15 @@ import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
 import MobilePlan from "./MobilePlan";
 import QuickTaskSheet from "./QuickTaskSheet";
-import ChatSheet from "./ChatSheet";
+import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
 
 // Top-level destinations: the three jobs you do on the phone. Today/Week/Inbox
 // collapse into one "Tasks" screen (three lenses on one backlog) so the bar can
 // give Calendar a slot and make capture + Nuvo permanent first-class actions.
-type Tab = "now" | "calendar" | "tasks" | "plan";
+// "nuvo" is the permanent chat destination — a real tab, not a modal sheet, so
+// the bottom bar stays put while you talk to the assistant.
+type Tab = "now" | "calendar" | "tasks" | "plan" | "nuvo";
 const TAB_KEY = "nuvo-mobile-tab-v2";
 const SUB_KEY = "nuvo-mobile-tasksub";
 const LEGACY_KEY = "nuvo-mobile-tab"; // pre-refactor: now|today|week|inbox
@@ -52,7 +54,7 @@ const SUBTABS: { id: MobileTab; label: string }[] = [
 function readTab(): Tab {
   try {
     const v = localStorage.getItem(TAB_KEY) as Tab | null;
-    if (v && NAV.some((t) => t.id === v)) return v;
+    if (v && (v === "nuvo" || NAV.some((t) => t.id === v))) return v;
     const legacy = localStorage.getItem(LEGACY_KEY);
     if (legacy === "now") return "now";
     if (legacy === "today" || legacy === "week" || legacy === "inbox") return "tasks";
@@ -95,7 +97,8 @@ export default function MobileShell() {
   };
 
   const [quickOpen, setQuickOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  // The tab Nuvo was opened from, so its starter hints match where you came from.
+  const [chatFrom, setChatFrom] = useState<"now" | MobileTab | undefined>(undefined);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -169,14 +172,14 @@ export default function MobileShell() {
     scrollRef.current?.scrollTo({ top: 0 });
   }, [tab, sub]);
 
-  // On mobile, "Ask Nuvo" from the Now view opens the global chat sheet (the
-  // permanent Nuvo surface) instead of NowFloor's cramped inline rail.
-  const askNuvo = (seed?: string) => {
-    setChatOpen(true);
+  // Open the permanent Nuvo tab. Capture the tab we came from (for context-aware
+  // starter hints) before switching, and optionally seed a first message — e.g.
+  // "Ask Nuvo" from the Now view, instead of NowFloor's cramped inline rail.
+  const openChat = (seed?: string) => {
+    if (tab !== "nuvo") setChatFrom(tab === "now" ? "now" : tab === "tasks" ? sub : undefined);
+    setTab("nuvo");
     if (seed) void agent.sendMessage(seed);
   };
-
-  const chatMobileTab = tab === "now" ? "now" : tab === "tasks" ? sub : undefined;
 
   return (
     <div className="atmosphere flex h-full flex-col">
@@ -205,11 +208,15 @@ export default function MobileShell() {
         </button>
       </header>
 
-      {/* Content */}
+      {/* Content. Nuvo is its own destination: it fills the space between the
+          top bar and nav (both persist) rather than overlaying as a sheet. */}
+      {tab === "nuvo" ? (
+        <ChatPane agent={agent} mobileTab={chatFrom} />
+      ) : (
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         {tab === "now" ? (
           <div className="px-4 pt-4 pb-10">
-            <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={askNuvo} />
+            <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
           </div>
         ) : tab === "calendar" ? (
           <MobileCalendar now={now} />
@@ -232,6 +239,7 @@ export default function MobileShell() {
           </div>
         )}
       </main>
+      )}
 
       {/* Bottom bar — Now · Calendar · ＋ capture · Tasks · Nuvo. The center
           capture and Nuvo are permanent first-class actions. */}
@@ -266,12 +274,12 @@ export default function MobileShell() {
           badge={inbox.length}
         />
 
-        {/* Nuvo — permanent chat slot */}
+        {/* Nuvo — permanent chat destination */}
         <button
-          onClick={() => setChatOpen(true)}
+          onClick={() => openChat()}
           aria-label="Ask Nuvo"
           className={`tap fast relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 ${
-            chatOpen ? "text-accent" : "text-muted"
+            tab === "nuvo" ? "text-accent" : "text-muted"
           }`}
         >
           <span className="text-lead leading-none">✦</span>
@@ -288,7 +296,6 @@ export default function MobileShell() {
           defaultDoDate={tab === "tasks" && sub === "today" ? today : null}
         />
       )}
-      {chatOpen && <ChatSheet agent={agent} mobileTab={chatMobileTab} onClose={() => setChatOpen(false)} />}
       {openTask && (
         <MobileTaskSheet
           task={openTask}
