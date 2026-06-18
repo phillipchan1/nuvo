@@ -634,13 +634,12 @@ textarea:focus {
 .fc .fc-timegrid-col {
   border-left-color: color-mix(in srgb, var(--line) 22%, transparent);
 }
-/* The sticky day header is frosted *paper* (same canvas), so the grid slides
-   gently beneath it without introducing a second surface. */
-.fc .fc-col-header,
-.fc .fc-timegrid-axis {
-  background: color-mix(in srgb, var(--bg) 68%, transparent);
-  -webkit-backdrop-filter: blur(8px) saturate(1.05);
-  backdrop-filter: blur(8px) saturate(1.05);
+/* The sticky day header rides on opaque paper so the grid slides cleanly under
+   it — no frosting (the blur was bleeding onto the full-height time axis and
+   washing the whole calendar lighter than the rail) and no second surface. The
+   axis + grid stay fully transparent, so the calendar IS the same warm paper. */
+.fc .fc-col-header {
+  background: var(--bg);
 }
 /* Day-header cells and the all-day ("anytime") divider share the paper — drop
    their borders so only the today underline + faint hour guides remain. */
