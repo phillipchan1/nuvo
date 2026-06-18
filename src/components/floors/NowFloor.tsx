@@ -376,7 +376,7 @@ export default function NowFloor({
                           {alts.map(({ s, i }) => (
                             <button
                               key={s.task.id}
-                              onClick={() => setIdx(i)}
+                              onMouseDown={(e) => { e.preventDefault(); setIdx(i); }}
                               className="fast group flex w-full items-center gap-2 text-left text-caption text-muted hover:text-ink"
                             >
                               <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: s.domain?.color ?? "var(--line-strong)" }} />
