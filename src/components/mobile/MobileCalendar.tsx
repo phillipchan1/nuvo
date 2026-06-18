@@ -104,7 +104,7 @@ export default function MobileCalendar({ now }: { now: Date }) {
   const loading = evLoading || blkLoading;
 
   return (
-    <div className="pb-10">
+    <div className="pb-24">
       {/* Date strip — tap a day to jump to it */}
       <div className="sticky top-0 z-10 border-b border-line bg-surface/90 backdrop-blur">
         <div className="mobile-scroll flex gap-1.5 overflow-x-auto px-3 py-2.5">

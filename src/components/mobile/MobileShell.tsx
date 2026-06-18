@@ -7,6 +7,7 @@ import {
   useInboxTasks,
   useDayTasks,
   useSprintTasks,
+  useAllTasks,
   useTaskMutations,
   useRolloverGuard,
 } from "../../hooks/useTasks";
@@ -20,14 +21,18 @@ import NowFloor from "../floors/NowFloor";
 import SettingsModal from "../SettingsModal";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
+import MobilePlan, { type PlanTarget } from "./MobilePlan";
+import MobileSearch, { type JumpKind } from "./MobileSearch";
 import QuickTaskSheet from "./QuickTaskSheet";
-import ChatSheet from "./ChatSheet";
+import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
 
 // Top-level destinations: the three jobs you do on the phone. Today/Week/Inbox
 // collapse into one "Tasks" screen (three lenses on one backlog) so the bar can
 // give Calendar a slot and make capture + Nuvo permanent first-class actions.
-type Tab = "now" | "calendar" | "tasks";
+// "nuvo" is the permanent chat destination — a real tab, not a modal sheet, so
+// the bottom bar stays put while you talk to the assistant.
+type Tab = "now" | "calendar" | "tasks" | "plan" | "nuvo";
 const TAB_KEY = "nuvo-mobile-tab-v2";
 const SUB_KEY = "nuvo-mobile-tasksub";
 const LEGACY_KEY = "nuvo-mobile-tab"; // pre-refactor: now|today|week|inbox
@@ -36,6 +41,9 @@ const NAV: { id: Tab; label: string; glyph: string }[] = [
   { id: "now", label: "Now", glyph: "◉" },
   { id: "calendar", label: "Calendar", glyph: "▦" },
   { id: "tasks", label: "Tasks", glyph: "▤" },
+  // The strategic vertical — Domains › Initiatives › Projects, the "why" above
+  // the schedule. Browsed top-down as a drill-down stack (see MobilePlan).
+  { id: "plan", label: "Plan", glyph: "❖" },
 ];
 
 const SUBTABS: { id: MobileTab; label: string }[] = [
@@ -48,7 +56,7 @@ const SUBTABS: { id: MobileTab; label: string }[] = [
 function readTab(): Tab {
   try {
     const v = localStorage.getItem(TAB_KEY) as Tab | null;
-    if (v && NAV.some((t) => t.id === v)) return v;
+    if (v && (v === "nuvo" || NAV.some((t) => t.id === v))) return v;
     const legacy = localStorage.getItem(LEGACY_KEY);
     if (legacy === "now") return "now";
     if (legacy === "today" || legacy === "week" || legacy === "inbox") return "tasks";
@@ -91,9 +99,13 @@ export default function MobileShell() {
   };
 
   const [quickOpen, setQuickOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  // The tab Nuvo was opened from, so its starter hints match where you came from.
+  const [chatFrom, setChatFrom] = useState<"now" | MobileTab | undefined>(undefined);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // A detail to open in the Plan tab, set when you jump from global search.
+  const [planTarget, setPlanTarget] = useState<PlanTarget | null>(null);
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -113,6 +125,7 @@ export default function MobileShell() {
   const { data: inbox = [] } = useInboxTasks();
   const { data: todayTasks = [] } = useDayTasks(today);
   const { data: weekTasks = [] } = useSprintTasks(vertical.sprint?.id ?? null);
+  const { data: allTasks = [] } = useAllTasks();
   const { labels } = useLabels();
   const { data: accounts = [] } = useCalendarAccounts();
   const mutations = useTaskMutations();
@@ -146,11 +159,13 @@ export default function MobileShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoaded, today]);
 
+  // Include every task so a global-search result (which can be any task) always
+  // resolves to a row the task sheet can open.
   const taskById = useMemo(() => {
     const m = new Map<string, Task>();
-    for (const t of [...inbox, ...todayTasks, ...weekTasks]) m.set(t.id, t);
+    for (const t of [...inbox, ...todayTasks, ...weekTasks, ...allTasks]) m.set(t.id, t);
     return m;
-  }, [inbox, todayTasks, weekTasks]);
+  }, [inbox, todayTasks, weekTasks, allTasks]);
   const openTask = taskId ? taskById.get(taskId) ?? null : null;
 
   const subCount = (s: MobileTab) =>
@@ -165,14 +180,32 @@ export default function MobileShell() {
     scrollRef.current?.scrollTo({ top: 0 });
   }, [tab, sub]);
 
-  // On mobile, "Ask Nuvo" from the Now view opens the global chat sheet (the
-  // permanent Nuvo surface) instead of NowFloor's cramped inline rail.
-  const askNuvo = (seed?: string) => {
-    setChatOpen(true);
+  // Opening Plan by hand starts at the flat list; only a search jump (which sets
+  // the target in the same tick it switches to Plan) opens a detail.
+  useEffect(() => {
+    if (tab !== "plan") setPlanTarget(null);
+  }, [tab]);
+
+  // Open the permanent Nuvo tab. Capture the tab we came from (for context-aware
+  // starter hints) before switching, and optionally seed a first message — e.g.
+  // "Ask Nuvo" from the Now view, instead of NowFloor's cramped inline rail.
+  const openChat = (seed?: string) => {
+    if (tab !== "nuvo") setChatFrom(tab === "now" ? "now" : tab === "tasks" ? sub : undefined);
+    setTab("nuvo");
     if (seed) void agent.sendMessage(seed);
   };
 
-  const chatMobileTab = tab === "now" ? "now" : tab === "tasks" ? sub : undefined;
+  // Global-search jumps: a vertical item opens its Plan detail (nonce so the same
+  // id re-fires); a task opens the task sheet.
+  const openPlanItem = (kind: JumpKind, id: string) => {
+    setPlanTarget({ kind, id, n: Date.now() });
+    setTab("plan");
+    setSearchOpen(false);
+  };
+  const openTaskFromSearch = (id: string) => {
+    setSearchOpen(false);
+    setTaskId(id);
+  };
 
   return (
     <div className="atmosphere flex h-full flex-col">
@@ -181,6 +214,16 @@ export default function MobileShell() {
         <span className="wordmark wordmark-grad text-lead">Nuvo</span>
         <span className="mono ml-0.5 text-caption text-muted">{format(now, "EEE MMM d")}</span>
         <div className="flex-1" />
+        <button
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search"
+          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-muted active:scale-95"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.4-3.4" />
+          </svg>
+        </button>
         <button
           onClick={() =>
             updateSettings({
@@ -201,16 +244,22 @@ export default function MobileShell() {
         </button>
       </header>
 
-      {/* Content */}
+      {/* Content. Nuvo is its own destination: it fills the space between the
+          top bar and nav (both persist) rather than overlaying as a sheet. */}
+      {tab === "nuvo" ? (
+        <ChatPane agent={agent} mobileTab={chatFrom} />
+      ) : (
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         {tab === "now" ? (
-          <div className="px-4 pt-4 pb-10">
-            <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={askNuvo} />
+          <div className="px-4 pt-4 pb-24">
+            <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
           </div>
         ) : tab === "calendar" ? (
           <MobileCalendar now={now} />
+        ) : tab === "plan" ? (
+          <MobilePlan target={planTarget} />
         ) : (
-          <div className="pb-10">
+          <div className="pb-24">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
             <MobileTaskList
               tab={sub}
@@ -226,45 +275,46 @@ export default function MobileShell() {
           </div>
         )}
       </main>
+      )}
 
-      {/* Bottom bar — Now · Calendar · ＋ capture · Tasks · Nuvo. The center
-          capture and Nuvo are permanent first-class actions. */}
+      {/* Bottom bar — five equal navigation destinations: Now · Calendar · Plan ·
+          Tasks · Nuvo. Capture is an *action*, not a place, so it doesn't take a
+          tab slot: it floats as the single primary ＋ (below), which keeps the
+          nav row even and lets the one bold accent belong to the one action.
+          Nuvo is a permanent chat destination. */}
       <nav className="pb-safe relative flex shrink-0 items-stretch border-t border-line bg-surface">
+        {/* Capture — the one primary action, floated above the bar in the
+            bottom-right thumb arc so it reads as a verb, not a destination.
+            Hidden on the Nuvo tab, where it would collide with the composer. */}
+        {tab !== "nuvo" && (
+          <button
+            onClick={() => setQuickOpen(true)}
+            aria-label="Quick task"
+            className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95"
+          >
+            ＋
+          </button>
+        )}
+
         <NavTab tab={NAV[0]} active={tab === NAV[0].id} onClick={() => setTab(NAV[0].id)} />
         <NavTab tab={NAV[1]} active={tab === NAV[1].id} onClick={() => setTab(NAV[1].id)} />
-
-        {/* Raised center capture — docked in a surface ring so the button reads
-            as sitting on the bar, not floating over the timeline behind it. The
-            ＋ glyph is self-evident, so it carries no label. */}
-        <button
-          onClick={() => setQuickOpen(true)}
-          aria-label="Quick task"
-          className="tap relative flex flex-1 flex-col items-center justify-center py-2"
-        >
-          <span className="absolute -top-6 rounded-full bg-surface p-[3px]">
-            <span className="elev-3 fast flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95">
-              ＋
-            </span>
-          </span>
-          <span className="invisible text-lead leading-none">＋</span>
-        </button>
-
+        {/* Plan — the strategic vertical. */}
+        <NavTab tab={NAV[3]} active={tab === NAV[3].id} onClick={() => setTab(NAV[3].id)} />
         <NavTab
           tab={NAV[2]}
           active={tab === NAV[2].id}
           onClick={() => setTab(NAV[2].id)}
           badge={inbox.length}
         />
-
-        {/* Nuvo — permanent chat slot */}
+        {/* Nuvo — permanent chat destination */}
         <button
-          onClick={() => setChatOpen(true)}
+          onClick={() => openChat()}
           aria-label="Ask Nuvo"
           className={`tap fast relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 ${
-            chatOpen ? "text-accent" : "text-muted"
+            tab === "nuvo" ? "text-accent" : "text-muted"
           }`}
         >
-          <span className="text-lead leading-none">✦</span>
+          <span className="flex h-7 items-center text-lead leading-none">✦</span>
           <span className="text-meta font-medium leading-none">Nuvo</span>
         </button>
       </nav>
@@ -278,7 +328,6 @@ export default function MobileShell() {
           defaultDoDate={tab === "tasks" && sub === "today" ? today : null}
         />
       )}
-      {chatOpen && <ChatSheet agent={agent} mobileTab={chatMobileTab} onClose={() => setChatOpen(false)} />}
       {openTask && (
         <MobileTaskSheet
           task={openTask}
@@ -286,6 +335,15 @@ export default function MobileShell() {
           mutations={mutations}
           accent={taskDomainColor(vertical, openTask)}
           onClose={() => setTaskId(null)}
+        />
+      )}
+      {searchOpen && (
+        <MobileSearch
+          vertical={vertical}
+          tasks={allTasks}
+          onOpenItem={openPlanItem}
+          onOpenTask={openTaskFromSearch}
+          onClose={() => setSearchOpen(false)}
         />
       )}
       {settingsOpen && (
@@ -320,7 +378,7 @@ function NavTab({
         active ? "text-accent" : "text-muted"
       }`}
     >
-      <span className="text-lead leading-none">{tab.glyph}</span>
+      <span className="flex h-7 items-center text-lead leading-none">{tab.glyph}</span>
       <span className="text-meta font-medium leading-none">{tab.label}</span>
       {badge > 0 && (
         <span
