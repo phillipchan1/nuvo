@@ -149,8 +149,10 @@ export default function CalendarPane({
   onOpenSlot,
   onRangeChange,
   railRef,
+  onViewChange,
 }: {
   view: CalView;
+  onViewChange?: (v: CalView) => void;
   tasks: Task[];
   events: ExternalEvent[];
   slots: Slot[];
@@ -1141,6 +1143,29 @@ export default function CalendarPane({
         )}
 
         <div className="flex-1" />
+
+        {onViewChange && (
+          <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
+            {(["timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
+              const on = view === v;
+              return (
+                <button
+                  key={v}
+                  onClick={() => onViewChange(v)}
+                  className="fast rounded-full px-2.5 py-0.5 text-label leading-none"
+                  style={{
+                    background: on ? "var(--surface)" : "transparent",
+                    color: on ? "var(--accent)" : "var(--muted)",
+                    fontWeight: on ? 600 : 500,
+                    boxShadow: on ? "var(--shadow-1)" : "none",
+                  }}
+                >
+                  {v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── FullCalendar ────────────────────────────────────────────────── */}

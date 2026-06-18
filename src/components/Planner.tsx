@@ -221,35 +221,14 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* A near-bare titlebar: the calendar already shows the date, marks today,
-          and draws the now-line, so the bar carries only the view toggle — the
-          rest is drag region. Plan/Shutdown live in ⌘K + the morning prompt;
-          Nuvo on the right edge (⌘J); settings on the spine (⌘,). */}
-      <header
-        data-tauri-drag-region
-        className="app-topbar flex h-11 shrink-0 items-center justify-end border-b border-line bg-surface px-3"
-      >
-        <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
-          {(["timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
-            const on = view === v;
-            return (
-              <button
-                key={v}
-                onClick={() => setCalView(v)}
-                className="fast rounded-full px-3 py-1 text-label leading-none"
-                style={{
-                  background: on ? "var(--surface)" : "transparent",
-                  color: on ? "var(--accent)" : "var(--muted)",
-                  fontWeight: on ? 600 : 500,
-                  boxShadow: on ? "var(--shadow-1)" : "none",
-                }}
-              >
-                {v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
-              </button>
-            );
-          })}
-        </div>
-      </header>
+      {/* No standalone header — the calendar's own toolbar carries the view
+          toggle (Day/Week/Month), and the date/today/now-line live on the grid.
+          All that's left at the very top is a thin drag strip: it collapses to
+          nothing on the web, and in the desktop app it's exactly the macOS
+          titlebar height so the window stays draggable and clears the traffic
+          lights. Plan/Shutdown live in ⌘K + the morning prompt; Nuvo on the
+          right edge (⌘J); settings on the spine (⌘,). */}
+      <div data-tauri-drag-region className="app-titlebar shrink-0" />
 
       <ReconnectBanner accounts={accounts} />
 
@@ -273,6 +252,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
         <div className="relative flex min-h-0 flex-1">
           <CalendarPane
             view={view}
+            onViewChange={setCalView}
             tasks={allTasksArray}
             events={events}
             slots={slots}

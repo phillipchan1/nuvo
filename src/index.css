@@ -289,10 +289,19 @@ html.tauri-macos {
   --spine-width: 140px;
 }
 
-/* Top bars sit under the overlay titlebar; spine column owns the left inset. */
+/* Floor headers (Today / Project / Initiative / Domain) keep a chrome bar, so
+   in Tauri they sit under the overlay titlebar; the spine owns the left inset. */
 html.tauri-macos .app-topbar {
   min-height: calc(2.75rem + var(--titlebar-inset-top));
   padding-top: var(--titlebar-inset-top);
+}
+
+/* The Schedule has no chrome header — only a thin drag strip at the very top.
+   On the web there's no window chrome, so it collapses to nothing; in the Tauri
+   macOS window it's exactly the overlay-titlebar height, keeping the window
+   draggable and clearing the traffic lights. */
+.app-titlebar {
+  height: var(--titlebar-inset-top, 0px);
 }
 
 /* Niche case only: the desktop Tauri window shrunk below 768px so the mobile
