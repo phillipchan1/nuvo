@@ -22,6 +22,13 @@ import { RIPENESS_HINT, RIPENESS_LABEL, type Ripeness } from "../../lib/tending"
 import type { CollectionSelection } from "../../hooks/useCollectionSelection";
 import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
 
+/** Translucent tint of an item's identity (domain) color — the one way every
+ *  collection view fills a chip / bar. Uses color-mix so it is robust for hex,
+ *  rgb() AND CSS tokens like var(--accent): string-concatenating a hex alpha
+ *  (`${color}1f`) silently produces invalid CSS for a domainless record (whose
+ *  accent is "var(--accent)"), which is why those chips rendered with no fill. */
+export const softTint = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
+
 // ── Shared status vocab (kept here so board/detail/initiative agree) ─────────
 export const PROJECT_STATUS: ProjectStatus[] = ["backlog", "in_progress", "waiting", "cancelled", "complete"];
 export const PROJECT_STATUS_COLORS: Record<ProjectStatus, string> = {
@@ -45,6 +52,7 @@ export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
 // The one source for the dot is the computed Ripeness; the ramp leans on the
 // "complete" teal already in the status vocab, so no new green is introduced.
 const RIPE_GREEN = PROJECT_STATUS_COLORS.complete;
+const RIPE_AMBER = PROJECT_STATUS_COLORS.waiting; // the "looks ready, not verified" caution
 const RIPE_FILL: Record<Ripeness, string> = {
   raw: "var(--muted)",
   shaped: `color-mix(in srgb, ${RIPE_GREEN} 40%, var(--muted))`,
@@ -53,21 +61,27 @@ const RIPE_FILL: Record<Ripeness, string> = {
   resting: "var(--line-strong)",
 };
 
-export function RipenessPip({ stage, size = 7 }: { stage: Ripeness; size?: number }) {
+/** `unsound` marks a structurally-Active item Nuvo hasn't verified sound — it
+ *  reads green-but-flagged (amber ring) so the portfolio shows TRUE readiness,
+ *  not just filled boxes. Only meaningful on the Active stage. */
+export function RipenessPip({ stage, unsound = false, size = 7 }: { stage: Ripeness; unsound?: boolean; size?: number }) {
   const fill = RIPE_FILL[stage];
   const resting = stage === "resting";
+  const flag = unsound && stage === "active";
   return (
     <span
-      title={`${RIPENESS_LABEL[stage]} — ${RIPENESS_HINT[stage]}`}
-      aria-label={`Ripeness: ${RIPENESS_LABEL[stage]}`}
+      title={flag ? "Active — but Nuvo hasn't verified it sound yet" : `${RIPENESS_LABEL[stage]} — ${RIPENESS_HINT[stage]}`}
+      aria-label={`Ripeness: ${RIPENESS_LABEL[stage]}${flag ? " (unverified)" : ""}`}
       className="inline-block shrink-0 rounded-full"
       style={{
         width: size,
         height: size,
         background: resting ? "transparent" : fill,
-        border: resting ? `1.5px solid ${fill}` : "none",
+        border: resting ? `1.5px solid ${fill}` : flag ? `1.5px solid ${RIPE_AMBER}` : "none",
         opacity: resting ? 0.7 : stage === "raw" ? 0.5 : 1,
-        boxShadow: stage === "active" ? `0 0 5px color-mix(in srgb, ${RIPE_GREEN} 55%, transparent)` : "none",
+        boxShadow: flag
+          ? `0 0 4px color-mix(in srgb, ${RIPE_AMBER} 55%, transparent)`
+          : stage === "active" ? `0 0 5px color-mix(in srgb, ${RIPE_GREEN} 55%, transparent)` : "none",
       }}
     />
   );
@@ -712,7 +726,10 @@ export function Timeline({
       setDrag(null);
       // commit OUTSIDE the state updater — a side-effect in a reducer is
       // double-invoked under StrictMode and writes twice
-      if (moved) it.onChangeDates!(it.start ? toISO(liveStart) : null, it.end ? toISO(liveEnd) : null);
+      if (moved) it.onChangeDates!(
+        (it.start || mode === "start") ? toISO(liveStart) : null,
+        (it.end || mode === "end") ? toISO(liveEnd) : null,
+      );
       else it.onClick?.();
     };
     window.addEventListener("pointermove", onMove);
@@ -882,10 +899,10 @@ export function Timeline({
                       onPointerDown={editable ? (ev) => startBarDrag(it, "move", ev) : undefined}
                       onClick={!editable ? it.onClick : undefined}
                       className={`fast relative flex h-full items-center overflow-hidden rounded px-2 ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
-                      style={{ background: it.dim ? "var(--bg)" : `${it.color}26`, border: `1px solid ${it.color}`, opacity: it.dim ? 0.6 : 1 }}
+                      style={{ background: it.dim ? softTint("var(--muted)", 10) : softTint(it.color, 20), border: `1px solid ${it.color}`, opacity: it.dim ? 0.6 : 1 }}
                       title={`${it.label}${it.start ? ` · ${fmtDate(it.start)}` : ""}${it.end ? ` → ${fmtDate(it.end)}` : ""} · ${it.progress}%${editable ? " · drag to move, edges to resize" : ""}`}
                     >
-                      <div className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.max(0, Math.min(100, it.progress))}%`, background: `${it.color}33` }} />
+                      <div className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.max(0, Math.min(100, it.progress))}%`, background: softTint(it.color, 28) }} />
                       {wide ? (
                         <>
                           <span className="relative truncate text-meta text-ink">{it.label}</span>
@@ -929,7 +946,7 @@ export function Timeline({
                 return (
                   <>
                     <div className="pointer-events-none absolute top-0 bottom-0 w-px" style={{ left: gl, background: "var(--accent)" }} />
-                    <div className="pointer-events-none absolute rounded border-2 border-dashed" style={{ left: gl, top: bodyRows * ROW + 6, width: gw, height: ROW - 12, borderColor: c, background: `${c}1f` }} />
+                    <div className="pointer-events-none absolute rounded border-2 border-dashed" style={{ left: gl, top: bodyRows * ROW + 6, width: gw, height: ROW - 12, borderColor: c, background: softTint(c, 16) }} />
                     <div className="pointer-events-none absolute mono text-micro font-semibold text-accent" style={{ left: gl + 3, top: Math.max(0, bodyRows * ROW - 8) }}>{fmtDate(toISO(start))}</div>
                   </>
                 );

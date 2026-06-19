@@ -12,7 +12,7 @@ import {
   isProjectInFlight,
   projectsOf,
 } from "../../lib/vertical";
-import { ripenessOfInitiative } from "../../lib/tending";
+import { ripenessOfInitiative, verdictOf } from "../../lib/tending";
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
@@ -37,6 +37,7 @@ export default function InitiativesFloor({
   const records: CollectionRecord[] = initiatives.map((i) => {
     const domain = domainById(data, i.domainId);
     const projects = projectsOf(data, i.id);
+    const ripe = ripenessOfInitiative(data, i);
     return {
       id: i.id,
       title: i.name,
@@ -46,7 +47,8 @@ export default function InitiativesFloor({
       domainIcon: domain?.icon,
       accent: domain?.color ?? "var(--accent)",
       status: i.status,
-      ripeness: ripenessOfInitiative(data, i).stage,
+      ripeness: ripe.stage,
+      unsound: ripe.stage === "active" && verdictOf(data, "initiative", i.id)?.sound !== true,
       progress: initiativeProgress(data, i),
       startDate: i.startDate,
       targetDate: i.targetDate,

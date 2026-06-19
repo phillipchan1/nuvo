@@ -34,7 +34,7 @@ import {
   Timeline,
   type TimelineItem,
 } from "./parts";
-import { RIPENESS_HINT, RIPENESS_LABEL, ripenessOfInitiative } from "../../lib/tending";
+import { RIPENESS_HINT, RIPENESS_LABEL, ripenessOfInitiative, verdictOf } from "../../lib/tending";
 import TaskList from "./TaskList";
 import { Btn } from "../ui";
 
@@ -100,7 +100,7 @@ export default function InitiativeFloor({
         actions={
           <div className="flex items-center gap-2">
             <span className="mono flex items-center gap-1.5 text-meta text-muted" title={RIPENESS_HINT[ripe.stage]}>
-              <RipenessPip stage={ripe.stage} />
+              <RipenessPip stage={ripe.stage} unsound={ripe.stage === "active" && verdictOf(data, "initiative", initiative.id)?.sound !== true} />
               {RIPENESS_LABEL[ripe.stage]}
             </span>
             <DomainPicker domains={domains} value={initiative.domainId} onChange={changeDomain} align="right" />

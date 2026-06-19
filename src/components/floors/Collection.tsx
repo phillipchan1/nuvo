@@ -18,7 +18,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { Bar, InlineDate, InlineText, RipenessPip, StatusPill, Timeline, type TimelineItem } from "./parts";
+import { Bar, InlineDate, InlineText, RipenessPip, StatusPill, Timeline, softTint, type TimelineItem } from "./parts";
 import type { Ripeness } from "../../lib/tending";
 import { Btn } from "../ui";
 import { SELECT_INTERACTIVE, useCollectionSelection, type CollectionSelection } from "../../hooks/useCollectionSelection";
@@ -43,6 +43,8 @@ export interface CollectionRecord {
   status: string;
   /** computed grooming maturity — renders the ambient ripeness pip. */
   ripeness?: Ripeness;
+  /** Active but not Nuvo-verified sound — the pip reads green-but-flagged. */
+  unsound?: boolean;
   progress: number;
   startDate: string | null;
   targetDate: string | null;
@@ -275,7 +277,7 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
               />
             )}
             <div className="flex min-w-0 items-center gap-2" data-no-select onMouseDown={(e) => e.stopPropagation()}>
-              {r.ripeness && <RipenessPip stage={r.ripeness} />}
+              {r.ripeness && <RipenessPip stage={r.ripeness} unsound={r.unsound} />}
               <InlineText value={r.title} onChange={r.setTitle} placeholder="Untitled" className="text-body font-medium" />
             </div>
             <div data-no-select onMouseDown={(e) => e.stopPropagation()}>
@@ -570,11 +572,14 @@ function BoardCard({
         }
       }}
       onDoubleClick={r.open}
-      className={`lift-anim group relative cursor-pointer touch-none overflow-hidden rounded-lg border glass-card p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${
-        inProgress ? "border-accent/50" : ""
-      } ${visual === "selected" ? "" : visual === "preview" ? "border-accent/50 border-dashed" : inProgress ? "" : "border-line"} ${dragging ? "is-dragging" : ""}`}
+      className={`lift-anim group relative cursor-pointer touch-none overflow-hidden rounded-lg border glass-tint p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${visual === "selected" ? "" : "hover:-translate-y-px hover:[box-shadow:var(--shadow-2)]"} ${visual === "selected" ? "" : visual === "preview" ? "border-accent/50 border-dashed" : "border-line"} ${dragging ? "is-dragging" : ""}`}
+      style={{ "--tint": r.accent } as React.CSSProperties}
     >
-      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: inProgress ? "var(--accent)" : r.accent }} />
+      {/* The identity edge is ALWAYS the domain color — the same crimson/blue/etc.
+          the record wears in Table, Calendar and Timeline. "In progress" is a
+          status (the filled pill + the active lane), not the entity's color, so it
+          no longer repaints this edge mulberry and breaks cross-view identity. */}
+      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: r.accent }} />
       <div className="flex items-start gap-2 pl-1.5">
         {selectable && (
           <SelectCheckbox
@@ -586,7 +591,7 @@ function BoardCard({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            {r.ripeness && <RipenessPip stage={r.ripeness} />}
+            {r.ripeness && <RipenessPip stage={r.ripeness} unsound={r.unsound} />}
             <span className="truncate text-body font-medium">{r.title || "Untitled"}</span>
           </div>
           <div className="mono mt-0.5 truncate text-meta" style={{ color: r.accent }}>{r.domainIcon} {r.subtitle}</div>
@@ -624,6 +629,7 @@ function CalendarChip({
   onDragEnd,
   className,
   style,
+  dot = false,
 }: {
   r: CollectionRecord;
   selectable: boolean;
@@ -633,6 +639,9 @@ function CalendarChip({
   onDragEnd: () => void;
   className: string;
   style?: React.CSSProperties;
+  /** Lead with a domain-color dot — the tray's identity cue (the month chip
+   *  carries its color as a left bar instead). */
+  dot?: boolean;
 }) {
   const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
   return (
@@ -662,6 +671,7 @@ function CalendarChip({
           className="mr-1 inline-flex align-middle"
         />
       )}
+      {dot && <span className="mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full align-middle" style={{ background: r.accent }} />}
       <span className="truncate">{r.title || "Untitled"}</span>
     </div>
   );
@@ -739,7 +749,7 @@ function CalendarView({ config, selection }: { config: CollectionConfig; selecti
                       onDragStart={() => setDragId(r.id)}
                       onDragEnd={() => { setDragId(null); setOverKey(null); }}
                       className="fast flex w-full items-center truncate rounded-sm px-1.5 py-1 text-left text-meta"
-                      style={{ background: `${r.accent}1f`, color: "var(--text)", borderLeft: `2px solid ${r.accent}` }}
+                      style={{ background: softTint(r.accent, 18), color: "var(--text)", borderLeft: `2px solid ${r.accent}` }}
                     />
                   ))}
                   {items.length > 4 && <div className="mono px-1 text-micro text-muted">+{items.length - 4} more</div>}
@@ -766,9 +776,10 @@ function CalendarView({ config, selection }: { config: CollectionConfig; selecti
                 selectable={!!selectable}
                 selection={selection}
                 dragging={dragId === r.id}
+                dot
                 onDragStart={() => setDragId(r.id)}
                 onDragEnd={() => { setDragId(null); setOverKey(null); }}
-                className="fast flex shrink-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-caption hover:border-line-strong"
+                className="glass-card fast flex shrink-0 items-center gap-2 rounded-lg border border-line px-3 py-2 text-caption hover:border-line-strong"
               />
             ))}
             {unscheduled.length === 0 && <span className="mono text-label text-muted italic">Everything has a date.</span>}

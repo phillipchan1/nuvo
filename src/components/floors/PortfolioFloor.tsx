@@ -13,7 +13,7 @@ import {
   projectSprintCount,
   tasksOf,
 } from "../../lib/vertical";
-import { ripenessOfProject } from "../../lib/tending";
+import { ripenessOfProject, verdictOf } from "../../lib/tending";
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
@@ -31,6 +31,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
     const tasks = tasksOf(data, p.id);
     const done = tasks.filter((t) => t.status === "done").length;
     const inSprint = projectSprintCount(data, p.id);
+    const ripe = ripenessOfProject(data, p);
     return {
       id: p.id,
       title: p.name,
@@ -40,7 +41,8 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
       domainIcon: domain?.icon,
       accent: domain?.color ?? "var(--accent)",
       status: p.status,
-      ripeness: ripenessOfProject(data, p).stage,
+      ripeness: ripe.stage,
+      unsound: ripe.stage === "active" && verdictOf(data, "project", p.id)?.sound !== true,
       progress: projectProgress(data, p),
       startDate: p.startDate,
       targetDate: p.targetDate,

@@ -12,7 +12,7 @@
 //   3 · The Yield — the payoff: stages advanced, the readiness meter rising, and
 //       the unlock into the time layer.
 
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useVertical, type InitiativeSubtree } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { supabase } from "../../lib/supabase";
@@ -22,6 +22,7 @@ import {
   domainById,
   initiativeById,
   projectById,
+  type SoundnessVerdict,
   type VerticalData,
 } from "../../lib/vertical";
 import {
@@ -32,8 +33,14 @@ import {
   readTending,
   ripenessOfInitiative,
   ripenessOfProject,
+  sliceForAppetite,
+  soundnessSig,
+  tendedScore,
+  verdictOf,
+  type Appetite,
   type GroomCandidate,
   type RipenessRead,
+  type TendingRead,
 } from "../../lib/tending";
 import { InlineDate, RipenessPip } from "../floors/parts";
 import FlowShell, { type FlowStage } from "./FlowShell";
@@ -70,37 +77,75 @@ export default function TendingFlow({
   onOpenSunday: () => void;
   onStepBack?: () => void;
 }) {
-  const { data } = useVertical();
-
-  // Freeze the walk-list + the starting picture once, so items don't fall out of
-  // the queue as they ripen and the Yield can measure real movement.
-  const [reading] = useState(() => readTending(data));
-  const [startReadiness] = useState(() => reading.readiness);
-  const [startScores] = useState<Record<string, number>>(() =>
-    Object.fromEntries(reading.queue.map((c) => [c.id, c.ripeness.score])),
-  );
+  const { data, ready } = useVertical();
   const [idx, setIdx] = useState(0);
+  const [appetite, setAppetite] = useState<Appetite>(loadAppetite);
+  // the walk is frozen on Begin (the appetite-sliced queue + its starting scores)
+  const [walk, setWalk] = useState<{ queue: GroomCandidate[]; startScores: Record<string, number> } | null>(null);
 
-  const queue = reading.queue;
+  // Capture the reading + start readiness ONCE — but on the first render where the
+  // data is loaded, never on an empty snapshot (a reload mid-flow mounts before
+  // the queries resolve; freezing then would strand an empty queue).
+  const startRef = useRef<{ reading: TendingRead; readiness: number } | null>(null);
+  if (!startRef.current && ready) {
+    const r = readTending(data);
+    startRef.current = { reading: r, readiness: r.readiness };
+  }
+
+  if (!startRef.current) {
+    return (
+      <FlowShell
+        title="Tending"
+        sub="ripen what's ready"
+        inputs={{ label: "the portfolio", value: "…" }}
+        output={{ label: "ready for time", value: "…" }}
+        stages={[{ id: "reading", label: "The Reading", value: "…", body: <div className="text-body text-muted">Reading the portfolio…</div> }]}
+        step={0}
+        setStep={() => {}}
+        onClose={onClose}
+      />
+    );
+  }
+
+  const reading = startRef.current.reading;
+  const startReadiness = startRef.current.readiness;
+
+  // the appetite-sliced preview (before Begin) vs the frozen walk (after Begin)
+  const preview = sliceForAppetite(reading.groomable, appetite);
+  const queue = walk?.queue ?? preview;
+  const startScores = walk?.startScores ?? {};
   const total = queue.length;
   const done = idx >= total;
 
-  // session yield, measured live against the frozen start
-  const advances = queue
-    .map((c) => {
-      const now = liveRipeness(data, c)?.score ?? startScores[c.id];
-      return { c, from: startScores[c.id], to: now };
-    })
-    .filter((a) => a.to > a.from);
-  const stagesAdvanced = advances.reduce((s, a) => s + (a.to - a.from), 0);
+  const begin = () => {
+    const q = sliceForAppetite(reading.groomable, appetite);
+    setWalk({ queue: q, startScores: Object.fromEntries(q.map((c) => [c.id, tendedScore(data, c.kind, c.id)])) });
+    setStep(1);
+  };
+
+  // session yield, measured live (soundness-aware) against the frozen start
+  const advances = queue.filter((c) => tendedScore(data, c.kind, c.id) > (startScores[c.id] ?? 1));
   const liveReadiness = portfolioReadiness(data);
+  // projected readiness if this session's queue were brought fully home
+  const projected = portfolioReadiness(data, new Set(preview.map((c) => c.id)));
 
   const stages: FlowStage[] = [
     {
       id: "reading",
       label: "The Reading",
-      value: total ? `${total} to tend` : "all tended",
-      body: <ReadingStep data={data} reading={reading} onBegin={() => setStep(1)} />,
+      value: preview.length ? `${preview.length} to tend` : "all sound",
+      body: (
+        <ReadingStep
+          data={data}
+          reading={reading}
+          preview={preview}
+          appetite={appetite}
+          setAppetite={(a) => { setAppetite(a); saveAppetite(a); }}
+          fromReadiness={startReadiness}
+          projected={projected}
+          onBegin={begin}
+        />
+      ),
     },
     {
       id: "tending",
@@ -119,12 +164,11 @@ export default function TendingFlow({
     {
       id: "yield",
       label: "The Yield",
-      value: `+${stagesAdvanced}`,
+      value: `${advances.length} ripened`,
       body: (
         <YieldStep
           data={data}
           advances={advances}
-          stagesAdvanced={stagesAdvanced}
           fromReadiness={startReadiness}
           toReadiness={liveReadiness}
         />
@@ -141,7 +185,7 @@ export default function TendingFlow({
       inputs={{ label: "the portfolio", value: `${openCount} items` }}
       output={{
         label: "ready for time",
-        value: step === 2 ? `+${stagesAdvanced} stages` : `${liveReadiness}%`,
+        value: step === 2 ? `${liveReadiness}%` : `→ ~${projected}%`,
         reached: step === 2,
       }}
       stages={stages}
@@ -154,84 +198,141 @@ export default function TendingFlow({
   );
 }
 
+// appetite persists across sessions, like Collection's view pref
+const APPETITE_KEY = "nuvo.tending.appetite";
+function loadAppetite(): Appetite {
+  try {
+    const v = localStorage.getItem(APPETITE_KEY);
+    return v === "quick" || v === "solid" || v === "deep" ? v : "solid";
+  } catch { return "solid"; }
+}
+function saveAppetite(a: Appetite) {
+  try { localStorage.setItem(APPETITE_KEY, a); } catch { /* ignore */ }
+}
+
 // ── 1 · The Reading ──────────────────────────────────────────────────────────
+const APPETITES: { id: Appetite; label: string; note: string }[] = [
+  { id: "quick", label: "Quick", note: "1–2 items" },
+  { id: "solid", label: "Solid", note: "3–4 items" },
+  { id: "deep", label: "Deep", note: "all of them" },
+];
+
 function ReadingStep({
   data,
   reading,
+  preview,
+  appetite,
+  setAppetite,
+  fromReadiness,
+  projected,
   onBegin,
 }: {
   data: VerticalData;
-  reading: ReturnType<typeof readTending>;
+  reading: TendingRead;
+  preview: GroomCandidate[];
+  appetite: Appetite;
+  setAppetite: (a: Appetite) => void;
+  fromReadiness: number;
+  projected: number;
   onBegin: () => void;
 }) {
-  const { queue, silent, raw, readiness } = reading;
+  const { groomable, silent, raw } = reading;
+  const previewIds = new Set(preview.map((c) => c.id));
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-display masthead">What's ready to ripen</h1>
         <p className="mt-1 max-w-[680px] text-body text-muted">
-          Not the whole backlog — just the few that most warrant a moment. {ASSISTANT_NAME} drafts,
-          you react. Take it, reshape it, or let it rest.
+          Not the whole backlog — just the few that most warrant a moment. {ASSISTANT_NAME} drafts and
+          judges; you react. Take it, reshape it, or let it rest.
         </p>
       </div>
 
-      {/* readiness meter */}
+      {/* readiness meter — now with the projected payoff of this session */}
       <div className="mb-7 max-w-[520px]">
         <div className="flex items-baseline justify-between">
           <span className="section-label">Portfolio readiness</span>
-          <span className="mono text-label" style={{ color: "var(--accent)" }}>{readiness}%</span>
+          <span className="mono text-label">
+            <span style={{ color: "var(--accent)" }}>{fromReadiness}%</span>
+            {projected > fromReadiness && <span className="text-muted"> → ~{projected}%</span>}
+          </span>
         </div>
-        <div className="relative mt-1.5 h-2.5 rounded-full" style={{ background: "var(--line)" }}>
-          <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${readiness}%`, background: "var(--accent)" }} />
+        <div className="relative mt-1.5 h-2.5 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+          {/* ghost of the projection behind the current fill */}
+          <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${projected}%`, background: "var(--accent-soft)" }} />
+          <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${fromReadiness}%`, background: "var(--accent)" }} />
         </div>
       </div>
 
-      {/* the ~3 to tend */}
+      {/* appetite — how much to attempt this session */}
+      <div className="mb-7">
+        <div className="section-label mb-2">How much today?</div>
+        <div className="inline-flex rounded-md border border-line p-0.5">
+          {APPETITES.map((a) => {
+            const on = a.id === appetite;
+            return (
+              <button
+                key={a.id}
+                onClick={() => setAppetite(a.id)}
+                className="fast rounded-[5px] px-3.5 py-1.5 text-left"
+                style={{ background: on ? "var(--accent)" : "transparent" }}
+              >
+                <span className="block text-label font-medium leading-tight" style={{ color: on ? "#fff" : "var(--text)" }}>{a.label}</span>
+                <span className="mono block text-micro leading-tight" style={{ color: on ? "rgba(255,255,255,0.8)" : "var(--muted)" }}>{a.note}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* the sliced queue */}
       <section className="mb-7">
-        <div className="section-label mb-2">Up for tending · {queue.length}</div>
-        {queue.length === 0 ? (
+        <div className="section-label mb-2">Up for tending · {preview.length}{groomable.length > preview.length ? ` of ${groomable.length}` : ""}</div>
+        {preview.length === 0 ? (
           <div className="rounded-md border border-dashed border-line p-6 text-center text-caption text-muted">
-            Nothing needs grooming right now — every open item has an outcome and a path. Come back when you've captured something new.
+            Everything's sound — every open item has a verified outcome, a path, and a realistic finish line. Come back when you've captured something new.
           </div>
         ) : (
-          <div className="space-y-1.5">
-            {queue.map((c) => <ReadingRow key={c.id} data={data} c={c} />)}
+          <div className="border-t border-line">
+            {preview.map((c) => <ReadingRow key={c.id} data={data} c={c} />)}
           </div>
         )}
       </section>
 
       {(raw.length > 0 || silent.length > 0) && (
         <section className="mb-7 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {raw.length > 0 && (
+          {raw.filter((c) => !previewIds.has(c.id)).length > 0 && (
             <div>
-              <div className="section-label mb-2">Raw · {raw.length} need an outcome</div>
-              <div className="space-y-1.5">{raw.slice(0, 5).map((c) => <ReadingRow key={c.id} data={data} c={c} quiet />)}</div>
+              <div className="section-label mb-2">Raw · need an outcome</div>
+              <div className="border-t border-line">{raw.filter((c) => !previewIds.has(c.id)).slice(0, 5).map((c) => <ReadingRow key={c.id} data={data} c={c} quiet />)}</div>
             </div>
           )}
-          {silent.length > 0 && (
+          {silent.filter((c) => !previewIds.has(c.id)).length > 0 && (
             <div>
-              <div className="section-label mb-2">Silent · {silent.length} gone quiet</div>
-              <div className="space-y-1.5">{silent.slice(0, 5).map((c) => <ReadingRow key={c.id} data={data} c={c} quiet />)}</div>
+              <div className="section-label mb-2">Silent · gone quiet</div>
+              <div className="border-t border-line">{silent.filter((c) => !previewIds.has(c.id)).slice(0, 5).map((c) => <ReadingRow key={c.id} data={data} c={c} quiet />)}</div>
             </div>
           )}
         </section>
       )}
 
-      {queue.length > 0 && <Btn kind="primary" onClick={onBegin}>Begin tending →</Btn>}
+      {preview.length > 0 && <Btn kind="primary" onClick={onBegin}>Begin tending →</Btn>}
     </div>
   );
 }
 
 function ReadingRow({ data, c, quiet }: { data: VerticalData; c: GroomCandidate; quiet?: boolean }) {
   const accent = accentOf(data, c);
+  // Dissolve, don't frame — the survey is a list, so each item is a hairline-
+  // separated row on the paper (the Today "up next" idiom), not a white card.
   return (
-    <div className="flex items-center gap-3 rounded-md border border-line bg-surface px-3.5 py-2.5">
+    <div className="fast flex items-center gap-3 border-b border-line px-1.5 py-3 last:border-0 hover:bg-accent-soft/40">
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent }} />
-      <RipenessPip stage={c.ripeness.stage} />
+      <RipenessPip stage={c.ripeness.stage} unsound={c.ripeness.stage === "active" && !c.sound} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-body font-medium">{c.name}</div>
         <div className="mono truncate text-micro text-muted">
-          {c.kind} · {RIPENESS_ADVANCE[c.ripeness.stage]}
+          {c.kind} · {c.ripeness.stage === "active" && !c.sound ? "Verify it's sound" : RIPENESS_ADVANCE[c.ripeness.stage]}
         </div>
       </div>
       {!quiet && c.reasons.length > 0 && (
@@ -315,6 +416,30 @@ function TendCard({
   const name = project?.name ?? initiative?.name ?? c.name;
   const outcome = project?.outcome ?? initiative?.outcome ?? "";
 
+  // soundness — Nuvo's judgment, for the stages that look done (scaffolded/active)
+  const verdict = verdictOf(data, c.kind, c.id);
+  const [verifying, setVerifying] = useState(false);
+  const needsVerify = ripe.stage === "scaffolded" || ripe.stage === "active";
+
+  const verifyNow = async () => {
+    setVerifying(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("agent", { body: { verify: { kind: c.kind, id: c.id } } });
+      if (error) throw error;
+      if (res) await store.saveVerdict(c.kind, c.id, { ...(res as Omit<SoundnessVerdict, "sig">), sig: soundnessSig(data, c.kind, c.id) });
+    } catch (e) {
+      console.warn("[tending] verify failed", e);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // judge on open (once), but only the stages where soundness is the question
+  useEffect(() => {
+    if (needsVerify && !verdict && !verifying) void verifyNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsVerify, verdict]);
+
   // shared draft machinery
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -370,6 +495,15 @@ function TendCard({
     } catch (e) { fail(e); } finally { setBusy(false); }
   };
 
+  // apply Nuvo's sharper outcome from the verdict (then the user re-checks)
+  const applyOutcome = () => {
+    const s = verdict?.outcome.suggestion?.trim();
+    if (!s) return;
+    if (c.kind === "project") store.updateProject(c.id, { outcome: s });
+    else store.updateInitiative(c.id, { outcome: s });
+    setNote("Outcome sharpened — re-check to confirm.");
+  };
+
   // ── takers ──────────────────────────────────────────────────────────────────
   const takeOutcome = async () => {
     const v = outcomeDraft.trim();
@@ -409,27 +543,30 @@ function TendCard({
 
   const NextLabel = last ? "Finish → the yield" : "Skip · next ↓";
   const onSkip = () => (last ? onJumpYield() : onAdvance());
+  const unsoundActive = ripe.stage === "active" && verdict?.sound !== true;
 
   return (
-    <div className="rounded-lg border bg-surface" style={{ borderColor: accent }}>
+    // The focal card of the station — a glass pane lifted gently off the paper,
+    // carrying its domain as a soft left edge (not a hard full-color frame).
+    <div className="glass-card relative overflow-hidden rounded-xl border border-line" style={{ boxShadow: "var(--shadow-2)" }}>
+      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent }} />
       {/* head */}
-      <div className="flex items-start gap-3 border-b border-line px-5 py-4">
-        <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: accent }} />
+      <div className="flex items-start gap-3 border-b border-line px-6 py-5">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <RipenessPip stage={ripe.stage} />
+            <RipenessPip stage={ripe.stage} unsound={unsoundActive} />
             <span className="mono text-meta text-muted">{RIPENESS_LABEL[ripe.stage]} · {c.kind}</span>
           </div>
-          <h2 className="mt-0.5 text-head font-semibold leading-snug">{name}</h2>
-          {outcome && <div className="mt-0.5 text-caption text-muted">{outcome}</div>}
+          <h2 className="mt-1 text-head masthead leading-snug">{name}</h2>
+          {outcome && <div className="mt-1 text-caption text-muted">{outcome}</div>}
         </div>
         <span className="mono shrink-0 rounded-full border border-line px-2 py-0.5 text-micro text-muted" title={RIPENESS_HINT[ripe.stage]}>
-          {RIPENESS_ADVANCE[ripe.stage]}
+          {unsoundActive ? "Make it sound" : RIPENESS_ADVANCE[ripe.stage]}
         </span>
       </div>
 
       {/* body — the advance for this stage */}
-      <div className="px-5 py-4">
+      <div className="px-6 py-5">
         {ripe.stage === "raw" && (
           <RawBody
             busy={busy}
@@ -457,19 +594,24 @@ function TendCard({
           />
         )}
 
-        {ripe.stage === "scaffolded" && (
-          <ScaffoldedBody
-            kind={c.kind}
-            targetDate={project?.targetDate ?? initiative?.targetDate ?? null}
-            onSetDate={(v) => (c.kind === "project" ? store.updateProject(c.id, { targetDate: v }) : store.updateInitiative(c.id, { targetDate: v }))}
-            onPullToWeek={c.kind === "project" ? () => { store.addProjectReadyToSprint(c.id); setNote("Pulled this project's open tasks into the week."); } : undefined}
-            onDone={advanceTended}
-          />
+        {(ripe.stage === "scaffolded" || ripe.stage === "active") && (
+          <div>
+            <VerdictPanel v={verdict} verifying={verifying} onRecheck={() => void verifyNow()} />
+            <RepairBody
+              kind={c.kind}
+              verdict={verdict}
+              targetDate={project?.targetDate ?? initiative?.targetDate ?? null}
+              onSetDate={(v) => (c.kind === "project" ? store.updateProject(c.id, { targetDate: v }) : store.updateInitiative(c.id, { targetDate: v }))}
+              onApplyOutcome={verdict?.outcome.suggestion ? applyOutcome : undefined}
+              onPullToWeek={c.kind === "project" ? () => { store.addProjectReadyToSprint(c.id); setNote("Pulled this project's open tasks into the week."); } : undefined}
+              onAccept={advanceTended}
+            />
+          </div>
         )}
 
-        {(ripe.stage === "active" || ripe.stage === "resting") && (
+        {ripe.stage === "resting" && (
           <div className="text-caption text-muted">
-            {ripe.stage === "active" ? "This one's moving — handed to the time layer." : "Resting."}
+            Resting.
             <div className="mt-3"><Btn kind="primary" onClick={advanceTended}>Next ↓</Btn></div>
           </div>
         )}
@@ -492,7 +634,7 @@ function TendCard({
       </div>
 
       {/* foot — the universal reactions */}
-      <div className="flex items-center gap-2 border-t border-line px-5 py-3">
+      <div className="flex items-center gap-2 border-t border-line px-6 py-3.5">
         <button onClick={() => void rest()} className="fast mono text-label text-muted hover:text-ink" title="Park it as someday — out of the ladder until the Summit">
           ☾ not now · rest
         </button>
@@ -615,24 +757,80 @@ function ShapedBody({
   );
 }
 
-function ScaffoldedBody({ kind, targetDate, onSetDate, onPullToWeek, onDone }: {
+// The caution color — mirrors the "waiting" status (no amber token exists).
+const AMBER = "#D97706";
+
+// Nuvo's four-check read, with a re-check affordance.
+function VerdictPanel({ v, verifying, onRecheck }: { v: SoundnessVerdict | null; verifying: boolean; onRecheck: () => void }) {
+  if (verifying && !v) {
+    return <div className="mb-4 rounded-md border border-line bg-surface px-3 py-2 text-label text-muted">✦ {ASSISTANT_NAME} is checking this over…</div>;
+  }
+  if (!v) {
+    return (
+      <div className="mb-4 flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-label text-muted">
+        <span>Not verified yet.</span>
+        <button onClick={onRecheck} className="fast text-accent hover:underline">check with {ASSISTANT_NAME}</button>
+      </div>
+    );
+  }
+  const rows = [
+    { key: "Outcome", ok: v.outcome.ok, note: v.outcome.note },
+    { key: "Steps", ok: v.steps.verdict !== "thin", note: v.steps.note },
+    { key: "Time", ok: v.time.read !== "unrealistic", note: `${v.time.note}${v.time.estHours ? ` · ~${v.time.estHours}h` : ""}` },
+    { key: "Dates", ok: v.dates.ok, note: v.dates.note },
+  ];
+  return (
+    <div className="mb-4 rounded-md border bg-surface px-3 py-2.5" style={{ borderColor: v.sound ? "color-mix(in srgb, var(--accent) 40%, var(--line))" : `color-mix(in srgb, ${AMBER} 45%, var(--line))` }}>
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="text-label font-medium" style={{ color: v.sound ? "var(--accent)" : AMBER }}>
+          {v.sound ? `✓ ${ASSISTANT_NAME} says this is sound` : "Needs a look before it's ready"}
+        </span>
+        <div className="flex-1" />
+        {verifying ? <span className="mono text-micro text-muted">checking…</span> : <button onClick={onRecheck} className="fast mono text-micro text-muted hover:text-ink">↻ re-check</button>}
+      </div>
+      <div className="space-y-1">
+        {rows.map((r) => (
+          <div key={r.key} className="flex items-baseline gap-2 text-label">
+            <span className="shrink-0" style={{ color: r.ok ? "var(--accent)" : AMBER }}>{r.ok ? "✓" : "△"}</span>
+            <span className="w-12 shrink-0 text-muted">{r.key}</span>
+            <span className="min-w-0 flex-1 text-ink/90">{r.note || (r.ok ? "looks good" : "needs work")}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// The "make it sound" body for Scaffolded + Active cards — the cheap fixes Nuvo's
+// verdict points at (sharper outcome, a finish line, pull to week), then accept.
+function RepairBody({ kind, verdict, targetDate, onSetDate, onApplyOutcome, onPullToWeek, onAccept }: {
   kind: "project" | "initiative";
+  verdict: SoundnessVerdict | null;
   targetDate: string | null;
   onSetDate: (v: string | null) => void;
+  onApplyOutcome?: () => void;
   onPullToWeek?: () => void;
-  onDone: () => void;
+  onAccept: () => void;
 }) {
+  const sound = verdict?.sound === true;
   return (
     <div>
-      <div className="text-caption text-muted">
-        It has a next action — give it a finish line {kind === "project" ? "or pull it into the week" : ""} so the time layer can watch it.
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
+      {onApplyOutcome && verdict?.outcome.suggestion && (
+        <div className="mb-3 rounded-md border border-line bg-bg px-3 py-2">
+          <div className="section-label mb-1">Sharper outcome</div>
+          <div className="text-caption">{verdict.outcome.suggestion}</div>
+          <div className="mt-2"><Btn onClick={onApplyOutcome}>Use this outcome</Btn></div>
+        </div>
+      )}
+      {verdict && verdict.steps.verdict === "thin" && verdict.steps.missing?.length ? (
+        <div className="mb-3 text-label text-muted">Missing: {verdict.steps.missing.join(" · ")}. {kind === "project" ? "Open in Nuvo or the project to add them." : ""}</div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
         <span className="mono flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-label">
           finish line <InlineDate value={targetDate} onChange={onSetDate} />
         </span>
         {onPullToWeek && <Btn onClick={onPullToWeek}>★ pull to week</Btn>}
-        <Btn kind="primary" onClick={onDone}>Done →</Btn>
+        <Btn kind="primary" onClick={onAccept}>{sound ? "Sound → next" : "Looks right → next"}</Btn>
       </div>
     </div>
   );
@@ -668,19 +866,21 @@ function Include({ on, accent, onToggle }: { on: boolean; accent: string; onTogg
 function YieldStep({
   data,
   advances,
-  stagesAdvanced,
   fromReadiness,
   toReadiness,
 }: {
   data: VerticalData;
-  advances: { c: GroomCandidate; from: number; to: number }[];
-  stagesAdvanced: number;
+  advances: GroomCandidate[];
   fromReadiness: number;
   toReadiness: number;
 }) {
-  // items that reached a time-ready stage this session — the unlock
-  const unlocked = advances.filter((a) => a.to >= 2);
   const items = advances.length;
+  // items now at a time-ready stage (scaffolded/active) — the unlock
+  const unlocked = advances.filter((c) => {
+    const stage = liveRipeness(data, c)?.stage;
+    return stage === "scaffolded" || stage === "active";
+  });
+  const delta = toReadiness - fromReadiness;
 
   return (
     <div>
@@ -688,11 +888,11 @@ function YieldStep({
         <span className="wordmark wordmark-grad text-body">{ASSISTANT_NAME}</span>
         <span className="mono ml-2 text-meta text-muted">the yield</span>
         <h1 className="mt-2 text-display masthead">
-          {stagesAdvanced > 0 ? `You ripened ${items} ${items === 1 ? "item" : "items"}.` : "Nothing moved — and that's a fine call."}
+          {items > 0 ? `You ripened ${items} ${items === 1 ? "item" : "items"}.` : "Nothing moved — and that's a fine call."}
         </h1>
         <p className="mt-1 max-w-[640px] text-head leading-relaxed text-ink/90">
-          {stagesAdvanced > 0
-            ? `+${stagesAdvanced} ${stagesAdvanced === 1 ? "stage" : "stages"} across ${items} ${items === 1 ? "item" : "items"}. The ones that crossed the line are ready for the time layer.`
+          {items > 0
+            ? `${delta > 0 ? `+${delta} points of portfolio readiness. ` : ""}The ones that crossed the line are ready for the time layer.`
             : "You looked, and decided to leave things where they are. The portfolio's still yours to come back to."}
         </p>
       </div>
@@ -712,8 +912,8 @@ function YieldStep({
       {unlocked.length > 0 && (
         <section>
           <div className="section-label mb-2">Ready to place on the timeline · {unlocked.length}</div>
-          <div className="space-y-1.5">
-            {unlocked.map((a) => <UnlockRow key={a.c.id} data={data} c={a.c} />)}
+          <div className="border-t border-line">
+            {unlocked.map((c) => <UnlockRow key={c.id} data={data} c={c} />)}
           </div>
         </section>
       )}
@@ -728,7 +928,7 @@ function UnlockRow({ data, c }: { data: VerticalData; c: GroomCandidate }) {
   const initiative = c.kind === "initiative" ? initiativeById(data, c.id) : null;
   const targetDate = project?.targetDate ?? initiative?.targetDate ?? null;
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface px-3.5 py-2.5">
+    <div className="flex flex-wrap items-center gap-3 border-b border-line px-1.5 py-3 last:border-0">
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent }} />
       <span className="min-w-0 flex-1 truncate text-body font-medium">{project?.name ?? initiative?.name ?? c.name}</span>
       <span className="mono flex items-center gap-1.5 text-label text-muted">

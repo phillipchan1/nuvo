@@ -8,14 +8,17 @@
 import { differenceInCalendarDays } from "date-fns";
 import { parseDateISO, todayISO } from "./dates";
 import {
+  initiativeById,
   isOpenStatus,
   isProjectComplete,
   isProjectInFlight,
   looseTasksOfInitiative,
+  projectById,
   projectsOf,
   tasksOf,
   type Initiative,
   type Project,
+  type SoundnessVerdict,
   type VerticalData,
   type VTask,
 } from "./vertical";
@@ -96,6 +99,66 @@ export function ripenessOfInitiative(d: VerticalData, i: Initiative): RipenessRe
   return SCAFFOLDED;
 }
 
+// ── Soundness — Nuvo's judgment, cached and staleness-aware ──────────────────
+// A structural signature of the soundness-relevant inputs. When it changes, the
+// cached verdict is stale (the item was edited since it was judged). Projects
+// have no updated_at, so this recomputed signature — not a timestamp — is the test.
+export function soundnessSig(d: VerticalData, kind: "project" | "initiative", id: string): string {
+  if (kind === "project") {
+    const p = projectById(d, id);
+    if (!p) return "";
+    const ts = tasksOf(d, id).map((t) => `${t.title}|${t.durationMins}|${t.status === "done" ? 1 : 0}`).join("~");
+    return `o:${p.outcome}|s:${p.startDate}|t:${p.targetDate}|st:${p.status}|T:${ts}`;
+  }
+  const i = initiativeById(d, id);
+  if (!i) return "";
+  const ps = projectsOf(d, id).map((p) => `${p.name}|${p.outcome}|${tasksOf(d, p.id).length}`).join("~");
+  const loose = looseTasksOfInitiative(d, id).map((t) => `${t.title}|${t.durationMins}|${t.status === "done" ? 1 : 0}`).join("~");
+  const krs = i.keyResults.map((k) => `${k.name}|${k.target}`).join("~");
+  return `o:${i.outcome}|s:${i.startDate}|t:${i.targetDate}|st:${i.status}|P:${ps}|L:${loose}|K:${krs}`;
+}
+
+/** The cached verdict, but only if it's still fresh (signature unchanged). */
+export function verdictOf(d: VerticalData, kind: "project" | "initiative", id: string): SoundnessVerdict | null {
+  const item = kind === "project" ? projectById(d, id) : initiativeById(d, id);
+  const v = item?.verification ?? null;
+  if (!v) return null;
+  if (v.sig !== soundnessSig(d, kind, id)) return null; // edited since judged → stale
+  return v;
+}
+
+/** Truly tended = structurally Active AND Nuvo-verified sound (or shipped). */
+export function isTended(d: VerticalData, kind: "project" | "initiative", id: string): boolean {
+  const item = kind === "project" ? projectById(d, id) : initiativeById(d, id);
+  if (!item) return false;
+  if (isProjectComplete(item.status)) return true; // shipped needs no judgment
+  const stage = (kind === "project"
+    ? ripenessOfProject(d, item as Project)
+    : ripenessOfInitiative(d, item as Initiative)).stage;
+  if (stage !== "active") return false;
+  return verdictOf(d, kind, id)?.sound === true;
+}
+
+/** Readiness contribution of one open/complete item, 0..1. An Active item that
+ *  Nuvo hasn't verified sound is NOT fully ready — it counts as scaffolded. */
+function effectiveScore(d: VerticalData, kind: "project" | "initiative", item: Project | Initiative): number | null {
+  const r = kind === "project" ? ripenessOfProject(d, item as Project) : ripenessOfInitiative(d, item as Initiative);
+  if (r.stage === "resting") return null; // off the ladder
+  if (isProjectComplete(item.status)) return 1;
+  let s = Math.max(0, r.score);
+  if (r.stage === "active" && verdictOf(d, kind, item.id)?.sound !== true) s = 2;
+  return s / 3;
+}
+
+/** One item's 0..1 readiness by id — soundness-aware. The session measures
+ *  advances in these units, so "became sound" (active-unsound → active-sound)
+ *  counts as movement even though the structural stage didn't change. */
+export function tendedScore(d: VerticalData, kind: "project" | "initiative", id: string): number {
+  const item = kind === "project" ? projectById(d, id) : initiativeById(d, id);
+  if (!item) return 0;
+  return effectiveScore(d, kind, item) ?? 0;
+}
+
 // ── Per-item "last touched" — the silent / faithfulness signal ───────────────
 function lastDoneAt(tasks: VTask[]): number | null {
   let last: number | null = null;
@@ -133,16 +196,20 @@ export interface GroomCandidate {
   /** active-but-stale, undated — the "silent" failure mode. */
   silent: boolean;
   daysSinceTouch: number | null;
+  /** Nuvo has judged it sound (fresh verdict). */
+  sound: boolean;
+  /** has a fresh verdict at all (sound or not). */
+  verified: boolean;
 }
 
 export interface TendingRead {
-  /** the ripest-few (~limit) most worth grooming now. */
-  queue: GroomCandidate[];
+  /** every item worth grooming, ranked — the session slices this by appetite. */
+  groomable: GroomCandidate[];
   /** active in-flight items that have gone quiet and undated. */
   silent: GroomCandidate[];
   /** items with a name but no outcome — the raw failure mode. */
   raw: GroomCandidate[];
-  /** 0..100 portfolio readiness — the meter the Yield animates. */
+  /** 0..100 portfolio readiness — soundness-aware. */
   readiness: number;
 }
 
@@ -208,6 +275,15 @@ function buildCandidate(
   const gap = Math.max(0, 3 - ripeness.score);
   priority += gap * 8;
 
+  // soundness — an Active item Nuvo hasn't verified sound still needs a look
+  const verdict = verdictOf(d, kind, item.id);
+  const verified = verdict != null;
+  const sound = verdict?.sound === true;
+  if (ripeness.stage === "active" && !sound) {
+    priority += 18;
+    reasons.push(verified ? "needs work" : "unverified");
+  }
+
   return {
     kind,
     id: item.id,
@@ -218,18 +294,22 @@ function buildCandidate(
     priority,
     silent,
     daysSinceTouch,
+    sound,
+    verified,
   };
 }
 
-/** A candidate is groomable when it's open, not resting, not freshly tended,
- *  and still has a stage to advance (active items are handed to the time layer). */
+/** A candidate is groomable when it's open, not resting, and not freshly tended.
+ *  An Active item is "done" only once Nuvo has verified it sound — until then it
+ *  still warrants a look, so it stays groomable. */
 function isGroomable(c: GroomCandidate, tendedDays: number | null): boolean {
-  if (c.ripeness.stage === "resting" || c.ripeness.stage === "active") return false;
+  if (c.ripeness.stage === "resting") return false;
   if (tendedDays != null && tendedDays < RECENTLY_TENDED_DAYS) return false;
+  if (c.ripeness.stage === "active") return !c.sound;
   return true;
 }
 
-export function readTending(d: VerticalData, now: Date = new Date(), limit = 3): TendingRead {
+export function readTending(d: VerticalData, now: Date = new Date()): TendingRead {
   const candidates: { c: GroomCandidate; tendedDays: number | null }[] = [];
 
   for (const p of d.projects) {
@@ -246,27 +326,36 @@ export function readTending(d: VerticalData, now: Date = new Date(), limit = 3):
     .map(({ c }) => c)
     .sort((a, b) => b.priority - a.priority);
 
-  const queue = groomable.slice(0, limit);
-  const queued = new Set(queue.map((c) => c.id));
-
-  // the two failure modes, flagged separately (may overlap the queue)
+  // the two failure modes, flagged for the Reading (may overlap the queue)
   const all = candidates.map(({ c }) => c);
-  const silent = all.filter((c) => c.silent && !queued.has(c.id)).sort((a, b) => b.priority - a.priority);
-  const raw = all.filter((c) => c.ripeness.stage === "raw" && !queued.has(c.id)).sort((a, b) => b.priority - a.priority);
+  const silent = all.filter((c) => c.silent).sort((a, b) => b.priority - a.priority);
+  const raw = all.filter((c) => c.ripeness.stage === "raw").sort((a, b) => b.priority - a.priority);
 
-  return { queue, silent, raw, readiness: portfolioReadiness(d) };
+  return { groomable, silent, raw, readiness: portfolioReadiness(d) };
 }
 
-/** 0..100 — mean ripeness across open items; the meter the Yield animates up.
- *  Resting items step out of the ladder and don't drag the read down. */
-export function portfolioReadiness(d: VerticalData): number {
+/** Slice the ranked groomable list to a session appetite. */
+export type Appetite = "quick" | "solid" | "deep";
+export const APPETITE_SIZE: Record<Appetite, number> = { quick: 2, solid: 4, deep: 99 };
+export function sliceForAppetite(groomable: GroomCandidate[], appetite: Appetite): GroomCandidate[] {
+  return groomable.slice(0, APPETITE_SIZE[appetite]);
+}
+
+/**
+ * 0..100 portfolio readiness — soundness-aware. An Active item Nuvo hasn't
+ * verified sound counts as scaffolded, not done. Pass `assumeReady` (a set of
+ * ids) to project the result of bringing those items fully home — the Reading's
+ * "47% → ~62%" preview.
+ */
+export function portfolioReadiness(d: VerticalData, assumeReady?: Set<string>): number {
   const scores: number[] = [];
-  const collect = (r: RipenessRead) => {
-    if (r.stage === "resting") return;
-    scores.push(Math.max(0, r.score) / 3);
+  const consider = (kind: "project" | "initiative", item: Project | Initiative) => {
+    if (!isOpenStatus(item.status) && !isProjectComplete(item.status)) return;
+    const s = assumeReady?.has(item.id) ? 1 : effectiveScore(d, kind, item);
+    if (s != null) scores.push(s);
   };
-  for (const p of d.projects) if (isOpenStatus(p.status) || isProjectComplete(p.status)) collect(ripenessOfProject(d, p));
-  for (const i of d.initiatives) if (isOpenStatus(i.status) || isProjectComplete(i.status)) collect(ripenessOfInitiative(d, i));
+  for (const p of d.projects) consider("project", p);
+  for (const i of d.initiatives) consider("initiative", i);
   if (scores.length === 0) return 0;
   return Math.round((scores.reduce((s, x) => s + x, 0) / scores.length) * 100);
 }

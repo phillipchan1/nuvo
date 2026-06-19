@@ -38,6 +38,23 @@ export interface KeyResult {
   unit: string;
 }
 
+/**
+ * Nuvo's soundness judgment of a project / initiative — the "are the pieces
+ * *good*?" read that gates whether something is truly tended. Persisted as the
+ * `verification` jsonb; `sig` is a structural signature so we know when the
+ * verdict has gone stale (the item changed since it was judged). The verify
+ * edge function returns everything but `sig`; the client stamps that on save.
+ */
+export interface SoundnessVerdict {
+  sig: string;
+  sound: boolean;
+  confidence: number; // 0..1
+  outcome: { ok: boolean; note: string; suggestion?: string };
+  steps: { ok: boolean; note: string; verdict: "thin" | "sound" | "bloated"; missing?: string[] };
+  time: { ok: boolean; note: string; read: "comfortable" | "tight" | "unrealistic"; estHours: number };
+  dates: { ok: boolean; note: string };
+}
+
 export interface Initiative {
   id: string;
   domainId: string;
@@ -53,6 +70,8 @@ export interface Initiative {
   keyResults: KeyResult[];
   createdAt: string | null; // when the bet was made — the "recently created" grooming prior
   tendedAt: string | null; // last groomed/rested in a Tending session — the snooze
+  verification: SoundnessVerdict | null; // Nuvo's last soundness judgment (cached)
+  verifiedAt: string | null; // when that judgment was made
 }
 
 export type ProjectStatus = "backlog" | "in_progress" | "waiting" | "cancelled" | "complete";
@@ -70,6 +89,8 @@ export interface Project {
   progress: number; // 0..100 — fallback when no tasks yet
   createdAt: string | null; // when created — the "recently created" grooming prior
   tendedAt: string | null; // last groomed/rested in a Tending session — the snooze
+  verification: SoundnessVerdict | null; // Nuvo's last soundness judgment (cached)
+  verifiedAt: string | null; // when that judgment was made
 }
 
 /** A task as the floors see it — a thin view over a live `tasks` row. */
@@ -151,6 +172,8 @@ export interface InitiativeRow {
   sort_order: number;
   created_at?: string;
   tended_at?: string | null;
+  verification?: SoundnessVerdict | null;
+  verified_at?: string | null;
   key_results?: KeyResultRow[];
 }
 
@@ -168,6 +191,8 @@ export interface ProjectRow {
   sort_order: number;
   created_at?: string;
   tended_at?: string | null;
+  verification?: SoundnessVerdict | null;
+  verified_at?: string | null;
 }
 
 // ── Row → view mapping ───────────────────────────────────────────────────────
@@ -272,6 +297,8 @@ export function buildVertical(
       momentum: (["up", "flat", "down"].includes(i.momentum) ? i.momentum : "flat") as Momentum,
       createdAt: i.created_at ?? null,
       tendedAt: i.tended_at ?? null,
+      verification: i.verification ?? null,
+      verifiedAt: i.verified_at ?? null,
       keyResults: [...(i.key_results ?? [])]
         .sort((a, b) => a.sort_order - b.sort_order)
         .map((k) => ({
@@ -301,6 +328,8 @@ export function buildVertical(
       progress: p.progress,
       createdAt: p.created_at ?? null,
       tendedAt: p.tended_at ?? null,
+      verification: p.verification ?? null,
+      verifiedAt: p.verified_at ?? null,
     }));
 
   const projectById = new Map(projects.map((p) => [p.id, p]));

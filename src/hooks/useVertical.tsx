@@ -19,6 +19,7 @@ import {
   type KeyResult,
   type Project,
   type ProjectRow,
+  type SoundnessVerdict,
   type VerticalData,
   type VTask,
 } from "../lib/vertical";
@@ -131,6 +132,9 @@ export interface VerticalStore {
   /** Stamp an item as tended (the grooming-recency / snooze marker); `rest`
    *  parks it (status → waiting / "Resting") in the same write. */
   tend: (kind: "project" | "initiative", id: string, opts?: { rest?: boolean }) => Promise<void>;
+  /** Cache Nuvo's soundness judgment (verification + verified_at). Judging is
+   *  read-only to the plan — it does NOT stamp tended_at (that's an action). */
+  saveVerdict: (kind: "project" | "initiative", id: string, verdict: SoundnessVerdict) => Promise<void>;
 }
 
 /** The attachable half of a BlueprintTree — what Tending grows under an
@@ -404,6 +408,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           status: normalizeInitiativeStatus(row.status ?? "in_progress"), progress: row.progress ?? 0,
           momentum: (row.momentum ?? "flat") as Initiative["momentum"], keyResults: [],
           createdAt: row.created_at ?? null, tendedAt: row.tended_at ?? null,
+          verification: null, verifiedAt: null,
         };
       },
       updateInitiative: (id, patch) => {
@@ -487,6 +492,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           targetDate: row.target_date ?? null,
           status: (row.status ?? "backlog") as Project["status"], progress: row.progress ?? 0,
           createdAt: row.created_at ?? null, tendedAt: row.tended_at ?? null,
+          verification: null, verifiedAt: null,
         };
       },
       updateProject: (id, patch) => {
@@ -886,6 +892,15 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         const key = kind === "project" ? ["vertical", "projects"] : ["vertical", "initiatives"];
         const rowPatch: Record<string, unknown> = { tended_at: new Date().toISOString() };
         if (opts?.rest) rowPatch.status = "waiting";
+        patchRows(key, id, rowPatch);
+        await writeTable(table, id, rowPatch);
+        invalidate(["vertical"]);
+      },
+
+      saveVerdict: async (kind, id, verdict) => {
+        const table = kind === "project" ? "projects" : "initiatives";
+        const key = kind === "project" ? ["vertical", "projects"] : ["vertical", "initiatives"];
+        const rowPatch: Record<string, unknown> = { verification: verdict, verified_at: new Date().toISOString() };
         patchRows(key, id, rowPatch);
         await writeTable(table, id, rowPatch);
         invalidate(["vertical"]);

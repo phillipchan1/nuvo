@@ -33,7 +33,7 @@ import {
   type VTask,
   type VerticalData,
 } from "../../lib/vertical";
-import { ripenessOfInitiative, ripenessOfProject } from "../../lib/tending";
+import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../lib/tending";
 import { RipenessPip } from "../floors/parts";
 
 type Store = ReturnType<typeof useVertical>;
@@ -256,7 +256,7 @@ function ListScreen({
             subtitle={projectContext(d, p)}
             meta={
               <span className="mono flex shrink-0 items-center gap-1.5 text-caption text-muted">
-                <RipenessPip stage={ripenessOfProject(d, p).stage} />
+                {(() => { const rp = ripenessOfProject(d, p); return <RipenessPip stage={rp.stage} unsound={rp.stage === "active" && verdictOf(d, "project", p.id)?.sound !== true} />; })()}
                 {projectProgress(d, p)}%
               </span>
             }
@@ -285,7 +285,7 @@ function ListScreen({
               subtitle={domainById(d, i.domainId)?.name ?? undefined}
               meta={
                 <span className="mono flex shrink-0 items-center gap-1.5 text-caption text-muted">
-                  <RipenessPip stage={ripenessOfInitiative(d, i).stage} />
+                  {(() => { const ri = ripenessOfInitiative(d, i); return <RipenessPip stage={ri.stage} unsound={ri.stage === "active" && verdictOf(d, "initiative", i.id)?.sound !== true} />; })()}
                   <span>{mom?.glyph}</span>
                   <span>{initiativeProgress(d, i)}%</span>
                 </span>

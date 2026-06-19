@@ -3,6 +3,7 @@ import { buildContext, contextToPrompt } from "./context.ts";
 import { scaffoldProject, scaffoldDraft } from "./scaffold.ts";
 import { blueprintInitiative } from "./blueprint.ts";
 import { draftOutcome } from "./draftOutcome.ts";
+import { verifyItem } from "./verify.ts";
 import { parsePriorities, breakdownPriority } from "./priorities.ts";
 import { prepareTask } from "./prepare.ts";
 import { narrate } from "./narrate.ts";
@@ -147,6 +148,11 @@ Deno.serve(async (req) => {
     // initiative that has a name but no goal yet.
     if (body.draftOutcome?.id) {
       return json(await draftOutcome(user.id, body.draftOutcome));
+    }
+    // Tending's soundness judgment: is this item genuinely ready (outcome, steps,
+    // time, dates), or just structurally filled in?
+    if (body.verify?.id) {
+      return json(await verifyItem(user.id, body.verify));
     }
     // The create-moment variant: draft a project's first tasks from typed
     // context, before the project row exists.
