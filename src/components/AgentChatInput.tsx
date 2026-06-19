@@ -92,17 +92,19 @@ export default function AgentChatInput({
           compact ? "px-2.5 py-2" : "px-3 py-2.5"
         }`}
       >
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={loading}
-          title="Attach files"
-          className="agent-attach-btn fast mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-head text-muted transition-colors hover:bg-surface hover:text-accent disabled:opacity-40"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-          </svg>
-        </button>
+        {compact && (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={loading}
+            title="Attach files"
+            className="agent-attach-btn fast mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-head text-muted transition-colors hover:bg-surface hover:text-accent disabled:opacity-40"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
+        )}
         <input
           ref={fileRef}
           type="file"
@@ -134,14 +136,27 @@ export default function AgentChatInput({
           onClick={onSubmit}
           disabled={!canSend}
           aria-label="Send"
-          className="agent-send-btn fast mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-head font-medium text-white shadow-sm transition-[transform,filter,box-shadow] hover:brightness-110 hover:shadow-[0_4px_12px_-4px_var(--accent-glow)] active:translate-y-px disabled:opacity-30 disabled:shadow-none"
+          className={`agent-send-btn fast shrink-0 flex items-center justify-center rounded-lg bg-accent font-medium text-white shadow-sm transition-[transform,filter,box-shadow] hover:brightness-110 hover:shadow-[0_4px_12px_-4px_var(--accent-glow)] active:translate-y-px disabled:opacity-30 disabled:shadow-none ${
+            compact ? "mb-0.5 h-8 w-8 text-head" : "mb-1 h-6 w-6 text-caption"
+          }`}
         >
           ↑
         </button>
       </div>
 
       {!compact && (
-        <div className="mt-1.5 px-0.5">
+        <div className="mt-1.5 flex items-center gap-1.5 px-0.5">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={loading}
+            title="Attach files"
+            className="agent-attach-btn fast flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-accent disabled:opacity-40"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
           <span className="mono text-meta text-muted">
             Enter to send · Shift+Enter newline · drag files anywhere
           </span>

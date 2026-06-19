@@ -77,6 +77,12 @@ export default function AgentSidebar({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [open]);
+
   const submit = (text?: string) => {
     const msg = (text ?? input).trim();
     if ((!msg && attachments.length === 0) || loading) return;
@@ -123,7 +129,7 @@ export default function AgentSidebar({
 
   return (
     <aside
-      className="agent-rail relative flex w-[380px] shrink-0 flex-col border-l border-line"
+      className="agent-rail relative flex w-[380px] shrink-0 flex-col"
       {...dropHandlers}
     >
       {dragging && (

@@ -206,7 +206,7 @@ function AppShellInner() {
 
   return (
     <div className="atmosphere flex h-full">
-      <Spine rung={rung} setRung={goRung} openFlow={openFlow} openSettings={() => openOverlay("settings")} />
+      <Spine rung={rung} setRung={goRung} openSettings={() => openOverlay("settings")} />
       <div className="flex min-w-0 flex-1">
         <div className="relative min-w-0 flex-1">
           <Planner openFlow={openFlow} />

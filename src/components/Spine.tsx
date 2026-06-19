@@ -13,18 +13,11 @@ const RUNGS: { id: Rung; label: string }[] = [
   { id: "domain", label: "Domain" },
 ];
 
+// The shared vocabulary for the rituals (Planner command palette,
+// useAppNavigation). The spine no longer launches them — it's navigation + the
+// readiness gauge. Flows open from the work surfaces instead: the floor "now
+// what" banners, Today's Plan, the Sunday nudge, and the command palette.
 export type FlowName = "sunday" | "summit" | "tending";
-
-// A flow is the *act* of deciding at an altitude. Floors are for looking;
-// flows are for deciding — so each ritual lives on the rung it operates on.
-// Tending spans both Build rungs (projects AND initiatives), so it hangs off
-// each — it surfaces whatever is ripest across the two.
-const RUNG_FLOW: Partial<Record<Rung, { flow: FlowName; label: string; sub: string }>> = {
-  day: { flow: "sunday", label: "Sunday", sub: "compose the week" },
-  project: { flow: "tending", label: "Tending", sub: "ripen what's ready" },
-  initiative: { flow: "tending", label: "Tending", sub: "ripen what's ready" },
-  domain: { flow: "summit", label: "Summit", sub: "decide the quarter" },
-};
 
 // The spine reads like a table of contents for your life. Two zones:
 // Execute (Today · Schedule — time horizons) and Build (Project · Initiative ·
@@ -52,12 +45,10 @@ const activePill: CSSProperties = {
 export default function Spine({
   rung,
   setRung,
-  openFlow,
   openSettings,
 }: {
   rung: Rung;
   setRung: (r: Rung) => void;
-  openFlow: (f: FlowName) => void;
   openSettings: () => void;
 }) {
   // Reads from the same cached vertical snapshot the floors use — no extra
@@ -68,13 +59,12 @@ export default function Spine({
 
   const renderRung = (r: { id: Rung; label: string }) => {
     const on = r.id === rung;
-    const rf = RUNG_FLOW[r.id];
     const n = LADDER.indexOf(r.id) + 1;
     const fs = spine?.floors[r.id] ?? null;
     const cue = fs?.cue ?? null;
 
     return (
-      <div key={r.id} className="group relative">
+      <div key={r.id}>
         <button
           onClick={() => setRung(r.id)}
           title={`${r.label} (⌘${n})`}
@@ -134,31 +124,6 @@ export default function Spine({
             </span>
           )}
         </button>
-
-        {/* Hover lifts the ceremony entry — a glass card floating clear of the
-            rail, carrying the live cue (or the ritual's standing invitation when
-            the floor is calm). Always reachable; the demand below is never
-            hover-gated, only this express shortcut into the flow is. */}
-        {rf && (
-          <button
-            onClick={() => openFlow(rf.flow)}
-            title={`${rf.label} — ${rf.sub}`}
-            className="glass-card elev-2 fast invisible absolute top-1/2 z-40 flex -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-lg border border-line py-1.5 pl-2.5 pr-3 text-left opacity-0 group-hover:visible group-hover:opacity-100"
-            style={{ left: "calc(100% - 8px)" }}
-          >
-            <span className="text-caption" style={{ color: "var(--accent)" }}>✦</span>
-            <span>
-              <span className="block text-label font-medium leading-tight text-ink">{rf.label}</span>
-              <span
-                className="mono block text-micro leading-tight"
-                style={{ color: cue ? toneColor(cue.tone) : "var(--muted)" }}
-              >
-                {cue ? cue.label : rf.sub}
-              </span>
-            </span>
-            <span className="text-label text-muted">▸</span>
-          </button>
-        )}
       </div>
     );
   };

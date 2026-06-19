@@ -300,6 +300,13 @@ html.tauri-macos .app-topbar {
   padding-top: var(--titlebar-inset-top);
 }
 
+/* Full-screen ritual overlays (FlowShell) have no spine, so they need both top
+   AND left padding to clear the macOS traffic lights. */
+html.tauri-macos .flow-topbar {
+  padding-top: var(--titlebar-inset-top);
+  padding-left: var(--titlebar-inset-left);
+}
+
 /* The Schedule has no chrome header. Instead the rail + the calendar toolbar
    carry this inset so their own surfaces rise to fill the macOS titlebar zone
    (traffic lights float over the spine; nothing reads as an empty bar). On the
@@ -690,6 +697,9 @@ textarea:focus {
 .fc .fc-scrollgrid > * > * {
   border: none;
 }
+/* FullCalendar forces overflow-y:scroll — hide the scrollbar, keep scrollability */
+.fc .fc-scroller { scrollbar-width: none; }
+.fc .fc-scroller::-webkit-scrollbar { display: none; }
 
 .fc .fc-timegrid-slot {
   height: calc(var(--nuvo-hour, 52px) / 4);

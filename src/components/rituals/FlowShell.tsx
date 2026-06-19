@@ -61,6 +61,7 @@ export default function FlowShell({
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      if (e.key === "Escape") { onClose(); return; }
       if (e.key === "ArrowRight") setStep(Math.min(last, step + 1));
       if (e.key === "ArrowLeft") {
         if (step > 0) onStepBack ? onStepBack() : setStep(Math.max(0, step - 1));
@@ -68,12 +69,12 @@ export default function FlowShell({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step, last, setStep, finished, onStepBack]);
+  }, [step, last, setStep, finished, onStepBack, onClose]);
 
   return (
     <div className="scrim atmosphere fixed inset-0 z-50 flex flex-col">
       {/* the pipeline header: inputs → stages → output, all live */}
-      <header className="flex shrink-0 items-center gap-4 border-b border-line bg-surface px-5 py-2 elev-1">
+      <header className="flow-topbar flex shrink-0 items-center gap-4 border-b border-line bg-surface px-5 py-2 elev-1">
         <div className="w-[108px] shrink-0">
           <div className="wordmark text-head">{title}</div>
           <div className="mono text-meta text-muted">{sub}</div>

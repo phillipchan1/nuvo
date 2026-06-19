@@ -197,22 +197,36 @@ function ThemeCard({
 }
 
 // ── Appearance: the warmth axis (a swatch per mood) ───────────────────────
-const PALETTE_SWATCH: Record<PaletteMood, { bg: string; surface: string; line: string; accent: string }> = {
-  daybreak: { bg: "#f4f1ea", surface: "#fffdf8", line: "#e7e0d2", accent: "#92568a" },
-  dusk: { bg: "#f1f0f3", surface: "#ffffff", line: "#e6e4ec", accent: "#6d54c0" },
-  fog: { bg: "#eef0f5", surface: "#ffffff", line: "#e4e6ef", accent: "#5a4be2" },
+const PALETTE_SWATCH: Record<PaletteMood, {
+  light: { bg: string; surface: string; line: string; accent: string };
+  dark: { bg: string; surface: string; line: string; accent: string };
+}> = {
+  daybreak: {
+    light: { bg: "#f4f1ea", surface: "#fffdf8", line: "#e7e0d2", accent: "#92568a" },
+    dark:  { bg: "#17130e", surface: "#201b14", line: "#332c20", accent: "#c692bf" },
+  },
+  dusk: {
+    light: { bg: "#f1f0f3", surface: "#ffffff", line: "#e6e4ec", accent: "#6d54c0" },
+    dark:  { bg: "#16151c", surface: "#1e1d26", line: "#302e3b", accent: "#9a86f0" },
+  },
+  fog: {
+    light: { bg: "#eef0f5", surface: "#ffffff", line: "#e4e6ef", accent: "#5a4be2" },
+    dark:  { bg: "#141320", surface: "#1c1a28", line: "#2d2b3d", accent: "#8b80ff" },
+  },
 };
 
 function PaletteCard({
   palette,
   active,
+  dark,
   onSelect,
 }: {
   palette: PaletteMood;
   active: boolean;
+  dark: boolean;
   onSelect: () => void;
 }) {
-  const sw = PALETTE_SWATCH[palette];
+  const sw = PALETTE_SWATCH[palette][dark ? "dark" : "light"];
   const meta = PALETTE_LABELS[palette];
   return (
     <button
@@ -258,6 +272,9 @@ function AppearancePane({
 }) {
   const theme = settings?.theme ?? "system";
   const [palette, setPalette] = usePalette();
+  const isDark =
+    theme === "dark" ||
+    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   return (
     <div>
       <PaneHeader title="Appearance" sub="How Nuvo looks. System follows your device's light or dark mode." />
@@ -271,7 +288,7 @@ function AppearancePane({
       <p className="text-caption mb-2.5 text-muted">The warmth of the paper. Switch it whenever the day calls for it.</p>
       <div className="grid grid-cols-3 gap-2.5">
         {(["daybreak", "dusk", "fog"] as const).map((p) => (
-          <PaletteCard key={p} palette={p} active={palette === p} onSelect={() => setPalette(p)} />
+          <PaletteCard key={p} palette={p} active={palette === p} dark={isDark} onSelect={() => setPalette(p)} />
         ))}
       </div>
     </div>
