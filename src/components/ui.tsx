@@ -72,7 +72,7 @@ export function Btn({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`fast rounded-md border px-4 py-2 text-caption font-medium active:translate-y-px disabled:opacity-40 ${styles} ${className}`}
+      className={`fast whitespace-nowrap rounded-md border px-4 py-2.5 text-body font-medium active:translate-y-px disabled:opacity-40 ${styles} ${className}`}
     >
       {children}
     </button>

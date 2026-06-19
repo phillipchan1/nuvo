@@ -251,14 +251,23 @@ function Niche({ domain, motif, focused, onEnter }: { domain: Domain; motif: Mot
   return (
     <button
       onClick={onEnter}
-      className="fast group relative flex flex-col items-center justify-end overflow-hidden hover:-translate-y-1"
+      className="fast group relative flex flex-col items-center justify-end overflow-hidden hover:-translate-y-1 hover:[box-shadow:var(--shadow-3)]"
       style={{
         flex: "1 1 150px", minWidth: 132, maxWidth: 220, height: 384, padding: "0 8px 22px",
-        border: `0.5px solid ${focused ? domain.color : "var(--line)"}`,
+        border: `0.5px solid ${focused ? `color-mix(in srgb, ${domain.color} 55%, var(--line))` : "var(--line)"}`,
         borderTop: `1px solid color-mix(in srgb, ${domain.color} ${lit ? 55 : 25}%, var(--line))`,
         borderRadius: "92px 92px 12px 12px",
-        background: `linear-gradient(180deg, color-mix(in srgb, ${domain.color} ${lit ? 7 : 3}%, var(--surface)) 0%, var(--surface) 72%)`,
-        boxShadow: focused ? `0 0 0 1px ${domain.color}` : "none",
+        // Glass, not an opaque slab — a domain-tinted glow at the crown fading into
+        // translucent frosted surface, so the warm-paper atmosphere reads through
+        // each niche instead of being covered by a white panel.
+        background:
+          `linear-gradient(180deg, color-mix(in srgb, ${domain.color} ${lit ? 15 : 6}%, transparent) 0%, transparent 60%), ` +
+          `color-mix(in srgb, var(--surface) 56%, transparent)`,
+        backdropFilter: "blur(12px) saturate(1.3)",
+        WebkitBackdropFilter: "blur(12px) saturate(1.3)",
+        // Focus lifts — the current domain rises on a real shadow rather than
+        // wearing a flat colored ring.
+        ...(focused ? { boxShadow: "var(--shadow-lift)", transform: "translateY(-4px)" } : {}),
       }}
     >
       {lit && (

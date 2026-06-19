@@ -200,6 +200,14 @@ export default function CalendarPane({
     [accounts],
   );
 
+  const writableGoogleAccounts = useMemo(
+    () =>
+      accounts
+        .filter((a) => a.provider === "google" && a.sync_direction === "two_way")
+        .map((a) => ({ id: a.id, email: a.email })),
+    [accounts],
+  );
+
   // What a plain (no-modifier) click-drag creates. ⌥-drag forces event,
   // ⌘/Ctrl-drag forces slot regardless of this.
   // Plain drag always creates a task now (the segmented control was removed for
@@ -214,9 +222,25 @@ export default function CalendarPane({
     point: { x: number; y: number };
   } | null>(null);
 
-  // The clicked block, brought to the front of any overlap (full width, on top)
-  // so it's readable. Click-driven (not hover); cleared by clicking empty grid.
-  const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
+  // The clicked block is brought to the front of any overlap (full width, on top)
+  // so it's readable, and lifts toward you. Focus is applied IMPERATIVELY — a
+  // direct class toggle on the block's own element — rather than by re-feeding
+  // FullCalendar a new events array. Routing focus through the event model forced
+  // FC to re-parse EVERY event on each click before the class (and so the lift)
+  // could land, which is the "slight delay" you felt. A direct classList toggle
+  // lifts the clicked block on the very next frame. Click-driven (not hover);
+  // cleared by clicking empty grid or anywhere off a block.
+  const focusedElRef = useRef<HTMLElement | null>(null);
+  const clearFocus = () => {
+    focusedElRef.current?.classList.remove("evt-focused");
+    focusedElRef.current = null;
+  };
+  const focusBlock = (el: HTMLElement) => {
+    if (focusedElRef.current === el) return;
+    clearFocus();
+    el.classList.add("evt-focused");
+    focusedElRef.current = el;
+  };
 
   // A focused block stays lifted/expanded until you move on — so a pointerdown
   // anywhere that ISN'T a calendar block (the rail, another floor, a button)
@@ -225,7 +249,7 @@ export default function CalendarPane({
     const onDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null;
       if (t?.closest(".fc-event")) return;
-      setFocusedEventId((cur) => (cur ? null : cur));
+      clearFocus();
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
@@ -562,19 +586,6 @@ export default function CalendarPane({
       }
     : null;
 
-  // Tag the clicked block so CSS can lift it to full width above its overlap.
-  const eventsWithFocus = useMemo(
-    () =>
-      focusedEventId
-        ? fcEvents.map((e) =>
-            e.id === focusedEventId
-              ? { ...e, classNames: [...(e.classNames ?? []), "evt-focused"] }
-              : e,
-          )
-        : fcEvents,
-    [fcEvents, focusedEventId],
-  );
-
   const findTask = (id: string) => tasksRef.current.find((t) => t.id === id);
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
   const findSlot = (id: string) => slotsRef.current.find((s) => s.id === id);
@@ -766,7 +777,7 @@ export default function CalendarPane({
   // type up front (⌥ event, ⌘/Ctrl slot); otherwise the toolbar create mode.
   const onSelect = (arg: DateSelectArg) => {
     if (arg.allDay) return; // the all-day row is a drop target, not a create surface
-    setFocusedEventId(null);
+    clearFocus();
     const je = arg.jsEvent;
     let kind: CreateKind = createMode;
     if (je?.altKey) kind = "event";
@@ -781,7 +792,7 @@ export default function CalendarPane({
   };
 
   const onDateClick = (arg: DateClickArg) => {
-    setFocusedEventId(null); // clicking empty space drops the focused block
+    clearFocus(); // clicking empty space drops the focused block
     if (isMonth || draft || arg.allDay) return;
     const start = arg.date;
     const end = new Date(start.getTime() + 30 * 60_000);
@@ -793,7 +804,7 @@ export default function CalendarPane({
     setDraft({ start, end, kind, point: { x: je.clientX, y: je.clientY } });
   };
 
-  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[] = []) => {
+  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[] = [], calendarAccountId?: string) => {
     if (!draft) return;
     const { start, end, point } = draft;
     const duration = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
@@ -837,6 +848,7 @@ export default function CalendarPane({
           end_at: end.toISOString(),
           ...(recurrence ? { recurrence: toGoogleRRULE(recurrence) } : {}),
           ...(attendees.length ? { attendees } : {}),
+          ...(calendarAccountId ? { accountId: calendarAccountId } : {}),
         });
       } else if (recurrence) {
         await recurrenceMutations.createSeries({
@@ -878,8 +890,8 @@ export default function CalendarPane({
       return;
     }
     // A click brings the block to the front of any overlap (full width, on top)
-    // and opens its detail.
-    setFocusedEventId(info.event.id);
+    // and opens its detail — the lift lands this frame, the detail opens with it.
+    focusBlock(info.el);
     if (kind === "task") {
       const task = findTask(refId);
       if (task) onOpenTask(task, info.el.getBoundingClientRect());
@@ -1098,6 +1110,7 @@ export default function CalendarPane({
           point={draft.point}
           initialKind={draft.kind}
           googleAvailable={googleAvailable}
+          writableAccounts={writableGoogleAccounts}
           onCreate={handleCreate}
           onCancel={() => {
             setDraft(null);
@@ -1252,7 +1265,7 @@ export default function CalendarPane({
           height="100%"
           expandRows={!isMonth}
           dayMaxEvents={isMonth ? 4 : false}
-          events={draftPreviewEvent ? [...eventsWithFocus, draftPreviewEvent] : eventsWithFocus}
+          events={draftPreviewEvent ? [...fcEvents, draftPreviewEvent] : fcEvents}
           editable
           droppable
           selectable={!isMonth}

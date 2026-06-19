@@ -160,6 +160,7 @@ export function useExternalEventMutations() {
       end_at,
       recurrence,
       attendees,
+      accountId,
     }: {
       title: string;
       start_at: string;
@@ -168,9 +169,11 @@ export function useExternalEventMutations() {
       recurrence?: string[];
       /** Email addresses to invite. */
       attendees?: string[];
+      /** calendar_accounts.id to create on; omit for the first connected account. */
+      accountId?: string;
     }) => {
       const { data, error } = await supabase.functions.invoke("google-events", {
-        body: { action: "create", title, start_at, end_at, recurrence, attendees },
+        body: { action: "create", title, start_at, end_at, recurrence, attendees, accountId },
       });
       if (error) throw error;
       return data;

@@ -186,7 +186,7 @@ export function RepeatControl({
           disabled={disabled}
           onClick={open}
           title={value ? describeRule(value, anchorISO) : "Set a repeat"}
-          className={`tap fast flex w-full items-center gap-3 rounded-[var(--radius)] border px-3.5 text-body disabled:opacity-40 ${
+          className={`fast flex w-full items-center gap-3 rounded-[var(--radius)] border px-3.5 py-3 text-body disabled:opacity-40 ${
             on
               ? "border-accent/35 bg-accent-soft text-accent"
               : "border-line bg-surface-2 text-ink hover:border-line-strong hover:bg-bg"

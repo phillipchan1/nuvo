@@ -134,6 +134,14 @@ export function TaskPopover({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [onClose]);
+
   const commitTitle = () => title.trim() && title !== task.title && mutations.patchTask(task.id, { title: title.trim() });
   const commitNotes = () => notes !== task.notes && mutations.patchTask(task.id, { notes });
 
@@ -202,9 +210,6 @@ export function TaskPopover({
 
   return createPortal(
     <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-
       {/* Popover card */}
       <div
         ref={popRef}
@@ -699,6 +704,14 @@ export function EventPopover({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [onClose]);
+
   // Compute fixed position: prefer right of event, fall back to left
   const [pos, setPos] = useState<{ top: number; left: number; side: "right" | "left" }>({
     top: anchor.top,
@@ -762,9 +775,6 @@ export function EventPopover({
 
   return createPortal(
     <>
-      {/* Backdrop — transparent, just catches outside clicks */}
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-
       {/* Popover card */}
       <div
         ref={popRef}
@@ -909,7 +919,7 @@ export function EventPopover({
                       <button
                         key={status}
                         onClick={() => handleRsvp(status)}
-                        className={`fast flex flex-1 items-center justify-center gap-1 rounded-md border py-1.5 text-caption font-medium ${
+                        className={`fast flex flex-1 items-center justify-center gap-1 rounded-md border py-2.5 text-body font-medium ${
                           active
                             ? status === "accepted"
                               ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
@@ -1193,6 +1203,14 @@ export function SlotPopover({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [onClose]);
+
   const [pos, setPos] = useState<{ top: number; left: number; side: "right" | "left" }>({
     top: anchor.top,
     left: anchor.right + 10,
@@ -1361,7 +1379,6 @@ export function SlotPopover({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
         ref={popRef}
         className="moment fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"

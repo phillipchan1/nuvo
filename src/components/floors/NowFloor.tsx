@@ -862,14 +862,17 @@ function DaySpine({
           return (
             <div
               key={i}
-              className="fast absolute overflow-hidden rounded-md pl-2 pr-1.5 py-1"
+              className="fast absolute overflow-hidden rounded-md pl-2 pr-1.5 py-1 backdrop-blur-[3px]"
               style={{
                 top, height, left, width,
-                background: ongoing ? "color-mix(in srgb, var(--signal) 10%, var(--surface))" : "var(--surface)",
-                border: `1px solid ${ongoing ? "color-mix(in srgb, var(--signal) 40%, var(--line))" : "var(--line)"}`,
+                // Tinted glass keyed to the block's own colour — the paper + hour
+                // guides read through it (frosted), so a block is a pane of glass
+                // like the Schedule's events, not an opaque white slab. The solid
+                // 3px left bar still carries the true colour; no busy outline.
+                background: `color-mix(in srgb, ${bar} ${ongoing ? 18 : 13}%, transparent)`,
                 borderLeft: `3px solid ${bar}`,
                 opacity: past && !ongoing ? 0.42 : 1,
-                boxShadow: ongoing ? "var(--shadow-1)" : "none",
+                boxShadow: ongoing ? "var(--shadow-2)" : "none",
                 zIndex: ongoing ? 5 : 1,
               }}
             >

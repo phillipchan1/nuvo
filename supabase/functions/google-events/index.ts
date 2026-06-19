@@ -27,7 +27,9 @@ Deno.serve(async (req) => {
       const recurrence = Array.isArray(body.recurrence) ? (body.recurrence as string[]) : undefined;
       if (!start_at || !end_at) return json({ error: "start_at and end_at required" }, 400);
 
-      const account = (await loadGoogleAccounts()).find((a) => a.user_id === user.id);
+      const accountId = body.accountId as string | undefined;
+      const allAccounts = await loadGoogleAccounts(accountId || undefined);
+      const account = allAccounts.find((a) => a.user_id === user.id);
       if (!account) return json({ error: "no google account connected" }, 400);
 
       const attendees = Array.isArray(body.attendees) ? (body.attendees as string[]) : [];

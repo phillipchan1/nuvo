@@ -257,7 +257,7 @@ function SuggestionPanel({
             {suggestions.map((s) => (
               <div
                 key={s.task.id}
-                className="group fast flex items-start gap-2 rounded-md border border-line bg-surface px-2.5 py-2 hover:border-line-strong"
+                className="group fast glass-card flex items-start gap-2 rounded-md border border-line px-2.5 py-2 hover:border-line-strong"
               >
                 <span className="mt-px shrink-0 text-caption" style={{ color: accent }}>
                   {s.task.energy ? ENERGY_META[s.task.energy].icon : "·"}
@@ -553,7 +553,7 @@ function InitiativeRecord({
                       <button
                         key={p.id}
                         onClick={() => onOpenProject(p.id)}
-                        className="fast group flex flex-col rounded-[var(--radius)] border border-line bg-surface p-3 text-left hover:border-muted"
+                        className="fast group glass-card flex flex-col rounded-[var(--radius)] border border-line p-3 text-left hover:border-muted hover:-translate-y-px hover:[box-shadow:var(--shadow-2)]"
                       >
                         <div className="flex items-start gap-2">
                           <span className="text-caption font-medium leading-snug">{p.name}</span>
@@ -600,7 +600,7 @@ function InitiativeRecord({
             >
               <div className="space-y-3">
                 {initiative.keyResults.map((kr) => (
-                  <div key={kr.id} className="group rounded-[var(--radius)] border border-line bg-surface p-3">
+                  <div key={kr.id} className="group glass-card rounded-[var(--radius)] border border-line p-3">
                     <div className="flex items-center gap-2">
                       <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-caption font-medium" />
                       <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
