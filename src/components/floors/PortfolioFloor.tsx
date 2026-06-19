@@ -17,6 +17,7 @@ import { ripenessOfProject, verdictOf } from "../../lib/tending";
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
+import FloorReadiness from "./FloorReadiness";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, updateProject, deleteProjects } = useVertical();
@@ -66,6 +67,8 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
         <h1 className="text-display masthead">Projects</h1>
         <p className="mt-1 text-body text-muted">Every project at a glance — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
+
+      <FloorReadiness kind="project" />
 
       <DomainFilter value={domainFilter} onChange={setDomainFilter} />
 

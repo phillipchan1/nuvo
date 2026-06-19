@@ -16,12 +16,14 @@ import { useRecurrenceMutations } from "../../hooks/useRecurrence";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
+import { readTending } from "../../lib/tending";
 import type { Task } from "../../lib/types";
 import NowFloor from "../floors/NowFloor";
 import SettingsModal from "../SettingsModal";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
 import MobilePlan, { type PlanTarget } from "./MobilePlan";
+import MobileReadiness from "./MobileReadiness";
 import MobileSearch, { type JumpKind } from "./MobileSearch";
 import QuickTaskSheet from "./QuickTaskSheet";
 import ChatPane from "./ChatPane";
@@ -168,6 +170,13 @@ export default function MobileShell() {
   }, [inbox, todayTasks, weekTasks, allTasks]);
   const openTask = taskId ? taskById.get(taskId) ?? null : null;
 
+  // Plan-tab demand: how many bets/projects in the vertical want a look (the
+  // silent + raw failure modes). The phone's echo of the spine's Build cues.
+  const planDemand = useMemo(() => {
+    const t = readTending(vertical);
+    return t.silent.length + t.raw.length;
+  }, [vertical]);
+
   const subCount = (s: MobileTab) =>
     s === "inbox"
       ? inbox.length
@@ -252,6 +261,9 @@ export default function MobileShell() {
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         {tab === "now" ? (
           <div className="px-4 pt-4 pb-24">
+            <div className="mb-4">
+              <MobileReadiness data={vertical} onAskNuvo={openChat} onOpenPlan={() => setTab("plan")} />
+            </div>
             <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
           </div>
         ) : tab === "calendar" ? (
@@ -298,8 +310,8 @@ export default function MobileShell() {
 
         <NavTab tab={NAV[0]} active={tab === NAV[0].id} onClick={() => setTab(NAV[0].id)} />
         <NavTab tab={NAV[1]} active={tab === NAV[1].id} onClick={() => setTab(NAV[1].id)} />
-        {/* Plan — the strategic vertical. */}
-        <NavTab tab={NAV[3]} active={tab === NAV[3].id} onClick={() => setTab(NAV[3].id)} />
+        {/* Plan — the strategic vertical, badged when bets want a look. */}
+        <NavTab tab={NAV[3]} active={tab === NAV[3].id} onClick={() => setTab(NAV[3].id)} badge={planDemand} />
         <NavTab
           tab={NAV[2]}
           active={tab === NAV[2].id}

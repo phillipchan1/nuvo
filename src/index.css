@@ -290,7 +290,7 @@ body {
 html.tauri-macos {
   --titlebar-inset-left: 78px;
   --titlebar-inset-top: 28px;
-  --spine-width: 140px;
+  --spine-width: 188px;
 }
 
 /* Floor headers (Today / Project / Initiative / Domain) keep a chrome bar, so
@@ -327,7 +327,7 @@ html.tauri-macos .spine-top {
 }
 
 /* Right-side separator for the spine. Runs the full height — the spine is now
-   wide enough (120px) that the line sits clear of the macOS traffic lights. */
+   wide enough (188px) that the line sits clear of the macOS traffic lights. */
 .spine-separator {
   top: 0;
 }
@@ -454,6 +454,19 @@ html.tauri-macos .spine-top {
   background:
     linear-gradient(145deg, color-mix(in srgb, white 12%, transparent), transparent 58%),
     color-mix(in srgb, var(--surface) 56%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  backdrop-filter: blur(10px) saturate(1.3);
+}
+/* The resting glass material WASHED with a record's identity color — the board
+   card variant of .glass-card, so an entity reads as the same tinted glass here
+   as it does on the Calendar chip and Timeline bar (which already tint their
+   fill). Pass the hue via --tint; falls back to neutral if unset. When the card
+   is selected, .glass-lift (below, so it wins) takes over with the neutral focal
+   glass — matching how a selected chip/row also sheds its tint. */
+.glass-tint {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 12%, transparent), transparent 58%),
+    color-mix(in srgb, var(--tint, transparent) 16%, color-mix(in srgb, var(--surface) 56%, transparent));
   -webkit-backdrop-filter: blur(10px) saturate(1.3);
   backdrop-filter: blur(10px) saturate(1.3);
 }
@@ -741,16 +754,15 @@ textarea:focus {
    so tasks, events and slots share identical spacing, radius and type. */
 .fc .fc-event {
   border-radius: 7px;
-  border: 1px solid transparent;
-  background-clip: padding-box;
   box-shadow: none;
   /* Frosted colour-glass: the translucent fill (blockColors) + this blur let the
      gridlines read through, so an event is a pane of tinted glass, not a slab. */
   -webkit-backdrop-filter: blur(5px) saturate(1.2);
   backdrop-filter: blur(5px) saturate(1.2);
-  /* Only the hover brightness eases — the lift (shadow + transform) is instant, so
-     selecting a block snaps it forward with no perceptible delay. */
-  transition: filter var(--d-fast) var(--ease-out);
+  transition:
+    filter var(--d-fast) var(--ease-out),
+    box-shadow var(--d-fast) var(--ease-out),
+    transform var(--d-fast) var(--ease-out);
 }
 .fc .fc-event:focus { outline: none; box-shadow: none; }
 .fc .fc-event .fc-event-main {
@@ -764,6 +776,10 @@ textarea:focus {
   box-shadow: var(--shadow-2);
   transform: translateY(-1px);
   filter: brightness(1.015);
+}
+.fc .fc-timegrid-event-harness .fc-event.evt-focused:hover {
+  box-shadow: var(--shadow-lift);
+  transform: translateY(-3px);
 }
 /* Overlapping blocks get sliced into thin columns you can't read. CLICKING one
    marks it `.evt-focused`, which lifts its harness to the FULL column width, on

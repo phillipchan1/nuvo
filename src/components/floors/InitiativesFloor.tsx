@@ -16,6 +16,7 @@ import { ripenessOfInitiative, verdictOf } from "../../lib/tending";
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
+import FloorReadiness from "./FloorReadiness";
 
 const MOMENTUM = {
   up: { value: "↑ rising", color: "var(--accent)" },
@@ -80,6 +81,8 @@ export default function InitiativesFloor({
         <h1 className="text-display masthead">Initiatives</h1>
         <p className="mt-1 text-body text-muted">The bets with finish lines, across every domain — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
+
+      <FloorReadiness kind="initiative" />
 
       <DomainFilter value={domainFilter} onChange={setDomainFilter} />
 

@@ -33,8 +33,10 @@ import {
   type VTask,
   type VerticalData,
 } from "../../lib/vertical";
-import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../lib/tending";
+import { RIPENESS_ADVANCE, readTending, ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../lib/tending";
+import { readinessOfInitiativeFloor, readinessOfProjectFloor, type FloorCue } from "../../lib/readiness";
 import { RipenessPip } from "../floors/parts";
+import { ReadinessBanner } from "../floors/ReadinessBanner";
 
 type Store = ReturnType<typeof useVertical>;
 
@@ -185,6 +187,10 @@ export default function MobilePlan({ target }: { target?: PlanTarget | null }) {
         )}
       </div>
 
+      {frame.level === "list" && (
+        <PlanReadiness d={d} onOpen={(k, id) => (k === "project" ? openProject(id) : openInitiative(id))} />
+      )}
+
       {frame.level === "list" ? (
         <ListScreen
           d={d}
@@ -221,6 +227,32 @@ export default function MobilePlan({ target }: { target?: PlanTarget | null }) {
           onOpenDomain={openDomain}
         />
       )}
+    </div>
+  );
+}
+
+// ── "Now what" header — where to start when you land on the vertical ─────────
+function PlanReadiness({
+  d,
+  onOpen,
+}: {
+  d: VerticalData;
+  onOpen: (kind: "project" | "initiative", id: string) => void;
+}) {
+  const top = readTending(d).groomable[0];
+  const readiness = (readinessOfProjectFloor(d) + readinessOfInitiativeFloor(d)) / 2;
+  const cue: FloorCue | null = top
+    ? { tone: top.silent ? "drift" : "attention", label: `${top.name} — ${RIPENESS_ADVANCE[top.ripeness.stage]}` }
+    : null;
+  return (
+    <div className="px-4 pt-4">
+      <ReadinessBanner
+        eyebrow="Your vertical"
+        readiness={readiness}
+        cue={cue}
+        actionLabel={top ? "Tend" : undefined}
+        onAction={top ? () => onOpen(top.kind, top.id) : undefined}
+      />
     </div>
   );
 }

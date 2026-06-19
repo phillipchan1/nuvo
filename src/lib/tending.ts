@@ -140,8 +140,11 @@ export function isTended(d: VerticalData, kind: "project" | "initiative", id: st
 }
 
 /** Readiness contribution of one open/complete item, 0..1. An Active item that
- *  Nuvo hasn't verified sound is NOT fully ready — it counts as scaffolded. */
-function effectiveScore(d: VerticalData, kind: "project" | "initiative", item: Project | Initiative): number | null {
+ *  Nuvo hasn't verified sound is NOT fully ready — it counts as scaffolded.
+ *  Exported for the readiness layer (src/lib/readiness.ts), which rolls these
+ *  per-item scores up into per-floor readiness — note `resting` returns null
+ *  here (off the ladder); readiness.ts treats a parked item as settled (1). */
+export function effectiveScore(d: VerticalData, kind: "project" | "initiative", item: Project | Initiative): number | null {
   const r = kind === "project" ? ripenessOfProject(d, item as Project) : ripenessOfInitiative(d, item as Initiative);
   if (r.stage === "resting") return null; // off the ladder
   if (isProjectComplete(item.status)) return 1;
