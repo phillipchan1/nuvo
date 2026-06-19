@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
+
 import {
   domainById,
   initiativeProgress,
@@ -13,7 +14,7 @@ import {
   projectsOf,
 } from "../../lib/vertical";
 import { ripenessOfInitiative, verdictOf } from "../../lib/tending";
-import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
+import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL, type TimelineItem } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
 import FloorReadiness from "./FloorReadiness";
@@ -30,7 +31,7 @@ export default function InitiativesFloor({
   onOpen: (id: string) => void;
 }) {
   const { data, updateInitiative, updateProject, deleteInitiatives } = useVertical();
-  const { openFloorModal } = useAppNavigation();
+  const { openFloorModal, openRecord } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
 
   const initiatives = data.initiatives.filter((i) => !domainFilter || i.domainId === domainFilter);
@@ -68,6 +69,17 @@ export default function InitiativesFloor({
       setTargetDate: (v) => updateInitiative(i.id, { targetDate: v }),
       setDates: (start, target) => updateInitiative(i.id, { startDate: start, targetDate: target }),
       open: () => onOpen(i.id),
+      childItems: projects.length > 0 ? projects.map((p): TimelineItem => ({
+        id: p.id,
+        label: p.name,
+        color: domain?.color ?? "var(--accent)",
+        start: p.startDate,
+        end: p.targetDate,
+        progress: p.progress,
+        dim: isProjectComplete(p.status),
+        onClick: () => openRecord("project", p.id),
+        onChangeDates: (start, end) => updateProject(p.id, { startDate: start, targetDate: end }),
+      })) : undefined,
     };
   });
 

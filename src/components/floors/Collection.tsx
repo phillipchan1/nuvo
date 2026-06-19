@@ -58,6 +58,8 @@ export interface CollectionRecord {
    *  timeline bar (which moves start + target together). */
   setDates?: (start: string | null, target: string | null) => void;
   open: () => void;
+  /** child TimelineItems shown in the accordion when this row is expanded (Timeline view only) */
+  childItems?: TimelineItem[];
 }
 
 export interface CollectionConfig {
@@ -805,6 +807,7 @@ function TimelineView({ config, selection }: { config: CollectionConfig; selecti
       if (r.setDates) r.setDates(start, end);
       else { r.setStartDate(start); r.setTargetDate(end); }
     },
+    children: r.childItems,
   }));
   return (
     <SelectionSurface selection={selection}>

@@ -478,6 +478,8 @@ export interface TimelineItem {
   // when present, the bar can be dragged to move/resize and an undated item can
   // be dragged in from the tray to get a date range
   onChangeDates?: (start: string | null, end: string | null) => void;
+  /** nested rows shown when the item is expanded (e.g. projects under an initiative) */
+  children?: TimelineItem[];
 }
 
 const DAY = 86_400_000;
@@ -627,6 +629,8 @@ const ROW = 44;
 const AXIS_H = 50;
 const MIN_BAR = 14;
 
+type FlatRow = TimelineItem & { _isChild?: true };
+
 export function Timeline({
   items,
   today = new Date(),
@@ -654,6 +658,9 @@ export function Timeline({
   // live preview while dragging an undated item in from the tray
   const [tray, setTray] = useState<{ id: string; x: number; y: number; ms: number | null } | null>(null);
   const trayRef = useRef<{ moved: boolean } | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setExpanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const choose = (z: TimelineZoom) => {
     setZoom(z);
@@ -665,7 +672,17 @@ export function Timeline({
   const dated = items.filter((i) => i.start || i.end);
   const undated = items.filter((i) => !i.start && !i.end);
 
-  const stamps = dated.flatMap((i) => [parse(i.start), parse(i.end)].filter((x): x is number => x != null));
+  // Accordion-flattened rows: dated top-level items, with expanded children interleaved
+  const flatRows: FlatRow[] = [];
+  for (const it of dated) {
+    flatRows.push(it);
+    if (it.children?.length && expanded.has(it.id)) {
+      for (const ch of it.children) flatRows.push({ ...ch, _isChild: true });
+    }
+  }
+
+  // Include children dates in range so the grid fits expanded rows
+  const stamps = [...dated, ...items.flatMap((i) => i.children ?? [])].flatMap((i) => [parse(i.start), parse(i.end)].filter((x): x is number => x != null));
   const todayMs = today.getTime();
   const lo = new Date(stamps.length ? Math.min(...stamps, todayMs) : todayMs);
   const hi = new Date(stamps.length ? Math.max(...stamps, todayMs) : todayMs);
@@ -676,7 +693,7 @@ export function Timeline({
   const { majors, minors, weekends } = buildTicks(zoom, origin, end, x);
   const todayX = x(snapDay(todayMs) + DAY / 2);
 
-  const bodyRows = dated.length;
+  const bodyRows = flatRows.length;
   // The grid fills the floor (the body is flex-1 below); this is just the minimum
   // height the placed bars need so they never collapse.
   const contentHeight = bodyRows * ROW + (tray ? ROW : 0) + 16;
@@ -849,20 +866,23 @@ export function Timeline({
             <div className="section-label flex h-full items-end px-3 pb-2">Name</div>
           </div>
           <div className="relative flex-1">
-            {dated.map((it, row) => {
-              const picked = selection?.isSelected(it.id);
-              const preview = selection?.isPreviewSelected(it.id);
+            {flatRows.map((it, row) => {
+              const isChild = !!it._isChild;
+              const hasKids = !isChild && (it.children?.length ?? 0) > 0;
+              const isExp = hasKids && expanded.has(it.id);
+              const picked = !isChild ? selection?.isSelected(it.id) : undefined;
+              const preview = !isChild ? selection?.isPreviewSelected(it.id) : undefined;
               const visual = picked ? "selected" : preview ? "preview" : "none";
               return (
                 <div
                   key={it.id}
-                  data-select-id={selection ? it.id : undefined}
-                  ref={selection ? (el) => selection.registerRef(it.id, el) : undefined}
-                  onMouseDown={selection ? selection.itemPointerDown(it.id) : undefined}
-                  className={`rise lift-anim flex items-center gap-2 px-3 ${selection ? itemSelectRowClass(selection, it.id) : "hover:bg-accent-soft/50"}`}
-                  style={{ height: ROW, animationDelay: `${row * 35}ms` }}
+                  data-select-id={!isChild && selection ? it.id : undefined}
+                  ref={!isChild && selection ? (el) => selection.registerRef(it.id, el) : undefined}
+                  onMouseDown={!isChild && selection ? selection.itemPointerDown(it.id) : undefined}
+                  className={`rise lift-anim flex items-center gap-2 ${!isChild && selection ? itemSelectRowClass(selection, it.id) : "hover:bg-accent-soft/50"}`}
+                  style={{ height: ROW, animationDelay: `${row * 35}ms`, paddingLeft: isChild ? 28 : 12 }}
                 >
-                  {selection && (
+                  {!isChild && selection && (
                     <span data-no-select>
                       <SelectCheckbox
                         checked={visual === "selected"}
@@ -871,8 +891,27 @@ export function Timeline({
                       />
                     </span>
                   )}
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: it.color, opacity: it.dim ? 0.5 : 1 }} />
-                  <button onClick={it.onClick} className="fast truncate text-left text-body text-ink hover:text-accent" title={it.label}>{it.label || "Untitled"}</button>
+                  {hasKids && (
+                    <button
+                      data-no-select
+                      onClick={(e) => { e.stopPropagation(); toggle(it.id); }}
+                      className="fast flex h-4 w-4 shrink-0 items-center justify-center text-micro text-muted hover:text-ink"
+                      title={isExp ? "Collapse" : "Expand projects"}
+                    >
+                      {isExp ? "▾" : "▸"}
+                    </button>
+                  )}
+                  <span
+                    className="shrink-0 rounded-full"
+                    style={{ width: isChild ? 7 : 10, height: isChild ? 7 : 10, background: it.color, opacity: it.dim ? 0.5 : isChild ? 0.7 : 1 }}
+                  />
+                  <button
+                    onClick={it.onClick}
+                    className={`fast truncate text-left hover:text-accent ${isChild ? "text-caption text-muted" : "text-body text-ink"}`}
+                    title={it.label}
+                  >
+                    {it.label || "Untitled"}
+                  </button>
                 </div>
               );
             })}
@@ -922,7 +961,8 @@ export function Timeline({
               </div>
 
               {/* bars */}
-              {dated.map((it, row) => {
+              {flatRows.map((it, row) => {
+                if (!it.start && !it.end) return null;
                 const live = drag && drag.id === it.id ? drag : null;
                 const sMs = live ? live.start : parse(it.start) ?? parse(it.end)!;
                 const eMs = live ? live.end : parse(it.end) ?? parse(it.start)!;
