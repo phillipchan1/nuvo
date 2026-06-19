@@ -592,7 +592,7 @@ function BoardCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             {r.ripeness && <RipenessPip stage={r.ripeness} unsound={r.unsound} />}
-            <span className="truncate text-body font-medium">{r.title || "Untitled"}</span>
+            <span className="text-body font-medium">{r.title || "Untitled"}</span>
           </div>
           <div className="mono mt-0.5 truncate text-meta" style={{ color: r.accent }}>{r.domainIcon} {r.subtitle}</div>
         </div>
