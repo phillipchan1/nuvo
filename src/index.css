@@ -276,6 +276,14 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* The floating ⌥Space window (Tauri "spotlight" label) is transparent — only
+   the centered card paints, so it reads as a panel hovering over the desktop. */
+html.spotlight-window,
+html.spotlight-window body,
+html.spotlight-window #root {
+  background: transparent !important;
+}
+
 /* The atmosphere: a whisper of dawn (top-left) and dusk (bottom-right) light,
    laid over the base surface. Used on the big full-bleed surfaces — the panels
    that sit on top stay clean. Subtle on purpose; it should be felt, not seen. */

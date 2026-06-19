@@ -9,8 +9,10 @@
     "beforeBuildCommand": "TAURI_BUILD=1 npm run build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "Nuvo",
         "width": 1280,
         "height": 800,
@@ -19,6 +21,21 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "trafficLightPosition": { "x": 19, "y": 20 }
+      },
+      {
+        "label": "spotlight",
+        "url": "index.html",
+        "width": 680,
+        "height": 480,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "center": true,
+        "focus": false,
+        "shadow": false
       }
     ],
     "security": {

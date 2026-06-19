@@ -16,7 +16,7 @@ import { writeAgentOpen } from "./AgentSidebar";
 import LeftRail from "./LeftRail";
 import type { FlowName } from "./Spine";
 import CalendarPane from "./CalendarPane";
-import CommandBar, { type Command } from "./CommandBar";
+import NuvoSpotlight, { type Command } from "./NuvoSpotlight";
 import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
@@ -48,7 +48,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
       end: new Date(now.getTime() + 7 * 86400_000).toISOString(),
     };
   });
-  const { setRange: setAgentRange } = useAgentContext();
+  const { agent, setRange: setAgentRange } = useAgentContext();
   const syncRange = useCallback(
     (start: string, end: string) => {
       const next = { start, end };
@@ -311,10 +311,11 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
       </div>
 
       {showCmd && (
-        <CommandBar
+        <NuvoSpotlight
           labels={labels}
           commands={commands}
           onCreate={mutations.create}
+          agent={agent}
           onClose={closeOverlay}
         />
       )}
