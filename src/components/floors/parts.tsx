@@ -880,8 +880,23 @@ export function Timeline({
                   ref={!isChild && selection ? (el) => selection.registerRef(it.id, el) : undefined}
                   onMouseDown={!isChild && selection ? selection.itemPointerDown(it.id) : undefined}
                   className={`rise lift-anim flex items-center gap-2 ${!isChild && selection ? itemSelectRowClass(selection, it.id) : "hover:bg-accent-soft/50"}`}
-                  style={{ height: ROW, animationDelay: `${row * 35}ms`, paddingLeft: isChild ? 28 : 12 }}
+                  style={{ height: ROW, animationDelay: `${row * 35}ms`, paddingLeft: isChild ? 36 : 8 }}
                 >
+                  {/* toggle in a fixed-width slot so all labels align regardless of children */}
+                  {!isChild && (
+                    hasKids ? (
+                      <button
+                        data-no-select
+                        onClick={(e) => { e.stopPropagation(); toggle(it.id); }}
+                        className="fast flex h-4 w-4 shrink-0 items-center justify-center text-micro text-muted hover:text-ink"
+                        title={isExp ? "Collapse" : "Expand projects"}
+                      >
+                        {isExp ? "▾" : "▸"}
+                      </button>
+                    ) : (
+                      <span className="h-4 w-4 shrink-0" />
+                    )
+                  )}
                   {!isChild && selection && (
                     <span data-no-select>
                       <SelectCheckbox
@@ -890,16 +905,6 @@ export function Timeline({
                         onToggle={() => selection.pick(it.id, { extend: true, range: false })}
                       />
                     </span>
-                  )}
-                  {hasKids && (
-                    <button
-                      data-no-select
-                      onClick={(e) => { e.stopPropagation(); toggle(it.id); }}
-                      className="fast flex h-4 w-4 shrink-0 items-center justify-center text-micro text-muted hover:text-ink"
-                      title={isExp ? "Collapse" : "Expand projects"}
-                    >
-                      {isExp ? "▾" : "▸"}
-                    </button>
                   )}
                   <span
                     className="shrink-0 rounded-full"
