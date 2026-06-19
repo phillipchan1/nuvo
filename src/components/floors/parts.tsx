@@ -609,9 +609,22 @@ function loadZoom(key: string | undefined, fallback: TimelineZoom): TimelineZoom
   }
 }
 
+const LABEL_W_DEFAULT = 208;
+const LABEL_W_MIN = 120;
+const LABEL_W_MAX = 520;
+
+function loadLabelW(key: string | undefined): number {
+  if (!key) return LABEL_W_DEFAULT;
+  try {
+    const n = parseInt(localStorage.getItem(`nuvo.timeline.labelW.${key}`) ?? "", 10);
+    return Number.isNaN(n) ? LABEL_W_DEFAULT : Math.max(LABEL_W_MIN, Math.min(LABEL_W_MAX, n));
+  } catch {
+    return LABEL_W_DEFAULT;
+  }
+}
+
 const ROW = 44;
 const AXIS_H = 50;
-const LABEL_W = 208;
 const MIN_BAR = 14;
 
 export function Timeline({
@@ -633,6 +646,7 @@ export function Timeline({
   const [zoom, setZoom] = useState<TimelineZoom>(() => loadZoom(persistKey, defaultZoom));
   const spec = ZOOMS.find((z) => z.id === zoom) ?? ZOOMS[1];
   const pxPerDay = spec.pxPerDay;
+  const [labelW, setLabelW] = useState<number>(() => loadLabelW(persistKey));
 
   // live preview while dragging an existing bar (commit on release)
   const [drag, setDrag] = useState<{ id: string; start: number; end: number } | null>(null);
@@ -782,6 +796,25 @@ export function Timeline({
     window.addEventListener("pointerup", onUp);
   };
 
+  const startLabelResize = (e: ReactPointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = labelW;
+    const onMove = (ev: PointerEvent) => {
+      setLabelW(Math.max(LABEL_W_MIN, Math.min(LABEL_W_MAX, startW + ev.clientX - startX)));
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const w = Math.max(LABEL_W_MIN, Math.min(LABEL_W_MAX, startW + ev.clientX - startX));
+      if (persistKey) {
+        try { localStorage.setItem(`nuvo.timeline.labelW.${persistKey}`, String(w)); } catch { /* ignore */ }
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={{ userSelect: drag || tray ? "none" : "auto" }}>
       {/* toolbar — zoom · navigation · counts. Floats on the paper, no frame. */}
@@ -811,7 +844,7 @@ export function Timeline({
 
       {/* chart — fixed name column + horizontally-scrolling grid */}
       <div className="flex min-h-0 flex-1">
-        <div className="flex shrink-0 flex-col border-r border-line" style={{ width: LABEL_W }}>
+        <div className="relative flex shrink-0 flex-col border-r border-line" style={{ width: labelW }}>
           <div className="shrink-0 border-b border-line" style={{ height: AXIS_H }}>
             <div className="section-label flex h-full items-end px-3 pb-2">Name</div>
           </div>
@@ -844,6 +877,12 @@ export function Timeline({
               );
             })}
           </div>
+          {/* column resize handle — sits on the right border, full height */}
+          <div
+            onPointerDown={startLabelResize}
+            className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize hover:bg-accent/20"
+            title="Drag to resize"
+          />
         </div>
 
         <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto">
