@@ -559,6 +559,57 @@ html.tauri-macos .spine-top {
 }
 .rise { animation: rise var(--d-base) var(--ease-out) both; }
 
+/* ── Week story (Wrapped-style recap) — paced scene reveals ────────────────── */
+@keyframes wkUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes wkScale {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+/* fade+rise; stagger children with inline animation-delay */
+@keyframes wkGrow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes wkFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* opacity-only — safe on SVG <g> layers (no transform jank inside the viewBox) */
+.wk-fade { animation: wkFade 0.8s var(--ease-out) both; }
+
+/* Ring arcs draw themselves clockwise — pair with pathLength="1" on the <path>. */
+@keyframes wkDraw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.wk-draw { stroke-dasharray: 1; animation: wkDraw 1s var(--ease-out) both; }
+
+/* Satellites pop in with a little spring overshoot (fill-box → scale from own center). */
+@keyframes wkPop {
+  0% { opacity: 0; transform: scale(0); }
+  70% { transform: scale(1.18); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.wk-pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wkPop 0.55s var(--ease-spring) both;
+}
+
+/* Ambient dots burst outward from the core to their resting spots. Each dot
+   carries its own inward start offset in --wk-dx/--wk-dy (user units). */
+@keyframes wkScatter {
+  from { opacity: 0; transform: translate(var(--wk-dx, 0), var(--wk-dy, 0)); }
+  to { opacity: 1; transform: translate(0, 0); }
+}
+.wk-scatter { animation: wkScatter 0.8s var(--ease-out) both; }
+.wk-in { animation: wkUp 0.7s var(--ease-out) both; }
+.wk-emblem-in { animation: wkScale 1s var(--ease-spring) both; }
+.wk-grow { transform-origin: left center; animation: wkGrow 0.9s var(--ease-out) both; }
+
 /* Marquee multi-select — suppress text selection while dragging */
 body.nuvo-selecting,
 body.nuvo-selecting * {

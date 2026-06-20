@@ -17,6 +17,7 @@ import { fmtMins } from "../../lib/now";
 import type { WeekReport, WeekPriority } from "../../lib/composeWeek";
 import { useWeekSprintRocks } from "../../hooks/useWeekSprintRocks";
 import WeekEmblem from "./WeekEmblem";
+import WeekStory from "./WeekStory";
 import { Bar } from "./parts";
 
 // ── This week — reckon each priority: land it (complete) or carry it forward ──
@@ -266,8 +267,23 @@ export interface WeekPlanFloorProps {
   canGoNext?: boolean;
 }
 
-/** The desktop floor — slides over the Schedule work area (full-width, rail hidden). */
+/** The desktop floor — slides over the Schedule work area (full-width, rail hidden).
+ *  Opens as a paced story (the received moment); "See the full week" → the detail. */
 export default function WeekPlanFloor({ report, state, weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext }: WeekPlanFloorProps) {
+  const [mode, setMode] = useState<"story" | "detail">("story");
+
+  if (mode === "story") {
+    return (
+      <WeekStory
+        report={report}
+        state={state}
+        weekLabel={weekLabel}
+        onClose={onClose}
+        onSeeDetail={() => setMode("detail")}
+      />
+    );
+  }
+
   const eyebrow = state === "forming" ? "This week" : "The Review";
   const header = (
     <div className="mb-8 flex items-start gap-4">

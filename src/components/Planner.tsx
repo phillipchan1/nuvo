@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { addDays, format, startOfWeek } from "date-fns";
 import { todayISO, toDateISO } from "../lib/dates";
 import { useWeekReport } from "../hooks/useWeekReport";
 import WeekPlanFloor from "./floors/WeekPlanFloor";
+import { readRevealConfig, isRevealReady, isAcknowledged, acknowledge, wasToasted, markToasted } from "../lib/weekReveal";
 import { fallbackPanelAnchor } from "../lib/appNav";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
 import { useDayTasks, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
@@ -81,10 +83,33 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const [viewedWeekISO, setViewedWeekISO] = useState(currentWeekISO);
   const viewedReport = useWeekReport(viewedWeekISO, now);
   const viewedIsCurrent = viewedWeekISO === currentWeekISO;
+  // The Friday reveal — a gentle nudge that the Review is ready (it always is;
+  // this is just the invitation). Per-week, per-device; acknowledged on open or
+  // dismiss so the glow + toast don't nag.
+  const [ackTick, setAckTick] = useState(0);
+  const weekReady = useMemo(
+    () => isRevealReady(now, currentWeekISO, readRevealConfig()) && !isAcknowledged(currentWeekISO),
+    [now, currentWeekISO, ackTick],
+  );
+  const ackReveal = useCallback(() => {
+    acknowledge(currentWeekISO);
+    setAckTick((t) => t + 1);
+  }, [currentWeekISO]);
   const openWeekPlan = useCallback(() => {
+    ackReveal();
     setViewedWeekISO(currentWeekISO);
     setWeekPlanOpen(true);
-  }, [currentWeekISO]);
+  }, [currentWeekISO, ackReveal]);
+
+  // One announcement toast per week when the reveal first arrives.
+  useEffect(() => {
+    if (!weekReady || wasToasted(currentWeekISO)) return;
+    markToasted(currentWeekISO);
+    toast("Your week is ready to review.", {
+      action: { label: "Review →", onClick: openWeekPlan },
+      duration: 8000,
+    });
+  }, [weekReady, currentWeekISO, openWeekPlan]);
   const walkWeek = useCallback(
     (deltaDays: number) =>
       setViewedWeekISO((iso) => {
@@ -308,6 +333,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             railRef={railRef}
             weekGlyph={onSchedule ? glyphReport.emblem : null}
             onOpenWeekPlan={onSchedule ? openWeekPlan : undefined}
+            weekReady={onSchedule ? weekReady : undefined}
           />
 
           {onSchedule && openTask && taskPanel && (

@@ -17,8 +17,8 @@ import { toDateISO } from "../../lib/dates";
 import { useVertical } from "../../hooks/useVertical";
 import { useWeekReport } from "../../hooks/useWeekReport";
 import { WeekPlanBody } from "../floors/WeekPlanFloor";
+import WeekStory from "../floors/WeekStory";
 import WeekEmblem from "../floors/WeekEmblem";
-import Sheet from "./Sheet";
 import {
   domainById,
   faithfulness,
@@ -278,32 +278,44 @@ function WeekPlanCard() {
 
 function WeekPlanSheet({ currentWeekISO, now, onClose }: { currentWeekISO: string; now: Date; onClose: () => void }) {
   const [viewedWeekISO, setViewedWeekISO] = useState(currentWeekISO);
+  const [mode, setMode] = useState<"story" | "detail">("story");
   const report = useWeekReport(viewedWeekISO, now);
   const isCurrent = viewedWeekISO === currentWeekISO;
+  const state = isCurrent ? "forming" : ("sealed" as const);
   const walk = (deltaDays: number) =>
     setViewedWeekISO((iso) => {
       const next = toDateISO(addDays(new Date(iso + "T00:00:00"), deltaDays));
       return next > currentWeekISO ? currentWeekISO : next;
     });
 
+  // The recap opens full-screen by default (the received moment); "See the full
+  // week" drops into the detailed view — same as desktop.
+  if (mode === "story") {
+    return (
+      <div className="fixed inset-0 z-[60]">
+        <WeekStory report={report} state={state} weekLabel={weekLabelOf(viewedWeekISO)} onClose={onClose} onSeeDetail={() => setMode("detail")} />
+      </div>
+    );
+  }
+
   const header = (
-    <div className="mb-5 flex items-center gap-2">
+    <div className="mb-5 flex items-center gap-2 pt-safe">
       <button onClick={() => walk(-7)} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Previous week">‹</button>
       <button onClick={isCurrent ? undefined : () => walk(7)} disabled={isCurrent} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2 disabled:opacity-30" aria-label="Next week">›</button>
       <div className="min-w-0 flex-1 text-center">
         <div className="section-label !p-0">{isCurrent ? "This week" : "The Review"}</div>
         <div className="masthead text-head text-ink">{weekLabelOf(viewedWeekISO)}</div>
       </div>
-      <span className="h-8 w-8" />
+      <button onClick={onClose} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Close">✕</button>
     </div>
   );
 
   return (
-    <Sheet onClose={onClose} tall>
-      <div className="px-4 pb-8">
-        <WeekPlanBody report={report} state={isCurrent ? "forming" : "sealed"} viewedWeekISO={viewedWeekISO} header={header} />
+    <div className="fixed inset-0 z-[60] overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 96%, transparent)", backdropFilter: "blur(20px)" }}>
+      <div className="px-4 pb-24 pt-3">
+        <WeekPlanBody report={report} state={state} viewedWeekISO={viewedWeekISO} header={header} />
       </div>
-    </Sheet>
+    </div>
   );
 }
 

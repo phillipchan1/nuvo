@@ -161,12 +161,15 @@ export default function CalendarPane({
   onViewChange,
   weekGlyph,
   onOpenWeekPlan,
+  weekReady,
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
   /** The living emblem for the current week — the toolbar's ambient gauge + door. */
   weekGlyph?: EmblemSpec | null;
   onOpenWeekPlan?: () => void;
+  /** The Friday reveal has arrived and the week isn't yet acknowledged — glow. */
+  weekReady?: boolean;
   tasks: Task[];
   events: ExternalEvent[];
   slots: Slot[];
@@ -1235,11 +1238,15 @@ export default function CalendarPane({
         {onOpenWeekPlan && weekGlyph && (
           <button
             onClick={onOpenWeekPlan}
-            className="fast mr-1 flex items-center gap-1.5 rounded-full border border-line py-0.5 pl-1 pr-2.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
-            title="This week's Plan"
+            className={`fast relative mr-1 flex items-center gap-1.5 rounded-full border py-0.5 pl-1 pr-2.5 text-label font-medium ${
+              weekReady ? "text-ink" : "border-line text-muted hover:border-line-strong hover:text-ink"
+            }`}
+            style={weekReady ? { borderColor: "var(--signal)", boxShadow: "0 0 0 3px color-mix(in srgb, var(--signal) 18%, transparent)" } : undefined}
+            title={weekReady ? "Your week is ready to review" : "This week's Plan"}
           >
             <WeekEmblem spec={weekGlyph} state="forming" size={22} hideAmbient />
-            <span className="leading-none">This week</span>
+            <span className="leading-none">{weekReady ? "Review ready" : "This week"}</span>
+            {weekReady && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />}
           </button>
         )}
 

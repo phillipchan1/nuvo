@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { formatHourLabel } from "../lib/dates";
+import { readRevealConfig, writeRevealConfig, type RevealConfig } from "../lib/weekReveal";
 import type { CalendarAccount, UserSettings } from "../lib/types";
 import { useLabels } from "../hooks/useCalendar";
 import { Btn, Modal } from "./ui";
@@ -307,6 +308,15 @@ function SchedulePane({
     const [h, mm] = e.target.value.split(":").map(Number);
     updateSettings({ [key]: h * 60 + mm });
   };
+
+  // The weekly Review reveal — a per-device nudge, so it lives in localStorage
+  // (not the synced settings row). Default Friday 1pm.
+  const [reveal, setRevealState] = useState<RevealConfig>(() => readRevealConfig());
+  const patchReveal = (p: Partial<RevealConfig>) => {
+    const next = { ...reveal, ...p };
+    setRevealState(next);
+    writeRevealConfig(next);
+  };
   const selCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent";
   const timeCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent";
 
@@ -404,6 +414,45 @@ function SchedulePane({
               { value: "1", label: "Monday" },
             ]}
           />
+        </Row>
+
+        <Row title="Weekly Review reveal" desc="When the week's Review quietly lights up as ready — an invitation, never forced.">
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 text-caption text-muted">
+              <input
+                type="checkbox"
+                checked={reveal.enabled}
+                onChange={(e) => patchReveal({ enabled: e.target.checked })}
+                className="accent-[var(--accent)]"
+              />
+              on
+            </label>
+            <select
+              value={reveal.dow}
+              onChange={(e) => patchReveal({ dow: Number(e.target.value) })}
+              disabled={!reveal.enabled}
+              className={`${selCls} disabled:opacity-40`}
+            >
+              {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => (
+                <option key={i} value={i}>
+                  {d}
+                </option>
+              ))}
+            </select>
+            <span className="text-caption text-muted">at</span>
+            <input
+              type="time"
+              step={900}
+              value={toMinLabel(reveal.minutes)}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                const [h, mm] = e.target.value.split(":").map(Number);
+                patchReveal({ minutes: h * 60 + mm });
+              }}
+              disabled={!reveal.enabled}
+              className={`${timeCls} disabled:opacity-40`}
+            />
+          </div>
         </Row>
       </div>
     </div>
