@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { todayISO } from "../lib/dates";
+import { addDays, format, startOfWeek } from "date-fns";
+import { todayISO, toDateISO } from "../lib/dates";
+import { useWeekReport } from "../hooks/useWeekReport";
+import WeekPlanFloor from "./floors/WeekPlanFloor";
 import { fallbackPanelAnchor } from "../lib/appNav";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
-import { useDayTasks, useInboxTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
+import { useDayTasks, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
@@ -67,10 +70,41 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const today = todayISO(now);
   const { settings, update: updateSettings } = useSettings();
   const { data: vertical } = useVertical();
+
+  // The current (lived) week — the toolbar's living emblem gauge. The week that
+  // contains today (Monday-anchored). The floor shows a *viewed* week, which you
+  // walk ‹ › backward through (past weeks render sealed); it resets to current
+  // each time the door is opened.
+  const currentWeekISO = useMemo(() => toDateISO(startOfWeek(now, { weekStartsOn: 1 })), [now]);
+  const glyphReport = useWeekReport(currentWeekISO, now);
+  const [weekPlanOpen, setWeekPlanOpen] = useState(false);
+  const [viewedWeekISO, setViewedWeekISO] = useState(currentWeekISO);
+  const viewedReport = useWeekReport(viewedWeekISO, now);
+  const viewedIsCurrent = viewedWeekISO === currentWeekISO;
+  const openWeekPlan = useCallback(() => {
+    setViewedWeekISO(currentWeekISO);
+    setWeekPlanOpen(true);
+  }, [currentWeekISO]);
+  const walkWeek = useCallback(
+    (deltaDays: number) =>
+      setViewedWeekISO((iso) => {
+        const next = toDateISO(addDays(new Date(iso + "T00:00:00"), deltaDays));
+        return next > currentWeekISO ? currentWeekISO : next; // never walk past the current week
+      }),
+    [currentWeekISO],
+  );
+  const weekLabel = useMemo(() => {
+    const s = new Date(viewedWeekISO + "T00:00:00");
+    const e = addDays(s, 6);
+    const sameMonth = s.getMonth() === e.getMonth();
+    return `${format(s, "MMM d")} – ${format(e, sameMonth ? "d" : "MMM d")}`;
+  }, [viewedWeekISO]);
+
   const { data: inbox = [] } = useInboxTasks();
   const { data: todayTasks = [] } = useDayTasks(today);
   const { data: weekTasks = [] } = useSprintTasks(vertical.sprint?.id ?? null);
   const { data: scheduled = [] } = useScheduledTasks(range.start, range.end);
+  const { data: anytime = [] } = usePlannedAnytimeTasks(range.start, range.end);
   const { data: events = [] } = useExternalEvents(range.start, range.end);
   const { data: slots = [] } = useSlots(range.start, range.end);
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
@@ -165,10 +199,10 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
 
   const allKnownTasks = useMemo(() => {
     const map = new Map<string, Task>();
-    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled, ...slotChildTasks])
+    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled, ...anytime, ...slotChildTasks])
       map.set(t.id, t);
     return map;
-  }, [inbox, weekTasks, todayTasks, scheduled, slotChildTasks]);
+  }, [inbox, weekTasks, todayTasks, scheduled, anytime, slotChildTasks]);
 
   const taskAccent = useCallback((t: Task) => taskDomainColor(vertical, t), [vertical]);
 
@@ -199,7 +233,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
     { id: "sunday", title: "Sunday — compose the week", run: () => openFlow("sunday") },
     { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
-    { id: "tending", title: "Tending — ripen what's ready", run: () => openFlow("tending") },
+    { id: "refine", title: "Refine — groom your projects toward done", run: () => openFlow("refine") },
     { id: "plan", title: "Plan my day (morning ritual)", run: () => { morningAutoRef.current = false; openOverlay("morning"); } },
     { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
     { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
@@ -272,6 +306,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
             onRangeChange={syncRange}
             railRef={railRef}
+            weekGlyph={onSchedule ? glyphReport.emblem : null}
+            onOpenWeekPlan={onSchedule ? openWeekPlan : undefined}
           />
 
           {onSchedule && openTask && taskPanel && (
@@ -308,6 +344,21 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             />
           )}
         </div>
+
+        {/* The Week's Plan / Review covers the whole work area (rail included) —
+            a moment to receive, not to triage. */}
+        {onSchedule && weekPlanOpen && (
+          <WeekPlanFloor
+            report={viewedReport}
+            state={viewedIsCurrent ? "forming" : "sealed"}
+            weekLabel={weekLabel}
+            viewedWeekISO={viewedWeekISO}
+            onClose={() => setWeekPlanOpen(false)}
+            onPrevWeek={() => walkWeek(-7)}
+            onNextWeek={() => walkWeek(7)}
+            canGoNext={!viewedIsCurrent}
+          />
+        )}
       </div>
 
       {showCmd && (

@@ -118,6 +118,11 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose 
   const setText = (v: string) => (mode === "capture" ? setCaptureText(v) : setAskText(v));
 
   const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+      return;
+    }
     // Space on an empty capture field → Ask; Backspace on an empty Ask field → Capture.
     if (e.key === " " && mode === "capture" && captureText === "") {
       e.preventDefault();
@@ -153,12 +158,8 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose 
 
   return (
     <>
-      <div className="flex items-center gap-2.5 border-b border-line px-3.5">
-        <span
-          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-caption ${
-            isAsk ? "bg-accent-soft text-accent" : "text-accent"
-          }`}
-        >
+      <div className="flex items-center gap-3 border-b border-line/50 px-4">
+        <span className={`shrink-0 text-body leading-none ${isAsk ? "text-accent" : "text-accent/70"}`}>
           {isAsk ? "✦" : "＋"}
         </span>
         <input
@@ -171,26 +172,26 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose 
           onKeyDown={onKey}
           placeholder={
             isAsk
-              ? `Ask ${ASSISTANT_NAME} — “what does my day look like?”`
+              ? `Ask ${ASSISTANT_NAME} — "what does my day look like?"`
               : 'Capture or command… "review PR tomorrow 2pm 45m #work !high"'
           }
-          className="w-full bg-transparent py-3 text-head outline-none placeholder:text-muted/60"
+          className="w-full bg-transparent py-4 text-head outline-none placeholder:text-muted/50"
         />
         <Keycap>esc</Keycap>
       </div>
 
       {/* Mode toggle — tappable on touch, plus the Space / Backspace accelerators */}
-      <div className="flex items-center gap-1 border-b border-line px-2 py-1.5">
+      <div className="flex items-center gap-1 border-b border-line/50 bg-[color-mix(in_srgb,var(--bg)_18%,transparent)] px-2 py-1.5">
         <ModeTab active={!isAsk} onClick={() => setMode("capture")} icon="⚡" label="Capture" />
         <ModeTab active={isAsk} onClick={() => setMode("ask")} icon="✦" label={`Ask ${ASSISTANT_NAME}`} />
-        <span className="mono ml-auto pr-1.5 text-meta text-muted/70">
-          {isAsk ? "⌫ to capture" : "space to ask"}
+        <span className="mono ml-auto pr-1.5 text-meta text-muted/50">
+          {isAsk ? "⌫ capture" : "space to ask"}
         </span>
       </div>
 
       {isAsk ? (
         <div className="flex max-h-[60vh] min-h-[8rem] flex-col">
-          <div className="flex-1 overflow-y-auto px-3.5 py-3">
+          <div className="flex-1 overflow-y-auto px-4 py-3">
             {messages.length === 0 && !loading ? (
               <div className="flex flex-col gap-2.5 py-1">
                 <p className="text-caption text-muted">
@@ -225,7 +226,7 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose 
             )}
           </div>
           {error && (
-            <div className="shrink-0 border-t border-line bg-signal-soft px-3.5 py-2 text-label text-signal">
+            <div className="shrink-0 border-t border-line/50 bg-signal-soft/80 px-4 py-2 text-label text-signal">
               {error}
             </div>
           )}
@@ -236,16 +237,18 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose 
             <button
               onClick={() => void runCapture()}
               onMouseEnter={() => setHighlight(0)}
-              className={`flex w-full items-center gap-2 border-b border-line px-3.5 py-2.5 text-left ${
-                highlight === 0 ? "bg-accent-soft" : ""
+              className={`fast flex w-full items-center gap-2 border-b border-line/50 px-4 py-2.5 text-left ${
+                highlight === 0
+                  ? "bg-[color-mix(in_srgb,var(--accent)_7%,var(--surface)_60%)]"
+                  : "hover:bg-[color-mix(in_srgb,var(--surface)_35%,transparent)]"
               }`}
             >
-              <span className="text-label font-semibold text-accent">＋</span>
+              <span className="shrink-0 text-caption text-accent">＋</span>
               <span className="min-w-0 flex-1 truncate text-body">{parsed.title || captureText.trim()}</span>
               {parsed.chips.map((c, i) => (
                 <span
                   key={i}
-                  className="mono shrink-0 border px-1 py-px text-meta"
+                  className="mono shrink-0 rounded border px-1.5 py-px text-meta"
                   style={{ borderColor: chipColor(c.kind), color: chipColor(c.kind) }}
                 >
                   {c.text}
@@ -265,8 +268,8 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose 
                     c.run();
                   }}
                   onMouseEnter={() => setHighlight(idx)}
-                  className={`flex w-full items-center px-3.5 py-2 text-left text-body ${
-                    highlight === idx ? "bg-accent-soft" : ""
+                  className={`fast flex w-full items-center px-4 py-2.5 text-left text-body transition-colors ${
+                    highlight === idx ? "bg-accent-soft text-ink" : "text-ink/75 hover:bg-accent-soft/50"
                   }`}
                 >
                   {c.title}
@@ -274,7 +277,7 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose 
               );
             })}
             {matches.length === 0 && !parsed && (
-              <div className="px-3.5 py-3 text-caption text-muted">
+              <div className="px-4 py-3 text-caption text-muted/70">
                 Type to capture a task{commands.length ? ", run a command," : ""} or press space to ask {ASSISTANT_NAME}.
               </div>
             )}
@@ -300,8 +303,10 @@ function ModeTab({
     <button
       onClick={onClick}
       aria-pressed={active}
-      className={`tap fast flex items-center gap-1.5 rounded-md px-2.5 py-1 text-label font-medium ${
-        active ? "bg-accent-soft text-accent" : "text-muted hover:text-ink"
+      className={`tap fast flex items-center gap-1.5 rounded-md px-2.5 py-1 text-label font-medium transition-all ${
+        active
+          ? "bg-[color-mix(in_srgb,var(--accent)_10%,var(--surface)_65%)] text-accent"
+          : "text-muted/70 hover:text-ink"
       }`}
     >
       <span aria-hidden>{icon}</span>

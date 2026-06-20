@@ -13,7 +13,8 @@
 
 import { useEffect, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
-import { domainById, initiativeById, isOpenStatus, projectById, type VerticalData, type VTask } from "../../lib/vertical";
+import { domainById, initiativeById, isOpenStatus, projectById, type VerticalData } from "../../lib/vertical";
+import { priorityWork, type RockWork } from "../../lib/priorities";
 import type { BigRock } from "../../lib/types";
 import { ENERGY_META, type Energy } from "../../lib/energy";
 import { supabase } from "../../lib/supabase";
@@ -34,32 +35,8 @@ function rockColor(data: VerticalData, rock: BigRock): string | null {
   return null;
 }
 
-// ── "what moves this?" — the work a priority owns, and how it's tracking ─────
-interface RockWork {
-  tasks: VTask[]; // everything serving the rock (done included)
-  done: number;
-  total: number;
-  scheduledMins: number;
-  pullable: VTask[]; // existing project/bet work, ready, not yet pulled in
-  label: string | null; // the linked project/bet name
-}
-function priorityWork(data: VerticalData, rock: BigRock): RockWork {
-  const init = initiativeById(data, rock.initiative_id);
-  const proj = projectById(data, rock.project_id ?? null);
-  const serves = (t: VTask) =>
-    t.bigRockId === rock.id ||
-    (proj != null && t.projectId === proj.id) ||
-    (init != null && (t.initiativeId === init.id || (t.projectId ? projectById(data, t.projectId)?.initiativeId === init.id : false)));
-  const tasks = data.tasks.filter(serves);
-  return {
-    tasks,
-    done: tasks.filter((t) => t.status === "done").length,
-    total: tasks.length,
-    scheduledMins: tasks.filter((t) => t.status === "scheduled").reduce((s, t) => s + t.durationMins, 0),
-    pullable: tasks.filter((t) => t.bigRockId !== rock.id && t.status === "ready" && !t.sprint),
-    label: proj?.name ?? init?.name ?? null,
-  };
-}
+// ("what moves this?" — priorityWork/RockWork now live in src/lib/priorities.ts,
+//  shared with the Week's Plan / Review.)
 
 // ── the editor — author the week's priorities ────────────────────────────────
 export function BigRocks() {

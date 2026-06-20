@@ -24,6 +24,7 @@ import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
 import MobilePlan, { type PlanTarget } from "./MobilePlan";
 import MobileReadiness from "./MobileReadiness";
+import RefineRun from "../refine/RefineRun";
 import MobileSearch, { type JumpKind } from "./MobileSearch";
 import QuickTaskSheet from "./QuickTaskSheet";
 import ChatPane from "./ChatPane";
@@ -106,6 +107,7 @@ export default function MobileShell() {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [refineOpen, setRefineOpen] = useState(false);
   // A detail to open in the Plan tab, set when you jump from global search.
   const [planTarget, setPlanTarget] = useState<PlanTarget | null>(null);
 
@@ -176,6 +178,12 @@ export default function MobileShell() {
     const t = readTending(vertical);
     return t.silent.length + t.raw.length;
   }, [vertical]);
+
+  // How many projects are groomable right now — the Refine run's deck size.
+  const refineCount = useMemo(
+    () => readTending(vertical).groomable.filter((c) => c.kind === "project").length,
+    [vertical],
+  );
 
   const subCount = (s: MobileTab) =>
     s === "inbox"
@@ -263,13 +271,28 @@ export default function MobileShell() {
           <div className="px-4 pt-4 pb-24">
             <div className="mb-4">
               <MobileReadiness data={vertical} onAskNuvo={openChat} onOpenPlan={() => setTab("plan")} />
+              {refineCount > 0 && (
+                <button
+                  onClick={() => setRefineOpen(true)}
+                  className="tap fast mt-3 flex w-full items-center justify-between rounded-xl border border-line glass-card px-4 py-3 active:scale-[.99]"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <span className="text-lead" style={{ color: "var(--accent)" }}>✦</span>
+                    <span className="text-left">
+                      <span className="block text-body font-medium">Refine your projects</span>
+                      <span className="block text-caption text-muted">{refineCount} ready to sharpen toward done</span>
+                    </span>
+                  </span>
+                  <span className="text-muted">→</span>
+                </button>
+              )}
             </div>
             <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
           </div>
         ) : tab === "calendar" ? (
           <MobileCalendar now={now} />
         ) : tab === "plan" ? (
-          <MobilePlan target={planTarget} />
+          <MobilePlan target={planTarget} onRefine={() => setRefineOpen(true)} />
         ) : (
           <div className="pb-24">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
@@ -330,6 +353,9 @@ export default function MobileShell() {
           <span className="text-meta font-medium leading-none">Nuvo</span>
         </button>
       </nav>
+
+      {/* The Refine run — a full-screen card deck over the shell */}
+      {refineOpen && <RefineRun onClose={() => setRefineOpen(false)} />}
 
       {/* Sheets */}
       {quickOpen && (

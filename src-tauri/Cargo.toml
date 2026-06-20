@@ -24,6 +24,12 @@ serde_json = "1"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
 
+# The ⌥Space spotlight is a macOS NSPanel (non-activating) so it can take the
+# keyboard without stealing focus from whatever app you're in — Spotlight/Raycast
+# feel. macOS-only; other desktops fall back to a plain focused window.
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

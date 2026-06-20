@@ -363,7 +363,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   );
 
   const setSettingsSection = useCallback(
-    (s: SettingsSection) => navigate({ settingsSection: s }),
+    (s: SettingsSection) => navigate({ settingsSection: s }, "replace"),
     [navigate],
   );
 

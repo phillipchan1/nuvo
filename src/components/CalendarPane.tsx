@@ -16,6 +16,8 @@ import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateKind } from "./DraftComposer";
+import WeekEmblem from "./floors/WeekEmblem";
+import type { EmblemSpec } from "../lib/weekEmblem";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth";
 
@@ -28,6 +30,8 @@ type ExtendedProps = {
   recurringEventId?: string;
   /** Part of a repeating series (task/slot occurrence or Google instance). */
   recurring?: boolean;
+  /** Baked-in done state so FC re-renders event content when status toggles. */
+  done?: boolean;
   slotDone?: number;
   slotTotal?: number;
   slotChildren?: { title: string; done: boolean }[];
@@ -155,9 +159,14 @@ export default function CalendarPane({
   onRangeChange,
   railRef,
   onViewChange,
+  weekGlyph,
+  onOpenWeekPlan,
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
+  /** The living emblem for the current week — the toolbar's ambient gauge + door. */
+  weekGlyph?: EmblemSpec | null;
+  onOpenWeekPlan?: () => void;
   tasks: Task[];
   events: ExternalEvent[];
   slots: Slot[];
@@ -220,7 +229,17 @@ export default function CalendarPane({
     end: Date;
     kind: CreateKind;
     point: { x: number; y: number };
+    allDay?: boolean;
   } | null>(null);
+
+  // Highlight the anytime row cell for the draft's day while the composer is open.
+  useEffect(() => {
+    if (!draft?.allDay) return;
+    const dateStr = toDateISO(draft.start);
+    const cell = document.querySelector<HTMLElement>(`.fc-daygrid-day[data-date="${dateStr}"]`);
+    cell?.classList.add("anytime-active");
+    return () => cell?.classList.remove("anytime-active");
+  }, [draft]);
 
   // The clicked block is brought to the front of any overlap (full width, on top)
   // so it's readable, and lifts toward you. Focus is applied IMPERATIVELY — a
@@ -446,6 +465,7 @@ export default function CalendarPane({
             refId: t.id,
             barColor: bar,
             recurring: Boolean(t.recurrence_id),
+            done: t.status === "done",
           },
         };
       });
@@ -776,7 +796,14 @@ export default function CalendarPane({
   // Click-drag on empty grid → open the quick-create card. Modifiers pick the
   // type up front (⌥ event, ⌘/Ctrl slot); otherwise the toolbar create mode.
   const onSelect = (arg: DateSelectArg) => {
-    if (arg.allDay) return; // the all-day row is a drop target, not a create surface
+    if (arg.allDay) {
+      // Anytime row click → plan a task for that day with no time.
+      const day = arg.start;
+      day.setHours(0, 0, 0, 0);
+      const je = arg.jsEvent;
+      setDraft({ start: day, end: day, kind: "task", point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 }, allDay: true });
+      return;
+    }
     clearFocus();
     const je = arg.jsEvent;
     let kind: CreateKind = createMode;
@@ -793,7 +820,14 @@ export default function CalendarPane({
 
   const onDateClick = (arg: DateClickArg) => {
     clearFocus(); // clicking empty space drops the focused block
-    if (isMonth || draft || arg.allDay) return;
+    if (isMonth || draft) return;
+    if (arg.allDay) {
+      const day = arg.date;
+      day.setHours(0, 0, 0, 0);
+      const je = arg.jsEvent;
+      setDraft({ start: day, end: day, kind: "task", point: { x: je.clientX, y: je.clientY }, allDay: true });
+      return;
+    }
     const start = arg.date;
     const end = new Date(start.getTime() + 30 * 60_000);
     const je = arg.jsEvent;
@@ -806,7 +840,7 @@ export default function CalendarPane({
 
   const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[] = [], calendarAccountId?: string) => {
     if (!draft) return;
-    const { start, end, point } = draft;
+    const { start, end, point, allDay: draftAllDay } = draft;
     const duration = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
     const doDate = toDateISO(start);
     const minutes = start.getHours() * 60 + start.getMinutes();
@@ -830,15 +864,14 @@ export default function CalendarPane({
             kind: "task",
             rule: recurrence,
             anchorISO: doDate,
-            template: { title, duration_minutes: duration, time_of_day_minutes: minutes },
+            template: { title, duration_minutes: duration, time_of_day_minutes: draftAllDay ? null : minutes },
           });
           revealFirstOccurrence();
         } else {
           await mutations.create({
             title,
             do_date: doDate,
-            start_time: start.toISOString(),
-            duration_minutes: duration,
+            ...(draftAllDay ? {} : { start_time: start.toISOString(), duration_minutes: duration }),
           });
         }
       } else if (kind === "event") {
@@ -884,10 +917,25 @@ export default function CalendarPane({
     // Clicking the checkbox toggles done — handle it in FullCalendar's own click
     // (FC's native eventClick fires before React's onClick on the rendered
     // checkbox, and opening the detail re-renders it away), and never focus/open.
-    if (kind === "task" && (info.jsEvent?.target as HTMLElement | null)?.closest("[data-done-toggle]")) {
-      const task = findTask(refId);
-      if (task) task.status === "done" ? mutations.uncomplete(task) : mutations.complete(task);
-      return;
+    if (kind === "task") {
+      const target = info.jsEvent?.target as HTMLElement | null;
+      // Primary: target is the button or a child of it (normal case).
+      // Fallback: coordinate hit-test for when the browser retargets the click
+      // to the event container (e.g. due to pointer capture).
+      const onCheckbox = Boolean(target?.closest("[data-done-toggle]")) || (() => {
+        const x = info.jsEvent?.clientX;
+        const y = info.jsEvent?.clientY;
+        if (x == null || y == null) return false;
+        return Array.from(info.el.querySelectorAll("[data-done-toggle]")).some(btn => {
+          const r = btn.getBoundingClientRect();
+          return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+        });
+      })();
+      if (onCheckbox) {
+        const task = findTask(refId);
+        if (task) task.status === "done" ? mutations.uncomplete(task) : mutations.complete(task);
+        return;
+      }
     }
     // A click brings the block to the front of any overlap (full width, on top)
     // and opens its detail — the lift lands this frame, the detail opens with it.
@@ -905,13 +953,12 @@ export default function CalendarPane({
   };
 
   const renderEvent = (arg: EventContentArg) => {
-    const { kind, refId, calColor, recurring } = arg.event.extendedProps as ExtendedProps;
+    const { kind, calColor, recurring, done: doneProp } = arg.event.extendedProps as ExtendedProps;
     const inMonth = arg.view.type === "dayGridMonth";
 
     // ── Month view: compact dot + title pill ──────────────────────────────
     if (inMonth) {
-      const task = kind === "task" ? findTask(refId) : null;
-      const done = task?.status === "done";
+      const done = kind === "task" ? (doneProp ?? false) : false;
       const dotColor = kind === "task" ? "var(--accent)" : (calColor ?? "var(--muted)");
       return (
         <div className="flex min-w-0 items-center gap-1 px-1.5 py-[2px]">
@@ -1028,8 +1075,7 @@ export default function CalendarPane({
     }
 
     // ── Task: checkbox tinted to its own color ─────────────────────────────
-    const task = findTask(refId);
-    const done = task?.status === "done";
+    const done = doneProp ?? false;
     return (
       <div className="flex h-full min-w-0 overflow-hidden">
         {Bar}
@@ -1109,6 +1155,7 @@ export default function CalendarPane({
           end={draft.end}
           point={draft.point}
           initialKind={draft.kind}
+          allDay={draft.allDay}
           googleAvailable={googleAvailable}
           writableAccounts={writableGoogleAccounts}
           onCreate={handleCreate}
@@ -1182,6 +1229,19 @@ export default function CalendarPane({
         )}
 
         <div data-tauri-drag-region className="flex-1 self-stretch" />
+
+        {/* "This week" — the living-emblem button: an ambient gauge that fills
+            across the week, and the door to the Week's Plan / Review floor. */}
+        {onOpenWeekPlan && weekGlyph && (
+          <button
+            onClick={onOpenWeekPlan}
+            className="fast mr-1 flex items-center gap-1.5 rounded-full border border-line py-0.5 pl-1 pr-2.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
+            title="This week's Plan"
+          >
+            <WeekEmblem spec={weekGlyph} state="forming" size={22} hideAmbient />
+            <span className="leading-none">This week</span>
+          </button>
+        )}
 
         {onViewChange && (
           <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">

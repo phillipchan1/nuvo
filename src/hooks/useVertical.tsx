@@ -101,6 +101,10 @@ export interface VerticalStore {
   addBigRocks: (items: { id?: string; title: string; win?: string; initiative_id?: string | null }[]) => void;
   updateBigRock: (id: string, patch: Partial<Omit<BigRock, "id">>) => void;
   removeBigRock: (id: string) => void;
+  /** The Review's forward-fold: carry unfinished priorities into THIS week's
+   *  sprint (the one Sunday opens), bumping each one's `roll_count`. Deduped by
+   *  id, so re-carrying is idempotent. Returns how many were newly carried. */
+  carryBigRocksForward: (rocks: BigRock[]) => number;
   /** Check a rock off as moved this week (or un-check it). */
   toggleBigRockDone: (id: string) => void;
   /** Per-day compose contexts (normal/light/travel/off) for the planning week. */
@@ -720,6 +724,18 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         }),
       removeBigRock: (id) =>
         void patchSprint({ big_rocks: data.bigRocks.filter((r) => r.id !== id) }),
+      carryBigRocksForward: (rocks) => {
+        const have = new Set(data.bigRocks.map((r) => r.id));
+        const fresh = rocks.filter((r) => !have.has(r.id));
+        if (!fresh.length) return 0;
+        const carried: BigRock[] = fresh.map((r) => ({
+          ...r,
+          done_at: null,
+          roll_count: (r.roll_count ?? 0) + 1,
+        }));
+        void patchSprint({ big_rocks: [...data.bigRocks, ...carried] });
+        return carried.length;
+      },
       toggleBigRockDone: (id) =>
         void patchSprint({
           big_rocks: data.bigRocks.map((r) =>

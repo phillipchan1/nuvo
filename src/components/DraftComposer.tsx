@@ -22,6 +22,7 @@ export default function DraftComposer({
   end,
   point,
   initialKind,
+  allDay = false,
   googleAvailable,
   writableAccounts = [],
   onCreate,
@@ -31,12 +32,14 @@ export default function DraftComposer({
   end: Date;
   point: { x: number; y: number };
   initialKind: CreateKind;
+  allDay?: boolean;
   googleAvailable: boolean;
   writableAccounts?: Array<{ id: string; email: string }>;
   onCreate: (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[], calendarAccountId?: string) => void;
   onCancel: () => void;
 }) {
-  const kinds = KINDS.filter((k) => k.value !== "event" || googleAvailable);
+  // Anytime (all-day) drafts are task-only — events and slots require a specific time.
+  const kinds = allDay ? KINDS.filter((k) => k.value === "task") : KINDS.filter((k) => k.value !== "event" || googleAvailable);
   const [kind, setKind] = useState<CreateKind>(
     initialKind === "event" && !googleAvailable ? "task" : initialKind,
   );
@@ -170,10 +173,16 @@ export default function DraftComposer({
             </svg>
             <span className="font-medium text-ink">{format(start, "EEE, MMM d")}</span>
             <span className="text-muted/40">·</span>
-            <span className="text-muted">{format(start, "h:mm")}–{format(end, "h:mm a")}</span>
-            <span className="ml-auto shrink-0 rounded-full bg-bg px-2.5 py-0.5 text-caption font-medium text-muted">
-              {fmtDuration(durationMins)}
-            </span>
+            {allDay ? (
+              <span className="text-muted">anytime</span>
+            ) : (
+              <>
+                <span className="text-muted">{format(start, "h:mm")}–{format(end, "h:mm a")}</span>
+                <span className="ml-auto shrink-0 rounded-full bg-bg px-2.5 py-0.5 text-caption font-medium text-muted">
+                  {fmtDuration(durationMins)}
+                </span>
+              </>
+            )}
           </div>
         </div>
 

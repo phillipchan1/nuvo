@@ -284,6 +284,20 @@ html.spotlight-window #root {
   background: transparent !important;
 }
 
+/* The in-app ⌘K panel floats over the calm .atmosphere canvas, so the light
+   .glass-card frost reads fine. The detached ⌥Space window has NO atmosphere
+   behind it — it hovers over the live desktop (a call, a deck, a bright doc),
+   where 56% surface lets that chaos bleed through and muddies the text. Inside
+   the spotlight window only, thicken the frost to a near-opaque warm pane so
+   the capture line stays legible over anything. */
+html.spotlight-window .glass-card {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 14%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface) 94%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  backdrop-filter: blur(28px) saturate(1.6);
+}
+
 /* The atmosphere: a whisper of dawn (top-left) and dusk (bottom-right) light,
    laid over the base surface. Used on the big full-bleed surfaces — the panels
    that sit on top stay clean. Subtle on purpose; it should be felt, not seen. */
@@ -913,7 +927,17 @@ textarea:focus {
 /* ── All-day row: "anytime" — tasks planned for the day, not yet time-blocked.
    Drop a task here to schedule it for the day without committing to a time;
    drag it down into the grid to block a slot. Kept tall enough to stay an easy
-   drop target even when empty. */
+   drop target even when empty. Cells are clickable to create an anytime task. */
+.fc .fc-daygrid-body .fc-daygrid-day-frame {
+  cursor: pointer;
+}
+.fc .fc-daygrid-body .fc-daygrid-day:hover .fc-daygrid-day-frame {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.fc .fc-daygrid-body .fc-daygrid-day.anytime-active .fc-daygrid-day-frame {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 35%, transparent);
+}
 .fc .fc-timegrid-axis-cushion {
   text-transform: lowercase;
   letter-spacing: 0.02em;

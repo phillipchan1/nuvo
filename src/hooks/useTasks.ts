@@ -58,6 +58,30 @@ export function useScheduledTasks(rangeStartISO: string, rangeEndISO: string) {
   });
 }
 
+/** Planned anytime tasks (do_date set, no start_time) within a date range.
+ *  These appear as chips in the calendar's anytime row but are invisible to
+ *  useScheduledTasks which requires start_time IS NOT NULL. */
+export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: string) {
+  // do_date is a date column — extract date-only strings from the ISO range.
+  const startDate = rangeStartISO.substring(0, 10);
+  const endDate = rangeEndISO.substring(0, 10);
+  return useQuery({
+    queryKey: ["tasks", "anytime", startDate, endDate],
+    queryFn: async (): Promise<Task[]> => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(TASK_COLS)
+        .is("start_time", null)
+        .not("do_date", "is", null)
+        .in("status", ["planned"])
+        .gte("do_date", startDate)
+        .lt("do_date", endDate);
+      if (error) throw error;
+      return data as Task[];
+    },
+  });
+}
+
 /** Every non-trashed task, done included — same query key the vertical store
  *  fills, so this shares its cache (no second fetch). The Plan flow needs the
  *  raw rows to feed the composer; `VTask` drops the deadline ISO it relies on. */

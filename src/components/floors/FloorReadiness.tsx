@@ -1,7 +1,7 @@
 // The floor's "now what" — the readiness gauge woven into the hero of the
 // Project / Initiative floors (the views that don't otherwise guide you; Today
 // has its brief, the Domain chapel has its lamps). Names the single ripest item
-// and its next move, and the action launches the intelligent Tending ritual.
+// and its next move, and the action launches the Refine run (the card-game groom).
 
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
@@ -25,8 +25,8 @@ export default function FloorReadiness({ kind }: { kind: "project" | "initiative
         eyebrow={kind === "project" ? "Projects" : "Initiatives"}
         readiness={readiness}
         cue={cue}
-        actionLabel={top ? "Tend" : undefined}
-        onAction={top ? () => openFlow("tending") : undefined}
+        actionLabel={top ? "Refine" : undefined}
+        onAction={top ? () => openFlow("refine") : undefined}
       />
     </div>
   );

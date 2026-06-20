@@ -45,8 +45,21 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+// Dev verify harness for the week emblem — reached at ?emblem, no auth/shell.
+const showEmblemHarness = import.meta.env.DEV && new URLSearchParams(window.location.search).has("emblem");
+
+if (showEmblemHarness) {
+  void import("./components/floors/EmblemHarness").then(({ default: EmblemHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <EmblemHarness />
+      </React.StrictMode>,
+    );
+  });
+} else {
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}

@@ -553,6 +553,9 @@ export function TaskPopover({
             </Btn>
           )}
           {task.start_time && <Btn onClick={() => mutations.unblock(task)}>Unblock</Btn>}
+          {task.status !== "inbox" && task.status !== "done" && (
+            <Btn onClick={() => { mutations.backToInbox(task); onClose(); }}>→ Inbox</Btn>
+          )}
           <div className="flex-1" />
           <RecurrenceDeleteButton
             recurring={Boolean(task.recurrence_id && recurrence)}

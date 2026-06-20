@@ -524,6 +524,15 @@ export default function LeftRail({
           </button>
           <button
             onClick={() => {
+              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.backToInbox(t));
+              setSelectedIds(new Set());
+            }}
+            className="fast rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
+          >
+            → Inbox
+          </button>
+          <button
+            onClick={() => {
               visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.complete(t));
               setSelectedIds(new Set());
             }}

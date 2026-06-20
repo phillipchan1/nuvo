@@ -11,9 +11,14 @@
 // vow + weekly target. No new data layer: every read is a pure selector over the
 // live VerticalData snapshot, every write goes through useVertical()'s mutations.
 
-import { useEffect, useState, type ReactNode } from "react";
-import { format, parseISO } from "date-fns";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { addDays, format, parseISO, startOfWeek } from "date-fns";
+import { toDateISO } from "../../lib/dates";
 import { useVertical } from "../../hooks/useVertical";
+import { useWeekReport } from "../../hooks/useWeekReport";
+import { WeekPlanBody } from "../floors/WeekPlanFloor";
+import WeekEmblem from "../floors/WeekEmblem";
+import Sheet from "./Sheet";
 import {
   domainById,
   faithfulness,
@@ -101,7 +106,7 @@ type Frame =
 
 const frameFor = (t: PlanTarget): Frame => ({ level: t.kind, id: t.id });
 
-export default function MobilePlan({ target }: { target?: PlanTarget | null }) {
+export default function MobilePlan({ target, onRefine }: { target?: PlanTarget | null; onRefine?: () => void }) {
   const store = useVertical();
   const d = store.data;
   const [lens, setLensState] = useState<Lens>(readLens);
@@ -187,8 +192,10 @@ export default function MobilePlan({ target }: { target?: PlanTarget | null }) {
         )}
       </div>
 
+      {frame.level === "list" && <WeekPlanCard />}
+
       {frame.level === "list" && (
-        <PlanReadiness d={d} onOpen={(k, id) => (k === "project" ? openProject(id) : openInitiative(id))} />
+        <PlanReadiness d={d} onRefine={onRefine} onOpen={(k, id) => (k === "project" ? openProject(id) : openInitiative(id))} />
       )}
 
       {frame.level === "list" ? (
@@ -231,13 +238,84 @@ export default function MobilePlan({ target }: { target?: PlanTarget | null }) {
   );
 }
 
+// ── The Week's Plan / Review — the weekly narrated companion (mobile home) ────
+// A "This week" hero atop the Plan tab; tap to open the full surface in a Sheet,
+// where you can walk ‹ › back to sealed Reviews of past weeks.
+function weekLabelOf(weekISO: string): string {
+  const s = new Date(weekISO + "T00:00:00");
+  const e = addDays(s, 6);
+  return `${format(s, "MMM d")} – ${format(e, s.getMonth() === e.getMonth() ? "d" : "MMM d")}`;
+}
+
+function WeekPlanCard() {
+  const now = useMemo(() => new Date(), []);
+  const currentWeekISO = useMemo(() => toDateISO(startOfWeek(now, { weekStartsOn: 1 })), [now]);
+  const report = useWeekReport(currentWeekISO, now);
+  const [open, setOpen] = useState(false);
+  const total = report.priorityTotal;
+
+  return (
+    <div className="px-4 pt-4">
+      <button
+        onClick={() => setOpen(true)}
+        className="tap fast flex w-full items-center gap-3 rounded-xl border border-line bg-surface-2 px-3 py-3 text-left active:bg-surface"
+      >
+        <WeekEmblem spec={report.emblem} state="forming" size={48} hideAmbient />
+        <div className="min-w-0 flex-1">
+          <div className="section-label !p-0">This week</div>
+          <div className="truncate text-head font-semibold text-ink">{weekLabelOf(currentWeekISO)}</div>
+          <div className="truncate text-caption text-muted">
+            {total > 0 ? `${report.landedCount} of ${total} priorities landed` : "Set what matters most"}
+          </div>
+        </div>
+        <span className="shrink-0 text-muted">›</span>
+      </button>
+
+      {open && <WeekPlanSheet currentWeekISO={currentWeekISO} now={now} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function WeekPlanSheet({ currentWeekISO, now, onClose }: { currentWeekISO: string; now: Date; onClose: () => void }) {
+  const [viewedWeekISO, setViewedWeekISO] = useState(currentWeekISO);
+  const report = useWeekReport(viewedWeekISO, now);
+  const isCurrent = viewedWeekISO === currentWeekISO;
+  const walk = (deltaDays: number) =>
+    setViewedWeekISO((iso) => {
+      const next = toDateISO(addDays(new Date(iso + "T00:00:00"), deltaDays));
+      return next > currentWeekISO ? currentWeekISO : next;
+    });
+
+  const header = (
+    <div className="mb-5 flex items-center gap-2">
+      <button onClick={() => walk(-7)} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Previous week">‹</button>
+      <button onClick={isCurrent ? undefined : () => walk(7)} disabled={isCurrent} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2 disabled:opacity-30" aria-label="Next week">›</button>
+      <div className="min-w-0 flex-1 text-center">
+        <div className="section-label !p-0">{isCurrent ? "This week" : "The Review"}</div>
+        <div className="masthead text-head text-ink">{weekLabelOf(viewedWeekISO)}</div>
+      </div>
+      <span className="h-8 w-8" />
+    </div>
+  );
+
+  return (
+    <Sheet onClose={onClose} tall>
+      <div className="px-4 pb-8">
+        <WeekPlanBody report={report} state={isCurrent ? "forming" : "sealed"} viewedWeekISO={viewedWeekISO} header={header} />
+      </div>
+    </Sheet>
+  );
+}
+
 // ── "Now what" header — where to start when you land on the vertical ─────────
 function PlanReadiness({
   d,
   onOpen,
+  onRefine,
 }: {
   d: VerticalData;
   onOpen: (kind: "project" | "initiative", id: string) => void;
+  onRefine?: () => void;
 }) {
   const top = readTending(d).groomable[0];
   const readiness = (readinessOfProjectFloor(d) + readinessOfInitiativeFloor(d)) / 2;
@@ -250,8 +328,8 @@ function PlanReadiness({
         eyebrow="Your vertical"
         readiness={readiness}
         cue={cue}
-        actionLabel={top ? "Tend" : undefined}
-        onAction={top ? () => onOpen(top.kind, top.id) : undefined}
+        actionLabel={top ? "Refine" : undefined}
+        onAction={top ? (onRefine ?? (() => onOpen(top.kind, top.id))) : undefined}
       />
     </div>
   );
