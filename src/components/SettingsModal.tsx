@@ -434,14 +434,14 @@ function ConnectionsPane({
   };
 
   // ── ICS subscription (read-only, no OAuth) ──
-  const [showIcs, setShowIcs] = useState(false);
+  const [icsMode, setIcsMode] = useState<"apple" | "generic" | null>(null);
   const [icsUrl, setIcsUrl] = useState("");
   const [icsLabel, setIcsLabel] = useState("");
   const [icsBusy, setIcsBusy] = useState(false);
   const [icsError, setIcsError] = useState<string | null>(null);
 
   const subscribeIcs = async () => {
-    const url = icsUrl.trim();
+    const url = icsUrl.trim().replace(/^webcal:\/\//i, "https://");
     if (!url || icsBusy) return;
     setIcsBusy(true);
     setIcsError(null);
@@ -463,7 +463,7 @@ function ConnectionsPane({
     setIcsBusy(false);
     setIcsUrl("");
     setIcsLabel("");
-    setShowIcs(false);
+    setIcsMode(null);
     qc.invalidateQueries({ queryKey: ["calendar_accounts"] });
   };
 
@@ -520,7 +520,7 @@ function ConnectionsPane({
                   kind="signal"
                   onClick={() => {
                     setIcsLabel(a.email);
-                    setShowIcs(true);
+                    setIcsMode("generic");
                   }}
                 >
                   Update link
@@ -569,23 +569,53 @@ function ConnectionsPane({
           {!accounts.some((a) => a.provider === "m365") && (
             <Btn onClick={() => connect("m365")}>Connect Microsoft 365</Btn>
           )}
-          {!showIcs && (
-            <Btn onClick={() => setShowIcs(true)}>Subscribe via calendar link</Btn>
+          {!icsMode && (
+            <>
+              <Btn onClick={() => setIcsMode("apple")}>Connect Apple Calendar</Btn>
+              <Btn onClick={() => setIcsMode("generic")}>Subscribe via calendar link</Btn>
+            </>
           )}
         </div>
 
-        {showIcs && (
+        {icsMode !== null && (
           <div className="space-y-2 rounded-lg border border-line bg-surface-2 p-3">
-            <div className="text-caption font-medium">Subscribe via calendar link</div>
-            <p className="text-label text-muted">
-              Paste a published <span className="mono">.ics</span> URL (e.g. Outlook → Settings → Calendar →
-              Shared calendars → Publish). Read-only, refreshes every ~15 min. The link grants full read
-              access to that calendar, so treat it like a password — it's stored encrypted.
-            </p>
+            <div className="text-caption font-medium">
+              {icsMode === "apple" ? "Apple Calendar" : "Subscribe via calendar link"}
+            </div>
+            {icsMode === "apple" ? (
+              <ol className="text-label text-muted list-decimal list-inside space-y-1">
+                <li>
+                  Open{" "}
+                  <span className="mono text-ink">calendar.icloud.com</span> and sign in.
+                </li>
+                <li>
+                  Hover over the calendar you want to add — click the broadcast icon{" "}
+                  <span className="text-ink">(⊙)</span> that appears next to its name.
+                </li>
+                <li>Tick <span className="text-ink">Public Calendar</span>, then copy the link.</li>
+                <li>Paste the link below — Nuvo accepts both <span className="mono">webcal://</span> and <span className="mono">https://</span> formats.</li>
+              </ol>
+            ) : (
+              <p className="text-label text-muted">
+                Paste a published <span className="mono">.ics</span> URL (e.g. Outlook → Settings → Calendar →
+                Shared calendars → Publish). Read-only, refreshes every ~15 min. The link grants full read
+                access to that calendar, so treat it like a password — it's stored encrypted.
+              </p>
+            )}
+            {icsMode === "apple" && (
+              <p className="text-label text-muted border-t border-line pt-2 mt-1">
+                The public link is obscure and non-guessable, but anyone who has it can read that calendar.
+                Nuvo stores it encrypted.
+              </p>
+            )}
             <input
               value={icsUrl}
               onChange={(e) => setIcsUrl(e.target.value)}
-              placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics"
+              placeholder={
+                icsMode === "apple"
+                  ? "webcal://p-caldav.icloud.com/published/2/…"
+                  : "https://outlook.office365.com/owa/calendar/…/calendar.ics"
+              }
               className="mono w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-label outline-none focus:border-accent"
               autoFocus
             />
@@ -604,7 +634,7 @@ function ConnectionsPane({
               <Btn
                 disabled={icsBusy}
                 onClick={() => {
-                  setShowIcs(false);
+                  setIcsMode(null);
                   setIcsError(null);
                 }}
               >
