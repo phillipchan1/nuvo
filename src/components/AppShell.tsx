@@ -8,6 +8,7 @@ import {
 import { VerticalProvider, useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useEventRouter } from "../hooks/useEventRouter";
 import MobileShell from "./mobile/MobileShell";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import Planner from "./Planner";
@@ -47,6 +48,7 @@ export default function AppShell() {
 // (VerticalProvider + the task hooks) and navigation context.
 function ResponsiveShell() {
   const isMobile = useIsMobile();
+  useEventRouter(); // quietly attribute events on unmapped calendars (Layer 3)
   return isMobile ? <MobileShell /> : <AppShellInner />;
 }
 
