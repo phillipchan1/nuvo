@@ -8,9 +8,9 @@ import { READY, toneColor } from "./floors/ReadinessBanner";
 const RUNGS: { id: Rung; label: string }[] = [
   { id: "now", label: "Today" },
   { id: "day", label: "Schedule" },
-  { id: "project", label: "Project" },
-  { id: "initiative", label: "Initiative" },
-  { id: "domain", label: "Domain" },
+  { id: "project", label: "Projects" },
+  { id: "initiative", label: "Initiatives" },
+  { id: "domain", label: "Domains" },
 ];
 
 // The shared vocabulary for the rituals (Planner command palette,

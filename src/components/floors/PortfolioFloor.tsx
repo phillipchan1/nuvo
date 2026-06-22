@@ -17,12 +17,14 @@ import { ripenessOfProject, verdictOf } from "../../lib/tending";
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
-import FloorReadiness from "./FloorReadiness";
+import FloorStanding from "./FloorStanding";
+import { StandingToggle } from "./StandingToggle";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, updateProject, deleteProjects } = useVertical();
-  const { openFloorModal } = useAppNavigation();
+  const { openFloorModal, openFlow } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
+  const [view, setView] = useState<"standing" | "board">("standing");
 
   const projects = data.projects.filter((p) => !domainFilter || p.domainId === domainFilter);
 
@@ -68,29 +70,35 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
         <p className="mt-1 text-body text-muted">Every project at a glance — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
 
-      <FloorReadiness kind="project" />
+      <StandingToggle value={view} onChange={setView} />
 
-      <DomainFilter value={domainFilter} onChange={setDomainFilter} />
+      {view === "standing" ? (
+        <FloorStanding kind="project" onRefine={() => openFlow("refine")} />
+      ) : (
+        <>
+          <DomainFilter value={domainFilter} onChange={setDomainFilter} />
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <Collection
-        config={{
-          records,
-          statusOptions: PROJECT_STATUS,
-          statusColors: PROJECT_STATUS_COLORS,
-          statusLabels: PROJECT_STATUS_LABEL,
-          extraColumns: [
-            { key: "tasks", label: "Tasks" },
-            { key: "week", label: "Week" },
-          ],
-          onNew: () => openFloorModal("new-project"),
-          newLabel: "+ new project",
-          storageKey: "projects",
-          selectable: true,
-          onBulkDelete: deleteProjects,
-        }}
-        />
-      </div>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <Collection
+              config={{
+                records,
+                statusOptions: PROJECT_STATUS,
+                statusColors: PROJECT_STATUS_COLORS,
+                statusLabels: PROJECT_STATUS_LABEL,
+                extraColumns: [
+                  { key: "tasks", label: "Tasks" },
+                  { key: "week", label: "Week" },
+                ],
+                onNew: () => openFloorModal("new-project"),
+                newLabel: "+ new project",
+                storageKey: "projects",
+                selectable: true,
+                onBulkDelete: deleteProjects,
+              }}
+            />
+          </div>
+        </>
+      )}
 
     </div>
   );

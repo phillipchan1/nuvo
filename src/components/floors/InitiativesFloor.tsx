@@ -17,7 +17,8 @@ import { ripenessOfInitiative, verdictOf } from "../../lib/tending";
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL, type TimelineItem } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
-import FloorReadiness from "./FloorReadiness";
+import FloorStanding from "./FloorStanding";
+import { StandingToggle } from "./StandingToggle";
 
 const MOMENTUM = {
   up: { value: "↑ rising", color: "var(--accent)" },
@@ -31,8 +32,9 @@ export default function InitiativesFloor({
   onOpen: (id: string) => void;
 }) {
   const { data, updateInitiative, updateProject, deleteInitiatives } = useVertical();
-  const { openFloorModal, openRecord } = useAppNavigation();
+  const { openFloorModal, openRecord, openFlow } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
+  const [view, setView] = useState<"standing" | "board">("standing");
 
   const initiatives = data.initiatives.filter((i) => !domainFilter || i.domainId === domainFilter);
 
@@ -94,31 +96,35 @@ export default function InitiativesFloor({
         <p className="mt-1 text-body text-muted">The bets with finish lines, across every domain — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
 
-      <FloorReadiness kind="initiative" />
+      <StandingToggle value={view} onChange={setView} />
 
-      <DomainFilter value={domainFilter} onChange={setDomainFilter} />
+      {view === "standing" ? (
+        <FloorStanding kind="initiative" onRefine={() => openFlow("refine")} />
+      ) : (
+        <>
+          <DomainFilter value={domainFilter} onChange={setDomainFilter} />
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <Collection
-        config={{
-          records,
-          statusOptions: [...PROJECT_STATUS],
-          statusColors: PROJECT_STATUS_COLORS,
-          statusLabels: PROJECT_STATUS_LABEL,
-          extraColumns: [
-            { key: "momentum", label: "Momentum" },
-            { key: "projects", label: "Projects" },
-          ],
-          onNew: () => openFloorModal("new-initiative"),
-          newLabel: "+ new initiative",
-          storageKey: "initiatives",
-          selectable: true,
-          onBulkDelete: deleteInitiatives,
-        }}
-        />
-      </div>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <Collection
+              config={{
+                records,
+                statusOptions: [...PROJECT_STATUS],
+                statusColors: PROJECT_STATUS_COLORS,
+                statusLabels: PROJECT_STATUS_LABEL,
+                extraColumns: [
+                  { key: "momentum", label: "Momentum" },
+                  { key: "projects", label: "Projects" },
+                ],
+                onNew: () => openFloorModal("new-initiative"),
+                newLabel: "+ new initiative",
+                storageKey: "initiatives",
+                selectable: true,
+                onBulkDelete: deleteInitiatives,
+              }}
+            />
+          </div>
 
-      {shipped.length > 0 && (
+          {shipped.length > 0 && (
         <section className="mt-10">
           <div className="section-label mb-2">The shelf · {shipped.length} complete</div>
           <div className="flex flex-wrap gap-2.5">
@@ -136,8 +142,10 @@ export default function InitiativesFloor({
                 </button>
               );
             })}
-          </div>
-        </section>
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   );
