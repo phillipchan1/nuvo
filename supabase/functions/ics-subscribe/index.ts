@@ -21,10 +21,13 @@ Deno.serve(async (req) => {
     const user = await requireUser(req);
     const { url, label } = await req.json().catch(() => ({}));
 
-    if (!url || typeof url !== "string" || !/^https:\/\//i.test(url.trim())) {
+    if (!url || typeof url !== "string") {
       return json({ error: "A valid https calendar URL is required" }, 400);
     }
-    const feedUrl = url.trim();
+    const feedUrl = url.trim().replace(/^webcal:\/\//i, "https://");
+    if (!/^https:\/\//i.test(feedUrl)) {
+      return json({ error: "A valid https calendar URL is required" }, 400);
+    }
     let host: string;
     try {
       host = new URL(feedUrl).hostname;

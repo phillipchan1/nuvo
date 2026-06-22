@@ -490,7 +490,7 @@ function ConnectionsPane({
   const [icsError, setIcsError] = useState<string | null>(null);
 
   const subscribeIcs = async () => {
-    const url = icsUrl.trim();
+    const url = icsUrl.trim().replace(/^webcal:\/\//i, "https://");
     if (!url || icsBusy) return;
     setIcsBusy(true);
     setIcsError(null);
