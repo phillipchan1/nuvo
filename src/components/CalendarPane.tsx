@@ -161,18 +161,18 @@ export default function CalendarPane({
   onViewChange,
   weekGlyph,
   onOpenWeekPlan,
-  weekReady,
-  planForward,
+  weekButtonLabel,
+  weekButtonGlow,
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
   /** The living emblem for the current week — the toolbar's ambient gauge + door. */
   weekGlyph?: EmblemSpec | null;
   onOpenWeekPlan?: () => void;
-  /** The Friday reveal has arrived and the week isn't yet acknowledged — glow. */
-  weekReady?: boolean;
-  /** Early in the week (before it's shaped) the door faces forward — label it "Plan". */
-  planForward?: boolean;
+  /** Lifecycle label for the week door: "Plan the week" / "The week's plan" / "Review ready". */
+  weekButtonLabel?: string;
+  /** Friday-review glow — only the review state lights the signal ring. */
+  weekButtonGlow?: boolean;
   tasks: Task[];
   events: ExternalEvent[];
   slots: Slot[];
@@ -1238,24 +1238,20 @@ export default function CalendarPane({
 
         {/* "This week" — the living-emblem button: an ambient gauge that fills
             across the week, and the door to the Week's Plan / Review floor. */}
-        {onOpenWeekPlan && weekGlyph && (() => {
-          // At the turn of the week Plan wins over a still-glowing review.
-          const reviewGlow = weekReady && !planForward;
-          return (
+        {onOpenWeekPlan && weekGlyph && (
           <button
             onClick={onOpenWeekPlan}
             className={`fast relative mr-1 flex items-center gap-1.5 rounded-full border py-0.5 pl-1 pr-2.5 text-label font-medium ${
-              reviewGlow ? "text-ink" : "border-line text-muted hover:border-line-strong hover:text-ink"
+              weekButtonGlow ? "text-ink" : "border-line text-muted hover:border-line-strong hover:text-ink"
             }`}
-            style={reviewGlow ? { borderColor: "var(--signal)", boxShadow: "0 0 0 3px color-mix(in srgb, var(--signal) 18%, transparent)" } : undefined}
-            title={reviewGlow ? "Your week is ready to review" : planForward ? "Plan the week ahead" : "This week's Plan"}
+            style={weekButtonGlow ? { borderColor: "var(--signal)", boxShadow: "0 0 0 3px color-mix(in srgb, var(--signal) 18%, transparent)" } : undefined}
+            title={weekButtonGlow ? "Your week is ready to review" : weekButtonLabel}
           >
             <WeekEmblem spec={weekGlyph} state="forming" size={22} hideAmbient />
-            <span className="leading-none">{reviewGlow ? "Review ready" : planForward ? "Plan the week" : "This week"}</span>
-            {reviewGlow && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />}
+            <span className="leading-none">{weekButtonLabel}</span>
+            {weekButtonGlow && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />}
           </button>
-          );
-        })()}
+        )}
 
         {onViewChange && (
           <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">

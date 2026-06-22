@@ -9,7 +9,7 @@
 // actually moved a domain. The big priority actions are just two: land it, or
 // carry it forward. No domain-linking here (that's not this moment's job).
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { addDays } from "date-fns";
 import { fmtHours, parseDateISO, toDateISO } from "../../lib/dates";
@@ -20,21 +20,48 @@ import WeekEmblem from "./WeekEmblem";
 import WeekStory from "./WeekStory";
 import { Bar } from "./parts";
 
+// A six-dot grip — the affordance for pointer-drag reorder (Tauri swallows
+// HTML5 DnD, so all drag is pointer-based; see CLAUDE.md / nuvo-tauri-dnd).
+function GripIcon() {
+  return (
+    <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden>
+      {[4, 8, 12].map((cy) => (
+        <g key={cy}>
+          <circle cx="3" cy={cy} r="1.1" />
+          <circle cx="7" cy={cy} r="1.1" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 // ── This week — reckon each priority: land it (complete) or carry it forward ──
 function ReckonRow({
   p,
   onToggleDone,
   onCarry,
   onRemove,
+  dragHandle,
+  dragging,
+  dragOffsetY = 0,
 }: {
   p: WeekPriority;
   onToggleDone: () => void;
   onCarry: () => void;
   onRemove: () => void;
+  /** pointer-drag grip rendered at the left when the list is reorderable. */
+  dragHandle?: ReactNode;
+  dragging?: boolean;
+  /** while dragging, how far the pointer has moved — the card follows it. */
+  dragOffsetY?: number;
 }) {
   const landed = p.verdict === "landed";
   return (
-    <div className="group flex items-start gap-3 border-b border-line py-3 last:border-0">
+    <div
+      className={`group flex items-start gap-2 py-3 ${dragging ? "glass-grab relative z-50 rounded-lg px-2" : "border-b border-line last:border-0"}`}
+      style={dragging ? { transform: `translateY(${dragOffsetY}px) scale(1.025)` } : undefined}
+    >
+      {dragHandle}
       <button
         onClick={onToggleDone}
         aria-label={landed ? "Mark not done" : "Mark complete"}
@@ -63,6 +90,115 @@ function ReckonRow({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Reorderable priority list — pointer-drag sortable (Tauri- + touch-safe). ──
+// Drag the grip; rows resort live as the pointer crosses neighbours' midpoints;
+// the new order persists on drop. Order survives because composeWeek renders
+// priorities in big_rocks array order (no re-sort).
+function ReorderablePriorities({
+  priorities,
+  onToggleDone,
+  onCarry,
+  onRemove,
+  onReorder,
+}: {
+  priorities: WeekPriority[];
+  onToggleDone: (id: string) => void;
+  onCarry: (p: WeekPriority) => void;
+  onRemove: (id: string) => void;
+  onReorder: (orderedIds: string[]) => void;
+}) {
+  // dragId drives which row lifts (state, for render); refs carry live drag data
+  // so the move/up handlers never read stale closures.
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [offsetY, setOffsetY] = useState(0);
+  const [lineTop, setLineTop] = useState<number | null>(null);
+  const dragIdRef = useRef<string | null>(null);
+  const startYRef = useRef(0);
+  const targetKRef = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const ids = priorities.map((p) => p.rock.id);
+
+  const start = (id: string, e: React.PointerEvent) => {
+    e.preventDefault();
+    dragIdRef.current = id;
+    startYRef.current = e.clientY;
+    setDragId(id);
+    setOffsetY(0);
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+  };
+  const move = (e: React.PointerEvent) => {
+    const id = dragIdRef.current;
+    if (!id || !containerRef.current) return;
+    setOffsetY(e.clientY - startYRef.current);
+    const cont = containerRef.current;
+    const others = [...cont.querySelectorAll("[data-rock-id]")].filter(
+      (r) => r.getAttribute("data-rock-id") !== id,
+    );
+    // landing index = how many other rows have their midpoint above the pointer
+    let k = 0;
+    for (const r of others) {
+      const b = r.getBoundingClientRect();
+      if (e.clientY > b.top + b.height / 2) k++;
+    }
+    targetKRef.current = k;
+    // place the drop indicator at the resulting gap
+    const contTop = cont.getBoundingClientRect().top;
+    if (!others.length) setLineTop(0);
+    else if (k < others.length) setLineTop(others[k].getBoundingClientRect().top - contTop);
+    else setLineTop(others[others.length - 1].getBoundingClientRect().bottom - contTop);
+  };
+  const end = () => {
+    const id = dragIdRef.current;
+    dragIdRef.current = null;
+    setDragId(null);
+    setLineTop(null);
+    setOffsetY(0);
+    if (!id) return;
+    const others = ids.filter((x) => x !== id);
+    const k = targetKRef.current;
+    const next = [...others.slice(0, k), id, ...others.slice(k)];
+    if (next.some((x, i) => x !== ids[i])) onReorder(next);
+  };
+
+  return (
+    <div ref={containerRef} className="relative flex flex-col">
+      {lineTop != null && (
+        <div
+          className="pointer-events-none absolute left-0 right-0 z-40 h-0.5 rounded-full"
+          style={{ top: lineTop, background: "var(--accent)" }}
+        />
+      )}
+      {priorities.map((p) => (
+        <div key={p.rock.id} data-rock-id={p.rock.id}>
+          <ReckonRow
+            p={p}
+            dragging={dragId === p.rock.id}
+            dragOffsetY={dragId === p.rock.id ? offsetY : 0}
+            dragHandle={
+              <button
+                onPointerDown={(e) => start(p.rock.id, e)}
+                onPointerMove={move}
+                onPointerUp={end}
+                onPointerCancel={end}
+                aria-label="Drag to reorder"
+                title="Drag to reorder"
+                className="fast mt-0.5 flex h-6 w-6 shrink-0 cursor-grab items-center justify-center rounded text-muted/40 hover:text-ink active:cursor-grabbing"
+                style={{ touchAction: "none" }}
+              >
+                <GripIcon />
+              </button>
+            }
+            onToggleDone={() => onToggleDone(p.rock.id)}
+            onCarry={() => onCarry(p)}
+            onRemove={() => onRemove(p.rock.id)}
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -190,6 +326,7 @@ export function WeekPlanBody({
   viewedWeekISO,
   header,
   onCompose,
+  composeLabel,
 }: {
   report: WeekReport;
   state: "forming" | "sealed";
@@ -200,6 +337,8 @@ export function WeekPlanBody({
   /** Launch the compose + time-block ritual. Omitted on surfaces where the
    *  ritual isn't mounted (e.g. mobile) — the CTA then hides itself. */
   onCompose?: () => void;
+  /** CTA wording — "Compose the week" when fresh, "Re-plan the week" once composed. */
+  composeLabel?: string;
 }) {
   const forming = state === "forming";
   const ahead = tense === "ahead";
@@ -254,7 +393,7 @@ export function WeekPlanBody({
                 onClick={onCompose}
                 className="fast inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-label font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
               >
-                Compose the week
+                {composeLabel ?? "Compose the week"}
                 <span aria-hidden>→</span>
               </button>
               <p className="mt-2 text-meta text-muted">Pull your priorities into time blocks against your real calendar.</p>
@@ -267,16 +406,29 @@ export function WeekPlanBody({
       <div className="grid gap-x-14 gap-y-10 md:grid-cols-2">
         <Col label={forming ? (ahead ? "The week's priorities" : "This week's priorities") : "How they landed"}>
           {report.priorities.length > 0 && (
-            <div className="mb-3 flex flex-col">
-              {report.priorities.map((p) => (
-                <ReckonRow
-                  key={p.rock.id}
-                  p={p}
-                  onToggleDone={() => thisWeek.toggleDone(p.rock.id)}
-                  onCarry={() => carry(p)}
-                  onRemove={() => thisWeek.removeRock(p.rock.id)}
+            <div className="mb-3">
+              {forming ? (
+                // Forming weeks: drag the grip to reorder priorities on the fly.
+                <ReorderablePriorities
+                  priorities={report.priorities}
+                  onToggleDone={thisWeek.toggleDone}
+                  onCarry={carry}
+                  onRemove={thisWeek.removeRock}
+                  onReorder={thisWeek.reorder}
                 />
-              ))}
+              ) : (
+                <div className="flex flex-col">
+                  {report.priorities.map((p) => (
+                    <ReckonRow
+                      key={p.rock.id}
+                      p={p}
+                      onToggleDone={() => thisWeek.toggleDone(p.rock.id)}
+                      onCarry={() => carry(p)}
+                      onRemove={() => thisWeek.removeRock(p.rock.id)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {/* Forming weeks are editable — name priorities here (Compose then blocks
@@ -329,6 +481,8 @@ export interface WeekPlanFloorProps {
   canGoNext?: boolean;
   /** Launch the compose + time-block ritual from the forming hero. */
   onCompose?: () => void;
+  /** CTA wording — "Compose the week" when fresh, "Re-plan the week" once composed. */
+  composeLabel?: string;
   /** Early-week planning moment — skip the reflective story, land on the
    *  forward-facing detail so the Compose CTA is immediately in view. */
   planForward?: boolean;
@@ -336,7 +490,7 @@ export interface WeekPlanFloorProps {
 
 /** The desktop floor — slides over the Schedule work area (full-width, rail hidden).
  *  Opens as a paced story (the received moment); "See the full week" → the detail. */
-export default function WeekPlanFloor({ report, state, tense = "current", weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext, onCompose, planForward }: WeekPlanFloorProps) {
+export default function WeekPlanFloor({ report, state, tense = "current", weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext, onCompose, composeLabel, planForward }: WeekPlanFloorProps) {
   const [mode, setMode] = useState<"story" | "detail">(planForward ? "detail" : "story");
 
   if (mode === "story") {
@@ -385,7 +539,7 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
   return (
     <div className="absolute inset-0 z-30 overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)", backdropFilter: "blur(20px)" }}>
       <div className="mx-auto w-full max-w-5xl px-8 py-10 pb-28 md:px-12">
-        <WeekPlanBody report={report} state={state} tense={tense} viewedWeekISO={viewedWeekISO} header={header} onCompose={onCompose} />
+        <WeekPlanBody report={report} state={state} tense={tense} viewedWeekISO={viewedWeekISO} header={header} onCompose={onCompose} composeLabel={composeLabel} />
       </div>
     </div>
   );

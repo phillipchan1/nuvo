@@ -22,6 +22,8 @@ export interface WeekSprintRocks {
   toggleDone: (id: string) => void;
   /** carry priorities in (id-deduped, roll_count bumped, done reset). Returns count newly added. */
   carryIn: (incoming: BigRock[]) => number;
+  /** persist a new order of the priorities (array order IS the order). */
+  reorder: (orderedIds: string[]) => void;
 }
 
 export function useWeekSprintRocks(weekStartISO: string): WeekSprintRocks {
@@ -65,6 +67,13 @@ export function useWeekSprintRocks(weekStartISO: string): WeekSprintRocks {
       if (!add.length) return 0;
       void write([...rocks, ...add]);
       return add.length;
+    },
+    reorder: (orderedIds) => {
+      const byId = new Map(rocks.map((r) => [r.id, r]));
+      const next = orderedIds.map((id) => byId.get(id)).filter((r): r is BigRock => Boolean(r));
+      // keep any rock not named in the order (safety) appended in its old place
+      for (const r of rocks) if (!orderedIds.includes(r.id)) next.push(r);
+      if (next.length === rocks.length && next.some((r, i) => r.id !== rocks[i].id)) void write(next);
     },
   };
 }

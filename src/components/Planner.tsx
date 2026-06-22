@@ -114,32 +114,48 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     const dow = now.getDay();
     return dow === 0 || dow === 1;
   }, [now]);
-  // The Week's Plan *surface* — the check-in / review door. Always opens on the
-  // lived week (you walk ‹ › to past Reviews or the week ahead). Planning the week
-  // is the *ritual*, reached separately (see openWeekDoor).
-  const openWeekPlan = useCallback(() => {
-    ackReveal();
-    setViewedWeekISO(currentWeekISO);
+  // Open the Week's Plan *surface* (the view) at a given week.
+  const openWeekPlanAt = useCallback((weekISO: string) => {
+    setViewedWeekISO(weekISO);
     setWeekPlanOpen(true);
-  }, [currentWeekISO, ackReveal]);
-  // The toolbar's living-emblem button. "Plan the week" (Sun/Mon) goes to the
-  // compose *ritual* — the one and only thing called "Plan the week" (it matches
-  // the bottom nudge). The rest of the week the button is "This week" / "Review
-  // ready" and opens the surface. One label, one destination.
+  }, []);
+  const openReview = useCallback(() => {
+    ackReveal();
+    openWeekPlanAt(currentWeekISO);
+  }, [ackReveal, openWeekPlanAt, currentWeekISO]);
+
+  // Is the plan-target week already composed? planWeek() stamps the sprint on
+  // commit (the same signal the Sunday nudge reads), and data.sprint resolves to
+  // the planning week (planningWeekStartISO), so this reflects the week the door
+  // concerns.
+  const weekPlanned = Boolean(vertical.sprint?.reviewed_at);
+
+  // The week button rides the week's lifecycle:
+  //  · plan   — not composed yet → "Plan the week" → the compose ritual
+  //  · view   — composed         → "The week's plan" → the surface (re-run / shift)
+  //  · review — Friday reveal     → "Review ready" → the surface (look back)
+  // Forward states (plan/view) win over a still-glowing review at the turn of the
+  // week (Sun/Mon); the Friday review wins the rest of the time.
+  const weekDoorMode: "plan" | "view" | "review" =
+    !planForward && weekReady ? "review" : weekPlanned ? "view" : "plan";
+  const weekButtonLabel =
+    weekDoorMode === "review" ? "Review ready" : weekDoorMode === "view" ? "The week's plan" : "Plan the week";
+
   const openWeekDoor = useCallback(() => {
-    if (planForward) openFlow("sunday");
-    else openWeekPlan();
-  }, [planForward, openFlow, openWeekPlan]);
+    if (weekDoorMode === "review") return openReview();
+    if (weekDoorMode === "view") return openWeekPlanAt(horizonWeekISO);
+    openFlow("sunday"); // "plan" → the compose ritual (matches the bottom nudge)
+  }, [weekDoorMode, openReview, openWeekPlanAt, horizonWeekISO, openFlow]);
 
   // One announcement toast per week when the reveal first arrives.
   useEffect(() => {
     if (!weekReady || wasToasted(currentWeekISO)) return;
     markToasted(currentWeekISO);
     toast("Your week is ready to review.", {
-      action: { label: "Review →", onClick: openWeekPlan },
+      action: { label: "Review →", onClick: openReview },
       duration: 8000,
     });
-  }, [weekReady, currentWeekISO, openWeekPlan]);
+  }, [weekReady, currentWeekISO, openReview]);
   const walkWeek = useCallback(
     (deltaDays: number) =>
       setViewedWeekISO((iso) => {
@@ -377,8 +393,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             railRef={railRef}
             weekGlyph={onSchedule ? glyphReport.emblem : null}
             onOpenWeekPlan={onSchedule ? openWeekDoor : undefined}
-            weekReady={onSchedule ? weekReady : undefined}
-            planForward={onSchedule ? planForward : undefined}
+            weekButtonLabel={weekButtonLabel}
+            weekButtonGlow={onSchedule && weekDoorMode === "review"}
           />
 
           {onSchedule && openTask && taskPanel && (
@@ -430,6 +446,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             onNextWeek={() => walkWeek(7)}
             canGoNext={viewedWeekISO < horizonWeekISO}
             onCompose={() => { setWeekPlanOpen(false); openFlow("sunday"); }}
+            composeLabel={weekPlanned && viewedWeekISO === horizonWeekISO ? "Re-plan the week" : "Compose the week"}
             planForward={viewedTense === "ahead" || (viewedTense === "current" && planForward)}
           />
         )}
