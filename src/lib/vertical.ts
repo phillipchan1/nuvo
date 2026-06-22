@@ -15,12 +15,26 @@ import { parseDateISO, todayISO } from "./dates";
 
 export type Momentum = "up" | "flat" | "down";
 
+/** Machine-facing routing context — the signal passive grooming reads to file a
+ *  terse capture into the right domain. Built from the charter (source of truth),
+ *  proposed by the `enrichDomain` edge path, persisted on accept. Distinct from
+ *  `intention` (the human-facing vow). */
+export interface DomainContext {
+  scope: string;
+  entities: string[];
+  keywords: string[];
+  boundary: string;
+  exemplars: string[];
+}
+
 export interface Domain {
   id: string;
   name: string;
   color: string;
   icon: string; // a single glyph/emoji — domains are fixtures, give them a face
   intention: string; // the standing vow — what faithfulness to this domain means
+  charter: string; // plain-line "what this domain IS" — the routing source of truth
+  context: DomainContext | null; // AI-expanded routing metadata (entities, boundary…)
   weeklyTargetHours: number;
   investedThisWeek: number; // derived: hours of blocks completed this week
   quarterHours: number; // derived: the long arc (Gain), last 90 days
@@ -143,6 +157,9 @@ export interface DomainRow {
   color: string;
   icon: string;
   intention: string;
+  charter?: string;
+  context?: DomainContext | null;
+  context_at?: string | null;
   weekly_target_hours: number | null;
   sort_order: number;
 }
@@ -383,6 +400,8 @@ export function buildVertical(
         color: d.color,
         icon: d.icon || "◇",
         intention: d.intention,
+        charter: d.charter ?? "",
+        context: d.context ?? null,
         weeklyTargetHours: d.weekly_target_hours ?? 0,
         investedThisWeek: led ? led.week / 60 : 0,
         quarterHours: led ? Math.round(led.quarter / 60) : 0,

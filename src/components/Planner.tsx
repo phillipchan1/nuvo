@@ -7,7 +7,7 @@ import WeekPlanFloor from "./floors/WeekPlanFloor";
 import { readRevealConfig, isRevealReady, isAcknowledged, acknowledge, wasToasted, markToasted } from "../lib/weekReveal";
 import { fallbackPanelAnchor } from "../lib/appNav";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
-import { useDayTasks, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
+import { useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
@@ -156,6 +156,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   }, [viewedWeekISO]);
 
   const { data: inbox = [] } = useInboxTasks();
+  useGroomInbox(inbox);
   const { data: todayTasks = [] } = useDayTasks(today);
   const { data: weekTasks = [] } = useSprintTasks(vertical.sprint?.id ?? null);
   const { data: scheduled = [] } = useScheduledTasks(range.start, range.end);

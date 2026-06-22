@@ -35,7 +35,8 @@ import {
 } from "../../lib/vertical";
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO, planningWeekStartISO, todayISO } from "../../lib/dates";
 import { CONTEXT_META, composeWeek, type DayContext, type Placement } from "../../lib/compose";
-import { batchWeek, type BatchResult } from "../../lib/batch";
+import { aiBatchInbox, batchWeek, type BatchResult, type InboxGroup } from "../../lib/batch";
+import { supabase } from "../../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../../lib/calibration";
 import { suggestPull } from "../../lib/pull";
 import { MomentumChip } from "../floors/parts";
@@ -194,8 +195,56 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
           taskIds: p.batch.taskIds,
         };
       }),
+      // stamp the sprint so themed inbox captures join the committed week (and
+      // leave the inbox); harmless for the deterministic batch — those tasks are
+      // already in this sprint.
+      { sprintId: data.sprint?.id ?? null },
     );
     setBatch(null);
+  };
+
+  // ── theme & slot the inbox: AI groups loose captures into named runs, the
+  //    composer drops each run into open time (GTD's "give it a when") ────────
+  const inbox = useMemo(() => inboxTasks(data), [data]);
+  const [theming, setTheming] = useState(false);
+  const [themeErr, setThemeErr] = useState<string | null>(null);
+  const themeInbox = async () => {
+    if (theming || inbox.length === 0) return;
+    setTheming(true);
+    setThemeErr(null);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("agent", {
+        body: { clusterInbox: { today } },
+      });
+      if (error) throw error;
+      const groups = (res?.groups ?? []) as InboxGroup[];
+      const inboxRows = allTasks.filter((t) => t.status === "inbox");
+      if (!groups.length || !inboxRows.length) {
+        setThemeErr("Nothing to theme — the inbox came back empty.");
+        return;
+      }
+      setBatch(
+        aiBatchInbox({
+          groups,
+          tasks: inboxRows,
+          data,
+          weekStartISO,
+          todayISO: today,
+          now: new Date(),
+          events: visibleEvents,
+          blocks: onCalBlocks,
+          workStartMin: workStart,
+          workEndMin: workEnd,
+          focusInitiativeIds: data.focusInitiativeIds,
+          dayContexts,
+          workingDays,
+        }),
+      );
+    } catch (e) {
+      setThemeErr(e instanceof Error ? e.message : "Theming failed");
+    } finally {
+      setTheming(false);
+    }
   };
 
   const weekDays = useMemo(
@@ -362,8 +411,17 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
             )}
           </section>
 
-          {/* right rail — the pull + boundaries beside the week, not stacked below */}
+          {/* right rail — the inbox + pull + boundaries beside the week */}
           <aside className="shrink-0 space-y-5 lg:w-[360px]">
+            {/* clear the inbox — the GTD tail: loose captures get a when. AI finds
+                what's like each other, the composer drops each run into open time. */}
+            <InboxRun
+              count={inbox.length}
+              theming={theming}
+              error={themeErr}
+              onTheme={() => void themeInbox()}
+            />
+
             {/* the candidates — the merged pull; toggle what belongs to the week */}
             <Candidates suggestions={suggestions} kept={kept} setKept={setKept} data={data} />
 
@@ -640,6 +698,50 @@ function BetRow({
 }
 
 // ── the candidates — the merged pull, plus everything else on tap ────────────
+function InboxRun({
+  count,
+  theming,
+  error,
+  onTheme,
+}: {
+  count: number;
+  theming: boolean;
+  error: string | null;
+  onTheme: () => void;
+}) {
+  return (
+    <section>
+      <div className="mb-2 flex items-baseline justify-between">
+        <h2 className="text-head masthead">
+          Clear the inbox{" "}
+          <span className="mono text-meta font-normal text-muted">{count} waiting</span>
+        </h2>
+      </div>
+
+      {count === 0 ? (
+        <div className="rounded-md border border-dashed border-line p-4 text-center text-caption text-muted">
+          Inbox is clear — nothing loose to place.
+        </div>
+      ) : (
+        <div className="rounded-md border border-line bg-surface p-3">
+          <p className="text-caption text-muted">
+            {count} loose capture{count === 1 ? "" : "s"} with no time yet. Group what's like each
+            other and drop each run into the week's open slots.
+          </p>
+          <button
+            onClick={onTheme}
+            disabled={theming}
+            className="tap fast mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-md border border-accent px-3 py-1.5 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
+          >
+            {theming ? "Theming the inbox…" : `✦ Theme & slot ${count} item${count === 1 ? "" : "s"}`}
+          </button>
+          {error && <p className="mt-1.5 text-meta text-signal">{error}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Candidates({
   suggestions,
   kept,
@@ -685,7 +787,7 @@ function Candidates({
       <div className="space-y-1">
         {suggestions.length === 0 && (
           <div className="rounded-md border border-dashed border-line p-6 text-center text-caption text-muted">
-            Nothing to pull — inbox is clear and no deadlines land this week.
+            Nothing urgent to pull — no deadlines land and no domain's gone quiet. Add by hand, or theme the inbox above.
           </div>
         )}
         {suggestions.map((s) => {

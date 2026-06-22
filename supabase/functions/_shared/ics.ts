@@ -44,12 +44,62 @@ function busyFromVevent(ve: any): boolean {
   return transp !== "TRANSPARENT";
 }
 
+// Strip VEVENTs that are clearly outside [windowStart, windowEnd] before
+// handing the text to ical.js. Feeds like iCloud export the full history
+// (5 000+ events) which exhausts the edge function memory budget.
+// Recurring events (RRULE) are always kept because they may expand into window.
+function slimFeed(text: string, windowStart: Date, windowEnd: Date): string {
+  const wsMs = windowStart.getTime();
+  const weMs = windowEnd.getTime();
+
+  // Collect header lines (everything up to the first VEVENT).
+  const firstVevent = text.indexOf("BEGIN:VEVENT");
+  if (firstVevent === -1) return text;
+  const header = text.slice(0, firstVevent);
+
+  // Find footer after the last END:VEVENT.
+  const lastEnd = text.lastIndexOf("END:VEVENT");
+  const footer = lastEnd === -1 ? "\nEND:VCALENDAR\r\n" : text.slice(lastEnd + "END:VEVENT".length);
+
+  // Split on VEVENT boundaries — handles CRLF and LF line endings.
+  const blocks: string[] = [];
+  const re = /BEGIN:VEVENT[\s\S]*?END:VEVENT/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const block = m[0];
+
+    // Always keep recurring events — we can't know their window without expanding.
+    if (/\nRRULE:/i.test(block) || /\r\nRRULE:/i.test(block)) {
+      blocks.push(block);
+      continue;
+    }
+
+    // Extract the 8-digit date from DTSTART (works for both DATE and DATETIME).
+    const dtStartMatch = block.match(/DTSTART[^:\r\n]*:(\d{8})/i);
+    if (!dtStartMatch) { blocks.push(block); continue; } // can't filter, keep
+
+    const ds = dtStartMatch[1];
+    const startMs = Date.UTC(+ds.slice(0, 4), +ds.slice(4, 6) - 1, +ds.slice(6, 8));
+
+    // Use DTEND if present, otherwise treat end = start.
+    const dtEndMatch = block.match(/DTEND[^:\r\n]*:(\d{8})/i);
+    const endMs = dtEndMatch
+      ? Date.UTC(+dtEndMatch[1].slice(0, 4), +dtEndMatch[1].slice(4, 6) - 1, +dtEndMatch[1].slice(6, 8))
+      : startMs;
+
+    if (endMs >= wsMs && startMs <= weMs) blocks.push(block);
+  }
+
+  return header + blocks.join("\n") + footer;
+}
+
 export function parseIcs(
   icsText: string,
   opts: { userId: string; accountId: string; windowStart: Date; windowEnd: Date; runStamp: string },
 ): { calName: string | null; rows: ExternalEventRow[] } {
   const { userId, accountId, windowStart, windowEnd, runStamp } = opts;
-  const comp = new ICAL.Component(ICAL.parse(icsText));
+  const slimmed = slimFeed(icsText, windowStart, windowEnd);
+  const comp = new ICAL.Component(ICAL.parse(slimmed));
 
   // Register embedded VTIMEZONEs so non-IANA (Windows) TZIDs resolve.
   for (const vt of comp.getAllSubcomponents("vtimezone")) {

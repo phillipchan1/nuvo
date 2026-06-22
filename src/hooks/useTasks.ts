@@ -1,7 +1,9 @@
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import { DEFAULT_DURATION_MINUTES, restingStatus, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
+import { needsGrooming } from "../lib/grooming";
 
 const TASK_COLS = "*, task_labels(label_id)";
 
@@ -206,6 +208,8 @@ export function useTaskMutations() {
         assignee: "me",
         prework: "",
         prework_at: null,
+        suggestion: null,
+        suggested_at: null,
         google_event_id: null,
         sort_order: 9999,
         slot_id: input.slot_id ?? null,
@@ -332,6 +336,44 @@ function todayLocalISO(d: Date): string {
   const m = `${d.getMonth() + 1}`.padStart(2, "0");
   const day = `${d.getDate()}`.padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/**
+ * Passive inbox grooming. While the app is open, quietly ask the `enrichInbox`
+ * edge path to guess a home / duration / energy for any capture that lacks a
+ * fresh suggestion — one at a time, gently, so the inbox is already thought-about
+ * by the time the user looks. Server-side `sig` caching means each capture is
+ * groomed once until its text changes, so this stays cheap across re-renders.
+ */
+export function useGroomInbox(inbox: Task[], enabled = true) {
+  const qc = useQueryClient();
+  const running = useRef(false);
+
+  useEffect(() => {
+    if (!enabled || running.current) return;
+    // Skip optimistic rows (empty user_id) — they aren't persisted server-side yet.
+    const pending = inbox.filter((t) => t.user_id && needsGrooming(t));
+    if (!pending.length) return;
+
+    running.current = true;
+    let cancelled = false;
+    (async () => {
+      for (const t of pending) {
+        if (cancelled) break;
+        const { error } = await supabase.functions.invoke("agent", {
+          body: { enrichInbox: { taskId: t.id } },
+        });
+        // Reveal each guess as it lands rather than waiting for the whole pass.
+        if (!error && !cancelled) qc.invalidateQueries({ queryKey: ["tasks", "inbox"] });
+      }
+      running.current = false;
+    })();
+
+    return () => {
+      cancelled = true;
+      running.current = false;
+    };
+  }, [inbox, enabled, qc]);
 }
 
 /**

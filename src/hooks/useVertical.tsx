@@ -116,6 +116,7 @@ export interface VerticalStore {
   /** Materialize batched focus blocks: create slot rows and move their tasks inside. */
   applySlots: (
     slots: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; taskIds: string[] }[],
+    opts?: { sprintId?: string | null },
   ) => Promise<void>;
   /** The Plan flow's one commit: commit the kept candidates to the week,
    *  schedule the placed ones, and stamp the sprint goal + reviewed — all
@@ -364,7 +365,8 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         invalidate(["vertical"]);
         return {
           id: row.id, name: row.name, color: row.color, icon: row.icon,
-          intention: row.intention, weeklyTargetHours: row.weekly_target_hours ?? 0,
+          intention: row.intention, charter: row.charter ?? "", context: row.context ?? null,
+          weeklyTargetHours: row.weekly_target_hours ?? 0,
           investedThisWeek: 0, quarterHours: 0, lastTouchedDays: 99, weeks: new Array(13).fill(0), sort,
         };
       },
@@ -374,6 +376,11 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if (patch.color != null) rowPatch.color = patch.color;
         if (patch.icon != null) rowPatch.icon = patch.icon;
         if (patch.intention != null) rowPatch.intention = patch.intention;
+        if (patch.charter != null) rowPatch.charter = patch.charter;
+        if (patch.context !== undefined) {
+          rowPatch.context = patch.context;
+          rowPatch.context_at = new Date().toISOString();
+        }
         if (patch.weeklyTargetHours != null) rowPatch.weekly_target_hours = patch.weeklyTargetHours;
         if (patch.sort != null) rowPatch.sort_order = patch.sort;
         if (!Object.keys(rowPatch).length) return;
@@ -756,7 +763,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         invalidate(["tasks"]);
       },
 
-      applySlots: async (specs) => {
+      applySlots: async (specs, opts) => {
         if (!specs.length) return;
         const uid = await userId();
         for (const s of specs) {
@@ -775,10 +782,14 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             .single();
           if (error) { console.error("[batch] slot insert failed", error); continue; }
           if (s.taskIds.length) {
-            // children lose their own block (start_time null), keep the slot's day
+            // children lose their own block (start_time null), keep the slot's day;
+            // an optional sprintId pulls loose inbox captures into the committed
+            // week (status leaves 'inbox') so a slotted run counts as week work.
+            const patch: Record<string, unknown> = { slot_id: slot.id, do_date: s.doDateISO, start_time: null, status: "planned" };
+            if (opts?.sprintId) patch.sprint_id = opts.sprintId;
             const { error: tErr } = await supabase
               .from("tasks")
-              .update({ slot_id: slot.id, do_date: s.doDateISO, start_time: null, status: "planned" })
+              .update(patch)
               .in("id", s.taskIds);
             if (tErr) console.error("[batch] slot task assign failed", tErr);
           }

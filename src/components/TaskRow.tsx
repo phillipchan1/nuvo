@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { Label, Task } from "../lib/types";
+import { ENERGY_META } from "../lib/energy";
+import { liveSuggestion } from "../lib/grooming";
 import { fmtDuration, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
 import { PriorityDot, RollBadge } from "./ui";
 
@@ -25,6 +27,8 @@ export default function TaskRow({
   accent,
   meta,
   action,
+  onAcceptSuggestion,
+  onDismissSuggestion,
 }: {
   task: Task;
   labels: Label[];
@@ -46,6 +50,10 @@ export default function TaskRow({
   meta?: TaskMeta;
   /** Optional trailing control (e.g. "▸ today" in the Week rail). */
   action?: React.ReactNode;
+  /** Apply the passive-grooming guess (placement / duration / energy). */
+  onAcceptSuggestion?: () => void;
+  /** Spend the guess without applying it. */
+  onDismissSuggestion?: () => void;
 }) {
   const [completing, setCompleting] = useState(false);
   const done = task.status === "done";
@@ -103,6 +111,10 @@ export default function TaskRow({
   const hasMeta = Boolean(
     meta?.project || meta?.domain || task.duration_minutes || (dateLabel && !task.start_time) || taskLabels.length > 0,
   );
+
+  // Passive grooming's guess — surfaced only where the row wired up accept/dismiss
+  // (the inbox), and only when fresh and actionable.
+  const groom = onAcceptSuggestion ? liveSuggestion(task) : null;
 
   const bg = multiSelected
     ? "bg-accent-soft"
@@ -207,6 +219,51 @@ export default function TaskRow({
                 {l.name}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Passive grooming's guess — Nuvo did the filing homework; one tap to take it. */}
+        {groom && (
+          <div
+            className="mt-[5px] flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-dashed border-line bg-surface/40 px-1.5 py-1"
+            onClick={(e) => e.stopPropagation()}
+            title={groom.rationale}
+          >
+            <span className="mono shrink-0 text-micro text-muted" aria-hidden>✦ groomed</span>
+            {groom.level !== "none" && groom.targetLabel && (
+              <span className="flex min-w-0 items-center gap-1 text-meta font-medium">
+                <span
+                  className="h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ background: groom.domainColor ?? "var(--muted)" }}
+                />
+                <span className="max-w-[130px] truncate" style={{ color: groom.domainColor ?? "var(--ink)" }}>
+                  {groom.targetLabel}
+                </span>
+              </span>
+            )}
+            {groom.durationMinutes ? (
+              <span className="mono text-meta text-muted">{fmtDuration(groom.durationMinutes)}</span>
+            ) : null}
+            {groom.energy && (
+              <span className="text-meta text-muted">
+                {ENERGY_META[groom.energy].icon} {ENERGY_META[groom.energy].label}
+              </span>
+            )}
+            <span className="ml-auto flex shrink-0 items-center gap-1">
+              <button
+                onClick={(e) => { e.stopPropagation(); onAcceptSuggestion?.(); }}
+                className="fast rounded px-1.5 py-px text-micro font-medium text-accent hover:bg-accent-soft"
+              >
+                Accept
+              </button>
+              <button
+                aria-label="Dismiss suggestion"
+                onClick={(e) => { e.stopPropagation(); onDismissSuggestion?.(); }}
+                className="fast rounded px-1 py-px text-micro text-muted hover:text-ink"
+              >
+                ✕
+              </button>
+            </span>
           </div>
         )}
       </div>

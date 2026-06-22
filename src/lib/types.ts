@@ -7,6 +7,27 @@ export type TaskStatus = "inbox" | "backlog" | "planned" | "done" | "trashed";
 export type TaskPriority = "none" | "low" | "medium" | "high";
 export type CalendarProvider = "google" | "m365" | "ics";
 
+/**
+ * Passive grooming's cached guess for a raw inbox capture — where it likely
+ * belongs, how long it takes, its energy register. A proposal only: the real
+ * placement FKs / duration / energy stay untouched until the user accepts.
+ * Written by the `enrichInbox` edge path; gated on `sig` (title+notes) staleness.
+ */
+export interface InboxSuggestion {
+  sig: string;
+  level: "project" | "initiative" | "domain" | "none";
+  targetId: string | null;
+  targetLabel: string;
+  domainId: string | null;
+  domainColor: string | null;
+  durationMinutes: number | null;
+  energy: Energy | null;
+  rationale: string;
+  confidence: number;
+  /** Set once the user has accepted or dismissed it — stops re-grooming until the capture changes. */
+  dismissed?: boolean;
+}
+
 export interface Task {
   id: string;
   user_id: string;
@@ -32,6 +53,8 @@ export interface Task {
   assignee: "me" | "agent";
   prework: string;
   prework_at: string | null;
+  suggestion: InboxSuggestion | null;
+  suggested_at: string | null;
   google_event_id: string | null;
   sort_order: number;
   slot_id: string | null;

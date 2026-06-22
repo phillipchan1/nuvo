@@ -3,6 +3,9 @@ import { buildContext, contextToPrompt } from "./context.ts";
 import { scaffoldProject, scaffoldDraft } from "./scaffold.ts";
 import { blueprintInitiative } from "./blueprint.ts";
 import { draftOutcome } from "./draftOutcome.ts";
+import { clusterInbox } from "./clusterInbox.ts";
+import { enrichInbox } from "./enrichInbox.ts";
+import { enrichDomain } from "./enrichDomain.ts";
 import { verifyItem } from "./verify.ts";
 import { parsePriorities, breakdownPriority } from "./priorities.ts";
 import { prepareTask } from "./prepare.ts";
@@ -237,6 +240,21 @@ Deno.serve(async (req) => {
     }
     if (body.prepare?.taskId) {
       return json(await prepareTask(user.id, String(body.prepare.taskId)));
+    }
+    // Plan's "theme the inbox": group loose captures into a few named runs the
+    // client can place as focus blocks across the week's open time.
+    if (body.clusterInbox) {
+      return json(await clusterInbox(user.id, body.clusterInbox));
+    }
+    // Passive grooming: guess one inbox capture's home (project/initiative/
+    // domain), duration and energy. Persists a suggestion only — files nothing.
+    if (body.enrichInbox?.taskId) {
+      return json(await enrichInbox(user.id, String(body.enrichInbox.taskId)));
+    }
+    // Domain refinement: expand a charter blurb into routing context (entities,
+    // keywords, boundary) grooming reads. Proposes only — chapel persists it.
+    if (body.enrichDomain?.domainId) {
+      return json(await enrichDomain(user.id, body.enrichDomain));
     }
     if (body.narrate) {
       return json(await narrate(body.narrate));

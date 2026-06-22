@@ -6,13 +6,15 @@
 // faithfulness pulse instead of a progress bar, and the initiatives demoted to a
 // quiet colophon at the foot. Domains don't ask for action — they ask to be kept.
 
-import { useId, useState, type CSSProperties } from "react";
+import { useEffect, useId, useState, type CSSProperties } from "react";
 import { useVertical } from "../../hooks/useVertical";
+import { supabase } from "../../lib/supabase";
 import {
   faithfulness,
   initiativesOf,
   looseTasksOfDomain,
   type Domain,
+  type DomainContext,
 } from "../../lib/vertical";
 import type { Focus } from "../AppShell";
 import { FloorHeader, InlineNumber, InlineText, InlineTextarea, DeleteBtn } from "./parts";
@@ -185,6 +187,41 @@ function stateOf(d: Domain): { tone: "lit" | "quiet"; line: string; short: strin
 
 const mom = (m: string) => (m === "up" ? "↑" : m === "down" ? "↓" : "→");
 
+// ── Clarity, voiced ───────────────────────────────────────────────────────────
+// A second axis from faithfulness: how well Nuvo can ROUTE captures here. Read
+// purely from persisted state (no AI call) so the wall can show, at a glance,
+// which domains still need refining, how far along they are, and why.
+type Clarity = { level: "clear" | "partial" | "unrefined"; label: string; why: string; pct: number };
+
+function clarityOf(d: Domain): Clarity {
+  const ctx = d.context;
+  if (ctx) {
+    const signals = ctx.entities.length + ctx.keywords.length;
+    if (signals === 0)
+      return { level: "partial", label: "needs detail", why: "Refined, but Nuvo couldn't pull anything specific to route on — re-refine with a richer line.", pct: 0.6 };
+    const lead = ctx.entities.slice(0, 3).join(", ") || ctx.keywords.slice(0, 3).join(", ");
+    return { level: "clear", label: "refined", why: `Nuvo files captures here by ${lead}.`, pct: 1 };
+  }
+  if (d.charter.trim())
+    return { level: "partial", label: "refine to finish", why: "You've described it — one tap on Refine teaches Nuvo what belongs here.", pct: 0.35 };
+  return { level: "unrefined", label: "needs refining", why: "Nuvo files here by name alone. Describe what belongs so captures land here.", pct: 0 };
+}
+
+function ClarityMark({ domain }: { domain: Domain }) {
+  const c = clarityOf(domain);
+  const amber = c.level !== "clear";
+  return (
+    <div className="relative mt-2.5 flex w-full max-w-[116px] flex-col items-center gap-1" title={c.why}>
+      <div className="h-[3px] w-full overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+        <div style={{ width: `${Math.round(c.pct * 100)}%`, height: "100%", background: amber ? "var(--signal)" : domain.color, transition: "width .3s" }} />
+      </div>
+      <span className="text-micro" style={{ color: amber ? "var(--signal)" : "var(--muted)", letterSpacing: "0.04em" }}>
+        {amber ? "✦ " : ""}{c.label}
+      </span>
+    </div>
+  );
+}
+
 // ══ The wall — a polyptych of niches ═════════════════════════════════════════
 export default function DomainFloor({
   focus,
@@ -228,6 +265,17 @@ export default function DomainFloor({
         <p className="mt-1 max-w-[560px] text-body text-muted">
           Measured by faithfulness over a long arc — not throughput. Are you still showing up?
         </p>
+        {(() => {
+          const total = domains.length;
+          const clear = domains.filter((d) => clarityOf(d).level === "clear").length;
+          if (!total || clear === total) return null;
+          return (
+            <p className="mt-2 max-w-[560px] text-meta text-muted">
+              <span style={{ color: "var(--signal)" }}>Nuvo can route {clear} of {total}.</span>{" "}
+              The rest file by name alone — refine a domain (enter it ↓) to teach Nuvo what belongs there.
+            </p>
+          );
+        })()}
       </FloorHeader>
 
       {domains.length === 0 ? (
@@ -291,6 +339,7 @@ function Niche({ domain, motif, focused, onEnter }: { domain: Domain; motif: Mot
       <div className="relative mt-1.5 text-center text-meta uppercase" style={{ letterSpacing: "0.12em", color: lit ? "var(--muted)" : "var(--signal)" }}>
         {st.short}
       </div>
+      <ClarityMark domain={domain} />
     </button>
   );
 }
@@ -303,6 +352,18 @@ function Chapel({ domain, motif, onBack, onOpenInitiative }: { domain: Domain; m
   const inits = initiativesOf(data, domain.id);
   const loose = looseTasksOfDomain(data, domain.id);
   const accent = domain.color;
+
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onBack();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onBack]);
 
   return (
     <div
@@ -387,7 +448,167 @@ function Chapel({ domain, motif, onBack, onOpenInitiative }: { domain: Domain; m
             <div className="mono mt-3 text-meta text-muted">+ {loose.length} loose {loose.length === 1 ? "task" : "tasks"} parked here</div>
           )}
         </div>
+
+        <DomainRefine domain={domain} />
       </div>
+    </div>
+  );
+}
+
+// The routing-context workbench — quiet at the foot of the chapel. Machine-facing,
+// not ceremony: a one-line charter (the source of truth for filing) that Nuvo
+// expands into entities/boundary so passive grooming can route captures here, and
+// a mis-file catcher that re-homes work the charter says doesn't belong.
+type Misfiled = { kind: "initiative" | "project" | "task"; id: string; name: string; suggestDomain: string; suggestDomainId: string | null };
+type Refinement = { context: DomainContext; misfiled: Misfiled[] };
+
+function DomainRefine({ domain }: { domain: Domain }) {
+  const { data, updateDomain, updateInitiative, updateProject, routeTask } = useVertical();
+  const [open, setOpen] = useState(false);
+  const [charter, setCharter] = useState(domain.charter);
+  const [busy, setBusy] = useState(false);
+  const [prop, setProp] = useState<Refinement | null>(null);
+  const [accepted, setAccepted] = useState(false);
+  const [moved, setMoved] = useState<Record<string, true>>({});
+  const [targets, setTargets] = useState<Record<string, string>>({});
+  const [err, setErr] = useState<string | null>(null);
+
+  const others = data.domains.filter((d) => d.id !== domain.id);
+  const shown = prop?.context ?? domain.context;
+  const pendingMis = (prop?.misfiled ?? []).filter((m) => !moved[m.id]);
+
+  const refine = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const c = charter.trim();
+      if (c !== domain.charter) updateDomain(domain.id, { charter: c });
+      const { data: res, error } = await supabase.functions.invoke("agent", {
+        body: { enrichDomain: { domainId: domain.id, charter: c } },
+      });
+      if (error) throw error;
+      setProp(res as Refinement);
+      setAccepted(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't refine just now");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const accept = () => {
+    if (!prop) return;
+    updateDomain(domain.id, { context: prop.context, charter: charter.trim() });
+    setAccepted(true);
+  };
+
+  const rehome = (m: Misfiled) => {
+    const target = targets[m.id] ?? m.suggestDomainId ?? "";
+    if (!target) return;
+    if (m.kind === "initiative") updateInitiative(m.id, { domainId: target });
+    else if (m.kind === "project") updateProject(m.id, { domainId: target });
+    else routeTask(m.id, { domainId: target });
+    setMoved((s) => ({ ...s, [m.id]: true }));
+  };
+
+  const glyph = { initiative: "◆", project: "▸", task: "·" } as const;
+  const chip = "rounded-sm px-1.5 py-px text-micro font-medium leading-none";
+
+  return (
+    <div className="mt-9 w-full max-w-[420px] border-t pt-4 text-left" style={{ borderColor: "var(--line)" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="fast flex w-full items-center justify-between text-meta uppercase text-muted hover:text-ink"
+        style={{ letterSpacing: "0.18em" }}
+      >
+        <span>How Nuvo files things here</span>
+        <span className="mono text-caption">{open ? "–" : "+"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-3 flex flex-col gap-3">
+          <textarea
+            value={charter}
+            onChange={(e) => setCharter(e.target.value)}
+            onBlur={() => charter.trim() !== domain.charter && updateDomain(domain.id, { charter: charter.trim() })}
+            placeholder="In a line — what is this domain? Who and what belongs here? (e.g. “My day job at SCE — Obi, the Enterprise rollout, Super Leader.”)"
+            rows={2}
+            className="w-full resize-none rounded-md border border-line bg-surface/40 px-2.5 py-2 text-body placeholder:text-muted focus:border-line-strong focus:outline-none"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={refine}
+              disabled={busy}
+              className="fast rounded-md px-3 py-1.5 text-meta font-medium text-white disabled:opacity-50"
+              style={{ background: domain.color }}
+            >
+              {busy ? "Refining…" : shown ? "✦ Re-refine" : "✦ Refine with Nuvo"}
+            </button>
+            {err && <span className="text-meta text-signal">{err}</span>}
+          </div>
+
+          {shown && (
+            <div className="rounded-md border border-dashed border-line bg-surface/40 px-2.5 py-2">
+              {prop && !accepted && (
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-micro uppercase text-muted" style={{ letterSpacing: "0.14em" }}>Nuvo proposes</span>
+                  <button onClick={accept} className="fast rounded px-1.5 py-px text-micro font-medium text-accent hover:bg-accent-soft">Accept</button>
+                </div>
+              )}
+              {accepted && <div className="mb-1.5 text-micro text-muted">✓ saved</div>}
+              {shown.scope && <div className="text-body italic text-muted">{shown.scope}</div>}
+              {shown.entities.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {shown.entities.map((e) => (
+                    <span key={e} className={chip} style={{ background: `color-mix(in srgb, ${domain.color} 14%, var(--surface))`, color: domain.color }}>{e}</span>
+                  ))}
+                </div>
+              )}
+              {shown.keywords.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                  {shown.keywords.map((k) => <span key={k} className="text-meta text-muted">{k}</span>)}
+                </div>
+              )}
+              {shown.boundary && <div className="mt-2 text-meta text-muted">⊘ {shown.boundary}</div>}
+              {shown.entities.length === 0 && shown.keywords.length === 0 && (
+                <div className="text-meta text-muted">No proper nouns of its own yet — routes by the line above.</div>
+              )}
+            </div>
+          )}
+
+          {pendingMis.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-micro uppercase text-signal" style={{ letterSpacing: "0.14em" }}>
+                Looks mis-filed here ({pendingMis.length})
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {pendingMis.map((m) => (
+                  <div key={m.id} className="flex items-center gap-1.5 text-meta">
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="text-muted" style={{ marginRight: 4 }}>{glyph[m.kind]}</span>{m.name}
+                    </span>
+                    <select
+                      value={targets[m.id] ?? m.suggestDomainId ?? ""}
+                      onChange={(e) => setTargets((t) => ({ ...t, [m.id]: e.target.value }))}
+                      className="max-w-[110px] rounded border border-line bg-surface px-1 py-px text-meta"
+                    >
+                      <option value="">move to…</option>
+                      {others.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                    <button
+                      onClick={() => rehome(m)}
+                      disabled={!(targets[m.id] ?? m.suggestDomainId)}
+                      className="fast rounded px-1.5 py-px text-micro font-medium text-accent hover:bg-accent-soft disabled:opacity-40"
+                    >
+                      Move
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

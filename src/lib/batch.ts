@@ -128,6 +128,27 @@ export function clusterWeek(tasks: Task[], data: VerticalData): Batch[] {
   return batches;
 }
 
+/** Build a batch from an explicit group (AI-themed inbox run): keep the given
+ *  name + energy, derive the rest (duration, domain, color) from the members. */
+function makeInboxBatch(members: Task[], energy: Energy, name: string, data: VerticalData, seq: number, part: number): Batch {
+  const durationMins = members.reduce((s, t) => s + (t.duration_minutes ?? 30), 0);
+  const deadline = members.map((t) => t.deadline).filter((d): d is string => !!d).sort()[0] ?? null;
+  const domainId = mostCommon(members.map((t) => resolveDomainId(data, t)));
+  const domain = domainById(data, domainId);
+  const initiativeId = mostCommon(members.map((t) => t.initiative_id));
+  return {
+    id: `inbox-${seq}`,
+    name: part ? `${name} (${part})` : name,
+    energy,
+    taskIds: members.map((t) => t.id),
+    durationMins,
+    deadline,
+    initiativeId,
+    domainId,
+    color: domain?.color ?? null,
+  };
+}
+
 // A placeholder the composer can place — only its scheduling fields are read.
 function synthTask(b: Batch, idx: number): Task {
   return {
@@ -145,9 +166,7 @@ function synthTask(b: Batch, idx: number): Task {
   } as unknown as Task;
 }
 
-export function batchWeek(args: {
-  tasks: Task[];
-  data: VerticalData;
+interface PlaceArgs {
   weekStartISO: string;
   todayISO: string;
   now: Date;
@@ -158,8 +177,11 @@ export function batchWeek(args: {
   focusInitiativeIds: string[];
   dayContexts: Record<string, DayContext>;
   workingDays: number[];
-}): BatchResult {
-  const batches = clusterWeek(args.tasks, args.data);
+}
+
+/** Hand a set of batches to the deterministic composer and map placements back
+ *  to their batches — the shared tail of both the deterministic and AI paths. */
+function placeBatches(batches: Batch[], args: PlaceArgs): BatchResult {
   const synth = batches.map((b, i) => synthTask(b, i));
   const res = composeWeek({
     weekStartISO: args.weekStartISO,
@@ -184,4 +206,35 @@ export function batchWeek(args: {
     .filter((x): x is BatchPlacement => x !== null);
   const placedIds = new Set(placed.map((x) => x.batch.id));
   return { placed, unplaced: batches.filter((b) => !placedIds.has(b.id)) };
+}
+
+export function batchWeek(args: PlaceArgs & { tasks: Task[]; data: VerticalData }): BatchResult {
+  return placeBatches(clusterWeek(args.tasks, args.data), args);
+}
+
+/** An AI-themed inbox run as returned by the `clusterInbox` edge function. */
+export interface InboxGroup {
+  name: string;
+  energy: Energy;
+  taskIds: string[];
+}
+
+/** Theme & slot the inbox: take AI-grouped runs, build a focus-block batch per
+ *  run (chunked to one sitting), and let composeWeek place them in open time. */
+export function aiBatchInbox(
+  args: PlaceArgs & { groups: InboxGroup[]; tasks: Task[]; data: VerticalData },
+): BatchResult {
+  const byId = new Map(args.tasks.map((t) => [t.id, t]));
+  const batches: Batch[] = [];
+  let seq = 0;
+  for (const g of args.groups) {
+    const members = g.taskIds.map((id) => byId.get(id)).filter((t): t is Task => !!t);
+    if (!members.length) continue;
+    members.sort((a, b) => a.sort_order - b.sort_order);
+    const cls = classOf(g.energy);
+    const cap = cls === "deep" ? CAP_DEEP : cls === "decide" ? CAP_DECIDE : CAP_SHALLOW;
+    const chunks = chunkByCap(members, cap);
+    chunks.forEach((c, i) => batches.push(makeInboxBatch(c, g.energy, g.name, args.data, seq++, chunks.length > 1 ? i + 1 : 0)));
+  }
+  return placeBatches(batches, args);
 }

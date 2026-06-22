@@ -11,11 +11,11 @@
 // state; a CUE surfaces only the single thing genuinely slipping (§4).
 
 import {
-  faithfulness,
   initiativesOf,
   isOpenStatus,
   looseProjectsOf,
   sprintTasks,
+  type Domain,
   type Initiative,
   type Project,
   type VerticalData,
@@ -105,9 +105,20 @@ export function readinessOfDomain(d: VerticalData, domainId: string): number {
   return mean([...inits, ...loose]);
 }
 
-/** The Domain floor = mean structural readiness across the domains. */
+/** A domain is "clear" once it's been refined — it carries the routing context
+ *  (charter → entities/boundary) the agent uses to file captures here, and
+ *  benefits from forever. Unlike faithfulness (an ongoing "did you show up?"),
+ *  clarity is a ONE-TIME investment: a refined domain stays clear. */
+export function isDomainClear(dom: Domain): boolean {
+  return dom.context != null;
+}
+
+/** The Domain floor meter = how much of the life map Nuvo can actually route —
+ *  the share of domains that have been refined. Not faithfulness (that's the
+ *  chapel lamp): a one-time clarity that, once earned, holds. */
 export function readinessOfDomainFloor(d: VerticalData): number {
-  return mean(d.domains.map((dom) => readinessOfDomain(d, dom.id)));
+  if (!d.domains.length) return 1;
+  return d.domains.filter(isDomainClear).length / d.domains.length;
 }
 
 /** The Week is ready when it's been decided AND every committed task traces to a
@@ -170,18 +181,15 @@ function groomCue(silent: GroomCandidate[], raw: GroomCandidate[], kind: "projec
   return null;
 }
 
-/** Domain cue = the least-faithful life area (the "Dayspring untouched" read). */
+/** Domain cue = a life area Nuvo can't yet route — unrefined, no charter/context.
+ *  A one-time clarity nudge ("refine this and grooming gets it forever"), not the
+ *  faithfulness nag the chapel lamp already carries. */
 function domainCue(d: VerticalData): FloorCue | null {
-  const unlit = d.domains
-    .map((dom) => ({ dom, lit: faithfulness(dom).lit }))
-    .filter((x) => !x.lit)
-    .sort((a, b) => b.dom.lastTouchedDays - a.dom.lastTouchedDays);
-  if (!unlit.length) return null;
-  const dom = unlit[0].dom;
-  const untouched = dom.lastTouchedDays >= 99;
+  const unclear = d.domains.filter((dom) => !isDomainClear(dom));
+  if (!unclear.length) return null;
   return {
-    tone: untouched ? "attention" : "drift",
-    label: `${dom.name} ${untouched ? "untouched" : `quiet ${dom.lastTouchedDays}d`}`,
+    tone: "attention",
+    label: unclear.length === 1 ? `${unclear[0].name} to refine` : `${unclear.length} to refine`,
   };
 }
 

@@ -16,6 +16,10 @@ async function complete(prompt: string, json: boolean): Promise<string> {
     body: JSON.stringify({
       model: model(),
       messages: [{ role: "user", content: prompt }],
+      // These endpoints are judgment/extraction, not prose — keep them near
+      // deterministic so the same input yields a stable verdict (e.g. a mis-file
+      // is flagged every run, not one in three).
+      temperature: json ? 0.2 : 0.5,
       ...(json ? { response_format: { type: "json_object" } } : {}),
     }),
   });

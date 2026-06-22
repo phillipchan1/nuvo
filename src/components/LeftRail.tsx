@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { parseCapture } from "../lib/nlp";
+import { acceptPatch, dismissPatch } from "../lib/grooming";
 import type { NewTaskInput, useTaskMutations } from "../hooks/useTasks";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
@@ -296,6 +297,8 @@ export default function LeftRail({
     onMultiToggle: () => toggleMultiSelect(t.id),
     onRangeSelect: () => selectRangeTo(t.id),
     onContextMenu: (e: React.MouseEvent) => openContextMenu(t, e),
+    onAcceptSuggestion: () => mutations.patchTask(t.id, acceptPatch(t)),
+    onDismissSuggestion: () => mutations.patchTask(t.id, dismissPatch(t)),
   });
 
   const tabCount = (t: RailTab) =>
