@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { addDays, format, startOfWeek } from "date-fns";
-import { todayISO, toDateISO } from "../lib/dates";
+import { todayISO, toDateISO, planningWeekStartISO } from "../lib/dates";
 import { useWeekReport } from "../hooks/useWeekReport";
 import WeekPlanFloor from "./floors/WeekPlanFloor";
 import { readRevealConfig, isRevealReady, isAcknowledged, acknowledge, wasToasted, markToasted } from "../lib/weekReveal";
@@ -78,11 +78,22 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   // walk ‹ › backward through (past weeks render sealed); it resets to current
   // each time the door is opened.
   const currentWeekISO = useMemo(() => toDateISO(startOfWeek(now, { weekStartsOn: 1 })), [now]);
+  // The forward horizon — the furthest week you can view/plan. On the weekend the
+  // week you plan is *next* week (Sunday isn't reviewing the week that's ending,
+  // it's planning the one ahead), so the plannable window extends one week past
+  // the lived week. On weekdays this equals currentWeekISO.
+  const horizonWeekISO = useMemo(() => planningWeekStartISO(now), [now]);
   const glyphReport = useWeekReport(currentWeekISO, now);
   const [weekPlanOpen, setWeekPlanOpen] = useState(false);
   const [viewedWeekISO, setViewedWeekISO] = useState(currentWeekISO);
   const viewedReport = useWeekReport(viewedWeekISO, now);
-  const viewedIsCurrent = viewedWeekISO === currentWeekISO;
+  // The lived week and any week ahead are *forming* (a plan you build/adjust);
+  // only a week that has truly ended is *sealed* (the Review / history).
+  const viewedState: "forming" | "sealed" = viewedWeekISO < currentWeekISO ? "sealed" : "forming";
+  // "ahead" = a not-yet-started week you're planning; "current" = the lived week
+  // (build + check in); "past" = sealed. Drives the surface's tense + eyebrow.
+  const viewedTense: "ahead" | "current" | "past" =
+    viewedWeekISO > currentWeekISO ? "ahead" : viewedWeekISO === currentWeekISO ? "current" : "past";
   // The Friday reveal — a gentle nudge that the Review is ready (it always is;
   // this is just the invitation). Per-week, per-device; acknowledged on open or
   // dismiss so the glow + toast don't nag.
@@ -95,11 +106,30 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     acknowledge(currentWeekISO);
     setAckTick((t) => t + 1);
   }, [currentWeekISO]);
+  // The turn of the week (Sun + Mon): the door faces forward. Even when the
+  // closing week's Friday review is still glowing, by Sunday the dominant job is
+  // planning the week ahead — so Plan *wins* over Review here (mirrors the
+  // Sunday-nudge window in AppShell). The review stays reachable inside.
+  const planForward = useMemo(() => {
+    const dow = now.getDay();
+    return dow === 0 || dow === 1;
+  }, [now]);
+  // The Week's Plan *surface* — the check-in / review door. Always opens on the
+  // lived week (you walk ‹ › to past Reviews or the week ahead). Planning the week
+  // is the *ritual*, reached separately (see openWeekDoor).
   const openWeekPlan = useCallback(() => {
     ackReveal();
     setViewedWeekISO(currentWeekISO);
     setWeekPlanOpen(true);
   }, [currentWeekISO, ackReveal]);
+  // The toolbar's living-emblem button. "Plan the week" (Sun/Mon) goes to the
+  // compose *ritual* — the one and only thing called "Plan the week" (it matches
+  // the bottom nudge). The rest of the week the button is "This week" / "Review
+  // ready" and opens the surface. One label, one destination.
+  const openWeekDoor = useCallback(() => {
+    if (planForward) openFlow("sunday");
+    else openWeekPlan();
+  }, [planForward, openFlow, openWeekPlan]);
 
   // One announcement toast per week when the reveal first arrives.
   useEffect(() => {
@@ -114,9 +144,9 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     (deltaDays: number) =>
       setViewedWeekISO((iso) => {
         const next = toDateISO(addDays(new Date(iso + "T00:00:00"), deltaDays));
-        return next > currentWeekISO ? currentWeekISO : next; // never walk past the current week
+        return next > horizonWeekISO ? horizonWeekISO : next; // forward only as far as the week you can plan
       }),
-    [currentWeekISO],
+    [horizonWeekISO],
   );
   const weekLabel = useMemo(() => {
     const s = new Date(viewedWeekISO + "T00:00:00");
@@ -278,6 +308,19 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     },
   ];
 
+  // Close the ⌘K palette and run the command in one step. We close with a
+  // `replace` (not `closeOverlay`'s `history.back()`) because back() fires an
+  // async popstate that would revert the command's own navigation a tick later
+  // — that race is why "Sunday — compose the week" (and every navigating
+  // command) appeared to do nothing.
+  const runCommand = useCallback(
+    (cmd: Command) => {
+      navigate({ overlay: "none", overlayId: null }, "replace");
+      cmd.run();
+    },
+    [navigate],
+  );
+
   return (
     <div className="flex h-full flex-col">
       {/* No header bar at all. The macOS titlebar zone is filled by the rail and
@@ -332,8 +375,9 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             onRangeChange={syncRange}
             railRef={railRef}
             weekGlyph={onSchedule ? glyphReport.emblem : null}
-            onOpenWeekPlan={onSchedule ? openWeekPlan : undefined}
+            onOpenWeekPlan={onSchedule ? openWeekDoor : undefined}
             weekReady={onSchedule ? weekReady : undefined}
+            planForward={onSchedule ? planForward : undefined}
           />
 
           {onSchedule && openTask && taskPanel && (
@@ -376,13 +420,16 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
         {onSchedule && weekPlanOpen && (
           <WeekPlanFloor
             report={viewedReport}
-            state={viewedIsCurrent ? "forming" : "sealed"}
+            state={viewedState}
+            tense={viewedTense}
             weekLabel={weekLabel}
             viewedWeekISO={viewedWeekISO}
             onClose={() => setWeekPlanOpen(false)}
             onPrevWeek={() => walkWeek(-7)}
             onNextWeek={() => walkWeek(7)}
-            canGoNext={!viewedIsCurrent}
+            canGoNext={viewedWeekISO < horizonWeekISO}
+            onCompose={() => { setWeekPlanOpen(false); openFlow("sunday"); }}
+            planForward={viewedTense === "ahead" || (viewedTense === "current" && planForward)}
           />
         )}
       </div>
@@ -394,6 +441,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           onCreate={mutations.create}
           agent={agent}
           onClose={closeOverlay}
+          onRunCommand={runCommand}
         />
       )}
       {showSettings && (

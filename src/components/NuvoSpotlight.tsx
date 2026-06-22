@@ -22,6 +22,14 @@ export interface SpotlightProps {
   onCreate: (input: NewTaskInput) => Promise<unknown>;
   agent: AgentHandle;
   onClose: () => void;
+  /**
+   * Run a command and close the palette in one non-racing step. Preferred over
+   * `onClose(); cmd.run()` because closing via `history.back()` fires an async
+   * popstate that would revert the command's own navigation (e.g. a flow set by
+   * the command gets clobbered → "command does nothing"). Optional so the
+   * standalone macOS window can still fall back to onClose + run.
+   */
+  onRunCommand?: (cmd: Command) => void;
 }
 
 // What Nuvo can answer in Ask mode — phrased as the things you'd actually
@@ -48,7 +56,14 @@ export default function NuvoSpotlight(props: SpotlightProps) {
 // runs a command; Ask hands the same text to the Nuvo agent. Space on an empty
 // capture field flips to Ask; Backspace on an empty Ask field flips back.
 // Renders bare (no scrim / no card chrome) so a Modal or a window can wrap it.
-export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose }: SpotlightProps) {
+export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose, onRunCommand }: SpotlightProps) {
+  const runCmd = (cmd: Command) => {
+    if (onRunCommand) onRunCommand(cmd);
+    else {
+      onClose();
+      cmd.run();
+    }
+  };
   const [mode, setMode] = useState<Mode>("capture");
   const [captureText, setCaptureText] = useState("");
   const [askText, setAskText] = useState("");
@@ -94,10 +109,7 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose 
       onClose();
     } else {
       const cmd = matches[highlight - (parsed ? 1 : 0)];
-      if (cmd) {
-        onClose();
-        cmd.run();
-      }
+      if (cmd) runCmd(cmd);
     }
   };
 
@@ -263,10 +275,7 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose 
               return (
                 <button
                   key={c.id}
-                  onClick={() => {
-                    onClose();
-                    c.run();
-                  }}
+                  onClick={() => runCmd(c)}
                   onMouseEnter={() => setHighlight(idx)}
                   className={`fast flex w-full items-center px-4 py-2.5 text-left text-body transition-colors ${
                     highlight === idx ? "bg-accent-soft text-ink" : "text-ink/75 hover:bg-accent-soft/50"

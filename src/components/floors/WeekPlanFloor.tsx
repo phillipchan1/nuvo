@@ -67,8 +67,8 @@ function ReckonRow({
   );
 }
 
-// ── Next week — capture what's in your head + what carried over ────────────────
-function NextWeek({ rocks, onAdd, onRemove }: { rocks: { id: string; title: string; roll_count: number }[]; onAdd: (titles: string[]) => void; onRemove: (id: string) => void }) {
+// ── Dump-one-per-line capture — the low-data-entry way to name priorities ─────
+function RockCapture({ onAdd, placeholder, rows = 2 }: { onAdd: (titles: string[]) => void; placeholder: string; rows?: number }) {
   const [text, setText] = useState("");
   const submit = () => {
     const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -76,20 +76,27 @@ function NextWeek({ rocks, onAdd, onRemove }: { rocks: { id: string; title: stri
     setText("");
   };
   return (
+    <textarea
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          submit();
+        }
+      }}
+      rows={rows}
+      placeholder={placeholder}
+      className="w-full resize-none rounded-lg border border-line bg-surface/60 px-3 py-2.5 text-body text-ink outline-none placeholder:text-muted/70 focus:border-accent"
+    />
+  );
+}
+
+// ── Next week — capture what's in your head + what carried over ────────────────
+function NextWeek({ rocks, onAdd, onRemove }: { rocks: { id: string; title: string; roll_count: number }[]; onAdd: (titles: string[]) => void; onRemove: (id: string) => void }) {
+  return (
     <div className="flex flex-col gap-4">
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-        rows={2}
-        placeholder="What matters next week? Dump it — one per line. Leftovers carry themselves."
-        className="w-full resize-none rounded-lg border border-line bg-surface/60 px-3 py-2.5 text-body text-ink outline-none placeholder:text-muted/70 focus:border-accent"
-      />
+      <RockCapture onAdd={onAdd} placeholder="What matters next week? Dump it — one per line. Leftovers carry themselves." />
       {rocks.length === 0 ? (
         <p className="text-meta text-muted">Nothing queued yet. Sunday will start from here.</p>
       ) : (
@@ -179,15 +186,26 @@ function Col({ label, children }: { label: string; children: ReactNode }) {
 export function WeekPlanBody({
   report,
   state,
+  tense = "current",
   viewedWeekISO,
   header,
+  onCompose,
 }: {
   report: WeekReport;
   state: "forming" | "sealed";
+  /** "ahead" = planning a not-yet-started week · "current" = the lived week · "past" = sealed. */
+  tense?: "ahead" | "current" | "past";
   viewedWeekISO: string;
   header?: ReactNode;
+  /** Launch the compose + time-block ritual. Omitted on surfaces where the
+   *  ritual isn't mounted (e.g. mobile) — the CTA then hides itself. */
+  onCompose?: () => void;
 }) {
   const forming = state === "forming";
+  const ahead = tense === "ahead";
+  // Where time-sections sit on the arc: a week not yet lived shows *planned*
+  // allocation; the lived week shows it *filling*; a sealed week, where it *went*.
+  const hoursLabel = tense === "ahead" ? "Where the hours will go" : tense === "current" ? "Where the hours are going" : "Where the hours went";
   const total = report.priorityTotal;
   const nextWeekISO = toDateISO(addDays(parseDateISO(viewedWeekISO), 7));
   const thisWeek = useWeekSprintRocks(viewedWeekISO);
@@ -210,21 +228,46 @@ export function WeekPlanBody({
         <div>
           {total > 0 && (
             <div className="mb-3">
-              <span className="mono text-head text-ink">{report.landedCount} of {total}</span>
-              <span className="ml-2 text-meta text-muted">priorit{total === 1 ? "y" : "ies"} landed</span>
+              {ahead ? (
+                <>
+                  <span className="mono text-head text-ink">{total}</span>
+                  <span className="ml-2 text-meta text-muted">priorit{total === 1 ? "y" : "ies"} set for the week</span>
+                </>
+              ) : (
+                <>
+                  <span className="mono text-head text-ink">{report.landedCount} of {total}</span>
+                  <span className="ml-2 text-meta text-muted">priorit{total === 1 ? "y" : "ies"} landed</span>
+                </>
+              )}
             </div>
           )}
-          {report.brief && <p className="serif text-lead leading-relaxed text-ink">{report.brief}</p>}
+          {/* The deterministic brief narrates the week that *was* — skip it for a
+              week you're planning (nothing has happened yet). */}
+          {report.brief && !ahead && <p className="serif text-lead leading-relaxed text-ink">{report.brief}</p>}
+          {ahead && <p className="serif text-lead leading-relaxed text-ink">Here's the week ahead. Name what matters, then compose it into time.</p>}
+
+          {/* The week's forward job: pull priorities into time blocks. The door
+              to the compose ritual lives here so the week button is one place. */}
+          {forming && onCompose && (
+            <div className="mt-5">
+              <button
+                onClick={onCompose}
+                className="fast inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-label font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
+              >
+                Compose the week
+                <span aria-hidden>→</span>
+              </button>
+              <p className="mt-2 text-meta text-muted">Pull your priorities into time blocks against your real calendar.</p>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* MAIN — This week (reckon) | Next week (capture) */}
+      {/* MAIN — the week's priorities (set / reckon) | time | (lived weeks) forward-fold */}
       <div className="grid gap-x-14 gap-y-10 md:grid-cols-2">
-        <Col label={forming ? "This week's priorities" : "How they landed"}>
-          {report.priorities.length === 0 ? (
-            <p className="text-body text-muted">No priorities were named this week.</p>
-          ) : (
-            <div className="flex flex-col">
+        <Col label={forming ? (ahead ? "The week's priorities" : "This week's priorities") : "How they landed"}>
+          {report.priorities.length > 0 && (
+            <div className="mb-3 flex flex-col">
               {report.priorities.map((p) => (
                 <ReckonRow
                   key={p.rock.id}
@@ -236,19 +279,36 @@ export function WeekPlanBody({
               ))}
             </div>
           )}
+          {/* Forming weeks are editable — name priorities here (Compose then blocks
+              them). Sealed weeks are read-only. */}
+          {forming ? (
+            <RockCapture
+              onAdd={thisWeek.addTitles}
+              placeholder={report.priorities.length === 0 ? "What needs to happen this week? Name it — one per line." : "Add another priority…"}
+            />
+          ) : (
+            report.priorities.length === 0 && <p className="text-body text-muted">No priorities were named this week.</p>
+          )}
         </Col>
 
-        <Col label="Next week">
-          <NextWeek rocks={nextWeek.rocks} onAdd={nextWeek.addTitles} onRemove={nextWeek.removeRock} />
-        </Col>
-
-        <Col label="Where the hours went">
+        <Col label={hoursLabel}>
           <HoursWeave report={report} />
         </Col>
 
-        <Col label="Highlights — what moved a domain">
-          <Highlights report={report} />
-        </Col>
+        {/* Next week capture is a forward-fold for the *lived* week. On a week
+            you're planning ahead, "next week" would be two weeks out — drop it. */}
+        {!ahead && (
+          <Col label="Next week">
+            <NextWeek rocks={nextWeek.rocks} onAdd={nextWeek.addTitles} onRemove={nextWeek.removeRock} />
+          </Col>
+        )}
+
+        {/* Highlights are spent-work — meaningless before the week has run. */}
+        {!ahead && (
+          <Col label="Highlights — what moved a domain">
+            <Highlights report={report} />
+          </Col>
+        )}
       </div>
     </>
   );
@@ -257,6 +317,8 @@ export function WeekPlanBody({
 export interface WeekPlanFloorProps {
   report: WeekReport;
   state: "forming" | "sealed";
+  /** "ahead" = a week you're planning · "current" = the lived week · "past" = sealed. */
+  tense?: "ahead" | "current" | "past";
   /** "Jun 15 – 21" — the week's span. */
   weekLabel: string;
   viewedWeekISO: string;
@@ -265,12 +327,17 @@ export interface WeekPlanFloorProps {
   onPrevWeek?: () => void;
   onNextWeek?: () => void;
   canGoNext?: boolean;
+  /** Launch the compose + time-block ritual from the forming hero. */
+  onCompose?: () => void;
+  /** Early-week planning moment — skip the reflective story, land on the
+   *  forward-facing detail so the Compose CTA is immediately in view. */
+  planForward?: boolean;
 }
 
 /** The desktop floor — slides over the Schedule work area (full-width, rail hidden).
  *  Opens as a paced story (the received moment); "See the full week" → the detail. */
-export default function WeekPlanFloor({ report, state, weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext }: WeekPlanFloorProps) {
-  const [mode, setMode] = useState<"story" | "detail">("story");
+export default function WeekPlanFloor({ report, state, tense = "current", weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext, onCompose, planForward }: WeekPlanFloorProps) {
+  const [mode, setMode] = useState<"story" | "detail">(planForward ? "detail" : "story");
 
   if (mode === "story") {
     return (
@@ -284,7 +351,7 @@ export default function WeekPlanFloor({ report, state, weekLabel, viewedWeekISO,
     );
   }
 
-  const eyebrow = state === "forming" ? "This week" : "The Review";
+  const eyebrow = tense === "ahead" ? "The week ahead" : tense === "current" ? "This week" : "The Review";
   const header = (
     <div className="mb-8 flex items-start gap-4">
       <div className="flex items-center gap-1.5 pt-1">
@@ -318,7 +385,7 @@ export default function WeekPlanFloor({ report, state, weekLabel, viewedWeekISO,
   return (
     <div className="absolute inset-0 z-30 overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)", backdropFilter: "blur(20px)" }}>
       <div className="mx-auto w-full max-w-5xl px-8 py-10 pb-28 md:px-12">
-        <WeekPlanBody report={report} state={state} viewedWeekISO={viewedWeekISO} header={header} />
+        <WeekPlanBody report={report} state={state} tense={tense} viewedWeekISO={viewedWeekISO} header={header} onCompose={onCompose} />
       </div>
     </div>
   );
