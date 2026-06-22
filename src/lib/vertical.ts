@@ -10,8 +10,9 @@
 
 import { differenceInCalendarDays, startOfWeek, subDays } from "date-fns";
 import type { Energy } from "./energy";
-import type { BigRock, Sprint, Task } from "./types";
+import type { BigRock, ExternalEvent, Sprint, Task } from "./types";
 import { parseDateISO, todayISO } from "./dates";
+import { eventCountsAsActual, eventDomainId, eventMins } from "./eventActuals";
 
 export type Momentum = "up" | "flat" | "down";
 
@@ -36,7 +37,8 @@ export interface Domain {
   charter: string; // plain-line "what this domain IS" — the routing source of truth
   context: DomainContext | null; // AI-expanded routing metadata (entities, boundary…)
   weeklyTargetHours: number;
-  investedThisWeek: number; // derived: hours of blocks completed this week
+  investedThisWeek: number; // derived: hours invested this week (completed blocks + attended meetings)
+  meetingHoursThisWeek: number; // derived: the meeting slice of investedThisWeek (so the UI can name it)
   quarterHours: number; // derived: the long arc (Gain), last 90 days
   lastTouchedDays: number; // derived: days since last completed task → faithfulness
   weeks: number[]; // derived: invested hours per week, last 13 weeks (oldest → now) — the faithfulness pulse
@@ -293,6 +295,9 @@ export function buildVertical(
   taskRows: Task[],
   sprint: Sprint | null,
   now: Date = new Date(),
+  events: ExternalEvent[] = [],
+  calendarDomainMap: Record<string, string> = {},
+  eventRouting: Record<string, string> = {},
 ): VerticalData {
   const today = todayISO(now);
   // calendar-week boundary in the app timezone, not the machine clock
@@ -390,6 +395,37 @@ export function buildVertical(
     }
   }
 
+  // ── fold attended calendar events into the same ledger (actuals) ───────────
+  // A past, non-declined, busy meeting spent real time in its domain — count it
+  // like a completed block. `meetingWeek` keeps the meeting slice separable so
+  // the UI can show "of which N h in meetings" without re-deriving.
+  const validDomain = new Set(domainRows.map((d) => d.id));
+  const meetingWeek = new Map<string, number>();
+  for (const e of events) {
+    if (!eventCountsAsActual(e, now)) continue;
+    const domainId = eventDomainId(e, calendarDomainMap, eventRouting);
+    if (!domainId || !validDomain.has(domainId)) continue;
+    const mins = eventMins(e);
+    const at = new Date(e.end_at).getTime();
+    const entry = ledger.get(domainId) ?? { week: 0, quarter: 0, last: null };
+    if (at >= weekStart.getTime()) {
+      entry.week += mins;
+      meetingWeek.set(domainId, (meetingWeek.get(domainId) ?? 0) + mins);
+    }
+    if (at >= quarterStart.getTime()) entry.quarter += mins;
+    if (entry.last == null || at > entry.last) entry.last = at;
+    ledger.set(domainId, entry);
+
+    if (at >= seriesStart) {
+      const wk = Math.floor((at - seriesStart) / WEEK_MS);
+      if (wk >= 0 && wk <= 12) {
+        const arr = weekly.get(domainId) ?? new Array(13).fill(0);
+        arr[wk] += mins;
+        weekly.set(domainId, arr);
+      }
+    }
+  }
+
   const domains: Domain[] = [...domainRows]
     .sort((a, b) => a.sort_order - b.sort_order)
     .map((d, idx) => {
@@ -404,6 +440,7 @@ export function buildVertical(
         context: d.context ?? null,
         weeklyTargetHours: d.weekly_target_hours ?? 0,
         investedThisWeek: led ? led.week / 60 : 0,
+        meetingHoursThisWeek: (meetingWeek.get(d.id) ?? 0) / 60,
         quarterHours: led ? Math.round(led.quarter / 60) : 0,
         lastTouchedDays: led?.last != null
           ? Math.max(0, Math.floor((now.getTime() - led.last) / 86_400_000))

@@ -233,6 +233,9 @@ export interface UserSettings {
   work_start_minutes: number; // compose boundary: blocks proposed inside these
   work_end_minutes: number;
   hidden_calendar_ids: string[];
+  /** Subscribed-calendar id → domain id. Every event from that calendar is
+   *  attributed to the domain (the deterministic default behind time allocation). */
+  calendar_domain_map: Record<string, string>;
   last_rollover_date: string | null;
 }
 

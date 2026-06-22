@@ -6,6 +6,7 @@ import { formatHourLabel } from "../lib/dates";
 import { readRevealConfig, writeRevealConfig, type RevealConfig } from "../lib/weekReveal";
 import type { CalendarAccount, UserSettings } from "../lib/types";
 import { useLabels } from "../hooks/useCalendar";
+import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
 import type { SettingsSection } from "../lib/appNav";
 import { useAppNavigation } from "../hooks/useAppNavigation";
@@ -530,9 +531,22 @@ function ConnectionsPane({
     updateSettings({ hidden_calendar_ids: [...next] });
   };
 
+  // Calendar → domain attribution. Every event from a mapped calendar counts
+  // toward that domain's invested time; unmapped calendars fall to the AI router.
+  const domains = useVertical().data.domains;
+  const calMap = settings?.calendar_domain_map ?? {};
+  // Composite key — every account's primary calendar shares the id "primary".
+  const calKey = (accountId: string, calId: string) => `${accountId}:${calId}`;
+  const setCalDomain = (key: string, domainId: string) => {
+    const next = { ...calMap };
+    if (domainId) next[key] = domainId;
+    else delete next[key];
+    updateSettings({ calendar_domain_map: next });
+  };
+
   return (
     <div>
-      <PaneHeader title="Connections" sub="Calendars Nuvo reads from and writes to. Toggle which ones appear on your board." />
+      <PaneHeader title="Connections" sub="Calendars Nuvo reads from and writes to. Toggle which appear on your board, and set the domain each one's meetings count toward." />
       <div className="space-y-3">
         {accounts.map((a) => (
           <div key={a.id} className="overflow-hidden rounded-lg border border-line">
@@ -581,27 +595,46 @@ function ConnectionsPane({
               {(a.calendars ?? []).map((c) => {
                 const on = !hidden.has(c.id);
                 return (
-                  <button
+                  <div
                     key={c.id}
-                    onClick={() => toggleCalendar(c.id)}
-                    className="fast flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-caption hover:bg-surface-2"
+                    className="fast flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-caption hover:bg-surface-2"
                   >
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-                      style={{ background: on ? (c.color ?? "var(--muted)") : "transparent", boxShadow: on ? "none" : "inset 0 0 0 1.5px var(--line-strong)" }}
-                    />
-                    <span className={`flex-1 truncate ${on ? "text-ink" : "text-muted line-through decoration-line-strong"}`}>
-                      {c.summary}
-                    </span>
-                    <span
+                    <button
+                      onClick={() => toggleCalendar(c.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                    >
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                        style={{ background: on ? (c.color ?? "var(--muted)") : "transparent", boxShadow: on ? "none" : "inset 0 0 0 1.5px var(--line-strong)" }}
+                      />
+                      <span className={`min-w-0 flex-1 truncate ${on ? "text-ink" : "text-muted line-through decoration-line-strong"}`}>
+                        {c.summary}
+                      </span>
+                    </button>
+                    <select
+                      value={calMap[calKey(a.id, c.id)] ?? ""}
+                      onChange={(e) => setCalDomain(calKey(a.id, c.id), e.target.value)}
+                      title="Attribute this calendar's meetings to a domain"
+                      className="fast max-w-[8rem] shrink-0 truncate rounded-md border border-line bg-surface px-1.5 py-1 text-meta text-muted hover:text-ink"
+                    >
+                      <option value="">Auto · domain</option>
+                      {domains.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => toggleCalendar(c.id)}
                       className={`fast relative h-4 w-7 shrink-0 rounded-full ${on ? "bg-accent" : "bg-line-strong"}`}
+                      title={on ? "Shown on your board" : "Hidden"}
                     >
                       <span
                         className="fast absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm"
                         style={{ left: on ? "14px" : "2px" }}
                       />
-                    </span>
-                  </button>
+                    </button>
+                  </div>
                 );
               })}
               {(a.calendars ?? []).length === 0 && (

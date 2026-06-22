@@ -14,6 +14,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   work_start_minutes: 480,
   work_end_minutes: 990,
   hidden_calendar_ids: [],
+  calendar_domain_map: {},
   last_rollover_date: null,
 };
 
@@ -33,7 +34,12 @@ export function useSettings() {
             calendar_fit_hours = local;
           }
         } catch { /* ignore */ }
-        return { ...data, calendar_fit_hours, hidden_calendar_ids: data.hidden_calendar_ids ?? [] };
+        return {
+          ...data,
+          calendar_fit_hours,
+          hidden_calendar_ids: data.hidden_calendar_ids ?? [],
+          calendar_domain_map: data.calendar_domain_map ?? {},
+        };
       }
       const { data: u } = await supabase.auth.getUser();
       return { user_id: u.user?.id ?? "", ...DEFAULTS };

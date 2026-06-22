@@ -7,6 +7,9 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
+import { useExternalEvents } from "./useCalendar";
+import { useSettings } from "./useSettings";
+import { useEventRouting } from "./useEventRouting";
 import { planningWeekStartISO } from "../lib/dates";
 import { restingStatus, type BigRock, type Sprint, type Task } from "../lib/types";
 import {
@@ -23,6 +26,9 @@ import {
   type VerticalData,
   type VTask,
 } from "../lib/vertical";
+
+/** Stable identity so the build memo doesn't churn while settings load. */
+const EMPTY_MAP: Record<string, string> = {};
 
 export interface TaskParent {
   projectId?: string | null;
@@ -236,6 +242,21 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  // Attended calendar events feed the same domain ledger as completed blocks.
+  // Pull the 13-week pulse window (oldest week the chapel renders → end of the
+  // current week) so meeting actuals line up with the task series.
+  const eventsRange = useMemo(() => {
+    const ws = new Date(`${weekStart}T00:00:00`).getTime();
+    return {
+      start: new Date(ws - 13 * 7 * 86_400_000).toISOString(),
+      end: new Date(ws + 7 * 86_400_000).toISOString(),
+    };
+  }, [weekStart]);
+  const eventsQ = useExternalEvents(eventsRange.start, eventsRange.end);
+  const { settings } = useSettings();
+  const calendarDomainMap = settings?.calendar_domain_map ?? EMPTY_MAP;
+  const eventRouting = useEventRouting();
+
   const ready = Boolean(domainsQ.data && initiativesQ.data && projectsQ.data && tasksQ.data);
 
   const data = useMemo<VerticalData>(
@@ -246,8 +267,12 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         projectsQ.data ?? [],
         tasksQ.data ?? [],
         sprintQ.data ?? null,
+        new Date(),
+        eventsQ.data ?? [],
+        calendarDomainMap,
+        eventRouting,
       ),
-    [domainsQ.data, initiativesQ.data, projectsQ.data, tasksQ.data, sprintQ.data],
+    [domainsQ.data, initiativesQ.data, projectsQ.data, tasksQ.data, sprintQ.data, eventsQ.data, calendarDomainMap, eventRouting],
   );
 
   const store = useMemo<VerticalStore>(() => {
@@ -367,7 +392,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           id: row.id, name: row.name, color: row.color, icon: row.icon,
           intention: row.intention, charter: row.charter ?? "", context: row.context ?? null,
           weeklyTargetHours: row.weekly_target_hours ?? 0,
-          investedThisWeek: 0, quarterHours: 0, lastTouchedDays: 99, weeks: new Array(13).fill(0), sort,
+          investedThisWeek: 0, meetingHoursThisWeek: 0, quarterHours: 0, lastTouchedDays: 99, weeks: new Array(13).fill(0), sort,
         };
       },
       updateDomain: (id, patch) => {
