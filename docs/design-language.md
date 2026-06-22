@@ -30,6 +30,8 @@ go look at those.
    eye never jostled. Density is fine (the planner is dense); *visual noise* is not.
 6. **The thing in focus lifts.** Selection / drag / active / open is shown by a glass
    pane physically rising toward you — never a flat outline or color swap. (See **Focus**.)
+   **While you drag-and-hold, the thing you're holding is glass in your hand and the
+   destination is always shown** — no exceptions. (See **Drag-and-hold**.)
 
 ---
 
@@ -69,9 +71,34 @@ rise *from* — **never lift a solid-white card; make it glass first.**
 | `.glass-card` | resting glass: translucent + blur + sheen, **no** border/shadow | board cards, Today hero cards (the "right now" block, open-time offer, focus/done moment) |
 | `.glass-lift` | selected / active / open: glass + `--shadow-lift` + `translateY(-3px) scale(1.015)` + inset top highlight. **No accent ring.** | board cards & calendar chips when selected (via `itemSelectClass`) |
 | `.glass-lift-row` | the row variant: same glass + shadow, `translateY(-2px)`, **no horizontal scale** (so a wide row can't overflow) | selected table rows & timeline name-column rows (via `itemSelectRowClass`) |
-| `.glass-grab` | the "picked up" variant: more blur, `scale(1.04) rotate(-0.5deg)` | drag ghosts (board, timeline tray) |
+| `.glass-grab` | the "picked up" variant: more blur, `scale(1.04) rotate(-0.5deg)` | drag ghosts (board, timeline tray, reorderable lists — Week's Plan priorities) |
+| drop indicator | a 2px `--accent` bar (`h-0.5 rounded-full`) at the landing gap | reorder lists; the "where it lands" half of the drag contract |
 | `.lift-anim` | springs the lift in/out (`transform` on `--ease-spring`) | board cards, table/timeline rows |
 | `.is-dragging` | the vacated slot left behind: `opacity .4` + dashed border | the source card while its ghost is dragged |
+
+### Drag-and-hold — the contract (universal, no exceptions)
+
+Any press-and-hold drag interaction — reorder, move, drag-to-schedule, board, timeline,
+tray — owes the user **two things at all times**, or it feels lost:
+
+1. **The held thing lifts into glass.** The element under the pointer becomes a real
+   picked-up card — `.glass-grab` (or, for a colored item, the inline lift: heavier frost
+   + `--shadow-lift` + transform, keeping its fill). It **follows the pointer** (inline
+   `transform: translateY(Δ)`, composed with the grab scale). You must always be able to
+   see *what* you're holding and that it's airborne. A faint inline shadow is **not**
+   enough — it must read as lifted-off-the-paper glass. **It's glass, so it stays
+   translucent** (`.glass-grab` is ~60% surface + a strong backdrop blur): whatever you
+   drag *over* stays visible (frosted) underneath — you never lose sight of the target.
+2. **The destination is shown.** Where it will land is always visible — either a **drop
+   indicator** (a 2px `--accent` bar at the target gap, for reorder/insert), the
+   **vacated slot** (`.is-dragging`, dashed + faded, for move-between-containers), or the
+   live target cell highlight (calendar). Never leave the user guessing where a release
+   lands.
+
+Reference implementation: the Week's Plan priority reorder (`WeekPlanFloor.tsx` —
+`ReorderablePriorities`): pointer-events (Tauri swallows HTML5 DnD — see
+`nuvo-tauri-dnd`), grip handle with `touch-action: none`, `.glass-grab` + pointer-follow
+on the held row, `--accent` drop bar at the computed gap, persist on release.
 
 ### Rules that took iterating to get right
 

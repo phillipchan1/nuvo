@@ -512,11 +512,14 @@ html.tauri-macos .spine-top {
   transform: translateY(-3px) scale(1.015);
 }
 .glass-grab {
+  /* Translucent — "glass in your hand". A strong backdrop blur frosts whatever
+     it passes over so the held card stays distinct, but the element underneath
+     still reads through (you never lose sight of where you're dragging). */
   background:
     linear-gradient(145deg, color-mix(in srgb, white 18%, transparent), transparent 58%),
-    color-mix(in srgb, var(--surface) 90%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  backdrop-filter: blur(16px) saturate(1.6);
+    color-mix(in srgb, var(--surface) 60%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  backdrop-filter: blur(18px) saturate(1.6);
   border-color: transparent !important;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
