@@ -40,17 +40,21 @@ export default function SpotlightWindow() {
     return () => html.classList.remove("spotlight-window");
   }, []);
 
-  // Each summon → fresh panel + refocus. Click-away dismiss is owned by the
-  // native NSPanel delegate (window_did_resign_key in lib.rs), not a JS blur
-  // listener — a panel's window delegate is replaced, so Tauri's "blur" event
-  // no longer fires here.
+  // Each summon → remount the panel fresh (empty capture field); React's mount
+  // effect focuses the input. Click-away dismiss is owned by the native NSPanel
+  // delegate (window_did_resign_key in lib.rs), not a JS blur listener — a
+  // panel's window delegate is replaced, so Tauri's "blur" event no longer fires.
+  //
+  // Deliberately NO win.setFocus() here: Tauri's setFocus calls NSApp.activate,
+  // which pulls all of Nuvo to the foreground and defeats the non-activating
+  // panel (the "⌥Space makes the whole app active" bug). The panel is already
+  // the key window from Rust's show_and_make_key(), so keystrokes land without it.
   useEffect(() => {
     if (!IS_TAURI) return;
     let unlistenShow: (() => void) | undefined;
     const win = getCurrentWebviewWindow();
     win.listen("spotlight-show", () => {
       setShowKey((k) => k + 1);
-      void win.setFocus();
     }).then((u) => (unlistenShow = u));
     return () => unlistenShow?.();
   }, []);
