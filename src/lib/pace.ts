@@ -133,3 +133,31 @@ export function portfolioDemand(d: VerticalData, now: Date): PortfolioDemand {
   pressing.sort((a, b) => (b.pace.driftDays ?? 0) - (a.pace.driftDays ?? 0));
   return { perWeekMins, counted, latent, pressing };
 }
+
+export interface WeekDemand {
+  weekStart: Date;
+  demandMins: number;
+}
+
+/** Spread each project's required pace across the weeks it's actually in play —
+ *  from now until its target — so we can forecast load week-by-week (the ribbon).
+ *  Overdue work lands entirely on the first (current) week; it's owed now.
+ *  `weekStarts` should come from the capacity read so the two stay index-aligned. */
+export function demandByWeek(d: VerticalData, now: Date, weekStarts: Date[]): WeekDemand[] {
+  const { counted } = portfolioDemand(d, now);
+  const firstWeekMs = weekStarts.length ? weekStarts[0].getTime() : 0;
+
+  return weekStarts.map((weekStart) => {
+    const ws = weekStart.getTime();
+    let demandMins = 0;
+    for (const { project, pace } of counted) {
+      if (pace.read === "overdue") {
+        if (ws === firstWeekMs) demandMins += pace.requiredMinsPerWeek; // owed now
+        continue;
+      }
+      const target = project.targetDate ? new Date(project.targetDate + "T23:59:59").getTime() : null;
+      if (target != null && target >= ws) demandMins += pace.requiredMinsPerWeek;
+    }
+    return { weekStart, demandMins };
+  });
+}

@@ -7,11 +7,17 @@
 import { useMemo } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
-import { portfolioDemand } from "../../lib/pace";
-import { Bar, PROJECT_STATUS_COLORS } from "./parts";
+import { demandByWeek, portfolioDemand } from "../../lib/pace";
+import { Bar, fmtDate, PROJECT_STATUS_COLORS } from "./parts";
 import { READY } from "./ReadinessBanner";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting; // the one caution amber, shared with the gauges
+const RIBBON_WEEKS = 10; // how many weeks of load forecast to show
+const CAP_CEILING = 0.78; // capacity (ratio = 1) sits here, leaving headroom to show overflow
+
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 type Band = "room" | "committed" | "over";
 
@@ -24,7 +30,20 @@ export default function CommitmentMeter({ onRefine }: { onRefine?: () => void })
   const { data } = useVertical();
   const now = useMemo(() => new Date(), []);
   const demand = portfolioDemand(data, now);
-  const { weeklyAvgMins, thisWeekMins } = useCapacity();
+  const { weeklyAvgMins, thisWeekMins, byWeek } = useCapacity();
+
+  // Per-week load forecast — demand spread across the weeks each project is live,
+  // against that week's real capacity. Index-aligned with byWeek.
+  const forecast = useMemo(() => {
+    const weeks = byWeek.slice(0, RIBBON_WEEKS);
+    const dem = demandByWeek(data, now, weeks.map((w) => w.weekStart));
+    return weeks.map((w, i) => {
+      const demandMins = dem[i]?.demandMins ?? 0;
+      const ratio = w.availMins > 0 ? demandMins / w.availMins : demandMins > 0 ? Infinity : 0;
+      return { weekStart: w.weekStart, availMins: w.availMins, demandMins, ratio, over: ratio > 1 };
+    });
+  }, [data, now, byWeek]);
+  const anyOver = forecast.some((f) => f.over);
 
   const demandMins = demand.perWeekMins;
   const capMins = weeklyAvgMins;
@@ -84,6 +103,40 @@ export default function CommitmentMeter({ onRefine }: { onRefine?: () => void })
       )}
 
       <p className="masthead mt-3 max-w-[52ch] text-lead text-ink">{synthesis}</p>
+
+      {hasDemand && capMins > 0 && forecast.length > 1 && (
+        <div className="mt-4">
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <span className="section-label !p-0">Load forecast</span>
+            <span className="mono text-micro text-muted">{anyOver ? "weeks over the line need a move" : "fits within capacity"}</span>
+          </div>
+          <div className="flex items-end gap-1 overflow-x-auto pb-0.5">
+            {forecast.map((f, i) => {
+              const tone = f.over ? CAUTION : READY;
+              const fillFrac = Math.min(Number.isFinite(f.ratio) ? f.ratio : 1.4, 1.4) * CAP_CEILING;
+              return (
+                <div key={i} className="flex min-w-[26px] flex-1 flex-col items-center gap-1">
+                  <div
+                    className="relative w-full overflow-hidden rounded-sm"
+                    style={{ height: 40, background: "var(--line)" }}
+                    title={`Week of ${fmtDate(toISODate(f.weekStart))} · need ≈${fmtH(f.demandMins)} / ≈${fmtH(f.availMins)} free${f.over ? " · over capacity" : ""}`}
+                  >
+                    {/* capacity ceiling — bars crossing it are over the week's open time */}
+                    <div className="absolute inset-x-0" style={{ bottom: `${CAP_CEILING * 100}%`, height: 1, background: "var(--line-strong)" }} />
+                    <div
+                      className="fast absolute inset-x-0 bottom-0"
+                      style={{ height: `${Math.min(fillFrac * 100, 100)}%`, background: tone, opacity: i === 0 ? 1 : 0.82 }}
+                    />
+                  </div>
+                  <span className="mono text-micro" style={{ color: i === 0 ? "var(--signal)" : "var(--muted)" }}>
+                    {i === 0 ? "now" : f.weekStart.getDate()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {(latent > 0 || pressing > 0) && (
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-caption">

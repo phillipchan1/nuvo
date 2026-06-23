@@ -92,11 +92,11 @@ ribbon is its aggregate.
 ## Phased build
 
 **Layer 0 — manual, no AI ("stupidly clear"):**
-1. Project **size** = Σ open task minutes (bottom-up). ✅ in `src/lib/pace.ts`
+1. Project **size** = Σ open task minutes (bottom-up). ✅ `src/lib/pace.ts`
 2. **Required pace** + **Drift** per project. ✅ `projectPace()`; surfaced on `ProjectFloor`.
-3. **Portfolio meter** (Demand÷Capacity, calendar-derived) on the projects dashboard + Sunday.
-4. **Real-date timeline + capacity ribbon.**
-5. **Latent tray** for unsized/undated projects with a refine nudge.
+3. **Portfolio meter** (Demand÷Capacity, calendar-derived) on the projects Standing. ✅ `CommitmentMeter`.
+4. **Capacity ribbon.** ✅ a per-week **load forecast** lives in `CommitmentMeter` (`demandByWeek` × `capacityByWeek`, with a capacity-ceiling line). ⏳ *Remaining:* the same ribbon **overlaid on the portfolio Timeline bars** so concurrency and over-capacity weeks line up pixel-for-pixel — deliberately deferred (the Timeline is an intricate pointer-drag component reached through the generic `Collection`; an aligned overlay there shouldn't ship without watching it render).
+5. **Latent** unsized/undated projects — surfaced as the "not yet counted — refine to commit" handoff in the meter (the Timeline already has an undated tray). ✅
 
 **Then stack intelligence:** auto-size raw projects from task titles; learn *real*
 delivered velocity per domain so capacity stops being aspirational; auto-propose the
@@ -105,8 +105,24 @@ over-committed.
 
 ## Current state
 
-`src/lib/pace.ts` — `projectPace(data, project, now)` returns remaining effort, required
-pace, recent actual pace, projected finish, and a `PaceRead`
+**Project altitude** — `src/lib/pace.ts` `projectPace(data, project, now)` returns
+remaining effort, required pace, recent actual pace, projected finish, and a `PaceRead`
 (`clear | undated | overdue | stalled | behind | on_track | ahead`). Surfaced as a
-hairline "Pace" row on the Project floor (`src/components/floors/ProjectFloor.tsx`).
-This is Layer 0, steps 1–2 — the atom before the portfolio molecule.
+hairline "Pace" row on the Project floor (`ProjectFloor.tsx`).
+
+**Portfolio altitude** — `pace.ts` `portfolioDemand()` rolls in-flight projects into one
+weekly demand and partitions counted / latent / pressing; `demandByWeek()` spreads that
+across upcoming weeks. `src/lib/capacity.ts` + `src/hooks/useCapacity.ts` supply
+calendar-derived capacity (this-week / typical-week / by-week). `CommitmentMeter`
+(`src/components/floors/CommitmentMeter.tsx`, on the projects Standing) shows the
+Demand÷Capacity band, a Fraunces synthesis, the per-week load forecast, and the refine
+handoff for latent projects.
+
+Layer 0 is complete except the in-Gantt aligned ribbon (step 4, deferred — see above).
+The whole of it is calendar-/AI-free; the intelligence layers build on these primitives.
+
+### Not yet verified in a running app
+The remote build session had no preview/browser tooling, so these were proven by
+typecheck, web build, and unit-level math checks — **not** yet driven on screen.
+Worth a look on desktop + 375px before calling it done: the Project-floor Pace row, and
+the `CommitmentMeter` (band, forecast ribbon, empty/over states) on the projects Standing.
