@@ -75,6 +75,8 @@ export interface ComposeWeekInput {
   workStartMin: number; // e.g. 480
   workEndMin: number; // e.g. 990
   hiddenCalendarIds?: string[];
+  /** Stable keys of individually hidden events — excluded from the busy math. */
+  hiddenEventKeys?: string[];
   /** 0=Sun…6=Sat; defaults to Mon–Fri. Non-working days hold no work window. */
   workingDays?: number[];
   // ── past-week overrides (sealed Review) — when omitted, the current week is
@@ -136,7 +138,7 @@ export function composeWeek(input: ComposeWeekInput): WeekReport {
     .sort((a, b) => b.hours - a.hours);
 
   // ── Capacity across the working days (reuse the one "what's busy" rule) ────
-  const busy = toBusyBlocks(events, blocks, input.hiddenCalendarIds ?? []);
+  const busy = toBusyBlocks(events, blocks, input.hiddenCalendarIds ?? [], input.hiddenEventKeys ?? []);
   let busyMins = 0;
   let workMins = 0;
   for (let i = 0; i < 7; i++) {

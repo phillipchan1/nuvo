@@ -78,6 +78,7 @@ export function useWeekReport(weekStartISO: string, now: Date): WeekReport {
       workStartMin: settings?.work_start_minutes ?? WORK_START_DEFAULT,
       workEndMin: settings?.work_end_minutes ?? WORK_END_DEFAULT,
       hiddenCalendarIds: settings?.hidden_calendar_ids ?? [],
+      hiddenEventKeys: (settings?.hidden_events ?? []).map((h) => h.key),
       bigRocks,
       domainHours,
       ambient,

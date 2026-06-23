@@ -14,6 +14,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   work_start_minutes: 480,
   work_end_minutes: 990,
   hidden_calendar_ids: [],
+  hidden_events: [],
   calendar_domain_map: {},
   last_rollover_date: null,
 };
@@ -38,6 +39,7 @@ export function useSettings() {
           ...data,
           calendar_fit_hours,
           hidden_calendar_ids: data.hidden_calendar_ids ?? [],
+          hidden_events: data.hidden_events ?? [],
           calendar_domain_map: data.calendar_domain_map ?? {},
         };
       }

@@ -10,7 +10,8 @@ import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
 import type { useRecurrenceMutations, SeriesTemplate } from "../hooks/useRecurrence";
-import { useEventDetails } from "../hooks/useCalendar";
+import { useEventDetails, useHiddenEvents } from "../hooks/useCalendar";
+import { eventSeriesKey } from "../lib/now";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, isProjectComplete, projectById } from "../lib/vertical";
@@ -696,6 +697,7 @@ export function EventPopover({
   const [pendingRsvp, setPendingRsvp] = useState<AttendeeStatus | null>(null);
   const [rsvpError, setRsvpError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [hideMode, setHideMode] = useState(false);
   const [addingGuests, setAddingGuests] = useState(false);
   const [newGuests, setNewGuests] = useState<string[]>([]);
   const [inviting, setInviting] = useState(false);
@@ -710,7 +712,12 @@ export function EventPopover({
     setEndAt(event.end_at);
     setPendingRsvp(null);
     setConfirmDelete(false);
+    setHideMode(false);
   }, [event.id, event.title, event.start_at, event.end_at]);
+
+  const { isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
+  const hiddenNow = isHidden(event);
+  const canHideSeries = Boolean(eventSeriesKey(event));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -1072,9 +1079,19 @@ export function EventPopover({
           </div>
         </div>
 
-        {/* Footer — open in Google / delete */}
-        {(editable || raw?.htmlLink) && (
+        {/* Footer — open in Google / hide / delete */}
+        {(
           <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
+            {hideMode && !hiddenNow ? (
+              <>
+                <span className="text-label text-muted">Hide…</span>
+                <div className="flex-1" />
+                <Btn onClick={() => setHideMode(false)}>Cancel</Btn>
+                <Btn onClick={() => { hide(event, "THIS"); onClose(); }}>This event</Btn>
+                <Btn onClick={() => { hide(event, "ALL"); onClose(); }}>All events</Btn>
+              </>
+            ) : (
+            <>
             {raw?.htmlLink && (
               <a
                 href={raw.htmlLink}
@@ -1088,6 +1105,22 @@ export function EventPopover({
                 </svg>
                 <span className="ml-1 align-middle">Google Cal</span>
               </a>
+            )}
+            {/* Hide / show — available for every event (keeps read-only calendars
+                out of your way too); hiding never touches the server. */}
+            {!confirmDelete && (
+              hiddenNow ? (
+                <Btn onClick={() => { const k = hiddenKeyFor(event); if (k) unhide(k); onClose(); }} title="Bring this event back onto the board">
+                  Show
+                </Btn>
+              ) : (
+                <Btn
+                  onClick={() => { if (canHideSeries) setHideMode(true); else { hide(event, "THIS"); onClose(); } }}
+                  title="Hide from the board and time-blocking — it stays on the server"
+                >
+                  Hide
+                </Btn>
+              )
             )}
             {editable && (
               !confirmDelete ? (
@@ -1134,6 +1167,8 @@ export function EventPopover({
                   </Btn>
                 </>
               )
+            )}
+            </>
             )}
           </div>
         )}

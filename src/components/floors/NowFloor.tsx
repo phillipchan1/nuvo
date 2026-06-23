@@ -15,7 +15,7 @@ import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useAgent } from "../../hooks/useAgent";
 import { todayISO } from "../../lib/dates";
 import { domainById, faithfulness, initiativeById, initiativeProgress, taskDomainColor, type Domain, type VerticalData } from "../../lib/vertical";
-import { fmtMins, OPEN_OFFER_MINS, rankNow, readDay, toBusyBlocks, type BusyBlock, type DayRead, type Gap, type NowContext, type Suggestion } from "../../lib/now";
+import { fmtMins, isEventHidden, OPEN_OFFER_MINS, rankNow, readDay, toBusyBlocks, type BusyBlock, type DayRead, type Gap, type NowContext, type Suggestion } from "../../lib/now";
 import { composeWeek, fmtSlot, type ComposeResult, type DayContext } from "../../lib/compose";
 import { composeBrief, type Brief } from "../../lib/brief";
 import type { AgentMessage } from "../../lib/agentTypes";
@@ -101,8 +101,8 @@ export default function NowFloor({
   const askBar = onAskNuvo ?? ((seed?: string) => { setChatOpen(true); if (seed) void agent.sendMessage(seed); });
 
   const busy = useMemo<BusyBlock[]>(
-    // respect the calendars the user has toggled off in settings
-    () => toBusyBlocks(events, blocks, settings?.hidden_calendar_ids ?? []),
+    // respect the calendars toggled off, and individual events hidden, in settings
+    () => toBusyBlocks(events, blocks, settings?.hidden_calendar_ids ?? [], (settings?.hidden_events ?? []).map((h) => h.key)),
     [events, blocks, settings],
   );
 
@@ -187,13 +187,14 @@ export default function NowFloor({
         t.status !== "done" && t.status !== "trashed" && !t.start_time &&
         (t.do_date === today || (!t.do_date && (t.status === "inbox" || t.status === "backlog"))),
     );
+    const hiddenEvKeys = new Set((settings?.hidden_events ?? []).map((h) => h.key));
     setOrder(
       composeWeek({
         weekStartISO: today,
         todayISO: today,
         now,
         tasks: pool,
-        events: events.filter((e) => !(settings?.hidden_calendar_ids ?? []).includes(e.calendar_id)),
+        events: events.filter((e) => !(settings?.hidden_calendar_ids ?? []).includes(e.calendar_id) && !isEventHidden(e, hiddenEvKeys)),
         blocks,
         workStartMin: settings?.work_start_minutes ?? 480,
         workEndMin: settings?.work_end_minutes ?? 990,

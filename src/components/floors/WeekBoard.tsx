@@ -59,6 +59,7 @@ export default function WeekBoard({
   const { data: inbox = [] } = useInboxTasks();
 
   const hidden = settings?.hidden_calendar_ids ?? [];
+  const hiddenEventKeys = (settings?.hidden_events ?? []).map((h) => h.key);
   const workStartMin = settings?.work_start_minutes ?? 480;
   const workEndMin = settings?.work_end_minutes ?? 990;
 
@@ -123,7 +124,7 @@ export default function WeekBoard({
     const iso = toDateISO(d);
     const dayPlaced = placed.get(iso) ?? [];
     const timed = dayPlaced.filter((t) => t.start_time && t.status !== "done");
-    const blocked = windowMins - readDay(ws, toBusyBlocks(events, timed, hidden), ws, we).openMins;
+    const blocked = windowMins - readDay(ws, toBusyBlocks(events, timed, hidden, hiddenEventKeys), ws, we).openMins;
     const anytimeMins = dayPlaced
       .filter((t) => !t.start_time && t.status !== "done" && iso >= today)
       .reduce((s, t) => s + (t.duration_minutes ?? DEFAULT_DUR), 0);

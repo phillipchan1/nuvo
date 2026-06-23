@@ -1,6 +1,9 @@
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
-import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleRawEvent, Label, RecurrenceScope } from "../lib/types";
+import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleRawEvent, HiddenEvent, Label, RecurrenceScope } from "../lib/types";
+import { eventInstanceKey, eventSeriesKey, isEventHidden } from "../lib/now";
+import { useSettings } from "./useSettings";
 
 export function useCalendarRefresh() {
   const qc = useQueryClient();
@@ -43,13 +46,51 @@ export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
     queryFn: async (): Promise<ExternalEvent[]> => {
       const { data, error } = await supabase
         .from("external_events")
-        .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp")
+        .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id")
         .lt("start_at", rangeEndISO)
         .gt("end_at", rangeStartISO);
       if (error) throw error;
       return data as ExternalEvent[];
     },
   });
+}
+
+/** The event most callers can hide. A single occurrence carries an instance key;
+ *  a recurring one can be hidden as just-this or the whole series. */
+type HidableEvent = Pick<ExternalEvent, "account_id" | "provider_event_id" | "title" | "recurring_event_id">;
+
+/** Hide events Fantastical-style — keep them on the server, just out of the way
+ *  (and out of the busy math). Backed by user_settings.hidden_events, so the hidden
+ *  set follows the single user across desktop + the PWA. */
+export function useHiddenEvents() {
+  const { settings, update } = useSettings();
+  const hidden = useMemo<HiddenEvent[]>(() => settings?.hidden_events ?? [], [settings]);
+  const keys = useMemo(() => new Set(hidden.map((h) => h.key)), [hidden]);
+
+  const isHidden = (e: { account_id: string; provider_event_id: string; recurring_event_id?: string | null }) =>
+    isEventHidden(e, keys);
+
+  /** The hidden key responsible for an event being hidden (series wins), for unhide. */
+  const hiddenKeyFor = (e: HidableEvent): string | null => {
+    const instance = eventInstanceKey(e);
+    if (keys.has(instance)) return instance;
+    const series = eventSeriesKey(e);
+    return series && keys.has(series) ? series : null;
+  };
+
+  const hide = (e: HidableEvent, scope: RecurrenceScope = "THIS") => {
+    // "All events" needs the synced master id; without it, fall back to just this one.
+    const seriesKey = eventSeriesKey(e);
+    const key = scope === "ALL" && seriesKey ? seriesKey : eventInstanceKey(e);
+    if (keys.has(key)) return;
+    update({ hidden_events: [...hidden, { key, title: e.title }] });
+  };
+
+  const unhide = (key: string) => {
+    update({ hidden_events: hidden.filter((h) => h.key !== key) });
+  };
+
+  return { hidden, keys, isHidden, hiddenKeyFor, hide, unhide };
 }
 
 /** Move/resize/retitle a Google event: optimistic local write + API write-back.

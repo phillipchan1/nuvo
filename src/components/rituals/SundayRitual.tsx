@@ -35,6 +35,7 @@ import {
 } from "../../lib/vertical";
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO, planningWeekStartISO, todayISO } from "../../lib/dates";
 import { CONTEXT_META, composeWeek, type DayContext, type Placement } from "../../lib/compose";
+import { isEventHidden } from "../../lib/now";
 import { aiBatchInbox, batchWeek, type BatchResult, type InboxGroup } from "../../lib/batch";
 import { supabase } from "../../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../../lib/calibration";
@@ -85,7 +86,11 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
   // honor the calendars the user has hidden in settings — a hidden calendar is
   // not "busy", and counting it makes the week look full when it isn't.
   const hiddenCals = useMemo(() => new Set(settings?.hidden_calendar_ids ?? []), [settings]);
-  const visibleEvents = useMemo(() => events.filter((e) => !hiddenCals.has(e.calendar_id)), [events, hiddenCals]);
+  const hiddenEventKeys = useMemo(() => new Set((settings?.hidden_events ?? []).map((h) => h.key)), [settings]);
+  const visibleEvents = useMemo(
+    () => events.filter((e) => !hiddenCals.has(e.calendar_id) && !isEventHidden(e, hiddenEventKeys)),
+    [events, hiddenCals, hiddenEventKeys],
+  );
 
   // ── the two buckets, intelligence picks: projects (lead bets, next-up,
   //    deadlines) + inbox (deadlines, faithfulness top-ups). One ranked set. ──
