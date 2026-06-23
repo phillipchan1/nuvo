@@ -6,13 +6,19 @@
 import { useVertical } from "../../hooks/useVertical";
 import {
   domainById,
+  initiativeAtRisk,
+  initiativeAttainment,
+  initiativeEffortGap,
+  initiativeExecution,
   initiativeById,
-  initiativeProgress,
   isProjectComplete,
+  krCoverage,
+  krPct,
+  krStaleDays,
+  KR_STALE_DAYS,
   looseTasksOfInitiative,
   projectProgress,
   projectsOf,
-  type KeyResult,
 } from "../../lib/vertical";
 import type { Focus } from "../AppShell";
 import {
@@ -25,6 +31,7 @@ import {
   InlineNumber,
   InlineText,
   InlineTextarea,
+  KrPicker,
   MomentumChip,
   PROJECT_STATUS,
   PROJECT_STATUS_COLORS,
@@ -37,12 +44,6 @@ import {
 import { RIPENESS_HINT, RIPENESS_LABEL, ripenessOfInitiative, verdictOf } from "../../lib/tending";
 import TaskList from "./TaskList";
 import { Btn } from "../ui";
-
-function krPct(kr: KeyResult) {
-  if (kr.target === kr.baseline) return kr.current >= kr.target ? 100 : 0;
-  const p = (kr.current - kr.baseline) / (kr.target - kr.baseline);
-  return Math.max(0, Math.min(100, Math.round(p * 100)));
-}
 
 export default function InitiativeFloor({
   focus,
@@ -73,8 +74,15 @@ export default function InitiativeFloor({
 
   const projects = projectsOf(data, initiative.id);
   const loose = looseTasksOfInitiative(data, initiative.id);
-  const pct = initiativeProgress(data, initiative);
   const ripe = ripenessOfInitiative(data, initiative);
+
+  // Outcome-first reads: attainment IS the progress when KRs exist; execution
+  // (work done) and invested effort sit beside it to expose the activity-gap.
+  const attainment = initiativeAttainment(data, initiative);
+  const execution = initiativeExecution(data, initiative);
+  const { investedHours, busywork } = initiativeEffortGap(data, initiative);
+  const risk = initiativeAtRisk(data, initiative);
+  const hasKRs = initiative.keyResults.length > 0;
 
   const timelineItems: TimelineItem[] = projects.map((p) => ({
     id: p.id,
@@ -99,6 +107,15 @@ export default function InitiativeFloor({
         }
         actions={
           <div className="flex items-center gap-2">
+            {risk.atRisk && (
+              <span
+                className="mono flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro"
+                style={{ color: "var(--signal)", borderColor: "color-mix(in srgb, var(--signal) 45%, transparent)", background: "color-mix(in srgb, var(--signal) 8%, transparent)" }}
+                title={`At risk — ${risk.reasons.join(" · ")}`}
+              >
+                ⚠ {risk.reasons[0]}
+              </span>
+            )}
             <span className="mono flex items-center gap-1.5 text-meta text-muted" title={RIPENESS_HINT[ripe.stage]}>
               <RipenessPip stage={ripe.stage} unsound={ripe.stage === "active" && verdictOf(data, "initiative", initiative.id)?.sound !== true} />
               {RIPENESS_LABEL[ripe.stage]}
@@ -131,14 +148,30 @@ export default function InitiativeFloor({
         </div>
       </FloorHeader>
 
-      {/* overall progress + dates */}
-      <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-line bg-surface px-4 py-3">
+      {/* outcome attainment (the needle) + execution + invested effort + dates */}
+      <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-md border border-line bg-surface px-4 py-3">
         <div className="min-w-[200px] flex-1">
           <div className="flex items-baseline justify-between">
-            <span className="section-label">Progress (rolled up from projects)</span>
-            <span className="mono text-label" style={{ color: accent }}>{pct}%</span>
+            <span className="section-label">
+              {hasKRs ? "Outcome attainment (key results)" : "Progress (rolled up from projects)"}
+            </span>
+            <span className="mono text-label" style={{ color: accent }}>{attainment ?? execution}%</span>
           </div>
-          <Bar pct={pct} color={accent} />
+          <Bar pct={attainment ?? execution} color={accent} />
+          {hasKRs && (
+            <div className="mono mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-meta text-muted">
+              <span title="Share of the work under this bet that's done — effort, not outcome.">
+                execution {execution}%
+              </span>
+              <span>·</span>
+              <span title="Hours of completed work that served this initiative.">{investedHours}h invested</span>
+              {busywork && (
+                <span style={{ color: "var(--signal)" }} title="Real effort logged, but the key results have barely moved — check whether the work actually targets the outcome.">
+                  · ⚠ effort isn't moving the needle
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="mono flex items-center gap-4 text-label text-muted">
           <span>start <InlineDate value={initiative.startDate} onChange={(v) => updateInitiative(initiative.id, { startDate: v })} /></span>
@@ -174,30 +207,38 @@ export default function InitiativeFloor({
             {projects.map((p) => {
               const pp = projectProgress(data, p);
               return (
-                <button
-                  key={p.id}
-                  onClick={() => onOpenProject(p.id)}
-                  className="fast group flex flex-col rounded-md border border-line bg-surface p-3.5 text-left hover:border-muted"
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="text-body font-medium leading-snug">{p.name}</span>
-                    <span
-                      className="mono ml-auto shrink-0 rounded-full border px-1.5 text-micro"
-                      style={{
-                        borderColor: PROJECT_STATUS_COLORS[p.status as keyof typeof PROJECT_STATUS_COLORS] ?? "var(--muted)",
-                        color: p.status === "in_progress" ? "#fff" : PROJECT_STATUS_COLORS[p.status as keyof typeof PROJECT_STATUS_COLORS] ?? "var(--muted)",
-                        background: p.status === "in_progress" ? "var(--accent)" : "transparent",
-                      }}
-                    >
-                      {PROJECT_STATUS_LABEL[p.status as keyof typeof PROJECT_STATUS_LABEL] ?? p.status}
-                    </span>
-                  </div>
-                  {p.outcome && <div className="mt-1 line-clamp-2 text-label text-muted">{p.outcome}</div>}
-                  <div className="mt-auto pt-2">
-                    <Bar pct={pp} color={accent} h={1} />
-                    <div className="mono text-meta text-muted">{pp}%{p.targetDate ? ` · by ${p.targetDate.slice(5)}` : ""}</div>
-                  </div>
-                </button>
+                <div key={p.id} className="fast group flex flex-col rounded-md border border-line bg-surface p-3.5 hover:border-muted">
+                  <button onClick={() => onOpenProject(p.id)} className="flex flex-1 flex-col text-left">
+                    <div className="flex items-start gap-2">
+                      <span className="text-body font-medium leading-snug">{p.name}</span>
+                      <span
+                        className="mono ml-auto shrink-0 rounded-full border px-1.5 text-micro"
+                        style={{
+                          borderColor: PROJECT_STATUS_COLORS[p.status as keyof typeof PROJECT_STATUS_COLORS] ?? "var(--muted)",
+                          color: p.status === "in_progress" ? "#fff" : PROJECT_STATUS_COLORS[p.status as keyof typeof PROJECT_STATUS_COLORS] ?? "var(--muted)",
+                          background: p.status === "in_progress" ? "var(--accent)" : "transparent",
+                        }}
+                      >
+                        {PROJECT_STATUS_LABEL[p.status as keyof typeof PROJECT_STATUS_LABEL] ?? p.status}
+                      </span>
+                    </div>
+                    {p.outcome && <div className="mt-1 line-clamp-2 text-label text-muted">{p.outcome}</div>}
+                    <div className="mt-auto pt-2">
+                      <Bar pct={pp} color={accent} h={1} />
+                      <div className="mono text-meta text-muted">{pp}%{p.targetDate ? ` · by ${p.targetDate.slice(5)}` : ""}</div>
+                    </div>
+                  </button>
+                  {hasKRs && (
+                    <div className={`mt-2 ${p.keyResultId ? "" : "opacity-0 group-hover:opacity-100"}`}>
+                      <KrPicker
+                        keyResults={initiative.keyResults}
+                        value={p.keyResultId}
+                        onChange={(krId) => updateProject(p.id, { keyResultId: krId })}
+                        color={accent}
+                      />
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -215,6 +256,7 @@ export default function InitiativeFloor({
               parent={{ initiativeId: initiative.id, domainId: initiative.domainId, projectId: null }}
               accent={accent}
               emptyHint="Small things that don't deserve a project live here."
+              keyResults={initiative.keyResults}
             />
           </div>
         </section>
@@ -243,6 +285,29 @@ export default function InitiativeFloor({
                   <InlineText value={kr.unit} onChange={(v) => updateKeyResult(initiative.id, kr.id, { unit: v })} placeholder="unit" className="ml-1 w-10" />
                 </div>
                 <Bar pct={krPct(kr)} color={accent} />
+                {(() => {
+                  const cov = krCoverage(data, kr.id);
+                  const stale = krStaleDays(initiative);
+                  return (
+                    <div className="mono mt-1.5 flex flex-wrap items-center gap-x-2 text-micro text-muted">
+                      {cov.covered ? (
+                        <span title="Open work pointed at this key result.">
+                          {cov.projects > 0 && `${cov.projects} project${cov.projects === 1 ? "" : "s"}`}
+                          {cov.projects > 0 && cov.openTasks > 0 && " · "}
+                          {cov.openTasks > 0 && `${cov.openTasks} task${cov.openTasks === 1 ? "" : "s"}`}
+                          {" working it"}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--signal)" }} title="No project or task is pointed at this number — link some work, or this outcome won't move.">
+                          ⚠ nothing is moving this
+                        </span>
+                      )}
+                      {stale != null && stale >= KR_STALE_DAYS && (
+                        <span title="This measurement hasn't been updated in a while.">· unmeasured {stale}d</span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             ))}
             {initiative.keyResults.length === 0 && (

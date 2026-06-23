@@ -539,7 +539,8 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if (error) throw error;
         invalidate(["vertical"]);
         return {
-          id: row.id, initiativeId, domainId, name: row.name, outcome: row.outcome ?? "",
+          id: row.id, initiativeId, keyResultId: row.key_result_id ?? null, domainId,
+          name: row.name, outcome: row.outcome ?? "",
           description: row.description ?? "", startDate: row.start_date ?? null,
           targetDate: row.target_date ?? null,
           status: (row.status ?? "backlog") as Project["status"], progress: row.progress ?? 0,
@@ -557,6 +558,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if (patch.status != null) rowPatch.status = patch.status;
         if (patch.progress != null) rowPatch.progress = patch.progress;
         if ("initiativeId" in patch) rowPatch.initiative_id = patch.initiativeId;
+        if ("keyResultId" in patch) rowPatch.key_result_id = patch.keyResultId;
         if (patch.domainId != null) rowPatch.domain_id = patch.domainId;
         if (!Object.keys(rowPatch).length) return;
         patchRows<ProjectRow>(["vertical", "projects"], id, rowPatch);
@@ -636,6 +638,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if (patch.title != null) rowPatch.title = patch.title;
         if ("energy" in patch) rowPatch.energy = patch.energy ?? null;
         if (patch.durationMins != null) rowPatch.duration_minutes = patch.durationMins;
+        if ("keyResultId" in patch) rowPatch.key_result_id = patch.keyResultId ?? null;
         if (!Object.keys(rowPatch).length) return;
         void patchTaskRow(id, rowPatch);
       },

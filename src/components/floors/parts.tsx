@@ -17,7 +17,7 @@ import {
   startOfYear,
 } from "date-fns";
 import { ENERGY_META, ENERGY_ORDER, type Energy } from "../../lib/energy";
-import type { Domain, Momentum, ProjectStatus } from "../../lib/vertical";
+import type { Domain, KeyResult, Momentum, ProjectStatus } from "../../lib/vertical";
 import { RIPENESS_HINT, RIPENESS_LABEL, type Ripeness } from "../../lib/tending";
 import type { CollectionSelection } from "../../hooks/useCollectionSelection";
 import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
@@ -405,6 +405,69 @@ export function DomainPicker({
                 {d.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
               </button>
             ))}
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
+// ── Key-result picker — point a project / task at the outcome it moves ───────
+export function KrPicker({
+  keyResults,
+  value,
+  onChange,
+  color = "var(--accent)",
+  align = "left",
+}: {
+  keyResults: KeyResult[];
+  value: string | null;
+  onChange: (krId: string | null) => void;
+  color?: string;
+  align?: "left" | "right";
+}) {
+  const [open, setOpen] = useState(false);
+  if (keyResults.length === 0) return null;
+  const cur = keyResults.find((k) => k.id === value) ?? null;
+  return (
+    <span className="relative inline-block">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        className="fast flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-micro"
+        style={
+          cur
+            ? { color, borderColor: `${color}66`, background: softTint(color, 8) }
+            : { color: "var(--muted)", borderColor: "var(--line)" }
+        }
+        title={cur ? `Moves: ${cur.name}` : "Link the key result this moves"}
+      >
+        <span>◎</span>
+        <span className="max-w-[120px] truncate font-medium">{cur ? cur.name : "link KR"}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
+          <div className={`rise elev-2 absolute ${align === "right" ? "right-0" : "left-0"} top-full z-50 mt-1 min-w-[170px] rounded-md border border-line bg-surface py-1`}>
+            {keyResults.map((k) => (
+              <button
+                key={k.id}
+                onClick={(e) => { e.stopPropagation(); onChange(k.id === value ? null : k.id); setOpen(false); }}
+                className="fast flex w-full items-center gap-2 px-2.5 py-1 text-left text-label hover:bg-accent-soft"
+                style={{ color: k.id === value ? color : "var(--text)" }}
+              >
+                <span style={{ color }}>◎</span>
+                <span className="truncate">{k.name}</span>
+                {k.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
+              </button>
+            ))}
+            {value && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onChange(null); setOpen(false); }}
+                className="fast mono mt-0.5 block w-full border-t border-line px-2.5 py-1 text-left text-micro text-muted hover:bg-accent-soft"
+              >
+                unlink
+              </button>
+            )}
           </div>
         </>
       )}

@@ -46,6 +46,8 @@ export interface Task {
   project_id: string | null;
   initiative_id: string | null;
   domain_id: string | null;
+  /** the key result this task moves — the outcome it serves, if any. */
+  key_result_id: string | null;
   sprint_id: string | null;
   /** the priority (big rock) this task serves — see {@link BigRock}. */
   big_rock_id: string | null;
@@ -233,10 +235,21 @@ export interface UserSettings {
   work_start_minutes: number; // compose boundary: blocks proposed inside these
   work_end_minutes: number;
   hidden_calendar_ids: string[];
+  /** Individually hidden events (Fantastical-style hide, not delete). Kept out of
+   *  the board AND the busy/availability math. Keyed by the stable event key so a
+   *  re-sync can't resurface them; title is stored for the Settings list. */
+  hidden_events: HiddenEvent[];
   /** Subscribed-calendar id → domain id. Every event from that calendar is
    *  attributed to the domain (the deterministic default behind time allocation). */
   calendar_domain_map: Record<string, string>;
   last_rollover_date: string | null;
+}
+
+/** One hidden calendar event. `key` is `account_id:provider_event_id` for a single
+ *  occurrence, or `account_id:series:recurring_event_id` for a whole series. */
+export interface HiddenEvent {
+  key: string;
+  title: string;
 }
 
 export const DEFAULT_DURATION_MINUTES = 30;

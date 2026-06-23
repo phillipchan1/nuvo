@@ -52,6 +52,7 @@ export interface KeyResult {
   current: number;
   target: number;
   unit: string;
+  updatedAt: string | null; // last time the measurement was touched — staleness
 }
 
 /**
@@ -95,6 +96,7 @@ export type ProjectStatus = "backlog" | "in_progress" | "waiting" | "cancelled" 
 export interface Project {
   id: string;
   initiativeId: string | null; // nullable — a project can sit straight under a domain
+  keyResultId: string | null; // the KR this project moves, if any — the outcome link
   domainId: string;
   name: string;
   outcome: string; // the goal in one line
@@ -115,6 +117,8 @@ export interface VTask {
   projectId: string | null;
   initiativeId: string | null;
   domainId: string | null;
+  /** the key result this task moves, if any — the outcome link. */
+  keyResultId: string | null;
   /** the priority (big rock) this task serves, if any. */
   bigRockId: string | null;
   title: string;
@@ -175,6 +179,7 @@ export interface KeyResultRow {
   target_value: number;
   unit: string;
   sort_order: number;
+  updated_at?: string | null;
 }
 
 export interface InitiativeRow {
@@ -199,6 +204,7 @@ export interface InitiativeRow {
 export interface ProjectRow {
   id: string;
   initiative_id: string | null;
+  key_result_id: string | null;
   domain_id: string | null;
   name: string;
   outcome: string;
@@ -264,6 +270,7 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
     projectId: t.project_id,
     initiativeId: t.initiative_id,
     domainId: t.domain_id,
+    keyResultId: t.key_result_id ?? null,
     bigRockId: t.big_rock_id ?? null,
     title: t.title,
     energy: t.energy,
@@ -330,6 +337,7 @@ export function buildVertical(
           current: k.current_value,
           target: k.target_value,
           unit: k.unit,
+          updatedAt: k.updated_at ?? null,
         })),
     }));
 
@@ -340,6 +348,7 @@ export function buildVertical(
     .map((p) => ({
       id: p.id,
       initiativeId: p.initiative_id,
+      keyResultId: p.key_result_id ?? null,
       domainId: p.domain_id ?? (p.initiative_id ? initiativeDomain.get(p.initiative_id) ?? "" : ""),
       name: p.name,
       outcome: p.outcome,
@@ -489,6 +498,55 @@ export const looseTasksOfInitiative = (d: VerticalData, initiativeId: string) =>
 export const looseTasksOfDomain = (d: VerticalData, domainId: string) =>
   d.tasks.filter((t) => t.domainId === domainId && !t.projectId && !t.initiativeId);
 
+// ── OKR alignment — work pointed at an outcome (a key result) ────────────────
+/** A key result's attainment, 0..100 — the Gain from baseline toward target. */
+export function krPct(kr: KeyResult): number {
+  if (kr.target === kr.baseline) return kr.current >= kr.target ? 100 : 0;
+  const p = (kr.current - kr.baseline) / (kr.target - kr.baseline);
+  return Math.max(0, Math.min(100, Math.round(p * 100)));
+}
+
+/** Projects pointed at a given key result. */
+export const projectsOfKeyResult = (d: VerticalData, krId: string) =>
+  d.projects.filter((p) => p.keyResultId === krId);
+
+/** Tasks pointed at a given key result (directly, or via their project). */
+export const tasksOfKeyResult = (d: VerticalData, krId: string) =>
+  d.tasks.filter(
+    (t) => t.keyResultId === krId || (t.projectId && projectById(d, t.projectId)?.keyResultId === krId),
+  );
+
+/** How much open work is aimed at a KR — the coverage read. A KR with zero
+ *  supporting projects AND zero supporting tasks is uncovered: a number nothing
+ *  is moving. */
+export function krCoverage(
+  d: VerticalData,
+  krId: string,
+): { projects: number; openTasks: number; covered: boolean } {
+  const projects = projectsOfKeyResult(d, krId).filter((p) => isOpenStatus(p.status)).length;
+  const openTasks = tasksOfKeyResult(d, krId).filter((t) => t.status !== "done").length;
+  return { projects, openTasks, covered: projects > 0 || openTasks > 0 };
+}
+
+/** Key results on an initiative that nothing is working toward — the alignment
+ *  gap the grooming surfaces ("this number has no supporting work"). */
+export const uncoveredKeyResults = (d: VerticalData, i: Initiative) =>
+  i.keyResults.filter((kr) => !krCoverage(d, kr.id).covered);
+
+/** Every task that serves an initiative's outcome — parented to it (through the
+ *  project chain) OR pointed straight at one of its key results. The set the
+ *  invested-effort read sums over. */
+export function tasksOfInitiative(d: VerticalData, i: Initiative): VTask[] {
+  const krIds = new Set(i.keyResults.map((k) => k.id));
+  const projectIds = new Set(projectsOf(d, i.id).map((p) => p.id));
+  return d.tasks.filter(
+    (t) =>
+      t.initiativeId === i.id ||
+      (t.projectId && projectIds.has(t.projectId)) ||
+      (t.keyResultId && krIds.has(t.keyResultId)),
+  );
+}
+
 // ── Sprint funnel — what's committed for the week ────────────────────────────
 /** Every task pulled into the current weekly sprint. */
 export const sprintTasks = (d: VerticalData) => d.tasks.filter((t) => t.sprint);
@@ -548,13 +606,33 @@ export function projectProgress(d: VerticalData, p: Project): number {
   return Math.round((done / ts.length) * 100);
 }
 
-/** An initiative's progress = mean of its projects' progress, else its stored %. */
-export function initiativeProgress(d: VerticalData, i: Initiative): number {
-  if (isProjectComplete(i.status)) return 100;
+/** An initiative's OUTCOME attainment — the mean of its key results' Gain.
+ *  Null when the bet carries no KRs (nothing measurable to attain yet), so
+ *  callers can fall back to execution. This is the needle, not the activity. */
+export function initiativeAttainment(d: VerticalData, i: Initiative): number | null {
+  void d;
+  if (i.keyResults.length === 0) return null;
+  const sum = i.keyResults.reduce((acc, kr) => acc + krPct(kr), 0);
+  return Math.round(sum / i.keyResults.length);
+}
+
+/** An initiative's EXECUTION — how much of the work under it is done (mean of
+ *  its projects' progress, else its stored %). The "are we moving" read that
+ *  pairs with attainment to expose the activity-vs-outcome gap. */
+export function initiativeExecution(d: VerticalData, i: Initiative): number {
   const ps = projectsOf(d, i.id);
   if (ps.length === 0) return i.progress;
   const sum = ps.reduce((acc, p) => acc + projectProgress(d, p), 0);
   return Math.round(sum / ps.length);
+}
+
+/** An initiative's headline progress. Outcome-first: when it has key results,
+ *  progress IS their attainment (the needle); otherwise it falls back to
+ *  execution (task completion) so KR-less bets still read sensibly. */
+export function initiativeProgress(d: VerticalData, i: Initiative): number {
+  if (isProjectComplete(i.status)) return 100;
+  const attain = initiativeAttainment(d, i);
+  return attain ?? initiativeExecution(d, i);
 }
 
 /** A domain's rolled-up progress = mean of its active initiatives' progress. */
@@ -569,9 +647,17 @@ export function domainProgress(d: VerticalData, domainId: string): number {
  * An initiative's progress as it stood at a past moment: tasks completed
  * before `cutoff` count as done, everything else as open. This is what lets
  * the Sunday ritual show real week-over-week deltas with no snapshot table.
+ *
+ * Must share `initiativeProgress`'s basis or the ritual deltas compare apples
+ * to oranges. KR `current_value` carries no history, so an outcome-measured
+ * bet can't show a back-dated number — we return its current attainment
+ * (delta 0: "no *measured* movement"), which is the honest read until KR
+ * snapshots exist. KR-less bets keep the task-based historical calc.
  */
 export function initiativeProgressAt(d: VerticalData, i: Initiative, cutoff: Date): number {
   if (isProjectComplete(i.status)) return 100;
+  const attain = initiativeAttainment(d, i);
+  if (attain != null) return attain;
   const ps = projectsOf(d, i.id);
   if (ps.length === 0) return i.progress;
   const cut = cutoff.getTime();
@@ -587,6 +673,97 @@ export function initiativeProgressAt(d: VerticalData, i: Initiative, cutoff: Dat
     return Math.round((done / ts.length) * 100);
   });
   return Math.round(per.reduce((a, b) => a + b, 0) / per.length);
+}
+
+// ── OKR intelligence — outcome vs effort, and risk ───────────────────────────
+/** Hours of completed work that served an initiative — its whole task set
+ *  (project chain + KR-linked + loose), summed over done blocks. The effort
+ *  side of the activity-vs-outcome read. */
+export function initiativeInvestedHours(d: VerticalData, i: Initiative): number {
+  const mins = tasksOfInitiative(d, i)
+    .filter((t) => t.status === "done")
+    .reduce((sum, t) => sum + (t.durationMins || 0), 0);
+  return Math.round((mins / 60) * 10) / 10;
+}
+
+/** The gap between doing and moving the needle: a lot of finished work while
+ *  the key results sit near baseline is busywork. `busywork` fires only once
+ *  there's real effort logged (≥ {@link BUSYWORK_HOURS}h) against an outcome
+ *  that has barely moved (attainment < {@link BUSYWORK_ATTAINMENT}%). */
+export const BUSYWORK_HOURS = 4;
+export const BUSYWORK_ATTAINMENT = 15;
+export function initiativeEffortGap(
+  d: VerticalData,
+  i: Initiative,
+): { investedHours: number; attainment: number | null; busywork: boolean } {
+  const investedHours = initiativeInvestedHours(d, i);
+  const attainment = initiativeAttainment(d, i);
+  const busywork =
+    attainment != null && investedHours >= BUSYWORK_HOURS && attainment < BUSYWORK_ATTAINMENT;
+  return { investedHours, attainment, busywork };
+}
+
+/** Days since any key result was last measured (null when none carry a stamp). */
+export function krStaleDays(i: Initiative, now: Date = new Date()): number | null {
+  const stamps = i.keyResults
+    .map((kr) => (kr.updatedAt ? new Date(kr.updatedAt).getTime() : null))
+    .filter((t): t is number => t != null);
+  if (stamps.length === 0) return null;
+  const newest = Math.max(...stamps);
+  return Math.max(0, Math.floor((now.getTime() - newest) / 86_400_000));
+}
+
+/** How many days remain to the finish line — negative once overdue. */
+export function daysToTarget(i: Initiative, now: Date = new Date()): number | null {
+  if (!i.targetDate) return null;
+  return differenceInCalendarDays(parseDateISO(i.targetDate), now);
+}
+
+/** Is this bet drifting? Off-track (the runway is shorter than the outcome
+ *  remaining), measurements gone stale, or already overdue while open. Returns
+ *  the reasons so the UI can name why, not just flash a dot. */
+export const KR_STALE_DAYS = 14;
+export function initiativeAtRisk(
+  d: VerticalData,
+  i: Initiative,
+  now: Date = new Date(),
+): { atRisk: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (!isOpenStatus(i.status)) return { atRisk: false, reasons };
+
+  const attain = initiativeAttainment(d, i);
+  const days = daysToTarget(i, now);
+  if (days != null && days < 0 && (attain ?? 0) < 100) reasons.push("overdue");
+  // off-track: outcome still far from done but little runway left (≤ 21 days)
+  if (attain != null && days != null && days >= 0 && days <= 21 && attain < 70)
+    reasons.push("behind pace");
+
+  const stale = krStaleDays(i, now);
+  if (stale != null && stale >= KR_STALE_DAYS) reasons.push(`unmeasured ${stale}d`);
+
+  // a measured bet whose numbers nobody is moving
+  if (i.keyResults.length > 0 && uncoveredKeyResults(d, i).length === i.keyResults.length)
+    reasons.push("no work on any KR");
+
+  return { atRisk: reasons.length > 0, reasons };
+}
+
+/** Rank for "where should the needle-moving effort go" — the prioritization
+ *  read. Higher = more urgent: a big remaining outcome gap, a near finish line,
+ *  and staleness all push it up. Pure and stable so floors can sort by it. */
+export function initiativePriorityScore(
+  d: VerticalData,
+  i: Initiative,
+  now: Date = new Date(),
+): number {
+  if (!isOpenStatus(i.status)) return 0;
+  const gap = 100 - initiativeProgress(d, i); // how much outcome remains
+  const days = daysToTarget(i, now);
+  // urgency: tightens as the finish line nears (and spikes when overdue)
+  const urgency = days == null ? 1 : days <= 0 ? 2.5 : Math.max(0.5, Math.min(2, 30 / (days + 7)));
+  const stale = krStaleDays(i, now);
+  const staleBoost = stale != null && stale >= KR_STALE_DAYS ? 1.25 : 1;
+  return Math.round(gap * urgency * staleBoost);
 }
 
 /** Resolve a task ROW's domain color through the parent chain — the one

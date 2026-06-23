@@ -202,6 +202,7 @@ export function useTaskMutations() {
         project_id: input.project_id ?? null,
         initiative_id: null,
         domain_id: input.domain_id ?? null,
+        key_result_id: null,
         sprint_id: null,
         big_rock_id: null,
         energy: null,

@@ -976,6 +976,11 @@ textarea:focus {
 .fc-event.evt-tentative { opacity: 0.7; border-style: dashed !important; }
 .fc-event.evt-declined  { opacity: 0.3; }
 
+/* Hidden events, only visible while "show hidden" is on — heavily faded + dashed
+   so they read clearly as tucked-away (not real commitments on the board). */
+.fc-event.evt-hidden { opacity: 0.32; border-style: dashed !important; }
+.fc-event.evt-hidden.evt-focused { opacity: 0.6; }
+
 /* Draft preview ghost block — shown while the DraftComposer popover is open */
 .fc-event.evt-draft-preview {
   opacity: 0.65;

@@ -166,7 +166,7 @@ function ItemRun({
   const feasibility: Feasibility | null = useMemo(() => {
     const est = verdict?.time.estHours ?? 0;
     if (!item.targetDate || !est) return null;
-    const busy = toBusyBlocks(events, sched, settings?.hidden_calendar_ids ?? []);
+    const busy = toBusyBlocks(events, sched, settings?.hidden_calendar_ids ?? [], (settings?.hidden_events ?? []).map((h) => h.key));
     return computeFeasibility(busy, now, item.targetDate, settings?.work_start_minutes ?? 480, settings?.work_end_minutes ?? 990, est);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, sched, settings, item.targetDate, verdict?.time.estHours]);
