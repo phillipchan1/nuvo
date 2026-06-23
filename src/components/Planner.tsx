@@ -382,6 +382,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     { id: "label", title: "New label…", run: () => openOverlay("settings") },
     { id: "agent", title: "Toggle Nuvo agent", run: handleToggleAgent },
     { id: "settings", title: "Settings", run: () => openOverlay("settings") },
+    { id: "shortcuts", title: "Keyboard shortcuts", run: () => openOverlay("shortcuts") },
     {
       id: "theme",
       title: "Toggle dark mode",
@@ -436,6 +437,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           <CalendarPane
             view={view}
             onViewChange={setCalView}
+            hotkeysEnabled={!anyModalOpen}
             tasks={allTasksArray}
             events={events}
             slots={slots}

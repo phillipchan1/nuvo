@@ -12,6 +12,7 @@ export type OverlayKind =
   | "none"
   | "cmd"
   | "settings"
+  | "shortcuts"
   | "morning"
   | "evening"
   | "task"

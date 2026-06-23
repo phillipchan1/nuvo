@@ -15,6 +15,7 @@ import Planner from "./Planner";
 import Spine from "./Spine";
 import FloorPane from "./FloorPane";
 import RecordModal from "./record/RecordModal";
+import ShortcutsModal from "./ShortcutsModal";
 import AgentSidebar from "./AgentSidebar";
 import { useAgentContext } from "../hooks/useAgentContext";
 import SundayRitual from "./rituals/SundayRitual";
@@ -197,20 +198,31 @@ function AppShellInner() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      if (nav.overlay !== "none" || nav.flow || nav.floorModal) return;
+      // "?" opens the shortcuts reference from anywhere.
+      if (e.key === "?") {
+        e.preventDefault();
+        openOverlay("shortcuts");
+        return;
+      }
       const key = e.key.toLowerCase();
       if (key !== "p" && key !== "i") return;
-      if (nav.overlay !== "none" || nav.flow || nav.floorModal) return;
       e.preventDefault();
       setCreateFull(null);
       openFloorModal(key === "p" ? "new-project" : "new-initiative");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [nav.overlay, nav.flow, nav.floorModal, openFloorModal]);
+  }, [nav.overlay, nav.flow, nav.floorModal, openFloorModal, openOverlay]);
 
   return (
     <div className="atmosphere flex h-full">
-      <Spine rung={rung} setRung={goRung} openSettings={() => openOverlay("settings")} />
+      <Spine
+        rung={rung}
+        setRung={goRung}
+        openSettings={() => openOverlay("settings")}
+        openShortcuts={() => openOverlay("shortcuts")}
+      />
       <div className="flex min-w-0 flex-1">
         <div className="relative min-w-0 flex-1">
           <Planner openFlow={openFlow} />
@@ -329,6 +341,8 @@ function AppShellInner() {
           onOpenInitiative={(iid) => openRecord("initiative", iid)}
         />
       )}
+
+      {nav.overlay === "shortcuts" && <ShortcutsModal onClose={closeOverlay} />}
     </div>
   );
 }

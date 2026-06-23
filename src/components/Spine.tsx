@@ -46,10 +46,12 @@ export default function Spine({
   rung,
   setRung,
   openSettings,
+  openShortcuts,
 }: {
   rung: Rung;
   setRung: (r: Rung) => void;
   openSettings: () => void;
+  openShortcuts: () => void;
 }) {
   // Reads from the same cached vertical snapshot the floors use — no extra
   // fetch. Until it's loaded the rail stays a plain table of contents (no
@@ -201,7 +203,14 @@ export default function Spine({
           <span className="w-3.5 shrink-0 text-center text-caption leading-none">⚙</span>
           <span className="text-caption leading-none">Settings</span>
         </button>
-        <div className="mono px-2.5 pt-2 text-micro leading-tight text-muted">⌘1–5 · ⌘↓↑</div>
+        <button
+          onClick={openShortcuts}
+          title="Keyboard shortcuts (?)"
+          className="fast flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left text-muted hover:text-ink"
+        >
+          <span className="w-3.5 shrink-0 text-center text-caption leading-none">⌘</span>
+          <span className="text-caption leading-none">Shortcuts</span>
+        </button>
       </div>
     </div>
   );

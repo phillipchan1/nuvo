@@ -9,7 +9,7 @@ import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
 import TaskRow, { type TaskMeta } from "./TaskRow";
-import { Keycap, SectionLabel } from "./ui";
+import { SectionLabel } from "./ui";
 
 export type RailTab = "inbox" | "today";
 type Mutations = ReturnType<typeof useTaskMutations>;
@@ -142,10 +142,12 @@ export default function LeftRail({
         case "t":
           targets.forEach((t) => mutations.planFor(t, tomorrowISO()));
           break;
-        case "w":
+        // Bare s / w / d / m belong to the Schedule (view switching), so the
+        // rail's three colliding triage actions live on n / f / r instead.
+        case "n":
           targets.forEach((t) => mutations.planFor(t, nextWeekISO()));
           break;
-        case "d":
+        case "f":
           targets.forEach((t) =>
             t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t),
           );
@@ -158,7 +160,7 @@ export default function LeftRail({
         case "i":
           targets.filter((t) => t.status !== "inbox").forEach((t) => mutations.backToInbox(t));
           break;
-        case "s":
+        case "r":
           if (targets.length === 1) setSchedulePickerFor(targets[0]);
           break;
         case "#":
@@ -452,7 +454,7 @@ export default function LeftRail({
       </div>
 
       {/* Bulk action bar — slides up when ≥2 tasks are multi-selected */}
-      {selectedIds.size > 1 ? (
+      {selectedIds.size > 1 && (
         <div className="rise flex shrink-0 items-center gap-2 border-t border-accent/30 bg-accent-soft px-3 py-2">
           <span className="mono text-label font-semibold text-accent">{selectedIds.size} selected</span>
           <div className="flex-1" />
@@ -499,18 +501,6 @@ export default function LeftRail({
           >
             ✕
           </button>
-        </div>
-      ) : (
-        /* Shortcut hints */
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-3 py-2 text-meta text-muted">
-          <span className="flex items-center gap-1"><Keycap>E</Keycap> today</span>
-          <span className="flex items-center gap-1"><Keycap>T</Keycap> tomorrow</span>
-          <span className="flex items-center gap-1"><Keycap>W</Keycap> next wk</span>
-          <span className="flex items-center gap-1"><Keycap>I</Keycap> inbox</span>
-          <span className="flex items-center gap-1"><Keycap>S</Keycap> pick</span>
-          <span className="flex items-center gap-1"><Keycap>D</Keycap> done</span>
-          <span className="flex items-center gap-1"><Keycap>X</Keycap> trash</span>
-          <span className="flex items-center gap-1"><Keycap>#</Keycap> label</span>
         </div>
       )}
 

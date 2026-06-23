@@ -160,6 +160,7 @@ export default function CalendarPane({
   onRangeChange,
   railRef,
   onViewChange,
+  hotkeysEnabled = true,
   weekGlyph,
   onOpenWeekPlan,
   weekButtonLabel,
@@ -167,6 +168,8 @@ export default function CalendarPane({
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
+  /** Schedule hotkeys (view switch + paging) stand down while a modal owns the screen. */
+  hotkeysEnabled?: boolean;
   /** The living emblem for the current week — the toolbar's ambient gauge + door. */
   weekGlyph?: EmblemSpec | null;
   onOpenWeekPlan?: () => void;
@@ -319,21 +322,38 @@ export default function CalendarPane({
   const densityRef = useRef(pxPerHour);
   densityRef.current = pxPerHour;
 
-  // Alt+← / Alt+→ = prev/next  |  Alt+T = today
+  // Schedule hotkeys. Views always win on bare s / w / d / m (the rail's triage
+  // letters moved off these). = / - page the period, as do ⌘→ / ⌘←; ⌘T returns
+  // to today. Paging/today need FullCalendar's api, so they no-op in Spread.
   useEffect(() => {
+    if (!hotkeysEnabled) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!e.altKey) return;
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-      const api = calRef.current?.getApi();
-      if (!api) return;
-      if (e.key === "ArrowLeft") { e.preventDefault(); api.prev(); }
-      if (e.key === "ArrowRight") { e.preventDefault(); api.next(); }
-      if (e.key.toLowerCase() === "t") { e.preventDefault(); api.today(); }
+      const api = () => calRef.current?.getApi();
+
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key === "ArrowLeft") { e.preventDefault(); api()?.prev(); }
+        else if (e.key === "ArrowRight") { e.preventDefault(); api()?.next(); }
+        else if (e.key.toLowerCase() === "t") { e.preventDefault(); api()?.today(); }
+        return;
+      }
+      if (e.altKey) return;
+
+      switch (e.key) {
+        case "s": e.preventDefault(); onViewChange?.("board"); break;
+        case "w": e.preventDefault(); onViewChange?.("timeGridWeek"); break;
+        case "d": e.preventDefault(); onViewChange?.("timeGridDay"); break;
+        case "m": e.preventDefault(); onViewChange?.("dayGridMonth"); break;
+        case "=":
+        case "+": e.preventDefault(); api()?.next(); break;
+        case "-":
+        case "_": e.preventDefault(); api()?.prev(); break;
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [hotkeysEnabled, onViewChange]);
 
   // External drag: any [data-task-drag] row in the left rail can be dropped
   // onto the grid. FullCalendar owns the drop geometry; we own the state. In the
