@@ -80,6 +80,25 @@ function AppShellInner() {
   const { rung, projectView, initiativeView, focus, flow, flowStep, agentOpen } = nav;
   const { agent } = useAgentContext();
 
+  // Auto-collapse the agent sidebar on narrow viewports so the calendar isn't crushed.
+  // Spine (188) + LeftRail (360) + AgentSidebar (380) + Calendar min (280) = 1208px.
+  const [narrowViewport, setNarrowViewport] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 1280
+  );
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 1279px)");
+    const onChange = () => setNarrowViewport(mq.matches);
+    onChange();
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+      else mq.removeListener(onChange);
+    };
+  }, []);
+  const effectiveAgentOpen = agentOpen && !narrowViewport;
+
   const [sundayNudge, setSundayNudge] = useState(false);
   // the fast composer is the default create surface, summonable from anywhere;
   // "more options" swaps in the full moment, carrying what's already typed.
@@ -260,7 +279,7 @@ function AppShellInner() {
         )}
         </div>
 
-        <AgentSidebar agent={agent} open={agentOpen} onToggle={toggleAgent} />
+        <AgentSidebar agent={agent} open={effectiveAgentOpen} onToggle={toggleAgent} />
       </div>
 
       {flow === "sunday" && <SundayRitual onClose={closeFlow} />}
