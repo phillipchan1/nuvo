@@ -8,6 +8,7 @@ import { useMemo } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { demandByWeek, portfolioDemand } from "../../lib/pace";
+import { readStanding } from "../../lib/standing";
 import { Bar, fmtDate, PROJECT_STATUS_COLORS } from "./parts";
 import { READY } from "./ReadinessBanner";
 
@@ -26,23 +27,27 @@ function fmtH(mins: number): string {
   return h >= 10 ? `${Math.round(h)}h` : `${Math.round(h * 10) / 10}h`;
 }
 
-export default function CommitmentMeter({ onRefine }: { onRefine?: () => void }) {
+export default function CommitmentMeter({ onRefine, onAllocate }: { onRefine?: () => void; onAllocate?: () => void }) {
   const { data } = useVertical();
   const now = useMemo(() => new Date(), []);
   const demand = portfolioDemand(data, now);
+  const standing = readStanding(data, "project");
   const { weeklyAvgMins, thisWeekMins, byWeek } = useCapacity();
 
   // Per-week load forecast — demand spread across the weeks each project is live,
-  // against that week's real capacity. Index-aligned with byWeek.
+  // against that week's *realistic* capacity. Far-future weeks look artificially
+  // open (one-offs aren't booked yet), so cap their free time at the near-term
+  // typical; recurring meetings already on the calendar keep actual ≤ cap anyway.
   const forecast = useMemo(() => {
     const weeks = byWeek.slice(0, RIBBON_WEEKS);
     const dem = demandByWeek(data, now, weeks.map((w) => w.weekStart));
     return weeks.map((w, i) => {
       const demandMins = dem[i]?.demandMins ?? 0;
-      const ratio = w.availMins > 0 ? demandMins / w.availMins : demandMins > 0 ? Infinity : 0;
-      return { weekStart: w.weekStart, availMins: w.availMins, demandMins, ratio, over: ratio > 1 };
+      const freeMins = i === 0 ? w.availMins : Math.min(w.availMins, weeklyAvgMins);
+      const ratio = freeMins > 0 ? demandMins / freeMins : demandMins > 0 ? Infinity : 0;
+      return { weekStart: w.weekStart, freeMins, demandMins, ratio, over: ratio > 1 };
     });
-  }, [data, now, byWeek]);
+  }, [data, now, byWeek, weeklyAvgMins]);
   const anyOver = forecast.some((f) => f.over);
 
   const demandMins = demand.perWeekMins;
@@ -119,7 +124,7 @@ export default function CommitmentMeter({ onRefine }: { onRefine?: () => void })
                   <div
                     className="relative w-full overflow-hidden rounded-sm"
                     style={{ height: 40, background: "var(--line)" }}
-                    title={`Week of ${fmtDate(toISODate(f.weekStart))} · need ≈${fmtH(f.demandMins)} / ≈${fmtH(f.availMins)} free${f.over ? " · over capacity" : ""}`}
+                    title={`${i === 0 ? "This week" : `${i} week${i === 1 ? "" : "s"} out`} (of ${fmtDate(toISODate(f.weekStart))}) · need ≈${fmtH(f.demandMins)} / ≈${fmtH(f.freeMins)} free${f.over ? " · over capacity" : ""}`}
                   >
                     {/* capacity ceiling — bars crossing it are over the week's open time */}
                     <div className="absolute inset-x-0" style={{ bottom: `${CAP_CEILING * 100}%`, height: 1, background: "var(--line-strong)" }} />
@@ -129,7 +134,7 @@ export default function CommitmentMeter({ onRefine }: { onRefine?: () => void })
                     />
                   </div>
                   <span className="mono text-micro" style={{ color: i === 0 ? "var(--signal)" : "var(--muted)" }}>
-                    {i === 0 ? "now" : f.weekStart.getDate()}
+                    {i === 0 ? "now" : `+${i}`}
                   </span>
                 </div>
               );
@@ -138,24 +143,39 @@ export default function CommitmentMeter({ onRefine }: { onRefine?: () => void })
         </div>
       )}
 
-      {(latent > 0 || pressing > 0) && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-caption">
-          {pressing > 0 && (
-            <span className="mono" style={{ color: CAUTION }}>
-              {pressing} behind pace
-            </span>
-          )}
-          {latent > 0 &&
-            (onRefine ? (
-              <button onClick={onRefine} className="fast group flex items-center gap-1 font-medium" style={{ color: "var(--accent)" }}>
-                {latent} not yet counted — refine to commit
+      <div className="mt-3 flex flex-col gap-1.5 text-caption">
+        {/* concurrency — folded in from the old WIP "Capacity" gauge: how many bets
+            are in flight at once, and whether any lack a path. Distinct from hours. */}
+        {standing.inFlight > 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span style={{ color: standing.capacity === "comfortable" ? "var(--muted)" : CAUTION }}>{standing.capacityBlurb}</span>
+            {standing.capacity !== "comfortable" && onAllocate && (
+              <button onClick={onAllocate} className="fast group flex items-center gap-1 font-medium" style={{ color: "var(--accent)" }}>
+                Triage
                 <span className="fast transition-transform group-hover:translate-x-0.5">›</span>
               </button>
-            ) : (
-              <span className="mono text-muted">{latent} not yet counted (unsized or undated)</span>
-            ))}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+        {(latent > 0 || pressing > 0) && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            {pressing > 0 && (
+              <span className="mono" style={{ color: CAUTION }}>
+                {pressing} behind pace
+              </span>
+            )}
+            {latent > 0 &&
+              (onRefine ? (
+                <button onClick={onRefine} className="fast group flex items-center gap-1 font-medium" style={{ color: "var(--accent)" }}>
+                  {latent} not yet counted — refine to commit
+                  <span className="fast transition-transform group-hover:translate-x-0.5">›</span>
+                </button>
+              ) : (
+                <span className="mono text-muted">{latent} not yet counted (unsized or undated)</span>
+              ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

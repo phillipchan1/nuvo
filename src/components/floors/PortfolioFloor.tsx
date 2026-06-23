@@ -81,8 +81,8 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
 
       {view === "standing" ? (
         <>
-          <CommitmentMeter onRefine={() => openFlow("refine")} />
-          <FloorStanding kind="project" onRefine={() => openFlow("refine")} onAllocate={() => openFlow("capacity")} />
+          <CommitmentMeter onRefine={() => openFlow("refine")} onAllocate={() => openFlow("capacity")} />
+          <FloorStanding kind="project" onRefine={() => openFlow("refine")} onAllocate={() => openFlow("capacity")} showCapacity={false} />
         </>
       ) : (
         <>
