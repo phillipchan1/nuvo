@@ -19,6 +19,7 @@ import { readSpine } from "../../lib/readiness";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
 import FloorStanding from "./FloorStanding";
+import CommitmentMeter from "./CommitmentMeter";
 import { StandingToggle } from "./StandingToggle";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
@@ -79,7 +80,10 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
       <StandingToggle value={view} onChange={setView} />
 
       {view === "standing" ? (
-        <FloorStanding kind="project" onRefine={() => openFlow("refine")} onAllocate={() => openFlow("capacity")} />
+        <>
+          <CommitmentMeter onRefine={() => openFlow("refine")} />
+          <FloorStanding kind="project" onRefine={() => openFlow("refine")} onAllocate={() => openFlow("capacity")} />
+        </>
       ) : (
         <>
           <DomainFilter value={domainFilter} onChange={setDomainFilter} />

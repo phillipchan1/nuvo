@@ -14,7 +14,7 @@
 // real calendar-derived hours) is built on top of this, not inside it.
 
 import { differenceInCalendarDays } from "date-fns";
-import { tasksOf, type Project, type VerticalData } from "./vertical";
+import { isProjectInFlight, tasksOf, type Project, type VerticalData } from "./vertical";
 
 /** How far back we look to read a project's *actual* weekly throughput. */
 const TREND_WINDOW_DAYS = 21;
@@ -92,4 +92,44 @@ export function projectPace(d: VerticalData, p: Project, now: Date): ProjectPace
     driftDays > ON_TRACK_SLACK_DAYS ? "behind" : driftDays < -ON_TRACK_SLACK_DAYS ? "ahead" : "on_track";
 
   return { ...base, daysLeft, requiredMinsPerWeek, projectedFinish, driftDays, read };
+}
+
+/** A read where a finishing rate is genuinely owed this week. */
+const PRESSING: ReadonlySet<PaceRead> = new Set<PaceRead>(["behind", "overdue", "stalled"]);
+
+export interface PortfolioDemand {
+  /** Σ required pace across every in-flight project that's sized + dated — the
+   *  portfolio's weekly hours-demand, in the same unit as calendar capacity. */
+  perWeekMins: number;
+  /** Sized + dated projects contributing a required rate, biggest demand first. */
+  counted: { project: Project; pace: ProjectPace }[];
+  /** In flight but invisible to the meter — unsized or undated. The refine queue. */
+  latent: { project: Project; pace: ProjectPace }[];
+  /** Counted projects drifting (behind / overdue / stalled), worst drift first. */
+  pressing: { project: Project; pace: ProjectPace }[];
+}
+
+/** Roll every in-flight project up into one weekly demand — the numerator of
+ *  the Commitment ratio (Demand ÷ calendar-derived Capacity). */
+export function portfolioDemand(d: VerticalData, now: Date): PortfolioDemand {
+  const counted: PortfolioDemand["counted"] = [];
+  const latent: PortfolioDemand["latent"] = [];
+  const pressing: PortfolioDemand["pressing"] = [];
+  let perWeekMins = 0;
+
+  for (const project of d.projects) {
+    if (!isProjectInFlight(project.status)) continue;
+    const pace = projectPace(d, project, now);
+    if (pace.requiredMinsPerWeek > 0) {
+      perWeekMins += pace.requiredMinsPerWeek;
+      counted.push({ project, pace });
+    } else if (pace.read === "undated" || pace.read === "clear") {
+      latent.push({ project, pace });
+    }
+    if (PRESSING.has(pace.read)) pressing.push({ project, pace });
+  }
+
+  counted.sort((a, b) => b.pace.requiredMinsPerWeek - a.pace.requiredMinsPerWeek);
+  pressing.sort((a, b) => (b.pace.driftDays ?? 0) - (a.pace.driftDays ?? 0));
+  return { perWeekMins, counted, latent, pressing };
 }
