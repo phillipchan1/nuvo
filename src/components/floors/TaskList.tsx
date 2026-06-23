@@ -11,9 +11,9 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useVertical, type TaskParent } from "../../hooks/useVertical";
-import type { VTask } from "../../lib/vertical";
+import type { KeyResult, VTask } from "../../lib/vertical";
 import { parseCapture } from "../../lib/nlp";
-import { InlineNumber, InlineText } from "./parts";
+import { InlineNumber, InlineText, KrPicker } from "./parts";
 import TaskRefine from "./TaskRefine";
 
 export type { TaskParent };
@@ -23,11 +23,15 @@ export default function TaskList({
   parent,
   accent,
   emptyHint = "No tasks yet.",
+  keyResults,
 }: {
   tasks: VTask[];
   parent: TaskParent;
   accent: string;
   emptyHint?: string;
+  /** When present, each row gets a chip to point the task at the key result it
+   *  moves (the OKR link). Omit to keep the plain list — desktop unchanged. */
+  keyResults?: KeyResult[];
 }) {
   const { addTask, updateTask, deleteTask, restoreTask, toggleTask, toggleTaskInbox } = useVertical();
   const [draft, setDraft] = useState("");
@@ -86,6 +90,18 @@ export default function TaskList({
           <span className="mono shrink-0 text-meta text-muted">
             <InlineNumber value={t.durationMins} onChange={(v) => updateTask(t.id, { durationMins: v })} suffix="m" />
           </span>
+
+          {keyResults && keyResults.length > 0 && (
+            <span className={`shrink-0 ${t.keyResultId ? "" : "opacity-0 group-hover:opacity-100"}`}>
+              <KrPicker
+                keyResults={keyResults}
+                value={t.keyResultId}
+                onChange={(krId) => updateTask(t.id, { keyResultId: krId })}
+                color={accent}
+                align="right"
+              />
+            </span>
+          )}
 
           {/* send to the Inbox triage queue — the real next action */}
           <button
