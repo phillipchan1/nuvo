@@ -552,7 +552,7 @@ export default function CalendarPane({
     const externalEvents = events
       // Hidden events drop off the board entirely — unless "show hidden" is on,
       // when they return dimmed (and dashed) so you can bring one back.
-      .filter((e) => !hidden.has(e.calendar_id) && !e.all_day && (showHidden || !isHidden(e)))
+      .filter((e) => !hidden.has(e.calendar_id) && (showHidden || !isHidden(e)))
       .map((e) => {
         const account = accountById.get(e.account_id);
         const eventHidden = isHidden(e);
@@ -573,8 +573,9 @@ export default function CalendarPane({
           title: e.title,
           start: e.start_at,
           end: e.end_at,
-          editable: isGoogle,
-          durationEditable: isGoogle,
+          allDay: e.all_day,
+          editable: isGoogle && !e.all_day,
+          durationEditable: isGoogle && !e.all_day,
           classNames: [
             isGoogle ? "evt-google" : isIcs ? "evt-ics" : "evt-m365",
             ...(rsvpClass ? [rsvpClass] : []),
@@ -1448,6 +1449,7 @@ export default function CalendarPane({
           headerToolbar={false}
           allDaySlot={!isMonth}
           allDayText="anytime"
+          dayMaxEventRows={5}
           firstDay={settings?.week_start ?? 0}
           nowIndicator={!isMonth}
           nowIndicatorContent={(arg) =>

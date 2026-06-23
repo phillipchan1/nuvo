@@ -63,13 +63,6 @@ export interface SpotlightProps {
    * standalone macOS window can still fall back to onClose + run.
    */
   onRunCommand?: (cmd: Command) => void;
-  /**
-   * "modal" = the in-app ⌘K palette inside a Modal scrim (default).
-   * "window" = the global ⌥Space summon, a standalone glass window. The window
-   * variant carries the editorial framing — a Today-style date eyebrow + Fraunces
-   * greeting, a capture-first input, and a "Captured" moment before it dismisses.
-   */
-  variant?: "modal" | "window";
 }
 
 // What Nuvo can answer in Ask mode — phrased as the things you'd actually
@@ -96,8 +89,7 @@ export default function NuvoSpotlight(props: SpotlightProps) {
 // runs a command; Ask hands the same text to the Nuvo agent. Space on an empty
 // capture field flips to Ask; Backspace on an empty Ask field flips back.
 // Renders bare (no scrim / no card chrome) so a Modal or a window can wrap it.
-export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, agent, onClose, onRunCommand, variant = "modal" }: SpotlightProps) {
-  const isWindow = variant === "window";
+export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, agent, onClose, onRunCommand }: SpotlightProps) {
   const runCmd = (cmd: Command) => {
     if (onRunCommand) onRunCommand(cmd);
     else {
@@ -182,14 +174,9 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
         priority: parsed!.priority,
         labelIds,
       }).catch(() => {});
-      // The window lingers on a "Captured" beat, then dismisses; the in-app
-      // modal closes straight away (the task appearing behind it is the receipt).
-      if (isWindow) {
-        setCaptured(title);
-        window.setTimeout(onClose, 900);
-      } else {
-        onClose();
-      }
+      // Linger on a "Captured" beat, then dismiss — same in ⌘K and ⌥Space.
+      setCaptured(title);
+      window.setTimeout(onClose, 900);
     } else if (sel.type === "command") {
       runCmd(sel.cmd);
     } else {
@@ -268,20 +255,16 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
     <>
       {/* The window opens like a pocket Today: a date eyebrow over a Fraunces
           greeting. The in-app ⌘K palette skips this — it's already in the app. */}
-      {isWindow && (
-        <div className="px-4 pb-3 pt-5">
-          <div className="section-label text-muted/55">
-            {now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
-          </div>
-          <h1 className="masthead mt-1 text-lead text-ink">{greetingFor(now)}</h1>
+      <div className="px-4 pb-3 pt-5">
+        <div className="section-label text-muted/55">
+          {now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
         </div>
-      )}
+        <h1 className="masthead mt-1 text-lead text-ink">{greetingFor(now)}</h1>
+      </div>
 
       <div className="flex items-center gap-3 border-b border-line/50 px-4">
         <span
-          className={`shrink-0 leading-none ${isWindow ? "text-lead" : "text-body"} ${
-            isAsk ? "text-accent" : "text-accent/70"
-          }`}
+          className={`shrink-0 text-lead leading-none ${isAsk ? "text-accent" : "text-accent/70"}`}
         >
           {isAsk ? "✦" : "＋"}
         </span>
@@ -296,13 +279,9 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
           placeholder={
             isAsk
               ? `Ask ${ASSISTANT_NAME} — "what does my day look like?"`
-              : isWindow
-                ? "Capture anything on your mind…"
-                : 'Capture or command… "review PR tomorrow 2pm 45m #work !high"'
+              : "Capture anything on your mind…"
           }
-          className={`nuvo-capture-input w-full bg-transparent py-4 outline-none placeholder:text-muted/45 ${
-            isWindow ? "text-lead" : "text-head"
-          }`}
+          className="nuvo-capture-input w-full bg-transparent py-4 text-lead outline-none placeholder:text-muted/45"
         />
         <Keycap>esc</Keycap>
       </div>

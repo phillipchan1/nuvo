@@ -102,7 +102,6 @@ export default function SpotlightWindow() {
           onCreate={mutations.create}
           agent={agent}
           onClose={hide}
-          variant="window"
         />
       </div>
     </div>

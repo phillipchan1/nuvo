@@ -181,16 +181,74 @@ pub fn run() {
         .run(|_app, _event| {
             // Dock-icon click (NSApplicationDelegate applicationShouldHandleReopen).
             // The global ⌥Space panel is a non-activating NSPanel, so summoning it
-            // leaves Nuvo running in the background with no key window — after which
-            // clicking the dock icon did nothing and the main window wouldn't come
-            // forward. Explicitly surface + focus it on reopen.
+            // leaves Nuvo in the background; if the main window was also minimized,
+            // the dock click looked dead — and tao's WebviewWindow::set_focus()
+            // /unminimize() are no-ops or unreliable while the window is still
+            // miniaturized. So drive AppKit directly: activate the app, then
+            // deminiaturize + key-and-order-front the actual NSWindow.
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = _event {
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = _event {
+                eprintln!("[nuvo] Reopen (has_visible_windows={has_visible_windows})");
+                // The spotlight is alwaysOnTop + floating; a lingering one would
+                // sit above the main window. Make sure it's out of the way first.
+                if let Ok(panel) = _app.get_webview_panel("spotlight") {
+                    if panel.is_visible() {
+                        eprintln!("[nuvo] Reopen: spotlight still visible — hiding it");
+                        panel.hide();
+                    }
+                }
                 if let Some(win) = _app.get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.unminimize();
-                    let _ = win.set_focus();
+                    surface_main_window(&win);
                 }
             }
         });
+}
+
+// Bring the main window all the way to the foreground, bypassing tao's guarded
+// wrappers (which short-circuit while the window is still miniaturized). Order
+// matters: activate the app first, then pull the NSWindow out of the dock and
+// make it key + front.
+#[cfg(target_os = "macos")]
+fn surface_main_window<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
+    use tauri_nspanel::objc2_app_kit::{NSApplication, NSWindow};
+    use tauri_nspanel::objc2_foundation::MainThreadMarker;
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        eprintln!("[nuvo] surface: not on main thread");
+        return;
+    };
+    let ns_app = NSApplication::sharedApplication(mtm);
+    let Ok(ptr) = win.ns_window() else {
+        eprintln!("[nuvo] surface: no ns_window");
+        return;
+    };
+    // SAFETY: ns_window() hands back this window's live NSWindow*.
+    let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+
+    eprintln!(
+        "[nuvo] surface BEFORE: min={} vis={} key={} appActive={}",
+        w.isMiniaturized(),
+        w.isVisible(),
+        w.isKeyWindow(),
+        ns_app.isActive()
+    );
+
+    // Drive AppKit directly (tao's wrappers short-circuit while miniaturized).
+    // deminiaturize → orderFrontRegardless (works even while the app is in the
+    // background) → makeKeyWindow, then activate. activateIgnoringOtherApps is
+    // deprecated/weakened on macOS 14+, so call the modern activate() too.
+    w.deminiaturize(None);
+    w.orderFrontRegardless();
+    w.makeKeyWindow();
+    ns_app.activate();
+    #[allow(deprecated)]
+    ns_app.activateIgnoringOtherApps(true);
+
+    eprintln!(
+        "[nuvo] surface AFTER:  min={} vis={} key={} appActive={}",
+        w.isMiniaturized(),
+        w.isVisible(),
+        w.isKeyWindow(),
+        ns_app.isActive()
+    );
 }
