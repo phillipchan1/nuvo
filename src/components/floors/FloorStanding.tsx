@@ -85,7 +85,19 @@ function Gauge({
   );
 }
 
-export default function FloorStanding({ kind, onRefine, onAllocate }: { kind: Kind; onRefine: () => void; onAllocate: () => void }) {
+export default function FloorStanding({
+  kind,
+  onRefine,
+  onAllocate,
+  showCapacity = true,
+}: {
+  kind: Kind;
+  onRefine: () => void;
+  onAllocate: () => void;
+  /** When false, the WIP Capacity gauge is omitted — the surface owns that read
+   *  elsewhere (e.g. the projects Commitment meter folds it in). */
+  showCapacity?: boolean;
+}) {
   const { data } = useVertical();
   const s = readStanding(data, kind);
 
@@ -93,7 +105,7 @@ export default function FloorStanding({ kind, onRefine, onAllocate }: { kind: Ki
 
   return (
     <div className="mb-6 max-w-[920px]">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className={`grid grid-cols-1 gap-3 ${showCapacity ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
         <Gauge
           label="Defined"
           value={`${definedPct}%`}
@@ -104,16 +116,18 @@ export default function FloorStanding({ kind, onRefine, onAllocate }: { kind: Ki
           onClick={s.calm ? undefined : onRefine}
           action={s.calm ? undefined : "Refine"}
         />
-        <Gauge
-          label="Capacity"
-          value={BAND_LABEL[s.capacity]}
-          valueColor={bandColor(s.capacity)}
-          fill={bandFill(s.capacity)}
-          fillColor={bandColor(s.capacity)}
-          blurb={s.capacityBlurb}
-          onClick={s.capacity === "comfortable" ? undefined : onAllocate}
-          action={s.capacity === "comfortable" ? undefined : "Triage"}
-        />
+        {showCapacity && (
+          <Gauge
+            label="Capacity"
+            value={BAND_LABEL[s.capacity]}
+            valueColor={bandColor(s.capacity)}
+            fill={bandFill(s.capacity)}
+            fillColor={bandColor(s.capacity)}
+            blurb={s.capacityBlurb}
+            onClick={s.capacity === "comfortable" ? undefined : onAllocate}
+            action={s.capacity === "comfortable" ? undefined : "Triage"}
+          />
+        )}
         <Gauge
           label="Motion"
           value={s.motionTotal ? `${s.motionMoving} / ${s.motionTotal} moving` : "—"}

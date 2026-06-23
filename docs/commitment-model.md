@@ -71,9 +71,28 @@ lets a project into the pace math, **Capacity** becomes real hours-demand for ri
 The divisor is **real available hours** = working window (`work_start/end_minutes`)
 − external meetings (`toBusyBlocks`) − already-scheduled blocks. Not the aspirational
 Σ domain `weekly_target_hours` (which measures intent, not what the calendar can hold).
-Domain target-hours become the per-domain *budget split* of that real capacity.
 `refineFeasibility.ts` already walks the calendar this way per project — the portfolio
 ribbon is its aggregate.
+
+Making it *honest* (post-dogfood) took three corrections, because a naïve "window minus
+booked" over 13 weeks reads wildly optimistic:
+- **Weekdays only.** Weekends aren't work capacity, so the 8:00–4:30 window applies
+  Mon–Fri (`capacity.ts` skips Sat/Sun).
+- **Near-term anchor.** "Typical week" capacity = the average of the **next 4 full
+  weeks**, not weeks 2–13. The far future looks empty only because one-offs aren't booked
+  yet; recurring meetings are already on the calendar this close in, so near-term is real.
+- **Cap the far weeks.** In the forecast ribbon each future week's free time is capped at
+  that near-term typical, so a sparsely-booked week 9 doesn't pretend to be wide open.
+  Recurring meetings keep actual ≤ cap anyway, so this never double-counts them.
+
+## The gauge it replaces
+
+The projects Standing used to show a WIP-first **"Capacity"** gauge (Comfortable / Tight /
+Overcommitted by *count* of in-flight bets). That competed with the hours-based meter, so
+the Commitment meter now **owns the capacity story** and the WIP read folds in as a
+concurrency sub-line ("N in flight; M carry no plan yet" + the Triage handoff). The
+Standing keeps **Defined** and **Motion**; `FloorStanding` drops the Capacity gauge via
+`showCapacity={false}` for projects (initiatives still show all three).
 
 ## Where it lives in the spine
 

@@ -13,10 +13,16 @@ import { capacityByWeek, type WeekCapacity } from "../lib/capacity";
 
 const DEFAULT_WEEKS = 13;
 
+/** How many upcoming full weeks define a "typical" week. Near-term so it
+ *  reflects real load (recurring meetings are already booked this far out)
+ *  instead of the artificially empty far future. */
+const NEAR_TERM_WEEKS = 4;
+
 export interface CapacityRead {
   /** Open work minutes left in the current (clipped) week. */
   thisWeekMins: number;
-  /** Typical full-week capacity — the structural denominator (excludes the partial current week). */
+  /** Typical week capacity = the near-term average. The structural denominator,
+   *  and the realistic cap for optimistic far-future weeks. */
   weeklyAvgMins: number;
   byWeek: WeekCapacity[];
 }
@@ -42,9 +48,9 @@ export function useCapacity(weeks: number = DEFAULT_WEEKS): CapacityRead {
     const busy = toBusyBlocks(events, blocks, hidden);
     const byWeek = capacityByWeek(busy, now, weeks, wStartMin, wEndMin, weekStartsOn);
     const thisWeekMins = byWeek[0]?.availMins ?? 0;
-    const full = byWeek.slice(1);
-    const weeklyAvgMins = full.length
-      ? full.reduce((s, w) => s + w.availMins, 0) / full.length
+    const near = byWeek.slice(1, 1 + NEAR_TERM_WEEKS); // next few full weeks
+    const weeklyAvgMins = near.length
+      ? near.reduce((s, w) => s + w.availMins, 0) / near.length
       : thisWeekMins;
     return { thisWeekMins, weeklyAvgMins, byWeek };
   }, [events, blocks, hidden, now, weeks, wStartMin, wEndMin, weekStartsOn]);

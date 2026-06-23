@@ -48,8 +48,9 @@ function dayAvailable(busy: BusyBlock[], day: Date, wStartMin: number, wEndMin: 
   return freeMinsOnDay(busy, dayBase, wStart, wEndMin);
 }
 
-/** Open work minutes across the seven days of the week starting `weekStart`.
- *  Pass `clipFrom` (= now) to count only time still ahead in the current week. */
+/** Open work minutes across the working days of the week starting `weekStart`.
+ *  Weekends don't count as work capacity. Pass `clipFrom` (= now) to count only
+ *  time still ahead in the current week. */
 export function weekCapacityMins(
   busy: BusyBlock[],
   weekStart: Date,
@@ -58,7 +59,12 @@ export function weekCapacityMins(
   clipFrom?: Date,
 ): number {
   let total = 0;
-  for (let i = 0; i < 7; i++) total += dayAvailable(busy, addDays(weekStart, i), wStartMin, wEndMin, clipFrom);
+  for (let i = 0; i < 7; i++) {
+    const day = addDays(weekStart, i);
+    const dow = day.getDay();
+    if (dow === 0 || dow === 6) continue; // Sat/Sun — not work time
+    total += dayAvailable(busy, day, wStartMin, wEndMin, clipFrom);
+  }
   return total;
 }
 
