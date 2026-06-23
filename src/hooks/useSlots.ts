@@ -126,9 +126,16 @@ export function useSlotMutations() {
     },
     onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: ["slots"] });
+      const snapshot = qc.getQueriesData<Slot[]>({ queryKey: ["slots"] });
       patchSlotCaches(qc, id, patch);
+      return { snapshot };
     },
     onSuccess: ({ id }) => invokeQuiet("slot-mirror", { slotId: id }),
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) {
+        for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
+      }
+    },
     onSettled: () => qc.invalidateQueries({ queryKey: ["slots"] }),
   });
 
