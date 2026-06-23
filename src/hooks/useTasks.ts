@@ -247,10 +247,17 @@ export function useTaskMutations() {
     },
     onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: ["tasks"] });
+      const snapshot = qc.getQueriesData<Task[]>({ queryKey: ["tasks"] });
       patchCaches(qc, id, patch);
+      return { snapshot };
     },
     onSuccess: ({ id, patch }) => {
       if (MIRROR_FIELDS.some((f) => f in patch)) invokeQuiet("task-mirror", { taskId: id });
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) {
+        for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
+      }
     },
     onSettled: () => invalidateTasks(qc),
   });

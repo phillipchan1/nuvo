@@ -375,8 +375,14 @@ export default function CalendarPane({
       // isn't misread as the start of a drag onto the grid.
       minDistance: 6,
       eventData: (el) => {
-        const groupCount = el.getAttribute("data-task-drag-group")?.split(",").length ?? 1;
+        const taskId = el.getAttribute("data-task-drag");
+        const groupAttr = el.getAttribute("data-task-drag-group");
+        const groupCount = groupAttr?.split(",").length ?? 1;
         return {
+          // For single-task drops, give the FC event the same id that fcEvents
+          // will generate ("task:<id>"). That way FC keeps the event exactly where
+          // the user dropped it and fcEvents reconciles it in-place — no snap-back.
+          ...(!groupAttr && taskId ? { id: `task:${taskId}` } : {}),
           title:
             groupCount > 1 ? `${groupCount} tasks` : (el.getAttribute("data-task-title") ?? "task"),
           duration: minutesToDuration(
@@ -732,13 +738,24 @@ export default function CalendarPane({
     const el = info.draggedEl;
     const start = info.event.start;
     const allDay = info.event.allDay;
-    info.revert();
     // A multi-selection drags as a group (data-task-drag-group); a single row is
     // just its own id. Resolve to the list of tasks being dropped.
     const group = el.getAttribute("data-task-drag-group");
     const ids = group ? group.split(",") : [el.getAttribute("data-task-drag") ?? ""];
     const tasks = ids.map((id) => findTask(id)).filter((t): t is Task => Boolean(t));
-    if (!tasks.length || !start) return;
+    if (!tasks.length || !start) {
+      // Unknown item — revert as a safety fallback.
+      info.revert();
+      return;
+    }
+    // Single-task drop: the FC event already has id "task:<id>" (set in eventData),
+    // which matches what fcEvents will generate. Don't revert — let FC keep the
+    // event at the drop position so fcEvents reconciles it in-place without any
+    // snap-back flash.
+    // Multi-task drop: FC created a single phantom event we can't map to a task id.
+    // Silently remove it (no snap-back animation) and let each task appear via
+    // fcEvents once the optimistic cache patches land.
+    if (group) info.event.remove();
 
     // Dropped on the all-day row → planned for that day, time TBD (no block).
     if (allDay) {

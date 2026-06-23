@@ -119,9 +119,16 @@ export function useExternalEventMutations() {
     onMutate: async ({ id, patch, scope = "THIS" }) => {
       if (scope !== "THIS") return;
       await qc.cancelQueries({ queryKey: ["external_events"] });
+      const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old?.map((e) => (e.id === id ? { ...e, ...patch } : e)),
       );
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) {
+        for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
+      }
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });
