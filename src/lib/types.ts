@@ -46,6 +46,8 @@ export interface Task {
   project_id: string | null;
   initiative_id: string | null;
   domain_id: string | null;
+  /** the key result this task moves — the outcome it serves, if any. */
+  key_result_id: string | null;
   sprint_id: string | null;
   /** the priority (big rock) this task serves — see {@link BigRock}. */
   big_rock_id: string | null;
