@@ -162,7 +162,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
 
   const rows = selectable.length;
 
-  const runCapture = async () => {
+  const runCapture = () => {
     const sel = selectable[highlight];
     if (!sel) return;
     if (sel.type === "capture") {
@@ -170,14 +170,18 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
       const labelIds = parsed!.labels
         .map((n) => labels.find((l) => l.name.toLowerCase() === n.toLowerCase())?.id)
         .filter((id): id is string => Boolean(id));
-      await onCreate({
+      // Fire-and-forget: the create mutation updates the cache optimistically
+      // (onMutate) and the global mutationCache toasts on failure — so we never
+      // block the UI on the network round-trip. The "Captured" beat / close is
+      // instant, not "instant after the insert resolves."
+      void onCreate({
         title,
         do_date: parsed!.doDate,
         start_time: parsed!.startTime?.toISOString() ?? null,
         duration_minutes: parsed!.durationMinutes,
         priority: parsed!.priority,
         labelIds,
-      });
+      }).catch(() => {});
       // The window lingers on a "Captured" beat, then dismisses; the in-app
       // modal closes straight away (the task appearing behind it is the receipt).
       if (isWindow) {
@@ -296,7 +300,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
                 ? "Capture anything on your mind…"
                 : 'Capture or command… "review PR tomorrow 2pm 45m #work !high"'
           }
-          className={`w-full bg-transparent py-4 outline-none placeholder:text-muted/45 ${
+          className={`nuvo-capture-input w-full bg-transparent py-4 outline-none placeholder:text-muted/45 ${
             isWindow ? "text-lead" : "text-head"
           }`}
         />

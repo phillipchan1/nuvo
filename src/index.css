@@ -760,6 +760,14 @@ textarea:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* …except the capture/command palette input (⌘K + ⌥Space): it IS the focal
+   element of the panel, so a ring around it is redundant noise. Focus reads
+   from the live caret + the panel itself. (Higher specificity than the rule
+   above; both unlayered, so this wins.) */
+.nuvo-capture-input:focus {
+  box-shadow: none;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

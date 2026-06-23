@@ -176,6 +176,21 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, _event| {
+            // Dock-icon click (NSApplicationDelegate applicationShouldHandleReopen).
+            // The global ⌥Space panel is a non-activating NSPanel, so summoning it
+            // leaves Nuvo running in the background with no key window — after which
+            // clicking the dock icon did nothing and the main window wouldn't come
+            // forward. Explicitly surface + focus it on reopen.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                if let Some(win) = _app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            }
+        });
 }
