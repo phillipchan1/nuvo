@@ -1,30 +1,32 @@
-// Commitment — the meter that answers "am I over-committed?" honestly, because it
-// finally compares like with like: the portfolio's weekly hours-demand (every
-// in-flight project's required pace, summed) against a typical week's real,
-// calendar-derived capacity. Demand ÷ Capacity. The headline of the projects
-// Standing. See docs/commitment-model.md.
+// Commitment — the honest "how full is my week, really?" read. It counts what
+// actually fills a week: meetings/obligations (learned from your trailing calendar)
+// + the project pace your bets demand, against your weekday work window, with a
+// buffer held back. A wall-to-wall meeting week reads as highly committed even
+// before any project work. See docs/commitment-model.md.
 
 import { useMemo } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { demandByWeek, portfolioDemand } from "../../lib/pace";
 import { readStanding } from "../../lib/standing";
-import { Bar, fmtDate, PROJECT_STATUS_COLORS } from "./parts";
+import { fmtDate, PROJECT_STATUS_COLORS } from "./parts";
 import { READY } from "./ReadinessBanner";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting; // the one caution amber, shared with the gauges
-const RIBBON_WEEKS = 10; // how many weeks of load forecast to show
-const CAP_CEILING = 0.78; // capacity (ratio = 1) sits here, leaving headroom to show overflow
-
-function toISODate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+const MEET = "color-mix(in srgb, var(--muted) 42%, transparent)"; // consumed-by-meetings tone
+const BUFFER_TINT = "color-mix(in srgb, var(--muted) 16%, transparent)";
+const RIBBON_WEEKS = 10;
+const CEIL = 0.82; // ribbon track headroom above the capacity line
 
 type Band = "room" | "committed" | "over";
+const BAND_LABEL: Record<Band, string> = { room: "Room to commit", committed: "Committed", over: "Overcommitted" };
 
 function fmtH(mins: number): string {
-  const h = mins / 60;
+  const h = Math.max(0, mins) / 60;
   return h >= 10 ? `${Math.round(h)}h` : `${Math.round(h * 10) / 10}h`;
+}
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export default function CommitmentMeter({ onRefine, onAllocate }: { onRefine?: () => void; onAllocate?: () => void }) {
@@ -32,84 +34,99 @@ export default function CommitmentMeter({ onRefine, onAllocate }: { onRefine?: (
   const now = useMemo(() => new Date(), []);
   const demand = portfolioDemand(data, now);
   const standing = readStanding(data, "project");
-  const { weeklyAvgMins, thisWeekMins, byWeek } = useCapacity();
+  const cap = useCapacity();
 
-  // Per-week load forecast — demand spread across the weeks each project is live,
-  // against that week's *realistic* capacity. Far-future weeks look artificially
-  // open (one-offs aren't booked yet), so cap their free time at the near-term
-  // typical; recurring meetings already on the calendar keep actual ≤ cap anyway.
-  const forecast = useMemo(() => {
-    const weeks = byWeek.slice(0, RIBBON_WEEKS);
-    const dem = demandByWeek(data, now, weeks.map((w) => w.weekStart));
-    return weeks.map((w, i) => {
-      const demandMins = dem[i]?.demandMins ?? 0;
-      const freeMins = i === 0 ? w.availMins : Math.min(w.availMins, weeklyAvgMins);
-      const ratio = freeMins > 0 ? demandMins / freeMins : demandMins > 0 ? Infinity : 0;
-      return { weekStart: w.weekStart, freeMins, demandMins, ratio, over: ratio > 1 };
-    });
-  }, [data, now, byWeek, weeklyAvgMins]);
-  const anyOver = forecast.some((f) => f.over);
+  const win = cap.windowMins;
+  const busy = cap.typicalBusyMins;
+  const buffer = cap.bufferMins;
+  const project = demand.perWeekMins;
+  const focus = cap.focusBudgetMins;
+  const freeAfter = win - busy - buffer - project;
 
-  const demandMins = demand.perWeekMins;
-  const capMins = weeklyAvgMins;
-  const hasDemand = demandMins > 0;
-  const ratio = capMins > 0 ? demandMins / capMins : hasDemand ? Infinity : 0;
-  const pct = Number.isFinite(ratio) ? Math.round(ratio * 100) : null;
-  const band: Band = ratio > 1 ? "over" : ratio >= 0.7 ? "committed" : "room";
+  const band: Band = project > focus ? "over" : freeAfter < 0.2 * win ? "committed" : "room";
   const color = band === "over" ? CAUTION : READY;
+  const committedPct = win > 0 ? Math.round(((busy + project) / win) * 100) : null;
 
   const latent = demand.latent.length;
   const pressing = demand.pressing.length;
 
-  // Empty / not-yet-meterable states — the funnel still has something to say.
+  // Per-week forecast — meetings (carried forward from trailing-typical) + project
+  // pace, against each week's window with the buffer ceiling.
+  const forecast = useMemo(() => {
+    const dem = demandByWeek(data, now, cap.byWeek.map((w) => w.weekStart));
+    return cap.byWeek.slice(0, RIBBON_WEEKS).map((w, i) => {
+      const wMins = Math.max(1, w.windowMins);
+      const projectMins = dem[i]?.demandMins ?? 0;
+      const ceiling = Math.max(0, w.windowMins - w.bufferMins);
+      return {
+        weekStart: w.weekStart,
+        busyMins: w.busyMins,
+        projectMins,
+        busyFrac: Math.min(w.busyMins / wMins, 1),
+        projFrac: Math.min(projectMins / wMins, 1),
+        ceilFrac: ceiling / wMins,
+        over: w.busyMins + projectMins > ceiling,
+      };
+    });
+  }, [data, now, cap.byWeek]);
+  const anyOver = forecast.some((f) => f.over);
+
+  // Headline stacked bar widths (share of the window), clamped so segments fit.
+  const winSafe = Math.max(1, win);
+  const bFrac = Math.min(busy / winSafe, 1);
+  const pFrac = Math.min(project / winSafe, 1 - bFrac);
+  const buffFrac = Math.min(buffer / winSafe, 1 - bFrac - pFrac);
+
+  // Synthesis
   let synthesis: string;
-  if (!hasDemand && latent === 0) {
-    synthesis = "Nothing in flight to pace yet. Commit a project with a finish line and it shows up here.";
-  } else if (!hasDemand) {
-    synthesis = `${latent} project${latent === 1 ? " is" : "s are"} in flight but not yet counted — size them and set a finish line to see your commitment.`;
-  } else if (capMins <= 0) {
-    synthesis = `Your bets need ≈${fmtH(demandMins)} a week. Set your working hours to gauge that against real capacity.`;
+  if (win <= 0) {
+    synthesis = "Set your working hours in Settings so Nuvo can gauge how full your week really is.";
+  } else if (project <= 0) {
+    synthesis = `Your weeks run ≈${fmtH(busy)} of meetings; after a ≈${fmtH(buffer)} buffer, ≈${fmtH(focus)} of focus remains. No project pace is committed yet — that focus is open.`;
   } else {
-    const head = `Your bets need ≈${fmtH(demandMins)} a week against ≈${fmtH(capMins)} of open time`;
+    const head = `Your weeks run ≈${fmtH(busy)} of meetings. After a ≈${fmtH(buffer)} buffer, ≈${fmtH(focus)} of focus remains and your bets need ≈${fmtH(project)}`;
     synthesis =
       band === "over"
-        ? `${head} — you're ${pct}% committed. Move a finish line, cut scope, or drop a bet.`
+        ? `${head} — over by ≈${fmtH(-freeAfter)}. Cut scope, move a finish line, or clear a meeting.`
         : band === "committed"
-          ? `${head}. ${pct}% committed — full, but it fits.`
-          : `${head}. ${pct}% committed — room to pull another bet.`;
+          ? `${head}. Nearly full — protect the buffer before pulling more.`
+          : `${head}, leaving ≈${fmtH(freeAfter)} open. Room for one more bet.`;
   }
-
-  const BAND_LABEL: Record<Band, string> = { room: "Room to commit", committed: "Committed", over: "Overcommitted" };
 
   return (
     <div className="glass-card mb-6 max-w-[920px] rounded-xl border border-line p-4" style={{ boxShadow: "var(--shadow-2)" }}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="section-label !p-0">Commitment</span>
-        {hasDemand && capMins > 0 && (
+        {win > 0 && committedPct != null && (
           <span className="mono shrink-0 text-meta" style={{ color }}>
-            {BAND_LABEL[band]} · {pct}%
+            {BAND_LABEL[band]} · {committedPct}%
           </span>
         )}
       </div>
 
-      {hasDemand && capMins > 0 ? (
+      {win > 0 ? (
         <div className="mt-2.5">
-          <Bar pct={Math.min(pct ?? 0, 100)} color={color} />
-          <div className="mono mt-2 flex items-center gap-3 text-meta text-muted">
-            <span style={{ color: "var(--ink)" }}>≈{fmtH(demandMins)}/wk needed</span>
+          <div className="flex h-2.5 w-full overflow-hidden rounded-full" style={{ background: "var(--line)" }} title="meetings · project work · buffer · open">
+            <div style={{ width: `${bFrac * 100}%`, background: MEET }} />
+            <div className="fast" style={{ width: `${pFrac * 100}%`, background: color }} />
+            <div style={{ width: `${buffFrac * 100}%`, background: BUFFER_TINT }} />
+          </div>
+          <div className="mono mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-muted">
+            <span><span className="mr-1 inline-block h-2 w-2 rounded-sm align-middle" style={{ background: MEET }} />≈{fmtH(busy)} meetings</span>
+            <span><span className="mr-1 inline-block h-2 w-2 rounded-sm align-middle" style={{ background: color }} />≈{fmtH(project)} projects</span>
+            <span style={{ color: "var(--ink)" }}>≈{fmtH(Math.max(0, freeAfter))} open</span>
+            <span>of ≈{fmtH(win)}/wk</span>
             <span>·</span>
-            <span>≈{fmtH(capMins)}/wk free</span>
-            <span>·</span>
-            <span>≈{fmtH(thisWeekMins)} left this week</span>
+            <span>≈{fmtH(cap.thisWeekFocusMins)} focus left this week</span>
           </div>
         </div>
       ) : (
-        <div className="mt-2.5 h-1.5 rounded-full" style={{ background: "var(--line)" }} />
+        <div className="mt-2.5 h-2.5 rounded-full" style={{ background: "var(--line)" }} />
       )}
 
-      <p className="masthead mt-3 max-w-[52ch] text-lead text-ink">{synthesis}</p>
+      <p className="masthead mt-3 max-w-[56ch] text-lead text-ink">{synthesis}</p>
 
-      {hasDemand && capMins > 0 && forecast.length > 1 && (
+      {win > 0 && forecast.length > 1 && (
         <div className="mt-4">
           <div className="mb-1.5 flex items-baseline justify-between">
             <span className="section-label !p-0">Load forecast</span>
@@ -117,21 +134,19 @@ export default function CommitmentMeter({ onRefine, onAllocate }: { onRefine?: (
           </div>
           <div className="flex items-end gap-1 overflow-x-auto pb-0.5">
             {forecast.map((f, i) => {
-              const tone = f.over ? CAUTION : READY;
-              const fillFrac = Math.min(Number.isFinite(f.ratio) ? f.ratio : 1.4, 1.4) * CAP_CEILING;
+              const projTone = f.over ? CAUTION : READY;
+              const bH = Math.min(f.busyFrac, 1) * CEIL * 100;
+              const pH = Math.min(f.projFrac, Math.max(0, 1 - f.busyFrac)) * CEIL * 100;
               return (
                 <div key={i} className="flex min-w-[26px] flex-1 flex-col items-center gap-1">
                   <div
                     className="relative w-full overflow-hidden rounded-sm"
                     style={{ height: 40, background: "var(--line)" }}
-                    title={`${i === 0 ? "This week" : `${i} week${i === 1 ? "" : "s"} out`} (of ${fmtDate(toISODate(f.weekStart))}) · need ≈${fmtH(f.demandMins)} / ≈${fmtH(f.freeMins)} free${f.over ? " · over capacity" : ""}`}
+                    title={`${i === 0 ? "This week" : `${i} week${i === 1 ? "" : "s"} out`} (of ${fmtDate(toISODate(f.weekStart))}) · ≈${fmtH(f.busyMins)} meetings + ≈${fmtH(f.projectMins)} projects${f.over ? " · over capacity" : ""}`}
                   >
-                    {/* capacity ceiling — bars crossing it are over the week's open time */}
-                    <div className="absolute inset-x-0" style={{ bottom: `${CAP_CEILING * 100}%`, height: 1, background: "var(--line-strong)" }} />
-                    <div
-                      className="fast absolute inset-x-0 bottom-0"
-                      style={{ height: `${Math.min(fillFrac * 100, 100)}%`, background: tone, opacity: i === 0 ? 1 : 0.82 }}
-                    />
+                    <div className="absolute inset-x-0" style={{ bottom: `${f.ceilFrac * CEIL * 100}%`, height: 1, background: "var(--line-strong)" }} />
+                    <div className="absolute inset-x-0 bottom-0" style={{ height: `${bH}%`, background: MEET }} />
+                    <div className="fast absolute inset-x-0" style={{ bottom: `${bH}%`, height: `${pH}%`, background: projTone, opacity: i === 0 ? 1 : 0.82 }} />
                   </div>
                   <span className="mono text-micro" style={{ color: i === 0 ? "var(--signal)" : "var(--muted)" }}>
                     {i === 0 ? "now" : `+${i}`}
@@ -144,8 +159,6 @@ export default function CommitmentMeter({ onRefine, onAllocate }: { onRefine?: (
       )}
 
       <div className="mt-3 flex flex-col gap-1.5 text-caption">
-        {/* concurrency — folded in from the old WIP "Capacity" gauge: how many bets
-            are in flight at once, and whether any lack a path. Distinct from hours. */}
         {standing.inFlight > 0 && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span style={{ color: standing.capacity === "comfortable" ? "var(--muted)" : CAUTION }}>{standing.capacityBlurb}</span>
