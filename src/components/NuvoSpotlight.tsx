@@ -17,6 +17,21 @@ function greetingFor(d: Date) {
   return `${part}, ${NAME}.`;
 }
 
+// What pressing Enter will actually do — its destination — so the capture
+// preview reads "Add to Inbox" / "Add to Tomorrow" instead of just echoing
+// back the text you typed (which the input already shows).
+function destinationLabel(doDate: string | null): string {
+  if (!doDate) return "Add to Inbox";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(`${doDate}T00:00:00`);
+  const diff = Math.round((d.getTime() - today.getTime()) / 86_400_000);
+  if (diff === 0) return "Add to Today";
+  if (diff === 1) return "Add to Tomorrow";
+  if (diff >= 2 && diff <= 6) return `Add to ${d.toLocaleDateString([], { weekday: "long" })}`;
+  return `Schedule ${d.toLocaleDateString([], { month: "short", day: "numeric" })}`;
+}
+
 export interface Command {
   id: string;
   title: string;
@@ -357,16 +372,21 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
               }`}
             >
               <span className="shrink-0 text-caption text-accent">＋</span>
-              <span className="min-w-0 flex-1 truncate text-body">{parsed.title || captureText.trim()}</span>
-              {parsed.chips.map((c, i) => (
-                <span
-                  key={i}
-                  className="mono shrink-0 rounded border px-1.5 py-px text-meta"
-                  style={{ borderColor: chipColor(c.kind), color: chipColor(c.kind) }}
-                >
-                  {c.text}
-                </span>
-              ))}
+              <span className="shrink-0 text-body">{destinationLabel(parsed.doDate)}</span>
+              <span className="min-w-0 flex-1 truncate text-caption text-muted">
+                {parsed.title || captureText.trim()}
+              </span>
+              {parsed.chips
+                .filter((c) => c.kind !== "date")
+                .map((c, i) => (
+                  <span
+                    key={i}
+                    className="mono shrink-0 rounded border px-1.5 py-px text-meta"
+                    style={{ borderColor: chipColor(c.kind), color: chipColor(c.kind) }}
+                  >
+                    {c.text}
+                  </span>
+                ))}
             </button>
           )}
 

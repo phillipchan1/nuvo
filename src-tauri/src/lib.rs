@@ -12,6 +12,25 @@ use tauri::Manager;
 use tauri_nspanel::{
     tauri_panel, CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt,
 };
+#[cfg(target_os = "macos")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "macos")]
+use std::sync::Mutex;
+#[cfg(target_os = "macos")]
+use std::time::{Duration, Instant};
+
+// Whether the ⌥Space spotlight panel is currently up. Tracked by us — not via
+// NSPanel::is_visible(), which reads stale the instant after show.
+#[cfg(target_os = "macos")]
+static SPOTLIGHT_VISIBLE: AtomicBool = AtomicBool::new(false);
+
+// When the last applicationShouldHandleReopen fired. A ⌥Space summon on a
+// ⌘H-hidden app makes macOS unhide+reopen the whole app, and that reopen races
+// with our hotkey handler in an unpredictable order — so each side corrects the
+// other: the hotkey handler re-hides main if a reopen JUST fired, and the reopen
+// handler re-hides main if a summon is already up. Net: ⌥Space never raises main.
+#[cfg(target_os = "macos")]
+static REOPEN_AT: Mutex<Option<Instant>> = Mutex::new(None);
 
 #[cfg(target_os = "macos")]
 tauri_panel! {
@@ -61,6 +80,7 @@ fn install_spotlight_panel(app: &tauri::AppHandle) {
     let handle = app.clone();
     handler.window_did_resign_key(move |_| {
         if let Ok(panel) = handle.get_webview_panel("spotlight") {
+            SPOTLIGHT_VISIBLE.store(false, Ordering::SeqCst);
             panel.hide();
         }
     });
@@ -76,6 +96,7 @@ fn install_spotlight_panel(app: &tauri::AppHandle) {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 fn hide_spotlight(app: tauri::AppHandle) {
+    SPOTLIGHT_VISIBLE.store(false, Ordering::SeqCst);
     if let Ok(panel) = app.get_webview_panel("spotlight") {
         panel.hide();
     }
@@ -110,6 +131,21 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             install_spotlight_panel(app.handle());
 
+            // ⌘W on the main window must HIDE it, not destroy it — otherwise the
+            // window is gone for good and the dock icon can never bring Nuvo back
+            // (Tauri's default close destroys the webview). Hidden, it's restored
+            // by the dock-reopen handler below.
+            #[cfg(target_os = "macos")]
+            if let Some(main) = app.get_webview_window("main") {
+                let w = main.clone();
+                main.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        order_out(&w);
+                    }
+                });
+            }
+
             // Global summon: a system-wide hotkey toggles the floating "spotlight"
             // window — a lightweight command bar that hovers over whatever you're
             // doing, without raising the whole app. Desktop only — iOS/Android
@@ -136,13 +172,30 @@ pub fn run() {
                             {
                                 if let Ok(panel) = app.get_webview_panel("spotlight") {
                                     if panel.is_visible() {
+                                        SPOTLIGHT_VISIBLE.store(false, Ordering::SeqCst);
                                         panel.hide();
                                     } else {
+                                        // Mark visible BEFORE showing, so any reopen
+                                        // the summon triggers is recognized as ours.
+                                        // Capture BEFORE the show — showing the panel
+                                        // makes macOS unhide a ⌘H-hidden app (often with
+                                        // no reopen at all), and we must undo that.
+                                        let was_hidden = app_is_hidden();
+                                        SPOTLIGHT_VISIBLE.store(true, Ordering::SeqCst);
                                         if let Some(win) = app.get_webview_window("spotlight") {
-                                            let _ = win.center();
+                                            position_spotlight(&win); // cursor's screen, not the panel's
                                             let _ = win.emit("spotlight-show", ());
                                         }
                                         panel.show_and_make_key();
+                                        // ⌥Space must never raise main. Re-hide it if the
+                                        // app was hidden (unhide-on-show, no reopen) OR if a
+                                        // reopen raced ahead and already raised it.
+                                        if was_hidden {
+                                            if let Some(win) = app.get_webview_window("main") {
+                                                order_out(&win);
+                                            }
+                                        }
+                                        rehide_main_if_reopen_raced(app);
                                     }
                                 }
                             }
@@ -179,29 +232,114 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, _event| {
-            // Dock-icon click (NSApplicationDelegate applicationShouldHandleReopen).
-            // The global ⌥Space panel is a non-activating NSPanel, so summoning it
-            // leaves Nuvo in the background; if the main window was also minimized,
-            // the dock click looked dead — and tao's WebviewWindow::set_focus()
-            // /unminimize() are no-ops or unreliable while the window is still
-            // miniaturized. So drive AppKit directly: activate the app, then
-            // deminiaturize + key-and-order-front the actual NSWindow.
+            // Dock-icon reopen (NSApplicationDelegate applicationShouldHandleReopen),
+            // also fired when macOS unhides a ⌘H-hidden app to show the ⌥Space panel.
+            //   • summon already up → the unhide arrived after the panel showed →
+            //     re-hide main (only the panel should be up). The other ordering —
+            //     reopen arrives first — is corrected by the hotkey handler, which
+            //     reads REOPEN_AT and re-hides main itself.
+            //   • no visible windows + no summon → genuine dock click on a minimized
+            //     or ⌘W-hidden app → restore it.
+            //   • windows already up → ordinary dock click → leave it to macOS.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { has_visible_windows, .. } = _event {
-                eprintln!("[nuvo] Reopen (has_visible_windows={has_visible_windows})");
-                // The spotlight is alwaysOnTop + floating; a lingering one would
-                // sit above the main window. Make sure it's out of the way first.
-                if let Ok(panel) = _app.get_webview_panel("spotlight") {
-                    if panel.is_visible() {
-                        eprintln!("[nuvo] Reopen: spotlight still visible — hiding it");
-                        panel.hide();
+                *REOPEN_AT.lock().unwrap() = Some(Instant::now());
+                if SPOTLIGHT_VISIBLE.load(Ordering::SeqCst) {
+                    // Unhide arrived after the panel showed → re-hide main.
+                    if let Some(win) = _app.get_webview_window("main") {
+                        order_out(&win);
+                    }
+                } else if !has_visible_windows {
+                    // Genuine dock click on a minimized / ⌘W-hidden app → restore it.
+                    if let Some(win) = _app.get_webview_window("main") {
+                        surface_main_window(&win);
                     }
                 }
-                if let Some(win) = _app.get_webview_window("main") {
-                    surface_main_window(&win);
-                }
+                // else: ordinary dock click with windows already up → leave to macOS.
             }
         });
+}
+
+// Place the spotlight on the screen the cursor is on (where the user is
+// working), centered horizontally and in the upper third — like Spotlight.
+// tao's center() puts it on the panel's assigned screen (often the wrong
+// monitor), so we set the frame origin ourselves via AppKit.
+#[cfg(target_os = "macos")]
+fn position_spotlight<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
+    use tauri_nspanel::objc2_app_kit::{NSEvent, NSScreen, NSWindow};
+    use tauri_nspanel::objc2_foundation::{MainThreadMarker, NSPoint};
+
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let Ok(ptr) = win.ns_window() else { return };
+    // SAFETY: ns_window() hands back this window's live NSWindow*.
+    let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+
+    let mouse = NSEvent::mouseLocation();
+    let screens = NSScreen::screens(mtm);
+    let mut chosen = screens.firstObject();
+    let mut i = 0usize;
+    while i < screens.count() {
+        let s = screens.objectAtIndex(i);
+        let f = s.frame();
+        if mouse.x >= f.origin.x
+            && mouse.x <= f.origin.x + f.size.width
+            && mouse.y >= f.origin.y
+            && mouse.y <= f.origin.y + f.size.height
+        {
+            chosen = Some(s);
+            break;
+        }
+        i += 1;
+    }
+    let Some(screen) = chosen else { return };
+
+    let vf = screen.visibleFrame();
+    let wf = w.frame();
+    let x = vf.origin.x + (vf.size.width - wf.size.width) / 2.0;
+    // macOS y is bottom-up — 0.62 puts the card in the upper third.
+    let y = vf.origin.y + (vf.size.height - wf.size.height) * 0.62;
+    w.setFrameOrigin(NSPoint { x, y });
+}
+
+// Is the whole app currently hidden (⌘H)? Checked before a summon shows the
+// panel — because showing it makes macOS unhide the app, which we must undo.
+#[cfg(target_os = "macos")]
+fn app_is_hidden() -> bool {
+    use tauri_nspanel::objc2_app_kit::NSApplication;
+    use tauri_nspanel::objc2_foundation::MainThreadMarker;
+    MainThreadMarker::new()
+        .map(|mtm| NSApplication::sharedApplication(mtm).isHidden())
+        .unwrap_or(false)
+}
+
+// Order a window out (hide it) via AppKit — used to undo the macOS unhide that a
+// ⌥Space summon triggers on a hidden app, so only the floating panel remains.
+#[cfg(target_os = "macos")]
+fn order_out<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
+    use tauri_nspanel::objc2_app_kit::NSWindow;
+    if let Ok(ptr) = win.ns_window() {
+        // SAFETY: ns_window() hands back this window's live NSWindow*.
+        let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+        w.orderOut(None);
+    }
+}
+
+// A ⌥Space summon never wants to raise the main window. If macOS just unhid the
+// app to show us (a reopen fired in the last beat), undo it. Called from the
+// hotkey handler right after the panel is shown.
+#[cfg(target_os = "macos")]
+fn rehide_main_if_reopen_raced<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let raced = REOPEN_AT
+        .lock()
+        .ok()
+        .and_then(|mut g| g.take())
+        .map(|t| t.elapsed() < Duration::from_millis(600))
+        .unwrap_or(false);
+    if raced {
+        if let Some(win) = app.get_webview_window("main") {
+            order_out(&win);
+        }
+    }
 }
 
 // Bring the main window all the way to the foreground, bypassing tao's guarded
@@ -213,25 +351,11 @@ fn surface_main_window<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
     use tauri_nspanel::objc2_app_kit::{NSApplication, NSWindow};
     use tauri_nspanel::objc2_foundation::MainThreadMarker;
 
-    let Some(mtm) = MainThreadMarker::new() else {
-        eprintln!("[nuvo] surface: not on main thread");
-        return;
-    };
+    let Some(mtm) = MainThreadMarker::new() else { return };
     let ns_app = NSApplication::sharedApplication(mtm);
-    let Ok(ptr) = win.ns_window() else {
-        eprintln!("[nuvo] surface: no ns_window");
-        return;
-    };
+    let Ok(ptr) = win.ns_window() else { return };
     // SAFETY: ns_window() hands back this window's live NSWindow*.
     let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
-
-    eprintln!(
-        "[nuvo] surface BEFORE: min={} vis={} key={} appActive={}",
-        w.isMiniaturized(),
-        w.isVisible(),
-        w.isKeyWindow(),
-        ns_app.isActive()
-    );
 
     // Drive AppKit directly (tao's wrappers short-circuit while miniaturized).
     // deminiaturize → orderFrontRegardless (works even while the app is in the
@@ -243,12 +367,4 @@ fn surface_main_window<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
     ns_app.activate();
     #[allow(deprecated)]
     ns_app.activateIgnoringOtherApps(true);
-
-    eprintln!(
-        "[nuvo] surface AFTER:  min={} vis={} key={} appActive={}",
-        w.isMiniaturized(),
-        w.isVisible(),
-        w.isKeyWindow(),
-        ns_app.isActive()
-    );
 }

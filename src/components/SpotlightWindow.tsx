@@ -59,10 +59,11 @@ export default function SpotlightWindow() {
     return () => unlistenShow?.();
   }, []);
 
-  // Esc dismisses (the bare panel doesn't own Escape the way the Modal does).
+  // Esc — and ⌘W, which reads as "close this window" — dismiss the panel (the
+  // bare panel doesn't own these the way the Modal does).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w")) {
         e.preventDefault();
         hide();
       }
