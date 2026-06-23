@@ -30,8 +30,50 @@ import {
   StatusPill,
 } from "./parts";
 import { RIPENESS_HINT, RIPENESS_LABEL, ripenessOfProject, verdictOf } from "../../lib/tending";
+import { projectPace, type PaceRead, type ProjectPace } from "../../lib/pace";
 import TaskList from "./TaskList";
 import { Btn } from "../ui";
+
+// ── Pace presentation — tone + phrasing for the weekly-rate verdict ──────────
+const PACE_TONE: Record<PaceRead, "signal" | "accent" | "muted"> = {
+  behind: "signal",
+  overdue: "signal",
+  stalled: "signal",
+  ahead: "accent",
+  on_track: "accent",
+  undated: "muted",
+  clear: "muted",
+};
+
+function hrs(mins: number): string {
+  const h = mins / 60;
+  return h >= 10 ? `${Math.round(h)}h` : `${Math.round(h * 10) / 10}h`;
+}
+
+function driftPhrase(days: number, word: "behind" | "ahead"): string {
+  if (days >= 14) return `${Math.round(days / 7)} wks ${word}`;
+  if (days >= 7) return `1 wk ${word}`;
+  return `${days}d ${word}`;
+}
+
+function paceVerdict(p: ProjectPace): string {
+  switch (p.read) {
+    case "behind":
+      return driftPhrase(p.driftDays ?? 0, "behind");
+    case "ahead":
+      return driftPhrase(-(p.driftDays ?? 0), "ahead");
+    case "on_track":
+      return "on pace";
+    case "overdue":
+      return `${p.driftDays}d overdue`;
+    case "stalled":
+      return "stalled — no recent motion";
+    case "undated":
+      return "no finish line yet — set a target to pace it";
+    case "clear":
+      return "no open work to pace";
+  }
+}
 
 export default function ProjectFloor({
   focus,
@@ -55,6 +97,9 @@ export default function ProjectFloor({
   const pct = projectProgress(data, project);
   const inSprint = projectSprintCount(data, project.id);
   const ripe = ripenessOfProject(data, project);
+  const pace = projectPace(data, project, new Date());
+  const paceTone =
+    PACE_TONE[pace.read] === "signal" ? "var(--signal)" : PACE_TONE[pace.read] === "accent" ? accent : "var(--muted)";
 
   const barColor = (status: string) => (status === "complete" || status === "done" ? "var(--muted)" : accent);
 
@@ -120,6 +165,30 @@ export default function ProjectFloor({
           <span>start <InlineDate value={project.startDate} onChange={(v) => updateProject(project.id, { startDate: v })} /></span>
           <span>·</span>
           <span>target <InlineDate value={project.targetDate} onChange={(v) => updateProject(project.id, { targetDate: v })} /></span>
+        </div>
+
+        {/* pace — the project as a weekly rate, and its drift against the target */}
+        <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-1 border-t border-line pt-2.5">
+          <span className="section-label">Pace</span>
+          {pace.read === "undated" || pace.read === "clear" ? (
+            <span className="text-label text-muted">{paceVerdict(pace)}</span>
+          ) : (
+            <>
+              {pace.read !== "overdue" && pace.requiredMinsPerWeek > 0 && (
+                <span className="mono text-label text-muted">
+                  <span className="text-ink">~{hrs(pace.requiredMinsPerWeek)}/wk</span> to finish on time
+                </span>
+              )}
+              <span className="mono text-label text-muted">{hrs(pace.remainingMins)} left</span>
+              {pace.recentMinsPerWeek > 0 && (
+                <span className="mono text-label text-muted">~{hrs(pace.recentMinsPerWeek)}/wk lately</span>
+              )}
+              <span className="mono ml-auto flex items-center gap-1.5 text-label" style={{ color: paceTone }}>
+                <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: paceTone }} />
+                {paceVerdict(pace)}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
