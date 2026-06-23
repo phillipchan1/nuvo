@@ -9,15 +9,18 @@
 
 import { addDays, format } from "date-fns";
 import {
+  domainById,
   initiativeById,
-  isProjectComplete,
+  isOpenStatus,
   projectById,
+  isProjectComplete,
   type Initiative,
   type Project,
   type SoundnessVerdict,
   type VerticalData,
 } from "./vertical";
 import {
+  readTending,
   ripenessOfInitiative,
   ripenessOfProject,
   tendedScore,
@@ -147,4 +150,100 @@ export function refineReadiness(d: VerticalData, c: GroomCandidate): number {
  *  two weeks out, with buffer. The user can tweak it; this is just the proposal. */
 export function proposeDueISO(now: Date = new Date()): string {
   return format(addDays(now, 14), "yyyy-MM-dd");
+}
+
+// ── Curated entry — group the groomable work into intent clusters ─────────────
+// The portfolio map shouldn't drop 15 ranked rows on you. It groups the groomable
+// work by the bet (or domain) it serves — "to move THIS, these few need shaping" —
+// so a run is a coherent, bounded scope, not the firehose. The grouping is the
+// overwhelm fix and the intent frame at once (docs/refine-run.md §5, §10 run-length).
+
+export type RefineRef = { kind: "project" | "initiative"; id: string };
+
+export interface RefineCluster {
+  /** the intent this cluster serves — an initiative (a bet) or a domain (loose work). */
+  kind: "initiative" | "domain";
+  id: string;
+  name: string;
+  /** the "what you're trying to do" line — an initiative's outcome (domains: null). */
+  intent: string | null;
+  color: string;
+  /** the initiative head itself still needs refining (only for kind "initiative"). */
+  headGroomable: boolean;
+  /** the groomable projects serving this intent, ranked (head excluded). */
+  members: GroomCandidate[];
+  /** the ranked run queue for the whole cluster — head first if it's groomable. */
+  queue: RefineRef[];
+  /** cluster rank = its strongest member's priority. */
+  priority: number;
+}
+
+/** Which cluster a candidate belongs to — its bet if it has an open one, else its domain. */
+function clusterKeyOf(d: VerticalData, c: GroomCandidate): string {
+  if (c.kind === "initiative") return `init:${c.id}`;
+  const initId = projectById(d, c.id)?.initiativeId;
+  if (initId) {
+    const init = initiativeById(d, initId);
+    if (init && isOpenStatus(init.status)) return `init:${initId}`;
+  }
+  return `dom:${c.domainId}`;
+}
+
+/**
+ * Group the ranked groomable work into intent clusters, strongest first. Each
+ * cluster is a coherent run scope — one bet (and the projects under it) or a
+ * domain's loose projects. The UI caps how many clusters / members it shows; this
+ * returns them all so "see all" can simply lift the cap.
+ */
+export function curateRefine(d: VerticalData, now: Date = new Date()): RefineCluster[] {
+  const groomable = readTending(d, now).groomable;
+  const buckets = new Map<string, GroomCandidate[]>();
+  for (const c of groomable) {
+    const key = clusterKeyOf(d, c);
+    const arr = buckets.get(key);
+    if (arr) arr.push(c);
+    else buckets.set(key, [c]);
+  }
+
+  const clusters: RefineCluster[] = [];
+  for (const [key, members] of buckets) {
+    const priority = members.reduce((m, c) => Math.max(m, c.priority), 0);
+    if (key.startsWith("init:")) {
+      const init = initiativeById(d, key.slice(5));
+      if (!init) continue;
+      const head = members.find((m) => m.kind === "initiative");
+      const projects = members.filter((m) => m.kind === "project");
+      clusters.push({
+        kind: "initiative",
+        id: init.id,
+        name: init.name,
+        intent: init.outcome.trim() || null,
+        color: domainById(d, init.domainId)?.color ?? "var(--accent)",
+        headGroomable: !!head,
+        members: projects,
+        queue: [
+          ...(head ? [{ kind: "initiative" as const, id: init.id }] : []),
+          ...projects.map((p) => ({ kind: "project" as const, id: p.id })),
+        ],
+        priority,
+      });
+    } else {
+      const dom = domainById(d, key.slice(4));
+      if (!dom) continue;
+      const projects = members.filter((m) => m.kind === "project");
+      clusters.push({
+        kind: "domain",
+        id: dom.id,
+        name: dom.name,
+        intent: null,
+        color: dom.color,
+        headGroomable: false,
+        members: projects,
+        queue: projects.map((p) => ({ kind: "project" as const, id: p.id })),
+        priority,
+      });
+    }
+  }
+
+  return clusters.sort((a, b) => b.priority - a.priority);
 }

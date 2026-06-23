@@ -20,7 +20,10 @@ export type OverlayKind =
   // Record command center — a project / initiative opened as a full modal.
   // The record id rides in `overlayId`; no anchor (it's centered, not a popover).
   | "project-record"
-  | "initiative-record";
+  | "initiative-record"
+  // A task opened as a centered modal (from ⌘K search) — the same TaskPopover
+  // UI, rung-agnostic, no anchor. Distinct from the on-Schedule anchored "task".
+  | "task-record";
 
 export type SettingsSection = "appearance" | "schedule" | "connections" | "labels" | "account";
 
@@ -115,6 +118,8 @@ export function readNavState(raw: unknown): AppNavState | null {
   return {
     ...DEFAULT_NAV,
     ...s,
+    // The Week rail tab was retired (the board replaced it) — heal stale state.
+    tab: s.tab === "inbox" ? "inbox" : "today",
     focus: { ...DEFAULT_NAV.focus, ...(s.focus ?? {}) },
   };
 }

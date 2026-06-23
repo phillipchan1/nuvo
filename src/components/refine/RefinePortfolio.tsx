@@ -4,7 +4,7 @@
 // run, the gain cascades — the project bar fills, its initiative ring climbs, the
 // portfolio meter counts up. (docs/refine-run.md §5.)
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   domainById,
   isOpenStatus,
@@ -13,6 +13,12 @@ import {
   type VerticalData,
 } from "../../lib/vertical";
 import { portfolioReadiness, tendedScore } from "../../lib/tending";
+import { curateRefine, type RefineCluster, type RefineRef } from "../../lib/refine";
+
+// How much the curated entry surfaces before "see all" — a few clusters, a few
+// rows each (docs/refine-run.md §10, run-length knob). The full map is one tap away.
+const CLUSTERS_SHOWN = 3;
+const MEMBERS_SHOWN = 3;
 
 export interface ReadinessSnapshot {
   portfolio: number;
@@ -33,25 +39,24 @@ export default function RefinePortfolio({
 }: {
   data: VerticalData;
   from: ReadinessSnapshot | null;
-  onStart: (item: { kind: "project" | "initiative"; id: string } | undefined) => void;
+  onStart: (refs: RefineRef[]) => void;
 }) {
+  // Returning from a finished run, show the full map so the gain cascades up the
+  // bars. On a fresh entry, lead with the curated few — "where do I start," not
+  // the firehose. The user can still open the full map by hand.
+  const [showAll, setShowAll] = useState(from != null);
   const live = portfolioReadiness(data);
-  // animate from the pre-run baseline to live (the cascade), once on mount
   const [animated, setAnimated] = useState(from == null);
   useEffect(() => {
     if (from == null) return;
     const t = requestAnimationFrame(() => requestAnimationFrame(() => setAnimated(true)));
     return () => cancelAnimationFrame(t);
   }, [from]);
-  const at = (id: string, liveVal: number) => (animated || !from ? liveVal : from.items[id] ?? liveVal);
   const portfolioShown = animated || !from ? live : from.portfolio;
   const gained = from != null && live > from.portfolio ? live - from.portfolio : 0;
 
+  const clusters = useMemo(() => curateRefine(data), [data]);
   const initiatives = data.initiatives.filter((i) => isOpenStatus(i.status));
-  const groupedProjectIds = new Set(initiatives.flatMap((i) => projectsOf(data, i.id).map((p) => p.id)));
-  const looseByDomain = data.domains
-    .map((dom) => ({ dom, projects: looseProjectsOf(data, dom.id).filter((p) => isOpenStatus(p.status) && !groupedProjectIds.has(p.id)) }))
-    .filter((g) => g.projects.length > 0);
 
   return (
     <div className="pt-3 pb-28">
@@ -69,46 +74,166 @@ export default function RefinePortfolio({
       </div>
       <div className="mt-1.5 flex items-center justify-between text-micro text-muted">
         <span className="mono">{initiatives.length} bets · {Object.keys(snapshotReadiness(data).items).length} items</span>
-        <button onClick={() => onStart(undefined)} className="fast font-medium" style={{ color: "var(--accent)" }}>Refine next →</button>
+        {clusters.length > 0 && (
+          <button onClick={() => onStart(clusters[0].queue)} className="fast font-medium" style={{ color: "var(--accent)" }}>Refine next →</button>
+        )}
       </div>
 
-      {/* the bets, each a ring + its projects */}
-      <div className="mt-6 space-y-2.5">
-        {initiatives.map((i) => {
-          const accent = domainById(data, i.domainId)?.color ?? "var(--accent)";
-          const kids = projectsOf(data, i.id).filter((p) => isOpenStatus(p.status));
-          const sealed = kids.filter((p) => (snapshotReadiness(data).items[p.id] ?? 0) >= 100).length;
-          const ring = at(i.id, Math.round(tendedScore(data, "initiative", i.id) * 100));
-          return (
-            <div key={i.id} className="rounded-xl border border-line glass-card px-3.5 py-3">
-              <button onClick={() => onStart({ kind: "initiative", id: i.id })} className="tap fast flex w-full items-center gap-3 text-left">
-                <MiniRing pct={ring} accent={accent} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body font-medium">{i.name}</div>
-                  <div className="text-micro text-muted">{kids.length ? `${sealed} of ${kids.length} sealed` : "no projects yet"}</div>
-                </div>
-                <span className="text-muted">→</span>
-              </button>
-              {kids.length > 0 && (
-                <div className="mt-2.5 space-y-1.5 border-t border-line pt-2.5">
-                  {kids.map((p) => <ProjectBar key={p.id} name={p.name} pct={at(p.id, Math.round(tendedScore(data, "project", p.id) * 100))} onTap={() => onStart({ kind: "project", id: p.id })} />)}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      {showAll
+        ? <FullMap data={data} from={from} animated={animated} onStart={onStart} onCollapse={clusters.length > 0 ? () => setShowAll(false) : undefined} />
+        : <CuratedView clusters={clusters} onStart={onStart} onSeeAll={() => setShowAll(true)} />}
+    </div>
+  );
+}
 
-        {looseByDomain.map(({ dom, projects }) => (
-          <div key={dom.id} className="rounded-xl border border-line glass-card px-3.5 py-3">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full" style={{ background: dom.color }} />
-              <span className="section-label">{dom.name} · direct projects</span>
-            </div>
-            <div className="space-y-1.5">
-              {projects.map((p) => <ProjectBar key={p.id} name={p.name} pct={at(p.id, Math.round(tendedScore(data, "project", p.id) * 100))} onTap={() => onStart({ kind: "project", id: p.id })} />)}
-            </div>
-          </div>
+// ── Curated entry — the few clusters worth a run now, grouped by intent ────────
+function CuratedView({
+  clusters, onStart, onSeeAll,
+}: {
+  clusters: RefineCluster[];
+  onStart: (refs: RefineRef[]) => void;
+  onSeeAll: () => void;
+}) {
+  if (clusters.length === 0) {
+    return (
+      <div className="mt-8 rounded-2xl border border-line glass-card px-5 py-9 text-center" style={{ boxShadow: "var(--shadow-2)" }}>
+        <div className="text-[28px]" style={{ color: "var(--accent)" }}>✓</div>
+        <p className="mt-2 text-body text-muted">Everything in flight is groomed — nothing needs refining right now.</p>
+        <button onClick={onSeeAll} className="tap fast mt-4 text-caption font-medium" style={{ color: "var(--accent)" }}>See the full map →</button>
+      </div>
+    );
+  }
+  const shown = clusters.slice(0, CLUSTERS_SHOWN);
+  const hidden = clusters.length - shown.length;
+  return (
+    <div className="mt-7">
+      <div className="section-label text-muted">Worth refining now</div>
+      <div className="mt-3 space-y-3.5">
+        {shown.map((c) => <ClusterCard key={`${c.kind}:${c.id}`} cluster={c} onStart={onStart} />)}
+      </div>
+      <button onClick={onSeeAll} className="tap fast mt-4 w-full rounded-xl border border-line py-3 text-caption text-muted hover:bg-accent-soft active:scale-[.99]">
+        See the full map{hidden > 0 ? ` · ${hidden} more cluster${hidden === 1 ? "" : "s"}` : ""} →
+      </button>
+    </div>
+  );
+}
+
+function ClusterCard({ cluster, onStart }: { cluster: RefineCluster; onStart: (refs: RefineRef[]) => void }) {
+  const { color, name, intent, members, headGroomable, queue, kind } = cluster;
+  const visible = members.slice(0, MEMBERS_SHOWN);
+  const overflow = members.length - visible.length;
+  const n = queue.length;
+  return (
+    <div className="rounded-2xl border border-line glass-card p-4" style={{ boxShadow: "var(--shadow-2)" }}>
+      <button onClick={() => onStart(queue)} className="tap fast -mx-2 -mt-2 flex w-full items-start gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-accent-soft active:scale-[.99]">
+        <span className="mt-[7px] h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-lead leading-snug">{name}</div>
+          {intent
+            ? <div className="mt-0.5 truncate text-caption text-muted">{intent}</div>
+            : kind === "domain" && <div className="mt-0.5 text-caption text-muted">direct projects</div>}
+        </div>
+        <span className="mt-1 shrink-0 text-muted">→</span>
+      </button>
+
+      <div className="mt-2 border-t border-line pt-1.5">
+        {headGroomable && (
+          <MemberRow label={`${name} — the bet itself`} badge="needs shaping" accent={color} onTap={() => onStart([queue[0]])} muted />
+        )}
+        {visible.map((m) => (
+          <MemberRow key={m.id} label={m.name} badge={m.reasons[0]} accent={color} onTap={() => onStart([{ kind: "project", id: m.id }])} />
         ))}
+        {overflow > 0 && <div className="px-2 pt-1 text-meta text-muted">+{overflow} more under this {kind === "domain" ? "domain" : "bet"}</div>}
+      </div>
+
+      <button
+        onClick={() => onStart(queue)}
+        className="tap fast mt-2 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-caption font-medium active:scale-[.98]"
+        style={{ color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}
+      >
+        Refine {n === 1 ? "this" : `these ${n}`} →
+      </button>
+    </div>
+  );
+}
+
+function MemberRow({
+  label, badge, accent, onTap, muted,
+}: {
+  label: string; badge?: string; accent: string; onTap: () => void; muted?: boolean;
+}) {
+  return (
+    <button onClick={onTap} className="tap fast flex w-full items-center gap-2.5 rounded-xl px-2 py-2.5 text-left hover:bg-accent-soft active:scale-[.99]">
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: muted ? "var(--line-strong)" : accent }} />
+      <span className={`min-w-0 flex-1 truncate text-body ${muted ? "italic text-muted" : ""}`}>{label}</span>
+      {badge && <span className="mono shrink-0 text-meta text-muted">{badge}</span>}
+    </button>
+  );
+}
+
+// ── The full map — the overworld + the post-run cascade ───────────────────────
+function FullMap({
+  data, from, animated, onStart, onCollapse,
+}: {
+  data: VerticalData;
+  from: ReadinessSnapshot | null;
+  animated: boolean;
+  onStart: (refs: RefineRef[]) => void;
+  onCollapse?: () => void;
+}) {
+  const at = (id: string, liveVal: number) => (animated || !from ? liveVal : from.items[id] ?? liveVal);
+  const initiatives = data.initiatives.filter((i) => isOpenStatus(i.status));
+  const groupedProjectIds = new Set(initiatives.flatMap((i) => projectsOf(data, i.id).map((p) => p.id)));
+  const looseByDomain = data.domains
+    .map((dom) => ({ dom, projects: looseProjectsOf(data, dom.id).filter((p) => isOpenStatus(p.status) && !groupedProjectIds.has(p.id)) }))
+    .filter((g) => g.projects.length > 0);
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-center justify-between">
+        <div className="section-label text-muted">The whole portfolio</div>
+        {onCollapse && (
+          <button onClick={onCollapse} className="tap fast text-caption font-medium text-muted hover:text-ink active:scale-[.98]">
+            ↑ Back to the focused few
+          </button>
+        )}
+      </div>
+      <div className="mt-3 space-y-2.5">
+      {initiatives.map((i) => {
+        const accent = domainById(data, i.domainId)?.color ?? "var(--accent)";
+        const kids = projectsOf(data, i.id).filter((p) => isOpenStatus(p.status));
+        const sealed = kids.filter((p) => (snapshotReadiness(data).items[p.id] ?? 0) >= 100).length;
+        const ring = at(i.id, Math.round(tendedScore(data, "initiative", i.id) * 100));
+        return (
+          <div key={i.id} className="rounded-xl border border-line glass-card px-3.5 py-3">
+            <button onClick={() => onStart([{ kind: "initiative", id: i.id }])} className="tap fast flex w-full items-center gap-3 text-left">
+              <MiniRing pct={ring} accent={accent} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-body font-medium">{i.name}</div>
+                <div className="text-micro text-muted">{kids.length ? `${sealed} of ${kids.length} sealed` : "no projects yet"}</div>
+              </div>
+              <span className="text-muted">→</span>
+            </button>
+            {kids.length > 0 && (
+              <div className="mt-2.5 space-y-1.5 border-t border-line pt-2.5">
+                {kids.map((p) => <ProjectBar key={p.id} name={p.name} pct={at(p.id, Math.round(tendedScore(data, "project", p.id) * 100))} onTap={() => onStart([{ kind: "project", id: p.id }])} />)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {looseByDomain.map(({ dom, projects }) => (
+        <div key={dom.id} className="rounded-xl border border-line glass-card px-3.5 py-3">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full" style={{ background: dom.color }} />
+            <span className="section-label">{dom.name} · direct projects</span>
+          </div>
+          <div className="space-y-1.5">
+            {projects.map((p) => <ProjectBar key={p.id} name={p.name} pct={at(p.id, Math.round(tendedScore(data, "project", p.id) * 100))} onTap={() => onStart([{ kind: "project", id: p.id }])} />)}
+          </div>
+        </div>
+      ))}
       </div>
     </div>
   );

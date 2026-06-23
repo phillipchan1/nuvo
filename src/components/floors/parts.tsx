@@ -159,10 +159,10 @@ export function InlineText({
   return (
     <span
       onClick={() => setEditing(true)}
-      className={`fast cursor-text rounded-sm hover:bg-accent-soft ${className} ${value ? "" : "text-muted italic"}`}
+      className={`fast cursor-text rounded-sm hover:bg-accent-soft ${className} ${draft ? "" : "text-muted italic"}`}
       title="Click to edit"
     >
-      {value || placeholder}
+      {draft || placeholder}
     </span>
   );
 }
@@ -218,10 +218,10 @@ export function InlineTextarea({
   return (
     <p
       onClick={() => setEditing(true)}
-      className={`fast cursor-text whitespace-pre-wrap rounded-sm leading-relaxed hover:bg-accent-soft ${className} ${value ? "" : "text-muted italic"}`}
+      className={`fast cursor-text whitespace-pre-wrap rounded-sm leading-relaxed hover:bg-accent-soft ${className} ${draft ? "" : "text-muted italic"}`}
       title="Click to edit"
     >
-      {value || placeholder}
+      {draft || placeholder}
     </p>
   );
 }
@@ -1111,6 +1111,99 @@ function UnassignedTray({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── The "refined" vocabulary — pip → tick → seal, one calm green ─────────────
+// A refined item is one Nuvo understands (shaped + sound, or a domain with
+// routing context). The reward for keeping it that way is quiet: no bar to
+// finish, just a settled check in the same RIPE_GREEN the ripeness pip uses, so
+// "refined" reads identically from a record up to a whole floor.
+const REFINED_INK = `color-mix(in srgb, ${RIPE_GREEN} 55%, var(--muted))`;
+
+function Check({ size = 11, pathClassName }: { size?: number; pathClassName?: string }) {
+  return (
+    <svg
+      viewBox="0 0 12 12"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path className={pathClassName} d="M2.5 6.5 5 9l4.5-5.5" />
+    </svg>
+  );
+}
+
+/** One-time celebration gate: returns true for ~1s the first time a floor
+ *  crosses into rest, then stays false on every revisit (the dopamine belongs to
+ *  the transition, not the destination). A per-floor localStorage flag persists
+ *  the "already seen" state and resets if the floor later drifts back out. */
+export function useRefinedCelebration(floorKey: string, atRest: boolean): boolean {
+  const [celebrate, setCelebrate] = useState(false);
+  useEffect(() => {
+    const key = `nuvo:refined-seen:${floorKey}`;
+    let seen = false;
+    try { seen = localStorage.getItem(key) === "1"; } catch { /* private mode */ }
+    if (atRest && !seen) {
+      try { localStorage.setItem(key, "1"); } catch { /* ignore */ }
+      setCelebrate(true);
+      const t = setTimeout(() => setCelebrate(false), 1100);
+      return () => clearTimeout(t);
+    }
+    if (!atRest && seen) {
+      try { localStorage.setItem(key, "0"); } catch { /* ignore */ }
+    }
+  }, [floorKey, atRest]);
+  return celebrate;
+}
+
+/** Record-level mark: a fully-refined project/initiative/domain wears this in
+ *  place of a progress bar — done isn't a track to fill, it's a state at rest. */
+export function RefinedTick({ size = 9 }: { size?: number }) {
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1 text-micro"
+      style={{ color: REFINED_INK, letterSpacing: "0.04em" }}
+      title="Refined — shaped and sound; Nuvo can plan and route it"
+    >
+      <Check size={size} /> refined
+    </span>
+  );
+}
+
+/** Floor-level seal: the quiet reward a fully-refined Build floor wears in its
+ *  header. Not a banner — a small chip, with the "why it pays off" tucked behind
+ *  a hover so the at-rest state stays calm but stays teaching. */
+export function RefinedSeal({ noun, celebrate = false }: { noun: string; celebrate?: boolean }) {
+  return (
+    <div className="group/seal relative flex">
+      <span
+        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-label ${celebrate ? "seal-draw" : ""}`}
+        style={{
+          color: `color-mix(in srgb, ${RIPE_GREEN} 78%, var(--text))`,
+          background: `color-mix(in srgb, ${RIPE_GREEN} 11%, transparent)`,
+          border: `0.5px solid color-mix(in srgb, ${RIPE_GREEN} 32%, var(--line))`,
+        }}
+      >
+        <Check pathClassName="seal-check" /> all refined
+        <span aria-hidden className="text-meta" style={{ opacity: 0.55 }}>ⓘ</span>
+      </span>
+      <div
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-[252px] rounded-lg border border-line bg-surface p-3 text-left text-meta leading-relaxed text-muted opacity-0 transition-opacity duration-150 group-hover/seal:opacity-100"
+        style={{ boxShadow: "var(--shadow-2)" }}
+      >
+        <span className="mb-1 block font-medium text-ink">Why keep it refined</span>
+        Refined {noun} are {noun} Nuvo understands — clear charter, sound structure.
+        The more of your map is refined, the better Nuvo plans your week, routes new
+        captures, and surfaces what actually matters.
+      </div>
     </div>
   );
 }

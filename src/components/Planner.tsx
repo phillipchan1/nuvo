@@ -7,7 +7,7 @@ import WeekPlanFloor from "./floors/WeekPlanFloor";
 import { readRevealConfig, isRevealReady, isAcknowledged, acknowledge, wasToasted, markToasted } from "../lib/weekReveal";
 import { fallbackPanelAnchor } from "../lib/appNav";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
-import { useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
+import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
@@ -15,13 +15,13 @@ import { useRealtime } from "../hooks/useRealtime";
 import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { taskDomainColor } from "../lib/vertical";
+import { domainById, projectById, projectsOf, initiativesOf, taskDomainColor } from "../lib/vertical";
 import { deriveSlotTitle } from "../lib/slots";
 import { writeAgentOpen } from "./AgentSidebar";
 import LeftRail from "./LeftRail";
 import type { FlowName } from "./Spine";
 import CalendarPane from "./CalendarPane";
-import NuvoSpotlight, { type Command } from "./NuvoSpotlight";
+import NuvoSpotlight, { type Command, type SearchHit } from "./NuvoSpotlight";
 import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
@@ -39,6 +39,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     toggleAgent,
     navigate,
     panelAnchor,
+    openProject,
+    openInitiative,
   } = useAppNavigation();
 
   const { tab, calView: view, overlay, overlayId, agentOpen, settingsSection, rung } = nav;
@@ -177,6 +179,9 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const { data: weekTasks = [] } = useSprintTasks(vertical.sprint?.id ?? null);
   const { data: scheduled = [] } = useScheduledTasks(range.start, range.end);
   const { data: anytime = [] } = usePlannedAnytimeTasks(range.start, range.end);
+  // Every non-trashed task (shares the vertical store's cache) — lets ⌘K open any
+  // task as the centered modal, scheduled or buried in a project backlog.
+  const { data: allTasks = [] } = useAllTasks();
   const { data: events = [] } = useExternalEvents(range.start, range.end);
   const { data: slots = [] } = useSlots(range.start, range.end);
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
@@ -291,17 +296,79 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const panelRect = panelAnchor ?? fallbackPanelAnchor();
 
   const openTask = taskPanel ? (allKnownTasks.get(taskPanel.id) ?? null) : null;
+  // The centered task modal (⌘K) — resolve from any task, not just loaded lists.
+  // Prefer allKnownTasks (carries task_labels) and fall back to the full cache.
+  const recordTask =
+    overlay === "task-record" && overlayId
+      ? (allKnownTasks.get(overlayId) ?? allTasks.find((t) => t.id === overlayId) ?? null)
+      : null;
   const openEvent: ExternalEvent | null = eventPanel
     ? (events.find((e) => e.id === eventPanel.id) ?? null)
     : null;
   const openEventAccount = openEvent ? accounts.find((a) => a.id === openEvent.account_id) : null;
   const openSlot = slotPanel ? (slots.find((s) => s.id === slotPanel.id) ?? null) : null;
 
-  const anyModalOpen = showCmd || showSettings || showMorning || showEvening || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel);
+  const anyModalOpen = showCmd || showSettings || showMorning || showEvening || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
+
+  // The searchable vertical for ⌘K — every task / project / initiative / domain
+  // as a SearchHit whose `run` navigates to it. Built once from the live store
+  // (which already holds it all); the palette filters by the typed query.
+  const searchHits = useMemo<SearchHit[]>(() => {
+    const data = vertical;
+    const hits: SearchHit[] = [];
+    for (const t of data.tasks) {
+      const title = t.title?.trim();
+      if (!title) continue; // raw/empty inbox captures aren't findable by name
+      const proj = projectById(data, t.projectId);
+      const dom = domainById(data, t.domainId ?? proj?.domainId ?? null);
+      hits.push({
+        id: `task:${t.id}`,
+        kind: "task",
+        title,
+        subtitle: proj?.name ?? dom?.name ?? undefined,
+        run: () => openOverlay("task-record", t.id),
+      });
+    }
+    for (const p of data.projects) {
+      hits.push({
+        id: `project:${p.id}`,
+        kind: "project",
+        title: p.name,
+        subtitle: domainById(data, p.domainId)?.name,
+        run: () => openProject({ domainId: p.domainId, initiativeId: p.initiativeId ?? "", projectId: p.id }),
+      });
+    }
+    for (const i of data.initiatives) {
+      hits.push({
+        id: `initiative:${i.id}`,
+        kind: "initiative",
+        title: i.name,
+        subtitle: domainById(data, i.domainId)?.name,
+        run: () => openInitiative({ domainId: i.domainId, initiativeId: i.id, projectId: projectsOf(data, i.id)[0]?.id ?? "" }),
+      });
+    }
+    for (const d of data.domains) {
+      const firstInit = initiativesOf(data, d.id)[0];
+      const firstProj = firstInit ? projectsOf(data, firstInit.id)[0] : null;
+      hits.push({
+        id: `domain:${d.id}`,
+        kind: "domain",
+        title: d.name,
+        run: () =>
+          navigate({
+            focus: { domainId: d.id, initiativeId: firstInit?.id ?? "", projectId: firstProj?.id ?? "" },
+            rung: "domain",
+            overlay: "none",
+            overlayId: null,
+          }),
+      });
+    }
+    return hits;
+  }, [vertical, openOverlay, openProject, openInitiative, navigate]);
 
   const commands: Command[] = [
     { id: "today", title: "Go to today", run: () => setTab("today") },
-    { id: "week", title: "Go to this week", run: () => setTab("week") },
+    { id: "week", title: "Go to the week (Spread)", run: () => setCalView("board") },
     { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
     { id: "sunday", title: "Sunday — compose the week", run: () => openFlow("sunday") },
     { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
@@ -357,7 +424,6 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           tab={tab}
           setTab={setTab}
           inbox={inbox}
-          week={weekTasks}
           today={todayTasks}
           labels={labels}
           mutations={mutations}
@@ -456,10 +522,23 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
         <NuvoSpotlight
           labels={labels}
           commands={commands}
+          searchHits={searchHits}
           onCreate={mutations.create}
           agent={agent}
           onClose={closeOverlay}
           onRunCommand={runCommand}
+        />
+      )}
+      {recordTask && (
+        <TaskPopover
+          task={recordTask}
+          anchor={panelRect}
+          variant="centered"
+          labels={labels}
+          mutations={mutations}
+          recurrence={recordTask.recurrence_id ? recurrenceById.get(recordTask.recurrence_id) ?? null : null}
+          recurrenceMutations={recurrenceMutations}
+          onClose={closeOverlay}
         />
       )}
       {showSettings && (

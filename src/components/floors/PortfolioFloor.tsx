@@ -14,7 +14,8 @@ import {
   tasksOf,
 } from "../../lib/vertical";
 import { ripenessOfProject, verdictOf } from "../../lib/tending";
-import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
+import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL, RefinedSeal, useRefinedCelebration } from "./parts";
+import { readSpine } from "../../lib/readiness";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
 import FloorStanding from "./FloorStanding";
@@ -25,6 +26,8 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
   const { openFloorModal, openFlow } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
   const [view, setView] = useState<"standing" | "board">("standing");
+  const atRest = readSpine(data).floors.project.calm;
+  const celebrate = useRefinedCelebration("project", atRest);
 
   const projects = data.projects.filter((p) => !domainFilter || p.domainId === domainFilter);
 
@@ -65,7 +68,10 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
 
   return (
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
-      <FloorHeader eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => isProjectInFlight(p.status)).length} in flight`}>
+      <FloorHeader
+        eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => isProjectInFlight(p.status)).length} in flight`}
+        actions={atRest ? <RefinedSeal noun="projects" celebrate={celebrate} /> : undefined}
+      >
         <h1 className="text-display masthead">Projects</h1>
         <p className="mt-1 text-body text-muted">Every project at a glance — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
@@ -73,7 +79,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
       <StandingToggle value={view} onChange={setView} />
 
       {view === "standing" ? (
-        <FloorStanding kind="project" onRefine={() => openFlow("refine")} />
+        <FloorStanding kind="project" onRefine={() => openFlow("refine")} onAllocate={() => openFlow("capacity")} />
       ) : (
         <>
           <DomainFilter value={domainFilter} onChange={setDomainFilter} />

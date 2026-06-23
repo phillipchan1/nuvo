@@ -17,7 +17,8 @@ import {
   type DomainContext,
 } from "../../lib/vertical";
 import type { Focus } from "../AppShell";
-import { FloorHeader, InlineNumber, InlineText, InlineTextarea, DeleteBtn } from "./parts";
+import { FloorHeader, InlineNumber, InlineText, InlineTextarea, DeleteBtn, RefinedSeal, RefinedTick, useRefinedCelebration } from "./parts";
+import { readSpine } from "../../lib/readiness";
 
 const SWATCHES = ["#DB2777", "#7C3AED", "#2563EB", "#0D9488", "#059669", "#D97706", "#4F46E5", "#DC2626", "#0891B2", "#65A30D"];
 
@@ -209,14 +210,22 @@ function clarityOf(d: Domain): Clarity {
 
 function ClarityMark({ domain }: { domain: Domain }) {
   const c = clarityOf(domain);
-  const amber = c.level !== "clear";
+  // Refined is a resting state, not a track to finish: a clear domain drops the
+  // bar for a quiet check. Only the unfinished levels still show progress.
+  if (c.level === "clear") {
+    return (
+      <div className="relative mt-2.5 flex justify-center" title={c.why}>
+        <RefinedTick />
+      </div>
+    );
+  }
   return (
     <div className="relative mt-2.5 flex w-full max-w-[116px] flex-col items-center gap-1" title={c.why}>
       <div className="h-[3px] w-full overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-        <div style={{ width: `${Math.round(c.pct * 100)}%`, height: "100%", background: amber ? "var(--signal)" : domain.color, transition: "width .3s" }} />
+        <div style={{ width: `${Math.round(c.pct * 100)}%`, height: "100%", background: "var(--signal)", transition: "width .3s" }} />
       </div>
-      <span className="text-micro" style={{ color: amber ? "var(--signal)" : "var(--muted)", letterSpacing: "0.04em" }}>
-        {amber ? "✦ " : ""}{c.label}
+      <span className="text-micro" style={{ color: "var(--signal)", letterSpacing: "0.04em" }}>
+        ✦ {c.label}
       </span>
     </div>
   );
@@ -235,15 +244,21 @@ export default function DomainFloor({
   const { data, addDomain } = useVertical();
   const domains = [...data.domains].sort((a, b) => a.sort - b.sort);
   const [openId, setOpenId] = useState<string | null>(null);
+  // Hold the object returned by addDomain so the Chapel opens immediately,
+  // before the query refetch has a chance to include the new row.
+  const [freshDomain, setFreshDomain] = useState<Domain | null>(null);
+  const atRest = readSpine(data).floors.domain.calm;
+  const celebrate = useRefinedCelebration("domain", atRest);
 
   const enter = (id: string) => { onSwitchDomain(id); setOpenId(id); };
   const openIdx = openId ? domains.findIndex((d) => d.id === openId) : -1;
-  const open = openIdx >= 0 ? domains[openIdx] : null;
+  // Prefer live data (so Chapel reflects edits), fall back to freshDomain while refetch is in flight.
+  const open = openIdx >= 0 ? domains[openIdx] : (openId && freshDomain?.id === openId ? freshDomain : null);
 
   if (open) {
     return (
       <div className="floor-enter">
-        <Chapel key={open.id} domain={open} motif={motifAt(openIdx)} onBack={() => setOpenId(null)} onOpenInitiative={onOpenInitiative} />
+        <Chapel key={open.id} domain={open} motif={motifAt(Math.max(openIdx, domains.length))} onBack={() => { setOpenId(null); setFreshDomain(null); }} onOpenInitiative={onOpenInitiative} />
       </div>
     );
   }
@@ -253,12 +268,15 @@ export default function DomainFloor({
       <FloorHeader
         eyebrow="The anchor · areas that persist for years"
         actions={
-          <button
-            onClick={() => void addDomain().then((d) => enter(d.id))}
-            className="fast rounded-md border border-line px-2.5 py-1 text-label text-muted hover:border-muted hover:text-ink"
-          >
-            + domain
-          </button>
+          <>
+            {atRest && <RefinedSeal noun="domains" celebrate={celebrate} />}
+            <button
+              onClick={() => void addDomain().then((d) => { setFreshDomain(d); enter(d.id); })}
+              className="fast rounded-md border border-line px-2.5 py-1 text-label text-muted hover:border-muted hover:text-ink"
+            >
+              + domain
+            </button>
+          </>
         }
       >
         <h1 className="serif text-[26px]" style={{ fontWeight: 500 }}>The fixtures of your life</h1>
@@ -539,7 +557,7 @@ function DomainRefine({ domain }: { domain: Domain }) {
             <button
               onClick={refine}
               disabled={busy}
-              className="fast rounded-md px-3 py-1.5 text-meta font-medium text-white disabled:opacity-50"
+              className={`tap fast rounded-lg px-4 py-2.5 text-body font-medium text-white active:scale-[.98] disabled:cursor-wait disabled:opacity-75 ${busy ? "animate-pulse" : "hover:opacity-90"}`}
               style={{ background: domain.color }}
             >
               {busy ? "Refining…" : shown ? "✦ Re-refine" : "✦ Refine with Nuvo"}

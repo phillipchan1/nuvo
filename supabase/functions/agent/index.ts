@@ -1,6 +1,7 @@
 import { handleOptions, json, requireUser } from "../_shared/admin.ts";
 import { buildContext, contextToPrompt } from "./context.ts";
 import { scaffoldProject, scaffoldDraft } from "./scaffold.ts";
+import { refineProject } from "./refine.ts";
 import { blueprintInitiative } from "./blueprint.ts";
 import { draftOutcome } from "./draftOutcome.ts";
 import { clusterInbox } from "./clusterInbox.ts";
@@ -209,7 +210,16 @@ Deno.serve(async (req) => {
     // One-shot intelligence endpoints. All of them propose; only `prepare`
     // writes (to the task's own prework field — never to the plan).
     if (body.scaffold?.projectId) {
-      return json(await scaffoldProject(user.id, String(body.scaffold.projectId), body.scaffold.guidance));
+      return json(await scaffoldProject(user.id, String(body.scaffold.projectId), {
+        guidance: body.scaffold.guidance,
+        draftTitles: Array.isArray(body.scaffold.draftTitles) ? body.scaffold.draftTitles.map(String) : undefined,
+        description: body.scaffold.description ? String(body.scaffold.description) : undefined,
+      }));
+    }
+    // Refine an existing backlog: typo/wording fixes + missing steps + a
+    // sensible order, all proposed as a reviewable diff the client applies.
+    if (body.refine?.projectId) {
+      return json(await refineProject(user.id, String(body.refine.projectId)));
     }
     // Tending's "raw → shaped" advance: draft one outcome line for a project /
     // initiative that has a name but no goal yet.
@@ -227,7 +237,12 @@ Deno.serve(async (req) => {
       return json(await scaffoldDraft(user.id, body.scaffoldDraft));
     }
     if (body.blueprint) {
-      return json(await blueprintInitiative(user.id, body.blueprint));
+      return json(await blueprintInitiative(user.id, {
+        ...body.blueprint,
+        draftProjectNames: Array.isArray(body.blueprint.draftProjectNames)
+          ? body.blueprint.draftProjectNames.map(String)
+          : undefined,
+      }));
     }
     // Free-text → the week's priorities (outcomes), inferring each win + the bet
     // it serves. The client appends the parse to the sprint's big_rocks.

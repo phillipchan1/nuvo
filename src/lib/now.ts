@@ -72,6 +72,7 @@ export interface BusyBlock {
   kind: "event" | "block"; // external commitment vs. your own scheduled task
   done?: boolean;
   location?: string | null;
+  taskId?: string; // only for kind === "block" — the originating task row
 }
 
 export interface Gap {
@@ -173,6 +174,7 @@ export function toBusyBlocks(
         end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }),
         kind: "block",
         done: t.status === "done",
+        taskId: t.id,
       })),
   ];
 }

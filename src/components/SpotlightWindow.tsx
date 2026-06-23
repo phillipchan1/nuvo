@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { invoke } from "@tauri-apps/api/core";
 import { useLabels } from "../hooks/useCalendar";
 import { useTaskMutations } from "../hooks/useTasks";
 import { useAgentContext } from "../hooks/useAgentContext";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import { NuvoSpotlightPanel, type Command } from "./NuvoSpotlight";
+
+// Tauri-only wiring (NSPanel hide, window events) is skipped in the browser, so
+// the DEV `?spotlight` preview harness can render the panel against live data.
+const IS_TAURI = "__TAURI_INTERNALS__" in globalThis;
 
 // The standalone floating panel rendered in the dedicated "spotlight" Tauri
 // window — summoned by the global ⌥Space hotkey. Same NuvoSpotlightPanel the
@@ -18,8 +23,12 @@ export default function SpotlightWindow() {
   // Bumped on every ⌥Space so the panel remounts fresh (capture mode, empty, focused).
   const [showKey, setShowKey] = useState(0);
 
+  // Dismiss via the Rust `hide_spotlight` command — the window is an NSPanel, so
+  // a JS `getCurrentWebviewWindow().hide()` doesn't reliably order it out (and
+  // desyncs the ⌥Space toggle's visibility check). See lib.rs. In the browser
+  // (the DEV preview harness, no Tauri) this is a no-op.
   const hide = useCallback(() => {
-    void getCurrentWebviewWindow().hide();
+    if (IS_TAURI) void invoke("hide_spotlight");
   }, []);
 
   // This window is transparent (just the floating card shows); drop the desktop
@@ -36,6 +45,7 @@ export default function SpotlightWindow() {
   // listener — a panel's window delegate is replaced, so Tauri's "blur" event
   // no longer fires here.
   useEffect(() => {
+    if (!IS_TAURI) return;
     let unlistenShow: (() => void) | undefined;
     const win = getCurrentWebviewWindow();
     win.listen("spotlight-show", () => {
@@ -62,6 +72,7 @@ export default function SpotlightWindow() {
       id: "open-nuvo",
       title: `Open ${ASSISTANT_NAME}`,
       run: () => {
+        if (!IS_TAURI) return;
         void WebviewWindow.getByLabel("main").then((w) => {
           void w?.show();
           void w?.unminimize();
@@ -87,6 +98,7 @@ export default function SpotlightWindow() {
           onCreate={mutations.create}
           agent={agent}
           onClose={hide}
+          variant="window"
         />
       </div>
     </div>

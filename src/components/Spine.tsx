@@ -17,7 +17,7 @@ const RUNGS: { id: Rung; label: string }[] = [
 // useAppNavigation). The spine no longer launches them — it's navigation + the
 // readiness gauge. Flows open from the work surfaces instead: the floor "now
 // what" banners, Today's Plan, the Sunday nudge, and the command palette.
-export type FlowName = "sunday" | "summit" | "tending" | "refine";
+export type FlowName = "sunday" | "summit" | "tending" | "refine" | "capacity";
 
 // The spine reads like a table of contents for your life. Two zones:
 // Execute (Today · Schedule — time horizons) and Build (Project · Initiative ·
@@ -71,7 +71,10 @@ export default function Spine({
           className="fast relative flex w-full flex-col gap-1.5 rounded-lg border border-transparent px-2.5 py-2 text-left"
           style={on ? activePill : undefined}
         >
-          {/* line 1 — navigation: the altitude, with the cue dot at the right */}
+          {/* line 1 — navigation: the altitude, then a status at the right. A
+              floor at rest wears a check where an active floor wears its cue dot,
+              so the indicator lives in one place and the row collapses to a
+              single quiet line. */}
           <span className="flex items-center gap-2.5">
             <span
               className="w-3.5 shrink-0 text-center leading-none"
@@ -90,18 +93,39 @@ export default function Spine({
             >
               {r.label}
             </span>
-            {cue && (
+            {fs?.calm ? (
+              <span
+                aria-hidden
+                className="flex shrink-0 items-center leading-none"
+                style={{ color: `color-mix(in srgb, ${READY} 66%, var(--muted))` }}
+                title="At rest — nothing here needs you"
+              >
+                <svg
+                  viewBox="0 0 12 12"
+                  width="12"
+                  height="12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M2.5 6.5 5 9l4.5-5.5" />
+                </svg>
+              </span>
+            ) : cue ? (
               <span
                 aria-hidden
                 className="h-1.5 w-1.5 shrink-0 rounded-full"
                 style={{ background: toneColor(cue.tone) }}
               />
-            )}
+            ) : null}
           </span>
 
-          {/* line 2 — readiness: the meter (held, not missing) + the one cue.
-              Calm floors show only the quiet meter; the rail stays serene. */}
-          {fs && (
+          {/* line 2 — readiness. Only when there's still ground to cover: the
+              meter (a track begging to be filled) and the one cue. A calm floor
+              has neither — its check on line 1 says all it needs to. */}
+          {fs && !fs.calm && (
             <span className="flex items-center gap-2" style={{ paddingLeft: 24 }}>
               <span
                 className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full"

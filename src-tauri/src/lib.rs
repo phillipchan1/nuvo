@@ -67,6 +67,30 @@ fn install_spotlight_panel(app: &tauri::AppHandle) {
     panel.set_event_handler(Some(handler.as_ref()));
 }
 
+// Dismiss the spotlight from the webview. The window is an NSPanel, and a
+// panel's visibility is owned by the native panel object — a JS
+// `getCurrentWebviewWindow().hide()` no-ops against it (and desyncs
+// `panel.is_visible()`, breaking the next ⌥Space toggle). So capture / Esc /
+// backdrop dismissal all route here, to the same `panel.hide()` the
+// resign-key handler and the hotkey toggle use.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn hide_spotlight(app: tauri::AppHandle) {
+    if let Ok(panel) = app.get_webview_panel("spotlight") {
+        panel.hide();
+    }
+}
+
+// Other desktops use a plain window (no NSPanel) — hide it directly.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn hide_spotlight(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("spotlight") {
+        let _ = win.hide();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -80,6 +104,7 @@ pub fn run() {
     }
 
     builder
+        .invoke_handler(tauri::generate_handler![hide_spotlight])
         .setup(|app| {
             // Reskin the spotlight window into a non-activating NSPanel.
             #[cfg(target_os = "macos")]

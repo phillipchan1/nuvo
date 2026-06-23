@@ -21,6 +21,7 @@ import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
 import TendingFlow from "./rituals/TendingFlow";
 import RefineRun from "./refine/RefineRun";
+import CapacityRun from "./capacity/CapacityRun";
 import QuickCreate from "./floors/QuickCreate";
 import NewProject from "./floors/NewProject";
 import NewInitiative from "./floors/NewInitiative";
@@ -270,6 +271,7 @@ function AppShellInner() {
       )}
 
       {flow === "refine" && <RefineRun onClose={closeFlow} />}
+      {flow === "capacity" && <CapacityRun onClose={closeFlow} />}
 
       {/* The fast composer — summoned by P / I or any "+ new" button, mounted
           globally so it works from any rung. "more options" swaps in the full

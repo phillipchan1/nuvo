@@ -258,6 +258,20 @@ body,
   height: 100%;
 }
 
+/* iOS standalone PWA: a percentage-height chain (html/body/#root at 100%)
+   resolves *short* of the real screen, so the app shell stops above the bottom
+   edge and the leftover strip shows the bare body background — the "gap under
+   the nav bar." Dynamic viewport units resolve to the true visible viewport, so
+   the warm-paper canvas fills top-to-bottom. Desktop/Tauri have no dynamic
+   chrome, so 100dvh == 100vh == 100% there — this is a no-op for them. */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+}
+
 /* The canvas behind the safe-area insets (e.g. the iOS PWA home-indicator strip
    under the bottom bar). Painted with --surface so those insets match the top
    bar and bottom nav — not the gray --bg, which otherwise shows as a stray bar. */
@@ -526,6 +540,14 @@ html.tauri-macos .spine-top {
     var(--shadow-lift);
   transform: scale(1.04) rotate(-0.5deg);
 }
+/* While a Week-board / rail item is being dragged, suppress text selection across
+   the whole interface so sweeping the pointer never leaves stray highlighting
+   (set on <body> the instant you press down, before any selection can start). */
+.wb-noselect,
+.wb-noselect * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
 /* Spring the lift in and out, so focus feels deliberate, not snapped. */
 .lift-anim {
   transition:
@@ -612,6 +634,31 @@ html.tauri-macos .spine-top {
 .wk-in { animation: wkUp 0.7s var(--ease-out) both; }
 .wk-emblem-in { animation: wkScale 1s var(--ease-spring) both; }
 .wk-grow { transform-origin: left center; animation: wkGrow 0.9s var(--ease-out) both; }
+
+/* ── Refined seal — the one-time draw-in when a floor crosses into rest ───────
+   Plays once on the transition (gated by a per-floor localStorage flag), never
+   on a plain revisit. The check strokes itself in while the chip pops and a soft
+   green halo expands and fades. prefers-reduced-motion neuters it globally. */
+@keyframes sealPop {
+  0% { opacity: 0; transform: scale(0.82); }
+  60% { opacity: 1; transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+@keyframes sealHalo {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, #0d9488 50%, transparent); }
+  100% { box-shadow: 0 0 0 15px transparent; }
+}
+@keyframes sealCheck {
+  from { stroke-dashoffset: 14; }
+  to { stroke-dashoffset: 0; }
+}
+.seal-draw {
+  animation: sealPop 0.55s var(--ease-spring) both, sealHalo 0.95s var(--ease-out) both;
+}
+.seal-draw .seal-check {
+  stroke-dasharray: 14;
+  animation: sealCheck 0.5s var(--ease-out) 0.12s both;
+}
 
 /* Marquee multi-select — suppress text selection while dragging */
 body.nuvo-selecting,
@@ -972,10 +1019,72 @@ textarea:focus {
 .over-slot .fc-event-dragging {
   opacity: 0.1 !important;
 }
+/* ── Rail drop zone: calendar → inbox ─────────────────────────────────────── */
+/* Smooth transition so the drop zone feel enters and exits gracefully. */
+[data-rail-drop] {
+  transition:
+    background var(--d-fast) var(--ease-out),
+    box-shadow var(--d-fast) var(--ease-out);
+}
+
 /* The left rail as the Inbox drop zone while dragging a calendar item over it. */
 .rail-drop-active {
-  box-shadow: inset 0 0 0 2px var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface)) !important;
+  background: color-mix(in srgb, var(--accent) 5%, transparent) !important;
+  box-shadow: inset 1.5px 0 0 color-mix(in srgb, var(--accent) 45%, transparent) !important;
+}
+
+/* Inbox tab glows to signal destination during drag. */
+.rail-drop-active [data-inbox-tab] {
+  color: var(--accent) !important;
+  border-bottom-color: var(--accent) !important;
+  opacity: 1 !important;
+}
+
+@keyframes rail-land-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* Landing strip: shown at top of inbox list when inbox tab is active during drag */
+.rail-inbox-landing {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  margin: 5px 8px;
+  padding: 7px 11px;
+  border-radius: 6px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  animation: rail-land-pulse 1.5s ease-in-out infinite;
+}
+[data-drop-tab="inbox"].rail-drop-active .rail-inbox-landing {
+  display: flex;
+}
+
+/* Off-tab drop banner: shown when dragging to rail while week/today tab is visible */
+.rail-drop-banner {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 5px 8px;
+  padding: 9px 14px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 38%, transparent);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  animation: rail-land-pulse 1.5s ease-in-out infinite;
+}
+[data-drop-tab="week"].rail-drop-active .rail-drop-banner,
+[data-drop-tab="today"].rail-drop-active .rail-drop-banner {
+  display: flex;
 }
 
 /* ── All-day row: "anytime" — tasks planned for the day, not yet time-blocked.

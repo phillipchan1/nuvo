@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, startOfDay } from "date-fns";
-import { useVertical, type InitiativeSubtree } from "../../hooks/useVertical";
+import { useVertical } from "../../hooks/useVertical";
 import { useSettings } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
@@ -30,7 +30,6 @@ import {
   type VerticalData,
 } from "../../lib/vertical";
 import {
-  readTending,
   ripenessOfInitiative,
   ripenessOfProject,
   soundnessSig,
@@ -60,11 +59,12 @@ export default function RefineRun({ onClose }: { onClose: () => void }) {
 
   if (!ready) return <Scaffold onClose={onClose}><Centered>Reading the portfolio…</Centered></Scaffold>;
 
-  const startRun = (from: Ref | undefined) => {
+  // A run covers exactly the refs it's handed — a curated cluster, or a single
+  // item tapped on the map. Bounded by design; no "and then everything else."
+  const startRun = (refs: Ref[]) => {
+    if (!refs.length) return;
     baseline.current = snapshotReadiness(data);
-    const g: Ref[] = readTending(data).groomable.map((c) => ({ kind: c.kind, id: c.id }));
-    const q = from ? [from, ...g.filter((x) => x.id !== from.id)] : g;
-    setQueue(q.length ? q : from ? [from] : []);
+    setQueue(refs);
     setIdx(0);
   };
 
@@ -268,8 +268,14 @@ function Ring({ pct }: { pct: number }) {
 }
 
 // ── the focal card — a verdict you confirm (tap or swipe) ─────────────────────
-type TaskDraft = { title: string; energy: Energy | null; durationMins: number; on: boolean };
-type Tree = { keyResults: InitiativeSubtree["keyResults"]; projects: InitiativeSubtree["projects"] };
+// The Path / Structure card is HUMAN-FIRST: you rattle off your own steps; Nuvo
+// only fills the gaps around them, on request. (Policy: human drives, Nuvo
+// refines + enriches — never proposes the whole list cold.)
+type StepLine = { id: number; text: string };
+type SuggTask = { title: string; energy: Energy | null; durationMins: number; on: boolean };
+type SuggKR = { name: string; baseline: number; target: number; unit: string; on: boolean };
+type SuggProj = { name: string; outcome: string; tasks: { title: string; energy: Energy | null; durationMins: number }[]; on: boolean };
+type SuggTree = { keyResults: SuggKR[]; projects: SuggProj[] };
 
 function RefineCardView({
   kind, item, accent, card, verdict, feasibility, onResolved, onSkip,
@@ -279,15 +285,23 @@ function RefineCardView({
   onResolved: () => void; onSkip: () => void;
 }) {
   const store = useVertical();
+  const isProject = kind === "project";
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [tweaking, setTweaking] = useState(false);
   const [text, setText] = useState<string>(card.kind === "due" ? proposeDueISO() : "");
-  const [tasks, setTasks] = useState<TaskDraft[] | null>(null);
-  const [tree, setTree] = useState<Tree | null>(null);
   const [loadingProposal, setLoadingProposal] = useState(false);
 
-  // auto-fetch the proposal — the heavy lift Nuvo does before you decide
+  // ── human-first path/structure state ────────────────────────────────────────
+  const [lines, setLines] = useState<StepLine[]>([{ id: 0, text: "" }]);
+  const [desc, setDesc] = useState((item.description ?? "").trim());
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggTasks, setSuggTasks] = useState<SuggTask[] | null>(null);
+  const [suggTree, setSuggTree] = useState<SuggTree | null>(null);
+  const stepTitles = lines.map((l) => l.text.trim()).filter(Boolean);
+
+  // Outcome cards stay Nuvo-assisted (a single line you confirm/tweak — not a
+  // cold list): draft one for a raw item, pre-fill the verdict's sharpening.
   useEffect(() => {
     let live = true;
     if (card.kind === "sharpen") { setText(verdict?.outcome.suggestion?.trim() ?? ""); return; }
@@ -297,31 +311,59 @@ function RefineCardView({
         try {
           const { data: res, error } = await supabase.functions.invoke("agent", { body: { draftOutcome: { kind, id: item.id } } });
           if (error) throw error;
-          if (live) setText(String(res?.outcome ?? "").trim());
+          if (live) setText(String((res as any)?.outcome ?? "").trim());
         } catch (e) { console.warn("[refine] draftOutcome failed", e); }
-        finally { if (live) setLoadingProposal(false); }
-      })();
-    } else if (card.kind === "tasks") {
-      setLoadingProposal(true);
-      void (async () => {
-        try {
-          if (kind === "project") {
-            const { data: res, error } = await supabase.functions.invoke("agent", { body: { scaffold: { projectId: item.id } } });
-            if (error) throw error;
-            const drafts = (res?.tasks ?? []) as { title: string; energy: Energy | null; durationMins: number }[];
-            if (live) setTasks(drafts.map((d) => ({ ...d, on: true })));
-          } else {
-            const { data: res, error } = await supabase.functions.invoke("agent", { body: { blueprint: { name: item.name, outcome: item.outcome, domainId: item.domainId } } });
-            if (error) throw error;
-            if (live) setTree({ keyResults: res?.keyResults ?? [], projects: res?.projects ?? [] });
-          }
-        } catch (e) { console.warn("[refine] path proposal failed", e); }
         finally { if (live) setLoadingProposal(false); }
       })();
     }
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.kind, item.id]);
+
+  const persistDesc = () => {
+    const v = desc.trim();
+    if (v === (item.description ?? "").trim()) return;
+    if (isProject) store.updateProject(item.id, { description: v });
+    else store.updateInitiative(item.id, { description: v });
+  };
+
+  // Nuvo's enrich pass — opt-in, on top of the human's own steps. It reads what
+  // you typed (+ the context line) and proposes ONLY the gaps, so intelligence
+  // is positioned to actually be intelligent rather than guessing cold.
+  const runSuggest = async () => {
+    setSuggesting(true);
+    setNote(null);
+    persistDesc();
+    try {
+      if (isProject) {
+        const { data: res, error } = await supabase.functions.invoke("agent", {
+          body: { scaffold: { projectId: item.id, draftTitles: stepTitles, description: desc.trim() || undefined } },
+        });
+        if (error) throw error;
+        const have = new Set(stepTitles.map((t) => t.toLowerCase()));
+        const drafts = ((res as any)?.tasks ?? []) as { title: string; energy: Energy | null; durationMins: number }[];
+        setSuggTasks(drafts.filter((d) => !have.has(d.title.trim().toLowerCase())).map((d) => ({ ...d, on: true })));
+      } else {
+        const { data: res, error } = await supabase.functions.invoke("agent", {
+          body: { blueprint: { name: item.name, outcome: item.outcome, domainId: item.domainId, description: desc.trim() || undefined, draftProjectNames: stepTitles } },
+        });
+        if (error) throw error;
+        const have = new Set(stepTitles.map((t) => t.toLowerCase()));
+        const r = res as any;
+        setSuggTree({
+          keyResults: ((r?.keyResults ?? []) as SuggKR[]).map((k) => ({ ...k, on: true })),
+          projects: ((r?.projects ?? []) as SuggProj[])
+            .filter((p) => !have.has(String(p.name).trim().toLowerCase()))
+            .map((p) => ({ ...p, on: true })),
+        });
+      }
+    } catch (e) {
+      console.warn("[refine] suggest failed", e);
+      setNote("Couldn't reach Nuvo — try again.");
+    } finally {
+      setSuggesting(false);
+    }
+  };
 
   const setOutcome = (v: string) => (kind === "project" ? store.updateProject(item.id, { outcome: v }) : store.updateInitiative(item.id, { outcome: v }));
   const setDue = (v: string | null) => (kind === "project" ? store.updateProject(item.id, { targetDate: v }) : store.updateInitiative(item.id, { targetDate: v }));
@@ -335,11 +377,20 @@ function RefineCardView({
       } else if (card.kind === "due") {
         setDue(text || null);
       } else if (card.kind === "tasks") {
-        if (kind === "project" && tasks) {
-          const accepted = tasks.filter((t) => t.on);
-          if (accepted.length) await store.addTasks({ projectId: item.id, initiativeId: (item as Project).initiativeId, domainId: item.domainId }, accepted.map((t) => ({ title: t.title, energy: t.energy, durationMins: t.durationMins })));
-        } else if (kind === "initiative" && tree) {
-          await store.addInitiativeSubtree(item.id, { keyResults: tree.keyResults, projects: tree.projects });
+        persistDesc();
+        if (isProject) {
+          const picks = [
+            ...stepTitles.map((t) => ({ title: t, energy: null as Energy | null, durationMins: 20 })),
+            ...(suggTasks ?? []).filter((s) => s.on).map((s) => ({ title: s.title, energy: s.energy, durationMins: s.durationMins })),
+          ];
+          if (picks.length) await store.addTasks({ projectId: item.id, initiativeId: (item as Project).initiativeId, domainId: item.domainId }, picks);
+        } else {
+          const projects = [
+            ...stepTitles.map((name) => ({ name, outcome: "", tasks: [] as { title: string; energy: Energy | null; durationMins: number }[] })),
+            ...(suggTree?.projects ?? []).filter((p) => p.on).map((p) => ({ name: p.name, outcome: p.outcome, tasks: p.tasks })),
+          ];
+          const keyResults = (suggTree?.keyResults ?? []).filter((k) => k.on).map((k) => ({ name: k.name, baseline: k.baseline, target: k.target, unit: k.unit }));
+          if (projects.length || keyResults.length) await store.addInitiativeSubtree(item.id, { keyResults, projects });
         }
       }
       onResolved(); // "reality" is an acknowledgment — no mutation
@@ -350,14 +401,18 @@ function RefineCardView({
     }
   };
 
-  const treeCount = (tree?.keyResults.length ?? 0) + (tree?.projects.length ?? 0);
+  const pathCount =
+    stepTitles.length +
+    (isProject
+      ? (suggTasks ?? []).filter((s) => s.on).length
+      : (suggTree?.projects ?? []).filter((p) => p.on).length + (suggTree?.keyResults ?? []).filter((k) => k.on).length);
   const canAccept =
     card.kind === "reality" ? true
-    : card.kind === "tasks" ? (kind === "project" ? !!tasks && tasks.some((t) => t.on) : !!tree && treeCount > 0)
+    : card.kind === "tasks" ? pathCount > 0
     : text.trim().length > 0;
   const acceptText =
     card.kind === "reality" ? "Lock it in"
-    : card.kind === "tasks" ? (kind === "project" ? `Add ${(tasks ?? []).filter((t) => t.on).length || ""}`.trim() : `Build it`)
+    : card.kind === "tasks" ? (pathCount ? (isProject ? `Add ${pathCount}` : `Build ${pathCount}`) : (isProject ? "Add steps" : "Build"))
     : "Accept";
 
   // ── swipe — pointer events (Tauri-safe), right = accept · left = skip ────────
@@ -400,9 +455,52 @@ function RefineCardView({
 
       <div className="mt-3.5">
         {card.kind === "tasks" ? (
-          kind === "project"
-            ? <TaskProposal accent={accent} tasks={tasks} loading={loadingProposal} setTasks={setTasks} />
-            : <TreeProposal tree={tree} loading={loadingProposal} />
+          <div className="space-y-3">
+            {/* Context for Nuvo — the metadata that lets the enrich pass be smart */}
+            <input
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              onBlur={persistDesc}
+              placeholder="Context for Nuvo — what is this, why now? (optional, sharpens its help)"
+              className="w-full rounded-md border border-line bg-bg px-3 py-2 text-caption outline-none focus:border-accent placeholder:text-muted/50"
+            />
+            <StepComposer
+              lines={lines}
+              setLines={setLines}
+              accent={accent}
+              placeholder={isProject ? "Write your first step…  ⏎ for the next" : "Name a project under this bet…  ⏎ for the next"}
+            />
+            {isProject
+              ? suggTasks && suggTasks.length > 0 && (
+                  <SuggestList accent={accent} label="Steps you might be missing">
+                    {suggTasks.map((s, i) => (
+                      <SuggRow key={i} on={s.on} accent={accent} title={s.title} meta={`${s.durationMins}m`}
+                        onToggle={() => setSuggTasks((p) => (p ?? []).map((x, j) => (j === i ? { ...x, on: !x.on } : x)))} />
+                    ))}
+                  </SuggestList>
+                )
+              : suggTree && (suggTree.keyResults.length > 0 || suggTree.projects.length > 0) && (
+                  <SuggestList accent={accent} label="Structure you might be missing">
+                    {suggTree.keyResults.map((k, i) => (
+                      <SuggRow key={`k${i}`} on={k.on} accent={accent} title={k.name} meta={`${k.baseline}→${k.target}${k.unit}`}
+                        onToggle={() => setSuggTree((t) => t && { ...t, keyResults: t.keyResults.map((x, j) => (j === i ? { ...x, on: !x.on } : x)) })} />
+                    ))}
+                    {suggTree.projects.map((p, i) => (
+                      <SuggRow key={`p${i}`} on={p.on} accent={accent} title={p.name} meta={p.tasks.length ? `${p.tasks.length} tasks` : ""}
+                        onToggle={() => setSuggTree((t) => t && { ...t, projects: t.projects.map((x, j) => (j === i ? { ...x, on: !x.on } : x)) })} />
+                    ))}
+                  </SuggestList>
+                )}
+            <button
+              onClick={() => void runSuggest()}
+              disabled={suggesting}
+              className="fast inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-meta text-muted hover:border-line-strong hover:text-ink disabled:opacity-50"
+              title="Nuvo reads your steps + context and proposes only the gaps"
+            >
+              <span style={{ color: accent }}>✦</span>
+              {suggesting ? `${ASSISTANT_NAME} is looking…` : isProject ? (suggTasks ? "Ask again" : "Suggest steps I'm missing") : (suggTree ? "Ask again" : "Suggest structure")}
+            </button>
+          </div>
         ) : card.kind === "reality" ? (
           <FeasibilityProposal feasibility={feasibility} verdict={verdict} />
         ) : card.kind === "due" ? (
@@ -422,7 +520,7 @@ function RefineCardView({
         <button onClick={() => void accept()} disabled={busy || !canAccept} className="tap fast flex-1 rounded-lg px-4 py-2.5 text-body font-medium text-white active:scale-[.98] disabled:opacity-40" style={{ background: "var(--accent)" }}>
           {busy ? "…" : acceptText}
         </button>
-        {card.kind !== "reality" && (
+        {card.kind !== "reality" && card.kind !== "tasks" && (
           <button onClick={() => setTweaking((v) => !v)} disabled={busy} className="tap fast rounded-lg border border-line px-4 py-2.5 text-body text-muted active:scale-[.98]">{tweaking ? "Done" : "Tweak"}</button>
         )}
         <button onClick={onSkip} disabled={busy} className="tap fast rounded-lg border border-line px-4 py-2.5 text-body text-muted active:scale-[.98]">Skip</button>
@@ -435,53 +533,76 @@ function Proposal({ children }: { children: React.ReactNode }) {
   return <div className="rounded-md bg-surface-2/60 px-3 py-2.5 text-body">{children}</div>;
 }
 
-function TaskProposal({ accent, tasks, loading, setTasks }: {
-  accent: string; tasks: TaskDraft[] | null; loading: boolean;
-  setTasks: (fn: (t: TaskDraft[] | null) => TaskDraft[] | null) => void;
+// ── the human-first composer — rattle off your own steps (Todoist-fast) ───────
+function StepComposer({ lines, setLines, accent, placeholder }: {
+  lines: StepLine[]; setLines: React.Dispatch<React.SetStateAction<StepLine[]>>; accent: string; placeholder: string;
 }) {
-  if (loading && !tasks) return <Proposal><span className="text-muted">✦ {ASSISTANT_NAME} is proposing the steps…</span></Proposal>;
-  if (!tasks || tasks.length === 0) return <Proposal><span className="italic text-muted">No steps to add — skip this one.</span></Proposal>;
+  const nextId = useRef(1000);
+  const refs = useRef(new Map<number, HTMLInputElement>());
+  const focusLine = (id: number) => requestAnimationFrame(() => refs.current.get(id)?.focus());
+
+  const addAfter = (id: number) => {
+    const fresh = { id: nextId.current++, text: "" };
+    setLines((ls) => { const i = ls.findIndex((l) => l.id === id); const n = [...ls]; n.splice(i + 1, 0, fresh); return n; });
+    focusLine(fresh.id);
+  };
+  const removeLine = (id: number) =>
+    setLines((ls) => {
+      if (ls.length <= 1) return ls;
+      const i = ls.findIndex((l) => l.id === id);
+      const prev = ls[i - 1] ?? ls[i + 1];
+      if (prev) focusLine(prev.id);
+      return ls.filter((l) => l.id !== id);
+    });
+  const setText = (id: number, text: string) => setLines((ls) => ls.map((l) => (l.id === id ? { ...l, text } : l)));
+
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>, line: StepLine, idx: number) => {
+    if (e.key === "Enter") { e.preventDefault(); addAfter(line.id); return; }
+    if (e.key === "Backspace" && line.text === "" && lines.length > 1) { e.preventDefault(); removeLine(line.id); return; }
+    const el = e.currentTarget;
+    if (e.key === "ArrowUp" && el.selectionStart === 0 && idx > 0) { e.preventDefault(); focusLine(lines[idx - 1].id); }
+    if (e.key === "ArrowDown" && el.selectionStart === el.value.length && idx < lines.length - 1) { e.preventDefault(); focusLine(lines[idx + 1].id); }
+  };
+
   return (
-    <div className="space-y-1">
-      {tasks.map((t, i) => (
-        <button key={i} onClick={() => setTasks((p) => (p ?? []).map((x, j) => (j === i ? { ...x, on: !x.on } : x)))} className="tap fast flex w-full items-center gap-2.5 rounded-md border border-line px-2.5 py-2 text-left">
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro text-white" style={{ borderColor: t.on ? accent : "var(--line)", background: t.on ? accent : "transparent" }}>{t.on ? "✓" : ""}</span>
-          <span className={`min-w-0 flex-1 truncate text-body ${t.on ? "" : "text-muted line-through"}`}>{t.title}</span>
-          <span className="mono shrink-0 text-meta text-muted">{t.durationMins}m</span>
-        </button>
+    <div className="rounded-md border border-line bg-bg/40 px-2 py-1.5">
+      {lines.map((line, idx) => (
+        <div key={line.id} className="group flex items-center gap-2.5 py-1">
+          <span className="shrink-0 text-[10px]" style={{ color: line.text.trim() ? accent : "var(--line-strong)" }}>◦</span>
+          <input
+            ref={(el) => { if (el) refs.current.set(line.id, el); else refs.current.delete(line.id); }}
+            value={line.text}
+            onChange={(e) => setText(line.id, e.target.value)}
+            onKeyDown={(e) => onKey(e, line, idx)}
+            placeholder={idx === 0 ? placeholder : "…and the next"}
+            className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted/45"
+          />
+          {lines.length > 1 && (
+            <button onClick={() => removeLine(line.id)} tabIndex={-1} className="fast shrink-0 px-1 text-meta text-muted/50 opacity-0 hover:text-signal group-hover:opacity-100" title="Remove this line">✕</button>
+          )}
+        </div>
       ))}
     </div>
   );
 }
 
-function TreeProposal({ tree, loading }: { tree: Tree | null; loading: boolean }) {
-  if (loading && !tree) return <Proposal><span className="text-muted">✦ {ASSISTANT_NAME} is proposing the structure…</span></Proposal>;
-  if (!tree || (tree.keyResults.length === 0 && tree.projects.length === 0)) return <Proposal><span className="italic text-muted">No structure proposed — skip this one.</span></Proposal>;
+// ── Nuvo's gap-fill — a dashed, clearly-secondary tray of toggleable suggestions
+function SuggestList({ accent, label, children }: { accent: string; label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-2.5">
-      {tree.keyResults.length > 0 && (
-        <div>
-          <div className="section-label mb-1">Key results · {tree.keyResults.length}</div>
-          {tree.keyResults.map((k, i) => (
-            <div key={i} className="flex items-baseline justify-between border-b border-line py-1 text-caption last:border-0">
-              <span className="min-w-0 truncate pr-2">{k.name}</span>
-              <span className="mono shrink-0 text-micro text-muted">{k.baseline}→{k.target}{k.unit}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {tree.projects.length > 0 && (
-        <div>
-          <div className="section-label mb-1">Projects · {tree.projects.length}</div>
-          {tree.projects.map((p, i) => (
-            <div key={i} className="border-b border-line py-1 text-caption last:border-0">
-              <span className="font-medium">{p.name}</span>
-              {p.tasks?.length ? <span className="mono ml-2 text-micro text-muted">{p.tasks.length} tasks</span> : null}
-            </div>
-          ))}
-        </div>
-      )}
+    <div className="rounded-md border border-dashed px-2.5 py-2" style={{ borderColor: `color-mix(in srgb, ${accent} 45%, var(--line))` }}>
+      <div className="section-label mb-1" style={{ color: accent }}>✦ {label}</div>
+      <div className="space-y-0.5">{children}</div>
     </div>
+  );
+}
+
+function SuggRow({ on, accent, onToggle, title, meta }: { on: boolean; accent: string; onToggle: () => void; title: string; meta: string }) {
+  return (
+    <button onClick={onToggle} className="tap fast flex w-full items-center gap-2.5 rounded-md px-1 py-1 text-left">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro text-white" style={{ borderColor: on ? accent : "var(--line)", background: on ? accent : "transparent" }}>{on ? "✓" : ""}</span>
+      <span className={`min-w-0 flex-1 truncate text-caption ${on ? "" : "text-muted line-through"}`}>{title}</span>
+      {meta && <span className="mono shrink-0 text-micro text-muted">{meta}</span>}
+    </button>
   );
 }
 

@@ -66,7 +66,7 @@ export interface VerticalStore {
 
   // tasks — created under a project/initiative/domain they land in `backlog`,
   // quiet by design: never in the inbox, never on Today, never roll.
-  addTask: (parent: TaskParent, patch?: { title?: string }) => void;
+  addTask: (parent: TaskParent, patch?: { title?: string; durationMins?: number }) => void;
   /** Bulk insert (AI scaffold accept): ordered drafts land in `backlog`. */
   addTasks: (
     parent: TaskParent,
@@ -78,7 +78,13 @@ export interface VerticalStore {
     drafts: { title: string; energy: VTask["energy"]; durationMins: number; deadline?: string | null; bigRockId?: string | null }[],
   ) => Promise<void>;
   updateTask: (id: string, patch: Partial<VTask>) => void;
-  deleteTask: (id: string) => void;
+  /** Soft-delete (status → trashed). Returns the prior raw status so the caller
+   *  can offer an exact Undo via `restoreTask`. */
+  deleteTask: (id: string) => Task["status"] | undefined;
+  /** Undo a delete (or any soft status change): put the row back to `status`. */
+  restoreTask: (id: string, status: Task["status"]) => void;
+  /** Persist an explicit task order — sort_order follows the given id sequence. */
+  reorderTasks: (ids: string[]) => void;
   toggleTask: (id: string) => void;
   /** The Sweep: file a capture into the vertical (and optionally the week).
    *  Routing processes it — status becomes `backlog`, it leaves the inbox. */
@@ -90,6 +96,11 @@ export interface VerticalStore {
   planTaskFor: (id: string, dateISO: string) => void;
   /** Drop the date (and block), keep everything else — back to the pool. */
   unplanTask: (id: string) => void;
+
+  /** Send a parented task to the Inbox triage queue (status → inbox, keeping its
+   *  project/initiative home), or pull it back out to its backlog. Raw and
+   *  unscheduled while it sits in the inbox — released from any week commitment. */
+  toggleTaskInbox: (id: string) => void;
 
   // sprint funnel — the Week gate
   toggleTaskSprint: (id: string) => void;
@@ -117,8 +128,13 @@ export interface VerticalStore {
   setDayContexts: (map: Record<string, string>) => void;
   markSprintReviewed: () => void;
 
-  /** The Composer's accept: write the proposed blocks in one pass. */
-  applySchedule: (placements: { id: string; doDateISO: string; startISO: string }[]) => Promise<void>;
+  /** The Composer's accept: write the proposed blocks in one pass. A single
+   *  task scheduled directly IS the time block (no slot wrapper); pass durationMins
+   *  to size it and sprintId to pull a loose inbox capture into the committed week. */
+  applySchedule: (
+    placements: { id: string; doDateISO: string; startISO: string; durationMins?: number }[],
+    opts?: { sprintId?: string | null },
+  ) => Promise<void>;
   /** Materialize batched focus blocks: create slot rows and move their tasks inside. */
   applySlots: (
     slots: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; taskIds: string[] }[],
@@ -565,7 +581,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             initiative_id: parent.initiativeId ?? null,
             domain_id: parent.domainId ?? null,
             energy: "quick",
-            duration_minutes: 20,
+            duration_minutes: patch?.durationMins ?? 20,
           });
           invalidate(["tasks"]);
         });
@@ -624,7 +640,20 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         void patchTaskRow(id, rowPatch);
       },
       deleteTask: (id) => {
+        const prev = (tasksQ.data ?? []).find((x) => x.id === id)?.status;
         void patchTaskRow(id, { status: "trashed" });
+        return prev;
+      },
+      restoreTask: (id, status) => {
+        void patchTaskRow(id, { status });
+      },
+      reorderTasks: (ids) => {
+        if (!ids.length) return;
+        void (async () => {
+          ids.forEach((id, i) => patchRows<Task>(["tasks", "all"], id, { sort_order: i }));
+          for (let i = 0; i < ids.length; i++) await writeTable("tasks", ids[i], { sort_order: i });
+          invalidate(["tasks"]);
+        })();
       },
       toggleTask: (id) => {
         const row = (tasksQ.data ?? []).find((x) => x.id === id);
@@ -663,6 +692,19 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
       unplanTask: (id) => {
         void patchTaskRow(id, { status: "backlog", do_date: null, start_time: null });
+      },
+
+      toggleTaskInbox: (id) => {
+        const row = (tasksQ.data ?? []).find((x) => x.id === id);
+        if (!row) return;
+        if (row.status === "inbox") {
+          // pull it back out of triage to its home backlog
+          void patchTaskRow(id, { status: "backlog" });
+        } else {
+          // send to the Inbox to be triaged/scheduled — raw and unscheduled,
+          // released from any week commitment (mirrors useTasks' "return to inbox")
+          void patchTaskRow(id, { status: "inbox", do_date: null, start_time: null, slot_id: null, sprint_id: null });
+        }
       },
 
       // ── sprint funnel — the Week gate ───────────────────────────────────
@@ -776,12 +818,13 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         }),
       markSprintReviewed: () => void patchSprint({ reviewed_at: new Date().toISOString() }),
 
-      applySchedule: async (placements) => {
+      applySchedule: async (placements, opts) => {
         for (const p of placements) {
-          const { error } = await supabase
-            .from("tasks")
-            .update({ status: "planned", do_date: p.doDateISO, start_time: p.startISO })
-            .eq("id", p.id);
+          // a direct block — the task itself carries the time (slot cleared)
+          const patch: Record<string, unknown> = { status: "planned", do_date: p.doDateISO, start_time: p.startISO, slot_id: null };
+          if (p.durationMins != null) patch.duration_minutes = p.durationMins;
+          if (opts?.sprintId) patch.sprint_id = opts.sprintId;
+          const { error } = await supabase.from("tasks").update(patch).eq("id", p.id);
           if (error) console.error("[compose] apply failed", error);
           else invokeQuiet("task-mirror", { taskId: p.id });
         }

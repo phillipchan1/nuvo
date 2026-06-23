@@ -227,3 +227,80 @@ export function readStanding(d: VerticalData, kind: Kind, now: Date = new Date()
     calm,
   };
 }
+
+// ── The load — the triage queue behind the Capacity gauge ────────────────────
+// Where the Standing *reports* Capacity, the Capacity run *moves* it: a worst-
+// first pass over everything in flight, one verdict each (Keep · Park · Cut ·
+// Reschedule). This exposes the per-item read the run renders, plus the band
+// recomputed over an arbitrary set so it can ease live as items shed.
+
+export interface LoadItem {
+  id: string;
+  kind: Kind;
+  name: string;
+  domainId: string;
+  targetDate: string | null;
+  overdue: boolean;
+  daysOverdue: number;
+  /** raw / no tasks — can't be carried, can't be measured. */
+  hollow: boolean;
+  moving: boolean;
+  daysSinceTouch: number | null;
+  /** adds to the strain: overdue or hollow. */
+  liability: boolean;
+  /** one line on why it weighs (or that it's fine). */
+  reason: string;
+}
+
+function loadReason(r: ItemRead): string {
+  if (r.overdue && r.hollow) return `${r.daysOverdue}d overdue, never started`;
+  if (r.overdue) return `${r.daysOverdue}d overdue`;
+  if (r.hollow) return "No plan yet — just a name";
+  if (!r.moving) return r.daysSinceTouch == null ? "Hasn't moved yet" : `Quiet ${r.daysSinceTouch}d`;
+  return "On a path, moving";
+}
+
+/** Every in-flight project + initiative, ranked worst-first — the triage queue. */
+export function readLoad(d: VerticalData, now: Date = new Date()): LoadItem[] {
+  const out: LoadItem[] = [];
+  const add = (kind: Kind, item: Project | Initiative) => {
+    const r = readItem(d, kind, item, now);
+    out.push({
+      id: r.id,
+      kind,
+      name: r.name,
+      domainId: item.domainId,
+      targetDate: item.targetDate ?? null,
+      overdue: r.overdue,
+      daysOverdue: r.daysOverdue,
+      hollow: r.hollow,
+      moving: r.moving,
+      daysSinceTouch: r.daysSinceTouch,
+      liability: r.overdue || r.hollow,
+      reason: loadReason(r),
+    });
+  };
+  for (const p of d.projects) if (isProjectInFlight(p.status)) add("project", p);
+  for (const i of d.initiatives) if (isProjectInFlight(i.status)) add("initiative", i);
+  // overdue (most days first) → hollow → other liabilities → stalled → moving
+  return out.sort(
+    (a, b) =>
+      Number(b.overdue) - Number(a.overdue) ||
+      b.daysOverdue - a.daysOverdue ||
+      Number(b.hollow) - Number(a.hollow) ||
+      Number(b.liability) - Number(a.liability) ||
+      Number(a.moving) - Number(b.moving) ||
+      (b.daysSinceTouch ?? -1) - (a.daysSinceTouch ?? -1),
+  );
+}
+
+/** The Capacity band over an arbitrary set — same WIP-first thresholds as the
+ *  Standing, so the run header eases as items are parked or cut. */
+export function loadBand(items: LoadItem[]): Band {
+  const N = items.length;
+  const liabilities = items.filter((i) => i.liability).length;
+  const anyOverdue = items.some((i) => i.overdue);
+  if (N > 0 && (anyOverdue || liabilities >= 2 || N >= WIP_MAX)) return "overcommitted";
+  if (N >= WIP_COMFORT || liabilities >= 1) return "tight";
+  return "comfortable";
+}

@@ -36,6 +36,7 @@ export function TaskPopover({
   recurrence,
   recurrenceMutations,
   onClose,
+  variant = "anchored",
 }: {
   task: Task;
   anchor: DOMRect;
@@ -45,7 +46,11 @@ export function TaskPopover({
   recurrence: Recurrence | null;
   recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
   onClose: () => void;
+  /** "anchored" (default) floats beside a calendar block with an arrow; "centered"
+   *  renders the same card as a scrim-backed modal, summonable from ⌘K on any rung. */
+  variant?: "anchored" | "centered";
 }) {
+  const centered = variant === "centered";
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes);
   const [preparing, setPreparing] = useState(false);
@@ -67,6 +72,7 @@ export function TaskPopover({
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const h = pop.offsetHeight;
+    if (centered) return; // centered modal positions via CSS, not the anchor
     let left = anchor.right + 10;
     let side: "right" | "left" = "right";
     if (left + TASK_POP_W > vw - 8) {
@@ -209,20 +215,24 @@ export function TaskPopover({
   })();
 
   return createPortal(
-    <>
+    // Centered variant: a flex scrim that dims the page and centers the card
+    // (no transform on the card, so the `.moment` spring doesn't fight it).
+    // Anchored variant: `contents` makes the wrapper layout-transparent so the
+    // fixed popover positions exactly as before.
+    <div className={centered ? "fixed inset-0 z-40 flex items-center justify-center bg-black/20 p-4" : "contents"}>
       {/* Popover card */}
       <div
         ref={popRef}
-        className="moment fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
+        className={`moment z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface ${centered ? "relative" : "fixed"}`}
         style={{
-          top: pos.top,
-          left: pos.left,
+          ...(centered ? {} : { top: pos.top, left: pos.left }),
           width: TASK_POP_W,
           maxHeight: "min(620px, calc(100vh - 24px))",
           boxShadow: "var(--shadow-3)",
         }}
       >
-        {/* Arrow connector */}
+        {/* Arrow connector — anchored variant only (the modal has no anchor). */}
+        {!centered && (
         <div
           className="absolute h-2.5 w-2.5 rotate-45 border border-line bg-surface"
           style={
@@ -247,6 +257,7 @@ export function TaskPopover({
                 }
           }
         />
+        )}
 
         {/* ── Title + close ── */}
         <div className="flex shrink-0 items-start gap-2 px-4 pt-4 pb-2">
@@ -574,7 +585,7 @@ export function TaskPopover({
           />
         </div>
       </div>
-    </>,
+    </div>,
     document.body,
   );
 }

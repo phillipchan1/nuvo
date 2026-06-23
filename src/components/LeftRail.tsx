@@ -11,7 +11,7 @@ import { domainById, initiativeById, projectById, taskDomainColor } from "../lib
 import TaskRow, { type TaskMeta } from "./TaskRow";
 import { Keycap, SectionLabel } from "./ui";
 
-export type RailTab = "inbox" | "week" | "today";
+export type RailTab = "inbox" | "today";
 type Mutations = ReturnType<typeof useTaskMutations>;
 
 const RAIL_WIDTH_KEY = "nuvo-rail-width";
@@ -41,7 +41,6 @@ export default function LeftRail({
   tab,
   setTab,
   inbox,
-  week,
   today,
   labels,
   mutations,
@@ -53,7 +52,6 @@ export default function LeftRail({
   tab: RailTab;
   setTab: (t: RailTab) => void;
   inbox: Task[];
-  week: Task[];
   today: Task[];
   labels: Label[];
   mutations: Mutations;
@@ -62,7 +60,7 @@ export default function LeftRail({
   now: Date;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
 }) {
-  const { data: vertical, setSprintGoal, toggleTaskSprint } = useVertical();
+  const { data: vertical, toggleTaskSprint } = useVertical();
   const { nav } = useAppNavigation();
 
   /** A task's thread back up the vertical: its domain color. */
@@ -90,14 +88,10 @@ export default function LeftRail({
 
   const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
 
-  const weekPool = useMemo(() => buildWeekPool(week), [week]);
-
   const visible: Task[] =
     tab === "inbox"
       ? inbox
-      : tab === "week"
-        ? [...weekPool.unplaced, ...weekPool.placed]
-        : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
+      : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
 
   const selected = visible.find((t) => t.id === selectedId) ?? null;
 
@@ -177,9 +171,6 @@ export default function LeftRail({
           setTab("inbox");
           break;
         case "2":
-          setTab("week");
-          break;
-        case "3":
           setTab("today");
           break;
         case "c":
@@ -302,11 +293,7 @@ export default function LeftRail({
   });
 
   const tabCount = (t: RailTab) =>
-    t === "inbox"
-      ? inbox.length
-      : t === "week"
-        ? week.filter((x) => x.status !== "done").length
-        : today.filter((x) => x.status !== "done").length;
+    t === "inbox" ? inbox.length : today.filter((x) => x.status !== "done").length;
 
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -335,6 +322,7 @@ export default function LeftRail({
     <div
       ref={railRef}
       data-rail-drop
+      data-drop-tab={tab}
       className="titlebar-pad relative flex h-full shrink-0 flex-col border-r border-line"
       style={{ width: railWidth }}
     >
@@ -347,15 +335,16 @@ export default function LeftRail({
       />
       {/* Tabs */}
       <div className="flex">
-        {(["inbox", "week", "today"] as const).map((t) => (
+        {(["inbox", "today"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
+            {...(t === "inbox" ? { "data-inbox-tab": "" } : {})}
             className={`fast flex-1 px-3 py-2 text-caption font-semibold ${
               tab === t ? "border-b-2 border-accent text-ink" : "text-muted hover:text-ink"
             }`}
           >
-            {t === "inbox" ? "Inbox" : t === "week" ? "Week" : "Today"}
+            {t === "inbox" ? "Inbox" : "Today"}
             <span className="mono ml-1.5 text-meta text-muted">{tabCount(t)}</span>
           </button>
         ))}
@@ -400,78 +389,29 @@ export default function LeftRail({
 
       {/* List */}
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Shown when dragging a calendar task to the rail while on week/today tab */}
+        <div className="rail-drop-banner" aria-hidden>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+            <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
+          </svg>
+          Release to return to inbox
+        </div>
+
         {tab === "inbox" && (
           <>
+            {/* Shown when dragging a calendar task to the rail while on inbox tab */}
+            <div className="rail-inbox-landing" aria-hidden>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+                <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
+              </svg>
+              Drop to unschedule
+            </div>
             {inbox.map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
             {inbox.length === 0 && <EmptyState text="Inbox zero. Capture with C or ⌘K." />}
-          </>
-        )}
-
-        {tab === "week" && (
-          <>
-            {/* the sprint header: goal + the ring that only ever fills */}
-            <div className="border-b border-line px-3 py-2.5">
-              <div className="flex items-center gap-2.5">
-                <WeekRing tasks={week} />
-                <div className="min-w-0 flex-1">
-                  <div className="section-label !p-0">This week's goal</div>
-                  <GoalInput value={vertical.sprintGoal ?? ""} onCommit={setSprintGoal} />
-                </div>
-              </div>
-            </div>
-
-            {weekPool.unplaced.length === 0 && weekPool.placed.length === 0 && (
-              <EmptyState text="Nothing committed this week yet. Run the Sunday flow (◉ flows) or ★ tasks on the floors." />
-            )}
-
-            {groupWeekByInitiative(weekPool.unplaced, vertical).map((g) => (
-              <div key={g.key}>
-                <SectionLabel>
-                  <span className="flex items-center gap-1.5">
-                    {g.lead && <span style={{ color: "var(--signal)" }}>★</span>}
-                    <span className="h-2 w-2 rounded-full" style={{ background: g.color ?? "var(--line)" }} />
-                    {g.label}
-                  </span>
-                </SectionLabel>
-                {g.tasks.map((t) => (
-                  <TaskRow
-                    key={t.id}
-                    {...rowProps(t)}
-                    action={
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          mutations.planFor(t, todayISO(now));
-                        }}
-                        title="Pull onto today"
-                        className="fast mono shrink-0 border border-line px-1 text-meta text-muted opacity-0 hover:border-accent hover:text-accent group-hover:opacity-100"
-                      >
-                        ▸
-                      </button>
-                    }
-                  />
-                ))}
-              </div>
-            ))}
-
-            {weekPool.placed.length > 0 && (
-              <>
-                <SectionLabel>Placed on days</SectionLabel>
-                {weekPool.placed.map((t) => (
-                  <TaskRow key={t.id} {...rowProps(t)} />
-                ))}
-              </>
-            )}
-            {weekPool.done.length > 0 && (
-              <>
-                <SectionLabel>Done</SectionLabel>
-                {weekPool.done.map((t) => (
-                  <TaskRow key={t.id} {...rowProps(t)} />
-                ))}
-              </>
-            )}
           </>
         )}
 
@@ -733,88 +673,6 @@ function TaskContextMenu({
       </div>
     </>,
     document.body,
-  );
-}
-
-function GoalInput({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  const commit = () => draft !== value && onCommit(draft);
-  return (
-    <input
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-      placeholder="What does a good week look like?"
-      className="w-full bg-transparent text-caption font-medium outline-none placeholder:text-muted/60"
-    />
-  );
-}
-
-/** The week pool, split: unplaced (pull targets), placed on a day, done. */
-function buildWeekPool(week: Task[]) {
-  const open = week.filter((t) => t.status !== "done");
-  return {
-    unplaced: open.filter((t) => !t.do_date),
-    placed: open.filter((t) => t.do_date).sort((a, b) => (a.do_date! < b.do_date! ? -1 : 1)),
-    done: week.filter((t) => t.status === "done"),
-  };
-}
-
-/** Group the unplaced pool by initiative, the week's lead bets first. */
-function groupWeekByInitiative(
-  tasks: Task[],
-  vertical: ReturnType<typeof useVertical>["data"],
-) {
-  const focus = new Set(vertical.focusInitiativeIds);
-  const groups = new Map<string, { key: string; label: string; color: string | null; lead: boolean; tasks: Task[] }>();
-  for (const t of tasks) {
-    const initiativeId = t.initiative_id ?? projectById(vertical, t.project_id)?.initiativeId ?? null;
-    const initiative = initiativeById(vertical, initiativeId);
-    const domain = domainById(
-      vertical,
-      initiative?.domainId ?? t.domain_id ?? projectById(vertical, t.project_id)?.domainId ?? null,
-    );
-    const key = initiative?.id ?? domain?.id ?? "loose";
-    const g = groups.get(key) ?? {
-      key,
-      label: initiative?.name ?? domain?.name ?? "Loose",
-      color: domain?.color ?? null,
-      lead: Boolean(initiative && focus.has(initiative.id)),
-      tasks: [],
-    };
-    g.tasks.push(t);
-    groups.set(key, g);
-  }
-  return [...groups.values()].sort((a, b) => Number(b.lead) - Number(a.lead));
-}
-
-/** The persistent anti-gap device: only fills, resets Sunday, measures against
- *  what you committed — not against infinity. */
-function WeekRing({ tasks }: { tasks: Task[] }) {
-  const total = tasks.reduce((s, t) => s + (t.duration_minutes ?? 30), 0);
-  const done = tasks
-    .filter((t) => t.status === "done")
-    .reduce((s, t) => s + (t.duration_minutes ?? 30), 0);
-  const pct = total > 0 ? done / total : 0;
-  const r = 13;
-  const c = 2 * Math.PI * r;
-  return (
-    <div className="relative h-9 w-9 shrink-0" title={`${Math.round(pct * 100)}% of committed hours done`}>
-      <svg width="36" height="36" viewBox="0 0 36 36" className="-rotate-90">
-        <circle cx="18" cy="18" r={r} fill="none" stroke="var(--line)" strokeWidth="3" />
-        <circle
-          cx="18" cy="18" r={r} fill="none"
-          stroke="var(--accent)" strokeWidth="3" strokeLinecap="round"
-          strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
-          style={{ transition: "stroke-dashoffset 300ms ease-out" }}
-        />
-      </svg>
-      <span className="mono absolute inset-0 flex items-center justify-center text-micro text-muted">
-        {Math.round(pct * 100)}
-      </span>
-    </div>
   );
 }
 

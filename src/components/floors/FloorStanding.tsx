@@ -30,6 +30,8 @@ function Gauge({
   fill,
   fillColor,
   blurb,
+  onClick,
+  action,
 }: {
   label: string;
   value: string;
@@ -37,9 +39,13 @@ function Gauge({
   fill: number; // 0..1
   fillColor: string;
   blurb: string;
+  /** when present, the whole gauge becomes the doorway to the play that moves it. */
+  onClick?: () => void;
+  /** the always-visible affordance label (e.g. "Refine") — no hover-only actions. */
+  action?: string;
 }) {
-  return (
-    <div className="glass-card rounded-xl border border-line p-4" style={{ boxShadow: "var(--shadow-2)" }}>
+  const inner = (
+    <>
       <div className="flex items-baseline justify-between gap-2">
         <span className="section-label !p-0">{label}</span>
         <span className="mono shrink-0 text-meta" style={{ color: valueColor ?? "var(--ink)" }}>
@@ -53,11 +59,33 @@ function Gauge({
         />
       </div>
       <p className="mt-2.5 text-caption text-muted">{blurb}</p>
+      {action && (
+        <div className="mt-3 flex items-center gap-1 text-caption font-medium" style={{ color: "var(--accent)" }}>
+          {action}
+          <span className="fast transition-transform group-hover:translate-x-0.5">›</span>
+        </div>
+      )}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        onClick={onClick}
+        className="glass-card lift-anim group rounded-xl border border-line p-4 text-left shadow-[var(--shadow-2)] hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] active:scale-[.99]"
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <div className="glass-card rounded-xl border border-line p-4" style={{ boxShadow: "var(--shadow-2)" }}>
+      {inner}
     </div>
   );
 }
 
-export default function FloorStanding({ kind, onRefine }: { kind: Kind; onRefine: () => void }) {
+export default function FloorStanding({ kind, onRefine, onAllocate }: { kind: Kind; onRefine: () => void; onAllocate: () => void }) {
   const { data } = useVertical();
   const s = readStanding(data, kind);
 
@@ -73,6 +101,8 @@ export default function FloorStanding({ kind, onRefine }: { kind: Kind; onRefine
           fill={s.defined}
           fillColor={READY}
           blurb={s.definedBlurb}
+          onClick={s.calm ? undefined : onRefine}
+          action={s.calm ? undefined : "Refine"}
         />
         <Gauge
           label="Capacity"
@@ -81,6 +111,8 @@ export default function FloorStanding({ kind, onRefine }: { kind: Kind; onRefine
           fill={bandFill(s.capacity)}
           fillColor={bandColor(s.capacity)}
           blurb={s.capacityBlurb}
+          onClick={s.capacity === "comfortable" ? undefined : onAllocate}
+          action={s.capacity === "comfortable" ? undefined : "Triage"}
         />
         <Gauge
           label="Motion"
@@ -92,18 +124,7 @@ export default function FloorStanding({ kind, onRefine }: { kind: Kind; onRefine
         />
       </div>
 
-      <div className="mt-5 flex items-end justify-between gap-6">
-        <p className="masthead max-w-[44ch] text-lead text-ink">{s.synthesis}</p>
-        {!s.calm && (
-          <button
-            onClick={onRefine}
-            className="fast mono shrink-0 text-caption active:scale-[.98]"
-            style={{ color: "var(--accent)" }}
-          >
-            Refine ›
-          </button>
-        )}
-      </div>
+      <p className="masthead mt-5 max-w-[44ch] text-lead text-ink">{s.synthesis}</p>
     </div>
   );
 }

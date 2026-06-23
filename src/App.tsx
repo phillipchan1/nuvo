@@ -18,6 +18,12 @@ function errMsg(e: unknown) {
 // the same bundle as the main window; this flag swaps in the bare panel instead
 // of the full app. Always false in the browser / PWA.
 const IS_SPOTLIGHT = (() => {
+  // DEV-only: `?spotlight` renders the global summon in the browser so its
+  // Tauri-only surface can be verified against live data (the panel's Tauri
+  // wiring no-ops outside Tauri). Tree-shaken from production builds.
+  if (import.meta.env.DEV && new URLSearchParams(globalThis.location?.search).has("spotlight")) {
+    return true;
+  }
   if (!("__TAURI_INTERNALS__" in globalThis)) return false;
   try {
     // Lazy require avoids touching the Tauri API outside the shell.

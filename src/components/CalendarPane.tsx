@@ -17,9 +17,10 @@ import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateKind } from "./DraftComposer";
 import WeekEmblem from "./floors/WeekEmblem";
+import WeekBoard from "./floors/WeekBoard";
 import type { EmblemSpec } from "../lib/weekEmblem";
 
-export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth";
+export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
 
 type ExtendedProps = {
   kind: "task" | "google" | "m365" | "ics" | "slot";
@@ -335,9 +336,11 @@ export default function CalendarPane({
   }, []);
 
   // External drag: any [data-task-drag] row in the left rail can be dropped
-  // onto the grid. FullCalendar owns the drop geometry; we own the state.
+  // onto the grid. FullCalendar owns the drop geometry; we own the state. In the
+  // board ("Spread") view there's no grid — WeekBoard owns rail-row drags itself,
+  // so this FC draggable must stand down or it fights for the same rows.
   useEffect(() => {
-    if (!railRef.current) return;
+    if (!railRef.current || view === "board") return;
     const draggable = new Draggable(railRef.current, {
       itemSelector: "[data-task-drag]",
       // A few px of slop so a click (or a cmd/shift multi-select) on a rail row
@@ -356,7 +359,7 @@ export default function CalendarPane({
       },
     });
     return () => draggable.destroy();
-  }, [railRef]);
+  }, [railRef, view]);
 
   // Live drop-target feedback while a task is being dragged. Classes are toggled
   // imperatively (no React state) so a drag never re-renders CalendarPane
@@ -411,6 +414,9 @@ export default function CalendarPane({
       }
     };
     const onUp = () => {
+      // Capture drag state before resetting — needed to suppress the phantom
+      // click the browser fires on the original element after any drag gesture.
+      const wasRailDrag = active && fromRail;
       armed = false;
       if (active) {
         active = false;
@@ -425,6 +431,12 @@ export default function CalendarPane({
       dragId = null;
       fromRail = false;
       overRail = false;
+      // After dragging from the rail (whether dropped, cancelled, or returned),
+      // the browser fires a click on the original TaskRow. Eat it once so the
+      // task popover doesn't open when the user changes their mind mid-drag.
+      if (wasRailDrag) {
+        document.addEventListener("click", (e) => { e.stopPropagation(); }, { capture: true, once: true });
+      }
     };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("pointermove", onMove, true);
@@ -438,6 +450,7 @@ export default function CalendarPane({
   }, [railRef]);
 
   useEffect(() => {
+    if (view === "board") return; // the board isn't a FullCalendar view
     const api = calRef.current?.getApi();
     if (api && api.view.type !== view) api.changeView(view);
   }, [view]);
@@ -1175,6 +1188,8 @@ export default function CalendarPane({
       {/* ── Navigation bar — also fills the macOS titlebar zone (titlebar-pad)
             and hosts the window-drag handle on its empty spacer. ──────────── */}
       <div className="titlebar-pad relative flex shrink-0 items-center gap-1 px-3 py-1.5">
+        {view !== "board" && (
+        <>
         <button
           onClick={() => calRef.current?.getApi().prev()}
           className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
@@ -1233,6 +1248,8 @@ export default function CalendarPane({
             </svg>
           </button>
         )}
+        </>
+        )}
 
         <div data-tauri-drag-region className="flex-1 self-stretch" />
 
@@ -1255,7 +1272,7 @@ export default function CalendarPane({
 
         {onViewChange && (
           <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
-            {(["timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
+            {(["board", "timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
               const on = view === v;
               return (
                 <button
@@ -1269,7 +1286,7 @@ export default function CalendarPane({
                     boxShadow: on ? "var(--shadow-1)" : "none",
                   }}
                 >
-                  {v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
+                  {v === "board" ? "Spread" : v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
                 </button>
               );
             })}
@@ -1277,7 +1294,19 @@ export default function CalendarPane({
         )}
       </div>
 
+      {/* ── The Week Board — "which day" altitude, a toggle away from the grid ── */}
+      {view === "board" && (
+        <WeekBoard
+          now={now}
+          settings={settings}
+          taskAccent={taskAccent}
+          mutations={mutations}
+          onOpenTask={onOpenTask}
+        />
+      )}
+
       {/* ── FullCalendar ────────────────────────────────────────────────── */}
+      {view !== "board" && (
       <div
         ref={wrapRef}
         className="min-h-0 flex-1 p-2"
@@ -1353,6 +1382,7 @@ export default function CalendarPane({
           datesSet={handleDatesSet}
         />
       </div>
+      )}
     </div>
   );
 }

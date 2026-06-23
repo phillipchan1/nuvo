@@ -115,7 +115,9 @@ export function agentHints(ctx: AgentHintContext): AgentHints {
   }
 }
 
-function scheduleHints(tab: RailTab): AgentHints {
+// Accepts "week" too: the desktop rail dropped its Week tab (the Spread board
+// replaced it), but the mobile Tasks screen still has a Week segment.
+function scheduleHints(tab: RailTab | "week"): AgentHints {
   if (tab === "inbox") {
     return {
       prompt: "Inbox — capture, clarify, and file what landed.",

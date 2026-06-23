@@ -18,7 +18,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { Bar, InlineDate, InlineText, RipenessPip, StatusPill, Timeline, softTint, type TimelineItem } from "./parts";
+import { Bar, InlineDate, InlineText, RefinedTick, RipenessPip, StatusPill, Timeline, softTint, type TimelineItem } from "./parts";
 import type { Ripeness } from "../../lib/tending";
 import { Btn } from "../ui";
 import { SELECT_INTERACTIVE, useCollectionSelection, type CollectionSelection } from "../../hooks/useCollectionSelection";
@@ -281,6 +281,7 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
             <div className="flex min-w-0 items-center gap-2" data-no-select onMouseDown={(e) => e.stopPropagation()}>
               {r.ripeness && <RipenessPip stage={r.ripeness} unsound={r.unsound} />}
               <InlineText value={r.title} onChange={r.setTitle} placeholder="Untitled" className="text-body font-medium" />
+              {r.ripeness === "active" && !r.unsound && <RefinedTick />}
             </div>
             <div data-no-select onMouseDown={(e) => e.stopPropagation()}>
               <StatusPill value={r.status} options={statusOptions} colors={statusColors} labels={config.statusLabels} onChange={r.setStatus} />

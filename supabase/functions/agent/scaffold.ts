@@ -43,13 +43,13 @@ ${input.description ? `Description: ${input.description}` : ""}
 ${input.initiative ? `Parent initiative: ${input.initiative.name} — ${input.initiative.outcome}` : ""}
 ${input.domain ? `Life domain: ${input.domain.name}. Standing intention: ${input.domain.intention}` : ""}
 
-Existing tasks (do NOT duplicate these):
+The person's own steps so far (their plan — do NOT duplicate or restate these):
 ${existing.length ? existing.map((t) => `- [${t.status}] ${t.title}`).join("\n") : "(none yet)"}
 ${input.guidance ? `\nThe person redirected: "${input.guidance}". Honor this redirection.` : ""}
 
-Propose the missing tasks that get this project from its current state to the outcome.
+Propose ONLY the tasks their plan is missing to reach the outcome — fill the gaps, don't rewrite their work.
 Rules:
-- 3 to 8 tasks, in execution order (a → b → c). First task should be startable today.
+- If they already have steps, add just the genuine gaps (0–4). If the list is empty, propose 3 to 8 to get started. Always in execution order (a → b → c); the first should be startable today.
 - Each task is one sitting of work: concrete verb-first title, 15–120 minutes.
 - energy is one of: "deep" (focused maker work), "decide" (judgment call), "delegate" (hand off / follow up), "quick" (low-friction win).
 - rationale: max 8 words on why it's needed.
@@ -95,7 +95,16 @@ Respond with JSON only: {"tasks":[{"title":string,"energy":string,"duration_minu
 export async function scaffoldProject(
   userId: string,
   projectId: string,
-  guidance?: string,
+  opts: {
+    guidance?: string;
+    /** The human's own steps, typed but not yet saved. Nuvo proposes what's
+     *  MISSING around them rather than guessing the whole list cold —
+     *  enrich-not-replace. The policy is human-drives, Nuvo-fills-the-gaps. */
+    draftTitles?: string[];
+    /** A freshly-typed context line (may not be persisted yet) — overrides the
+     *  stored description so Nuvo reasons from what the person just told it. */
+    description?: string;
+  } = {},
 ): Promise<{ tasks: ScaffoldDraft[] }> {
   const { data: project, error } = await admin
     .from("projects")
@@ -120,14 +129,22 @@ export async function scaffoldProject(
       .order("sort_order"),
   ]);
 
+  // Fold the human's just-typed steps in alongside any saved ones, so Nuvo
+  // reads the person's own plan as the spine and only proposes the gaps.
+  const saved = tasksRes.data ?? [];
+  const drafts = (opts.draftTitles ?? [])
+    .map((t) => String(t).trim())
+    .filter(Boolean)
+    .map((title) => ({ title, status: "backlog" }));
+
   return proposeTasks({
     name: project.name,
     outcome: project.outcome,
-    description: project.description,
+    description: opts.description?.trim() || project.description,
     initiative: initiativeRes.data,
     domain: domainRes.data,
-    existing: tasksRes.data ?? [],
-    guidance,
+    existing: [...saved, ...drafts],
+    guidance: opts.guidance,
   });
 }
 

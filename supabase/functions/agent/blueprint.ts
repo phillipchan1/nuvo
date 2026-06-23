@@ -19,11 +19,23 @@ export interface BlueprintProposal {
 
 export async function blueprintInitiative(
   userId: string,
-  input: { name: string; outcome: string; description?: string; domainId?: string; guidance?: string },
+  input: {
+    name: string;
+    outcome: string;
+    description?: string;
+    domainId?: string;
+    guidance?: string;
+    /** Project names the person already typed under this bet. Nuvo complements
+     *  them — proposing key results + only the MISSING projects, never restating
+     *  what's there. Human-drives, Nuvo-fills-the-gaps. */
+    draftProjectNames?: string[];
+  },
 ): Promise<BlueprintProposal> {
   const domain = input.domainId
     ? (await admin.from("domains").select("name, intention").eq("id", input.domainId).eq("user_id", userId).maybeSingle()).data
     : null;
+
+  const own = (input.draftProjectNames ?? []).map((n) => String(n).trim()).filter(Boolean);
 
   const prompt = `You are shaping a personal initiative (a bet with a finish line) into an executable structure.
 
@@ -32,10 +44,11 @@ Outcome (what "done" looks like): ${input.outcome || "(not stated — infer a cr
 ${input.description ? `Notes: ${input.description}` : ""}
 ${domain ? `Life domain: ${domain.name}. Standing intention: ${domain.intention}` : ""}
 ${input.guidance ? `The person redirected: "${input.guidance}". Honor this redirection.` : ""}
+${own.length ? `\nThe person's own projects under this bet (do NOT duplicate or restate these):\n${own.map((n) => `- ${n}`).join("\n")}` : ""}
 
 Propose:
 - 2-3 key results: measurable, each with a numeric baseline (usually the current state, often 0), a target, and a short unit ("%", "mo", "d", "" for counts).
-- 2-4 projects, in rough execution order, each with a one-line outcome and 3-6 first tasks in execution order (a → b → c). Task titles are verb-first and one-sitting sized (15–120 minutes). energy is one of "deep", "decide", "delegate", "quick".
+- ${own.length ? "ONLY the projects their plan is missing (0–3) — fill the gaps around their own projects, don't rewrite them" : "2-4 projects, in rough execution order"}, each with a one-line outcome and 3-6 first tasks in execution order (a → b → c). Task titles are verb-first and one-sitting sized (15–120 minutes). energy is one of "deep", "decide", "delegate", "quick".
 
 Respond with JSON only:
 {"keyResults":[{"name":string,"baseline":number,"target":number,"unit":string}],

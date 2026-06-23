@@ -57,7 +57,7 @@ const fmtMinShort = (m: number) => {
 type Phase = "intent" | "shape";
 
 export default function SundayRitual({ onClose }: { onClose: () => void }) {
-  const { data, planWeek, applySlots } = useVertical();
+  const { data, planWeek, applySlots, applySchedule } = useVertical();
   const { settings } = useSettings();
   const { data: allTasks = [] } = useAllTasks();
 
@@ -182,24 +182,38 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
   };
   const applyBatch = async () => {
     if (!batch) return;
-    await applySlots(
-      batch.placed.map((p) => {
-        const [y, mo, d] = p.dayISO.split("-").map(Number);
-        return {
+    // stamp the sprint so themed inbox captures join the committed week (and
+    // leave the inbox); harmless for the deterministic batch — those tasks are
+    // already in this sprint.
+    const opts = { sprintId: data.sprint?.id ?? null };
+    const startISOof = (p: BatchResult["placed"][number]) => {
+      const [y, mo, d] = p.dayISO.split("-").map(Number);
+      return new Date(y, mo - 1, d, Math.floor(p.startMin / 60), p.startMin % 60).toISOString();
+    };
+    // a one-task run IS its own time block — schedule the task directly, no slot
+    // wrapper; only genuine multi-task runs become a slot container.
+    const solo = batch.placed.filter((p) => p.batch.taskIds.length === 1);
+    const runs = batch.placed.filter((p) => p.batch.taskIds.length > 1);
+    if (solo.length) {
+      await applySchedule(
+        solo.map((p) => ({ id: p.batch.taskIds[0], doDateISO: p.dayISO, startISO: startISOof(p), durationMins: p.durationMin })),
+        opts,
+      );
+    }
+    if (runs.length) {
+      await applySlots(
+        runs.map((p) => ({
           title: p.batch.name,
           doDateISO: p.dayISO,
-          startISO: new Date(y, mo - 1, d, Math.floor(p.startMin / 60), p.startMin % 60).toISOString(),
+          startISO: startISOof(p),
           durationMins: p.durationMin,
           domainId: p.batch.domainId,
           color: p.batch.color,
           taskIds: p.batch.taskIds,
-        };
-      }),
-      // stamp the sprint so themed inbox captures join the committed week (and
-      // leave the inbox); harmless for the deterministic batch — those tasks are
-      // already in this sprint.
-      { sprintId: data.sprint?.id ?? null },
-    );
+        })),
+        opts,
+      );
+    }
     setBatch(null);
   };
 

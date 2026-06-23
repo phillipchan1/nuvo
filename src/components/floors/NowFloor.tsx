@@ -5,10 +5,11 @@
 // the next open block on the right, and a domain-balance read framed as Gain.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import { useVertical } from "../../hooks/useVertical";
 import { useExternalEvents } from "../../hooks/useCalendar";
-import { useScheduledTasks, useAllTasks } from "../../hooks/useTasks";
+import { useScheduledTasks, useAllTasks, useTaskMutations } from "../../hooks/useTasks";
 import { useSettings } from "../../hooks/useSettings";
 import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useAgent } from "../../hooks/useAgent";
@@ -42,10 +43,13 @@ export default function NowFloor({
   onAskNuvo?: (seed?: string) => void;
 }) {
   const { data, toggleTask, applySchedule } = useVertical();
+  const taskMutations = useTaskMutations();
   const { settings } = useSettings();
   const [workingDays] = useWorkingDays();
   const { nav, setNowMoment, back, openRecord, focusDomain, goRung, openOverlay } = useAppNavigation();
   const { nowMoment, nowTaskId } = nav;
+
+  const [blockCtxMenu, setBlockCtxMenu] = useState<{ b: BusyBlock; x: number; y: number } | null>(null);
 
   // Today has two faces: the tactical "now" (what to start next) and the
   // strategic "step back" (the board — bets, drift, blind spots). Same rung,
@@ -259,6 +263,7 @@ export default function NowFloor({
   }
 
   return (
+    <>
     <div className={`mx-auto w-full ${chatOpen ? "max-w-[1460px] 2xl:max-w-[1720px]" : "max-w-[1080px]"}`}>
       <ModeToggle mode={mode} setMode={setMode} />
       {/* big rocks — held all week, the first thing Today shows (when set) */}
@@ -283,7 +288,7 @@ export default function NowFloor({
         )}
 
         <div className="mt-6 grid grid-cols-1 gap-x-9 gap-y-7 md:grid-cols-[248px_1fr] xl:col-start-1 xl:row-start-2">
-          <DaySpine now={now} busy={busy} gaps={dayRead.gaps} activeGap={activeGap} windowStart={windowStart} windowEnd={windowEnd} onOrder={proposeOrder} />
+          <DaySpine now={now} busy={busy} gaps={dayRead.gaps} activeGap={activeGap} windowStart={windowStart} windowEnd={windowEnd} onOrder={proposeOrder} onBlockMenu={(b, x, y) => { if (b.kind === "block" && b.taskId) setBlockCtxMenu({ b, x, y }); }} />
 
         <div className="min-w-0">
           {/* RIGHT NOW — the meeting you're in, when you're in one; else the task to start */}
@@ -418,6 +423,60 @@ export default function NowFloor({
         </div>
       </div>
     </div>
+
+    {blockCtxMenu && createPortal(
+      <>
+        <div className="fixed inset-0 z-[299]" onMouseDown={() => setBlockCtxMenu(null)} />
+        <div
+          className="fixed z-[300] min-w-[180px] overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-xl"
+          style={{
+            left: Math.min(blockCtxMenu.x, window.innerWidth - 196),
+            top: Math.min(blockCtxMenu.y, window.innerHeight - 160),
+          }}
+        >
+          {(() => {
+            const task = blocks.find((t) => t.id === blockCtxMenu.b.taskId);
+            if (!task) return null;
+            const done = task.status === "done";
+            return (
+              <>
+                <button
+                  className="fast flex w-full items-center justify-between gap-6 px-3 py-1.5 text-left text-label hover:bg-accent-soft"
+                  onClick={() => { openOverlay("task", task.id); setBlockCtxMenu(null); }}
+                >
+                  <span>Open</span>
+                  <span className="mono text-meta text-muted">↗</span>
+                </button>
+                <button
+                  className="fast flex w-full items-center px-3 py-1.5 text-left text-label hover:bg-accent-soft"
+                  onClick={() => {
+                    done ? taskMutations.uncomplete(task) : taskMutations.complete(task);
+                    setBlockCtxMenu(null);
+                  }}
+                >
+                  {done ? "Mark not done" : "Mark done"}
+                </button>
+                <button
+                  className="fast flex w-full items-center px-3 py-1.5 text-left text-label hover:bg-accent-soft"
+                  onClick={() => { taskMutations.unblock(task); setBlockCtxMenu(null); }}
+                >
+                  Unschedule
+                </button>
+                <div className="my-1 border-t border-line" />
+                <button
+                  className="fast flex w-full items-center px-3 py-1.5 text-left text-label text-signal hover:bg-signal/10"
+                  onClick={() => { taskMutations.trash(task); setBlockCtxMenu(null); }}
+                >
+                  Delete
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      </>,
+      document.body
+    )}
+    </>
   );
 }
 
@@ -784,9 +843,10 @@ function layoutColumns(blocks: BusyBlock[]): { b: BusyBlock; col: number; cols: 
 // the day: what's behind you dims, what you're in glows, open blocks read as
 // the breathing room they are.
 function DaySpine({
-  now, busy, activeGap, windowStart, windowEnd, onOrder,
+  now, busy, activeGap, windowStart, windowEnd, onOrder, onBlockMenu,
 }: {
   now: Date; busy: BusyBlock[]; gaps: Gap[]; activeGap: Gap | null; windowStart: Date; windowEnd: Date; onOrder: () => void;
+  onBlockMenu?: (b: BusyBlock, x: number, y: number) => void;
 }) {
   const winMins = Math.max(60, (windowEnd.getTime() - windowStart.getTime()) / 60_000);
   // Fit the day into a comfortable band while keeping proportions honest.
@@ -875,6 +935,7 @@ function DaySpine({
                 boxShadow: ongoing ? "var(--shadow-2)" : "none",
                 zIndex: ongoing ? 5 : 1,
               }}
+              onContextMenu={b.taskId ? (e) => { e.preventDefault(); onBlockMenu?.(b, e.clientX, e.clientY); } : undefined}
             >
               <div className="truncate text-label font-medium leading-tight" style={{ textDecoration: b.done ? "line-through" : undefined }}>
                 {b.title}

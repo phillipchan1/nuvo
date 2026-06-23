@@ -8,17 +8,50 @@ import AgentMessageBubble from "./AgentMessageBubble";
 import AgentSuggestionChips from "./AgentSuggestionChips";
 import { Keycap, Modal } from "./ui";
 
+const NAME = "Phil";
+
+// Time-of-day greeting, in the same editorial register as Today's masthead.
+function greetingFor(d: Date) {
+  const h = d.getHours();
+  const part = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  return `${part}, ${NAME}.`;
+}
+
 export interface Command {
   id: string;
   title: string;
   run: () => void;
 }
 
+/** A found record — structurally a Command (so it runs through the same close
+ *  path) plus the metadata to render it grouped under its kind. */
+export interface SearchHit extends Command {
+  kind: "task" | "project" | "initiative" | "domain";
+  subtitle?: string;
+}
+
 type Mode = "capture" | "ask";
+
+const HIT_SECTIONS: { kind: SearchHit["kind"]; label: string; cap: number }[] = [
+  { kind: "task", label: "Tasks", cap: 6 },
+  { kind: "project", label: "Projects", cap: 6 },
+  { kind: "initiative", label: "Initiatives", cap: 6 },
+  { kind: "domain", label: "Domains", cap: 4 },
+];
+
+const HIT_GLYPH: Record<SearchHit["kind"], string> = {
+  task: "✓",
+  project: "◆",
+  initiative: "▲",
+  domain: "❖",
+};
 
 export interface SpotlightProps {
   labels: Label[];
   commands: Command[];
+  /** The searchable vertical — tasks/projects/initiatives/domains. Filtered here
+   *  by the typed query. Optional so the standalone macOS window can omit it. */
+  searchHits?: SearchHit[];
   onCreate: (input: NewTaskInput) => Promise<unknown>;
   agent: AgentHandle;
   onClose: () => void;
@@ -30,6 +63,13 @@ export interface SpotlightProps {
    * standalone macOS window can still fall back to onClose + run.
    */
   onRunCommand?: (cmd: Command) => void;
+  /**
+   * "modal" = the in-app ⌘K palette inside a Modal scrim (default).
+   * "window" = the global ⌥Space summon, a standalone glass window. The window
+   * variant carries the editorial framing — a Today-style date eyebrow + Fraunces
+   * greeting, a capture-first input, and a "Captured" moment before it dismisses.
+   */
+  variant?: "modal" | "window";
 }
 
 // What Nuvo can answer in Ask mode — phrased as the things you'd actually
@@ -56,7 +96,8 @@ export default function NuvoSpotlight(props: SpotlightProps) {
 // runs a command; Ask hands the same text to the Nuvo agent. Space on an empty
 // capture field flips to Ask; Backspace on an empty Ask field flips back.
 // Renders bare (no scrim / no card chrome) so a Modal or a window can wrap it.
-export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose, onRunCommand }: SpotlightProps) {
+export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, agent, onClose, onRunCommand, variant = "modal" }: SpotlightProps) {
+  const isWindow = variant === "window";
   const runCmd = (cmd: Command) => {
     if (onRunCommand) onRunCommand(cmd);
     else {
@@ -68,8 +109,14 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose,
   const [captureText, setCaptureText] = useState("");
   const [askText, setAskText] = useState("");
   const [highlight, setHighlight] = useState(0);
+  // The window's farewell beat: the captured title held for a moment so the
+  // summon completes with a "got it" instead of vanishing mid-keystroke.
+  const [captured, setCaptured] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // A static "now" per mount — the global window remounts on every ⌥Space
+  // (key={showKey}), so this re-reads the time on each summon.
+  const now = useMemo(() => new Date(), []);
 
   const { messages, loading, error, sendMessage } = agent;
 
@@ -84,32 +131,65 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose,
     [captureText],
   );
 
-  const matches = useMemo(() => {
-    const q = captureText.trim().toLowerCase();
-    if (!q) return commands;
-    return commands.filter((c) => c.title.toLowerCase().includes(q));
-  }, [captureText, commands]);
+  const query = captureText.trim().toLowerCase();
 
-  const rows = (parsed ? 1 : 0) + matches.length;
+  const matches = useMemo(() => {
+    if (!query) return commands;
+    return commands.filter((c) => c.title.toLowerCase().includes(query));
+  }, [query, commands]);
+
+  // Found records, grouped by kind and capped per section. Only when searching —
+  // an empty field shows the command palette, not the whole vertical.
+  const hitGroups = useMemo(() => {
+    if (!query || !searchHits?.length) return [] as { label: string; hits: SearchHit[] }[];
+    const match = (h: SearchHit) =>
+      h.title.toLowerCase().includes(query) || h.subtitle?.toLowerCase().includes(query);
+    return HIT_SECTIONS.map(({ kind, label, cap }) => ({
+      label,
+      hits: searchHits.filter((h) => h.kind === kind && match(h)).slice(0, cap),
+    })).filter((g) => g.hits.length > 0);
+  }, [query, searchHits]);
+
+  // One flat, ordered list of everything selectable (capture row, then command
+  // matches, then found records) — the single source of truth for ↑/↓ + Enter.
+  const selectable = useMemo(() => {
+    const items: ({ type: "capture" } | { type: "command"; cmd: Command } | { type: "entity"; hit: SearchHit })[] = [];
+    if (parsed) items.push({ type: "capture" });
+    for (const c of matches) items.push({ type: "command", cmd: c });
+    for (const g of hitGroups) for (const h of g.hits) items.push({ type: "entity", hit: h });
+    return items;
+  }, [parsed, matches, hitGroups]);
+
+  const rows = selectable.length;
 
   const runCapture = async () => {
-    const captureRow = parsed && highlight === 0;
-    if (captureRow) {
-      const labelIds = parsed.labels
+    const sel = selectable[highlight];
+    if (!sel) return;
+    if (sel.type === "capture") {
+      const title = parsed!.title || captureText.trim();
+      const labelIds = parsed!.labels
         .map((n) => labels.find((l) => l.name.toLowerCase() === n.toLowerCase())?.id)
         .filter((id): id is string => Boolean(id));
       await onCreate({
-        title: parsed.title || captureText.trim(),
-        do_date: parsed.doDate,
-        start_time: parsed.startTime?.toISOString() ?? null,
-        duration_minutes: parsed.durationMinutes,
-        priority: parsed.priority,
+        title,
+        do_date: parsed!.doDate,
+        start_time: parsed!.startTime?.toISOString() ?? null,
+        duration_minutes: parsed!.durationMinutes,
+        priority: parsed!.priority,
         labelIds,
       });
-      onClose();
+      // The window lingers on a "Captured" beat, then dismisses; the in-app
+      // modal closes straight away (the task appearing behind it is the receipt).
+      if (isWindow) {
+        setCaptured(title);
+        window.setTimeout(onClose, 900);
+      } else {
+        onClose();
+      }
+    } else if (sel.type === "command") {
+      runCmd(sel.cmd);
     } else {
-      const cmd = matches[highlight - (parsed ? 1 : 0)];
-      if (cmd) runCmd(cmd);
+      runCmd(sel.hit);
     }
   };
 
@@ -168,10 +248,37 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose,
 
   const isAsk = mode === "ask";
 
+  // The window's farewell — a held "Captured" moment so the summon completes
+  // with a quiet acknowledgment instead of vanishing mid-keystroke.
+  if (captured) {
+    return (
+      <div className="moment flex flex-col items-center gap-1.5 px-6 py-14 text-center">
+        <span className="text-lead leading-none text-accent">✓</span>
+        <h2 className="masthead text-lead text-ink">Captured</h2>
+        <p className="line-clamp-2 max-w-sm text-body text-muted">{captured}</p>
+      </div>
+    );
+  }
+
   return (
     <>
+      {/* The window opens like a pocket Today: a date eyebrow over a Fraunces
+          greeting. The in-app ⌘K palette skips this — it's already in the app. */}
+      {isWindow && (
+        <div className="px-4 pb-3 pt-5">
+          <div className="section-label text-muted/55">
+            {now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
+          </div>
+          <h1 className="masthead mt-1 text-lead text-ink">{greetingFor(now)}</h1>
+        </div>
+      )}
+
       <div className="flex items-center gap-3 border-b border-line/50 px-4">
-        <span className={`shrink-0 text-body leading-none ${isAsk ? "text-accent" : "text-accent/70"}`}>
+        <span
+          className={`shrink-0 leading-none ${isWindow ? "text-lead" : "text-body"} ${
+            isAsk ? "text-accent" : "text-accent/70"
+          }`}
+        >
           {isAsk ? "✦" : "＋"}
         </span>
         <input
@@ -185,19 +292,30 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose,
           placeholder={
             isAsk
               ? `Ask ${ASSISTANT_NAME} — "what does my day look like?"`
-              : 'Capture or command… "review PR tomorrow 2pm 45m #work !high"'
+              : isWindow
+                ? "Capture anything on your mind…"
+                : 'Capture or command… "review PR tomorrow 2pm 45m #work !high"'
           }
-          className="w-full bg-transparent py-4 text-head outline-none placeholder:text-muted/50"
+          className={`w-full bg-transparent py-4 outline-none placeholder:text-muted/45 ${
+            isWindow ? "text-lead" : "text-head"
+          }`}
         />
         <Keycap>esc</Keycap>
       </div>
 
-      {/* Mode toggle — tappable on touch, plus the Space / Backspace accelerators */}
-      <div className="flex items-center gap-1 border-b border-line/50 bg-[color-mix(in_srgb,var(--bg)_18%,transparent)] px-2 py-1.5">
-        <ModeTab active={!isAsk} onClick={() => setMode("capture")} icon="⚡" label="Capture" />
-        <ModeTab active={isAsk} onClick={() => setMode("ask")} icon="✦" label={`Ask ${ASSISTANT_NAME}`} />
-        <span className="mono ml-auto pr-1.5 text-meta text-muted/50">
-          {isAsk ? "⌫ capture" : "space to ask"}
+      {/* Mode — dissolved into one quiet ghost toggle (no filled band). The
+          leading mark + placeholder already say which mode you're in; this
+          offers the other, with the keyboard accelerator alongside. */}
+      <div className="flex items-center gap-2 border-b border-line/40 px-4 py-1.5">
+        <button
+          onClick={() => setMode(isAsk ? "capture" : "ask")}
+          className="tap fast flex items-center gap-1.5 text-meta text-muted/70 transition-colors hover:text-accent"
+        >
+          <span aria-hidden>{isAsk ? "＋" : "✦"}</span>
+          {isAsk ? "Capture a task" : `Ask ${ASSISTANT_NAME}`}
+        </button>
+        <span className="mono ml-auto text-micro text-muted/45">
+          {isAsk ? "⌫ to capture" : "space to ask"}
         </span>
       </div>
 
@@ -271,7 +389,7 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose,
 
           <div className="max-h-72 overflow-y-auto py-1">
             {matches.map((c, i) => {
-              const idx = i + (parsed ? 1 : 0);
+              const idx = (parsed ? 1 : 0) + i;
               return (
                 <button
                   key={c.id}
@@ -285,41 +403,45 @@ export function NuvoSpotlightPanel({ labels, commands, onCreate, agent, onClose,
                 </button>
               );
             })}
-            {matches.length === 0 && !parsed && (
+
+            {/* Found records — grouped under their kind. Flat indices continue
+                past the capture row + command matches so ↑/↓ flow straight through. */}
+            {(() => {
+              let n = (parsed ? 1 : 0) + matches.length;
+              return hitGroups.map((g) => (
+                <div key={g.label}>
+                  <div className="section-label px-4 pb-1 pt-2.5 text-meta text-muted/60">{g.label}</div>
+                  {g.hits.map((h) => {
+                    const idx = n++;
+                    return (
+                      <button
+                        key={h.id}
+                        onClick={() => runCmd(h)}
+                        onMouseEnter={() => setHighlight(idx)}
+                        className={`fast flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors ${
+                          highlight === idx ? "bg-accent-soft text-ink" : "text-ink/75 hover:bg-accent-soft/50"
+                        }`}
+                      >
+                        <span className="shrink-0 text-caption text-muted/60">{HIT_GLYPH[h.kind]}</span>
+                        <span className="min-w-0 flex-1 truncate text-body">{h.title}</span>
+                        {h.subtitle && (
+                          <span className="mono shrink-0 truncate text-meta text-muted/60">{h.subtitle}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ));
+            })()}
+
+            {rows === 0 && (
               <div className="px-4 py-3 text-caption text-muted/70">
-                Type to capture a task{commands.length ? ", run a command," : ""} or press space to ask {ASSISTANT_NAME}.
+                Type to capture a task, search, run a command, or press space to ask {ASSISTANT_NAME}.
               </div>
             )}
           </div>
         </>
       )}
     </>
-  );
-}
-
-function ModeTab({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: string;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={active}
-      className={`tap fast flex items-center gap-1.5 rounded-md px-2.5 py-1 text-label font-medium transition-all ${
-        active
-          ? "bg-[color-mix(in_srgb,var(--accent)_10%,var(--surface)_65%)] text-accent"
-          : "text-muted/70 hover:text-ink"
-      }`}
-    >
-      <span aria-hidden>{icon}</span>
-      {label}
-    </button>
   );
 }
