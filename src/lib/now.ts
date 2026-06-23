@@ -146,19 +146,51 @@ export function readDay(now: Date, busy: BusyBlock[], windowStart: Date, windowE
   };
 }
 
+// ── Hiding individual events ─────────────────────────────────────────────
+// A Fantastical-style "hide" keeps the event on the server but drops it from the
+// board AND the busy math (so its time is free for blocking again). We key on the
+// STABLE event key — account_id:provider_event_id — never external_events.id,
+// which is reassigned on a calendar re-import. A whole series shares one key:
+// account_id:series:recurring_event_id, so hiding the series hides every instance.
+
+/** Stable key for a single occurrence. */
+export function eventInstanceKey(e: { account_id: string; provider_event_id: string }): string {
+  return `${e.account_id}:${e.provider_event_id}`;
+}
+
+/** Stable key shared by every instance of a recurring series, or null if the
+ *  event isn't part of one (or the master id isn't synced yet). */
+export function eventSeriesKey(e: { account_id: string; recurring_event_id?: string | null }): string | null {
+  return e.recurring_event_id ? `${e.account_id}:series:${e.recurring_event_id}` : null;
+}
+
+/** Is this event hidden — directly, or because its whole series is? */
+export function isEventHidden(
+  e: { account_id: string; provider_event_id: string; recurring_event_id?: string | null },
+  hiddenKeys: Set<string>,
+): boolean {
+  if (hiddenKeys.size === 0) return false;
+  if (hiddenKeys.has(eventInstanceKey(e))) return true;
+  const seriesKey = eventSeriesKey(e);
+  return seriesKey ? hiddenKeys.has(seriesKey) : false;
+}
+
 /** Fold the live calendar — external events + your own scheduled task blocks —
  *  into the BusyBlock list readDay() consumes. Skips all-day events, anything
- *  marked free, and any calendar the user has hidden in settings. Shared by the
- *  Now view and the mobile Calendar so the "what counts as busy" rule lives once. */
+ *  marked free, any calendar the user has hidden in settings, and any individually
+ *  hidden event. Shared by the Now view and the mobile Calendar so the "what counts
+ *  as busy" rule lives once. */
 export function toBusyBlocks(
   events: ExternalEvent[],
   blocks: Task[],
   hiddenCalendarIds: Iterable<string> = [],
+  hiddenEventKeys: Iterable<string> = [],
 ): BusyBlock[] {
   const hidden = new Set(hiddenCalendarIds);
+  const hiddenKeys = new Set(hiddenEventKeys);
   return [
     ...events
-      .filter((e) => e.busy && !e.all_day && !hidden.has(e.calendar_id))
+      .filter((e) => e.busy && !e.all_day && !hidden.has(e.calendar_id) && !isEventHidden(e, hiddenKeys))
       .map((e): BusyBlock => ({
         title: e.title,
         start: new Date(e.start_at),

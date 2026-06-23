@@ -229,14 +229,14 @@ export async function buildContext(
       .lt("start_time", end),
     admin
       .from("external_events")
-      .select("id, title, start_at, end_at, all_day, location, calendar_id")
+      .select("id, title, start_at, end_at, all_day, location, calendar_id, account_id, provider_event_id, recurring_event_id")
       .eq("user_id", userId)
       .lt("start_at", end)
       .gt("end_at", start),
     admin.from("labels").select("id, name").eq("user_id", userId).order("name"),
     admin
       .from("user_settings")
-      .select("day_start_hour, day_end_hour, hidden_calendar_ids")
+      .select("day_start_hour, day_end_hour, hidden_calendar_ids, hidden_events")
       .eq("user_id", userId)
       .maybeSingle(),
     admin.from("domains").select("id, name, intention, icon, color, weekly_target_hours").eq("user_id", userId).order("sort_order"),
@@ -275,6 +275,16 @@ export async function buildContext(
   const hiddenCalendars = new Set<string>(
     (settingsRes.data?.hidden_calendar_ids as string[] | null) ?? [],
   );
+  // Individually hidden events — keyed by the stable account_id:provider_event_id
+  // (or account_id:series:recurring_event_id for a whole series).
+  const hiddenEventKeys = new Set<string>(
+    ((settingsRes.data?.hidden_events as { key: string }[] | null) ?? []).map((h) => h.key),
+  );
+  // deno-lint-ignore no-explicit-any
+  const isEventHidden = (e: any): boolean => {
+    if (hiddenEventKeys.has(`${e.account_id}:${e.provider_event_id}`)) return true;
+    return e.recurring_event_id ? hiddenEventKeys.has(`${e.account_id}:series:${e.recurring_event_id}`) : false;
+  };
 
   const inbox = (inboxRes.data ?? []).map((t) => fmtTask(t, today, nowMs));
   const todayTasks = (todayRes.data ?? [])
@@ -282,7 +292,7 @@ export async function buildContext(
     .map((t) => fmtTask(t, today, nowMs));
   const scheduled = (scheduledRes.data ?? []).map((t) => fmtTask(t, today, nowMs));
   const events = (eventsRes.data ?? [])
-    .filter((e) => !hiddenCalendars.has(e.calendar_id as string))
+    .filter((e) => !hiddenCalendars.has(e.calendar_id as string) && !isEventHidden(e))
     .map((e) => fmtEvent(e, today, nowMs));
 
   const todaySchedule = buildTodaySchedule(events, scheduled, today);

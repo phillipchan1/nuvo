@@ -2,7 +2,7 @@ import { useMemo, useRef } from "react";
 import { useSettings } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
-import { fmtMins, readDay, toBusyBlocks, type Gap } from "../../lib/now";
+import { fmtMins, isEventHidden, readDay, toBusyBlocks, type Gap } from "../../lib/now";
 import type { ExternalEvent, Task } from "../../lib/types";
 
 // The mobile Calendar — built to answer one question fast: "are you free on X?"
@@ -47,11 +47,12 @@ export default function MobileCalendar({ now }: { now: Date }) {
   const { data: blocks = [], isLoading: blkLoading } = useScheduledTasks(range.start, range.end);
 
   const hidden = useMemo(() => new Set(settings?.hidden_calendar_ids ?? []), [settings]);
+  const hiddenEventKeys = useMemo(() => new Set((settings?.hidden_events ?? []).map((h) => h.key)), [settings]);
   const workStart = settings?.work_start_minutes ?? 480;
   const workEnd = settings?.work_end_minutes ?? 990;
 
   const days = useMemo<DayPlan[]>(() => {
-    const visibleEvents = events.filter((e) => !hidden.has(e.calendar_id));
+    const visibleEvents = events.filter((e) => !hidden.has(e.calendar_id) && !isEventHidden(e, hiddenEventKeys));
     const out: DayPlan[] = [];
     for (let i = 0; i < HORIZON_DAYS; i++) {
       const date = new Date(today0.getTime() + i * DAY_MS);
@@ -93,7 +94,7 @@ export default function MobileCalendar({ now }: { now: Date }) {
       });
     }
     return out;
-  }, [events, blocks, hidden, today0, workStart, workEnd, now]);
+  }, [events, blocks, hidden, hiddenEventKeys, today0, workStart, workEnd, now]);
 
   // Refs for the date-strip jump-to-day.
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});

@@ -4,7 +4,7 @@ import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { Draggable } from "@fullcalendar/interaction";
-import type { DatesSetArg, DateSelectArg, EventClickArg, EventContentArg, EventDropArg } from "@fullcalendar/core";
+import type { DatesSetArg, DateSelectArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from "@fullcalendar/core";
 import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
@@ -12,7 +12,8 @@ import { endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
 import { addDays } from "date-fns";
 import { expandRule, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
-import type { useExternalEventMutations } from "../hooks/useCalendar";
+import { useHiddenEvents, type useExternalEventMutations } from "../hooks/useCalendar";
+import { eventSeriesKey } from "../lib/now";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateKind } from "./DraftComposer";
@@ -213,6 +214,13 @@ export default function CalendarPane({
   mutationsRef.current = mutations;
 
   const [viewTitle, setViewTitle] = useState("");
+
+  // Hidden events (Fantastical-style): kept off the board + out of the busy math.
+  // `showHidden` reveals them dimmed so you can bring one back. The context menu /
+  // popover toggle the per-event hidden state.
+  const { keys: hiddenKeys, isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
+  const [showHidden, setShowHidden] = useState(false);
+  const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent } | null>(null);
 
   const googleAvailable = useMemo(
     () => accounts.some((a) => a.provider === "google"),
@@ -542,9 +550,12 @@ export default function CalendarPane({
       });
 
     const externalEvents = events
-      .filter((e) => !hidden.has(e.calendar_id) && !e.all_day)
+      // Hidden events drop off the board entirely — unless "show hidden" is on,
+      // when they return dimmed (and dashed) so you can bring one back.
+      .filter((e) => !hidden.has(e.calendar_id) && !e.all_day && (showHidden || !isHidden(e)))
       .map((e) => {
         const account = accountById.get(e.account_id);
+        const eventHidden = isHidden(e);
         const isGoogle = account?.provider === "google";
         const isIcs = account?.provider === "ics";
         const calColor =
@@ -567,6 +578,7 @@ export default function CalendarPane({
           classNames: [
             isGoogle ? "evt-google" : isIcs ? "evt-ics" : "evt-m365",
             ...(rsvpClass ? [rsvpClass] : []),
+            ...(eventHidden ? ["evt-hidden"] : []),
           ],
           // Google + ICS render as quiet tinted blocks (the "given" calendar, so
           // your bolder tasks read on top); only M365 keeps the read-only hatch.
@@ -628,7 +640,8 @@ export default function CalendarPane({
     });
 
     return [...taskEvents, ...plannedTaskEvents, ...externalEvents, ...slotEvents];
-  }, [tasks, events, slots, slotTasks, hidden, accountById, now, taskAccent, slotTitle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, now, taskAccent, slotTitle]);
 
   // Ghost block shown while the DraftComposer popover is open from a click
   // (drag already gets selectMirror; click has no selection on the grid).
@@ -648,6 +661,51 @@ export default function CalendarPane({
   const findTask = (id: string) => tasksRef.current.find((t) => t.id === id);
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
   const findSlot = (id: string) => slotsRef.current.find((s) => s.id === id);
+
+  // ── Hide / show (Fantastical "hide", not delete) ─────────────────────────
+  const hideEvent = (event: ExternalEvent, scope: RecurrenceScope) => {
+    hide(event, scope);
+    setEventMenu(null);
+  };
+  const showEvent = (event: ExternalEvent) => {
+    const key = hiddenKeyFor(event);
+    if (key) unhide(key);
+    setEventMenu(null);
+  };
+
+  // Right-click a calendar event → the hide/show menu (events only — tasks and
+  // slots have their own editing paths). The listener is attached per element as
+  // FullCalendar mounts it.
+  const handleEventDidMount = (arg: EventMountArg) => {
+    const { kind, refId } = arg.event.extendedProps as ExtendedProps;
+    if (kind === "task" || kind === "slot") return;
+    arg.el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const evt = findEvent(refId);
+      if (evt) setEventMenu({ x: e.clientX, y: e.clientY, event: evt });
+    });
+  };
+
+  // Dismiss the menu on any outside interaction or Escape (a press inside the
+  // menu is a selection, not a dismissal).
+  const eventMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!eventMenu) return;
+    const onDown = (e: PointerEvent) => {
+      if (eventMenuRef.current?.contains(e.target as Node)) return;
+      setEventMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setEventMenu(null);
+    const onBlur = () => setEventMenu(null);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [eventMenu]);
 
   // If the event is part of a recurring series, revert immediately and
   // surface the scope dialog. On confirm the caller gets scope + executes.
@@ -1188,6 +1246,35 @@ export default function CalendarPane({
         />
       )}
 
+      {eventMenu && (() => {
+        const ev = eventMenu.event;
+        const hiddenNow = isHidden(ev);
+        const series = Boolean(eventSeriesKey(ev));
+        const left = Math.min(eventMenu.x, window.innerWidth - 210);
+        const top = Math.min(eventMenu.y, window.innerHeight - 140);
+        return (
+          <div
+            ref={eventMenuRef}
+            className="moment fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            style={{ top, left, boxShadow: "var(--shadow-3)" }}
+          >
+            <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
+              {ev.title || "Event"}
+            </div>
+            {hiddenNow ? (
+              <EventMenuItem onClick={() => showEvent(ev)}>Show event</EventMenuItem>
+            ) : series ? (
+              <>
+                <EventMenuItem onClick={() => hideEvent(ev, "THIS")}>Hide this event</EventMenuItem>
+                <EventMenuItem onClick={() => hideEvent(ev, "ALL")}>Hide all events in series</EventMenuItem>
+              </>
+            ) : (
+              <EventMenuItem onClick={() => hideEvent(ev, "THIS")}>Hide event</EventMenuItem>
+            )}
+          </div>
+        );
+      })()}
+
       {draft && (
         <DraftComposer
           start={draft.start}
@@ -1266,6 +1353,28 @@ export default function CalendarPane({
                 strokeLinejoin="round"
               />
             </svg>
+          </button>
+        )}
+
+        {/* Reveal hidden events (dimmed) so you can bring one back. Only appears
+            once something is actually hidden. */}
+        {hiddenKeys.size > 0 && (
+          <button
+            onClick={() => setShowHidden((v) => !v)}
+            className="fast ml-1 flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
+            style={showHidden ? { color: "var(--accent)" } : undefined}
+            title={showHidden ? `Hiding ${hiddenKeys.size} event${hiddenKeys.size > 1 ? "s" : ""} — click to tuck away again` : `Show ${hiddenKeys.size} hidden event${hiddenKeys.size > 1 ? "s" : ""}`}
+          >
+            {showHidden ? (
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3"/>
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M6.3 3.8A6 6 0 018 3.5C12.2 3.5 14.5 8 14.5 8a11 11 0 01-1.9 2.4M3.4 5.6A11 11 0 001.5 8s2.3 4.5 6.5 4.5a6 6 0 002-.35M2 2l12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
           </button>
         )}
         </>
@@ -1399,6 +1508,7 @@ export default function CalendarPane({
           eventDragStop={onDragStop}
           eventClick={onClick}
           eventContent={renderEvent}
+          eventDidMount={handleEventDidMount}
           datesSet={handleDatesSet}
         />
       </div>
@@ -1411,6 +1521,18 @@ function minutesToDuration(mins: number): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/** One row in the right-click event menu. */
+function EventMenuItem({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="fast block w-full px-3 py-1.5 text-left text-caption text-ink hover:bg-surface-2"
+    >
+      {children}
+    </button>
+  );
 }
 
 /** The two-arrow repeat glyph marking a block as part of a series. */

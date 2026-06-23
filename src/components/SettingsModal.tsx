@@ -644,6 +644,44 @@ function ConnectionsPane({
           </div>
         ))}
 
+        {/* Individually hidden events — the cross-shell place to bring one back
+            (the desktop calendar also has an inline eye toggle). */}
+        {(settings?.hidden_events ?? []).length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-line">
+            <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
+              <span className="text-body font-medium leading-tight">Hidden events</span>
+              <span className="mono ml-auto rounded-full border border-line px-1.5 py-0.5 text-meta text-muted">
+                {(settings?.hidden_events ?? []).length}
+              </span>
+            </div>
+            <div className="space-y-0.5 p-1.5">
+              {(settings?.hidden_events ?? []).map((h) => (
+                <div
+                  key={h.key}
+                  className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-caption hover:bg-surface-2"
+                >
+                  <span className="min-w-0 flex-1 truncate text-muted line-through decoration-line-strong">
+                    {h.title || "Untitled event"}
+                  </span>
+                  {h.key.includes(":series:") && (
+                    <span className="mono shrink-0 rounded-full border border-line px-1.5 py-0.5 text-meta text-muted">series</span>
+                  )}
+                  <Btn
+                    onClick={() =>
+                      updateSettings({ hidden_events: (settings?.hidden_events ?? []).filter((x) => x.key !== h.key) })
+                    }
+                  >
+                    Show
+                  </Btn>
+                </div>
+              ))}
+            </div>
+            <p className="px-3 pb-2.5 pt-0.5 text-label text-muted">
+              Hidden events stay on the server — they're just kept off your board and out of time-blocking.
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <Btn kind="primary" onClick={() => connect("google")}>
             {accounts.some((a) => a.provider === "google") ? "+ Add Google account" : "Connect Google"}
