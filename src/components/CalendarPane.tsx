@@ -221,6 +221,7 @@ export default function CalendarPane({
   const { keys: hiddenKeys, isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const [showHidden, setShowHidden] = useState(false);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent } | null>(null);
+  const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: Task; el: HTMLElement } | null>(null);
 
   const googleAvailable = useMemo(
     () => accounts.some((a) => a.provider === "google"),
@@ -685,7 +686,18 @@ export default function CalendarPane({
   // FullCalendar mounts it.
   const handleEventDidMount = (arg: EventMountArg) => {
     const { kind, refId } = arg.event.extendedProps as ExtendedProps;
-    if (kind === "task" || kind === "slot") return;
+    if (kind === "task") {
+      arg.el.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        const task = findTask(refId);
+        if (task) setTaskMenu({ x: e.clientX, y: e.clientY, task, el: arg.el });
+      });
+      return;
+    }
+    if (kind === "slot") {
+      arg.el.addEventListener("contextmenu", (e) => e.preventDefault());
+      return;
+    }
     arg.el.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       const evt = findEvent(refId);
@@ -713,6 +725,25 @@ export default function CalendarPane({
       window.removeEventListener("blur", onBlur);
     };
   }, [eventMenu]);
+
+  const taskMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!taskMenu) return;
+    const onDown = (e: PointerEvent) => {
+      if (taskMenuRef.current?.contains(e.target as Node)) return;
+      setTaskMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setTaskMenu(null);
+    const onBlur = () => setTaskMenu(null);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [taskMenu]);
 
   // If the event is part of a recurring series, revert immediately and
   // surface the scope dialog. On confirm the caller gets scope + executes.
@@ -1289,6 +1320,59 @@ export default function CalendarPane({
             ) : (
               <EventMenuItem onClick={() => hideEvent(ev, "THIS")}>Hide event</EventMenuItem>
             )}
+          </div>
+        );
+      })()}
+
+      {taskMenu && (() => {
+        const task = taskMenu.task;
+        const left = Math.min(taskMenu.x, window.innerWidth - 210);
+        const top = Math.min(taskMenu.y, window.innerHeight - 200);
+        return (
+          <div
+            ref={taskMenuRef}
+            className="moment fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            style={{ top, left, boxShadow: "var(--shadow-3)" }}
+          >
+            <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
+              {task.title}
+            </div>
+            <EventMenuItem onClick={() => {
+              const rect = taskMenu.el.getBoundingClientRect();
+              setTaskMenu(null);
+              onOpenTask(task, rect);
+            }}>
+              Open
+            </EventMenuItem>
+            <EventMenuItem onClick={() => {
+              setTaskMenu(null);
+              task.status === "done" ? mutations.uncomplete(task) : mutations.complete(task);
+            }}>
+              {task.status === "done" ? "Reopen" : "Mark done"}
+            </EventMenuItem>
+            <EventMenuItem onClick={() => {
+              setTaskMenu(null);
+              mutations.create({
+                title: task.title,
+                notes: task.notes || undefined,
+                do_date: task.do_date,
+                start_time: task.start_time,
+                duration_minutes: task.duration_minutes,
+                priority: task.priority !== "none" ? task.priority : undefined,
+                domain_id: task.domain_id,
+                project_id: task.project_id,
+                labelIds: task.task_labels?.map((l) => l.label_id),
+              });
+            }}>
+              Duplicate
+            </EventMenuItem>
+            <div className="my-1 border-t border-line" />
+            <EventMenuItem onClick={() => {
+              setTaskMenu(null);
+              mutations.trash(task);
+            }}>
+              <span style={{ color: "var(--signal)" }}>Trash</span>
+            </EventMenuItem>
           </div>
         );
       })()}
