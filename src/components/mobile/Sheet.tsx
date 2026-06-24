@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 // screen; the default hugs its content.
 //
 // Swipe the handle or title row downward to dismiss. Releasing past 30% of the
-// sheet height snaps it away; less than that snaps it back.
+// sheet height snaps it away with the scrim fading; less than that snaps it back.
 export default function Sheet({
   onClose,
   children,
@@ -22,7 +22,7 @@ export default function Sheet({
   contentClassName?: string;
 }) {
   const sheetRef = useRef<HTMLDivElement>(null);
-  // Track active drag without triggering re-renders.
+  const scrimRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ startY: number } | null>(null);
 
   useEffect(() => {
@@ -33,7 +33,6 @@ export default function Sheet({
       }
     };
     window.addEventListener("keydown", onKey, true);
-    // Lock the body scroll while a sheet owns the screen.
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -42,13 +41,27 @@ export default function Sheet({
     };
   }, [onClose]);
 
-  // Slide the sheet down and call onClose after the animation.
   const dismiss = () => {
-    const el = sheetRef.current;
-    if (!el) { onClose(); return; }
-    el.style.transition = "transform 0.22s ease-in";
-    el.style.transform = "translateY(110%)";
-    setTimeout(onClose, 220);
+    const sheet = sheetRef.current;
+    const scrim = scrimRef.current;
+    if (!sheet) { onClose(); return; }
+
+    // Clear the sheet-up CSS animation so it doesn't block the transition —
+    // animated props have higher precedence than transitioned props in the cascade.
+    sheet.style.animation = "none";
+    // Force a reflow so the browser records the current position as the
+    // transition start state before we update transform.
+    sheet.getBoundingClientRect();
+
+    sheet.style.transition = "transform 0.28s ease-in";
+    sheet.style.transform = "translateY(110%)";
+
+    if (scrim) {
+      scrim.style.transition = "opacity 0.28s ease-in";
+      scrim.style.opacity = "0";
+    }
+
+    setTimeout(onClose, 280);
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -59,8 +72,15 @@ export default function Sheet({
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!drag.current || !sheetRef.current) return;
     const delta = Math.max(0, e.clientY - drag.current.startY);
+    sheetRef.current.style.animation = "none";
     sheetRef.current.style.transition = "none";
     sheetRef.current.style.transform = `translateY(${delta}px)`;
+    // Dim the scrim proportionally as the sheet moves away.
+    if (scrimRef.current) {
+      const height = sheetRef.current.offsetHeight || 400;
+      const opacity = Math.max(0, 0.4 * (1 - delta / height));
+      scrimRef.current.style.opacity = String(opacity);
+    }
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -77,10 +97,13 @@ export default function Sheet({
         sheetRef.current.style.transition = "transform 0.22s ease-out";
         sheetRef.current.style.transform = "translateY(0)";
       }
+      if (scrimRef.current) {
+        scrimRef.current.style.transition = "opacity 0.22s ease-out";
+        scrimRef.current.style.opacity = "0.4";
+      }
     }
   };
 
-  // Shared drag-handle props — applied to the pill area and the title row.
   const handleProps = {
     onPointerDown,
     onPointerMove,
@@ -91,6 +114,7 @@ export default function Sheet({
 
   return createPortal(
     <div
+      ref={scrimRef}
       className="scrim fixed inset-0 z-[60] flex flex-col justify-end bg-black/40 backdrop-blur-[2px]"
       onMouseDown={(e) => e.target === e.currentTarget && dismiss()}
       onTouchStart={(e) => e.target === e.currentTarget && dismiss()}
@@ -101,7 +125,7 @@ export default function Sheet({
           tall ? "h-[92vh] pt-safe" : "max-h-[88vh]"
         } flex-col rounded-t-2xl border-t border-line pb-safe`}
       >
-        {/* Grab pill — also the primary swipe target */}
+        {/* Grab pill — primary swipe target */}
         <div {...handleProps} className="flex shrink-0 flex-col items-center py-2.5">
           <span className="h-1 w-9 rounded-full bg-line-strong" />
         </div>
@@ -114,7 +138,7 @@ export default function Sheet({
             <div className="text-head font-semibold tracking-tight select-none">{title}</div>
             <button
               onClick={onClose}
-              onPointerDown={(e) => e.stopPropagation()} // don't start a drag from the ✕
+              onPointerDown={(e) => e.stopPropagation()}
               aria-label="Close"
               className="fast -mr-1 flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted hover:bg-bg hover:text-ink"
               style={{ cursor: "default" }}
