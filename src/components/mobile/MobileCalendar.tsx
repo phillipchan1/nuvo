@@ -3,7 +3,8 @@ import { useSettings } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
 import { fmtMins, isEventHidden, readDay, toBusyBlocks, type Gap } from "../../lib/now";
-import type { ExternalEvent, Task } from "../../lib/types";
+import type { AttendeeStatus, ExternalEvent, Task } from "../../lib/types";
+import type { CalendarTap } from "./MobileEventSheet";
 
 // The mobile Calendar — built to answer one question fast: "are you free on X?"
 // A 14-day agenda where each day shows its commitments AND its open windows,
@@ -15,18 +16,31 @@ const DAY_MS = 24 * 3600_000;
 const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 const at = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
+interface TimedItem {
+  title: string;
+  start: Date;
+  end: Date;
+  kind: "event" | "block";
+  location?: string | null;
+  done?: boolean;
+  // For tapping:
+  eventId?: string;
+  self_rsvp?: AttendeeStatus | null;
+  taskId?: string;
+}
+
 interface DayPlan {
   date: Date;
   isToday: boolean;
   label: string; // "Today" / "Tomorrow" / weekday
   allDay: ExternalEvent[];
-  timed: { title: string; start: Date; end: Date; kind: "event" | "block"; location?: string | null; done?: boolean }[];
+  timed: TimedItem[];
   gaps: Gap[];
   openMins: number;
   isPast: boolean; // a fully-elapsed work window (today, after hours)
 }
 
-export default function MobileCalendar({ now }: { now: Date }) {
+export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEvent?: (tap: CalendarTap) => void }) {
   const { settings } = useSettings();
 
   const today0 = useMemo(() => {
@@ -78,9 +92,32 @@ export default function MobileCalendar({ now }: { now: Date }) {
       const refNow = isToday ? new Date(Math.max(now.getTime(), ws.getTime())) : ws;
       const read = readDay(refNow, busy, ws, we);
 
-      const timed = busy
-        .map((b) => ({ title: b.title, start: b.start, end: b.end, kind: b.kind, location: b.location, done: b.done }))
-        .sort((a, b) => a.start.getTime() - b.start.getTime());
+      // Build timed from source arrays so we can carry IDs for the tap actions.
+      // busy is still used for the gap/availability math below.
+      const timed: TimedItem[] = [
+        ...dayEvents.filter((e) => e.busy).map((e) => ({
+          title: e.title,
+          start: new Date(e.start_at),
+          end: new Date(e.end_at),
+          kind: "event" as const,
+          location: e.location,
+          done: false,
+          eventId: e.id,
+          self_rsvp: e.self_rsvp ?? null,
+        })),
+        ...dayBlocks
+          .filter((t: Task) => t.start_time)
+          .map((t: Task) => ({
+            title: t.title,
+            start: new Date(t.start_time!),
+            end: new Date(new Date(t.start_time!).getTime() + (t.duration_minutes ?? 30) * 60_000),
+            kind: "block" as const,
+            location: null,
+            done: t.status === "done",
+            taskId: t.id,
+            self_rsvp: null,
+          })),
+      ].sort((a, b) => a.start.getTime() - b.start.getTime());
 
       out.push({
         date,
@@ -147,6 +184,7 @@ export default function MobileCalendar({ now }: { now: Date }) {
               innerRef={(el) => {
                 dayRefs.current[dayKey(d.date)] = el;
               }}
+              onTapEvent={onTapEvent}
             />
           ))}
         </div>
@@ -157,7 +195,15 @@ export default function MobileCalendar({ now }: { now: Date }) {
 
 // One day: header with a free/busy read, the day's events, and — the point of
 // this whole view — its open windows spelled out so you can answer on the spot.
-function DayCard({ day, innerRef }: { day: DayPlan; innerRef: (el: HTMLElement | null) => void }) {
+function DayCard({
+  day,
+  innerRef,
+  onTapEvent,
+}: {
+  day: DayPlan;
+  innerRef: (el: HTMLElement | null) => void;
+  onTapEvent?: (tap: CalendarTap) => void;
+}) {
   const { date, isToday, label, allDay, timed, gaps, openMins, isPast } = day;
   const fullyOpen = timed.length === 0 && allDay.length === 0;
 
@@ -178,9 +224,24 @@ function DayCard({ day, innerRef }: { day: DayPlan; innerRef: (el: HTMLElement |
       {allDay.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {allDay.map((e) => (
-            <span key={e.id} className="mono rounded-md border border-line bg-surface-2 px-2 py-0.5 text-label text-muted">
+            <button
+              key={e.id}
+              onClick={() =>
+                onTapEvent?.({
+                  kind: "event",
+                  id: e.id,
+                  title: e.title || "Busy",
+                  start: new Date(e.start_at),
+                  end: new Date(e.end_at),
+                  allDay: true,
+                  location: e.location,
+                  self_rsvp: e.self_rsvp ?? null,
+                })
+              }
+              className="tap fast mono rounded-md border border-line bg-surface-2 px-2 py-0.5 text-label text-muted active:bg-surface"
+            >
               {e.title || "Busy"}
-            </span>
+            </button>
           ))}
         </div>
       )}
@@ -188,27 +249,37 @@ function DayCard({ day, innerRef }: { day: DayPlan; innerRef: (el: HTMLElement |
       {/* Timed commitments */}
       {timed.length > 0 && (
         <div className="space-y-1.5">
-          {timed.map((b, i) => (
-            <div key={i} className="flex items-baseline gap-2.5">
-              <span
-                className="mono w-[68px] shrink-0 text-right text-meta"
-                style={{ color: b.kind === "block" ? "var(--accent)" : "var(--muted)" }}
+          {timed.map((b, i) => {
+            const tap: CalendarTap =
+              b.kind === "event"
+                ? { kind: "event", id: b.eventId!, title: b.title || "Untitled", start: b.start, end: b.end, location: b.location ?? null, self_rsvp: b.self_rsvp }
+                : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
+            return (
+              <button
+                key={i}
+                onClick={() => onTapEvent?.(tap)}
+                className="tap fast -mx-1 flex w-full items-baseline gap-2.5 rounded-lg px-1 text-left active:bg-surface-2"
               >
-                {at(b.start)}
-              </span>
-              <span
-                className="mt-[5px] h-1.5 w-1.5 shrink-0 self-start rounded-full"
-                style={{ background: b.kind === "block" ? "var(--accent)" : "var(--line-strong)" }}
-              />
-              <div className="min-w-0 flex-1">
-                <div className={`truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>{b.title || "Untitled"}</div>
-                <div className="mono text-meta text-muted">
-                  {at(b.start)}–{at(b.end)}
-                  {b.location ? ` · ${b.location}` : ""}
+                <span
+                  className="mono w-[68px] shrink-0 text-right text-meta"
+                  style={{ color: b.kind === "block" ? "var(--accent)" : "var(--muted)" }}
+                >
+                  {at(b.start)}
+                </span>
+                <span
+                  className="mt-[5px] h-1.5 w-1.5 shrink-0 self-start rounded-full"
+                  style={{ background: b.kind === "block" ? "var(--accent)" : "var(--line-strong)" }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className={`truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>{b.title || "Untitled"}</div>
+                  <div className="mono text-meta text-muted">
+                    {at(b.start)}–{at(b.end)}
+                    {b.location ? ` · ${b.location}` : ""}
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
 

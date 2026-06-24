@@ -29,6 +29,7 @@ import MobileSearch, { type JumpKind } from "./MobileSearch";
 import QuickTaskSheet from "./QuickTaskSheet";
 import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
+import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 
 // Top-level destinations: the three jobs you do on the phone. Today/Week/Inbox
 // collapse into one "Tasks" screen (three lenses on one backlog) so the bar can
@@ -105,6 +106,7 @@ export default function MobileShell() {
   // The tab Nuvo was opened from, so its starter hints match where you came from.
   const [chatFrom, setChatFrom] = useState<"now" | MobileTab | undefined>(undefined);
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
@@ -290,7 +292,7 @@ export default function MobileShell() {
             <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
           </div>
         ) : tab === "calendar" ? (
-          <MobileCalendar now={now} />
+          <MobileCalendar now={now} onTapEvent={setCalendarTap} />
         ) : tab === "plan" ? (
           <MobilePlan target={planTarget} onRefine={() => setRefineOpen(true)} />
         ) : (
@@ -373,6 +375,16 @@ export default function MobileShell() {
           mutations={mutations}
           accent={taskDomainColor(vertical, openTask)}
           onClose={() => setTaskId(null)}
+        />
+      )}
+      {calendarTap && (
+        <MobileEventSheet
+          tap={calendarTap}
+          task={calendarTap.kind === "block" ? (taskById.get(calendarTap.taskId) ?? null) : null}
+          mutations={mutations}
+          onClose={() => setCalendarTap(null)}
+          onAskNuvo={openChat}
+          onEditTask={(id) => { setCalendarTap(null); setTaskId(id); }}
         />
       )}
       {searchOpen && (
