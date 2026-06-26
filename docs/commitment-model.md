@@ -19,10 +19,9 @@ required pace = remaining effort ÷ weeks until target
 
 - **Demand** = Σ required pace across all in-flight projects
 - **Capacity** = real available hours this week (calendar-derived — see below)
-- **Commitment = Demand ÷ Capacity**
-  - `< ~0.7` under-committed (slack — pull another bet)
-  - `~0.7–1.0` healthy
-  - `> 1.0` over-committed (cut scope, move a deadline, drop a bet, or add capacity)
+- **Commitment** — see the evolution below. The first cut was `Demand ÷ Capacity`
+  (project pace vs free time); dogfooding showed that's tone-deaf when your week is
+  wall-to-wall *meetings*, so Commitment now measures **total load**.
 
 "Are we behind?" is a separate number — **Drift**:
 
@@ -66,24 +65,40 @@ These slot into the existing three honest axes: **Defined** is the ripeness gate
 lets a project into the pace math, **Capacity** becomes real hours-demand for ripe work
 + WIP for raw work, **Motion** powers Drift.
 
-## Capacity = calendar-derived (decided)
+## Commitment = total load (the model that survived dogfooding)
 
-The divisor is **real available hours** = working window (`work_start/end_minutes`)
-− external meetings (`toBusyBlocks`) − already-scheduled blocks. Not the aspirational
-Σ domain `weekly_target_hours` (which measures intent, not what the calendar can hold).
-`refineFeasibility.ts` already walks the calendar this way per project — the portfolio
-ribbon is its aggregate.
+A packed *meeting* calendar is commitment, even if zero project work is on it. So the
+meter measures the whole week, not just project pace. Over a weekday work window
+(`work_start/end_minutes`, Mon–Fri):
 
-Making it *honest* (post-dogfood) took three corrections, because a naïve "window minus
-booked" over 13 weeks reads wildly optimistic:
-- **Weekdays only.** Weekends aren't work capacity, so the 8:00–4:30 window applies
-  Mon–Fri (`capacity.ts` skips Sat/Sun).
-- **Near-term anchor.** "Typical week" capacity = the average of the **next 4 full
-  weeks**, not weeks 2–13. The far future looks empty only because one-offs aren't booked
-  yet; recurring meetings are already on the calendar this close in, so near-term is real.
-- **Cap the far weeks.** In the forecast ribbon each future week's free time is capped at
-  that near-term typical, so a sparsely-booked week 9 doesn't pretend to be wide open.
-  Recurring meetings keep actual ≤ cap anyway, so this never double-counts them.
+```
+load = meetings/obligations  +  project pace        (vs the window)
+focus budget = usable free  −  buffer               (what's actually left for bets)
+over  ⇔  project pace > focus budget                (your bets don't fit the gaps)
+```
+
+- **% committed** = (meetings + project pace) ÷ window — the headline that finally
+  reads high when your week is slammed.
+- **Band** is driven by *fit*: `over` when project pace exceeds the focus budget;
+  `committed` when little slack remains; `room` otherwise.
+- The bar is **stacked**: meetings · project · buffer · free.
+
+### Capacity = calendar-derived, and honest (`capacity.ts` + `useCapacity.ts`)
+
+The divisor is **real** time, not the aspirational Σ domain `weekly_target_hours`.
+Four corrections, because a naïve "window minus booked over 13 weeks" reads wildly
+optimistic (it told a 13%-committed lie against a wall-to-wall calendar):
+- **Weekdays only.** Weekends aren't work capacity.
+- **Trailing-actual meeting load.** "Typical week" busy is learned from the **last 4
+  weeks** (fully booked in hindsight) and carried forward — the future looks empty only
+  because one-offs aren't booked yet.
+- **Buffer reserve.** `BUFFER_FRAC` (~15%) of the window is held back for
+  admin/email/transitions and never counted as project-capable.
+- **Usable gaps only.** Free stretches under `MIN_FOCUS_GAP` (30m) are the cracks
+  between meetings, not focus time, so they don't count toward the budget.
+
+*(Known gap: all-day banners — "PTO", "X in Town" — are excluded by `toBusyBlocks`, so
+they don't shrink capacity. Usually right; revisit if it bites.)*
 
 ## The gauge it replaces
 
