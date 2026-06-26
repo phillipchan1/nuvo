@@ -3,6 +3,15 @@ import { admin, todayLA } from "../_shared/admin.ts";
 const APP_TZ = "America/Los_Angeles";
 const TASK_COLS =
   "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count";
+const MIN_SLOT_MINUTES = 30;
+
+export interface FreeSlot {
+  startISO: string;
+  endISO: string;
+  /** Pre-formatted in America/Los_Angeles */
+  timeRange: string;
+  minutes: number;
+}
 
 export interface ScheduleItem {
   kind: "event" | "task";
@@ -22,17 +31,23 @@ export interface AgentContext {
   nowISO: string;
   /** Human current time in the user's zone, e.g. "Fri, 2:30 PM". */
   nowLabel: string;
+  /** UTC offset for America/Los_Angeles right now, e.g. "-07:00". Use this when building start_time ISO strings for tools — user-stated times are always in this zone. */
+  laUtcOffset: string;
   rangeStart: string;
   rangeEnd: string;
   settings: { dayStartHour: number; dayEndHour: number } | null;
   /** Pre-filtered timed items for today (LA calendar). Primary source for "what's on today". */
   todaySchedule: ScheduleItem[];
+  /** Pre-computed open windows today (≥30 min, future-only, between real busy blocks). Use this for all availability questions — never count gaps from todaySchedule yourself. */
+  todayFreeSlots: FreeSlot[];
   inbox: unknown[];
   /** Tasks with do_date=today but no start_time — not on the calendar. */
   todayTasks: unknown[];
   scheduled: unknown[];
   /** This week's sprint goal, if a sprint row exists. */
   sprintGoal: string | null;
+  /** The week's named priority outcomes (big rocks) — 3–5 commitments with a win condition. */
+  weekPriorities: unknown[];
   /** Tasks committed to this week's sprint and not yet done. */
   weekPool: unknown[];
   events: unknown[];
@@ -186,6 +201,52 @@ function buildTodaySchedule(
   return items;
 }
 
+function computeFreeSlots(
+  events: ReturnType<typeof fmtEvent>[],
+  scheduled: ReturnType<typeof fmtTask>[],
+  today: string,
+  nowMs: number,
+): FreeSlot[] {
+  const busy: Array<{ s: number; e: number }> = [];
+
+  for (const ev of events) {
+    if (ev.localDate !== today || ev.allDay || !ev.startAt || !ev.endAt) continue;
+    busy.push({ s: new Date(ev.startAt).getTime(), e: new Date(ev.endAt).getTime() });
+  }
+  for (const t of scheduled) {
+    if (!t.startTime || t.localDate !== today) continue;
+    const s = new Date(t.startTime).getTime();
+    busy.push({ s, e: s + t.durationMinutes * 60_000 });
+  }
+
+  if (busy.length < 2) return [];
+
+  busy.sort((a, b) => a.s - b.s);
+
+  // Merge overlapping intervals
+  const merged: Array<{ s: number; e: number }> = [];
+  for (const b of busy) {
+    if (merged.length && b.s < merged[merged.length - 1].e) {
+      merged[merged.length - 1].e = Math.max(merged[merged.length - 1].e, b.e);
+    } else {
+      merged.push({ ...b });
+    }
+  }
+
+  // Find gaps between consecutive busy blocks, future-only
+  const slots: FreeSlot[] = [];
+  for (let i = 0; i < merged.length - 1; i++) {
+    const gapStart = Math.max(merged[i].e, nowMs);
+    const gapEnd = merged[i + 1].s;
+    const mins = Math.floor((gapEnd - gapStart) / 60_000);
+    if (mins < MIN_SLOT_MINUTES) continue;
+    const startISO = new Date(gapStart).toISOString();
+    const endISO = new Date(gapEnd).toISOString();
+    slots.push({ startISO, endISO, timeRange: fmtTimeRangeLA(startISO, endISO), minutes: mins });
+  }
+  return slots;
+}
+
 export async function buildContext(
   userId: string,
   rangeStart?: string,
@@ -200,6 +261,12 @@ export async function buildContext(
     hour: "numeric",
     minute: "2-digit",
   }).format(now);
+  // Derive the current UTC offset for LA (handles PDT/PST automatically).
+  const laOffsetParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TZ,
+    timeZoneName: "longOffset",
+  }).formatToParts(now);
+  const laUtcOffset = (laOffsetParts.find((p) => p.type === "timeZoneName")?.value ?? "GMT-07:00").replace("GMT", "");
   const start = rangeStart ?? new Date(now.getTime() - 7 * 86400_000).toISOString();
   const end = rangeEnd ?? new Date(now.getTime() + 7 * 86400_000).toISOString();
 
@@ -239,7 +306,7 @@ export async function buildContext(
       .select("day_start_hour, day_end_hour, hidden_calendar_ids, hidden_events")
       .eq("user_id", userId)
       .maybeSingle(),
-    admin.from("domains").select("id, name, intention, icon, color, weekly_target_hours").eq("user_id", userId).order("sort_order"),
+    admin.from("domains").select("id, name, intention, charter, context, icon, color, weekly_target_hours").eq("user_id", userId).order("sort_order"),
     admin.from("initiatives").select("id, name, domain_id, outcome, description, status, target_date, start_date, key_results(id, name, baseline_value, current_value, target_value, unit)").eq("user_id", userId).order("sort_order"),
     admin.from("projects").select("id, name, domain_id, initiative_id, outcome, description, status, start_date, target_date").eq("user_id", userId).order("sort_order"),
   ]);
@@ -247,7 +314,7 @@ export async function buildContext(
   const weekStart = planningWeekStart(today);
   const { data: sprint } = await admin
     .from("sprints")
-    .select("id, goal")
+    .select("id, goal, big_rocks")
     .eq("user_id", userId)
     .eq("week_start", weekStart)
     .maybeSingle();
@@ -291,16 +358,35 @@ export async function buildContext(
     .filter((t) => !t.start_time)
     .map((t) => fmtTask(t, today, nowMs));
   const scheduled = (scheduledRes.data ?? []).map((t) => fmtTask(t, today, nowMs));
+  // Deduplicate events: same provider_event_id can appear from multiple synced
+  // accounts (e.g. two Google accounts that can both see the same calendar).
+  // Secondary dedup on title+start_at catches cross-account duplicates where
+  // the provider assigns different IDs to the same logical event.
+  const seenEventIds = new Set<string>();
+  const seenEventSlots = new Set<string>();
   const events = (eventsRes.data ?? [])
     .filter((e) => !hiddenCalendars.has(e.calendar_id as string) && !isEventHidden(e))
+    .filter((e) => {
+      const pid = e.provider_event_id as string | null;
+      if (pid) {
+        if (seenEventIds.has(pid)) return false;
+        seenEventIds.add(pid);
+      }
+      const slot = `${e.title}|${e.start_at}`;
+      if (seenEventSlots.has(slot)) return false;
+      seenEventSlots.add(slot);
+      return true;
+    })
     .map((e) => fmtEvent(e, today, nowMs));
 
   const todaySchedule = buildTodaySchedule(events, scheduled, today);
+  const todayFreeSlots = computeFreeSlots(events, scheduled, today, nowMs);
 
   return {
     today,
     nowISO: now.toISOString(),
     nowLabel,
+    laUtcOffset,
     rangeStart: start,
     rangeEnd: end,
     settings: settingsRes.data
@@ -310,10 +396,12 @@ export async function buildContext(
         }
       : null,
     todaySchedule,
+    todayFreeSlots,
     inbox,
     todayTasks,
     scheduled,
     sprintGoal: sprint?.goal ?? null,
+    weekPriorities: (sprint?.big_rocks ?? []) as unknown[],
     weekPool: (weekRes.data ?? []).map((t) => fmtTask(t, today, nowMs)),
     events,
     labels: labelsRes.data ?? [],
@@ -322,6 +410,8 @@ export async function buildContext(
         id: d.id,
         name: d.name,
         intention: d.intention,
+        charter: d.charter || undefined,
+        routingContext: d.context || undefined,
         icon: d.icon,
         color: d.color,
         weeklyTargetHours: d.weekly_target_hours,

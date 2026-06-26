@@ -1,13 +1,117 @@
-import { admin } from "../_shared/admin.ts";
+import { admin, todayLA } from "../_shared/admin.ts";
 import { parseCapture } from "../_shared/nlp.ts";
 import { executeVerticalTool, isVerticalTool, VERTICAL_TOOL_DEFINITIONS } from "./verticalTools.ts";
 
 const DEFAULT_DURATION = 30;
 const MIRROR_FIELDS = new Set(["start_time", "duration_minutes", "title", "status", "do_date"]);
 
+function fmtLATime(isoUtc: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(isoUtc));
+}
+
+function planningWeekStart(todayIso: string): string {
+  const [y, m, d] = todayIso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCDay() === 0) dt.setUTCDate(dt.getUTCDate() + 1);
+  const sinceMonday = (dt.getUTCDay() + 6) % 7;
+  dt.setUTCDate(dt.getUTCDate() - sinceMonday);
+  return dt.toISOString().slice(0, 10);
+}
+
+interface BigRock {
+  id: string;
+  title: string;
+  win: string;
+  initiative_id: string | null;
+  project_id?: string | null;
+  done_at: string | null;
+  roll_count: number;
+}
+
+async function getSprintRocks(userId: string): Promise<{ sprintId: string | null; weekStart: string; rocks: BigRock[] }> {
+  const weekStart = planningWeekStart(todayLA());
+  const { data } = await admin
+    .from("sprints")
+    .select("id, big_rocks")
+    .eq("user_id", userId)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  return {
+    sprintId: data?.id ?? null,
+    weekStart,
+    rocks: (data?.big_rocks ?? []) as BigRock[],
+  };
+}
+
+async function saveSprintRocks(userId: string, weekStart: string, rocks: BigRock[]): Promise<void> {
+  const { error } = await admin
+    .from("sprints")
+    .upsert({ user_id: userId, week_start: weekStart, big_rocks: rocks }, { onConflict: "user_id,week_start" });
+  if (error) throw new Error(error.message);
+}
+
 export interface AgentAction {
   tool: string;
   summary: string;
+}
+
+/** Marquee — drive the client's left canvas (navigate + spotlight) alongside the
+ *  reply. The edge is generic: it only relays "point at <target>". The client
+ *  owns the surface/where-it-lives mapping (src/lib/marqueeRegistry.ts) and sends
+ *  the available targets per request, so the edge never changes as targets grow. */
+export interface MarqueeDirective {
+  spotlight?: { target: string; ref?: string; label?: string }[];
+  caption?: string;
+}
+
+export interface MarqueeTargetSpec {
+  key: string;
+  describe: string;
+}
+
+/** Build the `point_at` tool definition from the targets the client sent this
+ *  request. The enum + description are derived from live app state, so the
+ *  agent's vocabulary is always current — no hardcoded list, no redeploy to add
+ *  a target. Falls back to a minimal default when the client sends nothing. */
+export function buildPointAtTool(targets: MarqueeTargetSpec[]) {
+  const list = targets.length ? targets : [{ key: "priorities", describe: "The week's priorities." }];
+  const bullets = list.map((t) => `- "${t.key}": ${t.describe}`).join("\n");
+  return {
+    type: "function" as const,
+    function: {
+      name: "point_at",
+      description:
+        "Show alongside telling. Drive the user's screen: bring the relevant destination forward (a floor, surface, record, or flow) and, where it's a section, hold a spotlight on it — so your answer lands on something visible. Call this when the user asks to SEE, OPEN, or asks ABOUT one of the targets below. Some targets are a specific item (a project, initiative, domain, task) — for those, pass its id as `ref` (use the ids in your context). After calling, answer normally with a real, self-contained reply (the highlight reinforces your words, it doesn't replace them). Use only for a genuine show-me moment, never on every message.\n\nAvailable targets:\n" +
+        bullets,
+      parameters: {
+        type: "object",
+        properties: {
+          target: {
+            type: "string",
+            enum: list.map((t) => t.key),
+            description: "What to bring forward / spotlight.",
+          },
+          ref: {
+            type: "string",
+            description: "For a specific-item target (project/initiative/domain/task), the item's id. Omit for general targets.",
+          },
+          caption: {
+            type: "string",
+            description: "Optional ≤6-word tag pinned to the highlight, e.g. 'your week, in lights'.",
+          },
+        },
+        required: ["target"],
+      },
+    },
+  };
 }
 
 /** Call a sibling edge function. Pass `token` (the user's JWT) for user-scoped
@@ -281,6 +385,72 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_priority",
+      description: "Add a new weekly priority (big rock) to this week's plan.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "The priority's name / outcome statement." },
+          win: { type: "string", description: "What winning looks like — the definition of done in one line." },
+          initiative_id: { type: "string", description: "The initiative this priority serves (optional)." },
+          project_id: { type: "string", description: "The project this priority spotlights (optional)." },
+        },
+        required: ["title", "win"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_priority",
+      description: "Edit a weekly priority's title or win condition.",
+      parameters: {
+        type: "object",
+        properties: {
+          priority_id: { type: "string", description: "The priority's id from context." },
+          priority_title: { type: "string", description: "Search by title if id unknown." },
+          title: { type: "string", description: "New title." },
+          win: { type: "string", description: "New win condition." },
+          initiative_id: { type: "string", description: "Update the linked initiative (pass null to clear)." },
+          project_id: { type: "string", description: "Update the linked project (pass null to clear)." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "complete_priority",
+      description: "Mark a weekly priority as done/complete.",
+      parameters: {
+        type: "object",
+        properties: {
+          priority_id: { type: "string", description: "The priority's id from context." },
+          priority_title: { type: "string", description: "Search by title if id unknown." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "delete_priority",
+      description: "Remove a weekly priority from this week's plan.",
+      parameters: {
+        type: "object",
+        properties: {
+          priority_id: { type: "string", description: "The priority's id from context." },
+          priority_title: { type: "string", description: "Search by title if id unknown." },
+        },
+      },
+    },
+  },
+  // NOTE: `point_at` is intentionally NOT here — it's built per-request from the
+  // targets the client sends (see buildPointAtTool), so its vocabulary is always
+  // current. The handler appends it to this list.
   ...VERTICAL_TOOL_DEFINITIONS,
 ];
 
@@ -344,12 +514,30 @@ async function resolveEventId(
   throw new Error("Provide event_id or event_title");
 }
 
+function resolvePriority(rocks: BigRock[], args: { priority_id?: string; priority_title?: string }): BigRock {
+  if (args.priority_id) {
+    const r = rocks.find((x) => x.id === args.priority_id);
+    if (!r) throw new Error(`Priority not found: ${args.priority_id}`);
+    return r;
+  }
+  if (args.priority_title) {
+    const q = args.priority_title.toLowerCase();
+    const matches = rocks.filter((x) => x.title.toLowerCase().includes(q));
+    if (matches.length === 0) throw new Error(`No priority matching "${args.priority_title}"`);
+    if (matches.length > 1) {
+      throw new Error(`Multiple priorities match "${args.priority_title}": ${matches.map((r) => `"${r.title}"`).join(", ")}. Use priority_id.`);
+    }
+    return matches[0];
+  }
+  throw new Error("Provide priority_id or priority_title");
+}
+
 export async function executeTool(
   userId: string,
   name: string,
   args: Record<string, unknown>,
   userToken?: string,
-): Promise<{ result: string; action?: AgentAction }> {
+): Promise<{ result: string; action?: AgentAction; ui?: MarqueeDirective }> {
   if (isVerticalTool(name)) return executeVerticalTool(userId, name, args);
 
   switch (name) {
@@ -433,7 +621,7 @@ export async function executeTool(
       if (startTime) await mirrorTask(data.id);
 
       const when = startTime
-        ? `scheduled for ${new Date(startTime).toLocaleString()}`
+        ? `scheduled for ${fmtLATime(startTime)}`
         : doDate
           ? `planned for ${doDate}`
           : parented
@@ -480,7 +668,7 @@ export async function executeTool(
         result: JSON.stringify({ id, startTime, duration }),
         action: {
           tool: name,
-          summary: `Scheduled "${title}" for ${new Date(startTime).toLocaleString()} (${duration}m)`,
+          summary: `Scheduled "${title}" for ${fmtLATime(startTime)} (${duration}m)`,
         },
       };
     }
@@ -511,7 +699,7 @@ export async function executeTool(
         result: JSON.stringify({ id, ...patch }),
         action: {
           tool: name,
-          summary: `Rescheduled "${title}" to ${new Date(startTime).toLocaleString()}`,
+          summary: `Rescheduled "${title}" to ${fmtLATime(startTime)}`,
         },
       };
     }
@@ -617,7 +805,7 @@ export async function executeTool(
         result: JSON.stringify({ id: eventId, patch }),
         action: {
           tool: name,
-          summary: `Rescheduled event "${evt.title}" to ${new Date(patch.start_at).toLocaleString()}`,
+          summary: `Rescheduled event "${evt.title}" to ${fmtLATime(patch.start_at)}`,
         },
       };
     }
@@ -653,6 +841,85 @@ export async function executeTool(
     case "list_tasks": {
       const matches = await findTaskByTitle(userId, args.query as string);
       return { result: JSON.stringify(matches) };
+    }
+
+    case "create_priority": {
+      const { weekStart, rocks } = await getSprintRocks(userId);
+      const title = (args.title as string)?.trim();
+      if (!title) throw new Error("Priority title is required");
+      const newRock: BigRock = {
+        id: crypto.randomUUID(),
+        title,
+        win: (args.win as string)?.trim() || "",
+        initiative_id: (args.initiative_id as string) ?? null,
+        project_id: (args.project_id as string) ?? null,
+        done_at: null,
+        roll_count: 0,
+      };
+      await saveSprintRocks(userId, weekStart, [...rocks, newRock]);
+      return {
+        result: JSON.stringify({ id: newRock.id, title: newRock.title }),
+        action: { tool: name, summary: `Added priority "${newRock.title}"` },
+      };
+    }
+
+    case "update_priority": {
+      const { weekStart, rocks } = await getSprintRocks(userId);
+      const rock = resolvePriority(rocks, args as { priority_id?: string; priority_title?: string });
+      const updated = rocks.map((r) => {
+        if (r.id !== rock.id) return r;
+        const patch: Partial<BigRock> = {};
+        if (args.title) patch.title = (args.title as string).trim();
+        if (args.win !== undefined) patch.win = (args.win as string).trim();
+        if ("initiative_id" in args) patch.initiative_id = (args.initiative_id as string | null) ?? null;
+        if ("project_id" in args) patch.project_id = (args.project_id as string | null) ?? null;
+        return { ...r, ...patch };
+      });
+      await saveSprintRocks(userId, weekStart, updated);
+      return {
+        result: JSON.stringify({ id: rock.id }),
+        action: { tool: name, summary: `Updated priority "${rock.title}"` },
+      };
+    }
+
+    case "complete_priority": {
+      const { weekStart, rocks } = await getSprintRocks(userId);
+      const rock = resolvePriority(rocks, args as { priority_id?: string; priority_title?: string });
+      const updated = rocks.map((r) =>
+        r.id === rock.id ? { ...r, done_at: new Date().toISOString() } : r,
+      );
+      await saveSprintRocks(userId, weekStart, updated);
+      return {
+        result: JSON.stringify({ id: rock.id, done: true }),
+        action: { tool: name, summary: `Completed priority "${rock.title}"` },
+      };
+    }
+
+    case "delete_priority": {
+      const { weekStart, rocks } = await getSprintRocks(userId);
+      const rock = resolvePriority(rocks, args as { priority_id?: string; priority_title?: string });
+      await saveSprintRocks(userId, weekStart, rocks.filter((r) => r.id !== rock.id));
+      return {
+        result: JSON.stringify({ id: rock.id, deleted: true }),
+        action: { tool: name, summary: `Removed priority "${rock.title}"` },
+      };
+    }
+
+    case "point_at": {
+      // A UI-only tool: it mutates nothing, it just relays where to point. The
+      // tool's enum (built per-request from the client's manifest) already
+      // constrained `target` to a real key, so the client resolves the surface.
+      const target = String(args.target ?? "");
+      if (!target) throw new Error("point_at needs a target");
+      const ref = typeof args.ref === "string" && args.ref.trim() ? args.ref.trim() : undefined;
+      const caption =
+        typeof args.caption === "string" && args.caption.trim()
+          ? args.caption.trim().slice(0, 60)
+          : undefined;
+      return {
+        result: JSON.stringify({ shown: target, ref }),
+        ui: { spotlight: [{ target, ref }], caption },
+      };
     }
 
     default:
