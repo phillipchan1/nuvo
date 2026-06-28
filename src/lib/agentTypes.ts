@@ -49,3 +49,12 @@ export interface AgentResponse {
   actions?: AgentAction[];
   suggestions?: AgentSuggestion[];
 }
+
+// The agent function streams Server-Sent Events. Each `data:` line is one of:
+//   { t: "c", v }      — a text chunk to append to the assistant reply
+//   { t: "d", ... }    — the final payload: cleaned content + actions/suggestions
+//   { t: "e", msg }    — a fatal error
+export type AgentStreamEvent =
+  | { t: "c"; v: string }
+  | { t: "d"; content: string; actions?: AgentAction[]; suggestions?: AgentSuggestion[]; ui?: unknown }
+  | { t: "e"; msg: string };

@@ -97,7 +97,7 @@ export default function ChatPane({
             {messages.map((m) => (
               <AgentMessageBubble key={m.id} message={m} compact />
             ))}
-            {loading && (
+            {loading && last?.role !== "assistant" && (
               <div className="agent-bubble agent-bubble-assistant w-fit">
                 <span className="mono shimmer text-caption">Thinking…</span>
               </div>

@@ -5,10 +5,13 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 export const supabaseConfigured = Boolean(url && anonKey);
 
-export const supabase = createClient(
-  url ?? "http://localhost:54321",
-  anonKey ?? "missing-anon-key",
-);
+// Exported so callers that need to stream an edge function (the agent replies
+// over SSE, which `functions.invoke` can't consume) can build the request URL
+// and auth headers themselves.
+export const supabaseUrl = url ?? "http://localhost:54321";
+export const supabaseAnonKey = anonKey ?? "missing-anon-key";
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /** Invoke an edge function, fire-and-forget, logging failures to console. */
 export function invokeQuiet(fn: string, body: Record<string, unknown>) {

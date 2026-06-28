@@ -1,8 +1,16 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "../lib/supabase";
+import { supabase, supabaseUrl, supabaseAnonKey } from "../lib/supabase";
 import { attachmentPromptBlock, isImageAttachment } from "../lib/agentAttachments";
-import type { AgentAttachment, AgentContentPart, AgentMessage, AgentRequestMessage, AgentResponse } from "../lib/agentTypes";
+import type {
+  AgentAction,
+  AgentAttachment,
+  AgentContentPart,
+  AgentMessage,
+  AgentRequestMessage,
+  AgentStreamEvent,
+  AgentSuggestion,
+} from "../lib/agentTypes";
 
 function uid() {
   return crypto.randomUUID();
@@ -51,43 +59,109 @@ export function useAgent(range: { start: string; end: string }) {
       setLoading(true);
       setError(null);
 
+      // The assistant bubble is created lazily on the first streamed chunk so
+      // the "Thinking…" indicator shows until the reply actually starts.
+      const assistantId = uid();
+      let created = false;
+      let streamed = "";
+      const ensureAssistant = () => {
+        if (created) return;
+        created = true;
+        setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "" }]);
+      };
+      const patchAssistant = (patch: Partial<AgentMessage>) => {
+        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)));
+      };
+
       try {
         const history = [...messages, userMsg].map(toApiMessage);
 
-        const { data, error: fnError } = await supabase.functions.invoke<AgentResponse>("agent", {
-          body: {
-            messages: history,
-            rangeStart: range.start,
-            rangeEnd: range.end,
+        // The agent replies over SSE; `functions.invoke` can't consume a stream,
+        // so call the function endpoint directly and read the body ourselves.
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? supabaseAnonKey;
+        const res = await fetch(`${supabaseUrl}/functions/v1/agent`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${token}`,
           },
+          body: JSON.stringify({ messages: history, rangeStart: range.start, rangeEnd: range.end }),
         });
 
-        if (fnError) throw new Error(fnError.message);
-        if (!data) throw new Error("No response from agent");
-        if ("error" in data && typeof (data as { error: string }).error === "string") {
-          throw new Error((data as { error: string }).error);
+        if (!res.ok || !res.body) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(detail || `Agent request failed (${res.status})`);
         }
 
-        const assistantMsg: AgentMessage = {
-          id: uid(),
-          role: "assistant",
-          content: data.reply || "Done.",
-          actions: data.actions,
-          suggestions: data.suggestions?.length ? data.suggestions : undefined,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
+        let finalActions: AgentAction[] | undefined;
+        let finalSuggestions: AgentSuggestion[] | undefined;
 
-        if (data.actions?.length) {
-          const tools = data.actions.map((a) => a.tool);
+        const handle = (evt: AgentStreamEvent) => {
+          if (evt.t === "c") {
+            streamed += evt.v;
+            ensureAssistant();
+            patchAssistant({ content: streamed });
+          } else if (evt.t === "d") {
+            finalActions = evt.actions?.length ? evt.actions : undefined;
+            finalSuggestions = evt.suggestions?.length ? evt.suggestions : undefined;
+            const content = (typeof evt.content === "string" && evt.content) || streamed;
+            ensureAssistant();
+            patchAssistant({ content: content || "Done.", actions: finalActions, suggestions: finalSuggestions });
+          } else if (evt.t === "e") {
+            throw new Error(evt.msg || "Agent error");
+          }
+        };
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const payload = line.slice(6).trim();
+            if (!payload || payload === "[DONE]") continue;
+            let evt: AgentStreamEvent;
+            try {
+              evt = JSON.parse(payload);
+            } catch {
+              continue;
+            }
+            handle(evt);
+          }
+        }
+
+        // Stream closed without a final/text event — surface whatever streamed.
+        if (!created) {
+          ensureAssistant();
+          patchAssistant({ content: streamed || "Done." });
+        }
+
+        if (finalActions?.length) {
+          const tools = finalActions.map((a) => a.tool);
           qc.invalidateQueries({ queryKey: ["tasks"] });
           qc.invalidateQueries({ queryKey: ["external_events"] });
           if (tools.some((t) => isVerticalAgentTool(t))) {
             qc.invalidateQueries({ queryKey: ["vertical"] });
           }
+          // Priorities (big rocks) live on the week's sprint record.
+          if (tools.some((t) => t.endsWith("_priority"))) {
+            qc.invalidateQueries({ queryKey: ["sprint"] });
+          }
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
+        // Drop an empty placeholder bubble; keep partial text if any streamed.
+        if (created && !streamed) {
+          setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+        }
       } finally {
         setLoading(false);
       }

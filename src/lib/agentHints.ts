@@ -143,9 +143,9 @@ function scheduleHints(tab: RailTab | "week"): AgentHints {
   return {
     prompt: "Your schedule — today, blocks, and what's next.",
     starters: [
+      "Help me plan this week",
       "What's on my schedule today?",
       "Plan my afternoon",
-      "What should I prep next?",
       "Move my non-urgent tasks to tomorrow",
     ],
   };
