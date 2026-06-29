@@ -57,13 +57,15 @@ async function getLocation(): Promise<GeoCache> {
     return result;
   }
 
-  // 3 — IP fallback (works in Tauri and when location is denied)
-  const r = await fetch("https://ipapi.co/json/");
+  // 3 — IP fallback; ip-api.com returns Access-Control-Allow-Origin: * so it
+  //     works from tauri://localhost (ipapi.co does not allow non-browser origins)
+  const r = await fetch("https://ip-api.com/json/");
   if (!r.ok) throw new Error("no-location");
   const j = await r.json();
+  if (j.status !== "success") throw new Error("no-location");
   const result: GeoCache = {
-    lat: j.latitude as number,
-    lon: j.longitude as number,
+    lat: j.lat as number,
+    lon: j.lon as number,
     city: j.city as string | undefined,
     ts: Date.now(),
   };
@@ -109,7 +111,7 @@ export function useWeather(enabled = true) {
     enabled,
     staleTime: 3_600_000, // 1h
     gcTime: 7_200_000,
-    retry: 1,
+    retry: 0,
   });
 }
 
