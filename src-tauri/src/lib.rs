@@ -92,6 +92,13 @@ fn install_spotlight_panel(app: &tauri::AppHandle) {
 // `getCurrentWebviewWindow().hide()` no-ops against it (and desyncs
 // `panel.is_visible()`, breaking the next ⌥Space toggle). So capture / Esc /
 // backdrop dismissal all route here, to the same `panel.hide()` the
+#[tauri::command]
+fn open_devtools(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        win.open_devtools();
+    }
+}
+
 // resign-key handler and the hotkey toggle use.
 #[cfg(target_os = "macos")]
 #[tauri::command]
@@ -157,17 +164,11 @@ pub fn run() {
     }
 
     builder
-        .invoke_handler(tauri::generate_handler![hide_spotlight, surface_main])
+        .invoke_handler(tauri::generate_handler![open_devtools, hide_spotlight, surface_main])
         .setup(|app| {
             // Reskin the spotlight window into a non-activating NSPanel.
             #[cfg(target_os = "macos")]
             install_spotlight_panel(app.handle());
-
-            // Open DevTools automatically in debug builds.
-            #[cfg(debug_assertions)]
-            if let Some(main) = app.get_webview_window("main") {
-                main.open_devtools();
-            }
 
             // ⌘W on the main window must HIDE it, not destroy it — otherwise the
             // window is gone for good and the dock icon can never bring Nuvo back
