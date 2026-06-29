@@ -17,6 +17,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   hidden_events: [],
   calendar_domain_map: {},
   last_rollover_date: null,
+  show_weather: false,
 };
 
 export function useSettings() {

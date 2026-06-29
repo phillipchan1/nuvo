@@ -681,12 +681,18 @@ export function EventPopover({
   event,
   anchor,
   editable,
+  calendarName,
+  calendarColor,
+  accountEmail,
   eventMutations,
   onClose,
 }: {
   event: ExternalEvent;
   anchor: DOMRect;
   editable: boolean;
+  calendarName?: string;
+  calendarColor?: string | null;
+  accountEmail?: string;
   eventMutations: ReturnType<typeof useExternalEventMutations>;
   onClose: () => void;
 }) {
@@ -901,6 +907,20 @@ export function EventPopover({
                 </>
               )}
             </div>
+
+            {/* Calendar */}
+            {calendarName && (
+              <div className="flex items-center gap-2 text-label text-muted">
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: calendarColor ?? "var(--muted)" }}
+                />
+                <span className="truncate">{calendarName}</span>
+                {accountEmail && (
+                  <span className="shrink-0 text-muted/60">· {accountEmail}</span>
+                )}
+              </div>
+            )}
 
             {/* Location */}
             {event.location && (

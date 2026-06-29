@@ -18,7 +18,8 @@ import type { WeekReport, WeekPriority } from "../../lib/composeWeek";
 import { useWeekSprintRocks } from "../../hooks/useWeekSprintRocks";
 import WeekEmblem from "./WeekEmblem";
 import WeekStory from "./WeekStory";
-import { Bar } from "./parts";
+import { Bar, InlineText } from "./parts";
+import type { BigRock } from "../../lib/types";
 
 // A six-dot grip — the affordance for pointer-drag reorder (Tauri swallows
 // HTML5 DnD, so all drag is pointer-based; see CLAUDE.md / nuvo-tauri-dnd).
@@ -41,6 +42,7 @@ function ReckonRow({
   onToggleDone,
   onCarry,
   onRemove,
+  onEdit,
   dragHandle,
   dragging,
   dragOffsetY = 0,
@@ -49,6 +51,8 @@ function ReckonRow({
   onToggleDone: () => void;
   onCarry: () => void;
   onRemove: () => void;
+  /** edit title / description in place (editable weeks only; omitted = read-only). */
+  onEdit?: (patch: Partial<BigRock>) => void;
   /** pointer-drag grip rendered at the left when the list is reorderable. */
   dragHandle?: ReactNode;
   dragging?: boolean;
@@ -72,8 +76,29 @@ function ReckonRow({
         ✓
       </button>
       <div className="min-w-0 flex-1">
-        <div className={`text-body ${landed ? "text-muted line-through" : "text-ink"}`}>{p.rock.title}</div>
-        {p.rock.win && <div className="text-meta text-muted">{p.rock.win}</div>}
+        {onEdit ? (
+          <>
+            <InlineText
+              value={p.rock.title}
+              onChange={(v) => onEdit({ title: v })}
+              placeholder="Untitled priority"
+              className={`block text-body ${landed ? "text-muted line-through" : "text-ink"}`}
+              inputClassName="text-body text-ink"
+            />
+            <InlineText
+              value={p.rock.win ?? ""}
+              onChange={(v) => onEdit({ win: v })}
+              placeholder="add a note…"
+              className="block text-meta text-muted"
+              inputClassName="text-meta text-ink"
+            />
+          </>
+        ) : (
+          <>
+            <div className={`text-body ${landed ? "text-muted line-through" : "text-ink"}`}>{p.rock.title}</div>
+            {p.rock.win && <div className="text-meta text-muted">{p.rock.win}</div>}
+          </>
+        )}
         <div className="mt-1 flex items-center gap-3">
           {p.rock.roll_count > 0 && <span className="mono text-micro text-signal">carried {p.rock.roll_count}w</span>}
           {!landed && (
@@ -103,12 +128,14 @@ function ReorderablePriorities({
   onToggleDone,
   onCarry,
   onRemove,
+  onUpdate,
   onReorder,
 }: {
   priorities: WeekPriority[];
   onToggleDone: (id: string) => void;
   onCarry: (p: WeekPriority) => void;
   onRemove: (id: string) => void;
+  onUpdate: (id: string, patch: Partial<BigRock>) => void;
   onReorder: (orderedIds: string[]) => void;
 }) {
   // dragId drives which row lifts (state, for render); refs carry live drag data
@@ -196,6 +223,7 @@ function ReorderablePriorities({
             onToggleDone={() => onToggleDone(p.rock.id)}
             onCarry={() => onCarry(p)}
             onRemove={() => onRemove(p.rock.id)}
+            onEdit={(patch) => onUpdate(p.rock.id, patch)}
           />
         </div>
       ))}
@@ -404,6 +432,7 @@ export function WeekPlanBody({
 
       {/* MAIN — the week's priorities (set / reckon) | time | (lived weeks) forward-fold */}
       <div className="grid gap-x-14 gap-y-10 md:grid-cols-2">
+        <div data-marquee="priorities">
         <Col label={forming ? (ahead ? "The week's priorities" : "This week's priorities") : "How they landed"}>
           {report.priorities.length > 0 && (
             <div className="mb-3">
@@ -414,6 +443,7 @@ export function WeekPlanBody({
                   onToggleDone={thisWeek.toggleDone}
                   onCarry={carry}
                   onRemove={thisWeek.removeRock}
+                  onUpdate={thisWeek.updateRock}
                   onReorder={thisWeek.reorder}
                 />
               ) : (
@@ -442,24 +472,31 @@ export function WeekPlanBody({
             report.priorities.length === 0 && <p className="text-body text-muted">No priorities were named this week.</p>
           )}
         </Col>
+        </div>
 
+        <div data-marquee="hours">
         <Col label={hoursLabel}>
           <HoursWeave report={report} />
         </Col>
+        </div>
 
         {/* Next week capture is a forward-fold for the *lived* week. On a week
             you're planning ahead, "next week" would be two weeks out — drop it. */}
         {!ahead && (
+          <div data-marquee="next-week">
           <Col label="Next week">
             <NextWeek rocks={nextWeek.rocks} onAdd={nextWeek.addTitles} onRemove={nextWeek.removeRock} />
           </Col>
+          </div>
         )}
 
         {/* Highlights are spent-work — meaningless before the week has run. */}
         {!ahead && (
+          <div data-marquee="highlights">
           <Col label="Highlights — what moved a domain">
             <Highlights report={report} />
           </Col>
+          </div>
         )}
       </div>
     </>
@@ -483,15 +520,15 @@ export interface WeekPlanFloorProps {
   onCompose?: () => void;
   /** CTA wording — "Compose the week" when fresh, "Re-plan the week" once composed. */
   composeLabel?: string;
-  /** Early-week planning moment — skip the reflective story, land on the
-   *  forward-facing detail so the Compose CTA is immediately in view. */
-  planForward?: boolean;
+  /** Play the paced recap animation on open — the Review's reveal moment only.
+   *  A check-in / plan view opens straight to the static detail. */
+  story?: boolean;
 }
 
 /** The desktop floor — slides over the Schedule work area (full-width, rail hidden).
  *  Opens as a paced story (the received moment); "See the full week" → the detail. */
-export default function WeekPlanFloor({ report, state, tense = "current", weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext, onCompose, composeLabel, planForward }: WeekPlanFloorProps) {
-  const [mode, setMode] = useState<"story" | "detail">(planForward ? "detail" : "story");
+export default function WeekPlanFloor({ report, state, tense = "current", weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext, onCompose, composeLabel, story }: WeekPlanFloorProps) {
+  const [mode, setMode] = useState<"story" | "detail">(story ? "story" : "detail");
 
   if (mode === "story") {
     return (

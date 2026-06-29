@@ -42,11 +42,16 @@ export function suggestionSig(title: string, notes: string): string {
 export async function enrichInbox(userId: string, taskId: string): Promise<InboxSuggestion> {
   const { data: task, error } = await admin
     .from("tasks")
-    .select("title, notes")
+    .select("title, notes, project_id, initiative_id, domain_id, duration_minutes")
     .eq("id", taskId)
     .eq("user_id", userId)
     .single();
   if (error || !task) throw new Error("Task not found");
+
+  // A duration the human already pinned (e.g. via a "30m" capture token) is
+  // ground truth — grooming fills blanks, it doesn't second-guess what you set.
+  const lockedDuration: number | null =
+    typeof task.duration_minutes === "number" ? task.duration_minutes : null;
 
   // The open vertical the capture could plausibly belong to. Skip finished /
   // cancelled work — you don't file a fresh capture into a closed project.
@@ -72,23 +77,82 @@ export async function enrichInbox(userId: string, taskId: string): Promise<Inbox
 
   const sig = suggestionSig(task.title, task.notes ?? "");
 
-  const fmt = (s: string | null, max = 80) =>
-    s ? ` — ${clean(s.length > max ? s.slice(0, max) + "…" : s)}` : "";
-  // A domain's routing context (entities + boundary) is the strongest signal we
-  // have — feed it in when the user has refined the domain; fall back to the vow.
-  const domLine = domains.map((d) => {
-    const c = (d.context ?? null) as { scope?: string; entities?: string[]; boundary?: string } | null;
-    const bits: string[] = [];
-    if (c?.scope) bits.push(clean(c.scope));
-    else if (d.intention) bits.push(clean(d.intention));
-    if (c?.entities?.length) bits.push(`signals: ${c.entities.map(clean).join(", ")}`);
-    if (c?.boundary) bits.push(`NOT: ${clean(c.boundary)}`);
-    return `[D:${d.id}] ${clean(d.name)}${bits.length ? ` — ${bits.join(" · ")}` : ""}`;
-  }).join("\n") || "(none yet)";
-  const iniLine = initiatives.map((i) => `[I:${i.id}] ${clean(i.name)}${fmt(i.outcome)}`).join("\n") || "(none)";
-  const projLine = projects.map((p) => `[P:${p.id}] ${clean(p.name)}${fmt(p.outcome)}`).join("\n") || "(none)";
+  // If the task is already filed under a project/initiative/domain, that assignment
+  // is ground truth — skip placement inference and honour the existing context.
+  const lockedProject = task.project_id ? projects.find((p) => p.id === task.project_id) : null;
+  const lockedInitiative = !lockedProject && task.initiative_id
+    ? initiatives.find((i) => i.id === task.initiative_id)
+    : null;
+  const lockedDomain = !lockedProject && !lockedInitiative && task.domain_id
+    ? domains.find((d) => d.id === task.domain_id)
+    : null;
 
-  const prompt = `You are quietly grooming one raw item in a person's inbox — guessing where it belongs so they don't have to file it by hand. Be a sharp, conservative copilot: only place it somewhere you're genuinely confident it fits.
+  let suggestion: InboxSuggestion;
+
+  if (lockedProject || lockedInitiative || lockedDomain) {
+    // Placement is already known — only ask the LLM for energy + duration.
+    const energyPrompt = `You are estimating effort for a task that's already been filed.
+
+Task: "${clean(task.title)}"${task.notes ? `\nNote: ${clean(task.notes)}` : ""}
+
+Estimate:
+1. durationMinutes — realistic single-sitting estimate (5–240); null if unclear.
+2. energy — "deep" (focused making/thinking), "decide" (review/reply/judge), "delegate" (hand off / follow up), or "quick" (shallow errand/admin).
+3. rationale — ≤14 words, plain English, why this energy register.
+4. confidence — 0..1.
+
+Respond with JSON only:
+{"durationMinutes":number|null,"energy":"deep|decide|delegate|quick","rationale":string,"confidence":number}`;
+
+    const raw = await completeJSON<Record<string, unknown>>(energyPrompt);
+    const energyRaw = str(raw.energy);
+    const energy = (ENERGIES.has(energyRaw) ? energyRaw : null) as Energy | null;
+    const rationale = str(raw.rationale).slice(0, 140);
+    const confidence = Math.max(0, Math.min(1, Number(raw.confidence) || 0.5));
+    const dur = Number(raw.durationMinutes);
+    const durationMinutes = Number.isFinite(dur) && dur > 0 ? Math.min(240, Math.max(5, Math.round(dur))) : null;
+
+    let level: Level = "none";
+    let targetId: string | null = null;
+    let targetLabel = "";
+    let domainId: string | null = null;
+
+    if (lockedProject) {
+      level = "project";
+      targetId = lockedProject.id;
+      targetLabel = clean(lockedProject.name);
+      domainId = lockedProject.domain_id ?? initiatives.find((i) => i.id === lockedProject.initiative_id)?.domain_id ?? null;
+    } else if (lockedInitiative) {
+      level = "initiative";
+      targetId = lockedInitiative.id;
+      targetLabel = clean(lockedInitiative.name);
+      domainId = lockedInitiative.domain_id ?? null;
+    } else if (lockedDomain) {
+      level = "domain";
+      targetId = lockedDomain.id;
+      targetLabel = clean(lockedDomain.name);
+      domainId = lockedDomain.id;
+    }
+
+    const domainColor = domains.find((d) => d.id === domainId)?.color ?? null;
+    suggestion = { sig, level, targetId, targetLabel, domainId, domainColor, durationMinutes, energy, rationale, confidence };
+  } else {
+    // No existing placement — run the full inference flow.
+    const fmt = (s: string | null, max = 80) =>
+      s ? ` — ${clean(s.length > max ? s.slice(0, max) + "…" : s)}` : "";
+    const domLine = domains.map((d) => {
+      const c = (d.context ?? null) as { scope?: string; entities?: string[]; boundary?: string } | null;
+      const bits: string[] = [];
+      if (c?.scope) bits.push(clean(c.scope));
+      else if (d.intention) bits.push(clean(d.intention));
+      if (c?.entities?.length) bits.push(`signals: ${c.entities.map(clean).join(", ")}`);
+      if (c?.boundary) bits.push(`NOT: ${clean(c.boundary)}`);
+      return `[D:${d.id}] ${clean(d.name)}${bits.length ? ` — ${bits.join(" · ")}` : ""}`;
+    }).join("\n") || "(none yet)";
+    const iniLine = initiatives.map((i) => `[I:${i.id}] ${clean(i.name)}${fmt(i.outcome)}`).join("\n") || "(none)";
+    const projLine = projects.map((p) => `[P:${p.id}] ${clean(p.name)}${fmt(p.outcome)}`).join("\n") || "(none)";
+
+    const prompt = `You are quietly grooming one raw item in a person's inbox — guessing where it belongs so they don't have to file it by hand. Be a sharp, conservative copilot: only place it somewhere you're genuinely confident it fits.
 
 The item:
 "${clean(task.title)}"${task.notes ? `\nTheir note: ${clean(task.notes)}` : ""}
@@ -114,8 +178,12 @@ Decide:
 Respond with JSON only:
 {"level":"project|initiative|domain|none","targetId":string|null,"durationMinutes":number|null,"energy":"deep|decide|delegate|quick","rationale":string,"confidence":number}`;
 
-  const raw = await completeJSON<Record<string, unknown>>(prompt);
-  const suggestion = normalize(raw, sig, { domains, initiatives, projects });
+    const raw = await completeJSON<Record<string, unknown>>(prompt);
+    suggestion = normalize(raw, sig, { domains, initiatives, projects });
+  }
+
+  // Honour the human's pinned duration over any estimate.
+  if (lockedDuration != null) suggestion.durationMinutes = lockedDuration;
 
   const { error: upErr } = await admin
     .from("tasks")

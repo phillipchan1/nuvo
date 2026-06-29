@@ -147,6 +147,7 @@ export interface NewTaskInput {
   labelIds?: string[];
   slot_id?: string | null;
   project_id?: string | null;
+  initiative_id?: string | null;
   domain_id?: string | null;
 }
 
@@ -200,7 +201,7 @@ export function useTaskMutations() {
         roll_count: 0,
         completed_at: null,
         project_id: input.project_id ?? null,
-        initiative_id: null,
+        initiative_id: input.initiative_id ?? null,
         domain_id: input.domain_id ?? null,
         key_result_id: null,
         sprint_id: null,

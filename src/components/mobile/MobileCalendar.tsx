@@ -5,6 +5,8 @@ import { useScheduledTasks } from "../../hooks/useTasks";
 import { fmtMins, isEventHidden, readDay, toBusyBlocks, type Gap } from "../../lib/now";
 import type { AttendeeStatus, ExternalEvent, Task } from "../../lib/types";
 import type { CalendarTap } from "./MobileEventSheet";
+import { useWeather, indexWeather } from "../../hooks/useWeather";
+import WeatherIcon from "../WeatherIcon";
 
 // The mobile Calendar — built to answer one question fast: "are you free on X?"
 // A 14-day agenda where each day shows its commitments AND its open windows,
@@ -59,6 +61,10 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
 
   const { data: events = [], isLoading: evLoading } = useExternalEvents(range.start, range.end);
   const { data: blocks = [], isLoading: blkLoading } = useScheduledTasks(range.start, range.end);
+
+  const showWeather = settings?.show_weather ?? false;
+  const { data: weatherData } = useWeather(showWeather);
+  const weatherIndex = useMemo(() => indexWeather(weatherData?.days), [weatherData]);
 
   const hidden = useMemo(() => new Set(settings?.hidden_calendar_ids ?? []), [settings]);
   const hiddenEventKeys = useMemo(() => new Set((settings?.hidden_events ?? []).map((h) => h.key)), [settings]);
@@ -149,6 +155,8 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
           {days.map((d) => {
             const key = dayKey(d.date);
             const busyDay = d.timed.length > 0 || d.allDay.length > 0;
+            const dateStr = d.date.toLocaleDateString("en-CA");
+            const wx = showWeather ? weatherIndex.get(dateStr) : undefined;
             return (
               <button
                 key={key}
@@ -163,10 +171,14 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
                 <span className={`text-body font-semibold leading-none ${d.isToday ? "text-accent" : "text-ink"}`}>
                   {d.date.getDate()}
                 </span>
-                <span
-                  className="h-1 w-1 rounded-full"
-                  style={{ background: busyDay ? "var(--line-strong)" : "transparent" }}
-                />
+                {wx ? (
+                  <WeatherIcon wmo={wx.wmo} size={12} />
+                ) : (
+                  <span
+                    className="h-1 w-1 rounded-full"
+                    style={{ background: busyDay ? "var(--line-strong)" : "transparent" }}
+                  />
+                )}
               </button>
             );
           })}

@@ -505,7 +505,7 @@ function RefineCardView({
           <FeasibilityProposal feasibility={feasibility} verdict={verdict} />
         ) : card.kind === "due" ? (
           tweaking
-            ? <input type="date" value={text} onChange={(e) => setText(e.target.value)} autoFocus className="w-full rounded-md border border-line bg-bg px-3 py-2.5 text-body outline-none focus:border-accent" />
+            ? <input type="date" value={text} onChange={(e) => { setText(e.target.value); setTweaking(false); }} autoFocus className="w-full rounded-md border border-line bg-bg px-3 py-2.5 text-body outline-none focus:border-accent" />
             : <Proposal>{text ? fmtDate(text) : "—"}</Proposal>
         ) : (
           tweaking

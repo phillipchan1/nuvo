@@ -145,7 +145,7 @@ export default function FloorPane({
         )}
 
         {rung === "domain" && (
-          <DomainFloor focus={focus} onSwitchDomain={focusDomain} onOpenInitiative={openInitiativeRecord} />
+          <DomainFloor focus={focus} onSwitchDomain={focusDomain} onOpenInitiative={openInitiativeRecord} onOpenProject={openProjectRecord} />
         )}
       </div>
     </div>

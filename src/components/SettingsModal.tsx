@@ -455,6 +455,18 @@ function SchedulePane({
             />
           </div>
         </Row>
+
+        <Row title="Weather" desc="Show a weather icon and high temperature next to each day in the calendar. Requires location access.">
+          <label className="flex items-center gap-1.5 text-caption text-muted">
+            <input
+              type="checkbox"
+              checked={settings?.show_weather ?? false}
+              onChange={(e) => updateSettings({ show_weather: e.target.checked })}
+              className="accent-[var(--accent)]"
+            />
+            on
+          </label>
+        </Row>
       </div>
     </div>
   );

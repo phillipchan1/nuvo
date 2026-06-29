@@ -9,14 +9,54 @@ export interface ParsedCapture {
   durationMinutes: number | null;
   labels: string[];
   priority: TaskPriority;
+  /** A `//` note — the freeform description tail, verbatim. */
+  notes: string | null;
+  /** The raw `@token` text (a slug), to be resolved against the vertical by the
+   *  consumer (the way `labels` are resolved to ids). */
+  route: string | null;
   /** Human-readable fragments for the live preview chips. */
-  chips: { kind: "date" | "time" | "duration" | "label" | "priority"; text: string }[];
+  chips: { kind: "date" | "time" | "duration" | "label" | "priority" | "note" | "route"; text: string }[];
 }
 
 const DURATION_RE = /\b(?:(\d+)\s*h(?:r|our)?s?)?\s*(?:(\d+)\s*m(?:in|ins|inutes)?\b)?/i;
 const DURATION_TOKEN_RE = /\b(\d+h(?:\d+m?)?|\d+\s*h(?:ours?|rs?)?(?:\s*\d+\s*m(?:ins?)?)?|\d+\s*m(?:ins?)?)\b/i;
 const LABEL_RE = /#([\w-]+)/g;
 const PRIORITY_RE = /!(high|medium|med|low|none|h|m|l)\b/i;
+// @route — a single slug token (letters/digits/-/_), e.g. "@church" or
+// "@Sermon-prep". Must be preceded by start/space so "a@b" emails don't match.
+const ROUTE_RE = /(^|\s)@([\w][\w-]*)/;
+// // note — everything after a "// " marks the freeform description tail. Must be
+// preceded by start/space so URLs ("https://…") aren't mistaken for a note.
+const NOTE_RE = /(^|\s)\/\/(.*)$/;
+
+// Casual date abbreviations chrono doesn't know natively (verified: it handles
+// "tomorrow", "next tuesday", "next week" but not these). Expanded before chrono
+// so the date still strips cleanly from the title. Whole-word, case-insensitive.
+// NOTE: "tom" → "tomorrow" can misfire on the name "Tom"; the live preview chip
+// surfaces the guess so a wrong read is visible and one tap to remove.
+const DATE_ALIASES: [RegExp, string][] = [
+  [/\btom\b/gi, "tomorrow"],
+  [/\btmrw\b/gi, "tomorrow"],
+  [/\btmr\b/gi, "tomorrow"],
+  [/\bmon\b/gi, "monday"],
+  [/\btues\b/gi, "tuesday"],
+  [/\btue\b/gi, "tuesday"],
+  [/\bweds\b/gi, "wednesday"],
+  [/\bwed\b/gi, "wednesday"],
+  [/\bthurs\b/gi, "thursday"],
+  [/\bthur\b/gi, "thursday"],
+  [/\bthu\b/gi, "thursday"],
+  [/\bnext wk\b/gi, "next week"],
+  [/\beod\b/gi, "today"],
+  [/\beow\b/gi, "friday"],
+  [/\bend of week\b/gi, "friday"],
+];
+
+function expandDateAliases(s: string): string {
+  let out = s;
+  for (const [re, full] of DATE_ALIASES) out = out.replace(re, full);
+  return out;
+}
 
 function parsePriority(token: string): TaskPriority {
   const t = token.toLowerCase();
@@ -37,14 +77,66 @@ function parseDurationToken(token: string): number | null {
   return null;
 }
 
+/** Fold a name to a comparable key — spaces/hyphens/case dropped — so the typed
+ *  slug "@sermonprep" or "@Sermon-prep" both match the project "Sermon prep". */
+export function routeKey(s: string): string {
+  return s.toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+export interface RouteTarget {
+  id: string;
+  kind: "project" | "initiative" | "domain";
+  name: string;
+}
+
+/**
+ * The title for a capture surface that does NOT resolve `@routes` itself — folds
+ * an unresolved route back into the title so the intent survives into the Inbox
+ * for grooming to home, rather than being silently stripped and lost.
+ */
+export function captureTitle(p: ParsedCapture, raw: string): string {
+  const t = p.route ? `${p.title} @${p.route}`.trim() : p.title;
+  return t || raw;
+}
+
+/**
+ * Resolve a parsed `@route` slug against the open vertical. Exact key match wins;
+ * otherwise a prefix match, biasing to the most specific altitude (project →
+ * initiative → domain). Returns null when nothing matches — the consumer then
+ * leaves the token literal in the title for inbox grooming to home.
+ */
+export function resolveRoute(route: string, targets: RouteTarget[]): RouteTarget | null {
+  if (!route) return null;
+  const key = routeKey(route);
+  const rank = { project: 0, initiative: 1, domain: 2 } as const;
+  const byRank = (a: RouteTarget, b: RouteTarget) => rank[a.kind] - rank[b.kind];
+  const exact = targets.filter((t) => routeKey(t.name) === key).sort(byRank);
+  if (exact.length) return exact[0];
+  const prefix = targets.filter((t) => routeKey(t.name).startsWith(key)).sort(byRank);
+  return prefix[0] ?? null;
+}
+
 /**
  * Parse a capture string like:
- *   "call David tomorrow 9am 30m #church !high"
+ *   "call David tomorrow 9am 30m #church !high @sermon // bring the outline"
  * into a structured task draft. Tokens are stripped from the title.
  */
 export function parseCapture(input: string, refDate: Date = new Date()): ParsedCapture {
   let working = input;
   const chips: ParsedCapture["chips"] = [];
+
+  // // note — pull the freeform tail out FIRST so its text isn't mined for tokens
+  // (dates, #labels) that belong to the description, not the task structure.
+  let notes: string | null = null;
+  const noteMatch = working.match(NOTE_RE);
+  if (noteMatch) {
+    const body = noteMatch[2].trim();
+    if (body) {
+      notes = body;
+      chips.push({ kind: "note", text: body.length > 32 ? body.slice(0, 32) + "…" : body });
+    }
+    working = working.replace(NOTE_RE, "");
+  }
 
   // #labels
   const labels: string[] = [];
@@ -53,6 +145,15 @@ export function parseCapture(input: string, refDate: Date = new Date()): ParsedC
     chips.push({ kind: "label", text: `#${name}` });
     return "";
   });
+
+  // @route — a single slug the consumer resolves to a project/initiative/domain.
+  let route: string | null = null;
+  const routeMatch = working.match(ROUTE_RE);
+  if (routeMatch) {
+    route = routeMatch[2];
+    chips.push({ kind: "route", text: `@${route}` });
+    working = working.replace(ROUTE_RE, "$1");
+  }
 
   // !priority
   let priority: TaskPriority = "none";
@@ -74,7 +175,10 @@ export function parseCapture(input: string, refDate: Date = new Date()): ParsedC
     }
   }
 
-  // natural-language date/time via chrono
+  // natural-language date/time via chrono. Expand casual abbreviations into
+  // `working` itself first so chrono's matched span strips cleanly from the title
+  // (an alias only survives in the title if chrono didn't claim it as a date).
+  working = expandDateAliases(working);
   let doDate: string | null = null;
   let startTime: Date | null = null;
   const results = chrono.parse(working, refDate, { forwardDate: true });
@@ -99,5 +203,5 @@ export function parseCapture(input: string, refDate: Date = new Date()): ParsedC
   }
 
   const title = working.replace(/\s{2,}/g, " ").trim();
-  return { title, doDate, startTime, durationMinutes, labels, priority, chips };
+  return { title, doDate, startTime, durationMinutes, labels, priority, notes, route, chips };
 }

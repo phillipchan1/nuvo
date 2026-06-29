@@ -20,6 +20,9 @@ import DraftComposer, { type CreateKind } from "./DraftComposer";
 import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
 import type { EmblemSpec } from "../lib/weekEmblem";
+import { useWeather, indexWeather, type WeatherDay } from "../hooks/useWeather";
+import WeatherIcon from "./WeatherIcon";
+import WeatherPopover from "./WeatherPopover";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
 
@@ -315,6 +318,11 @@ export default function CalendarPane({
     setAvailH(el.clientHeight);
     return () => ro.disconnect();
   }, []);
+
+  const showWeather = settings?.show_weather ?? false;
+  const { data: weatherData } = useWeather(showWeather);
+  const weatherIndex = useMemo(() => indexWeather(weatherData?.days), [weatherData]);
+  const [wxPopover, setWxPopover] = useState<{ day: WeatherDay; anchor: { x: number; y: number } } | null>(null);
 
   const dayStart = settings?.day_start_hour ?? 6;
   const dayEnd = settings?.day_end_hour ?? 24;
@@ -1574,6 +1582,9 @@ export default function CalendarPane({
             const isToday = arg.isToday;
             const weekday = arg.date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
             const dateNum = arg.date.getDate();
+            // en-CA locale reliably produces YYYY-MM-DD in local time
+            const dateStr = arg.date.toLocaleDateString("en-CA");
+            const wx = showWeather && !isMonth ? weatherIndex.get(dateStr) : undefined;
             return (
               <div className="flex flex-col items-center gap-0.5 py-1">
                 <span className="text-micro font-semibold tracking-widest text-muted">
@@ -1587,8 +1598,26 @@ export default function CalendarPane({
                 >
                   {dateNum}
                 </span>
-                {isToday && (
+                {isToday && !wx && (
                   <span className="h-1 w-1 rounded-full" style={{ background: "var(--accent)" }} />
+                )}
+                {wx && (
+                  <button
+                    className="fast flex items-center gap-0.5 mt-0.5 rounded px-1 hover:bg-surface-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setWxPopover({ day: wx, anchor: { x: rect.left + rect.width / 2, y: rect.bottom } });
+                    }}
+                  >
+                    <WeatherIcon wmo={wx.wmo} size={14} />
+                    <span
+                      className="mono tabular-nums leading-none"
+                      style={{ fontSize: "10px", color: "var(--muted)" }}
+                    >
+                      {wx.tempHigh}°
+                    </span>
+                  </button>
                 )}
               </div>
             );
@@ -1615,6 +1644,15 @@ export default function CalendarPane({
           datesSet={handleDatesSet}
         />
       </div>
+      )}
+
+      {wxPopover && (
+        <WeatherPopover
+          day={wxPopover.day}
+          city={weatherData?.city}
+          anchor={wxPopover.anchor}
+          onClose={() => setWxPopover(null)}
+        />
       )}
     </div>
   );

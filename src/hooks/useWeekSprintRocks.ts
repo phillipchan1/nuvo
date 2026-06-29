@@ -18,6 +18,8 @@ export interface WeekSprintRocks {
   /** add fresh priorities from free text (one per non-empty line). */
   addTitles: (titles: string[]) => void;
   removeRock: (id: string) => void;
+  /** edit a priority in place — title, description (win), etc. */
+  updateRock: (id: string, patch: Partial<BigRock>) => void;
   /** check off / un-check as landed (the "mark complete" action). */
   toggleDone: (id: string) => void;
   /** carry priorities in (id-deduped, roll_count bumped, done reset). Returns count newly added. */
@@ -59,6 +61,7 @@ export function useWeekSprintRocks(weekStartISO: string): WeekSprintRocks {
       if (fresh.length) void write([...rocks, ...fresh]);
     },
     removeRock: (id) => void write(rocks.filter((r) => r.id !== id)),
+    updateRock: (id, patch) => void write(rocks.map((r) => (r.id === id ? { ...r, ...patch } : r))),
     toggleDone: (id) =>
       void write(rocks.map((r) => (r.id === id ? { ...r, done_at: r.done_at ? null : new Date().toISOString() } : r))),
     carryIn: (incoming) => {

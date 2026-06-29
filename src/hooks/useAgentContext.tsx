@@ -6,12 +6,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useAgent, type AgentHandle } from "./useAgent";
+import { useAgent, type AgentHandle, type NavFocus } from "./useAgent";
 
 interface AgentContextValue {
   agent: AgentHandle;
   range: { start: string; end: string };
   setRange: (range: { start: string; end: string }) => void;
+  navFocus: NavFocus | undefined;
+  setNavFocus: (focus: NavFocus) => void;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -26,7 +28,8 @@ function defaultRange() {
 
 export function AgentProvider({ children }: { children: ReactNode }) {
   const [range, setRangeState] = useState(defaultRange);
-  const agent = useAgent(range);
+  const [navFocus, setNavFocusState] = useState<NavFocus | undefined>(undefined);
+  const agent = useAgent(range, navFocus);
 
   const setRange = useCallback((next: { start: string; end: string }) => {
     setRangeState((prev) =>
@@ -34,7 +37,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const value = useMemo(() => ({ agent, range, setRange }), [agent, range, setRange]);
+  const setNavFocus = useCallback((focus: NavFocus) => {
+    setNavFocusState(focus);
+  }, []);
+
+  const value = useMemo(() => ({ agent, range, setRange, navFocus, setNavFocus }), [agent, range, setRange, navFocus, setNavFocus]);
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
 }

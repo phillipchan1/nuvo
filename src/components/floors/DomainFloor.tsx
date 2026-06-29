@@ -12,12 +12,13 @@ import { supabase } from "../../lib/supabase";
 import {
   faithfulness,
   initiativesOf,
+  looseProjectsOf,
   looseTasksOfDomain,
   type Domain,
   type DomainContext,
 } from "../../lib/vertical";
 import type { Focus } from "../AppShell";
-import { FloorHeader, InlineNumber, InlineText, InlineTextarea, DeleteBtn, RefinedSeal, RefinedTick, useRefinedCelebration } from "./parts";
+import { FloorHeader, InlineNumber, InlineText, InlineTextarea, DeleteBtn, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL, RefinedSeal, RefinedTick, useRefinedCelebration } from "./parts";
 import { readSpine } from "../../lib/readiness";
 
 const SWATCHES = ["#DB2777", "#7C3AED", "#2563EB", "#0D9488", "#059669", "#D97706", "#4F46E5", "#DC2626", "#0891B2", "#65A30D"];
@@ -236,10 +237,12 @@ export default function DomainFloor({
   focus,
   onSwitchDomain,
   onOpenInitiative,
+  onOpenProject,
 }: {
   focus: Focus;
   onSwitchDomain: (id: string) => void;
   onOpenInitiative: (id: string) => void;
+  onOpenProject: (id: string) => void;
 }) {
   const { data, addDomain } = useVertical();
   const domains = [...data.domains].sort((a, b) => a.sort - b.sort);
@@ -258,7 +261,7 @@ export default function DomainFloor({
   if (open) {
     return (
       <div className="floor-enter">
-        <Chapel key={open.id} domain={open} motif={motifAt(Math.max(openIdx, domains.length))} onBack={() => { setOpenId(null); setFreshDomain(null); }} onOpenInitiative={onOpenInitiative} />
+        <Chapel key={open.id} domain={open} motif={motifAt(Math.max(openIdx, domains.length))} onBack={() => { setOpenId(null); setFreshDomain(null); }} onOpenInitiative={onOpenInitiative} onOpenProject={onOpenProject} />
       </div>
     );
   }
@@ -363,11 +366,12 @@ function Niche({ domain, motif, focused, onEnter }: { domain: Domain; motif: Mot
 }
 
 // ══ The chapel — a single domain, entered ════════════════════════════════════
-function Chapel({ domain, motif, onBack, onOpenInitiative }: { domain: Domain; motif: Motif; onBack: () => void; onOpenInitiative: (id: string) => void }) {
-  const { data, updateDomain, deleteDomain, addInitiative } = useVertical();
+function Chapel({ domain, motif, onBack, onOpenInitiative, onOpenProject }: { domain: Domain; motif: Motif; onBack: () => void; onOpenInitiative: (id: string) => void; onOpenProject: (id: string) => void }) {
+  const { data, updateDomain, deleteDomain, addInitiative, addProject } = useVertical();
   const st = stateOf(domain);
   const lit = st.tone === "lit";
   const inits = initiativesOf(data, domain.id);
+  const looseProjects = looseProjectsOf(data, domain.id);
   const loose = looseTasksOfDomain(data, domain.id);
   const accent = domain.color;
 
@@ -439,12 +443,20 @@ function Chapel({ domain, motif, onBack, onOpenInitiative }: { domain: Domain; m
         <div className="mt-9 w-full max-w-[420px] border-t pt-4" style={{ borderColor: "var(--line)" }}>
           <div className="flex items-center justify-between">
             <span className="text-meta uppercase text-muted" style={{ letterSpacing: "0.18em" }}>What you're building here</span>
-            <button
-              onClick={() => void addInitiative(domain.id).then((i) => onOpenInitiative(i.id))}
-              className="fast text-meta text-muted hover:text-ink"
-            >
-              + initiative
-            </button>
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => void addProject(domain.id, null).then((p) => onOpenProject(p.id))}
+                className="fast text-meta text-muted hover:text-ink"
+              >
+                + project
+              </button>
+              <button
+                onClick={() => void addInitiative(domain.id).then((i) => onOpenInitiative(i.id))}
+                className="fast text-meta text-muted hover:text-ink"
+              >
+                + initiative
+              </button>
+            </div>
           </div>
           <div className="mt-3 flex flex-col gap-2">
             {inits.map((i) => (
@@ -458,10 +470,26 @@ function Chapel({ domain, motif, onBack, onOpenInitiative }: { domain: Domain; m
                 <span className="group-hover/i:underline">{i.name}</span>
               </button>
             ))}
-            {inits.length === 0 && (
+            {inits.length === 0 && looseProjects.length === 0 && (
               <div className="serif text-body italic text-muted">No initiatives yet — this domain simply asks to be tended.</div>
             )}
           </div>
+          {looseProjects.length > 0 && (
+            <div className="mt-3 flex flex-col gap-1" style={{ borderTop: inits.length > 0 ? "0.5px solid var(--line)" : "none", paddingTop: inits.length > 0 ? 10 : 0 }}>
+              {looseProjects.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => onOpenProject(p.id)}
+                  className="fast group/p flex items-center gap-2 text-body"
+                  style={{ color: "color-mix(in srgb, var(--text) 75%, transparent)" }}
+                >
+                  <span style={{ color: PROJECT_STATUS_COLORS[p.status], fontSize: 7, lineHeight: 1 }}>●</span>
+                  <span className="min-w-0 flex-1 truncate text-left group-hover/p:underline">{p.name}</span>
+                  <span className="text-meta" style={{ color: PROJECT_STATUS_COLORS[p.status] }}>{PROJECT_STATUS_LABEL[p.status]}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {loose.length > 0 && (
             <div className="mono mt-3 text-meta text-muted">+ {loose.length} loose {loose.length === 1 ? "task" : "tasks"} parked here</div>
           )}

@@ -1,7 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase, supabaseUrl, supabaseAnonKey } from "../lib/supabase";
 import { attachmentPromptBlock, isImageAttachment } from "../lib/agentAttachments";
+import { marqueeManifest } from "../lib/marqueeRegistry";
 import type {
   AgentAction,
   AgentAttachment,
@@ -11,6 +12,14 @@ import type {
   AgentStreamEvent,
   AgentSuggestion,
 } from "../lib/agentTypes";
+import type { MarqueeDirective } from "../lib/marquee";
+
+export interface NavFocus {
+  rung: string;
+  domainId?: string;
+  initiativeId?: string;
+  projectId?: string;
+}
 
 function uid() {
   return crypto.randomUUID();
@@ -37,8 +46,10 @@ function toApiMessage(m: AgentMessage): AgentRequestMessage {
   return { role: m.role, content: parts.length ? parts : fullText || "(attachment)" };
 }
 
-export function useAgent(range: { start: string; end: string }) {
+export function useAgent(range: { start: string; end: string }, navFocus?: NavFocus) {
   const qc = useQueryClient();
+  const navFocusRef = useRef(navFocus);
+  navFocusRef.current = navFocus;
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +98,13 @@ export function useAgent(range: { start: string; end: string }) {
             apikey: supabaseAnonKey,
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ messages: history, rangeStart: range.start, rangeEnd: range.end }),
+          body: JSON.stringify({
+            messages: history,
+            rangeStart: range.start,
+            rangeEnd: range.end,
+            navFocus: navFocusRef.current,
+            marqueeTargets: marqueeManifest(),
+          }),
         });
 
         if (!res.ok || !res.body) {
@@ -106,9 +123,10 @@ export function useAgent(range: { start: string; end: string }) {
           } else if (evt.t === "d") {
             finalActions = evt.actions?.length ? evt.actions : undefined;
             finalSuggestions = evt.suggestions?.length ? evt.suggestions : undefined;
+            const ui = evt.ui as MarqueeDirective | undefined;
             const content = (typeof evt.content === "string" && evt.content) || streamed;
             ensureAssistant();
-            patchAssistant({ content: content || "Done.", actions: finalActions, suggestions: finalSuggestions });
+            patchAssistant({ content: content || "Done.", actions: finalActions, suggestions: finalSuggestions, ui });
           } else if (evt.t === "e") {
             throw new Error(evt.msg || "Agent error");
           }

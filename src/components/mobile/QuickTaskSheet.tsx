@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from "react";
-import { parseCapture } from "../../lib/nlp";
+import { captureTitle, parseCapture } from "../../lib/nlp";
 import { todayISO, tomorrowISO, nextWeekISO } from "../../lib/dates";
 import type { Label } from "../../lib/types";
 import type { NewTaskInput } from "../../hooks/useTasks";
@@ -50,7 +50,8 @@ export default function QuickTaskSheet({
       // An explicit date in the text wins; otherwise use the picked day chip.
       const doDate = p.doDate ?? day ?? undefined;
       await onCreate({
-        title: p.title || body,
+        title: captureTitle(p, body),
+        notes: p.notes ?? undefined,
         do_date: doDate,
         start_time: p.startTime?.toISOString() ?? null,
         duration_minutes: p.durationMinutes,

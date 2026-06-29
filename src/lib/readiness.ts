@@ -201,11 +201,13 @@ function weekCue(d: VerticalData): FloorCue | null {
   return null;
 }
 
-/** Day cue: today has commitments that aren't placed yet. */
+/** Day cue: today has commitments still floating — on the day, not yet given a
+ *  time. The pure-vertical read of Today (no clock): the coach's live "what
+ *  slipped / what's open now" stays inside the Today tab, never the chrome. */
 function dayCue(d: VerticalData, now: Date): FloorCue | null {
   const today = todayISO(now);
   const unplaced = d.tasks.filter((t) => t.doDate === today && t.status === "ready").length;
-  if (unplaced) return { tone: "drift", label: "order today" };
+  if (unplaced) return { tone: "drift", label: `${unplaced} to place` };
   return null;
 }
 

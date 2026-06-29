@@ -9,6 +9,7 @@ import SpotlightWindow from "./components/SpotlightWindow";
 import UpdateToast from "./components/UpdateToast";
 import { AppNavigationProvider } from "./hooks/useAppNavigation";
 import { AgentProvider } from "./hooks/useAgentContext";
+import { VerticalProvider } from "./hooks/useVertical";
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : "Something went wrong";
@@ -37,7 +38,14 @@ const IS_SPOTLIGHT = (() => {
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
-    onError: (e) => toast.error(errMsg(e)),
+    // Only alarm on a *first-load* failure (nothing on screen yet). A background
+    // refetch that blips — e.g. an interrupted fetch when the app refocuses and
+    // TanStack refetches everything, like right after the ⌥Space hand-off — still
+    // has cached data showing, so a red toast there is pure noise.
+    onError: (e, query) => {
+      if (query.state.data !== undefined) return;
+      toast.error(errMsg(e));
+    },
   }),
   mutationCache: new MutationCache({
     onError: (e) => toast.error(errMsg(e)),
@@ -64,7 +72,9 @@ function Shell() {
       <>
         {session && !loading && (
           <AgentProvider>
-            <SpotlightWindow />
+            <VerticalProvider>
+              <SpotlightWindow />
+            </VerticalProvider>
           </AgentProvider>
         )}
         <Toaster position="bottom-right" richColors closeButton />

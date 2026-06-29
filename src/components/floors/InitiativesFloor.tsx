@@ -126,6 +126,7 @@ export default function InitiativesFloor({
                 storageKey: "initiatives",
                 selectable: true,
                 onBulkDelete: deleteInitiatives,
+                domains: data.domains,
               }}
             />
           </div>

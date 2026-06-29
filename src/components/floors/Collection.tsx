@@ -18,7 +18,8 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { Bar, InlineDate, InlineText, RefinedTick, RipenessPip, StatusPill, Timeline, softTint, type TimelineItem } from "./parts";
+import { Bar, DomainPicker, InlineDate, InlineText, RefinedTick, RipenessPip, StatusPill, Timeline, softTint, type TimelineItem } from "./parts";
+import type { Domain } from "../../lib/vertical";
 import type { Ripeness } from "../../lib/tending";
 import { Btn } from "../ui";
 import { SELECT_INTERACTIVE, useCollectionSelection, type CollectionSelection } from "../../hooks/useCollectionSelection";
@@ -75,6 +76,7 @@ export interface CollectionConfig {
   /** Desktop-grade selection in every view */
   selectable?: boolean;
   onBulkDelete?: (ids: string[]) => void;
+  domains?: Domain[];
 }
 
 type View = "table" | "board" | "calendar" | "timeline";
@@ -286,9 +288,15 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
             <div data-no-select onMouseDown={(e) => e.stopPropagation()}>
               <StatusPill value={r.status} options={statusOptions} colors={statusColors} labels={config.statusLabels} onChange={r.setStatus} />
             </div>
-            <div className="mono flex items-center gap-1.5 truncate text-label text-muted">
-              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.accent }} />
-              <span className="truncate">{r.subtitle}</span>
+            <div className="flex min-w-0 items-center gap-1.5" data-no-select onMouseDown={(e) => e.stopPropagation()}>
+              {r.setDomain && config.domains ? (
+                <DomainPicker domains={config.domains} value={r.domainId} onChange={r.setDomain} />
+              ) : (
+                <div className="mono flex items-center gap-1.5 truncate text-label text-muted">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.accent }} />
+                  <span className="truncate">{r.subtitle}</span>
+                </div>
+              )}
             </div>
             <div>
               <Bar pct={r.progress} color={r.accent} h={1} />

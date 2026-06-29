@@ -8,6 +8,7 @@
 // the user promotes work). Sibling of scaffold.ts.
 
 import { admin } from "../_shared/admin.ts";
+import { llmKey, llmBaseUrl, llmModel, llmHeaders } from "./llm.ts";
 
 const ENERGIES = new Set(["deep", "decide", "delegate", "quick"]);
 
@@ -78,19 +79,17 @@ Produce:
 
 Respond with JSON only: {"edits":[...],"additions":[...],"order":[...]}`;
 
-  const key = Deno.env.get("OPENAI_API_KEY");
-  if (!key) throw new Error("OPENAI_API_KEY not configured");
-
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const key = llmKey();
+  const res = await fetch(`${llmBaseUrl()}/chat/completions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    headers: llmHeaders(key),
     body: JSON.stringify({
-      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4.1-mini",
+      model: llmModel("gpt-5.4-nano", "qwen/qwen3.7-plus-20260602"),
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
     }),
   });
-  if (!res.ok) throw new Error(`OpenAI error ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text()}`);
 
   const completion = await res.json();
   let parsed: { edits?: unknown[]; additions?: unknown[]; order?: unknown[] } = {};

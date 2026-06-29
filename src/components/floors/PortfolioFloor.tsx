@@ -104,6 +104,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
                 storageKey: "projects",
                 selectable: true,
                 onBulkDelete: deleteProjects,
+                domains: data.domains,
               }}
             />
           </div>

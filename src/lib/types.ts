@@ -243,6 +243,8 @@ export interface UserSettings {
    *  attributed to the domain (the deterministic default behind time allocation). */
   calendar_domain_map: Record<string, string>;
   last_rollover_date: string | null;
+  /** Show a weather icon + high temp in calendar day headers. Requires location permission. */
+  show_weather: boolean;
 }
 
 /** One hidden calendar event. `key` is `account_id:provider_event_id` for a single

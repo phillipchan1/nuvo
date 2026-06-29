@@ -1,3 +1,5 @@
+import type { MarqueeDirective } from "./marquee";
+
 export interface AgentAttachment {
   id: string;
   name: string;
@@ -17,6 +19,8 @@ export interface AgentMessage {
   actions?: AgentAction[];
   /** Clickable quick replies rendered below this message. */
   suggestions?: AgentSuggestion[];
+  /** Marquee — drive the left canvas (navigate + spotlight) alongside the reply. */
+  ui?: MarqueeDirective;
 }
 
 export interface AgentSuggestion {
@@ -48,6 +52,7 @@ export interface AgentResponse {
   reply: string;
   actions?: AgentAction[];
   suggestions?: AgentSuggestion[];
+  ui?: MarqueeDirective;
 }
 
 // The agent function streams Server-Sent Events. Each `data:` line is one of:

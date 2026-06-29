@@ -168,7 +168,18 @@ export function EveningShutdown({
     <Modal onClose={onClose} width="max-w-md">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
         <div className="text-lead masthead">Evening shutdown</div>
-        <div className="mono text-caption text-muted">{remaining.length} open</div>
+        <div className="flex items-center gap-2.5">
+          {remaining.length > 0 && (
+            <button
+              onClick={() => remaining.forEach((t) => mutations.planFor(t, tomorrowISO()))}
+              className="fast mono text-meta text-muted hover:text-accent"
+              title="Send everything still open to tomorrow"
+            >
+              roll all → tomorrow
+            </button>
+          )}
+          <span className="mono text-caption text-muted">{remaining.length} open</span>
+        </div>
       </div>
 
       {/* the gain, before the gap */}

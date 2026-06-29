@@ -112,6 +112,38 @@ fn hide_spotlight(app: tauri::AppHandle) {
     }
 }
 
+// Hand off from the ⌥Space panel to the main window: dismiss the panel and bring
+// main all the way to the foreground. The panel is non-activating, so a JS
+// `show()/setFocus()` can't pull a background app forward — only an AppKit
+// activate (surface_main_window) reliably does. Used by a pulled-up record and
+// "Open Nuvo". SPOTLIGHT_VISIBLE is cleared FIRST so a racing Reopen surfaces
+// main rather than re-hiding it (the ⌥Space-never-raises-main guard).
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn surface_main(app: tauri::AppHandle) {
+    SPOTLIGHT_VISIBLE.store(false, Ordering::SeqCst);
+    if let Ok(panel) = app.get_webview_panel("spotlight") {
+        panel.hide();
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        surface_main_window(&win);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn surface_main(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(spot) = app.get_webview_window("spotlight") {
+        let _ = spot.hide();
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -125,11 +157,17 @@ pub fn run() {
     }
 
     builder
-        .invoke_handler(tauri::generate_handler![hide_spotlight])
+        .invoke_handler(tauri::generate_handler![hide_spotlight, surface_main])
         .setup(|app| {
             // Reskin the spotlight window into a non-activating NSPanel.
             #[cfg(target_os = "macos")]
             install_spotlight_panel(app.handle());
+
+            // Open DevTools automatically in debug builds.
+            #[cfg(debug_assertions)]
+            if let Some(main) = app.get_webview_window("main") {
+                main.open_devtools();
+            }
 
             // ⌘W on the main window must HIDE it, not destroy it — otherwise the
             // window is gone for good and the dock icon can never bring Nuvo back

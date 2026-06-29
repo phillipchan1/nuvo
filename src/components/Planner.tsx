@@ -6,6 +6,7 @@ import { useWeekReport } from "../hooks/useWeekReport";
 import WeekPlanFloor from "./floors/WeekPlanFloor";
 import { readRevealConfig, isRevealReady, isAcknowledged, acknowledge, wasToasted, markToasted } from "../lib/weekReveal";
 import { fallbackPanelAnchor } from "../lib/appNav";
+import { MARQUEE_OPEN_EVENT, MARQUEE_CLOSE_EVENT } from "../lib/marquee";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
 import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
 import { useCalendarAccounts, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
@@ -15,7 +16,13 @@ import { useRealtime } from "../hooks/useRealtime";
 import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { domainById, projectById, projectsOf, initiativesOf, taskDomainColor } from "../lib/vertical";
+import { taskDomainColor } from "../lib/vertical";
+import {
+  applySpotlightNav,
+  buildSearchHits,
+  SPOTLIGHT_NAVIGATE_EVENT,
+  type SpotlightNav,
+} from "../lib/spotlightNav";
 import { deriveSlotTitle } from "../lib/slots";
 import { writeAgentOpen } from "./AgentSidebar";
 import LeftRail from "./LeftRail";
@@ -55,7 +62,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
       end: new Date(now.getTime() + 7 * 86400_000).toISOString(),
     };
   });
-  const { agent, setRange: setAgentRange } = useAgentContext();
+  const { agent, navFocus, setRange: setAgentRange } = useAgentContext();
   const syncRange = useCallback(
     (start: string, end: string) => {
       const next = { start, end };
@@ -74,6 +81,15 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const today = todayISO(now);
   const { settings, update: updateSettings } = useSettings();
   const { data: vertical } = useVertical();
+
+  const contextLabel = useMemo(() => {
+    if (!navFocus) return undefined;
+    const { projectId, initiativeId, domainId } = navFocus;
+    if (projectId) return vertical.projects.find((p) => p.id === projectId)?.name;
+    if (initiativeId) return vertical.initiatives.find((i) => i.id === initiativeId)?.name;
+    if (domainId) return vertical.domains.find((d) => d.id === domainId)?.name;
+    return undefined;
+  }, [navFocus, vertical]);
 
   // The current (lived) week — the toolbar's living emblem gauge. The week that
   // contains today (Monday-anchored). The floor shows a *viewed* week, which you
@@ -116,15 +132,39 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     const dow = now.getDay();
     return dow === 0 || dow === 1;
   }, [now]);
-  // Open the Week's Plan *surface* (the view) at a given week.
-  const openWeekPlanAt = useCallback((weekISO: string) => {
+  // Open the Week's Plan *surface*. `story` plays the paced recap animation —
+  // that's the Review's reveal moment ONLY. A mid-week check-in ("the week's
+  // plan") opens straight to the static detail (no animation).
+  const [weekPlanStory, setWeekPlanStory] = useState(false);
+  const openWeekPlanAt = useCallback((weekISO: string, story = false) => {
     setViewedWeekISO(weekISO);
+    setWeekPlanStory(story);
     setWeekPlanOpen(true);
   }, []);
   const openReview = useCallback(() => {
     ackReveal();
-    openWeekPlanAt(currentWeekISO);
+    openWeekPlanAt(currentWeekISO, true);
   }, [ackReveal, openWeekPlanAt, currentWeekISO]);
+
+  // Marquee: Nuvo can ask to bring the Week's Plan forward (e.g. "what are my
+  // priorities this week"). Open it straight to the static detail at the
+  // planning-horizon week — the Marquee controller lights the priorities next.
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const surface = (e as CustomEvent<{ surface?: string }>).detail?.surface;
+      if (surface === "week-plan") openWeekPlanAt(horizonWeekISO);
+    };
+    const onClose = (e: Event) => {
+      const surface = (e as CustomEvent<{ surface?: string }>).detail?.surface;
+      if (surface === "week-plan") setWeekPlanOpen(false);
+    };
+    window.addEventListener(MARQUEE_OPEN_EVENT, onOpen);
+    window.addEventListener(MARQUEE_CLOSE_EVENT, onClose);
+    return () => {
+      window.removeEventListener(MARQUEE_OPEN_EVENT, onOpen);
+      window.removeEventListener(MARQUEE_CLOSE_EVENT, onClose);
+    };
+  }, [openWeekPlanAt, horizonWeekISO]);
 
   // Is the plan-target week already composed? planWeek() stamps the sprint on
   // commit (the same signal the Sunday nudge reads), and data.sprint resolves to
@@ -306,65 +346,39 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     ? (events.find((e) => e.id === eventPanel.id) ?? null)
     : null;
   const openEventAccount = openEvent ? accounts.find((a) => a.id === openEvent.account_id) : null;
+  const openEventCalendar = openEvent && openEventAccount
+    ? (openEventAccount.calendars.find((c) => c.id === openEvent.calendar_id) ?? null)
+    : null;
   const openSlot = slotPanel ? (slots.find((s) => s.id === slotPanel.id) ?? null) : null;
 
   const anyModalOpen = showCmd || showSettings || showMorning || showEvening || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
 
   // The searchable vertical for ⌘K — every task / project / initiative / domain
-  // as a SearchHit whose `run` navigates to it. Built once from the live store
-  // (which already holds it all); the palette filters by the typed query.
-  const searchHits = useMemo<SearchHit[]>(() => {
-    const data = vertical;
-    const hits: SearchHit[] = [];
-    for (const t of data.tasks) {
-      const title = t.title?.trim();
-      if (!title) continue; // raw/empty inbox captures aren't findable by name
-      const proj = projectById(data, t.projectId);
-      const dom = domainById(data, t.domainId ?? proj?.domainId ?? null);
-      hits.push({
-        id: `task:${t.id}`,
-        kind: "task",
-        title,
-        subtitle: proj?.name ?? dom?.name ?? undefined,
-        run: () => openOverlay("task-record", t.id),
-      });
-    }
-    for (const p of data.projects) {
-      hits.push({
-        id: `project:${p.id}`,
-        kind: "project",
-        title: p.name,
-        subtitle: domainById(data, p.domainId)?.name,
-        run: () => openProject({ domainId: p.domainId, initiativeId: p.initiativeId ?? "", projectId: p.id }),
-      });
-    }
-    for (const i of data.initiatives) {
-      hits.push({
-        id: `initiative:${i.id}`,
-        kind: "initiative",
-        title: i.name,
-        subtitle: domainById(data, i.domainId)?.name,
-        run: () => openInitiative({ domainId: i.domainId, initiativeId: i.id, projectId: projectsOf(data, i.id)[0]?.id ?? "" }),
-      });
-    }
-    for (const d of data.domains) {
-      const firstInit = initiativesOf(data, d.id)[0];
-      const firstProj = firstInit ? projectsOf(data, firstInit.id)[0] : null;
-      hits.push({
-        id: `domain:${d.id}`,
-        kind: "domain",
-        title: d.name,
-        run: () =>
-          navigate({
-            focus: { domainId: d.id, initiativeId: firstInit?.id ?? "", projectId: firstProj?.id ?? "" },
-            rung: "domain",
-            overlay: "none",
-            overlayId: null,
-          }),
-      });
-    }
-    return hits;
-  }, [vertical, openOverlay, openProject, openInitiative, navigate]);
+  // as a SearchHit whose `run` navigates to it. Built from the shared builder
+  // (the same one the ⌥Space panel uses), each serialized intent applied through
+  // the live nav API so in-window search and cross-window pull-up stay identical.
+  const searchHits = useMemo<SearchHit[]>(
+    () =>
+      buildSearchHits(vertical).map((h) => ({
+        ...h,
+        run: () => applySpotlightNav(h.nav, { openOverlay, openProject, openInitiative, navigate }),
+      })),
+    [vertical, openOverlay, openProject, openInitiative, navigate],
+  );
+
+  // The global ⌥Space panel lives in its own Tauri window without the nav API, so
+  // a record it pulls up arrives here as an event — replayed against the live nav
+  // exactly like an in-window ⌘K selection. (No-op in the browser / PWA.)
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in globalThis)) return;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen<SpotlightNav>(SPOTLIGHT_NAVIGATE_EVENT, (e) =>
+        applySpotlightNav(e.payload, { openOverlay, openProject, openInitiative, navigate }),
+      ).then((u) => (unlisten = u)),
+    );
+    return () => unlisten?.();
+  }, [openOverlay, openProject, openInitiative, navigate]);
 
   const commands: Command[] = [
     { id: "today", title: "Go to today", run: () => setTab("today") },
@@ -481,6 +495,9 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
               event={openEvent}
               anchor={panelRect}
               editable={openEventAccount?.provider === "google"}
+              calendarName={openEventCalendar?.summary}
+              calendarColor={openEventCalendar?.color}
+              accountEmail={openEventAccount?.email}
               eventMutations={eventMutations}
               onClose={closeOverlay}
             />
@@ -515,7 +532,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             canGoNext={viewedWeekISO < horizonWeekISO}
             onCompose={() => { setWeekPlanOpen(false); openFlow("sunday"); }}
             composeLabel={weekPlanned && viewedWeekISO === horizonWeekISO ? "Re-plan the week" : "Compose the week"}
-            planForward={viewedTense === "ahead" || (viewedTense === "current" && planForward)}
+            story={weekPlanStory}
           />
         )}
       </div>
@@ -529,6 +546,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           agent={agent}
           onClose={closeOverlay}
           onRunCommand={runCommand}
+          contextLabel={contextLabel}
         />
       )}
       {recordTask && (

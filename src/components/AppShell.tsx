@@ -10,13 +10,13 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useEventRouter } from "../hooks/useEventRouter";
 import MobileShell from "./mobile/MobileShell";
-import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import Planner from "./Planner";
 import Spine from "./Spine";
 import FloorPane from "./FloorPane";
 import RecordModal from "./record/RecordModal";
 import ShortcutsModal from "./ShortcutsModal";
 import AgentSidebar from "./AgentSidebar";
+import Marquee from "./Marquee";
 import { useAgentContext } from "../hooks/useAgentContext";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
@@ -78,7 +78,16 @@ function AppShellInner() {
   } = useAppNavigation();
 
   const { rung, projectView, initiativeView, focus, flow, flowStep, agentOpen } = nav;
-  const { agent } = useAgentContext();
+  const { agent, setNavFocus } = useAgentContext();
+
+  useEffect(() => {
+    setNavFocus({
+      rung,
+      domainId: focus.domainId || undefined,
+      initiativeId: focus.initiativeId || undefined,
+      projectId: focus.projectId || undefined,
+    });
+  }, [rung, focus.domainId, focus.initiativeId, focus.projectId, setNavFocus]);
 
   // Auto-collapse the agent sidebar on narrow viewports so the calendar isn't crushed.
   // Spine (188) + LeftRail (360) + AgentSidebar (380) + Calendar min (280) = 1208px.
@@ -99,7 +108,6 @@ function AppShellInner() {
   }, []);
   const effectiveAgentOpen = agentOpen && !narrowViewport;
 
-  const [sundayNudge, setSundayNudge] = useState(false);
   // the fast composer is the default create surface, summonable from anywhere;
   // "more options" swaps in the full moment, carrying what's already typed.
   const [createFull, setCreateFull] = useState<{ domainId: string; initiativeId: string | null; name: string } | null>(null);
@@ -146,22 +154,6 @@ function AppShellInner() {
     }, "none");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, data.domains.length]);
-
-  // Sunday nudge: around the turn of the week, if this week's sprint hasn't
-  // been reviewed, offer the ritual once (dismissable per week).
-  useEffect(() => {
-    if (!ready) return;
-    const dow = parseDateISO(todayISO()).getDay();
-    const key = `nuvo-sunday-${planningWeekStartISO()}`;
-    if ((dow === 0 || dow === 1) && !data.sprint?.reviewed_at && !localStorage.getItem(key)) {
-      setSundayNudge(true);
-    }
-  }, [ready, data.sprint?.reviewed_at]);
-
-  const dismissSundayNudge = () => {
-    localStorage.setItem(`nuvo-sunday-${planningWeekStartISO()}`, "1");
-    setSundayNudge(false);
-  };
 
   // ⌘1–5 jump to a rung; ⌘↑ / ⌘↓ travel the ladder; ⌘[ goes back.
   useEffect(() => {
@@ -261,22 +253,6 @@ function AppShellInner() {
             </div>
           )}
 
-          {sundayNudge && !flow && (
-          <div className="absolute bottom-6 left-1/2 z-40 -translate-x-1/2">
-            <div className="rise elev-3 flex items-center gap-3 rounded-full border border-line bg-surface px-4 py-2">
-              <span className="text-caption">A new week is here — plan it?</span>
-              <button
-                onClick={() => { openFlow("sunday"); setSundayNudge(false); }}
-                className="fast rounded-full bg-accent px-3 py-1 text-label font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
-              >
-                Plan the week ▸
-              </button>
-              <button onClick={dismissSundayNudge} className="fast text-label text-muted hover:text-ink">
-                not now
-              </button>
-            </div>
-          </div>
-        )}
         </div>
 
         <AgentSidebar agent={agent} open={effectiveAgentOpen} onToggle={toggleAgent} />
@@ -362,6 +338,10 @@ function AppShellInner() {
       )}
 
       {nav.overlay === "shortcuts" && <ShortcutsModal onClose={closeOverlay} />}
+
+      {/* Marquee — lets Nuvo drive this canvas (navigate + spotlight) in step
+          with its reply. Desktop only; the orb portals above everything. */}
+      <Marquee messages={agent.messages} />
     </div>
   );
 }

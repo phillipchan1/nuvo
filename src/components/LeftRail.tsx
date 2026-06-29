@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
-import { parseCapture } from "../lib/nlp";
+import { captureTitle, parseCapture } from "../lib/nlp";
 import { acceptPatch, dismissPatch } from "../lib/grooming";
 import type { NewTaskInput, useTaskMutations } from "../hooks/useTasks";
 import { useVertical } from "../hooks/useVertical";
@@ -197,7 +197,8 @@ export default function LeftRail({
         .map((name) => labels.find((l) => l.name.toLowerCase() === name.toLowerCase())?.id)
         .filter((id): id is string => Boolean(id));
       const input: NewTaskInput = {
-        title: p.title || text,
+        title: captureTitle(p, text),
+        notes: p.notes ?? undefined,
         do_date: p.doDate ?? (tab === "today" ? todayISO(now) : null),
         start_time: p.startTime?.toISOString() ?? null,
         duration_minutes: p.durationMinutes,
