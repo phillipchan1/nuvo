@@ -149,16 +149,27 @@ export interface NewTaskInput {
   project_id?: string | null;
   initiative_id?: string | null;
   domain_id?: string | null;
+  /** Internal: the optimistic temp id, so the wrapper can track this create's
+   *  promise and defer any patch fired before the row is persisted. Stripped
+   *  before the insert. */
+  clientId?: string;
 }
 
 export function useTaskMutations() {
   const qc = useQueryClient();
 
+  // In-flight creates keyed by their optimistic temp id. A task can be toggled
+  // (or otherwise patched) within the ~150ms before its insert round-trips —
+  // patching the temp id is a server no-op and gets clobbered when the create
+  // resolves, so the change appears to "stick then revert". We defer such
+  // patches until the real row exists, then apply them to its real id.
+  const pendingCreates = useRef(new Map<string, Promise<Task>>());
+
   const create = useMutation({
     mutationFn: async (input: NewTaskInput): Promise<Task> => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("Not signed in");
-      const { labelIds, ...fields } = input;
+      const { labelIds, clientId: _clientId, ...fields } = input;
       const status = fields.do_date ? "planned" : "inbox";
       const duration =
         fields.start_time != null
@@ -180,7 +191,7 @@ export function useTaskMutations() {
     },
     onMutate: async (input) => {
       await qc.cancelQueries({ queryKey: ["tasks"] });
-      const tempId = crypto.randomUUID();
+      const tempId = input.clientId ?? crypto.randomUUID();
       const status: TaskStatus = input.do_date ? "planned" : "inbox";
       const duration = input.start_time != null
         ? (input.duration_minutes ?? DEFAULT_DURATION_MINUTES)
@@ -263,10 +274,32 @@ export function useTaskMutations() {
     onSettled: () => invalidateTasks(qc),
   });
 
-  const patchTask = (id: string, patch: Partial<Task>) => update.mutate({ id, patch });
+  /** Create a task, tracking its in-flight promise so patches fired before the
+   *  insert resolves can be re-targeted at the real row (see `pendingCreates`). */
+  const createTask = (input: NewTaskInput): Promise<Task> => {
+    const clientId = crypto.randomUUID();
+    const promise = create.mutateAsync({ ...input, clientId });
+    pendingCreates.current.set(clientId, promise);
+    void promise
+      .catch(() => {}) // the create's own onError unwinds the optimistic row
+      .finally(() => pendingCreates.current.delete(clientId));
+    return promise;
+  };
+
+  const patchTask = (id: string, patch: Partial<Task>) => {
+    const pending = pendingCreates.current.get(id);
+    if (pending) {
+      // Show the change immediately on the optimistic row, but defer the server
+      // write until the insert resolves — then patch the real id so it sticks.
+      patchCaches(qc, id, patch);
+      void pending.then((real) => update.mutate({ id: real.id, patch })).catch(() => {});
+      return;
+    }
+    update.mutate({ id, patch });
+  };
 
   return {
-    create: create.mutateAsync,
+    create: createTask,
     patchTask,
 
     /** Plan a task for a day without a time block (and out of any slot). */
@@ -300,7 +333,7 @@ export function useTaskMutations() {
 
     /** Create a fresh task already inside a slot (no block of its own). */
     createInSlot: (slot: Slot, title: string) =>
-      create.mutateAsync({
+      createTask({
         title,
         do_date: slot.do_date,
         slot_id: slot.id,
