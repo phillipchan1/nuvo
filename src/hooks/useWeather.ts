@@ -57,15 +57,17 @@ async function getLocation(): Promise<GeoCache> {
     return result;
   }
 
-  // 3 — IP fallback; ip-api.com returns Access-Control-Allow-Origin: * so it
-  //     works from tauri://localhost (ipapi.co does not allow non-browser origins)
-  const r = await fetch("https://ip-api.com/json/");
+  // 3 — IP fallback. Must be HTTPS + CORS-open to work from tauri://localhost
+  //     (a secure context) — ipapi.co 403s non-browser origins and ip-api.com's
+  //     free tier is HTTP-only (also a 403 over HTTPS). ipwho.is is HTTPS and
+  //     returns Access-Control-Allow-Origin: *.
+  const r = await fetch("https://ipwho.is/");
   if (!r.ok) throw new Error("no-location");
   const j = await r.json();
-  if (j.status !== "success") throw new Error("no-location");
+  if (!j.success) throw new Error("no-location");
   const result: GeoCache = {
-    lat: j.lat as number,
-    lon: j.lon as number,
+    lat: j.latitude as number,
+    lon: j.longitude as number,
     city: j.city as string | undefined,
     ts: Date.now(),
   };
@@ -112,6 +114,9 @@ export function useWeather(enabled = true) {
     staleTime: 3_600_000, // 1h
     gcTime: 7_200_000,
     retry: 0,
+    // Weather is decorative — if geo/forecast fetch fails (offline, geo provider
+    // down, denied location) it must never raise the global "Load failed" toast.
+    meta: { silent: true },
   });
 }
 

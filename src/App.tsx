@@ -44,6 +44,8 @@ const queryClient = new QueryClient({
     // has cached data showing, so a red toast there is pure noise.
     onError: (e, query) => {
       if (query.state.data !== undefined) return;
+      // Queries flagged silent (e.g. decorative weather) never raise a toast.
+      if (query.meta?.silent) return;
       toast.error(errMsg(e));
     },
   }),
