@@ -172,6 +172,61 @@ async function resolveLabelIds(userId: string, names: string[]): Promise<string[
     .filter((id): id is string => Boolean(id));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Adding a new agent tool — the "Nuvo can _do_ X" path (see CLAUDE.md's
+// "every new feature is reachable from Spotlight and Nuvo" rule).
+//
+// Unlike navigation (which hot-grows from src/lib/marqueeRegistry.ts on the
+// client), an action's handler runs HERE, server-side, with DB access — so a new
+// tool is a code change that needs `supabase functions deploy agent` to ship. It
+// can't grow from the client. Keep it to three steps, all in this file:
+//
+//   1. Declaration — add an entry to TOOL_DEFINITIONS below (name + description +
+//      JSON-schema parameters). The `description` is the agent's only cue for
+//      WHEN to call it, so write it like a usage note.
+//   2. Handler — add a matching `case "<name>":` to executeTool(). Do the work,
+//      then `return { result, action }` (and `ui` if it should also drive the
+//      canvas). `result` is JSON the model reads back; `action.summary` is the
+//      human-facing chip ("Filed 3 issues as tasks").
+//   3. Deploy — `supabase functions deploy agent`. The registry side needs no
+//      deploy; this side does. Call that out when you ship the feature.
+//
+// Copy-paste starting point (uncomment, rename, wire both halves):
+//
+//   // — 1. paste into TOOL_DEFINITIONS —
+//   {
+//     type: "function" as const,
+//     function: {
+//       name: "example_tool",
+//       description:
+//         "One-line of WHAT it does + WHEN to call it, e.g. 'File a GitHub issue " +
+//         "as a task. Call when the user asks to turn an issue/PR into a to-do.'",
+//       parameters: {
+//         type: "object",
+//         properties: {
+//           some_arg: { type: "string", description: "What this field is for." },
+//         },
+//         required: ["some_arg"],
+//       },
+//     },
+//   },
+//
+//   // — 2. paste into executeTool()'s switch —
+//   case "example_tool": {
+//     const someArg = String(args.some_arg ?? "").trim();
+//     if (!someArg) throw new Error("example_tool needs some_arg");
+//     // ...do the work (admin.from(...), invokeFn(...), etc.)...
+//     return {
+//       result: JSON.stringify({ ok: true }),
+//       action: { tool: name, summary: `Did the thing with "${someArg}"` },
+//     };
+//   }
+//
+// (For domain/initiative/project/key-result CRUD, the sibling file
+// verticalTools.ts is the equivalent place — add to VERTICAL_TOOL_DEFINITIONS +
+// executeVerticalTool there instead. Same deploy requirement.)
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const TOOL_DEFINITIONS = [
   {
     type: "function" as const,
@@ -922,6 +977,9 @@ export async function executeTool(
       };
     }
 
+    // Adding a tool? Paste a new `case "<name>":` above and its declaration into
+    // TOOL_DEFINITIONS — see the "Adding a new agent tool" template near the top
+    // of this file. Remember to `supabase functions deploy agent`.
     default:
       throw new Error(`Unknown tool: ${name}`);
   }

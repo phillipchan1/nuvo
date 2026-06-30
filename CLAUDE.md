@@ -107,7 +107,8 @@ integration" that files issues as tasks), navigation alone isn't enough: add a t
 **`supabase/functions/agent/tools.ts`** (`TOOL_DEFINITIONS`, or `verticalTools.ts` for
 structure CRUD) and implement its handler. That path is **server-side and needs a redeploy**
 (`supabase functions deploy agent`) — it does not hot-grow like the registry, so call it out
-explicitly when you ship such a feature.
+explicitly when you ship such a feature. There's a copy-paste template at the top of
+`tools.ts` and a how-to in **`docs/agent-tools.md`**.
 
 The check is mechanical, so make it a habit on every feature: *does this belong in the
 registry (navigate/show), and/or does it need an agent tool (do)?* If a user can reach it,
