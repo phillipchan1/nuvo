@@ -113,6 +113,15 @@ The check is mechanical, so make it a habit on every feature: *does this belong 
 registry (navigate/show), and/or does it need an agent tool (do)?* If a user can reach it,
 Nuvo and Spotlight should know about it.
 
+> **Required: don't let this be silently skipped — _ask_.** Whenever you add or meaningfully
+> change a user-reachable surface/flow/feature, before you call it done you MUST raise the
+> registry/tool question with the user explicitly (use `AskUserQuestion`), even if you think
+> the answer is "no" — e.g. *"This adds **X**. Want me to (a) add a `marqueeRegistry.ts`
+> entry so ⌘K + Nuvo reach it, (b) also add an agent tool so Nuvo can act on it, or (c)
+> skip both?"* Surface what you'd add and let them decide. The point is that **at least one
+> of us remembers every time** — the human shouldn't have to. If the change clearly touches
+> nothing navigable and adds no new action, say so in one line and move on; otherwise, ask.
+
 ## Low-data-entry principle
 
 Capture is organic free text (or voice) parsed into structure; **forms are the fallback,
