@@ -80,6 +80,39 @@ it needs to work on a phone.
 - Capture via free text: `parseCapture` in `src/lib/nlp.ts` turns
   "call David tomorrow 9am 30m #work !high" into structure.
 
+## Golden rule: every new feature is reachable from Spotlight *and* Nuvo
+
+The app must grow its own discoverability — a new surface, flow, or feature isn't done
+until you can both **⌘K to it** and **ask Nuvo about it**, without anyone wiring it by
+hand each time. There is **one registry** that makes this automatic:
+**`src/lib/marqueeRegistry.ts`** (`MARQUEE_TARGETS`).
+
+- Each entry's `describe` is sent to the agent every request (`marqueeManifest()`), so
+  Nuvo's `point_at` vocabulary is always current — **the chat side already grows on its
+  own.**
+- Adding `command: "…"` to the same entry makes it a ⌘K Spotlight command too
+  (`registryCommands()` builds them; `runRegistryNav` performs the entry's `nav`). Planner
+  composes `[...registryCommands(api), ...bespoke]` — it no longer hardcodes navigational
+  commands.
+
+**So: when you add anything a user can navigate to (a floor, surface, flow, ritual,
+settings section, record kind), add ONE entry to `marqueeRegistry.ts`.** Give it a `nav`,
+a `describe` (when + why Nuvo points there), and a `command` title if it belongs in ⌘K.
+Nothing else changes — not Planner, not the edge function, not the agent prompt. Entity
+targets (a *specific* project/task by id) set `entity: true` and are reached by search, not
+a static command.
+
+When a feature is a **new action Nuvo can _take_** (mutating data — e.g. a "GitHub
+integration" that files issues as tasks), navigation alone isn't enough: add a tool to
+**`supabase/functions/agent/tools.ts`** (`TOOL_DEFINITIONS`, or `verticalTools.ts` for
+structure CRUD) and implement its handler. That path is **server-side and needs a redeploy**
+(`supabase functions deploy agent`) — it does not hot-grow like the registry, so call it out
+explicitly when you ship such a feature.
+
+The check is mechanical, so make it a habit on every feature: *does this belong in the
+registry (navigate/show), and/or does it need an agent tool (do)?* If a user can reach it,
+Nuvo and Spotlight should know about it.
+
 ## Low-data-entry principle
 
 Capture is organic free text (or voice) parsed into structure; **forms are the fallback,
@@ -144,7 +177,10 @@ then report. This is the default loop — reach for it before guessing.
    content clears the bottom bar.
 4. Renders correctly in the desktop layout.
 5. Calendar/availability work reuses `readDay` / `toBusyBlocks`.
-6. `npm run build` green.
+6. If it's a new navigable surface/flow/feature, it has a `marqueeRegistry.ts` entry
+   (so ⌘K + Nuvo both reach it); if it's a new agent action, it has a tool in
+   `supabase/functions/agent/tools.ts`.
+7. `npm run build` green.
 
 ## Stack quick-reference
 

@@ -23,6 +23,7 @@ import {
   SPOTLIGHT_NAVIGATE_EVENT,
   type SpotlightNav,
 } from "../lib/spotlightNav";
+import { registryCommands, type RegistryNavApi } from "../lib/marqueeRegistry";
 import { deriveSlotTitle } from "../lib/slots";
 import { writeAgentOpen } from "./AgentSidebar";
 import LeftRail from "./LeftRail";
@@ -39,6 +40,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const railRef = useRef<HTMLDivElement | null>(null);
   const {
     nav,
+    goRung,
     setTab,
     setCalView,
     openOverlay,
@@ -48,6 +50,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     panelAnchor,
     openProject,
     openInitiative,
+    openRecord,
+    setSettingsSection,
   } = useAppNavigation();
 
   const { tab, calView: view, overlay, overlayId, agentOpen, settingsSection, rung } = nav;
@@ -380,22 +384,34 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     return () => unlisten?.();
   }, [openOverlay, openProject, openInitiative, navigate]);
 
+  // The nav API a registry command runs its `nav` against — the same functions
+  // the Marquee uses when the AGENT drives. Keeping it here means a new ⌘K
+  // command is just a new entry in marqueeRegistry.ts (which also adds it to
+  // Nuvo's chat vocabulary). See the "Capability registry" rule in CLAUDE.md.
+  const registryNavApi: RegistryNavApi = {
+    goRung,
+    setTab,
+    setCalView,
+    openFlow,
+    openOverlay,
+    setSettingsSection,
+    openRecord,
+    navigate,
+  };
+
+  // Navigational / feature commands come from the single registry, so Spotlight
+  // grows with the app automatically. Only genuinely bespoke actions (ones that
+  // aren't a registry destination, or do something extra) are spelled out here.
   const commands: Command[] = [
+    ...registryCommands(registryNavApi),
     { id: "today", title: "Go to today", run: () => setTab("today") },
-    { id: "week", title: "Go to the week (Spread)", run: () => setCalView("board") },
-    { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
-    { id: "sunday", title: "Sunday — compose the week", run: () => openFlow("sunday") },
-    { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
-    { id: "refine", title: "Refine — groom your projects toward done", run: () => openFlow("refine") },
     { id: "plan", title: "Plan my day (morning ritual)", run: () => { morningAutoRef.current = false; openOverlay("morning"); } },
     { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
     { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
     { id: "view-week", title: "Calendar: week view", run: () => setCalView("timeGridWeek") },
     { id: "view-month", title: "Calendar: month view", run: () => setCalView("dayGridMonth") },
-    { id: "connect", title: "Connect calendar…", run: () => openOverlay("settings") },
     { id: "label", title: "New label…", run: () => openOverlay("settings") },
     { id: "agent", title: "Toggle Nuvo agent", run: handleToggleAgent },
-    { id: "settings", title: "Settings", run: () => openOverlay("settings") },
     { id: "shortcuts", title: "Keyboard shortcuts", run: () => openOverlay("shortcuts") },
     {
       id: "theme",
