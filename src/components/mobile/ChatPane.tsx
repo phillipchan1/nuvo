@@ -131,6 +131,7 @@ export default function ChatPane({
           loading={loading}
           placeholder={otherMode ? "Say something else…" : `Ask ${ASSISTANT_NAME}…`}
           compact
+          enterToSend={false}
           inputRef={inputRef}
         />
       </div>
