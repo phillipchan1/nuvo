@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type RefObject } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { AgentAttachment } from "../lib/agentTypes";
 import { filesToAttachments, formatBytes, isImageAttachment } from "../lib/agentAttachments";
 
@@ -44,6 +44,15 @@ export default function AgentChatInput({
   const removeAttachment = (id: string) => {
     onAttachmentsChange(attachments.filter((a) => a.id !== id));
   };
+
+  // Grow the textarea to fit its content (like Claude/ChatGPT) up to the CSS
+  // max-height, past which `max-h-32` caps it and the field scrolls internally.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value, inputRef]);
 
   const canSend = (value.trim() || attachments.length > 0) && !loading;
 
@@ -126,8 +135,8 @@ export default function AgentChatInput({
           rows={compact ? 1 : 2}
           disabled={loading}
           autoFocus={autoFocus}
-          className={`max-h-32 min-w-0 flex-1 resize-none bg-transparent leading-relaxed outline-none placeholder:text-muted/70 disabled:opacity-50 ${
-            compact ? "py-1 text-body" : "py-0.5 text-body"
+          className={`max-h-32 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent leading-relaxed outline-none placeholder:text-muted/70 disabled:opacity-50 ${
+            compact ? "py-1 text-body" : "min-h-[3.25em] py-0.5 text-body"
           }`}
         />
 
