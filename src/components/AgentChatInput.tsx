@@ -12,6 +12,7 @@ export default function AgentChatInput({
   placeholder,
   compact,
   autoFocus,
+  enterToSend = true,
   inputRef: externalInputRef,
 }: {
   value: string;
@@ -23,6 +24,10 @@ export default function AgentChatInput({
   placeholder?: string;
   compact?: boolean;
   autoFocus?: boolean;
+  // Physical keyboards (desktop) send on Enter, newline on Shift+Enter. Touch
+  // keyboards (iOS/Android) have no Shift+Enter, so Return should just insert a
+  // newline and sending goes through the send button — set this false there.
+  enterToSend?: boolean;
   inputRef?: RefObject<HTMLTextAreaElement>;
 }) {
   const internalRef = useRef<HTMLTextAreaElement>(null);
@@ -57,7 +62,14 @@ export default function AgentChatInput({
   const canSend = (value.trim() || attachments.length > 0) && !loading;
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Don't submit while an IME candidate window is open (e.g. CJK, dictation),
+    // and only treat Enter as "send" when a physical keyboard is in play.
+    if (
+      enterToSend &&
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      !(e.nativeEvent as { isComposing?: boolean }).isComposing
+    ) {
       e.preventDefault();
       if (canSend) onSubmit();
     }
