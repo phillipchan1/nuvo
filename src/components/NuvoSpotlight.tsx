@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { parseCapture, resolveRoute, routeKey, type RouteTarget } from "../lib/nlp";
 import type { Label } from "../lib/types";
 import type { NewTaskInput } from "../hooks/useTasks";
@@ -148,7 +148,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
   // The window's farewell beat: the captured title held for a moment so the
   // summon completes with a "got it" instead of vanishing mid-keystroke.
   const [captured, setCaptured] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeRowRef = useRef<HTMLButtonElement>(null);
   const activeCellRef = useRef<HTMLButtonElement>(null);
@@ -162,6 +162,15 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
   useEffect(() => {
     if (mode === "ask") bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading, mode]);
+
+  // Grow the field to fit pasted/typed content instead of scrolling
+  // horizontally — capped by `max-h` on the element, which then scrolls.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [mode === "capture" ? captureText : askText]);
 
   // ── Capture mode ──────────────────────────────────────────────────────────
   const parsed = useMemo(
@@ -180,8 +189,9 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
   );
 
   // ── Token autocomplete (#label / @route) ──────────────────────────────────
-  // The plain <input> is preserved (iOS dictation) — the menu just rewrites its
-  // value on select. `caret` tracks the cursor so we read the token being typed.
+  // A plain <textarea> (auto-growing, no rich-text) is preserved for iOS
+  // dictation — the menu just rewrites its value on select. `caret` tracks the
+  // cursor so we read the token being typed.
   const [caret, setCaret] = useState(0);
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
@@ -531,13 +541,13 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
         </div>
       )}
 
-      <div className="relative flex items-center gap-3 border-b border-line/50 px-4">
+      <div className="relative flex items-start gap-3 border-b border-line/50 px-4">
         <span
-          className={`shrink-0 text-lead leading-none ${isAsk ? "text-accent" : "text-accent/70"}`}
+          className={`mt-4 shrink-0 text-lead leading-none ${isAsk ? "text-accent" : "text-accent/70"}`}
         >
           {isAsk ? "✦" : "＋"}
         </span>
-        <input
+        <textarea
           ref={inputRef}
           value={text}
           onChange={(e) => {
@@ -547,16 +557,19 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
             setMenuIndex(0);
             setCaret(e.target.selectionStart ?? e.target.value.length);
           }}
-          onSelect={(e) => setCaret((e.target as HTMLInputElement).selectionStart ?? 0)}
+          onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
           onKeyDown={onKey}
           placeholder={
             isAsk
               ? `Ask ${ASSISTANT_NAME} — "what does my day look like?"`
               : "Capture anything — try “tom 9am 30m @”"
           }
-          className="nuvo-capture-input w-full bg-transparent py-4 text-lead outline-none placeholder:text-muted/45"
+          rows={1}
+          className="nuvo-capture-input max-h-[40vh] w-full resize-none overflow-y-auto bg-transparent py-4 text-lead outline-none placeholder:text-muted/45"
         />
-        <Keycap>esc</Keycap>
+        <span className="mt-4 shrink-0">
+          <Keycap>esc</Keycap>
+        </span>
 
         {/* Token autocomplete — a plain-input-friendly menu that rewrites the
             field on select, so iOS dictation keeps working. */}
