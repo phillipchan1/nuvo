@@ -1,4 +1,16 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
+import {
+  addDays,
+  addMonths,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameDay,
+  isSameMonth,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+} from "date-fns";
 import { useSettings } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
@@ -8,12 +20,21 @@ import type { CalendarTap } from "./MobileEventSheet";
 import { useWeather, indexWeather } from "../../hooks/useWeather";
 import WeatherIcon from "../WeatherIcon";
 
-// The mobile Calendar — built to answer one question fast: "are you free on X?"
-// A 14-day agenda where each day shows its commitments AND its open windows,
-// computed by the same readDay() the Now view uses. Read-only for now.
+// The mobile Calendar — two lenses on the same live day-shape math:
+//   • Month — the whole month at a glance (free/busy density per day), swipe or
+//     arrow between months, tap any day to drop into its schedule.
+//   • Schedule — a 14-day agenda from the selected day, where each day shows its
+//     commitments AND its open windows, computed by the same readDay() Now uses.
+// Both read from one buildDayPlan(), so "what counts as busy" lives in one place.
 
 const HORIZON_DAYS = 14;
 const DAY_MS = 24 * 3600_000;
+const SWIPE_PX = 48; // horizontal travel that counts as a month swipe
+// Monday-start weeks, matching the app's planning week (see dates.ts).
+const WEEK_OPTS = { weekStartsOn: 1 as const };
+const MODE_KEY = "nuvo-mobile-cal-mode";
+
+type Mode = "month" | "schedule";
 
 const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 const at = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -42,22 +63,119 @@ interface DayPlan {
   isPast: boolean; // a fully-elapsed work window (today, after hours)
 }
 
+interface DayCtx {
+  visibleEvents: ExternalEvent[];
+  blocks: Task[];
+  hidden: Set<string>;
+  workStart: number;
+  workEnd: number;
+  now: Date;
+}
+
+// The one place a calendar date becomes a plan — used by both the month grid
+// (for its free/busy density) and the schedule agenda (for the full read).
+function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
+  const { visibleEvents, blocks, hidden, workStart, workEnd, now } = ctx;
+  const dStart = startOfDay(date);
+  const dEnd = new Date(dStart.getTime() + DAY_MS);
+  const isToday = isSameDay(date, now);
+
+  const allDay = visibleEvents.filter(
+    (e) => e.all_day && new Date(e.start_at) < dEnd && new Date(e.end_at) > dStart,
+  );
+
+  const dayEvents = visibleEvents.filter((e) => !e.all_day && dayKey(new Date(e.start_at)) === dayKey(date));
+  const dayBlocks = blocks.filter((t: Task) => t.start_time && dayKey(new Date(t.start_time)) === dayKey(date));
+  const busy = toBusyBlocks(dayEvents, dayBlocks, hidden);
+
+  const ws = new Date(dStart);
+  ws.setHours(0, workStart, 0, 0);
+  const we = new Date(dStart);
+  we.setHours(0, workEnd, 0, 0);
+  const refNow = isToday ? new Date(Math.max(now.getTime(), ws.getTime())) : ws;
+  const read = readDay(refNow, busy, ws, we);
+
+  const timed: TimedItem[] = [
+    ...dayEvents.filter((e) => e.busy).map((e) => ({
+      title: e.title,
+      start: new Date(e.start_at),
+      end: new Date(e.end_at),
+      kind: "event" as const,
+      location: e.location,
+      done: false,
+      eventId: e.id,
+      self_rsvp: e.self_rsvp ?? null,
+    })),
+    ...dayBlocks
+      .filter((t: Task) => t.start_time)
+      .map((t: Task) => ({
+        title: t.title,
+        start: new Date(t.start_time!),
+        end: new Date(new Date(t.start_time!).getTime() + (t.duration_minutes ?? 30) * 60_000),
+        kind: "block" as const,
+        location: null,
+        done: t.status === "done",
+        taskId: t.id,
+        self_rsvp: null,
+      })),
+  ].sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  const label = isToday
+    ? "Today"
+    : isSameDay(date, addDays(startOfDay(now), 1))
+      ? "Tomorrow"
+      : date.toLocaleDateString([], { weekday: "long" });
+
+  return {
+    date,
+    isToday,
+    label,
+    allDay,
+    timed,
+    gaps: read.gaps,
+    openMins: read.openMins,
+    isPast: isToday && now.getTime() >= we.getTime(),
+  };
+}
+
+function readMode(): Mode {
+  try {
+    const v = localStorage.getItem(MODE_KEY);
+    if (v === "month" || v === "schedule") return v;
+  } catch {
+    /* ignore */
+  }
+  return "month";
+}
+
 export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEvent?: (tap: CalendarTap) => void }) {
   const { settings } = useSettings();
 
-  const today0 = useMemo(() => {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, [dayKey(now)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [mode, setModeState] = useState<Mode>(readMode);
+  const setMode = (m: Mode) => {
+    setModeState(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      /* ignore */
+    }
+  };
 
-  const range = useMemo(
-    () => ({
-      start: today0.toISOString(),
-      end: new Date(today0.getTime() + HORIZON_DAYS * DAY_MS).toISOString(),
-    }),
-    [today0],
-  );
+  // The month the grid is showing, and the day the schedule is anchored to.
+  const [monthCursor, setMonthCursor] = useState(() => startOfMonth(now));
+  const [selected, setSelected] = useState(() => startOfDay(now));
+
+  // The fetch window follows the active lens: the full month grid (up to 6
+  // weeks) in month mode, the 14-day agenda from the selected day otherwise.
+  const range = useMemo(() => {
+    if (mode === "month") {
+      const gridStart = startOfWeek(startOfMonth(monthCursor), WEEK_OPTS);
+      const gridEnd = addDays(endOfWeek(endOfMonth(monthCursor), WEEK_OPTS), 1);
+      return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
+    }
+    const start = startOfDay(selected);
+    return { start: start.toISOString(), end: new Date(start.getTime() + HORIZON_DAYS * DAY_MS).toISOString() };
+  }, [mode, monthCursor, selected]);
 
   const { data: events = [], isLoading: evLoading } = useExternalEvents(range.start, range.end);
   const { data: blocks = [], isLoading: blkLoading } = useScheduledTasks(range.start, range.end);
@@ -71,92 +189,304 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
   const workStart = settings?.work_start_minutes ?? 480;
   const workEnd = settings?.work_end_minutes ?? 990;
 
-  const days = useMemo<DayPlan[]>(() => {
+  const dayCtx = useMemo<DayCtx>(() => {
     const visibleEvents = events.filter((e) => !hidden.has(e.calendar_id) && !isEventHidden(e, hiddenEventKeys));
+    return { visibleEvents, blocks, hidden, workStart, workEnd, now };
+  }, [events, blocks, hidden, hiddenEventKeys, workStart, workEnd, now]);
+
+  const loading = evLoading || blkLoading;
+
+  const pickDay = (date: Date) => {
+    const d = startOfDay(date);
+    setSelected(d);
+    setMonthCursor(startOfMonth(d));
+    setMode("schedule");
+  };
+
+  return (
+    <div className="pb-24">
+      {/* Lens switch — Month ⇄ Schedule. Translucent so the warm-paper canvas
+          keeps reading through (no frost seam). */}
+      <div className="sticky top-0 z-20 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
+        <div className="flex gap-1">
+          {(["month", "schedule"] as Mode[]).map((m) => {
+            const on = mode === m;
+            return (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`tap fast flex flex-1 items-center justify-center rounded-lg py-1.5 text-body font-medium capitalize ${
+                  on ? "bg-accent text-white" : "text-muted active:bg-surface-2"
+                }`}
+              >
+                {m}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {mode === "month" ? (
+        <MonthView
+          monthCursor={monthCursor}
+          ctx={dayCtx}
+          now={now}
+          selected={selected}
+          weatherIndex={showWeather ? weatherIndex : null}
+          onPrev={() => setMonthCursor((c) => startOfMonth(addMonths(c, -1)))}
+          onNext={() => setMonthCursor((c) => startOfMonth(addMonths(c, 1)))}
+          onToday={() => {
+            setMonthCursor(startOfMonth(now));
+            setSelected(startOfDay(now));
+          }}
+          onPick={pickDay}
+        />
+      ) : (
+        <ScheduleView
+          anchor={selected}
+          ctx={dayCtx}
+          weatherIndex={showWeather ? weatherIndex : null}
+          loading={loading}
+          onTapEvent={onTapEvent}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Month grid ───────────────────────────────────────────────────────────
+// The whole month at a glance: each day carries free/busy density dots so you
+// can scan for open days, then tap in for the full schedule. Swipe or arrow
+// between months.
+function MonthView({
+  monthCursor,
+  ctx,
+  now,
+  selected,
+  weatherIndex,
+  onPrev,
+  onNext,
+  onToday,
+  onPick,
+}: {
+  monthCursor: Date;
+  ctx: DayCtx;
+  now: Date;
+  selected: Date;
+  weatherIndex: ReturnType<typeof indexWeather> | null;
+  onPrev: () => void;
+  onNext: () => void;
+  onToday: () => void;
+  onPick: (d: Date) => void;
+}) {
+  const gridStart = useMemo(() => startOfWeek(startOfMonth(monthCursor), WEEK_OPTS), [monthCursor]);
+  const cells = useMemo(() => {
+    const gridEnd = endOfWeek(endOfMonth(monthCursor), WEEK_OPTS);
     const out: DayPlan[] = [];
-    for (let i = 0; i < HORIZON_DAYS; i++) {
-      const date = new Date(today0.getTime() + i * DAY_MS);
-      const dStart = new Date(date);
-      const dEnd = new Date(date.getTime() + DAY_MS);
-      const isToday = i === 0;
-
-      const allDay = visibleEvents.filter(
-        (e) => e.all_day && new Date(e.start_at) < dEnd && new Date(e.end_at) > dStart,
-      );
-
-      // Timed events belonging to this day (by local start date), plus this
-      // day's scheduled task blocks. Reuse toBusyBlocks for the busy math.
-      const dayEvents = visibleEvents.filter((e) => !e.all_day && dayKey(new Date(e.start_at)) === dayKey(date));
-      const dayBlocks = blocks.filter((t: Task) => t.start_time && dayKey(new Date(t.start_time)) === dayKey(date));
-      const busy = toBusyBlocks(dayEvents, dayBlocks, hidden);
-
-      // Work window for this day; on today, don't count time already elapsed.
-      const ws = new Date(date);
-      ws.setHours(0, workStart, 0, 0);
-      const we = new Date(date);
-      we.setHours(0, workEnd, 0, 0);
-      const refNow = isToday ? new Date(Math.max(now.getTime(), ws.getTime())) : ws;
-      const read = readDay(refNow, busy, ws, we);
-
-      // Build timed from source arrays so we can carry IDs for the tap actions.
-      // busy is still used for the gap/availability math below.
-      const timed: TimedItem[] = [
-        ...dayEvents.filter((e) => e.busy).map((e) => ({
-          title: e.title,
-          start: new Date(e.start_at),
-          end: new Date(e.end_at),
-          kind: "event" as const,
-          location: e.location,
-          done: false,
-          eventId: e.id,
-          self_rsvp: e.self_rsvp ?? null,
-        })),
-        ...dayBlocks
-          .filter((t: Task) => t.start_time)
-          .map((t: Task) => ({
-            title: t.title,
-            start: new Date(t.start_time!),
-            end: new Date(new Date(t.start_time!).getTime() + (t.duration_minutes ?? 30) * 60_000),
-            kind: "block" as const,
-            location: null,
-            done: t.status === "done",
-            taskId: t.id,
-            self_rsvp: null,
-          })),
-      ].sort((a, b) => a.start.getTime() - b.start.getTime());
-
-      out.push({
-        date,
-        isToday,
-        label: isToday ? "Today" : i === 1 ? "Tomorrow" : date.toLocaleDateString([], { weekday: "long" }),
-        allDay,
-        timed,
-        gaps: read.gaps,
-        openMins: read.openMins,
-        isPast: isToday && now.getTime() >= we.getTime(),
-      });
+    for (let d = new Date(gridStart); d <= gridEnd; d = addDays(d, 1)) {
+      out.push(buildDayPlan(d, ctx));
     }
     return out;
-  }, [events, blocks, hidden, hiddenEventKeys, today0, workStart, workEnd, now]);
+  }, [gridStart, monthCursor, ctx]);
 
-  // Refs for the date-strip jump-to-day.
+  const weekdays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(gridStart, i).toLocaleDateString([], { weekday: "short" }).slice(0, 2)),
+    [gridStart],
+  );
+
+  const isCurrentMonth = isSameMonth(monthCursor, now);
+
+  // Lightweight horizontal swipe between months (no HTML5 DnD — Tauri swallows it).
+  const touchX = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchX.current = e.touches[0]?.clientX ?? null;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchX.current == null) return;
+    const dx = (e.changedTouches[0]?.clientX ?? touchX.current) - touchX.current;
+    touchX.current = null;
+    if (dx <= -SWIPE_PX) onNext();
+    else if (dx >= SWIPE_PX) onPrev();
+  };
+
+  return (
+    <div>
+      {/* Month header — serif month label, ≥44px nav controls. */}
+      <div className="flex items-center gap-1 px-4 pt-3 pb-1">
+        <h2 className="text-lead masthead flex-1 text-ink">{format(monthCursor, "MMMM yyyy")}</h2>
+        {!isCurrentMonth && (
+          <button
+            onClick={onToday}
+            className="tap fast mr-1 rounded-full border border-line px-3 py-1 text-label font-medium text-muted active:bg-surface-2"
+          >
+            Today
+          </button>
+        )}
+        <button
+          onClick={onPrev}
+          aria-label="Previous month"
+          className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-head text-muted active:bg-surface-2"
+        >
+          ‹
+        </button>
+        <button
+          onClick={onNext}
+          aria-label="Next month"
+          className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-head text-muted active:bg-surface-2"
+        >
+          ›
+        </button>
+      </div>
+
+      {/* Weekday header */}
+      <div className="grid grid-cols-7 px-2">
+        {weekdays.map((w, i) => (
+          <div key={i} className="py-1.5 text-center text-micro font-medium uppercase text-muted">
+            {w}
+          </div>
+        ))}
+      </div>
+
+      {/* The grid — the paper itself, single-plane and transparent. */}
+      <div className="grid grid-cols-7 px-2" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        {cells.map((d) => (
+          <MonthCell
+            key={dayKey(d.date)}
+            day={d}
+            inMonth={isSameMonth(d.date, monthCursor)}
+            isSelected={isSameDay(d.date, selected)}
+            wx={weatherIndex?.get(d.date.toLocaleDateString("en-CA"))}
+            onPick={onPick}
+          />
+        ))}
+      </div>
+
+      {/* The availability of the selected day — a one-line answer under the grid
+          so the month view still says "are you free?". Only while the selected
+          day is in view, so the readout can't disagree with the month on screen. */}
+      {isSameMonth(selected, monthCursor) && (
+        <SelectedSummary day={buildDayPlan(selected, ctx)} onOpen={() => onPick(selected)} />
+      )}
+    </div>
+  );
+}
+
+function MonthCell({
+  day,
+  inMonth,
+  isSelected,
+  wx,
+  onPick,
+}: {
+  day: DayPlan;
+  inMonth: boolean;
+  isSelected: boolean;
+  wx: { wmo: number } | undefined;
+  onPick: (d: Date) => void;
+}) {
+  const { date, isToday, timed, allDay } = day;
+  const blkCount = timed.filter((t) => t.kind === "block").length;
+  const evCount = timed.filter((t) => t.kind === "event").length + allDay.length;
+  // Up to 3 density dots — tasks (accent) first, then events (neutral).
+  const dots = [
+    ...Array(blkCount).fill("block"),
+    ...Array(evCount).fill("event"),
+  ].slice(0, 3) as ("block" | "event")[];
+
+  return (
+    <button
+      onClick={() => onPick(date)}
+      className={`tap fast relative flex aspect-square flex-col items-center justify-start gap-1 rounded-xl py-1.5 ${
+        isSelected ? "glass-lift" : "active:bg-surface-2"
+      }`}
+    >
+      <span
+        className={`flex h-7 w-7 items-center justify-center rounded-full text-body leading-none ${
+          isToday ? "bg-accent font-semibold text-white" : isSelected ? "font-semibold text-ink" : ""
+        } ${!inMonth ? "text-muted/50" : isToday ? "" : "text-ink"}`}
+      >
+        {date.getDate()}
+      </span>
+      {wx ? (
+        <WeatherIcon wmo={wx.wmo} size={12} />
+      ) : (
+        <span className="flex h-1.5 items-center gap-0.5">
+          {dots.map((k, i) => (
+            <span
+              key={i}
+              className="h-1 w-1 rounded-full"
+              style={{ background: k === "block" ? "var(--accent)" : "var(--line-strong)" }}
+            />
+          ))}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// A single line under the grid: the tapped day and whether it's open, plus a
+// nudge into its full schedule.
+function SelectedSummary({ day, onOpen }: { day: DayPlan; onOpen: () => void }) {
+  const { date, timed, allDay, openMins, isPast } = day;
+  const busy = timed.length + allDay.length;
+  const status = isPast
+    ? "done for today"
+    : openMins > 0
+      ? `${fmtMins(openMins)} open`
+      : busy > 0
+        ? "fully booked"
+        : "wide open";
+  return (
+    <button
+      onClick={onOpen}
+      className="tap fast mt-3 flex w-full items-center gap-2 border-t border-line px-4 py-3 text-left active:bg-surface-2"
+    >
+      <span className="text-body font-medium text-ink">
+        {date.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
+      </span>
+      <span className="mono text-label" style={{ color: openMins > 0 && !isPast ? "var(--accent)" : "var(--muted)" }}>
+        {status}
+      </span>
+      <span className="ml-auto text-muted">→</span>
+    </button>
+  );
+}
+
+// ── Schedule (agenda) ──────────────────────────────────────────────────────
+// The 14-day availability list, anchored on the day you tapped in the grid.
+function ScheduleView({
+  anchor,
+  ctx,
+  weatherIndex,
+  loading,
+  onTapEvent,
+}: {
+  anchor: Date;
+  ctx: DayCtx;
+  weatherIndex: ReturnType<typeof indexWeather> | null;
+  loading: boolean;
+  onTapEvent?: (tap: CalendarTap) => void;
+}) {
+  const days = useMemo<DayPlan[]>(() => {
+    const start = startOfDay(anchor);
+    return Array.from({ length: HORIZON_DAYS }, (_, i) => buildDayPlan(addDays(start, i), ctx));
+  }, [anchor, ctx]);
+
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
   const jumpTo = (key: string) => {
     dayRefs.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const loading = evLoading || blkLoading;
-
   return (
-    <div className="pb-24">
+    <div>
       {/* Date strip — tap a day to jump to it */}
-      <div className="sticky top-0 z-10 border-b border-line bg-surface/90 backdrop-blur">
+      <div className="sticky top-[61px] z-10 border-b border-line bg-surface/90 backdrop-blur">
         <div className="mobile-scroll flex gap-1.5 overflow-x-auto px-3 py-2.5">
           {days.map((d) => {
             const key = dayKey(d.date);
             const busyDay = d.timed.length > 0 || d.allDay.length > 0;
             const dateStr = d.date.toLocaleDateString("en-CA");
-            const wx = showWeather ? weatherIndex.get(dateStr) : undefined;
+            const wx = weatherIndex?.get(dateStr);
             return (
               <button
                 key={key}
@@ -220,7 +550,7 @@ function DayCard({
   const fullyOpen = timed.length === 0 && allDay.length === 0;
 
   return (
-    <section ref={innerRef} className="scroll-mt-14 px-4 py-3.5">
+    <section ref={innerRef} className="scroll-mt-[128px] px-4 py-3.5">
       {/* Day header */}
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">
