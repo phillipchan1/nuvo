@@ -203,29 +203,13 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
     setMode("schedule");
   };
 
+  // Month is home; the schedule is the drill-in. Tapping a day (or swiping up)
+  // pushes into the schedule; the schedule's back header pops back to the month.
+  const openSchedule = () => setMode("schedule");
+  const backToMonth = () => setMode("month");
+
   return (
     <div className="pb-24">
-      {/* Lens switch — Month ⇄ Schedule. Translucent so the warm-paper canvas
-          keeps reading through (no frost seam). */}
-      <div className="sticky top-0 z-20 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
-        <div className="flex gap-1">
-          {(["month", "schedule"] as Mode[]).map((m) => {
-            const on = mode === m;
-            return (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`tap fast flex flex-1 items-center justify-center rounded-lg py-1.5 text-body font-medium capitalize ${
-                  on ? "bg-accent text-white" : "text-muted active:bg-surface-2"
-                }`}
-              >
-                {m}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {mode === "month" ? (
         <MonthView
           monthCursor={monthCursor}
@@ -240,6 +224,7 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
             setSelected(startOfDay(now));
           }}
           onPick={pickDay}
+          onOpenSchedule={openSchedule}
         />
       ) : (
         <ScheduleView
@@ -248,6 +233,7 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
           weatherIndex={showWeather ? weatherIndex : null}
           loading={loading}
           onTapEvent={onTapEvent}
+          onBack={backToMonth}
         />
       )}
     </div>
@@ -268,6 +254,7 @@ function MonthView({
   onNext,
   onToday,
   onPick,
+  onOpenSchedule,
 }: {
   monthCursor: Date;
   ctx: DayCtx;
@@ -278,6 +265,7 @@ function MonthView({
   onNext: () => void;
   onToday: () => void;
   onPick: (d: Date) => void;
+  onOpenSchedule: () => void;
 }) {
   const gridStart = useMemo(() => startOfWeek(startOfMonth(monthCursor), WEEK_OPTS), [monthCursor]);
   const cells = useMemo(() => {
@@ -296,16 +284,22 @@ function MonthView({
 
   const isCurrentMonth = isSameMonth(monthCursor, now);
 
-  // Lightweight horizontal swipe between months (no HTML5 DnD — Tauri swallows it).
-  const touchX = useRef<number | null>(null);
+  // Lightweight swipe (no HTML5 DnD — Tauri swallows it): horizontal changes
+  // months, an upward swipe drops into the schedule (the "expand" gesture).
+  const touch = useRef<{ x: number; y: number } | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
-    touchX.current = e.touches[0]?.clientX ?? null;
+    const t = e.touches[0];
+    touch.current = t ? { x: t.clientX, y: t.clientY } : null;
   };
   const onTouchEnd = (e: React.TouchEvent) => {
-    if (touchX.current == null) return;
-    const dx = (e.changedTouches[0]?.clientX ?? touchX.current) - touchX.current;
-    touchX.current = null;
-    if (dx <= -SWIPE_PX) onNext();
+    if (!touch.current) return;
+    const t = e.changedTouches[0];
+    const dx = (t?.clientX ?? touch.current.x) - touch.current.x;
+    const dy = (t?.clientY ?? touch.current.y) - touch.current.y;
+    touch.current = null;
+    if (Math.abs(dy) > Math.abs(dx)) {
+      if (dy <= -SWIPE_PX) onOpenSchedule(); // swipe up → expand into the schedule
+    } else if (dx <= -SWIPE_PX) onNext();
     else if (dx >= SWIPE_PX) onPrev();
   };
 
@@ -347,8 +341,9 @@ function MonthView({
         ))}
       </div>
 
-      {/* The grid — the paper itself, single-plane and transparent. */}
-      <div className="grid grid-cols-7 px-2" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      {/* The grid — the paper itself, single-plane and transparent. touch-pan-y
+          keeps horizontal swipes for month nav (not the browser's back gesture). */}
+      <div className="grid touch-pan-y grid-cols-7 px-2" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {cells.map((d) => (
           <MonthCell
             key={dayKey(d.date)}
@@ -460,12 +455,14 @@ function ScheduleView({
   weatherIndex,
   loading,
   onTapEvent,
+  onBack,
 }: {
   anchor: Date;
   ctx: DayCtx;
   weatherIndex: ReturnType<typeof indexWeather> | null;
   loading: boolean;
   onTapEvent?: (tap: CalendarTap) => void;
+  onBack: () => void;
 }) {
   const days = useMemo<DayPlan[]>(() => {
     const start = startOfDay(anchor);
@@ -479,8 +476,19 @@ function ScheduleView({
 
   return (
     <div>
+      {/* Back header — pops to the month grid and names where you'll land. */}
+      <div className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
+        <button
+          onClick={onBack}
+          className="tap fast flex items-center gap-0.5 px-3 py-2.5 text-body font-medium text-accent active:opacity-70"
+        >
+          <span className="text-head leading-none">‹</span>
+          {format(anchor, "MMMM yyyy")}
+        </button>
+      </div>
+
       {/* Date strip — tap a day to jump to it */}
-      <div className="sticky top-[61px] z-10 border-b border-line bg-surface/90 backdrop-blur">
+      <div className="sticky top-[45px] z-10 border-b border-line bg-surface/90 backdrop-blur">
         <div className="mobile-scroll flex gap-1.5 overflow-x-auto px-3 py-2.5">
           {days.map((d) => {
             const key = dayKey(d.date);
@@ -550,7 +558,7 @@ function DayCard({
   const fullyOpen = timed.length === 0 && allDay.length === 0;
 
   return (
-    <section ref={innerRef} className="scroll-mt-[128px] px-4 py-3.5">
+    <section ref={innerRef} className="scroll-mt-[112px] px-4 py-3.5">
       {/* Day header */}
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">
