@@ -351,6 +351,9 @@ export function useTaskMutations() {
     backToInbox: (t: Task) =>
       patchTask(t.id, { status: "inbox", do_date: null, start_time: null, slot_id: null }),
 
+    /** Reverse of backToInbox: file an inbox task back under its project/initiative/domain. */
+    fileToProject: (t: Task) => patchTask(t.id, { status: "backlog" }),
+
     /** An over-planned day degrades into the week pool, not into guilt-rolling:
      *  drop the date, keep the sprint commitment. */
     backToWeek: (t: Task) =>

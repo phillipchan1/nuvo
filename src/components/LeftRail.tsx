@@ -9,6 +9,7 @@ import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
 import TaskRow, { type TaskMeta } from "./TaskRow";
+import WeekReadiness from "./WeekReadiness";
 import { SectionLabel } from "./ui";
 
 export type RailTab = "inbox" | "today";
@@ -326,7 +327,7 @@ export default function LeftRail({
       ref={railRef}
       data-rail-drop
       data-drop-tab={tab}
-      className="titlebar-pad relative flex h-full shrink-0 flex-col border-r border-line"
+      className="titlebar-pad relative z-40 flex h-full shrink-0 flex-col border-r border-line"
       style={{ width: railWidth }}
     >
       <div
@@ -353,7 +354,7 @@ export default function LeftRail({
         ))}
       </div>
 
-      {/* Capture */}
+      {/* Capture — the front door. Status (WeekReadiness) lives below, as a footer. */}
       <form onSubmit={(e) => void submitCapture(e)} className="p-2">
         <div className="relative">
           {/* A quill — capture is organic free text, the front door, not a form. */}
@@ -453,6 +454,11 @@ export default function LeftRail({
           </>
         )}
       </div>
+
+      {/* This week — the inspectable "what's left to groom" checklist, demoted to
+          an ambient footer: status, not a primary action (the spine rung carries
+          the urgency). Quiet reassurance when groomed, a gentle nudge when not. */}
+      <WeekReadiness />
 
       {/* Bulk action bar — slides up when ≥2 tasks are multi-selected */}
       {selectedIds.size > 1 && (
@@ -609,6 +615,9 @@ function TaskContextMenu({
     { kind: "action", label: "Next week", key: "W", action: () => { mutations.planFor(task, nextWeekISO()); onClose(); } },
     { kind: "action", label: "Schedule…", key: "S", action: onSchedule },
     ...(task.status !== "inbox" ? [{ kind: "action" as const, label: "Return to inbox", key: "I", action: () => { mutations.backToInbox(task); onClose(); } }] : []),
+    ...(task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id)
+      ? [{ kind: "action" as const, label: "File to project", key: "P", action: () => { mutations.fileToProject(task); onClose(); } }]
+      : []),
     { kind: "sep" },
     {
       kind: "action",

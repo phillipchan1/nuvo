@@ -37,6 +37,7 @@ export function TaskPopover({
   recurrence,
   recurrenceMutations,
   onClose,
+  onConvertToEvent,
   variant = "anchored",
 }: {
   task: Task;
@@ -47,6 +48,7 @@ export function TaskPopover({
   recurrence: Recurrence | null;
   recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
   onClose: () => void;
+  onConvertToEvent?: () => void;
   /** "anchored" (default) floats beside a calendar block with an arrow; "centered"
    *  renders the same card as a scrim-backed modal, summonable from ⌘K on any rung. */
   variant?: "anchored" | "centered";
@@ -330,6 +332,15 @@ export function TaskPopover({
             </select>
           </label>
 
+          {task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id) && (
+            <button
+              onClick={() => mutations.fileToProject(task)}
+              className="fast rounded-full border border-accent/30 px-2 py-0.5 text-label text-accent hover:bg-accent-soft"
+            >
+              File to project
+            </button>
+          )}
+
           <div className="flex-1" />
           <RollBadge count={task.roll_count} />
 
@@ -568,6 +579,9 @@ export function TaskPopover({
           {task.status !== "inbox" && task.status !== "done" && (
             <Btn onClick={() => { mutations.backToInbox(task); onClose(); }}>→ Inbox</Btn>
           )}
+          {onConvertToEvent && task.start_time && (
+            <Btn onClick={() => { onConvertToEvent(); onClose(); }} title="Convert to a calendar event and remove the task">→ Event</Btn>
+          )}
           <div className="flex-1" />
           <RecurrenceDeleteButton
             recurring={Boolean(task.recurrence_id && recurrence)}
@@ -686,6 +700,7 @@ export function EventPopover({
   accountEmail,
   eventMutations,
   onClose,
+  onConvertToTask,
 }: {
   event: ExternalEvent;
   anchor: DOMRect;
@@ -695,6 +710,7 @@ export function EventPopover({
   accountEmail?: string;
   eventMutations: ReturnType<typeof useExternalEventMutations>;
   onClose: () => void;
+  onConvertToTask?: () => void;
 }) {
   const [title, setTitle] = useState(event.title);
   const [startAt, setStartAt] = useState(event.start_at);
@@ -1141,6 +1157,9 @@ export function EventPopover({
                   Hide
                 </Btn>
               )
+            )}
+            {onConvertToTask && !confirmDelete && (
+              <Btn onClick={() => { onConvertToTask(); onClose(); }} title="Create a task from this event and hide the event">→ Task</Btn>
             )}
             {editable && (
               !confirmDelete ? (
