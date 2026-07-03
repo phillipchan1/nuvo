@@ -4,13 +4,14 @@
 // atomic gap-cards falling through it — Accept · Tweak · Skip, by tap or swipe).
 //
 // A NEW interaction model over EXISTING logic: the gap decomposition is refine.ts;
-// every proposal/mutation reuses the same primitives the desktop TendingFlow uses
+// every proposal/mutation reuses the same grooming primitives
 // (draftOutcome · scaffold · blueprint · verify→verdict · updateProject/Initiative
 // · addTasks · addInitiativeSubtree · tend). No new backend.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, startOfDay } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useSettings } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
@@ -45,7 +46,9 @@ import {
   type RefineCardKind,
 } from "../../lib/refine";
 import { computeFeasibility, type Feasibility } from "../../lib/refineFeasibility";
-import RefinePortfolio, { snapshotReadiness, type ReadinessSnapshot } from "./RefinePortfolio";
+import { useCapacity } from "../../hooks/useCapacity";
+import { demandContext } from "../../lib/onDeck";
+import OnDeckTimeline from "../ondeck/OnDeckTimeline";
 
 type Kind = "project" | "initiative";
 type Ref = { kind: Kind; id: string };
@@ -53,9 +56,21 @@ type Ref = { kind: Kind; id: string };
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RefineRun({ onClose }: { onClose: () => void }) {
   const { data, ready } = useVertical();
-  const baseline = useRef<ReadinessSnapshot | null>(null);
+  const { nav } = useAppNavigation();
   const [queue, setQueue] = useState<Ref[] | null>(null);
   const [idx, setIdx] = useState(0);
+
+  // Opened pointed at one item (a to-groom row tap) → skip the timeline and drop
+  // straight into that item's run. Runs once per mount; "back" still reveals it.
+  const focusedRef = useRef(false);
+  useEffect(() => {
+    if (!ready || focusedRef.current) return;
+    const f = nav.flowFocus;
+    if (!f) return;
+    focusedRef.current = true;
+    setQueue([{ kind: f.kind, id: f.id }]);
+    setIdx(0);
+  }, [ready, nav.flowFocus, data]);
 
   if (!ready) return <Scaffold onClose={onClose}><Centered>Reading the portfolio…</Centered></Scaffold>;
 
@@ -63,7 +78,6 @@ export default function RefineRun({ onClose }: { onClose: () => void }) {
   // item tapped on the map. Bounded by design; no "and then everything else."
   const startRun = (refs: Ref[]) => {
     if (!refs.length) return;
-    baseline.current = snapshotReadiness(data);
     setQueue(refs);
     setIdx(0);
   };
@@ -73,11 +87,11 @@ export default function RefineRun({ onClose }: { onClose: () => void }) {
   const current = inRun ? queue![idx] : null;
   const item = current ? (current.kind === "project" ? projectById(data, current.id) : initiativeById(data, current.id)) : null;
 
-  // map (home, or the cascade landing after a finished run)
+  // timeline (home) — the demand-phased On Deck board; entering a run deals from it
   if (!inRun || !item) {
     return (
       <Scaffold onClose={onClose}>
-        <RefinePortfolio data={data} from={finished ? baseline.current : null} onStart={startRun} />
+        <OnDeckTimeline data={data} onStart={startRun} />
       </Scaffold>
     );
   }
@@ -105,7 +119,7 @@ function Scaffold({ children, onClose, onBack }: { children: React.ReactNode; on
         <button onClick={onBack ?? onClose} aria-label={onBack ? "Back to map" : "Close"} className="tap fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-muted active:scale-95">
           {onBack ? "←" : "✕"}
         </button>
-        <span className="wordmark wordmark-grad text-lead">Refine</span>
+        <span className="wordmark wordmark-grad text-lead">Groom</span>
         <div className="flex-1" />
         {onBack && <button onClick={onClose} aria-label="Close" className="tap fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-muted active:scale-95">✕</button>}
       </header>
@@ -134,7 +148,7 @@ function ItemRun({
   const [skipped, setSkipped] = useState<RefineCardKind[]>([]);
 
   // Nuvo's soundness verdict — fetched once the structural gaps close (a path
-  // exists), so the sharpen / reality cards can appear. Mirrors TendingFlow.
+  // exists), so the sharpen / reality cards can appear.
   const verdict = verdictOf(data, kind, item.id);
   const [verifying, setVerifying] = useState(false);
   const stage = (kind === "project" ? ripenessOfProject(data, item as Project) : ripenessOfInitiative(data, item as Initiative)).stage;
@@ -171,6 +185,10 @@ function ItemRun({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, sched, settings, item.targetDate, verdict?.time.estHours]);
 
+  // the "why now" band — the demand context On Deck deals this card by (projects only).
+  const { byWeek, weeklyAvgMins } = useCapacity();
+  const demand = demandContext(data, byWeek, weeklyAvgMins, { kind, id: item.id }, now);
+
   const candidate: GroomCandidate = {
     kind, id: item.id, name: item.name, domainId: item.domainId,
     ripeness: kind === "project" ? ripenessOfProject(data, item as Project) : ripenessOfInitiative(data, item as Initiative),
@@ -186,6 +204,12 @@ function ItemRun({
 
   return (
     <div className="pt-3">
+      {demand && (
+        <div className="mb-3 rounded-lg px-3.5 py-2.5" style={{ background: "var(--accent-soft)" }}>
+          <div className="section-label !p-0" style={{ color: "var(--accent)" }}>Why now</div>
+          <p className="mt-0.5 text-caption leading-relaxed text-ink/85">{demand.line}</p>
+        </div>
+      )}
       <Board data={data} kind={kind} item={item} accent={accent} ring={ring} verdict={verdict} verifying={verifying} feasibility={feasibility} position={position} remaining={cards.length} />
 
       <div className="mt-5 pb-8">
@@ -222,7 +246,7 @@ function Board({
     <div>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="section-label">Refine · {kind === "initiative" ? "bet" : "project"} {position}</div>
+          <div className="section-label">Groom · {kind === "initiative" ? "bet" : "project"} {position}</div>
           <div className="mt-1 flex items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent }} />
             <h1 className="truncate text-lead masthead leading-tight">{item.name}</h1>

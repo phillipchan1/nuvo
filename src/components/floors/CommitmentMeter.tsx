@@ -7,7 +7,8 @@
 import { useMemo } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
-import { demandByWeek, portfolioDemand } from "../../lib/pace";
+import { portfolioDemand } from "../../lib/pace";
+import { weekForecast } from "../../lib/capacity";
 import { readStanding } from "../../lib/standing";
 import { Bar, fmtDate, PROJECT_STATUS_COLORS } from "./parts";
 import { READY } from "./ReadinessBanner";
@@ -38,16 +39,10 @@ export default function CommitmentMeter({ onRefine, onAllocate }: { onRefine?: (
   // against that week's *realistic* capacity. Far-future weeks look artificially
   // open (one-offs aren't booked yet), so cap their free time at the near-term
   // typical; recurring meetings already on the calendar keep actual ≤ cap anyway.
-  const forecast = useMemo(() => {
-    const weeks = byWeek.slice(0, RIBBON_WEEKS);
-    const dem = demandByWeek(data, now, weeks.map((w) => w.weekStart));
-    return weeks.map((w, i) => {
-      const demandMins = dem[i]?.demandMins ?? 0;
-      const freeMins = i === 0 ? w.availMins : Math.min(w.availMins, weeklyAvgMins);
-      const ratio = freeMins > 0 ? demandMins / freeMins : demandMins > 0 ? Infinity : 0;
-      return { weekStart: w.weekStart, freeMins, demandMins, ratio, over: ratio > 1 };
-    });
-  }, [data, now, byWeek, weeklyAvgMins]);
+  const forecast = useMemo(
+    () => weekForecast(data, now, byWeek.slice(0, RIBBON_WEEKS), weeklyAvgMins),
+    [data, now, byWeek, weeklyAvgMins],
+  );
   const anyOver = forecast.some((f) => f.over);
 
   const demandMins = demand.perWeekMins;
@@ -167,7 +162,7 @@ export default function CommitmentMeter({ onRefine, onAllocate }: { onRefine?: (
             {latent > 0 &&
               (onRefine ? (
                 <button onClick={onRefine} className="fast group flex items-center gap-1 font-medium" style={{ color: "var(--accent)" }}>
-                  {latent} not yet counted — refine to commit
+                  {latent} not yet counted — groom to commit
                   <span className="fast transition-transform group-hover:translate-x-0.5">›</span>
                 </button>
               ) : (

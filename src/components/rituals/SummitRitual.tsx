@@ -275,7 +275,7 @@ function PortfolioStep({ onNewBet }: { onNewBet: () => void }) {
 
   return (
     <div>
-      <StepTitle title="The Portfolio" sub="Every bet gets a verdict — ship it, keep it, pause it, or drop it. No zombies into the new quarter. Name the next bet here, then ripen it in Tending." />
+      <StepTitle title="The Portfolio" sub="Every bet gets a verdict — ship it, keep it, pause it, or drop it. No zombies into the new quarter. Name the next bet here, then ripen it in Grooming." />
       <div className="mb-4">
         <Btn kind="primary" onClick={onNewBet}>✦ name a new bet</Btn>
       </div>

@@ -11,10 +11,10 @@
 //   BigRocksBar      — the collapsible plan on the Schedule rung
 //   BigRocksReckoning — the look-back in the Gain (Standback)
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { domainById, initiativeById, isOpenStatus, projectById, type VerticalData } from "../../lib/vertical";
-import { priorityWork, type RockWork } from "../../lib/priorities";
+import { priorityWork, proposedPriorities, type ProposedPriority, type RockWork } from "../../lib/priorities";
 import type { BigRock } from "../../lib/types";
 import { ENERGY_META, type Energy } from "../../lib/energy";
 import { supabase } from "../../lib/supabase";
@@ -24,7 +24,7 @@ import { InlineText } from "./parts";
 import { Btn } from "../ui";
 
 type ParsedTask = { title: string; energy: Energy; durationMins: number; deadline: string | null };
-type ParsedPriority = { title: string; win: string; initiativeId: string | null; tasks: ParsedTask[] };
+type ParsedPriority = { title: string; win: string; initiativeId: string | null; projectId: string | null; tasks: ParsedTask[] };
 
 /** The color a rock inherits from the bet/project it's anchored to. */
 function rockColor(data: VerticalData, rock: BigRock): string | null {
@@ -67,14 +67,23 @@ export function BigRocks() {
       // outcomes — with stable ids so their work can link back to them
       const withIds = priorities.map((p) => ({ id: crypto.randomUUID(), p }));
       if (withIds.length) {
-        addBigRocks(withIds.map(({ id, p }) => ({ id, title: p.title, win: p.win, initiative_id: p.initiativeId ?? null })));
+        addBigRocks(withIds.map(({ id, p }) => ({
+          id,
+          title: p.title,
+          win: p.win,
+          initiative_id: p.initiativeId ?? null,
+          project_id: p.projectId ?? null,
+        })));
       }
-      // each outcome's work → into the week, tagged to the rock, with deadlines
+      // each outcome's work → into the week, tagged to the rock, with deadlines.
+      // When the priority bound to standing work, home its work there too (most
+      // specific wins) so the generated tasks live where the priority points.
       for (const { id, p } of withIds) {
         if (!p.tasks?.length) continue;
+        const proj = projectById(data, p.projectId);
         const init = initiativeById(data, p.initiativeId);
         await addTasksToWeek(
-          { initiativeId: p.initiativeId ?? null, domainId: init?.domainId ?? null },
+          { projectId: p.projectId ?? null, initiativeId: p.initiativeId ?? null, domainId: proj?.domainId ?? init?.domainId ?? null },
           p.tasks.map((x) => ({ title: x.title, energy: x.energy, durationMins: x.durationMins, deadline: x.deadline, bigRockId: id })),
         );
       }
@@ -90,6 +99,16 @@ export function BigRocks() {
     }
   };
 
+  // Bottom-up: groomed projects that are slipping or due to start, proposed as
+  // priorities beside the blank line — never pre-filling it. (nuvo-priority-project-binding)
+  const { groomed, ungroomed } = useMemo(() => {
+    const bound = new Set(rocks.map((r) => r.project_id).filter((id): id is string => Boolean(id)));
+    return proposedPriorities(data, new Date(), bound);
+  }, [data, rocks]);
+
+  const bringIn = (p: ProposedPriority) =>
+    addBigRocks([{ title: p.project.name, win: p.win, project_id: p.project.id }]);
+
   return (
     <section>
       <div className="mb-3 flex items-baseline justify-between">
@@ -98,7 +117,7 @@ export function BigRocks() {
         </h2>
       </div>
 
-      <div className="rounded-lg border border-line bg-surface p-4">
+      <div className="glass-card rounded-lg border border-line p-4">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -118,6 +137,10 @@ export function BigRocks() {
         </div>
       </div>
 
+      {(groomed.length > 0 || ungroomed > 0) && (
+        <ProjectsAskingForYou data={data} groomed={groomed} ungroomed={ungroomed} onBringIn={bringIn} />
+      )}
+
       {rocks.length > 0 && (
         <div className="mt-4 space-y-3">
           {rocks.map((rock, i) => (
@@ -134,6 +157,62 @@ export function BigRocks() {
         </div>
       )}
     </section>
+  );
+}
+
+// ── "Projects asking for you" — groomed, slipping projects proposed as
+//    priorities. A proposal rail beside the blank line; one tap brings a project
+//    in as a priority born already bound to it. (nuvo-priority-project-binding) ─
+function ProjectsAskingForYou({
+  data,
+  groomed,
+  ungroomed,
+  onBringIn,
+}: {
+  data: VerticalData;
+  groomed: ProposedPriority[];
+  ungroomed: number;
+  onBringIn: (p: ProposedPriority) => void;
+}) {
+  return (
+    <div className="mt-4">
+      <div className="mb-1.5 flex items-baseline gap-2">
+        <span className="section-label">Projects asking for you</span>
+        <span className="mono text-micro text-muted">slipping or due to start</span>
+      </div>
+      <div className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+        {groomed.map((p) => {
+          const color = domainById(data, p.project.domainId)?.color ?? "var(--accent)";
+          return (
+            <button
+              key={p.project.id}
+              onClick={() => onBringIn(p)}
+              title={`Make "${p.project.name}" a priority this week`}
+              className="fast tap group/row flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-surface-2"
+            >
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-body">{p.project.name}</span>
+                <span className="mono block truncate text-micro text-muted">{p.reason}</span>
+              </span>
+              <span className="mono shrink-0 text-meta text-muted transition-colors group-hover/row:text-accent">
+                ＋ priority
+              </span>
+            </button>
+          );
+        })}
+        {ungroomed > 0 && (
+          <div className="flex items-center gap-2 px-3.5 py-2.5 text-meta text-muted">
+            <span aria-hidden>✦</span>
+            <span className="min-w-0">
+              {ungroomed} more {ungroomed === 1 ? "project is" : "projects are"} slipping but{" "}
+              {ungroomed === 1 ? "needs" : "need"} grooming first — groom{" "}
+              {ungroomed === 1 ? "it" : "them"} to bring {ungroomed === 1 ? "it" : "them"} in.
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -160,7 +239,7 @@ function RockCard({
 
   return (
     <div
-      className="group rounded-lg border bg-surface px-4 py-3.5"
+      className="group glass-card rounded-lg border px-4 py-3.5"
       style={{ borderColor: "var(--line)", borderLeft: `3px solid ${done ? "var(--line-strong)" : accent}`, opacity: done ? 0.62 : 1 }}
     >
       <div className="flex items-start gap-3">
@@ -190,6 +269,14 @@ function RockCard({
               className="text-caption text-muted"
             />
           </div>
+          {work.label && (
+            <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: accent }} aria-hidden />
+              <span className="mono truncate text-micro text-muted">
+                {rock.project_id ? "advances" : "serves"} {work.label}
+              </span>
+            </div>
+          )}
         </div>
 
         <button
@@ -234,7 +321,7 @@ function PriorityWork({
     setError(null);
     try {
       const { data: res, error: fnErr } = await supabase.functions.invoke("agent", {
-        body: { breakdown: { title: rock.title, win: rock.win, initiativeId: rock.initiative_id } },
+        body: { breakdown: { title: rock.title, win: rock.win, initiativeId: rock.initiative_id, projectId: rock.project_id ?? null } },
       });
       if (fnErr) throw fnErr;
       const tasks = (res?.tasks ?? []) as { title: string; energy: Energy; durationMins: number }[];
@@ -253,9 +340,10 @@ function PriorityWork({
   const addProposed = async () => {
     const chosen = (proposed ?? []).filter((t) => t.included);
     if (!chosen.length) { setProposed(null); return; }
+    const proj = projectById(data, rock.project_id ?? null);
     const init = initiativeById(data, rock.initiative_id);
     await addTasksToWeek(
-      { initiativeId: rock.initiative_id ?? null, domainId: init?.domainId ?? null },
+      { projectId: rock.project_id ?? null, initiativeId: rock.initiative_id ?? null, domainId: proj?.domainId ?? init?.domainId ?? null },
       chosen.map((t) => ({ title: t.title, energy: t.energy, durationMins: t.durationMins, bigRockId: rock.id })),
     );
     setProposed(null);
@@ -271,7 +359,7 @@ function PriorityWork({
               {work.done} of {work.total} done{work.scheduledMins > 0 ? ` · ${hrs(work.scheduledMins)}h scheduled` : ""}
             </span>
           </div>
-          <div className="mb-2 h-1 overflow-hidden rounded-full bg-bg">
+          <div className="mb-2 h-1 overflow-hidden rounded-full bg-line">
             <div className="h-full rounded-full" style={{ width: `${pct}%`, background: accent }} />
           </div>
           <div className="space-y-1">

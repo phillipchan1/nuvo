@@ -31,7 +31,7 @@ export function ReadinessBanner({
   readiness: number;
   /** the single thing slipping, or null when this view is calm. */
   cue: FloorCue | null;
-  /** the verb for the next turn, e.g. "Plan with Nuvo", "Tend". */
+  /** the verb for the next turn, e.g. "Plan with Nuvo", "Groom". */
   actionLabel?: string;
   onAction?: () => void;
 }) {

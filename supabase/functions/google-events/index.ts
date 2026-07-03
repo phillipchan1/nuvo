@@ -27,9 +27,22 @@ Deno.serve(async (req) => {
       const recurrence = Array.isArray(body.recurrence) ? (body.recurrence as string[]) : undefined;
       if (!start_at || !end_at) return json({ error: "start_at and end_at required" }, 400);
 
+      // Prefer explicit accountId, then the user's default, then first connected account.
       const accountId = body.accountId as string | undefined;
       const allAccounts = await loadGoogleAccounts(accountId || undefined);
-      const account = allAccounts.find((a) => a.user_id === user.id);
+      let account = allAccounts.find((a) => a.user_id === user.id && (!accountId || a.id === accountId));
+      if (!account && !accountId) {
+        // Fall back to the user's saved default calendar account.
+        const { data: s } = await admin
+          .from("user_settings")
+          .select("default_calendar_account_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (s?.default_calendar_account_id) {
+          account = allAccounts.find((a) => a.id === s.default_calendar_account_id);
+        }
+        account ??= allAccounts.find((a) => a.user_id === user.id);
+      }
       if (!account) return json({ error: "no google account connected" }, 400);
 
       const attendees = Array.isArray(body.attendees) ? (body.attendees as string[]) : [];

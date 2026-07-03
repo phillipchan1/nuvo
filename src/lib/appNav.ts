@@ -26,11 +26,15 @@ export type OverlayKind =
   // UI, rung-agnostic, no anchor. Distinct from the on-Schedule anchored "task".
   | "task-record";
 
-export type SettingsSection = "appearance" | "schedule" | "connections" | "labels" | "account";
+export type SettingsSection = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account";
 
 export type NowMoment = "choose" | "focus" | "done";
 
 export type FloorModal = null | "new-initiative" | "new-project";
+
+/** When a flow is opened pointed at one item (e.g. groom THIS project), the
+ *  target rides here so the flow can skip its overview and open it directly. */
+export type FlowFocus = { kind: "project" | "initiative"; id: string };
 
 export interface AppNavState {
   v: 1;
@@ -40,6 +44,7 @@ export interface AppNavState {
   focus: Focus;
   flow: FlowName | null;
   flowStep: number;
+  flowFocus: FlowFocus | null;
   tab: RailTab;
   calView: CalView;
   overlay: OverlayKind;
@@ -59,6 +64,7 @@ export const DEFAULT_NAV: AppNavState = {
   focus: { domainId: "", initiativeId: "", projectId: "" },
   flow: null,
   flowStep: 0,
+  flowFocus: null,
   tab: "today",
   calView: typeof window !== "undefined" && window.innerWidth < 1100 ? "timeGridDay" : "timeGridWeek",
   overlay: "none",
@@ -85,6 +91,7 @@ export function mergeNav(prev: AppNavState, patch: Partial<AppNavState>): AppNav
   }
   if (patch.flow !== undefined && patch.flow !== prev.flow && patch.flow === null) {
     next.flowStep = 0;
+    next.flowFocus = null; // leaving a flow drops its focused target
   }
   return next;
 }
@@ -99,6 +106,8 @@ export function navEqual(a: AppNavState, b: AppNavState): boolean {
     a.focus.projectId === b.focus.projectId &&
     a.flow === b.flow &&
     a.flowStep === b.flowStep &&
+    a.flowFocus?.kind === b.flowFocus?.kind &&
+    a.flowFocus?.id === b.flowFocus?.id &&
     a.tab === b.tab &&
     a.calView === b.calView &&
     a.overlay === b.overlay &&

@@ -55,7 +55,15 @@ consumer:
 | **Initiative** | open initiatives | projects defined enough to run | `ripenessOfInitiative` rollup | "N drifting" (silent) · "N to ready" (raw) |
 | **Project** | open projects | tasks sized + a finish line, so the week can take them | `ripenessOfProject` rollup | "N drifting" · "N to ready" |
 | **Week** (Schedule) | this week's committed tasks | the week is decided **and** every task traces to a domain | `composed × attributed` | "plan the week" (window open, not composed) · "N loose this week" |
-| **Day** (Today) | today's commitments | today is sequenced, nothing orphaned | share shaped/ordered | "order today" |
+
+**Today is not a readiness floor.** Readiness is directional — a floor is ready when
+it's groomed enough for the floor *below* to consume. Today is the bottom of the funnel:
+the execution surface where groomed work gets *done*. There is no floor beneath it to be
+ready for, and no grooming ritual that fills a meter (you don't groom today, you live it).
+The placement signal that the old Today meter measured already lives in the Week's
+checklist ("every task has a day"); the live "what slipped / what's open now" coaching
+stays inside the Today tab. So Today's spine rung is pure navigation — no gauge — and
+"all at rest" means *every groomed floor is groomed*, never blocked by a half-lived day.
 
 Note the **two axes on Domain**: the meter is *structural* readiness (ready for the
 floor below); *faithfulness* (did you spend time there) is a separate signal — it drives

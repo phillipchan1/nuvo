@@ -90,6 +90,27 @@ function lastDoneDays(tasks: VTask[], now: Date): number | null {
   return Math.max(0, Math.floor((now.getTime() - last) / 86_400_000));
 }
 
+/** Days since the most recent actual (a merged PR, …) on these projects, or
+ *  null. Lets Motion read a project as moving even with no completed tasks. */
+function lastActivityDays(d: VerticalData, projectIds: string[], now: Date): number | null {
+  let last: number | null = null;
+  for (const id of projectIds) {
+    const iso = d.lastActivityByProject[id];
+    if (!iso) continue;
+    const at = new Date(iso).getTime();
+    if (!Number.isNaN(at) && (last == null || at > last)) last = at;
+  }
+  if (last == null) return null;
+  return Math.max(0, Math.floor((now.getTime() - last) / 86_400_000));
+}
+
+/** The smaller of two day-counts, ignoring nulls. */
+function minDays(a: number | null, b: number | null): number | null {
+  if (a == null) return b;
+  if (b == null) return a;
+  return Math.min(a, b);
+}
+
 function daysLeftOf(targetDate: string | null, now: Date): number | null {
   if (!targetDate) return null;
   const t = parseDateISO(targetDate);
@@ -104,7 +125,9 @@ function readItem(d: VerticalData, kind: Kind, item: Project | Initiative, now: 
       : ripenessOfInitiative(d, item as Initiative).stage;
   const tasks = itemTasks(d, kind, item.id);
   const left = daysLeftOf(item.targetDate ?? null, now);
-  const touch = lastDoneDays(tasks, now);
+  // Motion = the most recent of a completed task OR an actual (merged PR, …).
+  const projectIds = kind === "project" ? [item.id] : projectsOf(d, item.id).map((p) => p.id);
+  const touch = minDays(lastDoneDays(tasks, now), lastActivityDays(d, projectIds, now));
   return {
     id: item.id,
     name: item.name,
@@ -225,6 +248,42 @@ export function readStanding(d: VerticalData, kind: Kind, now: Date = new Date()
     synthesis,
     focus,
     calm,
+  };
+}
+
+// ── Standing score — the blended 0..100 headline ─────────────────────────────
+// One number that folds the three axes together, MULTIPLICATIVELY so the weakest
+// drags it down and nothing hides behind an average. Groomed-ness is the backbone
+// (the only factor that can go truly low); Capacity and Motion are discounts that
+// are 1.0 when healthy and shave the score when not — so Standing can never read
+// ABOVE the groomed %, only at or below it. Distinct from "Readiness" (= groomed
+// alone, the spine/Groom-run number); this is the floor's overall footing.
+const HEADROOM: Record<Band, number> = { comfortable: 1, tight: 0.75, overcommitted: 0.5 };
+
+export interface StandingScore {
+  /** 0..100 — the headline figure. */
+  score: number;
+  /** the three contributors, each 0..1, for the breakdown bars. */
+  shaped: number; // = defined (groomed), the backbone
+  headroom: number; // capacity as a "more = healthier" factor
+  motion: number; // moving / in-flight ratio (1 when nothing in flight)
+}
+
+/** The blended 0..100 from raw parts — so a projection ("what if X were groomed")
+ *  can reuse the exact same multiply with a bumped `shaped`. */
+export function scoreFromParts(shaped: number, capacity: Band, motionMoving: number, inFlight: number): number {
+  const motionFactor = inFlight > 0 ? 0.5 + 0.5 * (motionMoving / inFlight) : 1; // damped so stall ≠ zero
+  return Math.round(100 * shaped * HEADROOM[capacity] * motionFactor);
+}
+
+/** Fold a Standing into the blended score + its three normalized contributors. */
+export function standingScore(s: Standing): StandingScore {
+  const motion = s.inFlight > 0 ? s.motionMoving / s.inFlight : 1;
+  return {
+    score: scoreFromParts(s.defined, s.capacity, s.motionMoving, s.inFlight),
+    shaped: s.defined,
+    headroom: HEADROOM[s.capacity],
+    motion,
   };
 }
 

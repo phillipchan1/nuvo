@@ -211,7 +211,7 @@ export default function NowFloor({
         <div className="mt-1.5 text-body text-ink">{activeTask.title}</div>
         <div className="mt-2 space-y-0.5 text-caption text-muted">
           {initiative && <div>{initiative.name} — now {initiativeProgress(data, initiative)}%</div>}
-          {domain && <div>{domain.name} tended · faithful again today</div>}
+          {domain && <div>{domain.name} groomed · faithful again today</div>}
         </div>
         <div className="mt-4"><Btn onClick={() => setNowMoment("choose")}>what's next →</Btn></div>
       </Moment>

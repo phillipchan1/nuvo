@@ -16,6 +16,7 @@ import {
   readNavState,
   type AppNavState,
   type FloorModal,
+  type FlowFocus,
   type OverlayKind,
   type SettingsSection,
 } from "../lib/appNav";
@@ -39,7 +40,7 @@ interface AppNavigationContextValue {
   goRung: (r: Rung) => void;
   setTab: (t: RailTab) => void;
   setCalView: (v: CalView) => void;
-  openFlow: (f: FlowName) => void;
+  openFlow: (f: FlowName, focus?: FlowFocus) => void;
   closeFlow: () => void;
   setFlowStep: (step: number) => void;
   openOverlay: (kind: OverlayKind, id?: string | null, anchor?: DOMRect | null) => void;
@@ -230,8 +231,8 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   const setCalView = useCallback((v: CalView) => navigate({ calView: v }), [navigate]);
 
   const openFlow = useCallback(
-    (f: FlowName) =>
-      navigate({ flow: f, flowStep: 0, overlay: "none", overlayId: null, floorModal: null }),
+    (f: FlowName, focus?: FlowFocus) =>
+      navigate({ flow: f, flowStep: 0, flowFocus: focus ?? null, overlay: "none", overlayId: null, floorModal: null }),
     [navigate],
   );
 

@@ -1138,17 +1138,60 @@ textarea:focus {
    The slot under the cursor is hit-tested in JS (`.slot-drop-target`), and
    `body.over-slot` drives the ghost fade — both set together by the drag tracker. */
 .fc-event.evt-slot {
-  transition: background-color var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+  transition: background-color var(--d-fast) var(--ease-out),
+    box-shadow var(--d-fast) var(--ease-out),
+    border-color var(--d-fast) var(--ease-out),
+    transform var(--d-fast) var(--ease-out);
 }
+/* Hovered slot lights up as a receptacle: the dashed outline fuses to a solid
+   ring, the fill warms to a soft teal wash, an outer halo bleeds past the edge so
+   the whole band reads as "drop here", and it lifts a hair toward the cursor. */
 .fc-event.evt-slot.slot-drop-target {
-  background: color-mix(in srgb, var(--slot) 45%, var(--surface)) !important;
+  background: color-mix(in srgb, var(--slot) 26%, var(--surface)) !important;
   border-style: solid !important;
   border-color: var(--slot) !important;
-  box-shadow: 0 0 0 2px var(--slot), var(--shadow-2);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 80%, transparent),
+    0 0 0 2px var(--slot),
+    0 0 0 7px color-mix(in srgb, var(--slot) 20%, transparent),
+    var(--shadow-lift) !important;
+  transform: scale(1.015);
+  z-index: 6;
 }
 .over-slot .fc-event-mirror,
 .over-slot .fc-event-dragging {
   opacity: 0.1 !important;
+}
+/* Cursor-following label naming the slot you're dropping into — appears only while
+   the pointer is over a slot (the faded ghost no longer carries that meaning). */
+.slot-drop-chip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 9999;
+  pointer-events: none;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  color: color-mix(in srgb, var(--slot) 30%, var(--ink));
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--slot) 50%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--slot) 14%, transparent), var(--shadow-lift);
+  backdrop-filter: blur(8px) saturate(1.3);
+  -webkit-backdrop-filter: blur(8px) saturate(1.3);
+  opacity: 0;
+  transform: translateY(3px) scale(0.96);
+  transition: opacity var(--d-fast) var(--ease-out), transform var(--d-fast) var(--ease-out);
+}
+.slot-drop-chip.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 /* ── Rail drop zone: calendar → inbox ─────────────────────────────────────── */
 /* Smooth transition so the drop zone feel enters and exits gracefully. */

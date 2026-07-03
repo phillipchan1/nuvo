@@ -12,6 +12,7 @@
 
 import {
   initiativesOf,
+  inboxTasks,
   isOpenStatus,
   looseProjectsOf,
   sprintTasks,
@@ -27,21 +28,25 @@ import {
   ripenessOfProject,
   type GroomCandidate,
 } from "./tending";
-import { todayISO } from "./dates";
 
-// ── Floors — the spine's altitudes, by their Rung id ─────────────────────────
-// NOTE the legacy naming: "now" is the Today/Day floor, "day" is the Schedule/
-// Week floor. These strings match `Rung` in AppShell so the Spine can pass its
-// rung id straight through.
-export type Floor = "now" | "day" | "project" | "initiative" | "domain";
-export const FLOORS: Floor[] = ["now", "day", "project", "initiative", "domain"];
+// ── Floors — the readiness elevations, by their Rung id ──────────────────────
+// Readiness is directional: a floor is ready when its contents are groomed
+// enough for the floor BELOW to consume. So readiness lives on the four
+// elevations that each groom for a consumer — Schedule (legacy id "day"),
+// Projects, Initiatives, Domains. *Today* (the Rung "now") is deliberately NOT
+// a readiness floor: it's the bottom of the funnel, the execution surface where
+// groomed work gets done — there is no floor below it to be ready for, and no
+// grooming ritual that fills a meter. Its rung is pure navigation; the "order
+// my day" coaching lives inside the Today tab, not the chrome. These strings
+// match `Rung` in AppShell so the Spine can pass its rung id straight through.
+export type Floor = "day" | "project" | "initiative" | "domain";
+export const FLOORS: Floor[] = ["day", "project", "initiative", "domain"];
 
 /** A floor is calm (quiet, no cue) at or above this readiness with no exception. */
 export const CALM = 0.85;
 
 /** Human label per floor, for "now what" headers. */
 export const FLOOR_LABEL: Record<Floor, string> = {
-  now: "Today",
   day: "This week",
   project: "Projects",
   initiative: "Initiatives",
@@ -92,6 +97,20 @@ export function readinessOfInitiativeFloor(d: VerticalData): number {
   );
 }
 
+/** The floor's shaped/groomed factor recomputed as if `readyIds` were fully
+ *  groomed — the projection behind "groom this → Readiness 25→38". */
+export function projectedFloorShaped(
+  d: VerticalData,
+  kind: "project" | "initiative",
+  readyIds: Set<string>,
+): number {
+  const items =
+    kind === "project"
+      ? d.projects.filter((p) => isOpenStatus(p.status))
+      : d.initiatives.filter((i) => isOpenStatus(i.status));
+  return mean(items.map((it) => (readyIds.has(it.id) ? 1 : settledScore(d, kind, it))));
+}
+
 /** One domain's STRUCTURAL readiness = its open bets (+ loose projects) settled.
  *  Faithfulness (did you spend time there) is a separate axis — it drives the
  *  cue and the chapel lamp, never this meter. */
@@ -121,30 +140,24 @@ export function readinessOfDomainFloor(d: VerticalData): number {
   return d.domains.filter(isDomainClear).length / d.domains.length;
 }
 
-/** The Week is ready when it's been decided AND every committed task traces to a
- *  domain (loose tasks are the up-flow leak that makes domain balance lie). */
+/** The Week is ready when it's groomed for *execution*: decided, priorities
+ *  named, inbox processed, every committed task given a day. The meter is the
+ *  fraction of that checklist satisfied (see `weekReadiness`) — the same source
+ *  the spine cue and the "This week" panel read, so they can never diverge.
+ *  Domain routing is an up-flow/Tending concern surfaced on Projects/Domains —
+ *  deliberately NOT a gate here (it never let the week read calm). */
 export function readinessOfWeek(d: VerticalData): number {
-  const composed = Boolean(d.sprint?.reviewed_at);
+  const items = weekReadiness(d);
+  const composed = items.find((i) => i.key === "planned")?.done ?? false;
   if (!composed) return WEEK_UNPLANNED;
-  const open = sprintTasks(d).filter((t) => t.status !== "done");
-  const attributed = open.length === 0 ? 1 : open.filter((t) => t.domainId).length / open.length;
-  return WEEK_COMPOSED_BASE + (1 - WEEK_COMPOSED_BASE) * attributed;
+  const done = items.filter((i) => i.done).length;
+  return WEEK_COMPOSED_BASE + (1 - WEEK_COMPOSED_BASE) * (done / items.length);
 }
 
-/** The Day is ready when today's commitments are placed, not floating. */
-export function readinessOfDay(d: VerticalData, now: Date = new Date()): number {
-  const today = todayISO(now);
-  const todays = d.tasks.filter((t) => t.doDate === today && t.status !== "done");
-  if (todays.length === 0) return 1;
-  const placed = todays.filter((t) => t.status === "scheduled").length;
-  return placed / todays.length;
-}
-
-/** Readiness of any floor, by its rung id. */
-export function floorReadiness(d: VerticalData, floor: Floor, now: Date = new Date()): number {
+/** Readiness of any floor, by its rung id. (Today is not a readiness floor —
+ *  see the `Floor` note: it's the execution surface, not a groomed elevation.) */
+export function floorReadiness(d: VerticalData, floor: Floor): number {
   switch (floor) {
-    case "now":
-      return readinessOfDay(d, now);
     case "day":
       return readinessOfWeek(d);
     case "project":
@@ -189,26 +202,53 @@ function domainCue(d: VerticalData): FloorCue | null {
   if (!unclear.length) return null;
   return {
     tone: "attention",
-    label: unclear.length === 1 ? `${unclear[0].name} to refine` : `${unclear.length} to refine`,
+    label: unclear.length === 1 ? `${unclear[0].name} to groom` : `${unclear.length} to groom`,
   };
 }
 
-/** Week cue: the planning invitation, then the loose-task leak. */
-function weekCue(d: VerticalData): FloorCue | null {
-  if (!d.sprint?.reviewed_at) return { tone: "invite", label: "plan the week" };
-  const loose = sprintTasks(d).filter((t) => t.status !== "done" && !t.domainId).length;
-  if (loose) return { tone: "attention", label: `${loose} loose this week` };
-  return null;
+// ── Week readiness — the inspectable checklist behind the Schedule rung ───────
+// The "what's between me and a calm week" inventory the Schedule cue summarizes
+// and the "This week" panel renders in full. One ordered list, four execution
+// gaps; the cue is just its first unfinished line, the meter its fill fraction.
+// Scoped to *placement/execution* — domain routing (up-flow) lives elsewhere.
+export type WeekReadinessKey = "planned" | "priorities" | "inbox" | "placed";
+
+export interface WeekReadinessItem {
+  key: WeekReadinessKey;
+  /** the panel line — present-tense, opportunity-framed. */
+  label: string;
+  /** the short remaining hint when unfinished ("1 to place"), else null. */
+  detail: string | null;
+  done: boolean;
+  /** remaining count for count-based items (0 otherwise). */
+  count: number;
 }
 
-/** Day cue: today has commitments still floating — on the day, not yet given a
- *  time. The pure-vertical read of Today (no clock): the coach's live "what
- *  slipped / what's open now" stays inside the Today tab, never the chrome. */
-function dayCue(d: VerticalData, now: Date): FloorCue | null {
-  const today = todayISO(now);
-  const unplaced = d.tasks.filter((t) => t.doDate === today && t.status === "ready").length;
-  if (unplaced) return { tone: "drift", label: `${unplaced} to place` };
-  return null;
+/** The week's grooming checklist, in priority order. Pure over the snapshot. */
+export function weekReadiness(d: VerticalData): WeekReadinessItem[] {
+  const composed = Boolean(d.sprint?.reviewed_at);
+  const rocks = d.bigRocks.length;
+  const inbox = inboxTasks(d).length;
+  // placed = committed this week but with no day yet (a day counts as placed;
+  // status flips to "scheduled" once a start_time exists, so "ready" = no block).
+  const toPlace = sprintTasks(d).filter((t) => t.status === "ready" && !t.doDate).length;
+  return [
+    { key: "planned", label: "Week planned", detail: composed ? null : "plan the week", done: composed, count: 0 },
+    { key: "priorities", label: "Priorities named", detail: rocks ? null : "name what matters", done: rocks > 0, count: 0 },
+    { key: "inbox", label: "Inbox processed", detail: inbox ? `${inbox} to sort` : null, done: inbox === 0, count: inbox },
+    { key: "placed", label: "Every task has a day", detail: toPlace ? `${toPlace} to place` : null, done: toPlace === 0, count: toPlace },
+  ];
+}
+
+/** Week cue: the single highest-priority unfinished grooming step — the first
+ *  gap in `weekReadiness`. The unplanned week reads as an invitation; anything
+ *  after it is a gentle attention nudge. Calm when the whole checklist is done. */
+function weekCue(d: VerticalData): FloorCue | null {
+  const items = weekReadiness(d);
+  if (!items[0].done) return { tone: "invite", label: "plan the week" };
+  const next = items.find((i) => !i.done);
+  if (!next) return null;
+  return { tone: "attention", label: next.detail ?? next.label };
 }
 
 // ── The spine state — one pass, what the rail renders ────────────────────────
@@ -228,14 +268,14 @@ export interface SpineState {
   allAtRest: boolean;
 }
 
-/** Read the whole spine in one pass — readiness + the one cue per floor, plus
- *  the all-at-rest reward flag. The Spine calls this once per render. */
-export function readSpine(d: VerticalData, now: Date = new Date()): SpineState {
+/** Read the whole spine in one pass — readiness + the one cue per readiness
+ *  floor, plus the all-at-rest reward flag. Today (the "now" rung) is excluded:
+ *  it's the execution surface, not a groomed floor, so it carries no gauge. The
+ *  Spine calls this once per render. */
+export function readSpine(d: VerticalData): SpineState {
   const reading = readTending(d);
   const cueFor = (floor: Floor): FloorCue | null => {
     switch (floor) {
-      case "now":
-        return dayCue(d, now);
       case "day":
         return weekCue(d);
       case "project":
@@ -247,12 +287,11 @@ export function readSpine(d: VerticalData, now: Date = new Date()): SpineState {
     }
   };
   const build = (floor: Floor): FloorState => {
-    const readiness = floorReadiness(d, floor, now);
+    const readiness = floorReadiness(d, floor);
     const cue = cueFor(floor);
     return { floor, readiness, cue, calm: readiness >= CALM && cue == null };
   };
   const floors: Record<Floor, FloorState> = {
-    now: build("now"),
     day: build("day"),
     project: build("project"),
     initiative: build("initiative"),
@@ -265,8 +304,8 @@ export function readSpine(d: VerticalData, now: Date = new Date()): SpineState {
 // The cross-floor pick a "now what" header surfaces when it isn't tied to one
 // altitude (the mobile Now banner, the desktop Today banner): an invitation
 // (plan the week) outranks something that needs readying, which outranks drift;
-// within a tone, the week and the vertical come before the day. Null = all calm.
-const TURN_ORDER: Floor[] = ["day", "project", "initiative", "domain", "now"];
+// within a tone, the week comes before the vertical floors. Null = all calm.
+const TURN_ORDER: Floor[] = ["day", "project", "initiative", "domain"];
 export function topTurn(spine: SpineState): FloorState | null {
   const states = TURN_ORDER.map((f) => spine.floors[f]);
   return (

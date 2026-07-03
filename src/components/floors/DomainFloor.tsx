@@ -180,10 +180,10 @@ function stateOf(d: Domain): { tone: "lit" | "quiet"; line: string; short: strin
   const f = faithfulness(d);
   if (f.lit) {
     if (d.weeklyTargetHours > 0 && d.investedThisWeek > d.weeklyTargetHours)
-      return { tone: "lit", line: `Tended ${ago(d.lastTouchedDays)} — over your ${fmtH(d.weeklyTargetHours)} this week`, short: `over ${fmtH(d.investedThisWeek)}` };
-    return { tone: "lit", line: `Tended ${ago(d.lastTouchedDays)} — ${fmtH(d.investedThisWeek)} kept this week`, short: "tended" };
+      return { tone: "lit", line: `Groomed ${ago(d.lastTouchedDays)} — over your ${fmtH(d.weeklyTargetHours)} this week`, short: `over ${fmtH(d.investedThisWeek)}` };
+    return { tone: "lit", line: `Groomed ${ago(d.lastTouchedDays)} — ${fmtH(d.investedThisWeek)} kept this week`, short: "groomed" };
   }
-  if (d.lastTouchedDays >= 99) return { tone: "quiet", line: "Untended — no time has been kept here yet", short: "untended" };
+  if (d.lastTouchedDays >= 99) return { tone: "quiet", line: "Ungroomed — no time has been kept here yet", short: "ungroomed" };
   return { tone: "quiet", line: `Quiet for ${d.lastTouchedDays} days — when did you last show up here?`, short: `quiet · ${d.lastTouchedDays}d` };
 }
 
@@ -200,13 +200,13 @@ function clarityOf(d: Domain): Clarity {
   if (ctx) {
     const signals = ctx.entities.length + ctx.keywords.length;
     if (signals === 0)
-      return { level: "partial", label: "needs detail", why: "Refined, but Nuvo couldn't pull anything specific to route on — re-refine with a richer line.", pct: 0.6 };
+      return { level: "partial", label: "needs detail", why: "Groomed, but Nuvo couldn't pull anything specific to route on — re-groom with a richer line.", pct: 0.6 };
     const lead = ctx.entities.slice(0, 3).join(", ") || ctx.keywords.slice(0, 3).join(", ");
-    return { level: "clear", label: "refined", why: `Nuvo files captures here by ${lead}.`, pct: 1 };
+    return { level: "clear", label: "groomed", why: `Nuvo files captures here by ${lead}.`, pct: 1 };
   }
   if (d.charter.trim())
-    return { level: "partial", label: "refine to finish", why: "You've described it — one tap on Refine teaches Nuvo what belongs here.", pct: 0.35 };
-  return { level: "unrefined", label: "needs refining", why: "Nuvo files here by name alone. Describe what belongs so captures land here.", pct: 0 };
+    return { level: "partial", label: "groom to finish", why: "You've described it — one tap on Groom teaches Nuvo what belongs here.", pct: 0.35 };
+  return { level: "unrefined", label: "needs grooming", why: "Nuvo files here by name alone. Describe what belongs so captures land here.", pct: 0 };
 }
 
 function ClarityMark({ domain }: { domain: Domain }) {
@@ -293,7 +293,7 @@ export default function DomainFloor({
           return (
             <p className="mt-2 max-w-[560px] text-meta text-muted">
               <span style={{ color: "var(--signal)" }}>Nuvo can route {clear} of {total}.</span>{" "}
-              The rest file by name alone — refine a domain (enter it ↓) to teach Nuvo what belongs there.
+              The rest file by name alone — groom a domain (enter it ↓) to teach Nuvo what belongs there.
             </p>
           );
         })()}
@@ -435,7 +435,7 @@ function Chapel({ domain, motif, onBack, onOpenInitiative, onOpenProject }: { do
           <div className="serif text-body italic text-muted">the last quarter — are you still showing up?</div>
           <div className="mt-2.5"><Pulse weeks={domain.weeks} color={accent} target={domain.weeklyTargetHours} /></div>
           <div className="mono mt-2 text-meta text-muted">
-            <span style={{ color: accent }}>{domain.quarterHours}h</span> tended this quarter · {fmtH(domain.investedThisWeek)} of{" "}
+            <span style={{ color: accent }}>{domain.quarterHours}h</span> groomed this quarter · {fmtH(domain.investedThisWeek)} of{" "}
             <InlineNumber value={domain.weeklyTargetHours} onChange={(v) => updateDomain(domain.id, { weeklyTargetHours: v })} suffix="h" /> intended this week
           </div>
         </div>
@@ -471,7 +471,7 @@ function Chapel({ domain, motif, onBack, onOpenInitiative, onOpenProject }: { do
               </button>
             ))}
             {inits.length === 0 && looseProjects.length === 0 && (
-              <div className="serif text-body italic text-muted">No initiatives yet — this domain simply asks to be tended.</div>
+              <div className="serif text-body italic text-muted">No initiatives yet — this domain simply asks to be groomed.</div>
             )}
           </div>
           {looseProjects.length > 0 && (
@@ -536,7 +536,7 @@ function DomainRefine({ domain }: { domain: Domain }) {
       setProp(res as Refinement);
       setAccepted(false);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't refine just now");
+      setErr(e instanceof Error ? e.message : "Couldn't groom just now");
     } finally {
       setBusy(false);
     }
@@ -588,7 +588,7 @@ function DomainRefine({ domain }: { domain: Domain }) {
               className={`tap fast rounded-lg px-4 py-2.5 text-body font-medium text-white active:scale-[.98] disabled:cursor-wait disabled:opacity-75 ${busy ? "animate-pulse" : "hover:opacity-90"}`}
               style={{ background: domain.color }}
             >
-              {busy ? "Refining…" : shown ? "✦ Re-refine" : "✦ Refine with Nuvo"}
+              {busy ? "Grooming…" : shown ? "✦ Re-groom" : "✦ Groom with Nuvo"}
             </button>
             {err && <span className="text-meta text-signal">{err}</span>}
           </div>

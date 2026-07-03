@@ -4,8 +4,8 @@
 // the bet it serves). Proposal only; the client appends accepted items to the
 // sprint's big_rocks and lets the user refine. Mirrors blueprint.ts.
 
-import { admin } from "../_shared/admin.ts";
 import { completeJSON } from "./llm.ts";
+import { buildProposalContext, ACTIVE_STATUSES } from "./proposalContext.ts";
 
 export interface ParsedTask {
   title: string;
@@ -15,7 +15,7 @@ export interface ParsedTask {
 }
 
 export interface PriorityProposal {
-  priorities: { title: string; win: string; initiativeId: string | null; tasks: ParsedTask[] }[];
+  priorities: { title: string; win: string; initiativeId: string | null; projectId: string | null; tasks: ParsedTask[] }[];
   tasks: ParsedTask[]; // standalone one-offs that aren't a priority
 }
 
@@ -26,20 +26,31 @@ export async function parsePriorities(
   const text = (input.text ?? "").trim();
   if (!text) return { priorities: [], tasks: [] };
 
-  // active bets, so a priority can be linked to the initiative it serves
-  const [{ data: initRows }, { data: domRows }] = await Promise.all([
-    admin.from("initiatives").select("id, name, domain_id, status").eq("user_id", userId).in("status", ["backlog", "in_progress", "waiting"]),
-    admin.from("domains").select("id, name").eq("user_id", userId),
-  ]);
-  const domName = new Map((domRows ?? []).map((d) => [d.id as string, d.name as string]));
-  const inits = (initRows ?? []).map((i) => ({
-    id: i.id as string,
-    name: i.name as string,
-    domain: domName.get(i.domain_id as string) ?? "",
-  }));
-  const validIds = new Set(inits.map((i) => i.id));
-  const betList = inits.length
-    ? inits.map((i) => `- id:${i.id} — "${i.name}"${i.domain ? ` (${i.domain})` : ""}`).join("\n")
+  // Existing standing work, so a named priority can BIND to the thing it already
+  // names — a project (most specific) or the broader initiative it serves. Drawn
+  // from the shared proposal-context engine.
+  const ctx = await buildProposalContext(userId);
+  const activeInits = ctx.initiatives.filter((i) => ACTIVE_STATUSES.includes(i.status));
+  const validInitIds = new Set(activeInits.map((i) => i.id));
+  const betList = activeInits.length
+    ? activeInits
+        .map((i) => {
+          const dom = i.domainId ? ctx.domainById.get(i.domainId)?.name ?? "" : "";
+          return `- id:${i.id} — "${i.name}"${dom ? ` (${dom})` : ""}`;
+        })
+        .join("\n")
+    : "(none)";
+
+  const activeProjs = ctx.projects.filter((p) => ACTIVE_STATUSES.includes(p.status));
+  const validProjIds = new Set(activeProjs.map((p) => p.id));
+  const projList = activeProjs.length
+    ? activeProjs
+        .map((p) => {
+          const dom = p.domainId ? ctx.domainById.get(p.domainId)?.name ?? "" : "";
+          const init = p.initiativeId ? ctx.initiativeById.get(p.initiativeId)?.name ?? "" : "";
+          return `- id:${p.id} — "${p.name}"${init ? ` · part of ${init}` : ""}${dom ? ` (${dom})` : ""}`;
+        })
+        .join("\n")
     : "(none)";
 
   const today = input.today || "(unknown — only set a deadline if an absolute date is stated)";
@@ -52,25 +63,33 @@ What they wrote:
 ${text}
 """
 
-Their active bets (initiatives), for linking:
+Their existing standing work, for linking a priority to something that ALREADY exists:
+PROJECTS (most specific — prefer these):
+${projList}
+INITIATIVES (broader bets):
 ${betList}
 
 Separate two things:
 1) PRIORITIES — the few OUTCOMES that, if they happen, make the week a win. For each:
    - "title": the outcome, verb-first and concise. A real outcome, not a vague theme.
    - "win": one line of what done looks like (infer it if they only implied it).
-   - "initiativeId": almost always null. ONLY set it when the priority EXPLICITLY names, or is unmistakably, one of the listed bets — same project/outcome, not just the same topic or domain. A wrong link is worse than none, so when there's any doubt at all, use null. Never invent an id.
+   - "projectId" / "initiativeId": link the priority to AT MOST ONE existing thing it NAMES.
+       · Recognize, never classify — link only when the priority unmistakably names that exact project/bet (same work, not merely the same topic or domain).
+       · Prefer the MOST SPECIFIC match: a named project ("projectId") over its parent initiative. Set at most ONE of the two; the other stays null.
+       · Most priorities name nothing on these lists — that's normal and healthy. A wrong link is worse than none: when there's ANY doubt, set BOTH to null. Never invent an id.
    - "tasks": the concrete next actions to move it THIS week (verb-first, one-sitting sized 15-120 min).
 2) TASKS — standalone one-offs they mentioned that are NOT a priority (errands, quick to-dos).
 
 Every task (under a priority or standalone) has: {title, energy ("deep"|"decide"|"delegate"|"quick"), duration_minutes, deadline (YYYY-MM-DD or null — only if timing was implied)}.
+
+duration_minutes must be an HONEST estimate of focused time, sized to the ACTUAL work and varied across tasks — a quick reply/edit is ~15, a real piece of building, writing, designing or analysis is usually 60–120+. Real project work rarely fits in 30. Never lazily stamp everything 30: a uniform 30 is almost always wrong and wrecks the schedule.
 
 Rules:
 - One priority per distinct outcome; don't split or merge. Don't pad — some dumps are all tasks and no priorities, and that's fine.
 - No internal ids anywhere in the text.
 
 Respond with JSON only:
-{"priorities":[{"title":string,"win":string,"initiativeId":string|null,"tasks":[{"title":string,"energy":string,"duration_minutes":number,"deadline":string|null}]}],"tasks":[{"title":string,"energy":string,"duration_minutes":number,"deadline":string|null}]}`;
+{"priorities":[{"title":string,"win":string,"projectId":string|null,"initiativeId":string|null,"tasks":[{"title":string,"energy":string,"duration_minutes":number,"deadline":string|null}]}],"tasks":[{"title":string,"energy":string,"duration_minutes":number,"deadline":string|null}]}`;
 
   const raw = await completeJSON<{ priorities?: unknown[]; tasks?: unknown[] }>(prompt);
 
@@ -90,12 +109,21 @@ Respond with JSON only:
 
   const priorities = (raw.priorities ?? [])
     .filter((p): p is Record<string, unknown> => typeof p === "object" && p !== null)
-    .map((p) => ({
-      title: String(p.title ?? "").trim(),
-      win: String(p.win ?? "").trim(),
-      initiativeId: typeof p.initiativeId === "string" && validIds.has(p.initiativeId) ? p.initiativeId : null,
-      tasks: (Array.isArray(p.tasks) ? p.tasks : []).map(mapTask).filter((t): t is ParsedTask => t !== null).slice(0, 6),
-    }))
+    .map((p) => {
+      const projectId = typeof p.projectId === "string" && validProjIds.has(p.projectId) ? p.projectId : null;
+      // Most specific binding wins: a project subsumes its parent initiative, so
+      // don't keep both (priorityWork would double-count the umbrella).
+      const initiativeId = projectId
+        ? null
+        : typeof p.initiativeId === "string" && validInitIds.has(p.initiativeId) ? p.initiativeId : null;
+      return {
+        title: String(p.title ?? "").trim(),
+        win: String(p.win ?? "").trim(),
+        initiativeId,
+        projectId,
+        tasks: (Array.isArray(p.tasks) ? p.tasks : []).map(mapTask).filter((t): t is ParsedTask => t !== null).slice(0, 6),
+      };
+    })
     .filter((p) => p.title)
     .slice(0, 8);
 
@@ -111,24 +139,27 @@ const ENERGIES = new Set(["deep", "decide", "delegate", "quick"]);
 // accepted tasks and commits them to the week.
 export async function breakdownPriority(
   userId: string,
-  input: { title?: string; win?: string; initiativeId?: string | null },
+  input: { title?: string; win?: string; initiativeId?: string | null; projectId?: string | null },
 ): Promise<{ tasks: { title: string; energy: string; durationMins: number }[] }> {
   const title = (input.title ?? "").trim();
   if (!title) return { tasks: [] };
 
+  // Ground the breakdown in the standing work this priority binds to. Prefer the
+  // most specific home (project), falling back to the initiative it serves. Both
+  // resolved from the shared proposal-context engine (already user-scoped).
+  const ctx = await buildProposalContext(userId);
   let initCtx = "";
-  if (input.initiativeId) {
-    const { data: init } = await admin
-      .from("initiatives")
-      .select("name, outcome, domain_id")
-      .eq("id", input.initiativeId)
-      .eq("user_id", userId)
-      .maybeSingle();
+  if (input.projectId) {
+    const proj = ctx.projectById.get(input.projectId);
+    if (proj) {
+      const dom = proj.domainId ? ctx.domainById.get(proj.domainId)?.name : null;
+      initCtx = `\nThis advances the project "${proj.name}"${proj.outcome ? ` (aim: ${proj.outcome})` : ""}${dom ? ` in ${dom}` : ""}.`;
+    }
+  } else if (input.initiativeId) {
+    const init = ctx.initiativeById.get(input.initiativeId);
     if (init) {
-      const dom = init.domain_id
-        ? (await admin.from("domains").select("name").eq("id", init.domain_id).maybeSingle()).data
-        : null;
-      initCtx = `\nThis serves the bet "${init.name}"${init.outcome ? ` (aim: ${init.outcome})` : ""}${dom?.name ? ` in ${dom.name}` : ""}.`;
+      const dom = init.domainId ? ctx.domainById.get(init.domainId)?.name : null;
+      initCtx = `\nThis serves the bet "${init.name}"${init.outcome ? ` (aim: ${init.outcome})` : ""}${dom ? ` in ${dom}` : ""}.`;
     }
   }
 
@@ -139,7 +170,7 @@ Priority: ${title}${input.win ? `\nWhat "done" looks like: ${input.win}` : ""}${
 Return 1-4 tasks, in execution order, that realistically fit in one week:
 - "title": verb-first, one-sitting sized (15-120 min). Concrete, not a vague theme.
 - "energy": one of "deep", "decide", "delegate", "quick".
-- "duration_minutes": a realistic estimate.
+- "duration_minutes": an HONEST estimate of focused time, sized to the actual work and varied across tasks — a quick edit is ~15-20, but real building, writing, designing or analysis is usually 60-120+. Real project work rarely fits in 30. Never lazily default to 30; a uniform 30 is almost always wrong and wrecks the schedule.
 
 Don't pad — fewer real next actions beats a long list.
 

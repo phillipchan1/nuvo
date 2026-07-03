@@ -115,7 +115,7 @@ export interface VerticalStore {
   /** Add a blank rock to author by hand. */
   addBigRock: () => void;
   /** Append parsed priorities (from the agent's free-text shaping); pass `id` to control the rock's id (so its tasks can link to it). */
-  addBigRocks: (items: { id?: string; title: string; win?: string; initiative_id?: string | null }[]) => void;
+  addBigRocks: (items: { id?: string; title: string; win?: string; initiative_id?: string | null; project_id?: string | null }[]) => void;
   updateBigRock: (id: string, patch: Partial<Omit<BigRock, "id">>) => void;
   removeBigRock: (id: string) => void;
   /** The Review's forward-fold: carry unfinished priorities into THIS week's
@@ -145,7 +145,7 @@ export interface VerticalStore {
    *  against the current planning week's sprint, in order, one await. */
   planWeek: (input: {
     commitTaskIds: string[];
-    placements: { id: string; doDateISO: string; startISO: string }[];
+    placements: { id: string; doDateISO: string; startISO: string; durationMins?: number }[];
     goal: string;
   }) => Promise<void>;
   /** The Blueprint's accept: create a whole initiative subtree (KRs,
@@ -273,6 +273,32 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
   const calendarDomainMap = settings?.calendar_domain_map ?? EMPTY_MAP;
   const eventRouting = useEventRouting();
 
+  // Activity actuals (merged PRs, …) → last-touched per project, so Motion reads
+  // a project as moving even with no completed tasks. Recent window is enough.
+  const activityQ = useQuery({
+    queryKey: ["activity_units", "motion"],
+    queryFn: async (): Promise<Array<{ project_id: string | null; occurred_at: string }>> => {
+      const since = new Date(Date.now() - 120 * 86_400_000).toISOString();
+      const { data, error } = await supabase
+        .from("activity_units")
+        .select("project_id, occurred_at")
+        .gte("occurred_at", since);
+      if (error) throw error;
+      return (data ?? []) as Array<{ project_id: string | null; occurred_at: string }>;
+    },
+    staleTime: 60_000,
+    retry: false, // table may not exist pre-migration
+    meta: { silent: true },
+  });
+  const lastActivityByProject = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const u of activityQ.data ?? []) {
+      if (!u.project_id) continue;
+      if (!map[u.project_id] || u.occurred_at > map[u.project_id]) map[u.project_id] = u.occurred_at;
+    }
+    return map;
+  }, [activityQ.data]);
+
   const ready = Boolean(domainsQ.data && initiativesQ.data && projectsQ.data && tasksQ.data);
 
   const data = useMemo<VerticalData>(
@@ -287,8 +313,9 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         eventsQ.data ?? [],
         calendarDomainMap,
         eventRouting,
+        lastActivityByProject,
       ),
-    [domainsQ.data, initiativesQ.data, projectsQ.data, tasksQ.data, sprintQ.data, eventsQ.data, calendarDomainMap, eventRouting],
+    [domainsQ.data, initiativesQ.data, projectsQ.data, tasksQ.data, sprintQ.data, eventsQ.data, calendarDomainMap, eventRouting, lastActivityByProject],
   );
 
   const store = useMemo<VerticalStore>(() => {
@@ -790,6 +817,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           title: it.title,
           win: it.win ?? "",
           initiative_id: it.initiative_id ?? null,
+          project_id: it.project_id ?? null,
           done_at: null,
           roll_count: 0,
         }));
@@ -886,7 +914,10 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         for (const p of placements) {
           const { error } = await supabase
             .from("tasks")
-            .update({ status: "planned", do_date: p.doDateISO, start_time: p.startISO, sprint_id: sprint.id })
+            .update({
+              status: "planned", do_date: p.doDateISO, start_time: p.startISO, sprint_id: sprint.id,
+              ...(p.durationMins != null ? { duration_minutes: p.durationMins } : {}),
+            })
             .eq("id", p.id);
           if (error) console.error("[plan] schedule failed", error);
           else invokeQuiet("task-mirror", { taskId: p.id });

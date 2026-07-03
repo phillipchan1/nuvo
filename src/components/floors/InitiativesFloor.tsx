@@ -18,7 +18,9 @@ import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABE
 import { readSpine } from "../../lib/readiness";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
-import FloorStanding from "./FloorStanding";
+import FloorStandingStrip from "./FloorStandingStrip";
+import GroomBlockCTA from "./GroomBlockCTA";
+import FloorReadinessPanel from "./FloorReadinessPanel";
 import { StandingToggle } from "./StandingToggle";
 
 const MOMENTUM = {
@@ -33,7 +35,7 @@ export default function InitiativesFloor({
   onOpen: (id: string) => void;
 }) {
   const { data, updateInitiative, updateProject, deleteInitiatives } = useVertical();
-  const { openFloorModal, openRecord, openFlow } = useAppNavigation();
+  const { openFloorModal, openRecord } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
   const [view, setView] = useState<"standing" | "board">("standing");
   const atRest = readSpine(data).floors.initiative.calm;
@@ -105,7 +107,11 @@ export default function InitiativesFloor({
       <StandingToggle value={view} onChange={setView} />
 
       {view === "standing" ? (
-        <FloorStanding kind="initiative" onRefine={() => openFlow("refine")} onAllocate={() => openFlow("capacity")} />
+        <>
+          <FloorStandingStrip kind="initiative" />
+          <GroomBlockCTA kind="initiative" />
+          <FloorReadinessPanel kind="initiative" />
+        </>
       ) : (
         <>
           <DomainFilter value={domainFilter} onChange={setDomainFilter} />

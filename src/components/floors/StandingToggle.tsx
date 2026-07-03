@@ -3,7 +3,7 @@
 // taller one — so each gets the whole floor. Mirrors the Collection view toolbar.
 
 const TABS = [
-  { id: "standing", label: "Standing" },
+  { id: "standing", label: "Readiness" },
   { id: "board", label: "Work" },
 ] as const;
 
@@ -15,12 +15,12 @@ export function StandingToggle({
   onChange: (v: "standing" | "board") => void;
 }) {
   return (
-    <div className="mb-6 inline-flex rounded-md border border-line p-0.5">
+    <div className="mb-6 inline-flex rounded-lg border border-line p-1">
       {TABS.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className="fast mono rounded-[5px] px-3 py-1 text-label"
+          className="fast rounded-md px-5 py-2 text-caption font-medium"
           style={{
             background: value === t.id ? "var(--accent)" : "transparent",
             color: value === t.id ? "#fff" : "var(--muted)",

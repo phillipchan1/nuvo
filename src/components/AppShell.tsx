@@ -20,7 +20,6 @@ import Marquee from "./Marquee";
 import { useAgentContext } from "../hooks/useAgentContext";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
-import TendingFlow from "./rituals/TendingFlow";
 import RefineRun from "./refine/RefineRun";
 import CapacityRun from "./capacity/CapacityRun";
 import QuickCreate from "./floors/QuickCreate";
@@ -238,18 +237,25 @@ function AppShellInner() {
         <div className="relative min-w-0 flex-1">
           <Planner openFlow={openFlow} />
           {rung !== "day" && (
-            <div className="atmosphere floor-enter absolute inset-0 z-30">
-              <FloorPane
-                rung={rung}
-                focus={focus}
-                focusDomain={focusDomain}
-                openInitiative={openInitiativeDetail}
-                goRung={goRung}
-                projectView={projectView}
-                setProjectView={setProjectView}
-                initiativeView={initiativeView}
-                setInitiativeView={setInitiativeView}
-              />
+            // Sits ABOVE the Schedule beneath it: the LeftRail is z-40, so the
+            // floor overlay must clear that (z-30 let the rail paint through).
+            // The atmosphere backdrop is also opaque from frame 1 so the Schedule
+            // never "peers through" during the floor-enter fade — only the inner
+            // content rises/fades over the opaque canvas.
+            <div className="atmosphere absolute inset-0 z-[41]">
+              <div className="floor-enter h-full">
+                <FloorPane
+                  rung={rung}
+                  focus={focus}
+                  focusDomain={focusDomain}
+                  openInitiative={openInitiativeDetail}
+                  goRung={goRung}
+                  projectView={projectView}
+                  setProjectView={setProjectView}
+                  initiativeView={initiativeView}
+                  setInitiativeView={setInitiativeView}
+                />
+              </div>
             </div>
           )}
 
@@ -267,16 +273,6 @@ function AppShellInner() {
           onNewBet={() => openFloorModal("new-initiative")}
         />
       )}
-      {flow === "tending" && (
-        <TendingFlow
-          step={flowStep}
-          setStep={(s) => navigate({ flowStep: s })}
-          onClose={closeFlow}
-          onOpenSunday={() => openFlow("sunday")}
-          onStepBack={back}
-        />
-      )}
-
       {flow === "refine" && <RefineRun onClose={closeFlow} />}
       {flow === "capacity" && <CapacityRun onClose={closeFlow} />}
 

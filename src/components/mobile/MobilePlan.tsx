@@ -340,7 +340,7 @@ function PlanReadiness({
         eyebrow="Your vertical"
         readiness={readiness}
         cue={cue}
-        actionLabel={top ? "Refine" : undefined}
+        actionLabel={top ? "Groom" : undefined}
         onAction={top ? (onRefine ?? (() => onOpen(top.kind, top.id))) : undefined}
       />
     </div>
@@ -489,7 +489,7 @@ function DomainScreen({
           <div className="mono mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted">
             <span style={{ color: dom.color }}>{dom.investedThisWeek.toFixed(1)}h this week</span>
             <span>{dom.quarterHours}h this quarter</span>
-            <span>{dom.lastTouchedDays >= 99 ? "untouched" : `tended ${dom.lastTouchedDays}d ago`}</span>
+            <span>{dom.lastTouchedDays >= 99 ? "untouched" : `groomed ${dom.lastTouchedDays}d ago`}</span>
           </div>
         </div>
       </Section>

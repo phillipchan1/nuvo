@@ -41,7 +41,7 @@ function Gauge({
   blurb: string;
   /** when present, the whole gauge becomes the doorway to the play that moves it. */
   onClick?: () => void;
-  /** the always-visible affordance label (e.g. "Refine") — no hover-only actions. */
+  /** the always-visible affordance label (e.g. "Groom") — no hover-only actions. */
   action?: string;
 }) {
   const inner = (
@@ -114,7 +114,7 @@ export default function FloorStanding({
           fillColor={READY}
           blurb={s.definedBlurb}
           onClick={s.calm ? undefined : onRefine}
-          action={s.calm ? undefined : "Refine"}
+          action={s.calm ? undefined : "Groom"}
         />
         {showCapacity && (
           <Gauge

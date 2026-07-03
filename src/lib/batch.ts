@@ -128,6 +128,24 @@ export function clusterWeek(tasks: Task[], data: VerticalData): Batch[] {
   return batches;
 }
 
+// Title-case a focus-block name for clarity, the way a headline reads: capitalize
+// the significant words, leave the small joining words (and/of/the…) lowercase
+// mid-phrase, and never touch an existing acronym (SCE, IFVG, AI).
+const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "in", "nor", "of", "on", "or", "per", "the", "to", "vs", "via", "with"]);
+function titleCase(raw: string): string {
+  const words = raw.trim().split(/\s+/);
+  if (words.length === 0) return raw;
+  return words
+    .map((w, i) => {
+      if (w.length > 1 && w === w.toUpperCase() && /[A-Z]/.test(w)) return w; // keep acronyms
+      const lower = w.toLowerCase();
+      const bare = lower.replace(/[^a-z]/g, "");
+      if (i !== 0 && i !== words.length - 1 && SMALL_WORDS.has(bare)) return lower;
+      return lower.replace(/[a-z]/, (c) => c.toUpperCase()); // capitalize first letter
+    })
+    .join(" ");
+}
+
 /** Build a batch from an explicit group (AI-themed inbox run): keep the given
  *  name + energy, derive the rest (duration, domain, color) from the members. */
 function makeInboxBatch(members: Task[], energy: Energy, name: string, data: VerticalData, seq: number, part: number): Batch {
@@ -136,9 +154,10 @@ function makeInboxBatch(members: Task[], energy: Energy, name: string, data: Ver
   const domainId = mostCommon(members.map((t) => resolveDomainId(data, t)));
   const domain = domainById(data, domainId);
   const initiativeId = mostCommon(members.map((t) => t.initiative_id));
+  const display = titleCase(name);
   return {
     id: `inbox-${seq}`,
-    name: part ? `${name} (${part})` : name,
+    name: part ? `${display} (${part})` : display,
     energy,
     taskIds: members.map((t) => t.id),
     durationMins,

@@ -25,7 +25,7 @@ export default function FloorReadiness({ kind }: { kind: "project" | "initiative
         eyebrow={kind === "project" ? "Projects" : "Initiatives"}
         readiness={readiness}
         cue={cue}
-        actionLabel={top ? "Refine" : undefined}
+        actionLabel={top ? "Groom" : undefined}
         onAction={top ? () => openFlow("refine") : undefined}
       />
     </div>

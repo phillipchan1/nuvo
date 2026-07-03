@@ -1,0 +1,261 @@
+// On Deck — grooming's higher-level start. Arranges the in-flight projects across
+// the next few weeks as a demand-phased timeline: which project lands in which
+// week, whether a week is about to overflow (the pinch), and how many weeks of
+// *ready* work are stocked against a typical week's capacity. Pure over a
+// VerticalData snapshot + the calendar-derived capacity read, exactly like
+// readiness.ts / standing.ts — NO new scoring, only an arrangement of what the
+// pace / capacity / tending engines already return. See docs/on-deck.md.
+
+import { addDays } from "date-fns";
+import {
+  isProjectComplete,
+  isProjectInFlight,
+  type Project,
+  type VerticalData,
+} from "./vertical";
+import { tendedScore } from "./tending";
+import { CALM } from "./readiness";
+import { demandByWeekDetailed, projectPace, type ProjectPace } from "./pace";
+import { weekForecast, type WeekCapacity } from "./capacity";
+
+/** How many near weeks the timeline shows before it's just noise (knob). */
+export const HORIZON_WEEKS = 3;
+/** Display unit — a "focus block". Math stays in minutes; this only rounds for
+ *  the eye. Align with Sunday's batched focus blocks so "2 blocks here" means
+ *  "2 blocks there". */
+export const BLOCK_MINS = 90;
+
+const toBlocks = (mins: number) => Math.round(mins / BLOCK_MINS);
+
+export type LaneState = "ready" | "needs_shaping" | "stalled" | "idea" | "parked";
+
+export interface OnDeckLane {
+  project: Project;
+  pace: ProjectPace;
+  /** 0..100 groomed-ness (tendedScore). */
+  readiness: number;
+  needsShaping: boolean;
+  state: LaneState;
+  /** first horizon week the bar starts in (0 = this week). */
+  startWeekIdx: number;
+  /** horizon week the finish line lands in; null = beyond the window (bar extends). */
+  dueWeekIdx: number | null;
+}
+
+export interface WeekColumn {
+  weekStart: Date;
+  idx: number;
+  availMins: number;
+  demandMins: number;
+  over: boolean;
+  blocks: number;
+  demandBlocks: number;
+}
+
+export interface Pinch {
+  weekIdx: number;
+  overByMins: number;
+  culprits: Project[];
+  /** the one deterministic sentence — the steward voice, never AI. */
+  line: string;
+}
+
+export interface OnDeckBoard {
+  weeks: WeekColumn[];
+  lanes: OnDeckLane[];
+  pinch: Pinch | null;
+  /** "weeks stocked" — Σ remaining ready-work ÷ a typical week (one decimal). */
+  coverageWeeks: number;
+  horizonWeeks: number;
+}
+
+function weekLabel(idx: number, weekStart: Date): string {
+  if (idx === 0) return "This week";
+  if (idx === 1) return "Next week";
+  return `Week of ${weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+}
+
+function pinchLine(idx: number, col: WeekColumn, culprits: Project[]): string {
+  const label = weekLabel(idx, col.weekStart);
+  const top = culprits[0]?.name ?? "a project";
+  const tail =
+    culprits.length > 1
+      ? `${top} slips unless you start it now or push ${culprits[1].name} out`
+      : `${top} slips unless you start it this week`;
+  const blk = (n: number) => `${n} block${n === 1 ? "" : "s"}`;
+  return `${label} wants ~${blk(col.demandBlocks)} and you have ${blk(col.blocks)} — ${tail}.`;
+}
+
+/** Read the whole On Deck board in one pass. */
+export function readOnDeck(
+  d: VerticalData,
+  byWeek: WeekCapacity[],
+  weeklyAvgMins: number,
+  now: Date,
+): OnDeckBoard {
+  const horizon = byWeek.slice(0, HORIZON_WEEKS);
+  const forecast = weekForecast(d, now, horizon, weeklyAvgMins);
+  const detailed = demandByWeekDetailed(d, now, horizon.map((w) => w.weekStart));
+
+  const weeks: WeekColumn[] = horizon.map((w, i) => ({
+    weekStart: w.weekStart,
+    idx: i,
+    availMins: w.availMins,
+    demandMins: forecast[i]?.demandMins ?? 0,
+    over: forecast[i]?.over ?? false,
+    blocks: toBlocks(w.availMins),
+    demandBlocks: toBlocks(forecast[i]?.demandMins ?? 0),
+  }));
+
+  const horizonStartMs = horizon.length ? horizon[0].weekStart.getTime() : now.getTime();
+  const horizonEndMs = horizon.length ? addDays(horizon[horizon.length - 1].weekStart, 7).getTime() : now.getTime();
+
+  const lanes: OnDeckLane[] = d.projects
+    .filter((p) => isProjectInFlight(p.status) && !isProjectComplete(p.status))
+    .map((project) => {
+      const pace = projectPace(d, project, now);
+      const score = tendedScore(d, "project", project.id);
+      const readiness = Math.round(score * 100);
+      const needsShaping = score < CALM;
+
+      // due week within the horizon: overdue / before window → 0, beyond → null.
+      let dueWeekIdx: number | null = null;
+      const targetMs = project.targetDate ? new Date(project.targetDate + "T23:59:59").getTime() : null;
+      if (targetMs != null) {
+        if (targetMs < horizonStartMs) dueWeekIdx = 0;
+        else if (targetMs >= horizonEndMs) dueWeekIdx = null;
+        else {
+          const idx = horizon.findIndex((w) => {
+            const ws = w.weekStart.getTime();
+            return targetMs >= ws && targetMs < addDays(w.weekStart, 7).getTime();
+          });
+          dueWeekIdx = idx >= 0 ? idx : null;
+        }
+      }
+
+      const state: LaneState =
+        project.status === "waiting"
+          ? "parked"
+          : pace.read === "undated" || !project.targetDate
+            ? "idea"
+            : needsShaping
+              ? "needs_shaping"
+              : pace.read === "stalled" || pace.read === "overdue" || pace.read === "behind"
+                ? "stalled"
+                : "ready";
+
+      return { project, pace, readiness, needsShaping, state, startWeekIdx: 0, dueWeekIdx };
+    });
+
+  // Demand order: most overdue first, then behind/stalled, then soonest due, then
+  // undated ideas, parked last.
+  const rank = (l: OnDeckLane): number => {
+    if (l.state === "parked") return 2e9;
+    if (l.pace.read === "overdue") return -1e6 - (l.pace.driftDays ?? 0);
+    if (l.pace.read === "behind" || l.pace.read === "stalled") return -1e5 + (l.pace.daysLeft ?? 0);
+    if (l.pace.daysLeft != null) return l.pace.daysLeft;
+    return 1e8;
+  };
+  lanes.sort((a, b) => rank(a) - rank(b));
+
+  // The pinch — the first week over capacity, attributed to the projects that
+  // land in it (worst pace first).
+  let pinch: Pinch | null = null;
+  const overIdx = weeks.findIndex((w) => w.over);
+  if (overIdx >= 0) {
+    const col = weeks[overIdx];
+    const culprits = (detailed[overIdx]?.contributors ?? [])
+      .slice()
+      .sort((a, b) => (projectPace(d, b.project, now).driftDays ?? -Infinity) - (projectPace(d, a.project, now).driftDays ?? -Infinity))
+      .map((c) => c.project);
+    pinch = {
+      weekIdx: overIdx,
+      overByMins: Math.max(0, col.demandMins - (forecast[overIdx]?.freeMins ?? col.availMins)),
+      culprits,
+      line: pinchLine(overIdx, col, culprits),
+    };
+  }
+
+  // Coverage — how many weeks of *ready* (schedulable) work is queued against a
+  // typical week. This is the reframed headline: runway, not completeness.
+  const readyMins = d.projects
+    .filter((p) => isProjectInFlight(p.status) && !isProjectComplete(p.status) && tendedScore(d, "project", p.id) >= CALM)
+    .reduce((sum, p) => sum + projectPace(d, p, now).remainingMins, 0);
+  const coverageWeeks = weeklyAvgMins > 0 ? Math.round((readyMins / weeklyAvgMins) * 10) / 10 : 0;
+
+  return { weeks, lanes, pinch, coverageWeeks, horizonWeeks: horizon.length };
+}
+
+// ── The "why now" band — one project's demand context, for the Groom deck ─────
+export interface DemandContext {
+  line: string;
+  dueLabel: string | null;
+  needsBlocks: number;
+  openBlocks: number;
+  overdue: boolean;
+}
+
+function relLabel(daysLeft: number | null): string {
+  if (daysLeft == null) return "soon";
+  if (daysLeft <= 7) return "this week";
+  if (daysLeft <= 14) return "next week";
+  return `in ${Math.round(daysLeft / 7)} weeks`;
+}
+
+/** The demand sentence a Groom card leads with — why this project, why now. Only
+ *  projects carry pace, so initiatives return null (their band is skipped). */
+export function demandContext(
+  d: VerticalData,
+  byWeek: WeekCapacity[],
+  weeklyAvgMins: number,
+  ref: { kind: "project" | "initiative"; id: string },
+  now: Date,
+): DemandContext | null {
+  if (ref.kind !== "project") return null;
+  const p = d.projects.find((x) => x.id === ref.id);
+  if (!p) return null;
+  const pace = projectPace(d, p, now);
+  const needsBlocks = Math.max(1, toBlocks(pace.remainingMins));
+  const blk = (n: number) => `${n} block${n === 1 ? "" : "s"}`;
+
+  if (pace.read === "overdue") {
+    return {
+      line: `Overdue by ${pace.driftDays ?? 0}d and it still needs ~${blk(needsBlocks)} — groom it to salvage a finish.`,
+      dueLabel: "overdue",
+      needsBlocks,
+      openBlocks: 0,
+      overdue: true,
+    };
+  }
+  if (!p.targetDate || pace.read === "undated") {
+    return {
+      line: `No finish line yet — set one so the week can pull this in.`,
+      dueLabel: null,
+      needsBlocks,
+      openBlocks: 0,
+      overdue: false,
+    };
+  }
+
+  // the week the finish line lands in → its realistic open time
+  const targetMs = new Date(p.targetDate + "T23:59:59").getTime();
+  let openMins = weeklyAvgMins;
+  let idx = -1;
+  for (let i = 0; i < byWeek.length; i++) {
+    const ws = byWeek[i].weekStart.getTime();
+    if (targetMs >= ws && targetMs < addDays(byWeek[i].weekStart, 7).getTime()) {
+      idx = i;
+      openMins = i === 0 ? byWeek[i].availMins : Math.min(byWeek[i].availMins, weeklyAvgMins);
+      break;
+    }
+  }
+  const openBlocks = Math.max(0, toBlocks(openMins));
+  const label = idx < 0 ? relLabel(pace.daysLeft) : weekLabel(idx, byWeek[idx].weekStart).toLowerCase();
+  return {
+    line: `Due ${label} and it needs ~${blk(needsBlocks)}. That week has ${blk(openBlocks)} open — groom it so Sunday can place it.`,
+    dueLabel: label,
+    needsBlocks,
+    openBlocks,
+    overdue: false,
+  };
+}

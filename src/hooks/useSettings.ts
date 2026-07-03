@@ -18,6 +18,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   calendar_domain_map: {},
   last_rollover_date: null,
   show_weather: false,
+  default_calendar_account_id: null,
 };
 
 export function useSettings() {

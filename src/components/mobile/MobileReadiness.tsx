@@ -30,15 +30,13 @@ export default function MobileReadiness({
 
   // The action depends on where the turn lives and what kind it is. The week's
   // own planning is a Nuvo job on the phone; everything in the vertical routes
-  // to the Plan tab (browse + light edits); the day gets ordered by Nuvo.
+  // to the Plan tab (browse + light edits).
   const action =
     turn.floor === "day"
       ? turn.cue?.tone === "invite"
         ? { label: "Plan with Nuvo", run: () => onAskNuvo("Help me plan this week") }
         : { label: "Review in Plan", run: onOpenPlan }
-      : turn.floor === "now"
-        ? { label: "Order with Nuvo", run: () => onAskNuvo("Order my day") }
-        : { label: "Review in Plan", run: onOpenPlan };
+      : { label: "Review in Plan", run: onOpenPlan };
 
   return (
     <ReadinessBanner

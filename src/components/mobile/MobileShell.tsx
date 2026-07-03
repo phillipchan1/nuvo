@@ -281,8 +281,8 @@ export default function MobileShell() {
                   <span className="flex items-center gap-2.5">
                     <span className="text-lead" style={{ color: "var(--accent)" }}>✦</span>
                     <span className="text-left">
-                      <span className="block text-body font-medium">Refine your projects</span>
-                      <span className="block text-caption text-muted">{refineCount} ready to sharpen toward done</span>
+                      <span className="block text-body font-medium">Groom your projects</span>
+                      <span className="block text-caption text-muted">{refineCount} ready to groom</span>
                     </span>
                   </span>
                   <span className="text-muted">→</span>

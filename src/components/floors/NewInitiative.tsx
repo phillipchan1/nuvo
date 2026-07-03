@@ -200,7 +200,7 @@ export default function NewInitiative({
 
       {/* ── Footer ── */}
       <div className="flex items-center gap-2 border-t border-line bg-bg/40 px-6 py-3.5">
-        <span className="hidden text-meta text-muted/70 sm:inline">Shape it later in ◇ Tending</span>
+        <span className="hidden text-meta text-muted/70 sm:inline">Shape it later in ◇ Groom</span>
         <div className="flex-1" />
         <button
           onClick={onClose}

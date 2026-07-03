@@ -139,25 +139,44 @@ export interface WeekDemand {
   demandMins: number;
 }
 
+export interface WeekDemandDetailed extends WeekDemand {
+  /** which in-flight projects contribute to this week's demand, and how much each
+   *  owes — kept so the On Deck timeline can draw per-project bars and name the
+   *  culprits behind a pinch. */
+  contributors: { project: Project; mins: number }[];
+}
+
 /** Spread each project's required pace across the weeks it's actually in play —
- *  from now until its target — so we can forecast load week-by-week (the ribbon).
- *  Overdue work lands entirely on the first (current) week; it's owed now.
- *  `weekStarts` should come from the capacity read so the two stay index-aligned. */
-export function demandByWeek(d: VerticalData, now: Date, weekStarts: Date[]): WeekDemand[] {
+ *  from now until its target — keeping project identity. Overdue work lands
+ *  entirely on the first (current) week; it's owed now. `weekStarts` should come
+ *  from the capacity read so the two stay index-aligned. */
+export function demandByWeekDetailed(d: VerticalData, now: Date, weekStarts: Date[]): WeekDemandDetailed[] {
   const { counted } = portfolioDemand(d, now);
   const firstWeekMs = weekStarts.length ? weekStarts[0].getTime() : 0;
 
   return weekStarts.map((weekStart) => {
     const ws = weekStart.getTime();
     let demandMins = 0;
+    const contributors: { project: Project; mins: number }[] = [];
     for (const { project, pace } of counted) {
+      let mins = 0;
       if (pace.read === "overdue") {
-        if (ws === firstWeekMs) demandMins += pace.requiredMinsPerWeek; // owed now
-        continue;
+        if (ws === firstWeekMs) mins = pace.requiredMinsPerWeek; // owed now
+      } else {
+        const target = project.targetDate ? new Date(project.targetDate + "T23:59:59").getTime() : null;
+        if (target != null && target >= ws) mins = pace.requiredMinsPerWeek;
       }
-      const target = project.targetDate ? new Date(project.targetDate + "T23:59:59").getTime() : null;
-      if (target != null && target >= ws) demandMins += pace.requiredMinsPerWeek;
+      if (mins > 0) {
+        demandMins += mins;
+        contributors.push({ project, mins });
+      }
     }
-    return { weekStart, demandMins };
+    return { weekStart, demandMins, contributors };
   });
+}
+
+/** Per-week demand totals (the ribbon) — the detail-free view onto
+ *  `demandByWeekDetailed`, kept for the Commitment meter. */
+export function demandByWeek(d: VerticalData, now: Date, weekStarts: Date[]): WeekDemand[] {
+  return demandByWeekDetailed(d, now, weekStarts).map(({ weekStart, demandMins }) => ({ weekStart, demandMins }));
 }

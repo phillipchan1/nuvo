@@ -245,6 +245,8 @@ export interface UserSettings {
   last_rollover_date: string | null;
   /** Show a weather icon + high temp in calendar day headers. Requires location permission. */
   show_weather: boolean;
+  /** calendar_accounts.id to use when Nuvo creates new Google Calendar events. Null = first connected account. */
+  default_calendar_account_id: string | null;
 }
 
 /** One hidden calendar event. `key` is `account_id:provider_event_id` for a single
@@ -252,6 +254,49 @@ export interface UserSettings {
 export interface HiddenEvent {
   key: string;
   title: string;
+}
+
+// ── Activity sources — completed work pulled from the world as actuals ────
+// The second instance of the calendar-allocation pattern: GitHub merged PRs.
+// See docs/activity-sources.md.
+
+/** One repository a source can see (for the bind picker). */
+export interface ActivityRepo {
+  full_name: string;
+  pushed_at: string | null;
+  private: boolean;
+}
+
+/** A connected external feed of completed work (currently only GitHub). */
+export interface ActivitySource {
+  id: string;
+  kind: "github";
+  login: string | null;
+  avatar_url: string | null;
+  repos: ActivityRepo[];
+  needs_reconnect: boolean;
+  last_synced_at: string | null;
+}
+
+/** repo → project. A repo ≈ a project; the domain is inherited via rollup. */
+export interface ActivityBinding {
+  id: string;
+  source_id: string;
+  project_id: string;
+  selector: string; // repo full_name
+}
+
+/** One unit of completed work — a merged PR. */
+export interface ActivityUnit {
+  id: string;
+  source_id: string;
+  kind: "github";
+  external_id: string;
+  title: string;
+  url: string | null;
+  selector: string | null;
+  project_id: string | null;
+  occurred_at: string;
 }
 
 export const DEFAULT_DURATION_MINUTES = 30;

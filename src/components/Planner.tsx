@@ -9,7 +9,7 @@ import { fallbackPanelAnchor } from "../lib/appNav";
 import { MARQUEE_OPEN_EVENT, MARQUEE_CLOSE_EVENT } from "../lib/marquee";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
 import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
-import { useCalendarAccounts, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useLabels } from "../hooks/useCalendar";
+import { useCalendarAccounts, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
 import { useRealtime } from "../hooks/useRealtime";
@@ -234,6 +234,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
   const eventMutations = useExternalEventMutations();
   const slotMutations = useSlotMutations();
   const recurrenceMutations = useRecurrenceMutations();
+  const { hide: hideEvent } = useHiddenEvents();
 
   const recurrenceById = useMemo(
     () => new Map(recurrences.map((r) => [r.id, r])),
@@ -248,6 +249,19 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     }
     return m;
   }, [slotChildTasks]);
+
+  // Today's slot children augmented with their slot's start_time so they appear
+  // in the "Scheduled on Calendar" section of the Today rail (slot children have
+  // start_time null in the DB — the slot carries the time, not the task).
+  const todayTasksForRail = useMemo(() => {
+    const todaySlotMap = new Map(
+      slots.filter((s) => s.do_date === today).map((s) => [s.id, s]),
+    );
+    const slotChildren = slotChildTasks
+      .filter((t) => t.slot_id != null && todaySlotMap.has(t.slot_id!) && t.status !== "trashed")
+      .map((t) => ({ ...t, start_time: todaySlotMap.get(t.slot_id!)!.start_time }));
+    return [...todayTasks, ...slotChildren];
+  }, [todayTasks, slotChildTasks, slots, today]);
 
   const slotTitle = useCallback(
     (s: Slot) => deriveSlotTitle(s, slotTasksBySlot[s.id] ?? [], vertical),
@@ -386,7 +400,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
     { id: "sunday", title: "Sunday — compose the week", run: () => openFlow("sunday") },
     { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
-    { id: "refine", title: "Refine — groom your projects toward done", run: () => openFlow("refine") },
+    { id: "refine", title: "Groom — shape your projects toward done", run: () => openFlow("refine") },
     { id: "plan", title: "Plan my day (morning ritual)", run: () => { morningAutoRef.current = false; openOverlay("morning"); } },
     { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
     { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
@@ -420,6 +434,39 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
     [navigate],
   );
 
+  const handleConvertEventToTask = useCallback(
+    (event: ExternalEvent) => {
+      const start = new Date(event.start_at);
+      const end = new Date(event.end_at);
+      const duration = Math.round((end.getTime() - start.getTime()) / 60000);
+      mutations.create({
+        title: event.title,
+        do_date: toDateISO(start),
+        start_time: event.start_at,
+        duration_minutes: duration > 0 ? duration : 30,
+      });
+      hideEvent(event, "THIS");
+      toast.success("Task created");
+    },
+    [mutations, hideEvent],
+  );
+
+  const handleConvertTaskToEvent = useCallback(
+    async (task: Task) => {
+      if (!task.start_time) return;
+      const durationMs = (task.duration_minutes ?? 30) * 60000;
+      const end = new Date(new Date(task.start_time).getTime() + durationMs).toISOString();
+      try {
+        await eventMutations.createEvent({ title: task.title, start_at: task.start_time, end_at: end });
+        mutations.trash(task);
+        toast.success("Event created");
+      } catch {
+        toast.error("Couldn't create event — is Google Calendar connected?");
+      }
+    },
+    [eventMutations, mutations],
+  );
+
   return (
     <div className="flex h-full flex-col">
       {/* No header bar at all. The macOS titlebar zone is filled by the rail and
@@ -439,7 +486,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           tab={tab}
           setTab={setTab}
           inbox={inbox}
-          today={todayTasks}
+          today={todayTasksForRail}
           labels={labels}
           mutations={mutations}
           onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor)}
@@ -473,6 +520,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
             onRangeChange={syncRange}
             railRef={railRef}
+            onConvertTaskToEvent={handleConvertTaskToEvent}
+            onConvertEventToTask={handleConvertEventToTask}
             weekGlyph={onSchedule ? glyphReport.emblem : null}
             onOpenWeekPlan={onSchedule ? openWeekDoor : undefined}
             weekButtonLabel={weekButtonLabel}
@@ -488,6 +537,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
               recurrence={openTask.recurrence_id ? recurrenceById.get(openTask.recurrence_id) ?? null : null}
               recurrenceMutations={recurrenceMutations}
               onClose={closeOverlay}
+              onConvertToEvent={() => handleConvertTaskToEvent(openTask)}
             />
           )}
           {onSchedule && openEvent && eventPanel && !openTask && (
@@ -500,6 +550,7 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
               accountEmail={openEventAccount?.email}
               eventMutations={eventMutations}
               onClose={closeOverlay}
+              onConvertToTask={() => handleConvertEventToTask(openEvent)}
             />
           )}
           {onSchedule && openSlot && slotPanel && !openTask && (

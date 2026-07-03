@@ -154,6 +154,10 @@ export interface VerticalData {
   focusInitiativeIds: string[];
   /** The week's big rocks — the plan above the schedule (a small, varying set). */
   bigRocks: BigRock[];
+  /** Last completed-activity timestamp per project (ISO) — merged PRs and other
+   *  actuals from activity sources. Feeds Motion so a project moves even with no
+   *  completed tasks. Empty until an activity source is bound. */
+  lastActivityByProject: Record<string, string>;
 }
 
 // ── Row shapes (snake_case, as they come from Supabase) ─────────────────────
@@ -305,6 +309,7 @@ export function buildVertical(
   events: ExternalEvent[] = [],
   calendarDomainMap: Record<string, string> = {},
   eventRouting: Record<string, string> = {},
+  lastActivityByProject: Record<string, string> = {},
 ): VerticalData {
   const today = todayISO(now);
   // calendar-week boundary in the app timezone, not the machine clock
@@ -468,6 +473,7 @@ export function buildVertical(
     sprintGoal: sprint?.goal ?? "",
     focusInitiativeIds: sprint?.focus_initiative_ids ?? [],
     bigRocks: sprint?.big_rocks ?? [],
+    lastActivityByProject,
   };
 }
 
@@ -782,7 +788,7 @@ export function taskDomainColor(
 
 /** Faithfulness read: lit = tended recently, dim = going quiet. */
 export function faithfulness(dom: Domain): { lit: boolean; note: string } {
-  if (dom.lastTouchedDays <= 2) return { lit: true, note: "tended" };
+  if (dom.lastTouchedDays <= 2) return { lit: true, note: "groomed" };
   if (dom.investedThisWeek > dom.weeklyTargetHours)
     return { lit: true, note: `over ${Math.round(dom.investedThisWeek)}h` };
   if (dom.lastTouchedDays >= 99) return { lit: false, note: "untouched" };

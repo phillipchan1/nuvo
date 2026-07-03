@@ -58,7 +58,7 @@ export default function TaskRefine({
         setKeepAdds(new Set(r.additions.map((_, i) => i)));
         setKeepOrder(r.order.length > 0);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Refine failed");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Groom failed");
       }
     })();
     return () => { cancelled = true; };
@@ -91,7 +91,7 @@ export default function TaskRefine({
         );
       }
       const n = edits.length + adds.length + (keepOrder && result.order.length ? 1 : 0);
-      toast(n ? "Backlog refined." : "No changes applied.");
+      toast(n ? "Backlog groomed." : "No changes applied.");
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't apply");
@@ -105,7 +105,7 @@ export default function TaskRefine({
   return (
     <div className="glass-card mt-2 rounded-[var(--radius)] border border-line p-3.5">
       <div className="mb-2 flex items-center gap-2">
-        <span className="mono text-micro font-semibold tracking-widest" style={{ color: accent }}>✦ NUVO REFINE</span>
+        <span className="mono text-micro font-semibold tracking-widest" style={{ color: accent }}>✦ NUVO GROOM</span>
         <div className="h-px flex-1" style={{ background: "var(--line)" }} />
         <button onClick={onClose} className="fast text-meta text-muted hover:text-ink" title="Dismiss">✕</button>
       </div>
@@ -119,7 +119,7 @@ export default function TaskRefine({
         </p>
       )}
 
-      {nothing && <p className="text-label text-muted">Nothing to refine — this backlog already reads clean. ✓</p>}
+      {nothing && <p className="text-label text-muted">Nothing to groom — this backlog already reads clean. ✓</p>}
 
       {result && !nothing && (
         <div className="space-y-4">

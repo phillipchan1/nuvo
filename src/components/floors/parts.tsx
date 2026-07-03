@@ -1233,9 +1233,9 @@ export function RefinedTick({ size = 9 }: { size?: number }) {
     <span
       className="flex shrink-0 items-center gap-1 text-micro"
       style={{ color: REFINED_INK, letterSpacing: "0.04em" }}
-      title="Refined — shaped and sound; Nuvo can plan and route it"
+      title="Groomed — shaped and sound; Nuvo can plan and route it"
     >
-      <Check size={size} /> refined
+      <Check size={size} /> groomed
     </span>
   );
 }
@@ -1254,7 +1254,7 @@ export function RefinedSeal({ noun, celebrate = false }: { noun: string; celebra
           border: `0.5px solid color-mix(in srgb, ${RIPE_GREEN} 32%, var(--line))`,
         }}
       >
-        <Check pathClassName="seal-check" /> all refined
+        <Check pathClassName="seal-check" /> all groomed
         <span aria-hidden className="text-meta" style={{ opacity: 0.55 }}>ⓘ</span>
       </span>
       <div
@@ -1262,9 +1262,9 @@ export function RefinedSeal({ noun, celebrate = false }: { noun: string; celebra
         className="pointer-events-none absolute right-0 top-full z-50 mt-1.5 w-[252px] rounded-lg border border-line bg-surface p-3 text-left text-meta leading-relaxed text-muted opacity-0 transition-opacity duration-150 group-hover/seal:opacity-100"
         style={{ boxShadow: "var(--shadow-2)" }}
       >
-        <span className="mb-1 block font-medium text-ink">Why keep it refined</span>
-        Refined {noun} are {noun} Nuvo understands — clear charter, sound structure.
-        The more of your map is refined, the better Nuvo plans your week, routes new
+        <span className="mb-1 block font-medium text-ink">Why keep it groomed</span>
+        Groomed {noun} are {noun} Nuvo understands — clear charter, sound structure.
+        The more of your map is groomed, the better Nuvo plans your week, routes new
         captures, and surfaces what actually matters.
       </div>
     </div>

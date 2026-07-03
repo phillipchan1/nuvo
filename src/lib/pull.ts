@@ -47,6 +47,14 @@ export function suggestPull(d: VerticalData): PullSuggestion[] {
     }
   }
 
+  // 2.5 · slipped commitments: work that's already rolled forward and still has
+  //       no time. Bundle it back in so replanning RE-TIMES it, instead of letting
+  //       it quietly age out on Today. Most-slipped first. (The carry-forward feed.)
+  const slipped = d.tasks
+    .filter((t) => t.rollCount > 0 && t.status === "ready" && !t.inbox)
+    .sort((a, b) => b.rollCount - a.rollCount);
+  for (const t of slipped) add(t, `slipped ${t.rollCount}× — give it a new time`);
+
   // 3 · faithfulness: one small task from each domain that's going quiet.
   for (const domain of d.domains) {
     if (faithfulness(domain).lit) continue;
@@ -56,12 +64,16 @@ export function suggestPull(d: VerticalData): PullSuggestion[] {
     add(candidates[0] ?? null, `${domain.name} has been quiet ${domain.lastTouchedDays}d`);
   }
 
-  // cap the proposal at ~60% of weekly capacity — a starting pull, not a full week
+  // cap the proposal at ~60% of weekly capacity — a starting pull, not a full
+  // week. Slipped work is exempt: it's already-owed commitments, not a fresh pull,
+  // so it always comes back even if it pushes past the soft cap.
+  const slippedIds = new Set(slipped.map((t) => t.id));
   const capMins = weeklyCapacityHours(d) * 60 * 0.6 || 12 * 60;
   const out: PullSuggestion[] = [];
   let load = 0;
   for (const s of picked.values()) {
-    if (load + s.task.durationMins > capMins && out.length > 0) continue;
+    const owed = slippedIds.has(s.task.id);
+    if (!owed && load + s.task.durationMins > capMins && out.length > 0) continue;
     out.push(s);
     load += s.task.durationMins;
   }

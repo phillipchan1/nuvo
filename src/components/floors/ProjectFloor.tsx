@@ -32,6 +32,7 @@ import {
 import { RIPENESS_HINT, RIPENESS_LABEL, ripenessOfProject, verdictOf } from "../../lib/tending";
 import { projectPace, type PaceRead, type ProjectPace } from "../../lib/pace";
 import TaskList from "./TaskList";
+import { ProjectActivityBind } from "./ProjectActivityBind";
 import { Btn } from "../ui";
 
 // ── Pace presentation — tone + phrasing for the weekly-rate verdict ──────────
@@ -202,6 +203,9 @@ export default function ProjectFloor({
         />
       </div>
 
+      {/* activity source — merged PRs as this project's actuals */}
+      <ProjectActivityBind projectId={project.id} projectName={project.name} />
+
       {/* Gantt */}
       <section className="mb-8">
         <div className="section-label mb-2">Task timeline</div>
@@ -245,7 +249,7 @@ export default function ProjectFloor({
           ★ commit to week{inSprint > 0 ? ` (${inSprint} in)` : ""}
         </Btn>
         {note && <span className="text-label text-muted">{note}</span>}
-        <span className="mono ml-auto text-meta text-muted">Grooming moved to ◇ Tending — ripen this from the spine.</span>
+        <span className="mono ml-auto text-meta text-muted">Grooming moved to ◇ Groom — ripen this from the spine.</span>
       </div>
     </div>
   );

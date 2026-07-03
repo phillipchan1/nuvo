@@ -18,6 +18,7 @@ import type { WeekReport, WeekPriority } from "../../lib/composeWeek";
 import { useWeekSprintRocks } from "../../hooks/useWeekSprintRocks";
 import WeekEmblem from "./WeekEmblem";
 import WeekStory from "./WeekStory";
+import { WhatYouBuilt } from "./WhatYouBuilt";
 import { Bar, InlineText } from "./parts";
 import type { BigRock } from "../../lib/types";
 
@@ -498,6 +499,9 @@ export function WeekPlanBody({
           </Col>
           </div>
         )}
+
+        {/* What you built — merged PRs as shipped work (self-hides if none). */}
+        {!ahead && <WhatYouBuilt weekStartISO={viewedWeekISO} />}
       </div>
     </>
   );
@@ -574,7 +578,7 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
   );
 
   return (
-    <div className="absolute inset-0 z-30 overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)", backdropFilter: "blur(20px)" }}>
+    <div className="absolute inset-0 z-[45] overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)", backdropFilter: "blur(20px)" }}>
       <div className="mx-auto w-full max-w-5xl px-8 py-10 pb-28 md:px-12">
         <WeekPlanBody report={report} state={state} tense={tense} viewedWeekISO={viewedWeekISO} header={header} onCompose={onCompose} composeLabel={composeLabel} />
       </div>

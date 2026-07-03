@@ -7,6 +7,8 @@
 
 import { addDays, startOfDay, startOfWeek } from "date-fns";
 import type { BusyBlock } from "./now";
+import type { VerticalData } from "./vertical";
+import { demandByWeek } from "./pace";
 
 export interface WeekCapacity {
   weekStart: Date;
@@ -85,4 +87,34 @@ export function capacityByWeek(
     out.push({ weekStart, availMins: weekCapacityMins(busy, weekStart, wStartMin, wEndMin, w === 0 ? now : undefined) });
   }
   return out;
+}
+
+// ── The load forecast — demand vs capacity per week ──────────────────────────
+// Lifted from CommitmentMeter so the meter and the On Deck timeline read ONE
+// source and can never diverge. Far-future weeks look artificially open (one-offs
+// aren't booked yet), so their free time is capped at the near-term typical; the
+// current week (index 0) uses its real clipped availability.
+export interface WeekLoad {
+  weekStart: Date;
+  /** realistic open minutes for the ratio — capped to the typical week for far weeks. */
+  freeMins: number;
+  demandMins: number;
+  /** demand ÷ free; Infinity when there's demand but no free time. */
+  ratio: number;
+  over: boolean;
+}
+
+export function weekForecast(
+  d: VerticalData,
+  now: Date,
+  byWeek: WeekCapacity[],
+  weeklyAvgMins: number,
+): WeekLoad[] {
+  const dem = demandByWeek(d, now, byWeek.map((w) => w.weekStart));
+  return byWeek.map((w, i) => {
+    const demandMins = dem[i]?.demandMins ?? 0;
+    const freeMins = i === 0 ? w.availMins : Math.min(w.availMins, weeklyAvgMins);
+    const ratio = freeMins > 0 ? demandMins / freeMins : demandMins > 0 ? Infinity : 0;
+    return { weekStart: w.weekStart, freeMins, demandMins, ratio, over: ratio > 1 };
+  });
 }

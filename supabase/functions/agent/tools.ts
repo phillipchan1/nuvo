@@ -5,6 +5,26 @@ import { executeVerticalTool, isVerticalTool, VERTICAL_TOOL_DEFINITIONS } from "
 const DEFAULT_DURATION = 30;
 const MIRROR_FIELDS = new Set(["start_time", "duration_minutes", "title", "status", "do_date"]);
 
+/**
+ * Convert an America/Los_Angeles local datetime string ("YYYY-MM-DDTHH:MM")
+ * to a UTC ISO string. Done server-side to avoid LLM midnight-rollover errors.
+ */
+function localLAToUtc(localStr: string): string {
+  // Treat the local string as UTC to get a reference point, then compute
+  // the real LA→UTC offset at that approximate moment and apply it.
+  const asIfUtc = new Date(localStr + ":00Z");
+  const laStr = asIfUtc
+    .toLocaleString("en-CA", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    })
+    .replace(", ", "T");
+  const offsetMs = asIfUtc.getTime() - new Date(laStr + "Z").getTime();
+  return new Date(asIfUtc.getTime() + offsetMs).toISOString();
+}
+
 function fmtLATime(isoUtc: string): string {
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
@@ -186,7 +206,7 @@ export const TOOL_DEFINITIONS = [
           title: { type: "string" },
           notes: { type: "string" },
           do_date: { type: "string", description: "YYYY-MM-DD" },
-          start_time: { type: "string", description: "ISO 8601 timestamp" },
+          start_time: { type: "string", description: "America/Los_Angeles local time: 'YYYY-MM-DDTHH:MM' (24h, no offset). Server converts to UTC." },
           duration_minutes: { type: "integer" },
           priority: { type: "string", enum: ["none", "low", "medium", "high"] },
           label_names: { type: "array", items: { type: "string" } },
@@ -223,7 +243,7 @@ export const TOOL_DEFINITIONS = [
         properties: {
           task_id: { type: "string" },
           task_title: { type: "string" },
-          start_time: { type: "string", description: "ISO 8601 timestamp" },
+          start_time: { type: "string", description: "America/Los_Angeles local time: 'YYYY-MM-DDTHH:MM' (24h, no offset). Server converts to UTC." },
           duration_minutes: { type: "integer" },
         },
         required: ["start_time"],
@@ -254,7 +274,7 @@ export const TOOL_DEFINITIONS = [
         properties: {
           task_id: { type: "string" },
           task_title: { type: "string" },
-          start_time: { type: "string", description: "ISO 8601 timestamp" },
+          start_time: { type: "string", description: "America/Los_Angeles local time: 'YYYY-MM-DDTHH:MM' (24h, no offset). Server converts to UTC." },
           duration_minutes: { type: "integer" },
         },
         required: ["start_time"],
@@ -318,6 +338,35 @@ export const TOOL_DEFINITIONS = [
           priority: { type: "string", enum: ["none", "low", "medium", "high"] },
           deadline: { type: "string", description: "YYYY-MM-DD or null to clear" },
         },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_calendar_event",
+      description:
+        "Create a real Google Calendar event (not a Nuvo task). Use this when the user says 'add to calendar', 'block time', 'schedule a meeting', or mentions a personal/social appointment that doesn't belong in the task list (e.g. 'Suzy coming over', 'dentist appointment', 'dinner with David'). Prefer this over create_task for anything calendar-native.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Event title." },
+          start_local: {
+            type: "string",
+            description:
+              "Start in America/Los_Angeles local time — 'YYYY-MM-DDTHH:MM' (24h, no offset). Example: Tuesday Jun 30 at 5pm → '2026-06-30T17:00'. The server handles UTC conversion.",
+          },
+          end_local: {
+            type: "string",
+            description: "End in America/Los_Angeles local time — 'YYYY-MM-DDTHH:MM' (24h, no offset).",
+          },
+          attendees: {
+            type: "array",
+            items: { type: "string" },
+            description: "Email addresses of attendees to invite (optional).",
+          },
+        },
+        required: ["title", "start_local", "end_local"],
       },
     },
   },
@@ -544,7 +593,7 @@ export async function executeTool(
     case "create_task": {
       let title = args.title as string | undefined;
       let doDate = args.do_date as string | null | undefined;
-      let startTime = args.start_time as string | null | undefined;
+      let startTimeRaw = args.start_time as string | null | undefined;
       let duration = args.duration_minutes as number | null | undefined;
       let priority = (args.priority as string) ?? "none";
       let labelNames = (args.label_names as string[]) ?? [];
@@ -554,7 +603,7 @@ export async function executeTool(
         const parsed = parseCapture(args.capture as string);
         title = parsed.title || (args.capture as string);
         doDate = doDate ?? parsed.doDate;
-        startTime = startTime ?? parsed.startTime?.toISOString() ?? null;
+        startTimeRaw = startTimeRaw ?? parsed.startTime?.toISOString() ?? null;
         duration = duration ?? parsed.durationMinutes;
         if (parsed.priority !== "none") priority = parsed.priority;
         labelNames = [...labelNames, ...parsed.labels];
@@ -588,7 +637,15 @@ export async function executeTool(
 
       const parented = Boolean(projectId || initiativeId || domainId);
 
-      const status = parented ? "backlog" : doDate ? "planned" : "inbox";
+      // Convert local LA time to UTC if the LLM passed "YYYY-MM-DDTHH:MM" format.
+      const startTime =
+        startTimeRaw && !startTimeRaw.includes("Z") && !startTimeRaw.includes("+")
+          ? localLAToUtc(startTimeRaw)
+          : (startTimeRaw ?? null);
+
+      // A task with a scheduled date/time is always "planned" — never backlog —
+      // so it surfaces in Today and the calendar regardless of parent assignment.
+      const status = doDate ? "planned" : parented ? "backlog" : "inbox";
       const dur =
         startTime != null ? (duration ?? DEFAULT_DURATION) : (duration ?? null);
 
@@ -650,7 +707,11 @@ export async function executeTool(
 
     case "schedule_task": {
       const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
-      const startTime = args.start_time as string;
+      const startTimeRaw = args.start_time as string;
+      const startTime =
+        startTimeRaw && !startTimeRaw.includes("Z") && !startTimeRaw.includes("+")
+          ? localLAToUtc(startTimeRaw)
+          : startTimeRaw;
       const duration = (args.duration_minutes as number) ?? DEFAULT_DURATION;
       const doDate = localDateISO(new Date(startTime));
       const { error } = await admin
@@ -686,7 +747,11 @@ export async function executeTool(
 
     case "reschedule_task": {
       const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
-      const startTime = args.start_time as string;
+      const startTimeRaw = args.start_time as string;
+      const startTime =
+        startTimeRaw && !startTimeRaw.includes("Z") && !startTimeRaw.includes("+")
+          ? localLAToUtc(startTimeRaw)
+          : startTimeRaw;
       const patch: Record<string, unknown> = {
         do_date: localDateISO(new Date(startTime)),
         start_time: startTime,
@@ -757,6 +822,33 @@ export async function executeTool(
       return {
         result: JSON.stringify({ id, patch }),
         action: { tool: name, summary: `Updated "${title}"` },
+      };
+    }
+
+    case "create_calendar_event": {
+      const title = (args.title as string)?.trim();
+      const attendees = (args.attendees as string[] | undefined) ?? [];
+      if (!title) throw new Error("title is required");
+
+      const startLocal = args.start_local as string;
+      const endLocal = args.end_local as string;
+      if (!startLocal || !endLocal) throw new Error("start_local and end_local are required");
+
+      const start_at = localLAToUtc(startLocal);
+      const end_at = localLAToUtc(endLocal);
+
+      const ok = await invokeFn(
+        "google-events",
+        { action: "create", title, start_at, end_at, attendees },
+        userToken,
+      );
+      if (!ok) throw new Error("Failed to create calendar event — is a Google account connected?");
+      return {
+        result: JSON.stringify({ created: true, title, start_at }),
+        action: {
+          tool: name,
+          summary: `Added "${title}" to calendar at ${fmtLATime(start_at)}`,
+        },
       };
     }
 

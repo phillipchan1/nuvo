@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { LADDER, type Rung } from "./AppShell";
 import { useVertical } from "../hooks/useVertical";
-import { readSpine, type SpineState } from "../lib/readiness";
+import { readSpine, type Floor, type SpineState } from "../lib/readiness";
 import { READY, toneColor } from "./floors/ReadinessBanner";
 
 // Top-to-bottom: Now (immediate) → Domain (widest). ⌘1 at top, ⌘5 at bottom.
@@ -22,9 +22,11 @@ export type FlowName = "sunday" | "summit" | "tending" | "refine" | "capacity";
 // The spine reads like a table of contents for your life. Two zones:
 // Execute (Today · Schedule — time horizons) and Build (Project · Initiative ·
 // Domain — structure). The seam between them is the Week, the only gate from
-// the vertical to the calendar. Each rung now also carries a readiness gauge:
-// a hairline meter ("ready for the floor below") + a gentle cue for the one
-// thing slipping — the funnel made visible, in the chrome itself.
+// the vertical to the calendar. The four *readiness* floors (Schedule · Project
+// · Initiative · Domain) each carry a gauge: a hairline meter ("ready for the
+// floor below") + a gentle cue for the one thing slipping — the funnel made
+// visible in the chrome. *Today* carries no gauge: it's the execution surface,
+// the bottom of the funnel where groomed work gets done, not a floor you groom.
 const EXECUTE = RUNGS.slice(0, 2);
 const BUILD = RUNGS.slice(2);
 
@@ -62,7 +64,9 @@ export default function Spine({
   const renderRung = (r: { id: Rung; label: string }) => {
     const on = r.id === rung;
     const n = LADDER.indexOf(r.id) + 1;
-    const fs = spine?.floors[r.id] ?? null;
+    // Today (the "now" rung) is the execution surface, not a readiness floor —
+    // it carries no gauge, just navigation. Every other rung reads its state.
+    const fs = r.id === "now" ? null : (spine?.floors[r.id as Floor] ?? null);
     const cue = fs?.cue ?? null;
 
     return (

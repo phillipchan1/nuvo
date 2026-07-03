@@ -195,19 +195,13 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     key: "refine",
     label: "Refine",
     nav: { kind: "flow", flow: "refine" },
-    describe: "The Refine run — the grooming card-game that sharpens projects toward done. Point here when the user wants to groom, tidy, or refine their projects/backlog.",
+    describe: "The Groom run — the grooming card-game that sharpens projects toward done. Point here when the user wants to groom, tidy, or refine their projects/backlog.",
   },
   {
     key: "summit",
     label: "Summit",
     nav: { kind: "flow", flow: "summit" },
     describe: "The Summit ritual — decide the quarter's bets. Point here when the user wants to plan the quarter or set big bets.",
-  },
-  {
-    key: "tending",
-    label: "Tending",
-    nav: { kind: "flow", flow: "tending" },
-    describe: "The Tending flow — the grooming/readiness ritual. Point here when the user wants to tend or assess readiness of their work.",
   },
   {
     key: "capacity",

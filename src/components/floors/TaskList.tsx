@@ -165,7 +165,7 @@ export default function TaskList({
               className="fast inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-meta text-muted hover:border-line-strong hover:text-ink"
               title="Let Nuvo tighten wording, add missing steps, and suggest an order"
             >
-              <span style={{ color: accent }}>✦</span> Refine with Nuvo
+              <span style={{ color: accent }}>✦</span> Groom with Nuvo
             </button>
           )}
         </div>

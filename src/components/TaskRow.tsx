@@ -65,7 +65,8 @@ export default function TaskRow({
   const toggle = () => {
     if (!done) {
       setCompleting(true);
-      window.setTimeout(() => { setCompleting(false); onToggleDone(); }, 200);
+      onToggleDone(); // fire mutation immediately so optimistic update lands before animation ends
+      window.setTimeout(() => { setCompleting(false); }, 200);
     } else {
       onToggleDone();
     }

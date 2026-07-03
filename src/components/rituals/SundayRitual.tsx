@@ -39,7 +39,7 @@ import { isEventHidden } from "../../lib/now";
 import { aiBatchInbox, batchWeek, type BatchResult, type InboxGroup } from "../../lib/batch";
 import { supabase } from "../../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../../lib/calibration";
-import { suggestPull } from "../../lib/pull";
+import { suggestPull, type PullSuggestion } from "../../lib/pull";
 import { MomentumChip } from "../floors/parts";
 import { BigRocks } from "../floors/bigRocks";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
@@ -155,10 +155,43 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
   );
 
   const gain = useMemo(() => computeGain(data), [data]);
-  const plannedMins = result.placements.reduce((s, p) => s + p.durationMin, 0) + blockedMins;
+
+  // Hand-edits on top of Nuvo's auto-placement: a move (day + start) or a resize
+  // (duration) per task. These override the composed placement and ride into the
+  // commit, so you build off the suggestion instead of accepting it whole.
+  const [overrides, setOverrides] = useState<Record<string, { dayISO: string; startMin: number; durationMin: number }>>({});
+  const placements = useMemo(
+    () => result.placements.map((p) => {
+      const o = overrides[p.task.id];
+      return o ? { ...p, dayISO: o.dayISO, startMin: o.startMin, durationMin: o.durationMin } : p;
+    }),
+    [result.placements, overrides],
+  );
+  const movePlacement = (taskId: string, dayISO: string, startMin: number) =>
+    setOverrides((prev) => {
+      const base = result.placements.find((p) => p.task.id === taskId);
+      const durationMin = prev[taskId]?.durationMin ?? base?.durationMin ?? 30;
+      return { ...prev, [taskId]: { dayISO, startMin, durationMin } };
+    });
+  const resizePlacement = (taskId: string, durationMin: number) =>
+    setOverrides((prev) => {
+      const base = result.placements.find((p) => p.task.id === taskId);
+      const dayISO = prev[taskId]?.dayISO ?? base?.dayISO ?? "";
+      const startMin = prev[taskId]?.startMin ?? base?.startMin ?? 0;
+      return { ...prev, [taskId]: { dayISO, startMin, durationMin } };
+    });
+
+  const plannedMins = placements.reduce((s, p) => s + p.durationMin, 0) + blockedMins;
   const conf = cal && plannedMins > 0 ? confidence(plannedMins, cal) : null;
-  const dropBlock = (taskId: string) =>
+  const dropBlock = (taskId: string) => {
     setKept((prev) => new Set([...prev].filter((id) => id !== taskId)));
+    setOverrides((prev) => {
+      if (!prev[taskId]) return prev;
+      const next = { ...prev };
+      delete next[taskId];
+      return next;
+    });
+  };
 
   // ── batch the committed week into named focus blocks (Slots) ──────────────
   const [batch, setBatch] = useState<BatchResult | null>(null);
@@ -266,6 +299,42 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     }
   };
 
+  // ── re-bundle the carried/slipped work into themed focus blocks ────────────
+  // The same AI theming the inbox uses, pointed at this week's slipped tasks: so
+  // carry-forward becomes a few named focus blocks (each sized to its members),
+  // not a scatter of loose tasks. Reuses the SlotBatchModal + applyBatch tail.
+  const [themingCarried, setThemingCarried] = useState(false);
+  const [carriedErr, setCarriedErr] = useState<string | null>(null);
+  const themeCarried = async () => {
+    if (themingCarried) return;
+    const carried = allTasks.filter(
+      (t) => (t.roll_count ?? 0) > 0 && t.status !== "done" && t.status !== "trashed" &&
+        t.status !== "inbox" && !t.start_time && !t.slot_id && kept.has(t.id),
+    );
+    if (!carried.length) return;
+    setThemingCarried(true);
+    setCarriedErr(null);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("agent", {
+        body: { clusterInbox: { today, taskIds: carried.map((t) => t.id) } },
+      });
+      if (error) throw error;
+      const groups = (res?.groups ?? []) as InboxGroup[];
+      if (!groups.length) { setCarriedErr("Couldn't bundle the carried work — try again."); return; }
+      setBatch(
+        aiBatchInbox({
+          groups, tasks: carried, data, weekStartISO, todayISO: today, now: new Date(),
+          events: visibleEvents, blocks: onCalBlocks, workStartMin: workStart, workEndMin: workEnd,
+          focusInitiativeIds: data.focusInitiativeIds, dayContexts, workingDays,
+        }),
+      );
+    } catch (e) {
+      setCarriedErr(e instanceof Error ? e.message : "Bundling failed");
+    } finally {
+      setThemingCarried(false);
+    }
+  };
+
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => format(addDays(parseDateISO(weekStartISO), i), "yyyy-MM-dd")),
     [weekStartISO],
@@ -281,7 +350,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
   );
 
   const keptCount = keptTasks.length;
-  const placedCount = result.placements.length;
+  const placedCount = placements.length;
 
   // esc closes; the draft resumes — nothing is committed until you say so
   useEffect(() => {
@@ -298,12 +367,13 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     setApplying(true);
     await planWeek({
       commitTaskIds: [...kept],
-      placements: result.placements.map((p) => {
+      placements: placements.map((p) => {
         const [y, mo, d] = p.dayISO.split("-").map(Number);
         return {
           id: p.task.id,
           doDateISO: p.dayISO,
           startISO: new Date(y, mo - 1, d, Math.floor(p.startMin / 60), p.startMin % 60).toISOString(),
+          durationMins: p.durationMin,
         };
       }),
       goal: goal.trim(),
@@ -351,27 +421,30 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       }
     >
       {phase === "intent" ? (
-        <div className="mx-auto max-w-[1080px] space-y-5">
-          {/* ── ACT 1 · set the week — the read, then the intent ── */}
-          {/* the gain — a read, not a gate: a glance back before the week ahead */}
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-caption">
-            <span className="text-muted">Last 7 days</span>
-            <span className="font-medium">{gain.doneCount} done · {hrs(gain.doneMins)}h</span>
-            {gain.topMove && (
-              <span className="mono text-label" style={{ color: "var(--accent)" }}>
-                {gain.topMove.name} {gain.topMove.from}%→{gain.topMove.to}%
-              </span>
-            )}
-            {gain.quiet.length > 0 && (
-              <span className="mono text-label text-signal">{gain.quiet.join(", ")} quiet</span>
-            )}
-          </div>
+        <div className="mx-auto max-w-[1080px]">
+          {/* ── ACT 1 · set the week — open with the look-back, then the intent ── */}
+          {/* hero: ceremony + the gain folded in as the supporting read, not a stray line */}
+          <header className="mb-8">
+            <div className="section-label">Set the week · {planningAhead ? "the week ahead" : "this week"}</div>
+            <h1 className="mt-1.5 text-display masthead leading-[1.05]">
+              Week of {format(parseDateISO(weekStartISO), "MMMM d")}
+            </h1>
+            <p className="mt-2.5 text-body text-muted">
+              Last 7 days — <span className="text-ink">{gain.doneCount} done · {hrs(gain.doneMins)}h</span>.
+              {gain.topMove && (
+                <span style={{ color: "var(--accent)" }}> {gain.topMove.name} climbed {gain.topMove.from}→{gain.topMove.to}%.</span>
+              )}
+              {gain.quiet.length > 0 && (
+                <span style={{ color: "var(--signal)" }}> {gain.quiet.join(" & ")} went quiet.</span>
+              )}
+            </p>
+          </header>
 
-          {/* the bets — the one strategic call; carried forward, stalled flagged */}
+          {/* the bets — the strategic backdrop; a quiet check above the week's intent */}
           <BetsStrip />
 
-          {/* priorities — name what would make this week a win, before the blocks */}
-          <BigRocks />
+          {/* priorities — the heart: name what would make this week a win */}
+          <div className="mt-8"><BigRocks /></div>
         </div>
       ) : (
         // ── ACT 2 · shape it — the composed week wide, pull + boundaries railed ──
@@ -401,24 +474,26 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                   events={visibleEvents}
                   slots={weekSlots}
                   locked={onCalBlocks}
-                  placements={result.placements}
+                  placements={placements}
                   data={data}
                   workStartMin={workStart}
                   workEndMin={workEnd}
                   dayContexts={dayContexts}
                   onDrop={dropBlock}
+                  onMove={movePlacement}
+                  onResize={resizePlacement}
                 />
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-meta text-muted">
-                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: "var(--accent)", outline: "1.5px solid rgba(255,255,255,.6)", outlineOffset: -1.5 }} /> placed for you</span>
-                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: "var(--accent)", opacity: .82 }} /> already set ✓</span>
-                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] border border-line bg-bg" /> immovable</span>
+                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", borderLeft: "3px solid var(--accent)" }} /> ✦ placed for you</span>
+                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 13%, transparent)", borderLeft: "3px solid var(--accent)" }} /> already set ✓</span>
+                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--ink) 5%, transparent)", borderLeft: "2px solid var(--line-strong)" }} /> immovable</span>
                   <span className="mono ml-auto">hover a placed block to drop it</span>
                 </div>
               </>
             )}
 
             {result.unplaced.length > 0 && (
-              <div className="mt-3 rounded-md border border-dashed border-line px-4 py-2.5">
+              <div className="mt-3 border-t border-line pt-2.5">
                 <div className="section-label mb-1">In the pool — committed, no time yet ({result.unplaced.length})</div>
                 {result.unplaced.map(({ task, reason }) => (
                   <div key={task.id} className="flex items-center gap-2 text-label text-muted">
@@ -442,7 +517,15 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
             />
 
             {/* the candidates — the merged pull; toggle what belongs to the week */}
-            <Candidates suggestions={suggestions} kept={kept} setKept={setKept} data={data} />
+            <Candidates
+              suggestions={suggestions}
+              kept={kept}
+              setKept={setKept}
+              data={data}
+              onThemeCarried={() => void themeCarried()}
+              themingCarried={themingCarried}
+              carriedErr={carriedErr}
+            />
 
             {/* boundaries — settings, tucked away; here when you need them */}
             <Boundaries
@@ -481,9 +564,10 @@ function Shell({
 }) {
   return (
     <div className="scrim atmosphere fixed inset-0 z-50 flex flex-col">
-      {/* clears the macOS traffic lights + gives a drag handle */}
-      <div data-tauri-drag-region className="h-8 w-full shrink-0 bg-surface" />
-      <header className="flex shrink-0 items-center gap-4 border-b border-line bg-surface px-5 py-2.5 elev-1">
+      {/* clears the macOS traffic lights + gives a drag handle — stays transparent
+          so the one warm-paper canvas reads from the very top (no frost seam) */}
+      <div data-tauri-drag-region className="h-8 w-full shrink-0" />
+      <header className="flex shrink-0 items-center gap-4 border-b border-line px-5 py-2.5">
         <div className="flex items-baseline gap-3">
           <div className="wordmark text-head">Plan</div>
           <div className="mono text-label text-muted">
@@ -545,7 +629,7 @@ function StepNav({ phase, setPhase }: { phase: Phase; setPhase: (p: Phase) => vo
 // Act 1's footer — the forward beat into shaping the week.
 function IntentBar({ priorityCount, leadCount, onNext }: { priorityCount: number; leadCount: number; onNext: () => void }) {
   return (
-    <footer className="shrink-0 border-t border-line bg-surface px-8 py-3 elev-1">
+    <footer className="shrink-0 border-t border-line px-8 py-3">
       <div className="mx-auto flex max-w-[1080px] items-center gap-4">
         <div className="mono min-w-0 flex-1 text-meta text-muted">
           {priorityCount > 0 ? `${priorityCount} priorit${priorityCount === 1 ? "y" : "ies"}` : "no priorities yet"}
@@ -579,9 +663,9 @@ function BetsStrip() {
   return (
     <section>
       <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-head masthead">
-          The bets <span className="mono text-meta font-normal text-muted">★ {leads.length}/3 leads</span>
-        </h2>
+        <div className="section-label">
+          The bets <span className="mono normal-case tracking-normal text-muted">· ★ {leads.length}/3 leads</span>
+        </div>
         {rows.length > 0 && (
           <button onClick={() => setManage((m) => !m)} className="fast mono text-meta text-muted hover:text-ink">
             {open ? "done" : "adjust"}
@@ -623,9 +707,9 @@ function BetsStrip() {
             />
           ))}
           {rows.length === 0 && (
-            <div className="rounded-md border border-dashed border-line p-6 text-center text-caption text-muted">
+            <p className="py-2 text-caption text-muted">
               No active initiatives. Start a bet on the Initiative floor (⌘4).
-            </div>
+            </p>
           )}
         </div>
       )}
@@ -661,7 +745,7 @@ function BetRow({
 
   return (
     <div
-      className="flex items-center gap-3 rounded-md border bg-surface px-3.5 py-2.5"
+      className="glass-card flex items-center gap-3 rounded-md border px-3.5 py-2.5"
       style={{ borderColor: lead ? "var(--signal)" : "var(--line)", opacity: paused ? 0.55 : 1 }}
     >
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: domain?.color }} />
@@ -738,11 +822,9 @@ function InboxRun({
       </div>
 
       {count === 0 ? (
-        <div className="rounded-md border border-dashed border-line p-4 text-center text-caption text-muted">
-          Inbox is clear — nothing loose to place.
-        </div>
+        <p className="text-caption text-muted">Inbox is clear — nothing loose to place.</p>
       ) : (
-        <div className="rounded-md border border-line bg-surface p-3">
+        <>
           <p className="text-caption text-muted">
             {count} loose capture{count === 1 ? "" : "s"} with no time yet. Group what's like each
             other and drop each run into the week's open slots.
@@ -750,12 +832,13 @@ function InboxRun({
           <button
             onClick={onTheme}
             disabled={theming}
-            className="tap fast mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-md border border-accent px-3 py-1.5 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
+            className="tap fast mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
+            style={{ background: "var(--accent-soft)" }}
           >
             {theming ? "Theming the inbox…" : `✦ Theme & slot ${count} item${count === 1 ? "" : "s"}`}
           </button>
           {error && <p className="mt-1.5 text-meta text-signal">{error}</p>}
-        </div>
+        </>
       )}
     </section>
   );
@@ -766,11 +849,17 @@ function Candidates({
   kept,
   setKept,
   data,
+  onThemeCarried,
+  themingCarried,
+  carriedErr,
 }: {
   suggestions: ReturnType<typeof suggestPull>;
   kept: Set<string>;
   setKept: (next: Set<string>) => void;
   data: VerticalData;
+  onThemeCarried: () => void;
+  themingCarried: boolean;
+  carriedErr: string | null;
 }) {
   const [showMore, setShowMore] = useState(false);
   const toggle = (id: string) => {
@@ -790,13 +879,55 @@ function Candidates({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  const keptCount = [...kept].filter((id) => suggestedIds.has(id)).length;
+  // Slipped commitments get their own bundle, ABOVE the fresh pull — so the flow
+  // asks about carry-forward work plainly instead of folding it into the pull.
+  const slipped = suggestions.filter((s) => s.task.rollCount > 0);
+  const fresh = suggestions.filter((s) => s.task.rollCount === 0);
+  const slippedMins = slipped.reduce((m, s) => m + s.task.durationMins, 0);
+  const keptFresh = fresh.filter((s) => kept.has(s.task.id)).length;
+
+  const renderRow = (s: PullSuggestion) => (
+    <CandidateRow
+      key={s.task.id}
+      on={kept.has(s.task.id)}
+      onToggle={() => toggle(s.task.id)}
+      color={domainById(data, s.task.domainId)?.color}
+      title={s.task.title}
+      mins={s.task.durationMins}
+      reason={s.reason}
+      carried={s.task.rollCount > 0}
+    />
+  );
 
   return (
     <section>
+      {slipped.length > 0 && (
+        <div className="mb-5">
+          <div className="mb-2">
+            <h2 className="text-head masthead">
+              Carrying forward <span className="mono text-meta font-normal text-signal">{slipped.length} slipped · {hrs(slippedMins)}h</span>
+            </h2>
+            <p className="mt-0.5 text-caption text-muted">
+              Work that rolled forward with no time yet. It's already in the week — Nuvo finds it new slots. Uncheck anything you'd rather let go.
+            </p>
+            <button
+              onClick={onThemeCarried}
+              disabled={themingCarried}
+              title="Group the kept slipped work into a few named focus blocks, each sized to its tasks"
+              className="tap fast mt-2 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
+              style={{ background: "var(--accent-soft)" }}
+            >
+              {themingCarried ? "Bundling into focus blocks…" : "✦ Bundle into focus blocks"}
+            </button>
+            {carriedErr && <p className="mt-1 text-meta text-signal">{carriedErr}</p>}
+          </div>
+          <div className="space-y-1">{slipped.map(renderRow)}</div>
+        </div>
+      )}
+
       <div className="mb-2 flex items-baseline justify-between">
         <h2 className="text-head masthead">
-          Pulled for you <span className="mono text-meta font-normal text-muted">{keptCount}/{suggestions.length} in the week</span>
+          Pulled for you <span className="mono text-meta font-normal text-muted">{keptFresh}/{fresh.length} in the week</span>
         </h2>
         <button onClick={() => setShowMore((s) => !s)} className="fast mono text-meta text-muted hover:text-ink">
           {showMore ? "hide" : "＋ add more"}
@@ -804,31 +935,19 @@ function Candidates({
       </div>
 
       <div className="space-y-1">
-        {suggestions.length === 0 && (
-          <div className="rounded-md border border-dashed border-line p-6 text-center text-caption text-muted">
+        {fresh.length === 0 && slipped.length === 0 && (
+          <p className="py-1 text-caption text-muted">
             Nothing urgent to pull — no deadlines land and no domain's gone quiet. Add by hand, or theme the inbox above.
-          </div>
+          </p>
         )}
-        {suggestions.map((s) => {
-          const on = kept.has(s.task.id);
-          const carried = s.task.rollCount > 0;
-          return (
-            <CandidateRow
-              key={s.task.id}
-              on={on}
-              onToggle={() => toggle(s.task.id)}
-              color={domainById(data, s.task.domainId)?.color}
-              title={s.task.title}
-              mins={s.task.durationMins}
-              reason={s.reason}
-              carried={carried}
-            />
-          );
-        })}
+        {fresh.length === 0 && slipped.length > 0 && (
+          <p className="py-1 text-caption text-muted">Nothing else urgent to pull — the week's carrying its slipped work.</p>
+        )}
+        {fresh.map(renderRow)}
       </div>
 
       {showMore && (
-        <div className="mt-2 max-h-[34vh] overflow-y-auto rounded-md border border-line bg-surface p-2">
+        <div className="mt-2 max-h-[34vh] overflow-y-auto border-t border-line pt-2">
           <div className="section-label mb-1">Inbox &amp; backlog ({more.length})</div>
           {more.length === 0 && <div className="px-2 py-3 text-center text-label text-muted">Nothing else waiting.</div>}
           {more.map((t) => (
@@ -869,20 +988,21 @@ function CandidateRow({
   return (
     <button
       onClick={onToggle}
-      className="fast flex w-full items-center gap-2.5 rounded-sm border px-2.5 py-1.5 text-left"
-      style={{
-        borderColor: on ? "var(--accent)" : "var(--line)",
-        background: on ? "var(--accent-soft)" : "transparent",
-      }}
+      className="tap fast flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left"
+      style={{ background: on ? "var(--accent-soft)" : "transparent" }}
     >
       <span
-        className="mono flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border text-micro"
-        style={{ borderColor: on ? "var(--accent)" : "var(--line)", color: "var(--accent)" }}
+        className="mono flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-micro"
+        style={{
+          background: on ? "var(--accent)" : "transparent",
+          border: on ? "none" : "1px solid var(--line)",
+          color: on ? "#fff" : "var(--muted)",
+        }}
       >
         {on ? "✓" : ""}
       </span>
       <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color ?? "var(--line)" }} />
-      <span className="min-w-0 flex-1 truncate text-caption" style={{ opacity: on ? 1 : 0.6 }}>
+      <span className="min-w-0 flex-1 truncate text-caption" style={{ opacity: on ? 1 : 0.62 }}>
         {title}
       </span>
       {carried && <span className="mono shrink-0 text-micro text-signal" title="Carried over from a past week">↻ carried</span>}
@@ -934,15 +1054,15 @@ function Boundaries({
     : `${workingDays.length} day${workingDays.length === 1 ? "" : "s"}`;
 
   return (
-    <section className="rounded-md border border-line bg-surface">
-      <button onClick={onToggle} className="fast flex w-full items-center justify-between px-4 py-2.5 text-left">
+    <section className="border-t border-line pt-3">
+      <button onClick={onToggle} className="fast flex w-full items-center justify-between text-left">
         <span className="section-label">Boundaries</span>
         <span className="mono text-meta text-muted">
           {workingLabel} · {toMinLabel(workStart)}–{toMinLabel(workEnd)} · click to {open ? "hide" : "adjust"}
         </span>
       </button>
       {open && (
-        <div className="space-y-3 border-t border-line px-4 py-3">
+        <div className="mt-3 space-y-3">
           {/* working days — the recurring boundary; weekends off by default */}
           <div className="flex items-center gap-1.5">
             <span className="mono w-[78px] shrink-0 text-meta text-muted">working days</span>
@@ -1032,7 +1152,7 @@ function CommitBar({
   onCommit: () => void;
 }) {
   return (
-    <footer className="shrink-0 border-t border-line bg-surface px-8 py-3 elev-1">
+    <footer className="shrink-0 border-t border-line px-8 py-3">
       <div className="mx-auto flex max-w-[1080px] items-center gap-4">
         <div className="min-w-0 flex-1">
           <input
@@ -1082,6 +1202,8 @@ function WeekGrid({
   workEndMin,
   dayContexts,
   onDrop,
+  onMove,
+  onResize,
 }: {
   days: { iso: string; past: boolean }[];
   events: ExternalEvent[];
@@ -1093,6 +1215,8 @@ function WeekGrid({
   workEndMin: number;
   dayContexts: Record<string, DayContext>;
   onDrop: (taskId: string) => void;
+  onMove: (taskId: string, dayISO: string, startMin: number) => void;
+  onResize: (taskId: string, durationMin: number) => void;
 }) {
   const dayKeys = new Set(days.map((d) => d.iso));
   const byDay = new Map<string, GridItem[]>();
@@ -1170,15 +1294,86 @@ function WeekGrid({
   const totalH = ((hi - lo) / 60) * HOUR_PX;
   const yOf = (m: number) => ((m - lo) / 60) * HOUR_PX;
 
+  // ── hand-editing — drag a placed block to move it, drag its edge to resize ──
+  // Pointer events (Tauri swallows HTML5 DnD). The held block lifts into glass and
+  // the destination column highlights — the drag-and-hold contract (design-language).
+  const colRefs = useRef(new Map<string, HTMLDivElement>());
+  const dragRef = useRef<
+    | { id: string; mode: "move" | "resize"; title: string; hue: string; dayISO: string; startMin: number; durationMin: number; grabOffsetMin: number }
+    | null
+  >(null);
+  const [, force] = useState(0);
+  const bump = () => force((n) => n + 1);
+  const drag = dragRef.current;
+
+  const snap = (m: number) => Math.round(m / 15) * 15;
+  const minAt = (clientY: number, colTop: number) => lo + ((clientY - colTop) / HOUR_PX) * 60;
+  const colTopOf = (iso: string) => {
+    const el = colRefs.current.get(iso);
+    return el ? el.getBoundingClientRect().top : 0;
+  };
+
+  useEffect(() => {
+    const onPointerMove = (e: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      if (d.mode === "move") {
+        let targetISO = d.dayISO;
+        for (const [iso, el] of colRefs.current) {
+          const r = el.getBoundingClientRect();
+          if (e.clientX >= r.left && e.clientX < r.right) { targetISO = iso; break; }
+        }
+        let start = snap(minAt(e.clientY, colTopOf(targetISO)) - d.grabOffsetMin);
+        start = Math.max(lo, Math.min(hi - d.durationMin, start));
+        d.dayISO = targetISO;
+        d.startMin = start;
+      } else {
+        let end = snap(minAt(e.clientY, colTopOf(d.dayISO)));
+        end = Math.max(d.startMin + 15, Math.min(hi, end));
+        d.durationMin = end - d.startMin;
+      }
+      bump();
+    };
+    const onPointerUp = () => {
+      const d = dragRef.current;
+      if (!d) return;
+      if (d.mode === "move") onMove(d.id, d.dayISO, d.startMin);
+      else onResize(d.id, d.durationMin);
+      dragRef.current = null;
+      bump();
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [lo, hi, onMove, onResize]);
+
+  const startDrag = (e: React.PointerEvent, it: GridItem, dayISO: string, mode: "move" | "resize") => {
+    e.preventDefault();
+    if (mode === "resize") e.stopPropagation();
+    const grabOffsetMin = mode === "move" ? minAt(e.clientY, colTopOf(dayISO)) - it.startMin : 0;
+    dragRef.current = {
+      id: it.id, mode, title: it.title, hue: it.color ?? "var(--accent)",
+      dayISO, startMin: it.startMin, durationMin: it.endMin - it.startMin, grabOffsetMin,
+    };
+    bump();
+  };
+
   return (
-    <div className="overflow-auto rounded-md border border-line bg-surface" style={{ maxHeight: "62vh" }}>
-      {/* day headers — sticky so they stay put while the grid scrolls */}
-      <div className="sticky top-0 z-10 flex border-b border-line bg-surface">
+    <div className="overflow-auto rounded-lg border border-line" style={{ maxHeight: "62vh" }}>
+      {/* day headers — sticky frosted glass so they stay legible over the scroll,
+          without painting an opaque seam over the warm-paper canvas */}
+      <div
+        className="sticky top-0 z-10 flex border-b border-line"
+        style={{ background: "color-mix(in srgb, var(--surface) 72%, transparent)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}
+      >
         <div className="w-[52px] shrink-0" />
         {days.map((d) => {
           const ctx = dayContexts[d.iso] ?? "normal";
           return (
-            <div key={d.iso} className="min-w-[150px] flex-1 border-l border-line px-2 py-1.5 text-center" style={{ opacity: d.past ? 0.4 : 1 }}>
+            <div key={d.iso} className="min-w-[150px] flex-1 border-l border-line px-2 py-2 text-center" style={{ opacity: d.past ? 0.4 : 1 }}>
               <div className="text-caption font-semibold">{format(parseDateISO(d.iso), "EEE")}</div>
               <div className="mono text-micro text-muted">
                 {format(parseDateISO(d.iso), "MMM d")}
@@ -1202,7 +1397,15 @@ function WeekGrid({
         {days.map((d) => {
           const items = (byDay.get(d.iso) ?? []).sort((a, b) => a.startMin - b.startMin);
           return (
-            <div key={d.iso} className="relative min-w-[150px] flex-1 border-l border-line" style={{ opacity: d.past ? 0.5 : 1 }}>
+            <div
+              key={d.iso}
+              ref={(el) => { if (el) colRefs.current.set(d.iso, el); }}
+              className="relative min-w-[150px] flex-1 border-l border-line"
+              style={{
+                opacity: d.past ? 0.5 : 1,
+                background: drag?.mode === "move" && drag.dayISO === d.iso ? "color-mix(in srgb, var(--accent) 7%, transparent)" : undefined,
+              }}
+            >
               {hours.map((h, i) =>
                 i === 0 ? null : <div key={h} className="absolute inset-x-0" style={{ top: yOf(h), borderTop: "1px solid var(--line)", opacity: 0.5 }} />,
               )}
@@ -1210,11 +1413,17 @@ function WeekGrid({
                 const top = yOf(it.startMin);
                 const height = Math.max(MIN_BLOCK_PX, yOf(it.endMin) - yOf(it.startMin));
                 if (it.kind === "event") {
+                  // immovable external commitments — a quiet neutral frost, no identity
                   return (
                     <div
                       key={`ev-${it.id}`}
-                      className="absolute inset-x-1 overflow-hidden rounded-[4px] border border-line bg-bg/80 px-1.5 py-0.5"
-                      style={{ top, height }}
+                      className="absolute inset-x-1 overflow-hidden rounded-[5px] px-1.5 py-0.5"
+                      style={{
+                        top, height,
+                        background: "color-mix(in srgb, var(--ink) 5%, transparent)",
+                        borderLeft: "2px solid var(--line-strong)",
+                        backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+                      }}
                       title={it.title}
                     >
                       <div className="mono truncate text-micro leading-tight text-muted">{it.title}</div>
@@ -1223,43 +1432,83 @@ function WeekGrid({
                 }
                 const isNew = it.kind === "new";
                 const isSlot = it.kind === "slot";
+                const hue = it.color ?? "var(--accent)";
+                const dragging = drag?.id === it.id;
+                const moveSource = dragging && drag!.mode === "move";
+                const resizing = dragging && drag!.mode === "resize";
+                const endMin = resizing ? it.startMin + drag!.durationMin : it.endMin;
+                const blkTop = yOf(it.startMin);
+                const blkHeight = Math.max(MIN_BLOCK_PX, yOf(endMin) - yOf(it.startMin));
+                // Tinted glass: the domain hue read through, with its color as the
+                // left identity edge and ink text — never a solid white-on-color slab.
+                // Placed-for-you (new) reads as Nuvo's intent: a touch stronger + lift.
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
-                    className="group absolute inset-x-1 overflow-hidden rounded-[5px] px-1.5 py-1 text-white"
+                    onPointerDown={isNew ? (e) => startDrag(e, it, d.iso, "move") : undefined}
+                    className={`group lift-anim absolute inset-x-1 overflow-hidden rounded-[6px] px-1.5 py-1 ${isNew ? "cursor-grab" : ""}`}
                     style={{
-                      top,
-                      height,
-                      background: it.color ?? "var(--accent)",
-                      opacity: isNew ? 1 : isSlot ? 0.96 : 0.8,
-                      outline: isNew || isSlot ? "1.5px solid rgba(255,255,255,0.55)" : "none",
-                      outlineOffset: -1.5,
-                      boxShadow: isNew || isSlot ? "0 3px 10px -4px rgba(0,0,0,0.45)" : "none",
+                      top: blkTop, height: blkHeight,
+                      color: "var(--ink)",
+                      background: `color-mix(in srgb, ${hue} ${isNew ? 22 : isSlot ? 18 : 13}%, transparent)`,
+                      borderLeft: `3px solid ${hue}`,
+                      borderTop: moveSource ? "1px dashed var(--line-strong)" : undefined,
+                      opacity: moveSource ? 0.3 : isNew || isSlot ? 1 : 0.85,
+                      backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
+                      boxShadow: isNew && !moveSource ? "var(--shadow-lift)" : "none",
+                      touchAction: isNew ? "none" : undefined,
                     }}
-                    title={isNew ? it.reason : isSlot ? "focus block — your batched work" : "already on the calendar — locked"}
+                    title={isNew ? "drag to move · drag the bottom edge to resize" : isSlot ? "focus block — your batched work" : "already on the calendar — locked"}
                   >
                     <div className="flex items-start gap-1">
-                      <div className="min-w-0 flex-1 truncate text-meta font-semibold leading-tight">{isSlot ? `⛶ ${it.title}` : it.title}</div>
+                      <div className="min-w-0 flex-1 truncate text-meta font-semibold leading-tight">
+                        {isSlot ? `⛶ ${it.title}` : isNew ? `✦ ${it.title}` : it.title}
+                      </div>
                       {isNew ? (
                         <button
+                          onPointerDown={(e) => e.stopPropagation()}
                           onClick={() => onDrop(it.id)}
-                          className="fast shrink-0 text-caption leading-none text-white/70 opacity-0 hover:text-white group-hover:opacity-100"
+                          className="fast shrink-0 text-caption leading-none text-muted opacity-0 hover:text-signal group-hover:opacity-100"
                           title="Remove from the week"
                         >
                           ×
                         </button>
                       ) : isSlot ? null : (
-                        <span className="shrink-0 text-micro leading-none opacity-80">✓</span>
+                        <span className="shrink-0 text-micro leading-none text-muted">✓</span>
                       )}
                     </div>
-                    {height > 30 && (
-                      <div className="mono truncate text-micro leading-tight text-white/80">
-                        {fmtMinShort(it.startMin)}–{fmtMinShort(it.endMin)}
+                    {blkHeight > 30 && (
+                      <div className="mono truncate text-micro leading-tight text-muted">
+                        {fmtMinShort(it.startMin)}–{fmtMinShort(endMin)}
                       </div>
+                    )}
+                    {isNew && (
+                      <div
+                        onPointerDown={(e) => startDrag(e, it, d.iso, "resize")}
+                        className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize"
+                        style={{ touchAction: "none" }}
+                        title="Drag to resize"
+                      />
                     )}
                   </div>
                 );
               })}
+              {drag?.mode === "move" && drag.dayISO === d.iso && (
+                <div
+                  className="glass-grab pointer-events-none absolute inset-x-1 overflow-hidden rounded-[6px] px-1.5 py-1"
+                  style={{
+                    top: yOf(drag.startMin),
+                    height: Math.max(MIN_BLOCK_PX, yOf(drag.startMin + drag.durationMin) - yOf(drag.startMin)),
+                    color: "var(--ink)",
+                    background: `color-mix(in srgb, ${drag.hue} 26%, transparent)`,
+                    borderLeft: `3px solid ${drag.hue}`,
+                    zIndex: 30,
+                  }}
+                >
+                  <div className="truncate text-meta font-semibold leading-tight">✦ {drag.title}</div>
+                  <div className="mono text-micro text-muted">{fmtMinShort(drag.startMin)}–{fmtMinShort(drag.startMin + drag.durationMin)}</div>
+                </div>
+              )}
             </div>
           );
         })}

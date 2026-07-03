@@ -34,7 +34,7 @@ export function Modal({
       // Mobile-first: centered with a margin and scrollable so it can't overflow
       // a phone. sm+ restores the desktop look exactly (top-anchored, no inner
       // scroll — children own their scroll).
-      className="scrim fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-3 backdrop-blur-[2px] sm:items-start sm:p-0 sm:pt-[12vh]"
+      className="scrim fixed inset-0 z-[50] flex items-center justify-center bg-black/30 p-3 backdrop-blur-[2px] sm:items-start sm:p-0 sm:pt-[12vh]"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div

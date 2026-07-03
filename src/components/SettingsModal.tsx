@@ -8,13 +8,14 @@ import type { CalendarAccount, UserSettings } from "../lib/types";
 import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
+import { GitHubConnect } from "./GitHubConnect";
 import type { SettingsSection } from "../lib/appNav";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { usePalette, PALETTE_LABELS, type Palette as PaletteMood } from "../hooks/usePalette";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "connections" | "labels" | "account";
+type SectionId = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   {
@@ -39,12 +40,22 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   },
   {
     id: "connections",
-    label: "Connections",
+    label: "Calendars",
     icon: (
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
         <rect x="2.3" y="3.3" width="11.4" height="10.4" rx="1.6" stroke="currentColor" strokeWidth="1.3" />
         <path d="M2.3 6.3h11.4" stroke="currentColor" strokeWidth="1.3" />
         <path d="M5.5 1.8v2.6M10.5 1.8v2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    id: "integrations",
+    label: "Integrations",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <path d="M6.2 2.5 3 5.7a2.4 2.4 0 0 0 0 3.4l3.7 3.7a2.4 2.4 0 0 0 3.4 0l3.2-3.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9.8 13.5 13 10.3a2.4 2.4 0 0 0 0-3.4L9.3 3.2a2.4 2.4 0 0 0-3.4 0L2.7 6.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
       </svg>
     ),
   },
@@ -558,7 +569,7 @@ function ConnectionsPane({
 
   return (
     <div>
-      <PaneHeader title="Connections" sub="Calendars Nuvo reads from and writes to. Toggle which appear on your board, and set the domain each one's meetings count toward." />
+      <PaneHeader title="Calendars" sub="Calendars Nuvo reads from and writes to. Toggle which appear on your board, and set the domain each one's meetings count toward." />
       <div className="space-y-3">
         {accounts.map((a) => (
           <div key={a.id} className="overflow-hidden rounded-lg border border-line">
@@ -585,6 +596,17 @@ function ConnectionsPane({
                 {a.sync_direction === "two_way" ? "two-way" : "read-only"}
               </span>
               <div className="flex-1" />
+              {a.provider === "google" && a.sync_direction === "two_way" && (
+                settings?.default_calendar_account_id === a.id ? (
+                  <span className="mono rounded-full bg-accent-soft px-2 py-0.5 text-meta text-accent">
+                    default
+                  </span>
+                ) : (
+                  <Btn onClick={() => updateSettings({ default_calendar_account_id: a.id })}>
+                    Set as default
+                  </Btn>
+                )
+              )}
               {a.needs_reconnect && a.provider !== "ics" && (
                 <Btn kind="signal" onClick={() => connect(a.provider as "google" | "m365")}>
                   Reconnect
@@ -750,6 +772,18 @@ function ConnectionsPane({
   );
 }
 
+function IntegrationsPane() {
+  return (
+    <div>
+      <PaneHeader
+        title="Integrations"
+        sub="Feeds of completed work that flow into your projects as actuals — what you shipped, not what's scheduled."
+      />
+      <GitHubConnect />
+    </div>
+  );
+}
+
 function LabelsPane() {
   const { labels, createLabel, updateLabel, deleteLabel } = useLabels();
   const [newLabel, setNewLabel] = useState("");
@@ -882,6 +916,7 @@ export default function SettingsModal({
       {active === "connections" && (
         <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
       )}
+      {active === "integrations" && <IntegrationsPane />}
       {active === "labels" && <LabelsPane />}
       {active === "account" && <AccountPane />}
     </>

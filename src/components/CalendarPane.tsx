@@ -163,6 +163,8 @@ export default function CalendarPane({
   onOpenSlot,
   onRangeChange,
   railRef,
+  onConvertTaskToEvent,
+  onConvertEventToTask,
   onViewChange,
   hotkeysEnabled = true,
   weekGlyph,
@@ -205,6 +207,8 @@ export default function CalendarPane({
   onOpenSlot: (s: Slot, anchor: DOMRect) => void;
   onRangeChange: (startISO: string, endISO: string) => void;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
+  onConvertTaskToEvent?: (task: Task) => void;
+  onConvertEventToTask?: (event: ExternalEvent) => void;
 }) {
   const calRef = useRef<FullCalendar>(null);
   const tasksRef = useRef(tasks);
@@ -213,6 +217,10 @@ export default function CalendarPane({
   eventsRef.current = events;
   const slotsRef = useRef(slots);
   slotsRef.current = slots;
+  // Tracks the slot id the pointer is hovering over during a task drag.
+  // onReceive reads this to prefer the visually-highlighted slot over time-range math,
+  // which breaks when FC snaps the ghost adjacent to the slot to avoid overlap.
+  const overSlotIdRef = useRef<string | null>(null);
   const mutationsRef = useRef(mutations);
   mutationsRef.current = mutations;
 
@@ -421,10 +429,18 @@ export default function CalendarPane({
     let dragId: string | null = null; // external [data-task-drag] id (rail / slot popover row)
     let fromRail = false; // did this drag start inside the rail itself?
     let overRail = false; // is the pointer currently over the rail?
+    // A cursor-following label that names the slot you're about to drop into. The
+    // ghost fades to ~10% over a slot, so this is what tells you the target — and it
+    // shows the full slot title even when a narrow/inset slot truncates its own.
+    const chip = document.createElement("div");
+    chip.className = "slot-drop-chip";
+    chip.setAttribute("aria-hidden", "true");
+    document.body.appendChild(chip);
     const reset = () => {
       document.body.classList.remove("cal-dragging", "over-slot");
       overSlot?.classList.remove("slot-drop-target");
       overSlot = null;
+      chip.classList.remove("is-visible");
       railRef.current?.classList.remove("rail-drop-active");
     };
     const onDown = (e: PointerEvent) => {
@@ -437,23 +453,47 @@ export default function CalendarPane({
     const onMove = (e: PointerEvent) => {
       if (!armed) return;
       if (!active) { active = true; document.body.classList.add("cal-dragging"); }
-      const under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-      const slotEl = (under?.closest?.(".fc-event.evt-slot") ?? null) as HTMLElement | null;
+      // Hit-test slots by geometry, not elementFromPoint: FullCalendar stacks the
+      // .fc-highlight selection box and the drag mirror *above* the slot event, so
+      // elementFromPoint+closest never sees the slot and the drop lands beside it.
+      // Instead walk the slot rects and accept the pointer anywhere in the slot's
+      // full-width time band (the whole column row, not just the rendered block) —
+      // so the entire slot reads as one generous drop zone.
+      let slotEl: HTMLElement | null = null;
+      for (const el of document.querySelectorAll<HTMLElement>(".fc-event.evt-slot")) {
+        const r = el.getBoundingClientRect();
+        if (e.clientY < r.top || e.clientY > r.bottom) continue;
+        const col = el.closest<HTMLElement>(".fc-timegrid-col");
+        const cr = col?.getBoundingClientRect() ?? r;
+        if (e.clientX >= cr.left && e.clientX <= cr.right) { slotEl = el; break; }
+      }
       if (slotEl !== overSlot) {
         overSlot?.classList.remove("slot-drop-target");
         slotEl?.classList.add("slot-drop-target");
         overSlot = slotEl;
+        overSlotIdRef.current = slotEl?.getAttribute("data-slot-id") ?? null;
+        // Slots use a custom renderer (no .fc-event-title); .fc-event-main holds
+        // just the slot title, no time text.
+        const title = slotEl?.querySelector(".fc-event-main")?.textContent?.trim();
+        chip.textContent = `↳ Drop into ${title || "this slot"}`;
       }
       document.body.classList.toggle("over-slot", Boolean(slotEl));
+      if (slotEl) {
+        chip.style.left = `${e.clientX + 14}px`;
+        chip.style.top = `${e.clientY + 16}px`;
+        chip.classList.add("is-visible");
+      } else {
+        chip.classList.remove("is-visible");
+      }
       const rail = railRef.current;
       if (rail) {
         const rr = rail.getBoundingClientRect();
         const onRail =
           e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom;
         overRail = onRail && !slotEl;
-        // Only an item dragged *in* from elsewhere (a slot popover row) is an
-        // inbox candidate; dragging a rail row back onto the rail just cancels.
-        rail.classList.toggle("rail-drop-active", overRail && !fromRail && Boolean(dragId));
+        // Any task dragged over the rail — whether from the calendar or from the
+        // rail itself — can drop to inbox. The banner already exists for today/week tabs.
+        rail.classList.toggle("rail-drop-active", overRail && Boolean(dragId));
       }
     };
     const onUp = () => {
@@ -463,12 +503,19 @@ export default function CalendarPane({
       armed = false;
       if (active) {
         active = false;
-        // A slot/popover item dropped on the rail → back to the Inbox. (Calendar
-        // blocks use onDragStop; rail rows dropped on the rail just cancel.)
-        if (overRail && dragId && !fromRail) {
-          const task = tasksRef.current.find((t) => t.id === dragId);
-          if (task) mutationsRef.current.backToInbox(task);
+        // Any task dropped on the rail → back to the Inbox (removes from slot too).
+        if (overRail && dragId) {
+          const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${dragId}"]`);
+          const group = dragEl?.getAttribute("data-task-drag-group");
+          const ids = group ? group.split(",") : [dragId];
+          ids.forEach((id) => {
+            const task = tasksRef.current.find((t) => t.id === id);
+            if (task) mutationsRef.current.backToInbox(task);
+          });
         }
+        // onReceive fires after onUp in the same task. Clear overSlotIdRef after a
+        // microtask so onReceive can read it; if no drop occurred it clears itself.
+        Promise.resolve().then(() => { overSlotIdRef.current = null; });
         reset();
       }
       dragId = null;
@@ -489,6 +536,7 @@ export default function CalendarPane({
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("pointerup", onUp, true);
       reset();
+      chip.remove();
     };
   }, [railRef]);
 
@@ -703,6 +751,7 @@ export default function CalendarPane({
       return;
     }
     if (kind === "slot") {
+      arg.el.setAttribute("data-slot-id", refId);
       arg.el.addEventListener("contextmenu", (e) => e.preventDefault());
       return;
     }
@@ -802,14 +851,33 @@ export default function CalendarPane({
       tasks.forEach((t) => mutations.planFor(t, date));
       return;
     }
-    // Dropped onto a slot's time range → join the slot (no block of their own).
+    // Dropped onto a slot → join it. Prefer the visually-highlighted slot (the
+    // one the pointer was over at drop time, stored in overSlotIdRef) over time-range
+    // math, which breaks when FC snaps the ghost adjacent to avoid overlap.
+    const hoveredSlotId = overSlotIdRef.current;
+    overSlotIdRef.current = null; // consume it — onUp intentionally left it for us
+    const hoveredSlot = hoveredSlotId
+      ? slotsRef.current.find((s) => s.id === hoveredSlotId)
+      : null;
+
     const t0 = start.getTime();
-    const slot = slotsRef.current.find((s) => {
+    const timeSlot = slotsRef.current.find((s) => {
       const ss = new Date(s.start_time).getTime();
       return t0 >= ss && t0 < ss + s.duration_minutes * 60_000;
     });
+    const slot = hoveredSlot ?? timeSlot;
     if (slot) {
-      tasks.forEach((t) => mutations.assignToSlot(t, slot));
+      // If every dropped task is already in this slot, they're being dragged to
+      // reschedule (from the Today rail), not re-slotted. Block them at the drop time.
+      if (tasks.every((t) => t.slot_id === slot.id)) {
+        let cursor = new Date(start);
+        tasks.forEach((t) => {
+          mutations.block(t, cursor);
+          cursor = new Date(cursor.getTime() + (t.duration_minutes ?? DEFAULT_DURATION_MINUTES) * 60_000);
+        });
+      } else {
+        tasks.forEach((t) => mutations.assignToSlot(t, slot));
+      }
       return;
     }
     // Otherwise time-block them — a group stacks back-to-back from the drop time.
@@ -833,9 +901,28 @@ export default function CalendarPane({
     if (kind === "task") {
       const task = findTask(refId);
       if (task && info.event.start) {
-        // All-day row → planned for that day, no time block; a time slot → block.
-        if (info.event.allDay) mutations.planFor(task, toDateISO(info.event.start));
-        else mutations.block(task, info.event.start);
+        if (info.event.allDay) {
+          mutations.planFor(task, toDateISO(info.event.start));
+        } else {
+          // Check if the task was dropped onto a slot (visually highlighted or by time overlap).
+          const hoveredSlotId = overSlotIdRef.current;
+          overSlotIdRef.current = null;
+          const hoveredSlot = hoveredSlotId
+            ? slotsRef.current.find((s) => s.id === hoveredSlotId)
+            : null;
+          const t0 = info.event.start.getTime();
+          const timeSlot = slotsRef.current.find((s) => {
+            const ss = new Date(s.start_time).getTime();
+            return t0 >= ss && t0 < ss + s.duration_minutes * 60_000;
+          });
+          const slot = hoveredSlot ?? timeSlot;
+          if (slot) {
+            info.revert(); // undo FC's move — the task joins the slot, not a time block
+            mutations.assignToSlot(task, slot);
+          } else {
+            mutations.block(task, info.event.start);
+          }
+        }
         if (task.recurrence_id && !task.recurrence_overridden)
           mutations.patchTask(task.id, { recurrence_overridden: true });
       }
@@ -1328,6 +1415,14 @@ export default function CalendarPane({
             ) : (
               <EventMenuItem onClick={() => hideEvent(ev, "THIS")}>Hide event</EventMenuItem>
             )}
+            {onConvertEventToTask && !ev.all_day && (
+              <>
+                <div className="my-1 border-t border-line" />
+                <EventMenuItem onClick={() => { setEventMenu(null); onConvertEventToTask(ev); }}>
+                  → Task
+                </EventMenuItem>
+              </>
+            )}
           </div>
         );
       })()}
@@ -1374,6 +1469,17 @@ export default function CalendarPane({
             }}>
               Duplicate
             </EventMenuItem>
+            {onConvertTaskToEvent && task.start_time && (
+              <>
+                <div className="my-1 border-t border-line" />
+                <EventMenuItem onClick={() => {
+                  setTaskMenu(null);
+                  onConvertTaskToEvent(task);
+                }}>
+                  → Event
+                </EventMenuItem>
+              </>
+            )}
             <div className="my-1 border-t border-line" />
             <EventMenuItem onClick={() => {
               setTaskMenu(null);
