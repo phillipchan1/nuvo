@@ -90,20 +90,21 @@ export default function BriefLens({
       });
       const cur = briefRef.current;
       const have = (sec: Section) => new Set(cur[sec].map(norm));
-      const fresh: ItemBrief = {
+      const freshQs = res.brief.openQuestions.filter(
+        (q) =>
+          !dismissedQs.current.has(norm(q)) &&
+          !answers.current.some((a) => norm(a.question) === norm(q)),
+      );
+      setProposal({
         scope: res.brief.scope.filter((l) => !have("scope").has(norm(l))),
         nonGoals: res.brief.nonGoals.filter((l) => !have("nonGoals").has(norm(l))),
         doneWhen: res.brief.doneWhen.filter((l) => !have("doneWhen").has(norm(l))),
         constraints: res.brief.constraints.filter((l) => !have("constraints").has(norm(l))),
-        openQuestions: res.brief.openQuestions.filter(
-          (q) =>
-            !dismissedQs.current.has(norm(q)) &&
-            !answers.current.some((a) => norm(a.question) === norm(q)),
-        ),
-      };
-      setProposal(fresh);
-      // open questions live on the document so a half-done interrogation survives
-      persist({ ...briefRef.current, openQuestions: fresh.openQuestions });
+        openQuestions: [],
+      });
+      // Local only — the draft PROPOSES, it never mutates. Questions reach the
+      // persisted document the first time the human acts (accept/answer/…).
+      setBrief((b) => ({ ...b, openQuestions: freshQs }));
       if (res.outcome && !outcome.trim()) setProposedOutcome(res.outcome);
     } catch (e) {
       console.warn("[brief] draft failed", e);
@@ -157,19 +158,15 @@ export default function BriefLens({
     persist({ ...brief, [sec]: [...brief[sec], v] });
   };
 
-  const openQuestions = proposal?.openQuestions ?? brief.openQuestions;
+  const openQuestions = brief.openQuestions;
   const answerQuestion = (q: string, a: string) => {
     answers.current = [...answers.current, { question: q, answer: a.trim() }];
-    const left = openQuestions.filter((x) => x !== q);
-    if (proposal) setProposal({ ...proposal, openQuestions: left });
-    persist({ ...briefRef.current, openQuestions: left });
+    persist({ ...briefRef.current, openQuestions: openQuestions.filter((x) => x !== q) });
     void runDraft(true); // the answer→brief loop: revise, don't silently mutate
   };
   const dismissQuestion = (q: string) => {
     dismissedQs.current.add(norm(q));
-    const left = openQuestions.filter((x) => x !== q);
-    if (proposal) setProposal({ ...proposal, openQuestions: left });
-    persist({ ...briefRef.current, openQuestions: left });
+    persist({ ...briefRef.current, openQuestions: openQuestions.filter((x) => x !== q) });
   };
 
   // ── the Defined axis, live ──────────────────────────────────────────────────
@@ -304,9 +301,13 @@ export default function BriefLens({
         </div>
       )}
 
-      {/* the handoff */}
+      {/* the handoff — flush the outcome edit too, so a tap straight from the
+          textarea to Done can never drop it */}
       <button
-        onClick={onDone}
+        onClick={() => {
+          if (outcome.trim() !== item.outcome.trim()) update({ outcome: outcome.trim() });
+          onDone();
+        }}
         className="tap fast mt-7 w-full rounded-xl py-3 text-body font-medium text-white active:scale-[.98]"
         style={{ background: "var(--accent)" }}
       >
