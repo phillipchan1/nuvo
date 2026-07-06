@@ -380,6 +380,37 @@ export default function CalendarPane({
     return () => window.removeEventListener("keydown", onKey);
   }, [hotkeysEnabled, onViewChange]);
 
+  // Trackpad horizontal swipe pages the period (Fantastical/Google Calendar
+  // convention) — a mostly-horizontal wheel gesture goes to next/prev instead
+  // of doing nothing (the grid has no native horizontal scroll to hijack).
+  // Fires once per gesture: crossing the threshold locks further paging until
+  // the gesture pauses (deltaX events stop for a beat), so one swipe = one page.
+  useEffect(() => {
+    if (view === "board") return; // WeekBoard has no FC api to page
+    const el = wrapRef.current;
+    if (!el) return;
+    const THRESHOLD = 60;
+    let accumX = 0;
+    let locked = false;
+    let endTimer: ReturnType<typeof setTimeout> | null = null;
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; // vertical scroll — let it through
+      e.preventDefault();
+      if (endTimer) clearTimeout(endTimer);
+      endTimer = setTimeout(() => { accumX = 0; locked = false; }, 150);
+      if (locked) return;
+      accumX += e.deltaX;
+      const api = calRef.current?.getApi();
+      if (accumX > THRESHOLD) { api?.next(); locked = true; }
+      else if (accumX < -THRESHOLD) { api?.prev(); locked = true; }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (endTimer) clearTimeout(endTimer);
+    };
+  }, [view]);
+
   // External drag: any [data-task-drag] row in the left rail can be dropped
   // onto the grid. FullCalendar owns the drop geometry; we own the state. In the
   // board ("Spread") view there's no grid — WeekBoard owns rail-row drags itself,
