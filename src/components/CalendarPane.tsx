@@ -233,6 +233,7 @@ export default function CalendarPane({
   const [showHidden, setShowHidden] = useState(false);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent } | null>(null);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: Task; el: HTMLElement } | null>(null);
+  const [slotMenu, setSlotMenu] = useState<{ x: number; y: number; slot: Slot; el: HTMLElement } | null>(null);
 
   const googleAvailable = useMemo(
     () => accounts.some((a) => a.provider === "google"),
@@ -783,7 +784,11 @@ export default function CalendarPane({
     }
     if (kind === "slot") {
       arg.el.setAttribute("data-slot-id", refId);
-      arg.el.addEventListener("contextmenu", (e) => e.preventDefault());
+      arg.el.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        const slot = findSlot(refId);
+        if (slot) setSlotMenu({ x: e.clientX, y: e.clientY, slot, el: arg.el });
+      });
       return;
     }
     arg.el.addEventListener("contextmenu", (e) => {
@@ -832,6 +837,25 @@ export default function CalendarPane({
       window.removeEventListener("blur", onBlur);
     };
   }, [taskMenu]);
+
+  const slotMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!slotMenu) return;
+    const onDown = (e: PointerEvent) => {
+      if (slotMenuRef.current?.contains(e.target as Node)) return;
+      setSlotMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSlotMenu(null);
+    const onBlur = () => setSlotMenu(null);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [slotMenu]);
 
   // If the event is part of a recurring series, revert immediately and
   // surface the scope dialog. On confirm the caller gets scope + executes.
@@ -1517,6 +1541,60 @@ export default function CalendarPane({
               mutations.trash(task);
             }}>
               <span style={{ color: "var(--signal)" }}>Trash</span>
+            </EventMenuItem>
+          </div>
+        );
+      })()}
+
+      {slotMenu && (() => {
+        const slot = slotMenu.slot;
+        const childCount = slotTasks[slot.id]?.length ?? 0;
+        const recurring = Boolean(slot.recurrence_id);
+        const left = Math.min(slotMenu.x, window.innerWidth - 210);
+        const top = Math.min(slotMenu.y, window.innerHeight - 160);
+        return (
+          <div
+            ref={slotMenuRef}
+            className="moment fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            style={{ top, left, boxShadow: "var(--shadow-3)" }}
+          >
+            <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
+              {slotTitle(slot)}
+            </div>
+            <EventMenuItem onClick={() => {
+              const rect = slotMenu.el.getBoundingClientRect();
+              setSlotMenu(null);
+              onOpenSlot(slot, rect);
+            }}>
+              Open
+            </EventMenuItem>
+            <EventMenuItem onClick={() => {
+              setSlotMenu(null);
+              slotMutations.createSlot({
+                title: slot.title,
+                do_date: slot.do_date,
+                start_time: slot.start_time,
+                duration_minutes: slot.duration_minutes,
+                project_id: slot.project_id,
+                domain_id: slot.domain_id,
+                color: slot.color,
+              });
+            }}>
+              Duplicate
+            </EventMenuItem>
+            <div className="my-1 border-t border-line" />
+            <EventMenuItem onClick={() => {
+              const rect = slotMenu.el.getBoundingClientRect();
+              setSlotMenu(null);
+              // A plain, empty, non-recurring slot deletes outright. Anything with
+              // occurrence scope or tasks inside needs the full picker in the slot
+              // detail panel (SlotDeleteButton) — don't reimplement that choice here.
+              if (!recurring && childCount === 0) slotMutations.removeSlot(slot);
+              else onOpenSlot(slot, rect);
+            }}>
+              <span style={{ color: "var(--signal)" }}>
+                {!recurring && childCount === 0 ? "Delete slot" : "Delete slot…"}
+              </span>
             </EventMenuItem>
           </div>
         );
