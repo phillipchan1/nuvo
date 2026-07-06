@@ -13,8 +13,8 @@
 // hand off to the Refine run. Capacity is deliberately WIP-first (no calendar
 // math): the live-data probe showed a pure hours model scores an unshaped, overdue
 // project at ZERO demand — it tells a comfortable lie about exactly the projects
-// that weigh on you. WIP-first can't. Per-project calendar feasibility
-// (refineFeasibility.ts) is a later enrichment, never the verdict.
+// that weigh on you. WIP-first can't. Per-project calendar feasibility (the
+// weekForecast in capacity.ts) is a later enrichment, never the verdict.
 
 import { differenceInCalendarDays } from "date-fns";
 import {

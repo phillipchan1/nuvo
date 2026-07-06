@@ -1,9 +1,8 @@
 // Capacity — the denominator of the Commitment ratio. Real available hours, not
 // aspiration: the work window minus what the calendar already holds (external
-// meetings + scheduled blocks). Pure over busy blocks, the same primitive the
-// Reality-check card walks (refineFeasibility.ts), generalized from one finish
-// line to a rolling set of weeks so the portfolio meter and the timeline ribbon
-// can share it. Capacity is decided calendar-derived — see docs/commitment-model.md.
+// meetings + scheduled blocks). Pure over busy blocks, rolled across a set of
+// weeks so the portfolio meter and the On Deck timeline share one source.
+// Capacity is decided calendar-derived — see docs/commitment-model.md.
 
 import { addDays, startOfDay, startOfWeek } from "date-fns";
 import type { BusyBlock } from "./now";

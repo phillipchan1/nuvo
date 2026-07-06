@@ -17,6 +17,7 @@ import { useRealtime } from "../../hooks/useRealtime";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
 import { readTending } from "../../lib/tending";
+import { itemsNeedingLenses } from "../../lib/lenses";
 import type { Task } from "../../lib/types";
 import NowFloor from "../floors/NowFloor";
 import SettingsModal from "../SettingsModal";
@@ -181,9 +182,10 @@ export default function MobileShell() {
     return t.silent.length + t.raw.length;
   }, [vertical]);
 
-  // How many projects are groomable right now — the Refine run's deck size.
+  // How many projects still carry a readiness gap — the guided pass's size.
+  // Same axis source the On Deck lanes route by (lib/lenses.ts).
   const refineCount = useMemo(
-    () => readTending(vertical).groomable.filter((c) => c.kind === "project").length,
+    () => itemsNeedingLenses(vertical, "project", new Date()).length,
     [vertical],
   );
 

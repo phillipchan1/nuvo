@@ -22,7 +22,6 @@ import {
 } from "./vertical";
 import { projectPace } from "./pace";
 import { verdictOf } from "./tending";
-import type { RefineCardKind } from "./refine";
 
 export type LensKind = "brief" | "path";
 
@@ -34,17 +33,6 @@ export const LENS_LABEL: Record<LensKind, string> = {
 /** A groomable target, optionally pinned to one lens — what the hub's chips and
  *  the guided pass hand the flow host. */
 export type LensRef = { kind: "project" | "initiative"; id: string; lens?: LensKind };
-
-/** The §4 card-kind → lens map: which lens hosts each of the old deck's gaps.
- *  "reality" belongs to On Deck (the hub reads Fits); nothing maps to a card
- *  anymore — the verdict-layer repairs become lens prefills. */
-export const CARD_LENS: Record<RefineCardKind, LensKind | "ondeck"> = {
-  outcome: "brief",
-  sharpen: "brief",
-  due: "brief",
-  tasks: "path",
-  reality: "ondeck",
-};
 
 export interface ReadinessAxes {
   /** The Brief's axis: outcome + scope + acceptance + a finish line. */

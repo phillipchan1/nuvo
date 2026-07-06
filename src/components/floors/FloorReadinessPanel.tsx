@@ -1,29 +1,21 @@
 // The floor's readiness panel — the Projects / Initiatives mirror of the rail's
 // WeekReadiness. Answers "how prepared is this floor to be worked?" as an
-// inspectable list: "N groomed · M to groom", each gap a jump into the Groom run.
-// Dissolves to a single quiet line once everything's groomed.
+// inspectable list: each to-groom row NAMES its gap with a lens tag (the §4
+// router in lib/lenses.ts) and routes straight into the lens that closes it —
+// Brief (Defined) or Path (Planned). Dissolves to a single quiet line once
+// everything's groomed.
 //
 // COMPLEMENTARY to FloorStanding (Defined · Capacity · Motion = *assessment*):
-// readiness = *preparedness*. Standing tells you where you stand; this tells you
-// what's left to groom and lets you go do it. Reads the same `readTending`
-// source the spine cue and the Groom run draw from, so they never disagree.
+// readiness = *preparedness*. Reads the same axis checklist the Groom flow and
+// On Deck route by, so they can never disagree.
 
 import { useMemo } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { isOpenStatus } from "../../lib/vertical";
-import { readTending, type Ripeness } from "../../lib/tending";
+import { itemsNeedingLenses, LENS_LABEL } from "../../lib/lenses";
 
-/** Short, present-tense need per stage — what grooming this item will give it. */
-const NEEDS: Record<Ripeness, string> = {
-  raw: "needs an outcome",
-  shaped: "needs steps",
-  scaffolded: "needs a finish line",
-  active: "needs a review",
-  resting: "resting",
-};
-
-// A few rows inline; the rest fold into a "+N more" line into the same run.
+// A few rows inline; the rest fold into a "+N more" line into the same pass.
 const SHOWN = 5;
 
 /** A tick (groomed) or an open ring (a gap) — mirrors WeekReadiness's Mark. */
@@ -57,10 +49,10 @@ export default function FloorReadinessPanel({ kind }: { kind: "project" | "initi
     const open = (kind === "project" ? data.projects : data.initiatives).filter((x) =>
       isOpenStatus(x.status),
     );
-    // groomable = the ones still wanting a pass; everything else open is groomed
-    // (tended/sound or deliberately resting). Same source as the spine cue.
-    const groomable = readTending(data).groomable.filter((c) => c.kind === kind);
-    return { groomed: Math.max(0, open.length - groomable.length), toGroom: groomable };
+    // gapped = still missing a readiness axis (Defined / Planned); everything
+    // else open is groomed or deliberately resting. Same source as the hub.
+    const gapped = itemsNeedingLenses(data, kind, new Date());
+    return { groomed: Math.max(0, open.length - gapped.length), toGroom: gapped };
   }, [data, kind]);
 
   // Reward — everything in flight is groomed. A quiet line, not a card.
@@ -75,6 +67,10 @@ export default function FloorReadinessPanel({ kind }: { kind: "project" | "initi
 
   const shown = toGroom.slice(0, SHOWN);
   const overflow = toGroom.length - shown.length;
+  // "+N more" and the header route into the guided experience for this floor:
+  // projects land on the On Deck hub; initiatives start their pass directly.
+  const openAll = () =>
+    kind === "project" ? openFlow("refine") : openFlow("refine", { pass: "initiative" });
 
   return (
     <div className="mb-6 max-w-[920px]">
@@ -83,24 +79,30 @@ export default function FloorReadinessPanel({ kind }: { kind: "project" | "initi
         <span className="mono text-meta text-muted">{groomed} ready for a week · {toGroom.length} to groom</span>
       </div>
       <div className="flex flex-col">
-        {shown.map((c) => (
+        {shown.map(({ item, gaps }) => (
           <button
-            key={`${c.kind}:${c.id}`}
+            key={`${kind}:${item.id}`}
             type="button"
-            onClick={() => openFlow("refine", { kind: c.kind, id: c.id })}
+            onClick={() => openFlow("refine", { kind, id: item.id })}
             className="fast tap flex items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left hover:bg-surface-2"
           >
             <Mark done={false} />
-            <span className="min-w-0 flex-1 truncate text-body text-ink">{c.name}</span>
-            <span className="shrink-0 rounded-full bg-accent-soft px-1.5 py-0.5 text-meta font-medium text-accent">
-              {c.silent ? "drifting" : NEEDS[c.ripeness.stage]}
-            </span>
+            <span className="min-w-0 flex-1 truncate text-body text-ink">{item.name}</span>
+            {gaps.map((g) => (
+              <span
+                key={g.lens}
+                title={g.label}
+                className="shrink-0 rounded-full bg-accent-soft px-1.5 py-0.5 text-meta font-medium text-accent"
+              >
+                {LENS_LABEL[g.lens]} · {g.label}
+              </span>
+            ))}
           </button>
         ))}
         {overflow > 0 && (
           <button
             type="button"
-            onClick={() => openFlow("refine")}
+            onClick={openAll}
             className="fast tap px-1.5 py-1.5 text-left text-caption text-muted hover:text-ink"
           >
             +{overflow} more to groom →

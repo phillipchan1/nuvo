@@ -35,7 +35,7 @@ export default function InitiativesFloor({
   onOpen: (id: string) => void;
 }) {
   const { data, updateInitiative, updateProject, deleteInitiatives } = useVertical();
-  const { openFloorModal, openRecord } = useAppNavigation();
+  const { openFloorModal, openRecord, openFlow } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
   const [view, setView] = useState<"standing" | "board">("standing");
   const atRest = readSpine(data).floors.initiative.calm;
@@ -98,7 +98,18 @@ export default function InitiativesFloor({
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
       <FloorHeader
         eyebrow={`${data.initiatives.length} initiatives · ${data.initiatives.filter((i) => isProjectInFlight(i.status)).length} in flight`}
-        actions={atRest ? <RefinedSeal noun="initiatives" celebrate={celebrate} /> : undefined}
+        actions={
+          <>
+            {atRest && <RefinedSeal noun="initiatives" celebrate={celebrate} />}
+            <button
+              onClick={() => openFlow("refine", { pass: "initiative" })}
+              className="tap fast rounded-lg px-3.5 py-2 text-caption font-medium text-white active:scale-[.98]"
+              style={{ background: "var(--accent)" }}
+            >
+              Groom the bets →
+            </button>
+          </>
+        }
       >
         <h1 className="text-display masthead">Initiatives</h1>
         <p className="mt-1 text-body text-muted">The bets with finish lines, across every domain — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
