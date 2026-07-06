@@ -321,3 +321,52 @@ deploy/migration on Phil's project (the "NEEDS DEPLOY" pattern). Until deployed,
 Brief UI to degrade gracefully (manual entry works; the AI draft lights up post-deploy).
 The routing, axes, Path lens, floor wiring, and guided pass are **pure client** and ship
 without any deploy.
+
+---
+
+## SHIPPED (2026-07-05, branch `grooming-lenses`) — v1 live end-to-end
+
+Built autonomously overnight; verified in the running dev app at desktop and 375px.
+
+**What's live**
+- **The axes + router** (`src/lib/lenses.ts`): `projectReadinessAxes` / `initiativeReadinessAxes`
+  (Defined · Planned · Fits), `lensGaps`/`lensesFor`/`itemsNeedingLenses`. Schedulable =
+  defined && planned; On Deck's lane gaps AND `coverageWeeks` now read the axes (the §4
+  retirement of flat `tendedScore` for grooming surfaces — the Spine/floor meters still
+  read the settled scores, untouched).
+- **The Brief lens** (`components/grooming/BriefLens.tsx`): document surface, AI-drafted
+  sections + outcome, interrogation with the answer→redraft loop, accept/edit/dismiss per
+  line, Defined checklist chips, manual entry fully working (graceful "AI off" note).
+- **The Path lens** (`components/grooming/PathLens.tsx`): existing steps/structure outline,
+  the shared `StepComposer` (extracted per §6), duration cycler (20/45/90m), scaffold /
+  blueprint gap-fill, thin-steps verdict inline, Planned chip.
+- **The guided pass** (`refine/RefineRun.tsx` rewritten): per-project, demand-ordered,
+  "project 2 of 4" progress, per-item lens ladder (Brief → Path chips), coverage-climb
+  finish ("weeks stocked X → Y"). `ItemRun` (the card deck) is deleted, with
+  `refineFeasibility.ts`, `curateRefine`, and the card taxonomy.
+- **On Deck as the hub**: lanes name their gap ("scope unclear · no steps"), gap-specific
+  `Brief →` / `Path →` chips replace "Shape →", footer = "Groom the N that need it →".
+- **Entries**: Projects floor hero "Open On Deck →"; Initiatives floor hero "Groom the
+  bets →" (§8 pass — Brief + Path, no timeline); `FloorReadinessPanel` rows wear lens tags
+  and route into the flow; mobile "Groom your projects" pill counts from the same axes.
+
+**Deviations from the spec (deliberate)**
+- **`draftBrief` needs NO edge deploy**: it rides the already-deployed `agent` chat
+  endpoint as a one-shot JSON completion (`src/lib/draftBrief.ts`), grounded client-side
+  (item + steps + domain charter/context) — verified against live: tool-free, clean JSON,
+  domain-aware non-goals. The `brief` column migration (`00000000000030`) was applied via
+  `supabase db push` (additive, nullable). Nothing awaits a deploy.
+- Routing is **axis-first** rather than `refineProjectCards`-grouped — the axes subsume
+  the card kinds and keep one source of truth; the soundness verdict still feeds lens
+  prefills (sharper outcome, missing steps).
+- The Brief's interrogation renders as a tonal block (not a margin rail) — one layout at
+  every width; the type is named `ItemBrief` (`Brief` was taken by the morning brief).
+- The lens's AI draft **proposes only** — nothing persists until a human accepts/answers.
+
+**Optional follow-ups**
+- A dedicated `draftBrief` edge action (cheaper/faster than the chat loop, temp 0.2):
+  add to `supabase/functions/agent`, then `supabase functions deploy agent`.
+- Path outline reorder-by-dependency (pointer drag, Tauri-safe) — v1 keeps list order.
+- Record modal `Brief · Path` segmented control (§9B), Blockers lens (§7) — deferred as spec'd.
+- Migration ledger note: the duplicate-numbered `00000000000025_okr_alignment.sql` was
+  renumbered to `00000000000029` so `db push` could record it (its DDL was already live).
