@@ -487,7 +487,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           status: normalizeInitiativeStatus(row.status ?? "in_progress"), progress: row.progress ?? 0,
           momentum: (row.momentum ?? "flat") as Initiative["momentum"], keyResults: [],
           createdAt: row.created_at ?? null, tendedAt: row.tended_at ?? null,
-          verification: null, verifiedAt: null,
+          verification: null, verifiedAt: null, brief: null,
         };
       },
       updateInitiative: (id, patch) => {
@@ -501,6 +501,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if (patch.momentum != null) rowPatch.momentum = patch.momentum;
         if (patch.progress != null) rowPatch.progress = patch.progress;
         if (patch.domainId != null) rowPatch.domain_id = patch.domainId;
+        if ("brief" in patch) rowPatch.brief = patch.brief;
         if (!Object.keys(rowPatch).length) return;
         patchRows<InitiativeRow>(["vertical", "initiatives"], id, rowPatch);
         void writeTable("initiatives", id, rowPatch).then(() => invalidate(["vertical"]));
@@ -572,7 +573,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           targetDate: row.target_date ?? null,
           status: (row.status ?? "backlog") as Project["status"], progress: row.progress ?? 0,
           createdAt: row.created_at ?? null, tendedAt: row.tended_at ?? null,
-          verification: null, verifiedAt: null,
+          verification: null, verifiedAt: null, brief: null,
         };
       },
       updateProject: (id, patch) => {
@@ -587,6 +588,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if ("initiativeId" in patch) rowPatch.initiative_id = patch.initiativeId;
         if ("keyResultId" in patch) rowPatch.key_result_id = patch.keyResultId;
         if (patch.domainId != null) rowPatch.domain_id = patch.domainId;
+        if ("brief" in patch) rowPatch.brief = patch.brief;
         if (!Object.keys(rowPatch).length) return;
         patchRows<ProjectRow>(["vertical", "projects"], id, rowPatch);
         void writeTable("projects", id, rowPatch).then(() => invalidate(["vertical"]));

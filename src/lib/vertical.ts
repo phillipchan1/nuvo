@@ -56,6 +56,29 @@ export interface KeyResult {
 }
 
 /**
+ * The grooming Brief — the "What" lens's document (docs/grooming-lenses.md §5).
+ * Scope and acceptance as adjudicated lines, persisted as a `brief` jsonb on
+ * projects and initiatives. The existing `outcome` (one-liner) and `targetDate`
+ * stay where they are; the Brief lens edits them alongside these fields.
+ * (Named ItemBrief — `Brief` is already the morning brief in lib/brief.ts.)
+ */
+export interface ItemBrief {
+  scope: string[]; // in scope
+  nonGoals: string[]; // explicitly out
+  doneWhen: string[]; // acceptance criteria
+  openQuestions: string[]; // the AI's interrogation, still open
+  constraints: string[];
+}
+
+export const EMPTY_BRIEF: ItemBrief = {
+  scope: [],
+  nonGoals: [],
+  doneWhen: [],
+  openQuestions: [],
+  constraints: [],
+};
+
+/**
  * Nuvo's soundness judgment of a project / initiative — the "are the pieces
  * *good*?" read that gates whether something is truly tended. Persisted as the
  * `verification` jsonb; `sig` is a structural signature so we know when the
@@ -89,6 +112,7 @@ export interface Initiative {
   tendedAt: string | null; // last groomed/rested in a Tending session — the snooze
   verification: SoundnessVerdict | null; // Nuvo's last soundness judgment (cached)
   verifiedAt: string | null; // when that judgment was made
+  brief: ItemBrief | null; // the What lens's document (scope / non-goals / acceptance)
 }
 
 export type ProjectStatus = "backlog" | "in_progress" | "waiting" | "cancelled" | "complete";
@@ -109,6 +133,7 @@ export interface Project {
   tendedAt: string | null; // last groomed/rested in a Tending session — the snooze
   verification: SoundnessVerdict | null; // Nuvo's last soundness judgment (cached)
   verifiedAt: string | null; // when that judgment was made
+  brief: ItemBrief | null; // the What lens's document (scope / non-goals / acceptance)
 }
 
 /** A task as the floors see it — a thin view over a live `tasks` row. */
@@ -202,6 +227,7 @@ export interface InitiativeRow {
   tended_at?: string | null;
   verification?: SoundnessVerdict | null;
   verified_at?: string | null;
+  brief?: ItemBrief | null;
   key_results?: KeyResultRow[];
 }
 
@@ -222,6 +248,7 @@ export interface ProjectRow {
   tended_at?: string | null;
   verification?: SoundnessVerdict | null;
   verified_at?: string | null;
+  brief?: ItemBrief | null;
 }
 
 // ── Row → view mapping ───────────────────────────────────────────────────────
@@ -333,6 +360,7 @@ export function buildVertical(
       tendedAt: i.tended_at ?? null,
       verification: i.verification ?? null,
       verifiedAt: i.verified_at ?? null,
+      brief: i.brief ?? null,
       keyResults: [...(i.key_results ?? [])]
         .sort((a, b) => a.sort_order - b.sort_order)
         .map((k) => ({
@@ -366,6 +394,7 @@ export function buildVertical(
       tendedAt: p.tended_at ?? null,
       verification: p.verification ?? null,
       verifiedAt: p.verified_at ?? null,
+      brief: p.brief ?? null,
     }));
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
