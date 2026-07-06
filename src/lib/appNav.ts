@@ -33,8 +33,16 @@ export type NowMoment = "choose" | "focus" | "done";
 export type FloorModal = null | "new-initiative" | "new-project";
 
 /** When a flow is opened pointed at one item (e.g. groom THIS project), the
- *  target rides here so the flow can skip its overview and open it directly. */
-export type FlowFocus = { kind: "project" | "initiative"; id: string };
+ *  target rides here so the flow can skip its overview and open it directly.
+ *  `lens` pins the grooming lens to open (a gap chip / to-groom row tap);
+ *  `pass` starts the guided pass over a whole floor instead of one item — the
+ *  Initiatives entry, which has no On Deck hub (docs/grooming-lenses.md §8). */
+export type FlowFocus = {
+  kind?: "project" | "initiative";
+  id?: string;
+  lens?: "brief" | "path";
+  pass?: "initiative";
+};
 
 export interface AppNavState {
   v: 1;
@@ -108,6 +116,8 @@ export function navEqual(a: AppNavState, b: AppNavState): boolean {
     a.flowStep === b.flowStep &&
     a.flowFocus?.kind === b.flowFocus?.kind &&
     a.flowFocus?.id === b.flowFocus?.id &&
+    a.flowFocus?.lens === b.flowFocus?.lens &&
+    a.flowFocus?.pass === b.flowFocus?.pass &&
     a.tab === b.tab &&
     a.calView === b.calView &&
     a.overlay === b.overlay &&

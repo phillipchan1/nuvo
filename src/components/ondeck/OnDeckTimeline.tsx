@@ -1,9 +1,11 @@
-// On Deck — the grooming home. A demand-phased timeline of the in-flight projects
+// On Deck — the grooming hub. A demand-phased timeline of the in-flight projects
 // across the next few weeks: capacity per week, a bar per project positioned by
-// its finish line, the pinch called out, and the coarse moves (Shape · Push ·
-// Park · Cut) inline. Renders inside the Groom flow's Scaffold, in place of the
-// old readiness-sorted portfolio map. Reads readOnDeck (docs/on-deck.md); the
-// moves reuse the same updateProject mutations the Capacity run uses.
+// its finish line, the pinch called out, and the coarse moves (Push · Park ·
+// Cut) inline. Each lane NAMES its readiness gap (the lens router) and routes
+// straight into the lens that closes it — Brief (what) or Path (how) — and the
+// footer's guided pass walks every gapped project through, demand-first.
+// Renders inside the Groom flow's Scaffold. Reads readOnDeck (docs/on-deck.md,
+// docs/grooming-lenses.md §9A); the moves reuse the Capacity run's mutations.
 
 import { useMemo, useState } from "react";
 import { addDays } from "date-fns";
@@ -11,7 +13,7 @@ import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { domainById, type VerticalData } from "../../lib/vertical";
 import { readOnDeck, type LaneState, type OnDeckLane } from "../../lib/onDeck";
-import { type RefineRef } from "../../lib/refine";
+import { LENS_LABEL, type LensRef } from "../../lib/lenses";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
 
@@ -32,7 +34,6 @@ const STATE_LABEL: Record<LaneState, string> = {
   parked: "parked",
 };
 
-const SHAPEABLE: LaneState[] = ["needs_shaping", "idea", "stalled"];
 const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtWk = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
@@ -41,7 +42,7 @@ export default function OnDeckTimeline({
   onStart,
 }: {
   data: VerticalData;
-  onStart: (refs: RefineRef[]) => void;
+  onStart: (refs: LensRef[]) => void;
 }) {
   const store = useVertical();
   const { byWeek, weeklyAvgMins } = useCapacity();
@@ -52,8 +53,9 @@ export default function OnDeckTimeline({
   const H = board.horizonWeeks;
   const cols = `repeat(${H}, minmax(0,1fr))`;
 
-  const shapeQueue: RefineRef[] = board.lanes
-    .filter((l) => SHAPEABLE.includes(l.state))
+  // the guided pass — every gapped project, already in the board's demand order
+  const shapeQueue: LensRef[] = board.lanes
+    .filter((l) => l.gaps.length > 0)
     .map((l) => ({ kind: "project", id: l.project.id }));
 
   const push = (l: OnDeckLane) => {
@@ -110,7 +112,6 @@ export default function OnDeckTimeline({
           const end = l.dueWeekIdx ?? H - 1;
           const extendsBeyond = l.dueWeekIdx == null && l.state !== "idea";
           const isOpen = openId === l.project.id;
-          const showPct = l.state !== "idea" && l.state !== "parked";
           return (
             <div key={l.project.id} className="rounded-lg px-1.5 py-2 hover:bg-accent-soft">
               <button
@@ -121,9 +122,9 @@ export default function OnDeckTimeline({
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
                   <span className="truncate text-caption">{l.project.name}</span>
                 </span>
+                {/* the gap, named — the hub's routing made legible (§4) */}
                 <span className="mono shrink-0 text-micro" style={{ color }}>
-                  {STATE_LABEL[l.state]}
-                  {showPct ? ` · ${l.readiness}%` : ""}
+                  {l.gaps.length > 0 ? l.gaps.map((g) => g.label).join(" · ") : STATE_LABEL[l.state]}
                 </span>
               </button>
 
@@ -143,15 +144,18 @@ export default function OnDeckTimeline({
 
               {isOpen && (
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {SHAPEABLE.includes(l.state) && (
+                  {/* gap-specific lens chips replace the old flat "Shape →" */}
+                  {l.gaps.map((g) => (
                     <button
-                      onClick={() => onStart([{ kind: "project", id: l.project.id }])}
+                      key={g.lens}
+                      onClick={() => onStart([{ kind: "project", id: l.project.id, lens: g.lens }])}
                       className="tap fast rounded-lg px-3.5 py-2 text-caption font-medium text-white active:scale-[.98]"
                       style={{ background: "var(--accent)" }}
+                      title={g.label}
                     >
-                      Shape →
+                      {LENS_LABEL[g.lens]} →
                     </button>
-                  )}
+                  ))}
                   {l.project.targetDate && (
                     <button onClick={() => push(l)} className="tap fast rounded-lg border border-line px-3.5 py-2 text-caption text-muted hover:text-ink active:scale-[.98]">
                       Push a week
@@ -182,7 +186,7 @@ export default function OnDeckTimeline({
           className="tap fast mt-6 w-full rounded-xl py-3 text-body font-medium text-white active:scale-[.98]"
           style={{ background: "var(--accent)" }}
         >
-          Shape the {shapeQueue.length} that need it →
+          Groom the {shapeQueue.length} that need it →
         </button>
       ) : (
         <p className="mt-6 text-center text-caption text-muted">Everything on deck is ready — {board.coverageWeeks} weeks stocked.</p>

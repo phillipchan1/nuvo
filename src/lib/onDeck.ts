@@ -13,8 +13,7 @@ import {
   type Project,
   type VerticalData,
 } from "./vertical";
-import { tendedScore } from "./tending";
-import { CALM } from "./readiness";
+import { lensGaps, projectReadinessAxes, type LensGap } from "./lenses";
 import { demandByWeekDetailed, projectPace, type ProjectPace } from "./pace";
 import { weekForecast, type WeekCapacity } from "./capacity";
 
@@ -32,9 +31,8 @@ export type LaneState = "ready" | "needs_shaping" | "stalled" | "idea" | "parked
 export interface OnDeckLane {
   project: Project;
   pace: ProjectPace;
-  /** 0..100 groomed-ness (tendedScore). */
-  readiness: number;
-  needsShaping: boolean;
+  /** the named readiness gaps (lens router) — empty = nothing to groom. */
+  gaps: LensGap[];
   state: LaneState;
   /** first horizon week the bar starts in (0 = this week). */
   startWeekIdx: number;
@@ -114,9 +112,7 @@ export function readOnDeck(
     .filter((p) => isProjectInFlight(p.status) && !isProjectComplete(p.status))
     .map((project) => {
       const pace = projectPace(d, project, now);
-      const score = tendedScore(d, "project", project.id);
-      const readiness = Math.round(score * 100);
-      const needsShaping = score < CALM;
+      const gaps = lensGaps(d, "project", project, now);
 
       // due week within the horizon: overdue / before window → 0, beyond → null.
       let dueWeekIdx: number | null = null;
@@ -138,13 +134,13 @@ export function readOnDeck(
           ? "parked"
           : pace.read === "undated" || !project.targetDate
             ? "idea"
-            : needsShaping
+            : gaps.length > 0
               ? "needs_shaping"
               : pace.read === "stalled" || pace.read === "overdue" || pace.read === "behind"
                 ? "stalled"
                 : "ready";
 
-      return { project, pace, readiness, needsShaping, state, startWeekIdx: 0, dueWeekIdx };
+      return { project, pace, gaps, state, startWeekIdx: 0, dueWeekIdx };
     });
 
   // Demand order: most overdue first, then behind/stalled, then soonest due, then
@@ -177,9 +173,14 @@ export function readOnDeck(
   }
 
   // Coverage — how many weeks of *ready* (schedulable) work is queued against a
-  // typical week. This is the reframed headline: runway, not completeness.
+  // typical week. Schedulable = defined && planned (the axis checklist,
+  // docs/grooming-lenses.md §4) — so grooming a brief visibly stocks the weeks.
   const readyMins = d.projects
-    .filter((p) => isProjectInFlight(p.status) && !isProjectComplete(p.status) && tendedScore(d, "project", p.id) >= CALM)
+    .filter((p) => {
+      if (!isProjectInFlight(p.status) || isProjectComplete(p.status)) return false;
+      const axes = projectReadinessAxes(d, p, now);
+      return axes.defined && axes.planned;
+    })
     .reduce((sum, p) => sum + projectPace(d, p, now).remainingMins, 0);
   const coverageWeeks = weeklyAvgMins > 0 ? Math.round((readyMins / weeklyAvgMins) * 10) / 10 : 0;
 
