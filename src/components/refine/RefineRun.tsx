@@ -77,6 +77,15 @@ export default function RefineRun({ onClose }: { onClose: () => void }) {
       coverageAtStart.current = coverage;
       setQueue(refs); // empty = straight to the "all groomed" state
       setIdx(0);
+    } else if (f.pass === "project") {
+      // The On Deck floor's "Groom the N" — rebuild the identical demand-ordered
+      // queue the board's own button deals (readOnDeck, gapped lanes in order).
+      const refs = readOnDeck(data, byWeek, weeklyAvgMins, now).lanes
+        .filter((l) => l.gaps.length > 0)
+        .map((l): LensRef => ({ kind: "project", id: l.project.id }));
+      coverageAtStart.current = coverage;
+      setQueue(refs);
+      setIdx(0);
     } else if (f.kind && f.id) {
       startRun([{ kind: f.kind, id: f.id, lens: f.lens }]);
     }
@@ -90,9 +99,13 @@ export default function RefineRun({ onClose }: { onClose: () => void }) {
   const current = inRun ? queue![idx] : null;
   const item = current ? (current.kind === "project" ? projectById(data, current.id) : initiativeById(data, current.id)) : null;
 
-  // A hubless run never lands on the (project-only) timeline: the Initiatives
-  // pass backs straight out of the flow instead.
-  const hubless = queue != null && (nav.flowFocus?.pass === "initiative" || (queue.length > 0 && queue.every((r) => r.kind === "initiative")));
+  // A hubless run never lands on the flow's in-flow timeline: both guided passes
+  // (project + initiative) close straight back to the floor they were dealt from
+  // — the On Deck / Initiatives floor is the real hub now.
+  const hubless = queue != null && (nav.flowFocus?.pass != null || (queue.length > 0 && queue.every((r) => r.kind === "initiative")));
+  // Initiative passes get bespoke finish copy ("ready for projects to run under
+  // them"); everything project-shaped shows the weeks-stocked climb.
+  const initiativePass = nav.flowFocus?.pass === "initiative" || (queue != null && queue.length > 0 && queue.every((r) => r.kind === "initiative"));
   const toHub = () => { setQueue(null); setIdx(0); };
 
   // the hub — the demand-phased On Deck board; every pass deals from it
@@ -111,7 +124,8 @@ export default function RefineRun({ onClose }: { onClose: () => void }) {
           count={queue.length}
           coverageFrom={coverageAtStart.current}
           coverageTo={coverage}
-          hubless={hubless}
+          closeToFloor={hubless}
+          initiative={initiativePass}
           onBack={toHub}
           onClose={onClose}
         />
@@ -288,9 +302,9 @@ function ItemLensRun({
 
 // ── the finish — the pass's payoff, coverage climbing ─────────────────────────
 function PassDone({
-  count, coverageFrom, coverageTo, hubless, onBack, onClose,
+  count, coverageFrom, coverageTo, closeToFloor, initiative, onBack, onClose,
 }: {
-  count: number; coverageFrom: number | null; coverageTo: number; hubless: boolean; onBack: () => void; onClose: () => void;
+  count: number; coverageFrom: number | null; coverageTo: number; closeToFloor: boolean; initiative: boolean; onBack: () => void; onClose: () => void;
 }) {
   const [show, setShow] = useState(false);
   useEffect(() => { const t = requestAnimationFrame(() => setShow(true)); return () => cancelAnimationFrame(t); }, []);
@@ -312,7 +326,7 @@ function PassDone({
         </div>
         {count === 0 ? (
           <p className="mt-1 text-caption text-muted">Every bet here is defined and planned — all at rest.</p>
-        ) : hubless ? (
+        ) : initiative ? (
           <p className="mt-1 text-caption text-muted">Defined and planned — ready for projects to run under them.</p>
         ) : (
           <p className="mt-1 text-caption text-muted">
@@ -322,11 +336,11 @@ function PassDone({
           </p>
         )}
         <button
-          onClick={hubless ? onClose : onBack}
+          onClick={closeToFloor ? onClose : onBack}
           className="tap fast mt-5 rounded-lg px-5 py-2.5 text-body font-medium text-white active:scale-[.98]"
           style={{ background: "var(--accent)" }}
         >
-          {hubless ? "Done →" : "Back to On Deck →"}
+          {closeToFloor ? "Done →" : "Back to On Deck →"}
         </button>
       </div>
     </Centered>

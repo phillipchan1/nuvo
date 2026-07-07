@@ -35,13 +35,16 @@ export type FloorModal = null | "new-initiative" | "new-project";
 /** When a flow is opened pointed at one item (e.g. groom THIS project), the
  *  target rides here so the flow can skip its overview and open it directly.
  *  `lens` pins the grooming lens to open (a gap chip / to-groom row tap);
- *  `pass` starts the guided pass over a whole floor instead of one item — the
- *  Initiatives entry, which has no On Deck hub (docs/grooming-lenses.md §8). */
+ *  `pass` starts the guided pass over a whole altitude instead of one item —
+ *  `"project"` deals the demand-ordered On Deck queue (launched from the On Deck
+ *  floor's "Groom the N" button); `"initiative"` deals the Initiatives floor,
+ *  which has no On Deck hub (docs/grooming-lenses.md §8). Both are hubless — the
+ *  pass finish closes straight back to the floor it was dealt from. */
 export type FlowFocus = {
   kind?: "project" | "initiative";
   id?: string;
   lens?: "brief" | "path";
-  pass?: "initiative";
+  pass?: "initiative" | "project";
 };
 
 export interface AppNavState {
@@ -67,7 +70,7 @@ export interface AppNavState {
 export const DEFAULT_NAV: AppNavState = {
   v: 1,
   rung: "day",
-  projectView: "portfolio",
+  projectView: "ondeck",
   initiativeView: "portfolio",
   focus: { domainId: "", initiativeId: "", projectId: "" },
   flow: null,
@@ -140,6 +143,8 @@ export function readNavState(raw: unknown): AppNavState | null {
     ...s,
     // The Week rail tab was retired (the board replaced it) — heal stale state.
     tab: s.tab === "inbox" ? "inbox" : "today",
+    // "portfolio" (the old filing-cabinet default) → On Deck, the new front door.
+    projectView: !s.projectView || s.projectView === ("portfolio" as ProjectView) ? "ondeck" : s.projectView,
     focus: { ...DEFAULT_NAV.focus, ...(s.focus ?? {}) },
   };
 }

@@ -213,7 +213,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   const setRung = useCallback(
     (r: Rung) => {
       const patch: Partial<AppNavState> = { rung: r, floorModal: null };
-      if (r === "project") patch.projectView = "portfolio";
+      if (r === "project") patch.projectView = "ondeck";
       if (r === "initiative") patch.initiativeView = "portfolio";
       if (r !== "day") {
         clearCalendarOverlay(patch);

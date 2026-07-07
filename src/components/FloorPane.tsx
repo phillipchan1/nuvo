@@ -13,10 +13,13 @@ import InitiativeFloor from "./floors/InitiativeFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
 import ProjectFloor from "./floors/ProjectFloor";
 import PortfolioFloor from "./floors/PortfolioFloor";
+import OnDeckFloor from "./floors/OnDeckFloor";
 import SprintFloor from "./floors/SprintFloor";
 import NowFloor from "./floors/NowFloor";
 
-export type ProjectView = "portfolio" | "sprint" | "detail";
+// "ondeck" is the front door (demand timeline); "all" is the filing-cabinet
+// Collection, demoted to a tab; "sprint" is This Week; "detail" a single record.
+export type ProjectView = "ondeck" | "all" | "sprint" | "detail";
 export type DetailView = "portfolio" | "detail";
 
 export default function FloorPane({
@@ -55,7 +58,7 @@ export default function FloorPane({
   // Direct navigation back to the portfolio list — does not rely on history.back()
   // so it works regardless of how the user arrived at the detail view (e.g. via
   // "full page ↗" from a Record modal, which would otherwise pop back to the modal).
-  const backToProjects = () => setProjectView("portfolio");
+  const backToProjects = () => setProjectView("ondeck");
   const backToInitiatives = () => setInitiativeView("portfolio");
 
   // Show a back arrow in the top bar when a detail is open AND there's no
@@ -91,8 +94,9 @@ export default function FloorPane({
         {rung === "project" && (
           <RungTabs
             tabs={[
-              { id: "portfolio", label: "Portfolio", on: backToProjects },
+              { id: "ondeck", label: "On Deck", on: backToProjects },
               { id: "sprint", label: "This Week", on: () => setProjectView("sprint") },
+              { id: "all", label: "All projects", on: () => setProjectView("all") },
             ]}
             active={projectView}
             detailName={projectView === "detail" ? projectById(data, focus.projectId)?.name ?? "Project" : null}
@@ -121,7 +125,8 @@ export default function FloorPane({
       <div key={`${rung}-${viewKey}`} className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7">
         {rung === "now" && <NowFloor onOpenDay={() => goRung("day")} />}
 
-        {rung === "project" && projectView === "portfolio" && <PortfolioFloor onOpen={openProjectRecord} />}
+        {rung === "project" && projectView === "ondeck" && <OnDeckFloor />}
+        {rung === "project" && projectView === "all" && <PortfolioFloor onOpen={openProjectRecord} />}
         {rung === "project" && projectView === "sprint" && <SprintFloor />}
         {rung === "project" && projectView === "detail" && (
           <ProjectFloor
