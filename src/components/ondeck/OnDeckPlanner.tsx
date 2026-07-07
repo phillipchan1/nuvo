@@ -16,7 +16,7 @@ import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
-import { domainById, isOpenStatus, isProjectInFlight, type Project } from "../../lib/vertical";
+import { domainById, isOpenStatus, type Project } from "../../lib/vertical";
 import { readOnDeck, BLOCK_MINS, type LaneState, type OnDeckLane, type WeekColumn } from "../../lib/onDeck";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
@@ -27,7 +27,7 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 // A planning surface wants runway — show more weeks than the compact hub and let
 // it scroll. More than this many projects committed to one week is a red flag.
 const PLANNER_HORIZON = 8;
-const WEEK_COL_PX = 116;
+const WEEK_COL_PX = 128;
 const OVERLOAD_LIMIT = 3;
 
 const STATE_COLOR: Record<LaneState, string> = {
@@ -106,10 +106,11 @@ export default function OnDeckPlanner() {
   const gridMinW = 150 + H * WEEK_COL_PX;
 
   const placed = board.lanes.filter((l) => l.project.targetDate);
-  const inbox = useMemo(
-    () => data.projects.filter((p) => isOpenStatus(p.status) && !p.targetDate),
-    [data.projects],
-  );
+  // Inbox = every open project NOT on the timeline. That's not just the undated
+  // ones: a backlog project WITH a date isn't in-flight so it's off the timeline,
+  // yet it still needs a week — it belongs here, not lost between the two.
+  const placedIds = new Set(placed.map((l) => l.project.id));
+  const inbox = data.projects.filter((p) => isOpenStatus(p.status) && !placedIds.has(p.id));
   const needShaping = placed.filter((l) => l.gaps.length > 0).length;
   const shapeable = placed.some((l) => l.gaps.length > 0);
 
@@ -227,7 +228,42 @@ export default function OnDeckPlanner() {
   const cellBg = (i: number) => (dropWeek === i ? "var(--accent-soft)" : board.weeks[i].over ? TINT : undefined);
 
   return (
-    <div className="flex min-h-0 gap-5">
+    <div className="flex min-h-0 gap-6">
+      {/* ── the inbox — a left panel, mirroring Schedule's task inbox ──────── */}
+      <aside
+        data-pool-drop
+        className="fast w-72 shrink-0 self-start rounded-xl border p-3"
+        style={{
+          borderColor: overInbox ? "var(--accent)" : "var(--line)",
+          background: overInbox ? "var(--accent-soft)" : "var(--surface-2)",
+        }}
+      >
+        <div className="section-label px-1.5 pb-2">Needs a week · {inbox.length}</div>
+        {inbox.length === 0 ? (
+          <p className="px-1.5 py-6 text-center text-caption text-muted">Every project has a week. Drag one here to shelve it.</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {inbox.map((p) => {
+              const dot = domainById(data, p.domainId)?.color ?? "var(--accent)";
+              const sub = !p.targetDate ? "no finish line" : `due ${format(new Date(p.targetDate + "T00:00:00"), "MMM d")}`;
+              return (
+                <div
+                  key={p.id}
+                  data-project-drag={p.id}
+                  className="fast cursor-grab select-none rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-line-strong active:cursor-grabbing"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
+                    <span className="truncate text-caption text-ink">{p.name}</span>
+                  </div>
+                  <div className="mono mt-0.5 pl-4 text-micro text-muted">{sub}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </aside>
+
       {/* ── the timeline ──────────────────────────────────────────────────── */}
       <div className="min-w-0 flex-1">
         <div className="flex items-end justify-between gap-3">
@@ -255,7 +291,7 @@ export default function OnDeckPlanner() {
             <div className="grid border-b border-line" style={{ gridTemplateColumns: cols }}>
               <div className="section-label !p-0 self-end px-3.5 py-2.5">project</div>
               {board.weeks.map((w) => (
-                <div key={w.idx} data-week={w.idx} className="border-l border-line px-3 py-2" style={{ background: cellBg(w.idx) }}>
+                <div key={w.idx} data-week={w.idx} className="border-l border-line px-3.5 py-2.5" style={{ background: cellBg(w.idx) }}>
                   <div className="flex items-center gap-1 text-caption font-medium text-ink">
                     {w.idx === 0 ? "This week" : w.idx === 1 ? "Next week" : `Week of ${fmtWk(w.weekStart)}`}
                     {w.over && <span style={{ color: CAUTION }} aria-hidden>⚠</span>}
@@ -289,7 +325,7 @@ export default function OnDeckPlanner() {
                     className="group fast relative cursor-grab border-t border-line first:border-t-0 select-none hover:bg-accent-soft active:cursor-grabbing"
                   >
                     <div className="grid" style={{ gridTemplateColumns: cols }}>
-                      <div className="min-w-0 px-3.5 py-3">
+                      <div className="min-w-0 px-3.5 py-4">
                         <div className="flex items-center gap-2">
                           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
                           <span className="truncate text-body text-ink">{l.project.name}</span>
@@ -306,7 +342,7 @@ export default function OnDeckPlanner() {
                       <div />
                       <div className="grid items-center px-1.5" style={{ gridColumn: `2 / span ${H}`, gridTemplateColumns: weekCols }}>
                         <div
-                          className="relative flex h-7 items-center overflow-hidden rounded-md px-2.5 text-micro font-medium"
+                          className="relative flex h-8 items-center overflow-hidden rounded-md px-2.5 text-micro font-medium"
                           style={{
                             gridColumn: `${start + 1} / ${end + 2}`,
                             justifyContent: single ? "center" : "flex-end",
@@ -335,7 +371,7 @@ export default function OnDeckPlanner() {
             {/* per-week load — more than OVERLOAD_LIMIT projects in a week is a problem */}
             {effGeom.length > 0 && (
               <div className="grid border-t border-line" style={{ gridTemplateColumns: cols }}>
-                <div className="section-label !p-0 self-center px-3.5 py-2">projects / week</div>
+                <div className="section-label !p-0 self-center px-3.5 py-2.5">projects / week</div>
                 {board.weeks.map((w) => {
                   const n = weekLoad[w.idx];
                   const over = n > OVERLOAD_LIMIT;
@@ -343,7 +379,7 @@ export default function OnDeckPlanner() {
                     <div
                       key={w.idx}
                       data-week={w.idx}
-                      className="flex items-center justify-center border-l border-line py-2"
+                      className="flex items-center justify-center border-l border-line py-2.5"
                       style={{ background: dropWeek === w.idx ? "var(--accent-soft)" : over ? OVERLOAD_TINT : undefined }}
                     >
                       <span className="mono text-caption" style={{ color: over ? CAUTION : n > 0 ? "var(--ink)" : "var(--muted)" }}>
@@ -370,41 +406,6 @@ export default function OnDeckPlanner() {
           )}
         </div>
       </div>
-
-      {/* ── the inbox rail ────────────────────────────────────────────────── */}
-      <aside
-        data-pool-drop
-        className="fast w-64 shrink-0 self-start rounded-xl border p-2.5"
-        style={{
-          borderColor: overInbox ? "var(--accent)" : "var(--line)",
-          background: overInbox ? "var(--accent-soft)" : "transparent",
-        }}
-      >
-        <div className="section-label px-1.5 pb-1.5">Needs a week · {inbox.length}</div>
-        {inbox.length === 0 ? (
-          <p className="px-1.5 py-6 text-center text-caption text-muted">Every project has a week. Drag one here to shelve it.</p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {inbox.map((p) => {
-              const dot = domainById(data, p.domainId)?.color ?? "var(--accent)";
-              const flight = isProjectInFlight(p.status);
-              return (
-                <div
-                  key={p.id}
-                  data-project-drag={p.id}
-                  className="fast cursor-grab select-none rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-line-strong active:cursor-grabbing"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-                    <span className="truncate text-caption text-ink">{p.name}</span>
-                  </div>
-                  <div className="mono mt-0.5 pl-4 text-micro text-muted">{flight ? "no finish line" : "shelved"}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </aside>
 
       {/* drag ghost — inbox projects only (placed bars preview in place) */}
       {drag && (
