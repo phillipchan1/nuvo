@@ -10,6 +10,7 @@ import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
 import { GitHubConnect } from "./GitHubConnect";
 import type { SettingsSection } from "../lib/appNav";
+import { useMaxPerWeek } from "../hooks/usePlannerPrefs";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useSkin, useScheme, SKIN_LABELS, SCHEMES, SCHEME_GROUP, schemeModes, type Skin, type Scheme, type SchemeModes } from "../hooks/useSkin";
@@ -418,6 +419,8 @@ function SchedulePane({
     updateSettings({ [key]: h * 60 + mm });
   };
 
+  const [maxPerWeek, setMaxPerWeekPref] = useMaxPerWeek();
+
   // The weekly Review reveal — a per-device nudge, so it lives in localStorage
   // (not the synced settings row). Default Friday 1pm.
   const [reveal, setRevealState] = useState<RevealConfig>(() => readRevealConfig());
@@ -523,6 +526,28 @@ function SchedulePane({
               { value: "1", label: "Monday" },
             ]}
           />
+        </Row>
+
+        <Row title="Projects per week" desc="How many projects you'll commit to a single week before On Deck flags it as overloaded. Fewer = more focus.">
+          <div className="flex items-center overflow-hidden rounded-md border border-line">
+            <button
+              onClick={() => setMaxPerWeekPref(Math.max(1, maxPerWeek - 1))}
+              disabled={maxPerWeek <= 1}
+              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+              title="Fewer per week"
+            >
+              −
+            </button>
+            <span className="mono w-9 select-none text-center text-caption tabular-nums text-text">{maxPerWeek}</span>
+            <button
+              onClick={() => setMaxPerWeekPref(Math.min(6, maxPerWeek + 1))}
+              disabled={maxPerWeek >= 6}
+              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+              title="More per week"
+            >
+              +
+            </button>
+          </div>
         </Row>
 
         <Row title="Weekly Review reveal" desc="When the week's Review quietly lights up as ready — an invitation, never forced.">

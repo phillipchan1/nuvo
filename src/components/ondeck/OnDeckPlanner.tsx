@@ -16,6 +16,7 @@ import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
+import { useMaxPerWeek } from "../../hooks/usePlannerPrefs";
 import { domainById, isOpenStatus, type Project } from "../../lib/vertical";
 import { readOnDeck, type LaneState, type OnDeckLane, type WeekColumn } from "../../lib/onDeck";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
@@ -28,8 +29,7 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 // it scroll. More than this many projects committed to one week is a red flag.
 const PLANNER_HORIZON = 8;
 // Wide enough that ~4 weeks (about a month) show at once; the rest scroll.
-const WEEK_COL_PX = 208;
-const OVERLOAD_LIMIT = 3;
+const WEEK_COL_PX = 232;
 
 const STATE_COLOR: Record<LaneState, string> = {
   ready: READY,
@@ -37,6 +37,13 @@ const STATE_COLOR: Record<LaneState, string> = {
   stalled: CAUTION,
   idea: "var(--line-strong)",
   parked: "var(--muted)",
+};
+const STATE_LABEL: Record<LaneState, string> = {
+  ready: "ready",
+  needs_shaping: "needs shaping",
+  stalled: "stalled",
+  idea: "no finish line",
+  parked: "parked",
 };
 
 const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -82,6 +89,7 @@ export default function OnDeckPlanner() {
   const { data, updateProject } = useVertical();
   const { byWeek, weeklyAvgMins } = useCapacity();
   const { openRecord, openFlow, openFloorModal } = useAppNavigation();
+  const [maxPerWeek] = useMaxPerWeek();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, PLANNER_HORIZON), [data, byWeek, weeklyAvgMins, now]);
 
@@ -312,41 +320,46 @@ export default function OnDeckPlanner() {
                 const dot = domainById(data, l.project.domainId)?.color ?? "var(--accent)";
                 const color = STATE_COLOR[l.state];
                 const dragging = preview?.id === l.project.id;
-                const label = barLabel(l);
+                const due = barLabel(l)?.replace("⚠ ", "") ?? null; // border color carries the warning
                 const fillPct = l.state === "needs_shaping" ? 22 : 34;
 
                 return (
-                  <div key={l.project.id} className="relative border-t border-line first:border-t-0" style={{ minHeight: 56 }}>
-                    {/* week cells — the drop targets + gridlines/tint */}
-                    <div className="grid h-full" style={{ gridTemplateColumns: cols }}>
+                  <div key={l.project.id} className="relative border-t border-line first:border-t-0">
+                    {/* week cells — the drop targets + gridlines/tint (fill the row) */}
+                    <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
                       {board.weeks.map((w) => (
                         <div key={w.idx} data-week={w.idx} className="border-l border-line first:border-l-0" style={{ background: cellBg(w.idx) }} />
                       ))}
                     </div>
 
-                    {/* the bar CARD — carries the title, and is itself the drag/resize/click target */}
-                    <div className="pointer-events-none absolute inset-0 grid items-center px-1.5" style={{ gridTemplateColumns: cols }}>
+                    {/* the CARD — carries the full title (wraps, no ellipsis) and is
+                        itself the drag/resize/click target. In flow, so it sets the
+                        row height; pointer-events-none wrapper lets empty cells drop. */}
+                    <div className="pointer-events-none relative grid items-center px-1.5 py-2" style={{ gridTemplateColumns: cols }}>
                       <div
                         data-project-drag={l.project.id}
-                        title={l.project.name}
-                        className="group/bar pointer-events-auto fast relative flex h-11 cursor-grab items-center gap-2 overflow-hidden rounded-lg px-3 active:cursor-grabbing"
+                        className="group/bar pointer-events-auto fast relative flex min-h-[52px] cursor-grab items-start gap-2 rounded-xl px-3.5 py-2.5 active:cursor-grabbing"
                         style={{
                           gridColumn: `${start + 1} / ${end + 2}`,
                           background: `color-mix(in srgb, ${color} ${dragging ? fillPct + 16 : fillPct}%, var(--surface))`,
                           border: `1.5px solid ${dragging || l.state === "needs_shaping" ? color : "transparent"}`,
-                          color: `color-mix(in srgb, ${color} 78%, var(--ink))`,
+                          color: `color-mix(in srgb, ${color} 80%, var(--ink))`,
                           boxShadow: dragging ? "var(--shadow-lift)" : beyond ? `5px 0 0 -1px ${color}` : "none",
                           opacity: l.state === "parked" ? 0.5 : 1,
                         }}
                       >
                         <span data-resize="start" className="absolute inset-y-0 left-0 flex w-2 cursor-ew-resize items-center justify-center" aria-hidden>
-                          <span className="h-4 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
+                          <span className="h-5 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
                         </span>
-                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-                        <span className="min-w-0 flex-1 truncate text-caption font-medium">{l.project.name}</span>
-                        {label && <span className="mono shrink-0 text-micro opacity-80">{label}</span>}
+                        <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-caption font-semibold leading-snug text-ink">{l.project.name}</div>
+                          <div className="mono mt-1 text-micro" style={{ color }}>
+                            {STATE_LABEL[l.state]}{due ? ` · ${due}` : ""}
+                          </div>
+                        </div>
                         <span data-resize="end" className="absolute inset-y-0 right-0 flex w-2 cursor-ew-resize items-center justify-center" aria-hidden>
-                          <span className="h-4 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
+                          <span className="h-5 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
                         </span>
                       </div>
                     </div>
@@ -358,13 +371,14 @@ export default function OnDeckPlanner() {
             {/* per-week load — more than OVERLOAD_LIMIT projects in a week is a problem */}
             {effGeom.length > 0 && (
               <>
-                <div className="border-t border-line px-3.5 pt-2">
+                <div className="flex items-center gap-2 border-t border-line px-3.5 pt-2">
                   <span className="section-label !p-0">projects / week</span>
+                  <span className="text-micro text-muted">· max {maxPerWeek}</span>
                 </div>
                 <div className="grid pb-1" style={{ gridTemplateColumns: cols }}>
                   {board.weeks.map((w) => {
                     const n = weekLoad[w.idx];
-                    const over = n > OVERLOAD_LIMIT;
+                    const over = n > maxPerWeek;
                     return (
                       <div
                         key={w.idx}
