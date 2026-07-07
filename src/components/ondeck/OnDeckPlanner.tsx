@@ -49,7 +49,6 @@ const STATE_LABEL: Record<LaneState, string> = {
 const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtWk = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
-const TINT = `color-mix(in srgb, ${CAUTION} 9%, transparent)`;
 const OVERLOAD_TINT = `color-mix(in srgb, ${CAUTION} 16%, transparent)`;
 
 /** Which horizon week a date falls in (clamped into range; 0 when undated). */
@@ -224,7 +223,7 @@ export default function OnDeckPlanner() {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
-  const cellBg = (i: number) => (dropWeek === i ? "var(--accent-soft)" : board.weeks[i].over ? TINT : undefined);
+  const cellBg = (i: number) => (dropWeek === i ? "var(--accent-soft)" : undefined);
 
   return (
     <div className="flex min-h-0 gap-6">
@@ -281,30 +280,14 @@ export default function OnDeckPlanner() {
           </span>
         </div>
 
-        {board.pinch && (
-          <div
-            className="mt-4 rounded-xl border px-4 py-3"
-            style={{ borderColor: `color-mix(in srgb, ${CAUTION} 45%, var(--line))`, background: `color-mix(in srgb, ${CAUTION} 8%, transparent)` }}
-          >
-            <div className="section-label !p-0 flex items-center gap-1.5" style={{ color: CAUTION }}>
-              <span aria-hidden>⚠</span> The pinch
-            </div>
-            <p className="mt-1 text-body leading-relaxed text-ink/90">{board.pinch.line}</p>
-          </div>
-        )}
-
         <div className="mt-4 overflow-x-auto">
           <div className="overflow-hidden rounded-xl border border-line glass-card" style={{ minWidth: gridMinW }}>
-            {/* column headers — no project column; the bar carries the title */}
+            {/* column headers — just the week; capacity math removed (manual for now) */}
             <div className="grid border-b border-line" style={{ gridTemplateColumns: cols }}>
               {board.weeks.map((w) => (
-                <div key={w.idx} data-week={w.idx} className="border-l border-line first:border-l-0 px-3.5 py-2.5" style={{ background: cellBg(w.idx) }}>
-                  <div className="flex items-center gap-1 text-caption font-medium text-ink">
+                <div key={w.idx} data-week={w.idx} className="border-l border-line first:border-l-0 px-3.5 py-3" style={{ background: cellBg(w.idx) }}>
+                  <div className="text-caption font-medium text-ink">
                     {w.idx === 0 ? "This week" : w.idx === 1 ? "Next week" : `Week of ${fmtWk(w.weekStart)}`}
-                    {w.over && <span style={{ color: CAUTION }} aria-hidden>⚠</span>}
-                  </div>
-                  <div className="mono text-micro" style={{ color: w.over ? CAUTION : "var(--muted)" }}>
-                    {w.over ? `over by ${Math.max(1, w.demandBlocks - w.blocks)}` : `${w.demandBlocks} of ${w.blocks} blocks`}
                   </div>
                 </div>
               ))}
@@ -399,7 +382,7 @@ export default function OnDeckPlanner() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <span className="text-micro text-muted">Drag onto a week to time-box · drag an edge to resize · click to edit · {board.coverageWeeks} weeks stocked</span>
+          <span className="text-micro text-muted">Drag onto a week to time-box · drag an edge to resize · click to edit</span>
           {shapeable && (
             <button
               onClick={() => openFlow("refine", { pass: "project" })}
