@@ -16,7 +16,7 @@ import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { domainById, isOpenStatus, isProjectInFlight, type Project } from "../../lib/vertical";
-import { readOnDeck, BLOCK_MINS, type LaneState, type OnDeckLane } from "../../lib/onDeck";
+import { readOnDeck, BLOCK_MINS, type LaneState, type OnDeckLane, type WeekColumn } from "../../lib/onDeck";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
 
@@ -31,7 +31,23 @@ const STATE_COLOR: Record<LaneState, string> = {
   parked: "var(--muted)",
 };
 
+// A planning surface wants runway, not just the near pinch — show more weeks
+// than the compact hub and let it scroll horizontally.
+const PLANNER_HORIZON = 8;
+const WEEK_COL_PX = 116; // min width per week column before the table scrolls
+
 const toBlocks = (mins: number) => Math.round(mins / BLOCK_MINS);
+
+/** Which horizon week a date falls in (clamped into range; 0 when undated). */
+function weekIndex(weeks: WeekColumn[], iso: string | null): number {
+  if (!iso) return 0;
+  const ms = new Date(iso + "T12:00:00").getTime();
+  for (let i = 0; i < weeks.length; i++) {
+    const ws = weeks[i].weekStart.getTime();
+    if (ms >= ws && ms < ws + WEEK_MS) return i;
+  }
+  return ms < (weeks[0]?.weekStart.getTime() ?? 0) ? 0 : weeks.length - 1;
+}
 const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtWk = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const TINT = `color-mix(in srgb, ${CAUTION} 9%, transparent)`;
@@ -76,11 +92,12 @@ export default function OnDeckPlanner() {
   const { byWeek, weeklyAvgMins } = useCapacity();
   const { openRecord, openFlow } = useAppNavigation();
   const now = useMemo(() => new Date(), []);
-  const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now), [data, byWeek, weeklyAvgMins, now]);
+  const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, PLANNER_HORIZON), [data, byWeek, weeklyAvgMins, now]);
 
   const H = board.horizonWeeks;
-  const cols = `minmax(150px, 1.15fr) repeat(${H}, minmax(0, 1fr))`;
-  const weekCols = `repeat(${H}, minmax(0, 1fr))`;
+  const cols = `minmax(150px, 1.15fr) repeat(${H}, minmax(${WEEK_COL_PX}px, 1fr))`;
+  const weekCols = `repeat(${H}, minmax(${WEEK_COL_PX}px, 1fr))`;
+  const gridMinW = 150 + H * WEEK_COL_PX; // forces horizontal scroll past the horizon
 
   // Placed = in-flight projects with a finish line; Inbox = open projects with none.
   const placed = board.lanes.filter((l) => l.project.targetDate);
@@ -90,17 +107,6 @@ export default function OnDeckPlanner() {
   );
   const needShaping = placed.filter((l) => l.gaps.length > 0).length;
   const shapeable = placed.some((l) => l.gaps.length > 0);
-
-  // The week a project's start falls in (clamped to the horizon), for the bar.
-  const weekIdxOf = (iso: string | null): number => {
-    if (!iso) return 0;
-    const ms = new Date(iso + "T12:00:00").getTime();
-    for (let i = 0; i < board.weeks.length; i++) {
-      const ws = board.weeks[i].weekStart.getTime();
-      if (ms >= ws && ms < ws + WEEK_MS) return i;
-    }
-    return ms < (board.weeks[0]?.weekStart.getTime() ?? 0) ? 0 : H - 1;
-  };
 
   // ── pointer drag ────────────────────────────────────────────────────────────
   const [drag, setDrag] = useState<{ name: string; x: number; y: number } | null>(null);
@@ -114,26 +120,35 @@ export default function OnDeckPlanner() {
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
-      const el = (e.target as HTMLElement)?.closest?.("[data-project-drag]") as HTMLElement | null;
+      const tgt = e.target as HTMLElement;
+      const el = tgt?.closest?.("[data-project-drag]") as HTMLElement | null;
       if (!el) return;
       const id = el.getAttribute("data-project-drag");
       const p = id ? live.current.projectById.get(id) : null;
       if (!p) return;
+      // A grab on an edge handle resizes that end; anywhere else moves the whole box.
+      const handle = tgt?.closest?.("[data-resize]")?.getAttribute("data-resize");
+      const mode: "move" | "start" | "end" = handle === "start" ? "start" : handle === "end" ? "end" : "move";
       const start = { x: e.clientX, y: e.clientY };
       let moved = false;
       let tWeek: number | null = null;
       let tInbox = false;
-      document.body.classList.add("wb-noselect");
-      window.getSelection()?.removeAllRanges();
 
       const move = (ev: PointerEvent) => {
         if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 5) return;
-        if (!moved) { moved = true; document.body.style.cursor = "grabbing"; }
-        setDrag({ name: p.name, x: ev.clientX, y: ev.clientY });
+        if (!moved) {
+          moved = true;
+          document.body.classList.add("wb-noselect");
+          document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
+          window.getSelection()?.removeAllRanges();
+          // let the cursor see the week cells beneath the bar + its handles
+          document.querySelectorAll<HTMLElement>("[data-resize]").forEach((h) => (h.style.pointerEvents = "none"));
+        }
+        if (mode === "move") setDrag({ name: p.name, x: ev.clientX, y: ev.clientY });
         const hit = document.elementFromPoint(ev.clientX, ev.clientY);
         const wk = hit?.closest("[data-week]");
         if (wk) { tWeek = Number(wk.getAttribute("data-week")); tInbox = false; }
-        else if (hit?.closest("[data-pool-drop]")) { tInbox = true; tWeek = null; }
+        else if (mode === "move" && hit?.closest("[data-pool-drop]")) { tInbox = true; tWeek = null; }
         else { tWeek = null; tInbox = false; }
         setDropWeek(tWeek);
         setOverInbox(tInbox);
@@ -143,14 +158,21 @@ export default function OnDeckPlanner() {
         window.removeEventListener("pointerup", up);
         document.body.style.cursor = "";
         document.body.classList.remove("wb-noselect");
+        document.querySelectorAll<HTMLElement>("[data-resize]").forEach((h) => (h.style.pointerEvents = ""));
         const s = live.current;
+        const weeks = s.board.weeks;
         if (!moved) {
           s.openRecord("project", p.id);
-        } else if (tWeek != null) {
-          const ws = s.board.weeks[tWeek]?.weekStart;
-          if (ws) s.updateProject(p.id, { ...weekSpan(p, ws), status: "in_progress" });
-        } else if (tInbox && p.targetDate) {
+        } else if (mode === "move" && tWeek != null && weeks[tWeek]) {
+          s.updateProject(p.id, { ...weekSpan(p, weeks[tWeek].weekStart), status: "in_progress" });
+        } else if (mode === "move" && tInbox && p.targetDate) {
           s.updateProject(p.id, { startDate: null, targetDate: null, status: "backlog" });
+        } else if (mode === "end" && tWeek != null && weeks[tWeek]) {
+          const w = Math.max(tWeek, weekIndex(weeks, p.startDate)); // never end before start
+          s.updateProject(p.id, { targetDate: toISO(addDays(weeks[w].weekStart, 4)), status: "in_progress" });
+        } else if (mode === "start" && tWeek != null && weeks[tWeek]) {
+          const w = Math.min(tWeek, weekIndex(weeks, p.targetDate)); // never start after end
+          s.updateProject(p.id, { startDate: toISO(weeks[w].weekStart), status: "in_progress" });
         }
         setDrag(null);
         setDropWeek(null);
@@ -187,7 +209,7 @@ export default function OnDeckPlanner() {
         )}
 
         <div className="mt-4 overflow-x-auto">
-          <div className="min-w-[560px] overflow-hidden rounded-xl border border-line glass-card">
+          <div className="overflow-hidden rounded-xl border border-line glass-card" style={{ minWidth: gridMinW }}>
             {/* column headers */}
             <div className="grid border-b border-line" style={{ gridTemplateColumns: cols }}>
               <div className="section-label !p-0 self-end px-3.5 py-2.5">project</div>
@@ -219,7 +241,7 @@ export default function OnDeckPlanner() {
                 const st = statusOf(l);
                 const dot = domainById(data, l.project.domainId)?.color ?? "var(--accent)";
                 const color = STATE_COLOR[l.state];
-                const sIdx = weekIdxOf(l.project.startDate);
+                const sIdx = weekIndex(board.weeks, l.project.startDate);
                 const dIdx = l.dueWeekIdx ?? H - 1;
                 const start = Math.min(sIdx, dIdx);
                 const end = Math.max(sIdx, dIdx);
@@ -232,7 +254,7 @@ export default function OnDeckPlanner() {
                   <div
                     key={l.project.id}
                     data-project-drag={l.project.id}
-                    className="fast relative cursor-grab border-t border-line first:border-t-0 select-none hover:bg-accent-soft active:cursor-grabbing"
+                    className="group fast relative cursor-grab border-t border-line first:border-t-0 select-none hover:bg-accent-soft active:cursor-grabbing"
                   >
                     {/* bg cells — tint + gridlines + the week drop targets */}
                     <div className="grid" style={{ gridTemplateColumns: cols }}>
@@ -258,7 +280,7 @@ export default function OnDeckPlanner() {
                       <div />
                       <div className="grid items-center px-1.5" style={{ gridColumn: `2 / span ${H}`, gridTemplateColumns: weekCols }}>
                         <div
-                          className="flex h-7 items-center overflow-hidden rounded-md px-2 text-micro font-medium"
+                          className="relative flex h-7 items-center overflow-hidden rounded-md px-2.5 text-micro font-medium"
                           style={{
                             gridColumn: `${start + 1} / ${end + 2}`,
                             justifyContent: single ? "center" : "flex-end",
@@ -269,7 +291,24 @@ export default function OnDeckPlanner() {
                             opacity: l.state === "parked" ? 0.5 : 1,
                           }}
                         >
+                          {/* edge handles — drag to resize the span, whole-week snap */}
+                          <span
+                            data-resize="start"
+                            className="absolute inset-y-0 left-0 flex w-2.5 cursor-ew-resize items-center justify-center"
+                            style={{ pointerEvents: "auto" }}
+                            aria-hidden
+                          >
+                            <span className="h-3.5 w-[3px] rounded-full opacity-0 transition-opacity group-hover:opacity-50" style={{ background: "currentColor" }} />
+                          </span>
                           {label}
+                          <span
+                            data-resize="end"
+                            className="absolute inset-y-0 right-0 flex w-2.5 cursor-ew-resize items-center justify-center"
+                            style={{ pointerEvents: "auto" }}
+                            aria-hidden
+                          >
+                            <span className="h-3.5 w-[3px] rounded-full opacity-0 transition-opacity group-hover:opacity-50" style={{ background: "currentColor" }} />
+                          </span>
                         </div>
                       </div>
                     </div>

@@ -90,8 +90,9 @@ export function readOnDeck(
   byWeek: WeekCapacity[],
   weeklyAvgMins: number,
   now: Date,
+  horizonWeeks: number = HORIZON_WEEKS,
 ): OnDeckBoard {
-  const horizon = byWeek.slice(0, HORIZON_WEEKS);
+  const horizon = byWeek.slice(0, horizonWeeks);
   const forecast = weekForecast(d, now, horizon, weeklyAvgMins);
   const detailed = demandByWeekDetailed(d, now, horizon.map((w) => w.weekStart));
 
