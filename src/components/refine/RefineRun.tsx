@@ -291,7 +291,6 @@ function ItemLensRun({
           data={data}
           kind={kind}
           item={item}
-          verdict={verdict}
           onDone={() => void advance()}
           doneLabel={doneLabel}
         />
