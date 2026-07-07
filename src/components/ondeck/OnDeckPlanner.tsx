@@ -94,9 +94,9 @@ function weekSpan(p: Project, ws: Date): { startDate: string; targetDate: string
 type Preview = { id: string; start: number; end: number } | null;
 
 export default function OnDeckPlanner() {
-  const { data, updateProject, routeTask } = useVertical();
+  const { data, updateProject } = useVertical();
   const { byWeek, weeklyAvgMins } = useCapacity();
-  const { openRecord, openFlow } = useAppNavigation();
+  const { openRecord, openFlow, openFloorModal } = useAppNavigation();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, PLANNER_HORIZON), [data, byWeek, weeklyAvgMins, now]);
 
@@ -111,15 +111,12 @@ export default function OnDeckPlanner() {
   // yet it still needs a week — it belongs here, not lost between the two.
   const placedIds = new Set(placed.map((l) => l.project.id));
   const inbox = data.projects.filter((p) => isOpenStatus(p.status) && !placedIds.has(p.id));
-  // Loose tasks = open work with no container (excludes raw inbox captures, which
-  // have their own sweep). File one into a project to give it a home.
-  const looseTasks = data.tasks.filter((t) => t.loose && !t.inbox && t.status !== "done");
-  const routableProjects = [...data.projects].filter((p) => isOpenStatus(p.status)).sort((a, b) => a.name.localeCompare(b.name));
   const needShaping = placed.filter((l) => l.gaps.length > 0).length;
   const shapeable = placed.some((l) => l.gaps.length > 0);
 
   // ── drag state (in React so the bar + counts preview live) ───────────────────
-  const [drag, setDrag] = useState<{ name: string; x: number; y: number } | null>(null); // inbox chip only
+  // inbox drags ride a card-shaped ghost (placed bars preview in place instead)
+  const [drag, setDrag] = useState<{ name: string; dot: string; sub: string; x: number; y: number } | null>(null);
   const [dropWeek, setDropWeek] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
   const [preview, setPreview] = useState<Preview>(null);
@@ -140,8 +137,8 @@ export default function OnDeckPlanner() {
   const weekLoad = board.weeks.map((_, i) => effGeom.filter((g) => i >= g.start && i <= g.end).length);
 
   const projectById = useMemo(() => new Map(data.projects.map((p) => [p.id, p])), [data.projects]);
-  const live = useRef({ projectById, board, updateProject, openRecord });
-  live.current = { projectById, board, updateProject, openRecord };
+  const live = useRef({ projectById, board, updateProject, openRecord, data });
+  live.current = { projectById, board, updateProject, openRecord, data };
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
@@ -155,8 +152,11 @@ export default function OnDeckPlanner() {
       const handle = tgt?.closest?.("[data-resize]")?.getAttribute("data-resize");
       const mode: "move" | "start" | "end" = handle === "start" ? "start" : handle === "end" ? "end" : "move";
       const weeks = live.current.board.weeks;
+      // "from inbox" = not on the timeline (an inbox card can still carry a date).
+      const fromInbox = !live.current.board.lanes.some((l) => l.project.id === p.id && l.project.targetDate);
+      const ghostDot = domainById(live.current.data, p.domainId)?.color ?? "var(--accent)";
+      const ghostSub = !p.targetDate ? "no finish line" : `due ${format(new Date(p.targetDate + "T00:00:00"), "MMM d")}`;
       // current geometry (default 1 week when there's no explicit start)
-      const fromInbox = !p.targetDate;
       const dIdx0 = weekIndex(weeks, p.targetDate);
       const sIdx0 = p.startDate ? weekIndex(weeks, p.startDate) : dIdx0;
       const curStart = Math.min(sIdx0, dIdx0);
@@ -186,7 +186,7 @@ export default function OnDeckPlanner() {
         // live preview: existing bars follow to their prospective span; an inbox
         // project has no bar yet, so it rides the floating chip + column highlight.
         if (fromInbox) {
-          setDrag({ name: p.name, x: ev.clientX, y: ev.clientY });
+          setDrag({ name: p.name, dot: ghostDot, sub: ghostSub, x: ev.clientX, y: ev.clientY });
           setPreview(null);
         } else if (tWeek != null) {
           if (mode === "move") setPreview({ id: p.id, start: tWeek, end: tWeek + width - 1 });
@@ -242,9 +242,18 @@ export default function OnDeckPlanner() {
           background: overInbox ? "var(--accent-soft)" : "var(--surface-2)",
         }}
       >
-        <div className="section-label px-1.5 pb-2">Needs a week · {inbox.length}</div>
+        <div className="flex items-center justify-between gap-2 px-1.5 pb-2">
+          <span className="section-label !p-0">Needs a week · {inbox.length}</span>
+          <button
+            onClick={() => openFloorModal("new-project")}
+            className="tap fast rounded-md px-1.5 py-0.5 text-caption font-medium text-muted hover:text-ink"
+            title="New project"
+          >
+            + project
+          </button>
+        </div>
         {inbox.length === 0 ? (
-          <p className="px-1.5 py-6 text-center text-caption text-muted">Every project has a week. Drag one here to shelve it.</p>
+          <p className="px-1.5 py-6 text-center text-caption text-muted">Nothing waiting — every project has a week. <button onClick={() => openFloorModal("new-project")} className="fast underline hover:text-ink">Add one</button> or drag a project here to shelve it.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {inbox.map((p) => {
@@ -264,30 +273,6 @@ export default function OnDeckPlanner() {
                 </div>
               );
             })}
-          </div>
-        )}
-
-        {/* loose tasks — uncontained work; file each into a project */}
-        {looseTasks.length > 0 && (
-          <div className="mt-5 border-t border-line pt-3">
-            <div className="section-label px-1.5 pb-2">Loose tasks · {looseTasks.length}</div>
-            <div className="mobile-scroll flex max-h-[380px] flex-col gap-1.5 overflow-y-auto pr-1">
-              {looseTasks.map((t) => (
-                <div key={t.id} className="rounded-lg border border-line bg-surface px-3 py-2">
-                  <div className="truncate text-caption text-ink">{t.title || "Untitled"}</div>
-                  <select
-                    value=""
-                    onChange={(e) => e.target.value && routeTask(t.id, { projectId: e.target.value })}
-                    className="mono mt-1.5 w-full rounded border border-line bg-bg px-1.5 py-1 text-micro text-muted outline-none focus:border-accent"
-                  >
-                    <option value="">file into project…</option>
-                    {routableProjects.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
           </div>
         )}
       </aside>
@@ -435,13 +420,17 @@ export default function OnDeckPlanner() {
         </div>
       </div>
 
-      {/* drag ghost — inbox projects only (placed bars preview in place) */}
+      {/* drag ghost — a lifted copy of the inbox card (placed bars preview in place) */}
       {drag && (
         <div
-          className="pointer-events-none fixed z-[60] rounded-lg border border-line bg-surface px-3 py-1.5 text-caption text-ink shadow-[var(--shadow-lift)]"
-          style={{ left: drag.x + 12, top: drag.y + 12 }}
+          className="glass-grab pointer-events-none fixed z-[60] w-60 rounded-lg border border-line bg-surface px-3 py-2.5"
+          style={{ left: drag.x + 14, top: drag.y + 8, transform: "rotate(-2deg)" }}
         >
-          {drag.name}
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: drag.dot }} />
+            <span className="truncate text-caption text-ink">{drag.name}</span>
+          </div>
+          <div className="mono mt-0.5 pl-4 text-micro text-muted">{drag.sub}</div>
         </div>
       )}
     </div>
