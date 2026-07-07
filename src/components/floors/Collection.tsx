@@ -77,9 +77,12 @@ export interface CollectionConfig {
   selectable?: boolean;
   onBulkDelete?: (ids: string[]) => void;
   domains?: Domain[];
+  /** Which views to offer. Defaults to all. Projects pass ["table","board"] —
+   *  On Deck is the canonical time-view, so Calendar/Timeline are retired there. */
+  views?: View[];
 }
 
-type View = "table" | "board" | "calendar" | "timeline";
+export type View = "table" | "board" | "calendar" | "timeline";
 type GroupBy = "status" | "domain";
 const VIEWS: { id: View; label: string }[] = [
   { id: "table", label: "Table" },
@@ -125,8 +128,11 @@ function SelectionSurface({
 }
 
 export default function Collection({ config }: { config: CollectionConfig }) {
+  const shownViews = config.views ? VIEWS.filter((v) => config.views!.includes(v.id)) : VIEWS;
+  const allowed = shownViews.map((v) => v.id);
   const init = loadPref(config.storageKey, { view: "table", groupBy: "status" });
-  const [view, setView] = useState<View>(init.view);
+  // heal a stale saved view that's no longer offered (e.g. projects' old Timeline)
+  const [view, setView] = useState<View>(allowed.includes(init.view) ? init.view : allowed[0]);
   const [groupBy, setGroupBy] = useState<GroupBy>(init.groupBy);
   const orderedIds = useMemo(() => config.records.map((r) => r.id), [config.records]);
   const selection = useCollectionSelection(orderedIds, !!config.selectable, config.onBulkDelete);
@@ -143,7 +149,7 @@ export default function Collection({ config }: { config: CollectionConfig }) {
       {/* view toolbar */}
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border border-line p-0.5">
-          {VIEWS.map((v) => (
+          {shownViews.map((v) => (
             <button
               key={v.id}
               onClick={() => choose(v.id)}

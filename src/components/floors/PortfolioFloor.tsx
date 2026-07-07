@@ -25,7 +25,7 @@ import { StandingToggle } from "./StandingToggle";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, updateProject, deleteProjects } = useVertical();
-  const { openFloorModal, openFlow } = useAppNavigation();
+  const { openFloorModal } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
   const [view, setView] = useState<"standing" | "board">("standing");
   const atRest = readSpine(data).floors.project.calm;
@@ -72,18 +72,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
       <FloorHeader
         eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => isProjectInFlight(p.status)).length} in flight`}
-        actions={
-          <>
-            {atRest && <RefinedSeal noun="projects" celebrate={celebrate} />}
-            <button
-              onClick={() => openFlow("refine")}
-              className="tap fast rounded-lg px-3.5 py-2 text-caption font-medium text-white active:scale-[.98]"
-              style={{ background: "var(--accent)" }}
-            >
-              Open On Deck →
-            </button>
-          </>
-        }
+        actions={atRest ? <RefinedSeal noun="projects" celebrate={celebrate} /> : undefined}
       >
         <h1 className="text-display masthead">Projects</h1>
         <p className="mt-1 text-body text-muted">Every project at a glance — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
@@ -118,6 +107,9 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
                 selectable: true,
                 onBulkDelete: deleteProjects,
                 domains: data.domains,
+                // On Deck is the canonical timeline now — "All projects" is a
+                // pure browse/bulk filing cabinet.
+                views: ["table", "board"],
               }}
             />
           </div>
