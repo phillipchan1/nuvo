@@ -49,6 +49,7 @@ export default function LeftRail({
   hotkeysEnabled,
   now,
   railRef,
+  collapsed = false,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -60,6 +61,8 @@ export default function LeftRail({
   hotkeysEnabled: boolean;
   now: Date;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
+  /** Focus mode: slide the rail closed so the calendar takes the whole width. */
+  collapsed?: boolean;
 }) {
   const { data: vertical, toggleTaskSprint } = useVertical();
   const { nav } = useAppNavigation();
@@ -327,15 +330,28 @@ export default function LeftRail({
       ref={railRef}
       data-rail-drop
       data-drop-tab={tab}
-      className="titlebar-pad relative z-40 flex h-full shrink-0 flex-col border-r border-line"
-      style={{ width: railWidth }}
+      className="relative z-40 h-full shrink-0 overflow-hidden"
+      style={{
+        width: collapsed ? 0 : railWidth,
+        transition: "width var(--d-slow) var(--ease-out)",
+      }}
     >
+      {/* Inner keeps its natural width so nothing reflows while the outer clips
+          it shut in focus mode. */}
+      <div
+        className="titlebar-pad relative flex h-full flex-col border-r border-line"
+        style={{
+          width: railWidth,
+          opacity: collapsed ? 0 : 1,
+          transition: "opacity var(--d-base) var(--ease-out)",
+        }}
+      >
       <div
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize sidebar"
         onPointerDown={startResize}
-        className="absolute -right-1 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35"
+        className={`absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35 ${collapsed ? "hidden" : ""}`}
       />
       {/* Tabs */}
       <div className="flex">
@@ -547,6 +563,7 @@ export default function LeftRail({
           toggleTaskSprint={toggleTaskSprint}
         />
       )}
+      </div>
     </div>
   );
 }

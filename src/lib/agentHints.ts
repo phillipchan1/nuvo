@@ -19,7 +19,6 @@ export interface AgentHints {
 }
 
 export function agentHints(ctx: AgentHintContext): AgentHints {
-  const project = ctx.projectName?.trim();
   const initiative = ctx.initiativeName?.trim();
   const domain = ctx.domainName?.trim();
 
@@ -43,17 +42,6 @@ export function agentHints(ctx: AgentHintContext): AgentHints {
       return scheduleHints(ctx.tab ?? "today");
 
     case "project":
-      if (ctx.projectView === "detail" && project) {
-        return {
-          prompt: `Working on ${project} — tasks, scope, and next steps.`,
-          starters: [
-            `Scaffold starter tasks for "${project}"`,
-            `What's the next step on "${project}"?`,
-            "Move blocked items back to backlog",
-            "Summarize progress and what's left",
-          ],
-        };
-      }
       if (ctx.projectView === "sprint") {
         return {
           prompt: "This week's sprint — what's committed and what's stuck.",

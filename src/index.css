@@ -1521,3 +1521,580 @@ textarea:focus {
     scroll-behavior: auto !important;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   SKINS — the MATERIAL axis (set on <html data-skin>, see useSkin.ts).
+   Orthogonal to light/dark (data-theme) and the warmth moods (data-palette):
+   a palette changes colour, a skin changes the *material* — glass vs. flat vs.
+   mono, shadow vs. border, round vs. sharp. "paper" is the base language (no
+   data-skin attribute at all), so the whole file above IS the paper skin.
+
+   Each skin below declares a COMPLETE identity and deliberately overrides the
+   palette, so it reads the same in any mood. Two mechanics:
+     1. TOKENS — redefined on `html[data-skin=X][data-theme=…]`. The two
+        attributes are required: the palette selectors are (0,2,0), so a token
+        override needs (0,2,1) to win. Skins with a real light/dark split list
+        both themes separately; theme-independent skins (terminal, blueprint)
+        list both with identical values.
+     2. MATERIAL — the ~6 frost hooks (.atmosphere, .glass-*) are re-skinned to
+        solid surface + border, so every component that floats on glass turns
+        flat for free, with no component edits.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── FLAT — crisp white (light) / near-black (dark). Linear/Notion register:
+      pure surfaces, hairline borders, no frost, tight radii, minimal shadow.
+      Keeps Nuvo's mulberry accent so it still reads as Nuvo, just flattened. */
+html[data-skin="flat"][data-theme="light"] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f7f7f9;
+  --line: #ececef;
+  --line-strong: #dbdbe1;
+  --text: #18181b;
+  --muted: #86868e;
+  --accent: #92568a;
+  --accent-2: #b07fa8;
+  --accent-soft: rgba(146, 86, 138, 0.08);
+  --accent-glow: rgba(146, 86, 138, 0.16);
+  --slot: #0d8f9c;
+  --event-default: #9aa0ac;
+  --radius-sm: 5px;
+  --radius: 8px;
+  --radius-lg: 10px;
+  --shadow-1: 0 1px 2px rgba(20, 20, 30, 0.05);
+  --shadow-2: 0 2px 8px -2px rgba(20, 20, 30, 0.10), 0 0 0 1px #eeeef2;
+  --shadow-3: 0 8px 24px -8px rgba(20, 20, 30, 0.14);
+  --shadow-lift: 0 12px 30px -12px rgba(20, 20, 30, 0.22);
+}
+html[data-skin="flat"][data-theme="dark"] {
+  --bg: #0c0c0e;
+  --surface: #161619;
+  --surface-2: #1d1d21;
+  --line: #26262b;
+  --line-strong: #35353c;
+  --text: #f1f1f4;
+  --muted: #8a8a92;
+  --accent: #c692bf;
+  --accent-2: #d6abce;
+  --accent-soft: rgba(198, 146, 191, 0.13);
+  --accent-glow: rgba(198, 146, 191, 0.24);
+  --slot: #37b1a4;
+  --event-default: #7a7f8c;
+  --radius-sm: 5px;
+  --radius: 8px;
+  --radius-lg: 10px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 10px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px #232329;
+  --shadow-3: 0 10px 28px -10px rgba(0, 0, 0, 0.6);
+  --shadow-lift: 0 14px 34px -12px rgba(0, 0, 0, 0.7);
+}
+
+/* ── TERMINAL — mono console, amber-on-black phosphor, sharp corners, faint
+      scanlines. Theme-independent (always dark). Note it overrides the ember
+      signal to amber — urgency still reads warm, just terminal-warm. */
+html[data-skin="terminal"][data-theme="light"],
+html[data-skin="terminal"][data-theme="dark"] {
+  --bg: #0b0e0a;
+  --surface: #101510;
+  --surface-2: #151b13;
+  --line: #1e2b19;
+  --line-strong: #2c4020;
+  --text: #c8f7b0;
+  --muted: #5f8a52;
+  --accent: #8fef5a;
+  --accent-2: #b6f78a;
+  --accent-soft: rgba(143, 239, 90, 0.10);
+  --accent-glow: rgba(143, 239, 90, 0.30);
+  --signal: #ffb000;
+  --signal-soft: rgba(255, 176, 0, 0.15);
+  --slot: #39c5bb;
+  --event-default: #5f8a52;
+  --font-sans: var(--font-mono);
+  --font-serif: var(--font-mono);
+  --font-brand: var(--font-mono);
+  --radius-sm: 1px;
+  --radius: 2px;
+  --radius-lg: 2px;
+  --shadow-1: none;
+  --shadow-2: 0 0 0 1px var(--line);
+  --shadow-3: 0 0 0 1px var(--line-strong);
+  --shadow-lift: 0 0 0 1px var(--accent), 0 0 18px -2px var(--accent-glow);
+  color-scheme: dark;
+}
+
+/* ── BLUEPRINT — cyanotype: drafting-blue ground under a graph-paper grid,
+      amber ink. Theme-independent (always deep blue). */
+html[data-skin="blueprint"][data-theme="light"],
+html[data-skin="blueprint"][data-theme="dark"] {
+  --bg: #0e2c46;
+  --surface: #143a56;
+  --surface-2: #1a4160;
+  --line: #2c5a7a;
+  --line-strong: #3d6d90;
+  --text: #eaf3fb;
+  --muted: #7fa6c4;
+  --accent: #ffd166;
+  --accent-2: #ffdd8a;
+  --accent-soft: rgba(255, 209, 102, 0.12);
+  --accent-glow: rgba(255, 209, 102, 0.28);
+  --signal: #ff8f5e;
+  --signal-soft: rgba(255, 143, 94, 0.16);
+  --slot: #7ee0d0;
+  --event-default: #6f9dc0;
+  --radius-sm: 2px;
+  --radius: 3px;
+  --radius-lg: 4px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 6px 20px -6px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 20px 50px -16px rgba(0, 0, 0, 0.6);
+  --shadow-lift: 0 24px 56px -16px rgba(0, 0, 0, 0.66);
+  color-scheme: dark;
+}
+
+/* ── E-INK — near-monochrome warm grey (light) / charcoal (dark). No colour but
+      a desaturated signal, and NO shadows at all: selection reads by border +
+      the small rise alone, like electronic paper. Restful, anti-glare. */
+html[data-skin="eink"][data-theme="light"] {
+  --bg: #e9e6de;
+  --surface: #f2efe8;
+  --surface-2: #eae7df;
+  --line: #d5d0c3;
+  --line-strong: #bab4a4;
+  --text: #2b2824;
+  --muted: #8c877c;
+  --accent: #3a3733;
+  --accent-2: #57534c;
+  --accent-soft: rgba(58, 55, 51, 0.07);
+  --accent-glow: rgba(58, 55, 51, 0.12);
+  --signal: #5a5550;
+  --signal-soft: rgba(90, 85, 80, 0.12);
+  --slot: #6b6660;
+  --event-default: #8c877c;
+  --radius-sm: 3px;
+  --radius: 5px;
+  --radius-lg: 7px;
+  --shadow-1: none;
+  --shadow-2: none;
+  --shadow-3: none;
+  --shadow-lift: none;
+}
+html[data-skin="eink"][data-theme="dark"] {
+  --bg: #1a1a18;
+  --surface: #242320;
+  --surface-2: #2a2926;
+  --line: #33322e;
+  --line-strong: #48463f;
+  --text: #dad6cc;
+  --muted: #8c877c;
+  --accent: #cbc6ba;
+  --accent-2: #dad6cc;
+  --accent-soft: rgba(203, 198, 186, 0.10);
+  --accent-glow: rgba(203, 198, 186, 0.16);
+  --signal: #b0a99e;
+  --signal-soft: rgba(176, 169, 158, 0.14);
+  --slot: #9a948a;
+  --event-default: #8c877c;
+  --radius-sm: 3px;
+  --radius: 5px;
+  --radius-lg: 7px;
+  --shadow-1: none;
+  --shadow-2: none;
+  --shadow-3: none;
+  --shadow-lift: none;
+  color-scheme: dark;
+}
+
+/* ── MATERIAL: re-skin the frost hooks to solid surfaces. One selector list for
+      all flat skins keeps the resting-surface rule DRY — the glass becomes an
+      opaque token surface with the blur removed; borders/shadows come from the
+      tokens above. .atmosphere is per-skin because each ground differs. */
+
+/* The canvas: kill the dawn/dusk gradient; each skin paints its own ground. */
+html[data-skin="flat"] .atmosphere {
+  background: var(--bg);
+}
+/* E-Ink: a faint paper grain — the matte tooth of electronic paper. */
+html[data-skin="eink"] .atmosphere {
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.035'/%3E%3C/svg%3E");
+}
+html[data-skin="terminal"] .atmosphere {
+  /* a phosphor screen-glow from the centre + scanlines, both accent-tinted so
+     they read on every editor theme (light Solarized included). */
+  background:
+    radial-gradient(120% 130% at 50% 42%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 62%),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 4%, transparent) 0 1px, transparent 1px 3px),
+    var(--bg);
+}
+html[data-skin="blueprint"] .atmosphere {
+  /* clean cyanotype ground — a whisper of light from above, no grid */
+  background:
+    radial-gradient(130% 100% at 50% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 55%),
+    var(--bg);
+}
+
+/* Resting glass → opaque token surface, no blur (all flat skins share this). */
+html[data-skin="flat"] .glass-card,
+html[data-skin="flat"] .glass-tint,
+html[data-skin="flat"] .glass-lift-row,
+html[data-skin="terminal"] .glass-card,
+html[data-skin="terminal"] .glass-tint,
+html[data-skin="terminal"] .glass-lift-row,
+html[data-skin="blueprint"] .glass-card,
+html[data-skin="blueprint"] .glass-tint,
+html[data-skin="blueprint"] .glass-lift-row,
+html[data-skin="eink"] .glass-card,
+html[data-skin="eink"] .glass-tint,
+html[data-skin="eink"] .glass-lift-row {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Focal lift + drag ghost → solid surface, no blur, no inset highlight. The
+      base .glass-lift/.glass-grab force a transparent border !important and an
+      inset-white top edge; we replace both. Border/shadow are per-skin so each
+      keeps its own selection language (a glow in terminal, a rule in eink). */
+html[data-skin="flat"] .glass-lift,
+html[data-skin="flat"] .glass-grab,
+html[data-skin="terminal"] .glass-lift,
+html[data-skin="terminal"] .glass-grab,
+html[data-skin="blueprint"] .glass-lift,
+html[data-skin="blueprint"] .glass-grab,
+html[data-skin="eink"] .glass-lift,
+html[data-skin="eink"] .glass-grab {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html[data-skin="flat"] .glass-lift {
+  border-color: var(--line-strong) !important;
+  box-shadow: var(--shadow-lift);
+}
+html[data-skin="blueprint"] .glass-lift {
+  border-color: var(--accent) !important;
+  box-shadow: var(--shadow-3);
+}
+html[data-skin="terminal"] .glass-lift {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent), 0 0 16px -2px var(--accent-glow);
+}
+html[data-skin="eink"] .glass-lift {
+  /* no shadow on paper — selection is the border + the small rise */
+  border-color: var(--line-strong) !important;
+  box-shadow: none;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SCHEMES — each material's own colour sets (data-palette, keyed per skin in
+   useSkin.ts). Only COLOUR tokens here; radius/shadow/font come from the base
+   skin block above. The FIRST scheme of each material is its default and is
+   already painted by the base block, so it needs no entry — only the others do.
+
+   Specificity: a scheme must beat both the palette selectors (0,2,0) and the
+   base skin block (0,2,1). Theme-independent skins (terminal, blueprint) add a
+   bare [data-theme] to reach (0,3,1); theme-aware skins (flat, e-ink) name the
+   theme explicitly, which also reaches (0,3,1).
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── TERMINAL — editor themes ────────────────────────────────────────────── */
+html[data-skin="terminal"][data-palette="ayu"][data-theme] {
+  --bg: #0f131a; --surface: #1a1f29; --surface-2: #212836;
+  --line: #2a3341; --line-strong: #3a4657; --text: #cbccc6; --muted: #7a8699;
+  --accent: #ffb454; --accent-2: #ffcb6b;
+  --accent-soft: rgba(255, 180, 84, 0.12); --accent-glow: rgba(255, 180, 84, 0.28);
+  --signal: #ff8f40; --signal-soft: rgba(255, 143, 64, 0.16);
+  --slot: #95e6cb; --event-default: #59c2ff;
+}
+html[data-skin="terminal"][data-palette="ocean"][data-theme] {
+  --bg: #0f1b26; --surface: #16232e; --surface-2: #1c2b38;
+  --line: #25333f; --line-strong: #35495a; --text: #cdd3de; --muted: #6b7d8f;
+  --accent: #5ccfe6; --accent-2: #7ee0f2;
+  --accent-soft: rgba(92, 207, 230, 0.12); --accent-glow: rgba(92, 207, 230, 0.26);
+  --signal: #ec5f67; --signal-soft: rgba(236, 95, 103, 0.16);
+  --slot: #5fb3b3; --event-default: #c594c5;
+}
+html[data-skin="terminal"][data-palette="dracula"][data-theme] {
+  --bg: #282a36; --surface: #343746; --surface-2: #3c3f51;
+  --line: #44475a; --line-strong: #565971; --text: #f8f8f2; --muted: #8a8ea8;
+  --accent: #bd93f9; --accent-2: #d0b3ff;
+  --accent-soft: rgba(189, 147, 249, 0.14); --accent-glow: rgba(189, 147, 249, 0.30);
+  --signal: #ff5555; --signal-soft: rgba(255, 85, 85, 0.16);
+  --slot: #8be9fd; --event-default: #50fa7b;
+}
+html[data-skin="terminal"][data-palette="nord"][data-theme] {
+  --bg: #2e3440; --surface: #3b4252; --surface-2: #434c5e;
+  --line: #4c566a; --line-strong: #5c6a82; --text: #eceff4; --muted: #9aa4b8;
+  --accent: #88c0d0; --accent-2: #8fbcbb;
+  --accent-soft: rgba(136, 192, 208, 0.13); --accent-glow: rgba(136, 192, 208, 0.26);
+  --signal: #bf616a; --signal-soft: rgba(191, 97, 106, 0.18);
+  --slot: #a3be8c; --event-default: #81a1c1;
+}
+html[data-skin="terminal"][data-palette="gruvbox"][data-theme="dark"] {
+  --bg: #282828; --surface: #32302f; --surface-2: #3c3836;
+  --line: #504945; --line-strong: #665c54; --text: #ebdbb2; --muted: #a89984;
+  --accent: #fabd2f; --accent-2: #fbd968;
+  --accent-soft: rgba(250, 189, 47, 0.13); --accent-glow: rgba(250, 189, 47, 0.28);
+  --signal: #fb4934; --signal-soft: rgba(251, 73, 52, 0.16);
+  --slot: #8ec07c; --event-default: #83a598;
+}
+html[data-skin="terminal"][data-palette="gruvbox"][data-theme="light"] {
+  --bg: #fbf1c7; --surface: #f9f5d7; --surface-2: #f2e5bc;
+  --line: #ebdbb2; --line-strong: #d5c4a1; --text: #3c3836; --muted: #7c6f64;
+  --accent: #b57614; --accent-2: #d79921;
+  --accent-soft: rgba(181, 118, 20, 0.11); --accent-glow: rgba(181, 118, 20, 0.20);
+  --signal: #cc241d; --signal-soft: rgba(204, 36, 29, 0.13);
+  --slot: #689d6a; --event-default: #458588;
+  color-scheme: light;
+}
+html[data-skin="terminal"][data-palette="one"][data-theme="dark"] {
+  --bg: #282c34; --surface: #2c313a; --surface-2: #333842;
+  --line: #3b414d; --line-strong: #4b5263; --text: #abb2bf; --muted: #6b7280;
+  --accent: #61afef; --accent-2: #82c0f5;
+  --accent-soft: rgba(97, 175, 239, 0.13); --accent-glow: rgba(97, 175, 239, 0.26);
+  --signal: #e06c75; --signal-soft: rgba(224, 108, 117, 0.16);
+  --slot: #56b6c2; --event-default: #98c379;
+}
+html[data-skin="terminal"][data-palette="one"][data-theme="light"] {
+  --bg: #fafafa; --surface: #ffffff; --surface-2: #f2f2f3;
+  --line: #e5e5e6; --line-strong: #d4d4d6; --text: #383a42; --muted: #a0a1a7;
+  --accent: #4078f2; --accent-2: #5a8cf5;
+  --accent-soft: rgba(64, 120, 242, 0.09); --accent-glow: rgba(64, 120, 242, 0.18);
+  --signal: #e45649; --signal-soft: rgba(228, 86, 73, 0.12);
+  --slot: #0184bc; --event-default: #50a14f;
+  color-scheme: light;
+}
+html[data-skin="terminal"][data-palette="tokyonight"][data-theme] {
+  --bg: #1a1b26; --surface: #24283b; --surface-2: #2a2e42;
+  --line: #343a52; --line-strong: #414868; --text: #c0caf5; --muted: #565f89;
+  --accent: #7aa2f7; --accent-2: #9aabf5;
+  --accent-soft: rgba(122, 162, 247, 0.12); --accent-glow: rgba(122, 162, 247, 0.28);
+  --signal: #f7768e; --signal-soft: rgba(247, 118, 142, 0.16);
+  --slot: #73daca; --event-default: #bb9af7;
+}
+html[data-skin="terminal"][data-palette="monokai"][data-theme] {
+  --bg: #272822; --surface: #31322a; --surface-2: #3a3b32;
+  --line: #49483e; --line-strong: #5a594d; --text: #f8f8f2; --muted: #a6a28c;
+  --accent: #a6e22e; --accent-2: #c3f04f;
+  --accent-soft: rgba(166, 226, 46, 0.12); --accent-glow: rgba(166, 226, 46, 0.26);
+  --signal: #f92672; --signal-soft: rgba(249, 38, 114, 0.16);
+  --slot: #66d9ef; --event-default: #fd971f;
+}
+/* Solarized & Catppuccin carry a real light AND dark — the theme toggle drives
+   them, so a terminal skin can finally be a *light* terminal too. */
+html[data-skin="terminal"][data-palette="solarized"][data-theme="dark"] {
+  --bg: #002b36; --surface: #073642; --surface-2: #0a3f4c;
+  --line: #0f4b57; --line-strong: #2a5560; --text: #93a1a1; --muted: #586e75;
+  --accent: #268bd2; --accent-2: #52a8e0;
+  --accent-soft: rgba(38, 139, 210, 0.14); --accent-glow: rgba(38, 139, 210, 0.28);
+  --signal: #dc322f; --signal-soft: rgba(220, 50, 47, 0.16);
+  --slot: #2aa198; --event-default: #859900;
+}
+html[data-skin="terminal"][data-palette="solarized"][data-theme="light"] {
+  --bg: #fdf6e3; --surface: #fffbf0; --surface-2: #f5eed8;
+  --line: #eee8d5; --line-strong: #ddd6c1; --text: #586e75; --muted: #93a1a1;
+  --accent: #268bd2; --accent-2: #3a97d8;
+  --accent-soft: rgba(38, 139, 210, 0.10); --accent-glow: rgba(38, 139, 210, 0.18);
+  --signal: #dc322f; --signal-soft: rgba(220, 50, 47, 0.12);
+  --slot: #2aa198; --event-default: #859900;
+  color-scheme: light;
+}
+html[data-skin="terminal"][data-palette="catppuccin"][data-theme="dark"] {
+  --bg: #1e1e2e; --surface: #28283e; --surface-2: #313145;
+  --line: #3a3a52; --line-strong: #494963; --text: #cdd6f4; --muted: #7f849c;
+  --accent: #cba6f7; --accent-2: #ddb6f9;
+  --accent-soft: rgba(203, 166, 247, 0.14); --accent-glow: rgba(203, 166, 247, 0.28);
+  --signal: #f38ba8; --signal-soft: rgba(243, 139, 168, 0.16);
+  --slot: #94e2d5; --event-default: #89b4fa;
+}
+html[data-skin="terminal"][data-palette="catppuccin"][data-theme="light"] {
+  --bg: #eff1f5; --surface: #ffffff; --surface-2: #f2f4f8;
+  --line: #e6e9ef; --line-strong: #d3d7e0; --text: #4c4f69; --muted: #8c8fa1;
+  --accent: #8839ef; --accent-2: #9a5ff5;
+  --accent-soft: rgba(136, 57, 239, 0.10); --accent-glow: rgba(136, 57, 239, 0.18);
+  --signal: #d20f39; --signal-soft: rgba(210, 15, 57, 0.12);
+  --slot: #179299; --event-default: #1e66f5;
+  color-scheme: light;
+}
+
+/* ── FLAT — tones (theme-aware) ──────────────────────────────────────────── */
+html[data-skin="flat"][data-palette="arctic"][data-theme="light"] {
+  --bg: #f6f8fc; --surface: #ffffff; --surface-2: #eef2f9;
+  --line: #e5eaf3; --line-strong: #d3daea; --text: #1a1f2b; --muted: #6b7385;
+  --accent: #4f46e5; --accent-2: #6d64f0;
+  --accent-soft: rgba(79, 70, 229, 0.08); --accent-glow: rgba(79, 70, 229, 0.16);
+  --slot: #0d9488; --event-default: #94a3b8;
+}
+html[data-skin="flat"][data-palette="arctic"][data-theme="dark"] {
+  --bg: #0b0d13; --surface: #141720; --surface-2: #1b1f2b;
+  --line: #232936; --line-strong: #333b4d; --text: #eaecf3; --muted: #8b93a7;
+  --accent: #8b93ff; --accent-2: #a6acff;
+  --accent-soft: rgba(139, 147, 255, 0.13); --accent-glow: rgba(139, 147, 255, 0.24);
+  --slot: #2dd4bf; --event-default: #7a869c;
+}
+html[data-skin="flat"][data-palette="linen"][data-theme="light"] {
+  --bg: #fdfbf6; --surface: #ffffff; --surface-2: #f6f1e8;
+  --line: #ebe4d7; --line-strong: #dcd2c0; --text: #26211a; --muted: #7d7362;
+  --accent: #b06a3c; --accent-2: #c9885c;
+  --accent-soft: rgba(176, 106, 60, 0.09); --accent-glow: rgba(176, 106, 60, 0.16);
+  --slot: #2f8d86; --event-default: #a98a6f;
+}
+html[data-skin="flat"][data-palette="linen"][data-theme="dark"] {
+  --bg: #100f0b; --surface: #1a1714; --surface-2: #221e18;
+  --line: #2a2620; --line-strong: #3a352b; --text: #efe9dd; --muted: #a4967f;
+  --accent: #d69b6a; --accent-2: #e3b489;
+  --accent-soft: rgba(214, 155, 106, 0.14); --accent-glow: rgba(214, 155, 106, 0.24);
+  --slot: #37b1a4; --event-default: #b89a7e;
+}
+
+/* ── BLUEPRINT — prints (theme-independent) ──────────────────────────────── */
+html[data-skin="blueprint"][data-palette="whiteprint"][data-theme] {
+  --bg: #eef3f8; --surface: #ffffff; --surface-2: #f5f8fb;
+  --line: #ccdcea; --line-strong: #b0c8de; --text: #143a52; --muted: #5b7a92;
+  --accent: #1c5a8a; --accent-2: #2b74ab;
+  --accent-soft: rgba(28, 90, 138, 0.09); --accent-glow: rgba(28, 90, 138, 0.16);
+  --signal: #c1440e; --signal-soft: rgba(193, 68, 14, 0.14);
+  --slot: #2a8c86; --event-default: #4a7ba8;
+  --shadow-1: 0 1px 2px rgba(20, 50, 80, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(20, 50, 80, 0.12), 0 1px 2px rgba(20, 50, 80, 0.05);
+  --shadow-3: 0 24px 60px -16px rgba(20, 50, 80, 0.20);
+  --shadow-lift: 0 30px 60px -18px rgba(20, 50, 80, 0.28);
+  color-scheme: light;
+}
+html[data-skin="blueprint"][data-palette="sepia"][data-theme] {
+  --bg: #241c12; --surface: #2e2416; --surface-2: #362a1a;
+  --line: #453a26; --line-strong: #574828; --text: #ecdcc0; --muted: #a5906f;
+  --accent: #e0a850; --accent-2: #edbf72;
+  --accent-soft: rgba(224, 168, 80, 0.12); --accent-glow: rgba(224, 168, 80, 0.26);
+  --signal: #e07b3c; --signal-soft: rgba(224, 123, 60, 0.16);
+  --slot: #8bab7a; --event-default: #b89a6f;
+}
+/* ── E-INK — tints (theme-aware, no shadows inherited from base) ─────────── */
+html[data-skin="eink"][data-palette="sepia"][data-theme="light"] {
+  --bg: #e4d9c3; --surface: #efe6d3; --surface-2: #e7dcc6;
+  --line: #d3c4a3; --line-strong: #bfad86; --text: #4a3c28; --muted: #8a7659;
+  --accent: #5a4a2f; --accent-2: #75603f;
+  --accent-soft: rgba(90, 74, 47, 0.08); --accent-glow: rgba(90, 74, 47, 0.12);
+  --signal: #7a5a2f; --signal-soft: rgba(122, 90, 47, 0.12);
+  --slot: #6b6047; --event-default: #9a8a6a;
+}
+html[data-skin="eink"][data-palette="sepia"][data-theme="dark"] {
+  --bg: #211c14; --surface: #2a251b; --surface-2: #322c20;
+  --line: #3a3324; --line-strong: #4d442f; --text: #d8c9a8; --muted: #9a8a6a;
+  --accent: #c9b98f; --accent-2: #d8c9a8;
+  --accent-soft: rgba(201, 185, 143, 0.10); --accent-glow: rgba(201, 185, 143, 0.16);
+  --signal: #b09a70; --signal-soft: rgba(176, 154, 112, 0.14);
+  --slot: #8a7a5a; --event-default: #9a8a6a;
+}
+html[data-skin="eink"][data-palette="carta"][data-theme="light"] {
+  --bg: #ecedf0; --surface: #f6f7f9; --surface-2: #e9eaee;
+  --line: #d7dbe0; --line-strong: #c0c5cd; --text: #33363c; --muted: #7c8189;
+  --accent: #3a3d42; --accent-2: #565a61;
+  --accent-soft: rgba(58, 61, 66, 0.07); --accent-glow: rgba(58, 61, 66, 0.12);
+  --signal: #5a5d63; --signal-soft: rgba(90, 93, 99, 0.12);
+  --slot: #6a6f76; --event-default: #8a8f96;
+}
+html[data-skin="eink"][data-palette="carta"][data-theme="dark"] {
+  --bg: #191a1c; --surface: #232527; --surface-2: #2a2c2f;
+  --line: #323538; --line-strong: #454952; --text: #ccd0d5; --muted: #868b93;
+  --accent: #c6cace; --accent-2: #d6dade;
+  --accent-soft: rgba(198, 202, 206, 0.10); --accent-glow: rgba(198, 202, 206, 0.16);
+  --signal: #a0a5ac; --signal-soft: rgba(160, 165, 172, 0.14);
+  --slot: #7a7f86; --event-default: #8a8f96;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   MATERIAL FLATTEN — the content submits to the skin, not just the chrome.
+   Calendar events carry their own identity colour inline (blockColors mixes the
+   calendar/domain hue), so tokens can't reach them. On PAPER and FLAT that's
+   right — colour is identity there. But a MONO material (e-ink / blueprint /
+   terminal) reading full Google-blue is a broken illusion, so we push the event
+   through the material's own finish with a filter. `.fc-event` already animates
+   `filter`, so the flatten eases in. Slots keep their themed --slot accent.
+   ════════════════════════════════════════════════════════════════════════ */
+html[data-skin="eink"] .fc-event:not(.evt-slot) {
+  /* electronic paper: everything in grey ink */
+  filter: grayscale(1) contrast(1.02);
+}
+html[data-skin="terminal"] .fc-event:not(.evt-slot) {
+  /* A console lists entries in ONE ink: greying translucent fills into the near
+     -black just makes them vanish, so instead tint every event to the scheme
+     accent with an accent edge (and it follows Ayu/Dracula/… for free). */
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface)) !important;
+  border-left: 2px solid var(--accent) !important;
+}
+html[data-skin="blueprint"] .fc-event:not(.evt-slot) {
+  /* duotone → a single blueprint ink */
+  filter: grayscale(1) sepia(1) hue-rotate(178deg) saturate(1.5) brightness(0.95);
+}
+
+/* ── Universal lean-ins (token-driven, so they follow every scheme) ──────── */
+/* Text selection picks up the active accent everywhere. */
+::selection {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+/* Sharp materials get a sharp scrollbar too. */
+html[data-skin="terminal"] ::-webkit-scrollbar-thumb,
+html[data-skin="blueprint"] ::-webkit-scrollbar-thumb {
+  border-radius: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PERSONALITY — a skin is a design language, not a palette. Each material
+   MOVES, MARKS, and CUTS differently. Driven through global hooks so it reaches
+   every surface (Domains included) with no per-component work:
+     · motion tokens  — .fast (everywhere), .rise, borders all read --d-* / --ease-*
+     · .section-label — 115 uses across 46 files
+     · rounded utils  — every pill/card/avatar
+   Aurora is the reference (calm warm spring); the others deviate from it.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* — MOTION: how each material moves ─────────────────────────────────────── */
+/* Terminal: mechanical — fast and linear, no spring, no ease. */
+html[data-skin="terminal"] {
+  --d-fast: 45ms; --d-base: 85ms; --d-slow: 120ms; --d-moment: 150ms;
+  --ease-out: cubic-bezier(0, 0, 1, 1); --ease-in-out: cubic-bezier(0, 0, 1, 1); --ease-spring: cubic-bezier(0, 0, 1, 1);
+}
+/* Flat: quick and smooth — the modern-app snap. */
+html[data-skin="flat"] {
+  --d-fast: 90ms; --d-base: 150ms;
+}
+/* Blueprint: a plotter — even and linear, never bouncy. */
+html[data-skin="blueprint"] {
+  --ease-out: cubic-bezier(0, 0, 1, 1); --ease-spring: cubic-bezier(0, 0, 1, 1);
+}
+/* E-Ink: the display just refreshes — no smooth motion at all, like real paper. */
+html[data-skin="eink"] {
+  --d-fast: 1ms; --d-base: 1ms; --d-slow: 1ms; --d-moment: 1ms;
+  --ease-out: cubic-bezier(0, 0, 1, 1); --ease-spring: cubic-bezier(0, 0, 1, 1);
+}
+
+/* — SECTION LABELS take on each material's voice ────────────────────────── */
+/* Terminal: every section header is a shell prompt. */
+html[data-skin="terminal"] .section-label {
+  letter-spacing: 0.14em;
+}
+html[data-skin="terminal"] .section-label::before {
+  content: "> ";
+  color: var(--accent);
+}
+/* Blueprint: a drafting callout — wider tracking. */
+html[data-skin="blueprint"] .section-label {
+  letter-spacing: 0.18em;
+}
+/* E-Ink: a reader doesn't shout — drop the caps and the tracking. */
+html[data-skin="eink"] .section-label {
+  text-transform: none;
+  letter-spacing: 0.005em;
+  font-weight: 650;
+}
+
+/* — CORNERS: the console is cut square everywhere (pills, cards, avatars). ── */
+html[data-skin="terminal"] [class*="rounded"] {
+  border-radius: 1px !important;
+}
+
+/* — CURSOR: a blueprint is drafted under crosshairs (over the bare canvas). ── */
+html[data-skin="blueprint"] .atmosphere {
+  cursor: crosshair;
+}

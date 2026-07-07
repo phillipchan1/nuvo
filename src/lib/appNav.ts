@@ -143,8 +143,9 @@ export function readNavState(raw: unknown): AppNavState | null {
     ...s,
     // The Week rail tab was retired (the board replaced it) — heal stale state.
     tab: s.tab === "inbox" ? "inbox" : "today",
-    // "portfolio" (the old filing-cabinet default) → On Deck, the new front door.
-    projectView: !s.projectView || s.projectView === ("portfolio" as ProjectView) ? "ondeck" : s.projectView,
+    // Heal retired project views ("portfolio" filing-cabinet default, "detail"
+    // full page) → On Deck, the new front door.
+    projectView: (["ondeck", "all", "sprint"] as ProjectView[]).includes(s.projectView as ProjectView) ? (s.projectView as ProjectView) : "ondeck",
     focus: { ...DEFAULT_NAV.focus, ...(s.focus ?? {}) },
   };
 }

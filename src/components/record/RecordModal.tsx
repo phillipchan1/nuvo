@@ -38,6 +38,8 @@ import {
   StatusPill,
 } from "../floors/parts";
 import TaskList from "../floors/TaskList";
+import { ProjectPaceLine } from "../floors/ProjectPace";
+import { ProjectActivityBind } from "../floors/ProjectActivityBind";
 import { Btn } from "../ui";
 
 export type RecordKind = "project" | "initiative";
@@ -81,7 +83,6 @@ export default function RecordModal({
         <ProjectRecord
           id={id}
           onClose={onClose}
-          onExpand={onExpand}
           onOpenInitiative={onOpenInitiative}
         />
       ) : (
@@ -160,7 +161,7 @@ function Header({
   onGoal: (v: string) => void;
   goalPlaceholder: string;
   pct: number;
-  onExpand: () => void;
+  onExpand?: () => void;
   onClose: () => void;
 }) {
   return (
@@ -168,13 +169,15 @@ function Header({
       <div className="mono mb-2.5 flex items-center gap-1.5 text-meta">
         {crumbs}
         <div className="flex-1" />
-        <button
-          onClick={onExpand}
-          title="Open as a full page"
-          className="fast flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-meta text-muted hover:border-line-strong hover:text-ink"
-        >
-          ⤢ full page
-        </button>
+        {onExpand && (
+          <button
+            onClick={onExpand}
+            title="Open as a full page"
+            className="fast flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-meta text-muted hover:border-line-strong hover:text-ink"
+          >
+            ⤢ full page
+          </button>
+        )}
         <button onClick={onClose} className="keycap" title="Close">esc</button>
       </div>
 
@@ -299,12 +302,10 @@ function SuggestionPanel({
 function ProjectRecord({
   id,
   onClose,
-  onExpand,
   onOpenInitiative,
 }: {
   id: string;
   onClose: () => void;
-  onExpand: () => void;
   onOpenInitiative: (id: string) => void;
 }) {
   const { data, updateProject, deleteProject, routeTask, addProjectReadyToSprint } = useVertical();
@@ -353,7 +354,6 @@ function ProjectRecord({
         onGoal={(v) => updateProject(project.id, { outcome: v })}
         goalPlaceholder="What does done look like, in one line?"
         pct={pct}
-        onExpand={onExpand}
         onClose={onClose}
       />
 
@@ -378,6 +378,10 @@ function ProjectRecord({
       <Body
         main={
           <>
+            <Section label="Pace">
+              <ProjectPaceLine data={data} project={project} accent={accent} />
+            </Section>
+
             <Section label="Brief">
               <InlineTextarea
                 value={project.description}
@@ -409,6 +413,10 @@ function ProjectRecord({
                 emptyHint="No tasks yet — add the first step."
               />
             </Section>
+
+            <Section label="Activity">
+              <ProjectActivityBind projectId={project.id} projectName={project.name} />
+            </Section>
           </>
         }
         side={
@@ -423,7 +431,6 @@ function ProjectRecord({
 
       <Footer
         onClose={onClose}
-        onExpand={onExpand}
         deleteWhat="project"
         onDelete={() => { deleteProject(project.id); onClose(); }}
         note={note}
@@ -657,7 +664,7 @@ function Footer({
   note,
 }: {
   onClose: () => void;
-  onExpand: () => void;
+  onExpand?: () => void;
   deleteWhat: string;
   onDelete: () => void;
   note?: string | null;
@@ -667,7 +674,7 @@ function Footer({
       <DeleteBtn what={deleteWhat} onDelete={onDelete} />
       {note && <span className="text-label text-muted">{note}</span>}
       <div className="flex-1" />
-      <Btn onClick={onExpand}>Open full page ↗</Btn>
+      {onExpand && <Btn onClick={onExpand}>Open full page ↗</Btn>}
       <Btn kind="primary" onClick={onClose}>Done</Btn>
     </div>
   );

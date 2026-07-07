@@ -49,11 +49,14 @@ export default function Spine({
   setRung,
   openSettings,
   openShortcuts,
+  collapsed = false,
 }: {
   rung: Rung;
   setRung: (r: Rung) => void;
   openSettings: () => void;
   openShortcuts: () => void;
+  /** Focus mode: slide the whole spine closed (the calendar takes the room). */
+  collapsed?: boolean;
 }) {
   // Reads from the same cached vertical snapshot the floors use — no extra
   // fetch. Until it's loaded the rail stays a plain table of contents (no
@@ -160,9 +163,23 @@ export default function Spine({
 
   return (
     <div
-      className="spine relative z-40 flex w-[var(--spine-width,188px)] shrink-0 flex-col"
-      style={{ background: "transparent" }}
+      className="spine relative z-40 shrink-0 overflow-hidden"
+      style={{
+        width: collapsed ? 0 : "var(--spine-width,188px)",
+        transition: "width var(--d-slow) var(--ease-out)",
+        background: "transparent",
+      }}
     >
+      {/* Inner holds its natural width so the content never reflows while the
+          outer clips it shut. */}
+      <div
+        className="relative flex h-full flex-col"
+        style={{
+          width: "var(--spine-width,188px)",
+          opacity: collapsed ? 0 : 1,
+          transition: "opacity var(--d-base) var(--ease-out)",
+        }}
+      >
       {/* Right separator — runs the full height (spine is wide enough to clear
           the macOS traffic lights). */}
       <div className="spine-separator pointer-events-none absolute bottom-0 right-0 w-px bg-line" />
@@ -215,6 +232,7 @@ export default function Spine({
           <span className="w-3.5 shrink-0 text-center text-caption leading-none">⌘</span>
           <span className="text-caption leading-none">Shortcuts</span>
         </button>
+      </div>
       </div>
     </div>
   );

@@ -4,29 +4,28 @@
 // record's detail. Projects additionally carry the weekly Sprint funnel.
 
 import { useVertical } from "../hooks/useVertical";
-import { domainById, initiativeById, projectById } from "../lib/vertical";
+import { domainById, initiativeById } from "../lib/vertical";
 import type { Focus, Rung } from "./AppShell";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { Keycap } from "./ui";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativeFloor from "./floors/InitiativeFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
-import ProjectFloor from "./floors/ProjectFloor";
 import PortfolioFloor from "./floors/PortfolioFloor";
 import OnDeckFloor from "./floors/OnDeckFloor";
 import SprintFloor from "./floors/SprintFloor";
 import NowFloor from "./floors/NowFloor";
 
 // "ondeck" is the front door (demand timeline); "all" is the filing-cabinet
-// Collection, demoted to a tab; "sprint" is This Week; "detail" a single record.
-export type ProjectView = "ondeck" | "all" | "sprint" | "detail";
+// Collection, demoted to a tab; "sprint" is This Week. A single project opens in
+// the Record modal now (the full-page ProjectFloor was retired).
+export type ProjectView = "ondeck" | "all" | "sprint";
 export type DetailView = "portfolio" | "detail";
 
 export default function FloorPane({
   rung,
   focus,
   focusDomain,
-  openInitiative,
   goRung,
   projectView,
   setProjectView,
@@ -36,7 +35,6 @@ export default function FloorPane({
   rung: Rung;
   focus: Focus;
   focusDomain: (id: string) => void;
-  openInitiative: (id: string) => void;
   goRung: (r: Rung) => void;
   projectView: ProjectView;
   setProjectView: (v: ProjectView) => void;
@@ -63,9 +61,8 @@ export default function FloorPane({
 
   // Show a back arrow in the top bar when a detail is open AND there's no
   // natural breadcrumb (i.e. the user can't see which list to click back to).
-  const showBackBtn = (rung === "project" && projectView === "detail") ||
-                      (rung === "initiative" && initiativeView === "detail");
-  const onBackBtn = rung === "project" ? backToProjects : backToInitiatives;
+  const showBackBtn = rung === "initiative" && initiativeView === "detail";
+  const onBackBtn = backToInitiatives;
 
   const viewKey = rung === "project" ? projectView : rung === "initiative" ? initiativeView : "";
 
@@ -99,7 +96,7 @@ export default function FloorPane({
               { id: "all", label: "All projects", on: () => setProjectView("all") },
             ]}
             active={projectView}
-            detailName={projectView === "detail" ? projectById(data, focus.projectId)?.name ?? "Project" : null}
+            detailName={null}
             accent={accent}
           />
         )}
@@ -128,14 +125,6 @@ export default function FloorPane({
         {rung === "project" && projectView === "ondeck" && <OnDeckFloor />}
         {rung === "project" && projectView === "all" && <PortfolioFloor onOpen={openProjectRecord} />}
         {rung === "project" && projectView === "sprint" && <SprintFloor />}
-        {rung === "project" && projectView === "detail" && (
-          <ProjectFloor
-            focus={focus}
-            accent={accent}
-            onUp={() => focus.initiativeId && openInitiative(focus.initiativeId)}
-            onBack={backToProjects}
-          />
-        )}
 
         {rung === "initiative" && initiativeView === "portfolio" && (
           <InitiativesFloor onOpen={openInitiativeRecord} />

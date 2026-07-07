@@ -35,7 +35,16 @@ import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown, MorningPlan } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
 
-export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void }) {
+export default function Planner({
+  openFlow,
+  focusMode = false,
+  onToggleFocus,
+}: {
+  openFlow: (f: FlowName) => void;
+  /** Focus mode: the inbox·today rail slides closed and the calendar goes full-bleed. */
+  focusMode?: boolean;
+  onToggleFocus?: () => void;
+}) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const {
     nav,
@@ -490,9 +499,10 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
           labels={labels}
           mutations={mutations}
           onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor)}
-          hotkeysEnabled={!anyModalOpen}
+          hotkeysEnabled={!anyModalOpen && !focusMode}
           now={now}
           railRef={railRef}
+          collapsed={focusMode}
         />
         <div className="relative flex min-h-0 flex-1 min-w-[280px]">
           <CalendarPane
@@ -526,6 +536,8 @@ export default function Planner({ openFlow }: { openFlow: (f: FlowName) => void 
             onOpenWeekPlan={onSchedule ? openWeekDoor : undefined}
             weekButtonLabel={weekButtonLabel}
             weekButtonGlow={onSchedule && weekDoorMode === "review"}
+            focusMode={focusMode}
+            onToggleFocus={onToggleFocus}
           />
 
           {onSchedule && openTask && taskPanel && (

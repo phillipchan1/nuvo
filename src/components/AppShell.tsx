@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   initiativeById,
   initiativesOf,
@@ -35,6 +35,26 @@ export interface Focus {
 
 // Top-to-bottom on the spine: ⌘1 = Now … ⌘5 = Domain. ⌘↓ widens, ⌘↑ narrows.
 export const LADDER: Rung[] = ["now", "day", "project", "initiative", "domain"];
+
+// Focus mode — one gesture (⌘. / the toolbar button / the left-edge reveal)
+// slides the spine + the inbox·today rail out of the way so the calendar goes
+// full-bleed. Desktop-only chrome; persisted so the workspace opens the way you
+// left it.
+const FOCUS_KEY = "nuvo-focus-mode";
+function readFocusMode(): boolean {
+  try {
+    return localStorage.getItem(FOCUS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function writeFocusMode(v: boolean) {
+  try {
+    localStorage.setItem(FOCUS_KEY, v ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function AppShell() {
   return (
@@ -106,6 +126,18 @@ function AppShellInner() {
     };
   }, []);
   const effectiveAgentOpen = agentOpen && !narrowViewport;
+
+  // Focus mode: collapse the spine + the inbox·today rail to give the calendar
+  // the whole workspace. Lives here (the common ancestor of Spine and Planner)
+  // rather than in nav history — the back button shouldn't toggle chrome.
+  const [focusMode, setFocusMode] = useState(readFocusMode);
+  const toggleFocus = useCallback(() => {
+    setFocusMode((v) => {
+      const next = !v;
+      writeFocusMode(next);
+      return next;
+    });
+  }, []);
 
   // the fast composer is the default create surface, summonable from anywhere;
   // "more options" swaps in the full moment, carrying what's already typed.
@@ -200,6 +232,19 @@ function AppShellInner() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleAgent]);
 
+  // ⌘. slides the side panels away (and back) — focus the calendar from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== ".") return;
+      const el = e.target as HTMLElement;
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      e.preventDefault();
+      toggleFocus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleFocus]);
+
   // P / I summon the fast composer from anywhere (no modifier, so ⌘P print is
   // untouched). Stay out of the way while typing or when another surface owns
   // the screen — an overlay, a flow, or a composer already open.
@@ -228,14 +273,16 @@ function AppShellInner() {
   return (
     <div className="atmosphere flex h-full">
       <Spine
+        collapsed={focusMode}
         rung={rung}
         setRung={goRung}
         openSettings={() => openOverlay("settings")}
         openShortcuts={() => openOverlay("shortcuts")}
       />
+
       <div className="flex min-w-0 flex-1">
         <div className="relative min-w-0 flex-1">
-          <Planner openFlow={openFlow} />
+          <Planner openFlow={openFlow} focusMode={focusMode} onToggleFocus={toggleFocus} />
           {rung !== "day" && (
             // Sits ABOVE the Schedule beneath it: the LeftRail is z-40, so the
             // floor overlay must clear that (z-30 let the rail paint through).
@@ -248,7 +295,6 @@ function AppShellInner() {
                   rung={rung}
                   focus={focus}
                   focusDomain={focusDomain}
-                  openInitiative={openInitiativeDetail}
                   goRung={goRung}
                   projectView={projectView}
                   setProjectView={setProjectView}

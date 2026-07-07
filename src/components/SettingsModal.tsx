@@ -12,7 +12,7 @@ import { GitHubConnect } from "./GitHubConnect";
 import type { SettingsSection } from "../lib/appNav";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { usePalette, PALETTE_LABELS, type Palette as PaletteMood } from "../hooks/usePalette";
+import { useSkin, useScheme, SKIN_LABELS, SCHEMES, SCHEME_GROUP, schemeModes, type Skin, type Scheme, type SchemeModes } from "../hooks/useSkin";
 
 // ── Section registry ──────────────────────────────────────────────────────
 type SectionId = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account";
@@ -164,16 +164,19 @@ function MiniBars({ p }: { p: Palette }) {
 function ThemeCard({
   theme,
   active,
+  disabled = false,
   onSelect,
 }: {
   theme: "system" | "light" | "dark";
   active: boolean;
+  disabled?: boolean;
   onSelect: () => void;
 }) {
   return (
     <button
       onClick={onSelect}
-      className={`fast group overflow-hidden rounded-lg border text-left ${
+      disabled={disabled}
+      className={`fast group overflow-hidden rounded-lg border text-left disabled:cursor-not-allowed disabled:opacity-40 ${
         active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
       }`}
     >
@@ -209,38 +212,25 @@ function ThemeCard({
   );
 }
 
-// ── Appearance: the warmth axis (a swatch per mood) ───────────────────────
-const PALETTE_SWATCH: Record<PaletteMood, {
-  light: { bg: string; surface: string; line: string; accent: string };
-  dark: { bg: string; surface: string; line: string; accent: string };
-}> = {
-  daybreak: {
-    light: { bg: "#f4f1ea", surface: "#fffdf8", line: "#e7e0d2", accent: "#92568a" },
-    dark:  { bg: "#17130e", surface: "#201b14", line: "#332c20", accent: "#c692bf" },
-  },
-  dusk: {
-    light: { bg: "#f1f0f3", surface: "#ffffff", line: "#e6e4ec", accent: "#6d54c0" },
-    dark:  { bg: "#16151c", surface: "#1e1d26", line: "#302e3b", accent: "#9a86f0" },
-  },
-  fog: {
-    light: { bg: "#eef0f5", surface: "#ffffff", line: "#e4e6ef", accent: "#5a4be2" },
-    dark:  { bg: "#141320", surface: "#1c1a28", line: "#2d2b3d", accent: "#8b80ff" },
-  },
-};
-
-function PaletteCard({
-  palette,
+// ── Appearance: a scheme swatch (one per colour scheme within a material) ──
+// Rendered from the SCHEMES registry, so it works for every material's own set
+// — warmth moods under Paper, editor themes under Terminal, and so on. `sharp`
+// mirrors the material's corner language so the preview reads as the material.
+function SchemeCard({
+  scheme,
   active,
   dark,
+  sharp,
   onSelect,
 }: {
-  palette: PaletteMood;
+  scheme: Scheme;
   active: boolean;
   dark: boolean;
+  sharp: boolean;
   onSelect: () => void;
 }) {
-  const sw = PALETTE_SWATCH[palette][dark ? "dark" : "light"];
-  const meta = PALETTE_LABELS[palette];
+  const sw = dark ? scheme.dark : scheme.light;
+  const barR = sharp ? "0" : "9999px";
   return (
     <button
       onClick={onSelect}
@@ -249,9 +239,73 @@ function PaletteCard({
       }`}
     >
       <div className="flex h-[46px] items-center gap-1.5 px-2.5" style={{ background: sw.bg }}>
-        <div className="flex flex-1 flex-col gap-1 rounded-[4px] border p-1.5" style={{ background: sw.surface, borderColor: sw.line }}>
-          <div className="h-1 w-3/5 rounded-full" style={{ background: sw.accent }} />
-          <div className="h-1 w-full rounded-full" style={{ background: sw.line }} />
+        <div
+          className="flex flex-1 flex-col gap-1 border p-1.5"
+          style={{ background: sw.surface, borderColor: sw.line, borderRadius: sharp ? "1px" : "4px" }}
+        >
+          <div className="h-1 w-3/5" style={{ background: sw.accent, borderRadius: barR }} />
+          <div className="h-1 w-full" style={{ background: sw.line, borderRadius: barR }} />
+        </div>
+      </div>
+      <div className="flex items-center justify-between border-t border-line bg-surface px-2.5 py-1.5">
+        <span className="flex flex-col leading-tight">
+          <span className="text-caption font-medium text-ink">{scheme.name}</span>
+          <span className="mono text-micro text-muted">{scheme.hint}</span>
+        </span>
+        <span
+          className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
+            active ? "border-accent bg-accent text-white" : "border-line-strong"
+          }`}
+        >
+          {active && (
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+              <path d="M2 5l2 2 4-4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ── Appearance: the material axis (a swatch per skin) ─────────────────────
+// The material preview reuses the skin's DEFAULT scheme (SCHEMES[skin][0]) as
+// its swatch, so there's one source of truth for colours. `sharp` mirrors the
+// skin's corner language so the preview reads as the material, not the palette.
+const SKIN_SHARP: Record<Skin, boolean> = {
+  paper: false, flat: false, terminal: true, blueprint: true, eink: false,
+};
+
+function SkinCard({
+  skin,
+  active,
+  dark,
+  onSelect,
+}: {
+  skin: Skin;
+  active: boolean;
+  dark: boolean;
+  onSelect: () => void;
+}) {
+  const sharp = SKIN_SHARP[skin];
+  const def = SCHEMES[skin][0];
+  const sw = dark ? def.dark : def.light;
+  const meta = SKIN_LABELS[skin];
+  const barR = sharp ? "0" : "9999px";
+  return (
+    <button
+      onClick={onSelect}
+      className={`fast group overflow-hidden rounded-lg border text-left ${
+        active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
+      }`}
+    >
+      <div className="flex h-[46px] items-center gap-1.5 px-2.5" style={{ background: sw.bg }}>
+        <div
+          className="flex flex-1 flex-col gap-1 border p-1.5"
+          style={{ background: sw.surface, borderColor: sw.line, borderRadius: sharp ? "1px" : "4px" }}
+        >
+          <div className="h-1 w-3/5" style={{ background: sw.accent, borderRadius: barR }} />
+          <div className="h-1 w-full" style={{ background: sw.line, borderRadius: barR }} />
         </div>
       </div>
       <div className="flex items-center justify-between border-t border-line bg-surface px-2.5 py-1.5">
@@ -284,24 +338,67 @@ function AppearancePane({
   updateSettings: (patch: Partial<UserSettings>) => void;
 }) {
   const theme = settings?.theme ?? "system";
-  const [palette, setPalette] = usePalette();
-  const isDark =
-    theme === "dark" ||
-    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [skin, setSkin] = useSkin();
+  const { scheme, schemes, setScheme } = useScheme();
+  const group = SCHEME_GROUP[skin];
+
+  const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const themeIsDark = theme === "dark" || (theme === "system" && sysDark);
+  // A scheme that only comes in one mode forces it; a "both" scheme follows the
+  // theme toggle. `effDark` gives the right swatch/preview for any scheme.
+  const effDark = (m: SchemeModes) => (m === "dark" ? true : m === "light" ? false : themeIsDark);
+
+  const activeScheme = schemes.find((s) => s.id === scheme);
+  const forced = schemeModes(skin, scheme) === "both" ? null : schemeModes(skin, scheme);
+
   return (
     <div>
       <PaneHeader title="Appearance" sub="How Nuvo looks. System follows your device's light or dark mode." />
       <div className="grid grid-cols-3 gap-2.5">
         {(["system", "light", "dark"] as const).map((t) => (
-          <ThemeCard key={t} theme={t} active={theme === t} onSelect={() => updateSettings({ theme: t })} />
+          <ThemeCard
+            key={t}
+            theme={t}
+            // When the scheme forces a mode, only that card is live + active, so
+            // a dead "Light" toggle can't quietly do nothing.
+            active={forced ? t === forced : theme === t}
+            disabled={forced ? t !== forced : false}
+            onSelect={() => updateSettings({ theme: t })}
+          />
+        ))}
+      </div>
+      {forced && (
+        <p className="text-caption mt-2 text-muted">
+          {activeScheme?.name} is a {forced} {group.label.toLowerCase()} — it sets its own light &amp; dark.
+        </p>
+      )}
+
+      <div className="section-label mb-2 mt-6">Material</div>
+      <p className="text-caption mb-2.5 text-muted">The feel of the surface. Each material brings its own look — and its own set of {group.label.toLowerCase()}s below.</p>
+      <div className="grid grid-cols-3 gap-2.5">
+        {(Object.keys(SKIN_LABELS) as Skin[]).map((s) => (
+          <SkinCard
+            key={s}
+            skin={s}
+            active={skin === s}
+            dark={effDark(SCHEMES[s][0].modes ?? "both")}
+            onSelect={() => setSkin(s)}
+          />
         ))}
       </div>
 
-      <div className="section-label mb-2 mt-6">Mood</div>
-      <p className="text-caption mb-2.5 text-muted">The warmth of the paper. Switch it whenever the day calls for it.</p>
+      <div className="section-label mb-2 mt-6">{group.label}</div>
+      <p className="text-caption mb-2.5 text-muted">{group.hint}</p>
       <div className="grid grid-cols-3 gap-2.5">
-        {(["daybreak", "dusk", "fog"] as const).map((p) => (
-          <PaletteCard key={p} palette={p} active={palette === p} dark={isDark} onSelect={() => setPalette(p)} />
+        {schemes.map((sc) => (
+          <SchemeCard
+            key={sc.id}
+            scheme={sc}
+            active={scheme === sc.id}
+            dark={effDark(sc.modes ?? "both")}
+            sharp={SKIN_SHARP[skin]}
+            onSelect={() => setScheme(sc.id)}
+          />
         ))}
       </div>
     </div>
@@ -980,7 +1077,7 @@ export default function SettingsModal({
 
   // ── Desktop: side-by-side nav + pane (unchanged) ──
   return (
-    <Modal onClose={onClose} width="max-w-3xl">
+    <Modal onClose={onClose} width="max-w-4xl">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
         <div className="text-head font-semibold">Settings</div>
         <button onClick={onClose} className="keycap">
@@ -988,7 +1085,7 @@ export default function SettingsModal({
         </button>
       </div>
 
-      <div className="flex h-[min(72vh,560px)]">
+      <div className="flex h-[min(84vh,680px)]">
         {/* Section nav */}
         <nav className="w-[188px] shrink-0 space-y-0.5 overflow-y-auto border-r border-line bg-surface-2/40 p-2.5">
           {SECTIONS.map((s) => (

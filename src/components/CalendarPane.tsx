@@ -171,6 +171,8 @@ export default function CalendarPane({
   onOpenWeekPlan,
   weekButtonLabel,
   weekButtonGlow,
+  focusMode = false,
+  onToggleFocus,
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
@@ -209,6 +211,10 @@ export default function CalendarPane({
   railRef: React.MutableRefObject<HTMLDivElement | null>;
   onConvertTaskToEvent?: (task: Task) => void;
   onConvertEventToTask?: (event: ExternalEvent) => void;
+  /** Focus mode is on — the toolbar button flips to "show panels". */
+  focusMode?: boolean;
+  /** Toggle focus mode (slide the side panels away / back). Enables the button. */
+  onToggleFocus?: () => void;
 }) {
   const calRef = useRef<FullCalendar>(null);
   const tasksRef = useRef(tasks);
@@ -1620,6 +1626,34 @@ export default function CalendarPane({
       {/* ── Navigation bar — also fills the macOS titlebar zone (titlebar-pad)
             and hosts the window-drag handle on its empty spacer. ──────────── */}
       <div className="titlebar-pad relative flex shrink-0 items-center gap-1 px-3 py-1.5">
+        {/* Focus the calendar — slides the spine + inbox·today rail away. Always
+            present (even in Spread) and flips to "show panels" once collapsed.
+            A labeled pill so the way out (and back) is unmissable. */}
+        {onToggleFocus && (
+          <button
+            onClick={onToggleFocus}
+            className="fast mr-1 flex h-6 items-center gap-1.5 rounded-full border py-0.5 pl-1.5 pr-2.5 text-label font-medium"
+            style={
+              focusMode
+                ? { borderColor: "var(--accent)", color: "var(--accent)", background: "var(--accent-soft)" }
+                : { borderColor: "var(--line)", color: "var(--muted)" }
+            }
+            title={focusMode ? "Show panels (⌘.)" : "Focus the calendar (⌘.)"}
+            aria-pressed={focusMode}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" strokeWidth="1.3" />
+              <line x1="6" y1="2.75" x2="6" y2="13.25" strokeWidth="1.3" />
+              {focusMode ? (
+                <path d="M8.75 6 10.75 8l-2 2" strokeWidth="1.2" />
+              ) : (
+                <path d="M10.75 6 8.75 8l2 2" strokeWidth="1.2" />
+              )}
+            </svg>
+            <span className="leading-none">{focusMode ? "Show panels" : "Focus"}</span>
+          </button>
+        )}
+
         {view !== "board" && (
         <>
         <button

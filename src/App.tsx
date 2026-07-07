@@ -2,7 +2,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@ta
 import { Toaster, toast } from "sonner";
 import { useAuth } from "./hooks/useAuth";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
-import { usePalette } from "./hooks/usePalette";
+import { useSkin, useScheme } from "./hooks/useSkin";
 import Login from "./components/Login";
 import AppShell from "./components/AppShell";
 import SpotlightWindow from "./components/SpotlightWindow";
@@ -65,7 +65,8 @@ function Shell() {
   const { session, loading } = useAuth();
   const { settings } = useSettings();
   useApplyTheme(settings?.theme);
-  usePalette(); // keep <html data-palette> applied (warmth axis of the theme)
+  useSkin(); // keep <html data-skin> applied (the material axis)
+  useScheme(); // keep <html data-palette> applied (the material's colour scheme)
 
   // The floating ⌥Space window: just the panel (no app chrome, no updater).
   // Stays blank until authed — the window is hidden until summoned anyway.

@@ -52,7 +52,6 @@ interface AppNavigationContextValue {
   toggleAgent: () => void;
   focusDomain: (focus: Focus) => void;
   focusInitiative: (focus: Focus) => void;
-  focusProject: (focus: Focus) => void;
   openInitiative: (focus: Focus) => void;
   openProject: (focus: Focus) => void;
   setProjectView: (v: ProjectView) => void;
@@ -314,11 +313,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     [navigate],
   );
 
-  const focusProject = useCallback(
-    (focus: Focus) => navigate({ focus, projectView: "detail", floorModal: null }),
-    [navigate],
-  );
-
   const openInitiative = useCallback(
     (focus: Focus) => {
       const patch: Partial<AppNavState> = {
@@ -336,21 +330,10 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     [navigate],
   );
 
+  // A single project has no full page anymore — it opens in the Record modal.
   const openProject = useCallback(
-    (focus: Focus) => {
-      const patch: Partial<AppNavState> = {
-        focus,
-        rung: "project",
-        projectView: "detail",
-        flow: null,
-        flowStep: 0,
-        overlay: "none",
-        overlayId: null,
-        floorModal: null,
-      };
-      navigate(patch);
-    },
-    [navigate],
+    (focus: Focus) => { if (focus.projectId) openRecord("project", focus.projectId); },
+    [openRecord],
   );
 
   const setProjectView = useCallback(
@@ -396,7 +379,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     toggleAgent,
     focusDomain,
     focusInitiative,
-    focusProject,
     openInitiative,
     openProject,
     setProjectView,
