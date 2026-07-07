@@ -94,7 +94,7 @@ function weekSpan(p: Project, ws: Date): { startDate: string; targetDate: string
 type Preview = { id: string; start: number; end: number } | null;
 
 export default function OnDeckPlanner() {
-  const { data, updateProject } = useVertical();
+  const { data, updateProject, routeTask } = useVertical();
   const { byWeek, weeklyAvgMins } = useCapacity();
   const { openRecord, openFlow } = useAppNavigation();
   const now = useMemo(() => new Date(), []);
@@ -111,6 +111,10 @@ export default function OnDeckPlanner() {
   // yet it still needs a week — it belongs here, not lost between the two.
   const placedIds = new Set(placed.map((l) => l.project.id));
   const inbox = data.projects.filter((p) => isOpenStatus(p.status) && !placedIds.has(p.id));
+  // Loose tasks = open work with no container (excludes raw inbox captures, which
+  // have their own sweep). File one into a project to give it a home.
+  const looseTasks = data.tasks.filter((t) => t.loose && !t.inbox && t.status !== "done");
+  const routableProjects = [...data.projects].filter((p) => isOpenStatus(p.status)).sort((a, b) => a.name.localeCompare(b.name));
   const needShaping = placed.filter((l) => l.gaps.length > 0).length;
   const shapeable = placed.some((l) => l.gaps.length > 0);
 
@@ -260,6 +264,30 @@ export default function OnDeckPlanner() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* loose tasks — uncontained work; file each into a project */}
+        {looseTasks.length > 0 && (
+          <div className="mt-5 border-t border-line pt-3">
+            <div className="section-label px-1.5 pb-2">Loose tasks · {looseTasks.length}</div>
+            <div className="mobile-scroll flex max-h-[380px] flex-col gap-1.5 overflow-y-auto pr-1">
+              {looseTasks.map((t) => (
+                <div key={t.id} className="rounded-lg border border-line bg-surface px-3 py-2">
+                  <div className="truncate text-caption text-ink">{t.title || "Untitled"}</div>
+                  <select
+                    value=""
+                    onChange={(e) => e.target.value && routeTask(t.id, { projectId: e.target.value })}
+                    className="mono mt-1.5 w-full rounded border border-line bg-bg px-1.5 py-1 text-micro text-muted outline-none focus:border-accent"
+                  >
+                    <option value="">file into project…</option>
+                    {routableProjects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </aside>
