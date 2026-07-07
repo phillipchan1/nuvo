@@ -548,6 +548,12 @@ html.tauri-macos .spine-top {
   -webkit-user-select: none !important;
   user-select: none !important;
 }
+/* On Deck planner: while dragging a bar/card, the bars + resize handles ignore
+   the pointer so elementFromPoint hit-tests the week cells beneath them. */
+body.odp-dragging [data-project-drag],
+body.odp-dragging [data-resize] {
+  pointer-events: none !important;
+}
 /* Spring the lift in and out, so focus feels deliberate, not snapped. */
 .lift-anim {
   transition:
