@@ -31,13 +31,18 @@ const MOMENTUM = {
 
 export default function InitiativesFloor({
   onOpen,
+  pin,
 }: {
   onOpen: (id: string) => void;
+  /** When set, the floor renders only that surface and hides the toggle — the
+   *  rung tabs drive it (Grooming = "standing", All initiatives = "board"). */
+  pin?: "standing" | "board";
 }) {
   const { data, updateInitiative, updateProject, deleteInitiatives } = useVertical();
   const { openFloorModal, openRecord, openFlow } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
-  const [view, setView] = useState<"standing" | "board">("standing");
+  const [view, setView] = useState<"standing" | "board">(pin ?? "standing");
+  const effectiveView = pin ?? view;
   const atRest = readSpine(data).floors.initiative.calm;
   const celebrate = useRefinedCelebration("initiative", atRest);
 
@@ -115,9 +120,9 @@ export default function InitiativesFloor({
         <p className="mt-1 text-body text-muted">The bets with finish lines, across every domain — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
 
-      <StandingToggle value={view} onChange={setView} />
+      {!pin && <StandingToggle value={view} onChange={setView} />}
 
-      {view === "standing" ? (
+      {effectiveView === "standing" ? (
         <>
           <FloorStandingStrip kind="initiative" />
           <GroomBlockCTA kind="initiative" />

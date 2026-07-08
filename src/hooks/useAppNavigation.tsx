@@ -213,7 +213,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     (r: Rung) => {
       const patch: Partial<AppNavState> = { rung: r, floorModal: null };
       if (r === "project") patch.projectView = "ondeck";
-      if (r === "initiative") patch.initiativeView = "portfolio";
+      if (r === "initiative") patch.initiativeView = "ondeck";
       if (r !== "day") {
         clearCalendarOverlay(patch);
         setPanelAnchor(null);
