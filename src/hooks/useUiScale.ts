@@ -5,6 +5,7 @@
 // hardcoded px, not rem — a root font-size multiplier wouldn't cascade into it.
 
 import { useSyncExternalStore } from "react";
+import { toast } from "sonner";
 
 const KEY = "nuvo.uiScale";
 export const UI_SCALE_MIN = 0.8;
@@ -46,6 +47,9 @@ export function setUiScale(next: number) {
   try { localStorage.setItem(KEY, String(scale)); } catch { /* ignore */ }
   apply();
   notify();
+  // A stable id so rapid ⌘+/⌘− presses update one toast in place (extending its
+  // dismiss timer) instead of stacking — the standard OS volume/brightness-OSD pattern.
+  toast(`Zoom ${Math.round(scale * 100)}%`, { id: "zoom-level", duration: 1200 });
 }
 
 export function zoomIn() {
