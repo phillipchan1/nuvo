@@ -325,8 +325,8 @@ export default function OnDeckPlanner() {
 
                   {/* the cards in this row — each carries its full title (wraps) and is
                       itself the drag/resize/click target. In flow, so they set the row
-                      height; pointer-events-none wrapper lets empty cells drop. */}
-                  <div className="pointer-events-none relative grid items-start px-1.5 py-2" style={{ gridTemplateColumns: cols }}>
+                      height; items-stretch makes every card in the row equal height. */}
+                  <div className="pointer-events-none relative grid items-stretch px-1.5 py-2" style={{ gridTemplateColumns: cols }}>
                     {row.map((g) => {
                       const { l } = g;
                       const { start, end, beyond } = effOf(g);
