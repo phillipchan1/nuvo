@@ -1829,8 +1829,14 @@ export default function CalendarPane({
           })}
           dayHeaderContent={(arg) => {
             const isToday = arg.isToday;
-            const weekday = arg.date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
-            const dateNum = arg.date.getDate();
+            // Month view hands header dates in as UTC-midnight markers — reading
+            // them with local getters shifts the label back a day for anyone
+            // west of UTC. Week/Day headers are already local, so only Month
+            // needs the UTC read.
+            const weekday = isMonth
+              ? arg.date.toLocaleDateString([], { weekday: "short", timeZone: "UTC" }).toUpperCase()
+              : arg.date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
+            const dateNum = isMonth ? arg.date.getUTCDate() : arg.date.getDate();
             // en-CA locale reliably produces YYYY-MM-DD in local time
             const dateStr = arg.date.toLocaleDateString("en-CA");
             const wx = showWeather && !isMonth ? weatherIndex.get(dateStr) : undefined;

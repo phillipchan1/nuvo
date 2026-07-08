@@ -979,6 +979,22 @@ textarea:focus {
   font-weight: 500;
   text-decoration: none !important;
 }
+/* Weekend columns: a whisper of shading, never a filled band — Sat/Sun read
+   as "lighter" days without breaking the warm-paper continuity. Declared
+   before the today rule below so today's underline still wins when today
+   falls on a weekend. */
+.fc .fc-col-header-cell.fc-day-sat,
+.fc .fc-col-header-cell.fc-day-sun {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+.fc .fc-daygrid-day.fc-day-sat .fc-daygrid-day-frame,
+.fc .fc-daygrid-day.fc-day-sun .fc-daygrid-day-frame {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+.fc .fc-timegrid-col.fc-day-sat,
+.fc .fc-timegrid-col.fc-day-sun {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
 /* Today column header: just a soft accent underline — no band. */
 .fc .fc-col-header-cell.fc-day-today {
   background: transparent;
