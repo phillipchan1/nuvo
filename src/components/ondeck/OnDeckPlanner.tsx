@@ -18,7 +18,7 @@ import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useMaxPerWeek } from "../../hooks/usePlannerPrefs";
 import { domainById, isOpenStatus, type Project } from "../../lib/vertical";
-import { readOnDeck, type LaneState, type OnDeckLane, type WeekColumn } from "../../lib/onDeck";
+import { readOnDeck, type OnDeckLane, type ReadyTier, type WeekColumn } from "../../lib/onDeck";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
 import NewProject from "../floors/NewProject";
@@ -29,28 +29,40 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 // A planning surface wants runway — show more weeks than the compact hub and let
 // it scroll. More than this many projects committed to one week is a red flag.
 const PLANNER_HORIZON = 8;
-// Wide enough that ~4 weeks (about a month) show at once; the rest scroll.
-const WEEK_COL_PX = 232;
+// Cards now carry the readiness meter + completion control, so give them room:
+// wide columns mean ~4 weeks fill a typical pane comfortably and the rest scroll.
+const WEEK_COL_PX = 288;
 
-const STATE_COLOR: Record<LaneState, string> = {
+// Readiness ramp — one color per tier, so a wall of cards sorts itself by eye:
+// teal = ready to pull in, amber = mid-groom, faint = raw/untouched.
+const TIER_COLOR: Record<ReadyTier, string> = {
   ready: READY,
-  needs_shaping: CAUTION,
-  stalled: CAUTION,
-  idea: "var(--line-strong)",
+  grooming: CAUTION,
+  raw: "var(--line-strong)",
   parked: "var(--muted)",
+  done: READY,
 };
-const STATE_LABEL: Record<LaneState, string> = {
-  ready: "ready",
-  needs_shaping: "needs shaping",
-  stalled: "stalled",
-  idea: "no finish line",
-  parked: "parked",
-};
+/** The right-side readiness chip text — a word for the extremes, the fraction
+ *  while grooming, so "how close" is always legible. */
+function readyText(l: OnDeckLane): string {
+  if (l.readyTier === "done") return "Done";
+  if (l.readyTier === "parked") return "Parked";
+  if (l.readyTier === "ready") return "Ready · 3/3";
+  if (l.readyTier === "raw") return "Raw · 0/3";
+  return `${l.readyCount}/3`;
+}
+
+/** The one missing-check hint under the meter — pulled from the lens router, or
+ *  the capacity axis when only "Fits" is unmet. Null when fully ready/parked/done. */
+function readyHint(l: OnDeckLane): string | null {
+  if (l.readyTier === "ready" || l.readyTier === "parked" || l.readyTier === "done") return null;
+  if (l.gaps.length) return l.gaps.map((g) => g.label).join(" · ");
+  return l.axes.fits === false ? "won't fit the week" : null;
+}
 
 const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtWk = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
-const OVERLOAD_TINT = `color-mix(in srgb, ${CAUTION} 16%, transparent)`;
 
 /** Which horizon week a date falls in (clamped into range; 0 when undated). */
 function weekIndex(weeks: WeekColumn[], iso: string | null): number {
@@ -85,13 +97,13 @@ function weekSpan(p: Project, ws: Date): { startDate: string; targetDate: string
 
 type Preview = { id: string; start: number; end: number } | null;
 
-export default function OnDeckPlanner() {
+export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
   const { data, updateProject } = useVertical();
   const { byWeek, weeklyAvgMins } = useCapacity();
-  const { openRecord, openFlow, openFloorModal } = useAppNavigation();
+  const { openRecord, openFloorModal } = useAppNavigation();
   const [maxPerWeek] = useMaxPerWeek();
   const now = useMemo(() => new Date(), []);
-  const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, PLANNER_HORIZON), [data, byWeek, weeklyAvgMins, now]);
+  const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, PLANNER_HORIZON, true), [data, byWeek, weeklyAvgMins, now]);
 
   const H = board.horizonWeeks;
   // No project column — the bar carries the title. One uniform week grid.
@@ -106,6 +118,12 @@ export default function OnDeckPlanner() {
   const inbox = data.projects.filter((p) => isOpenStatus(p.status) && !placedIds.has(p.id));
   const needShaping = placed.filter((l) => l.gaps.length > 0).length;
   const shapeable = placed.some((l) => l.gaps.length > 0);
+  // Readiness distribution across the deck — the header rollup. Parked is excluded
+  // (it's settled by choice, not a grooming deficit).
+  const readyN = placed.filter((l) => l.readyTier === "ready").length;
+  const groomN = placed.filter((l) => l.readyTier === "grooming").length;
+  const rawN = placed.filter((l) => l.readyTier === "raw").length;
+  const doneN = placed.filter((l) => l.readyTier === "done").length;
 
   // ── drag state (in React so the bar + counts preview live) ───────────────────
   // inbox drags ride a card-shaped ghost (placed bars preview in place instead)
@@ -113,6 +131,18 @@ export default function OnDeckPlanner() {
   const [dropWeek, setDropWeek] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
   const [preview, setPreview] = useState<Preview>(null);
+  // Mark-complete: fire after a beat so the check bloom + card fade can play before
+  // the project drops off the deck (readOnDeck excludes complete projects).
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const completeProject = (id: string) => {
+    setCompletingId(id);
+    window.setTimeout(() => {
+      updateProject(id, { status: "complete" });
+      setCompletingId(null);
+    }, 260);
+  };
+  // Reopen a finished project — the check toggles it back into flight.
+  const reopenProject = (id: string) => updateProject(id, { status: "in_progress" });
   // Click an empty week cell → create a project placed in that week (calendar-style).
   const [createWeek, setCreateWeek] = useState<number | null>(null);
   const createInWeek = (i: number) => (id: string) => {
@@ -135,14 +165,20 @@ export default function OnDeckPlanner() {
       : g,
   );
   // Projects committed to each week (live under the drag) — the overload gauge.
-  const weekLoad = board.weeks.map((_, i) => effGeom.filter((g) => i >= g.start && i <= g.end).length);
+  // Finished projects don't count as load (they're no longer pending work).
+  const weekLoad = board.weeks.map((_, i) => effGeom.filter((g) => i >= g.start && i <= g.end && g.l.readyTier !== "done").length);
 
   // Lane-packing: bars that don't overlap in time share a row, so the same week's
   // projects stack together in a column instead of staggering one-per-row. Row
   // assignment uses the BASE geom (stable during a drag); the preview only slides
   // a bar's column within its row.
+  // Pack most-ready first so the greedy first-fit lands ready cards in the top
+  // rows — "shaped to top" within each week — then by time to keep bars tidy.
   const rows: (typeof geom)[] = [];
-  for (const g of [...geom].sort((a, b) => a.start - b.start || a.end - b.end)) {
+  const doneRank = (g: (typeof geom)[number]) => (g.l.readyTier === "done" ? 1 : 0);
+  for (const g of [...geom].sort(
+    (a, b) => doneRank(a) - doneRank(b) || b.l.readyCount - a.l.readyCount || a.start - b.start || a.end - b.end,
+  )) {
     const row = rows.find((r) => r.every((x) => !(g.start <= x.end && x.start <= g.end)));
     if (row) row.push(g);
     else rows.push([g]);
@@ -160,6 +196,8 @@ export default function OnDeckPlanner() {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       const tgt = e.target as HTMLElement;
+      // the completion check owns its click — never start a drag / open the record.
+      if (tgt?.closest?.("[data-card-complete]")) return;
       const el = tgt?.closest?.("[data-project-drag]") as HTMLElement | null;
       if (!el) return;
       const id = el.getAttribute("data-project-drag");
@@ -247,7 +285,10 @@ export default function OnDeckPlanner() {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
-  const cellBg = (i: number) => (dropWeek === i ? "var(--accent-soft)" : undefined);
+  // "You are here" — a faint warm band down the current week (idx 0), the focus
+  // column, so the eye lands on now first. Drop-highlight still wins while dragging.
+  const THISWEEK_BAND = "color-mix(in srgb, var(--accent) 5%, transparent)";
+  const cellBg = (i: number) => (dropWeek === i ? "var(--accent-soft)" : i === 0 ? THISWEEK_BAND : undefined);
 
   return (
     <div className="flex min-h-0 gap-6">
@@ -299,33 +340,75 @@ export default function OnDeckPlanner() {
       <div className="min-w-0 flex-1">
         <div className="flex items-end justify-between gap-3">
           <h1 className="text-lead masthead leading-none">On deck · next {H} weeks</h1>
-          <span className="shrink-0 text-caption text-muted">
-            {placed.length} placed{needShaping > 0 && <> · {needShaping} need shaping</>}
-          </span>
+          {placed.length > 0 && (
+            <div className="flex shrink-0 items-center gap-3 text-caption">
+              <span className="flex items-center gap-1.5" title="Ready to pull into a week (all 3 checks)">
+                <span className="h-2 w-2 rounded-full" style={{ background: READY }} />
+                <span style={{ color: readyN ? "var(--ink)" : "var(--muted)" }}>{readyN} ready</span>
+              </span>
+              <span className="flex items-center gap-1.5" title="Mid-groom (1–2 checks)">
+                <span className="h-2 w-2 rounded-full" style={{ background: CAUTION }} />
+                <span style={{ color: groomN ? "var(--ink)" : "var(--muted)" }}>{groomN} grooming</span>
+              </span>
+              <span className="flex items-center gap-1.5" title="Raw idea (no checks yet)">
+                <span className="h-2 w-2 rounded-full border" style={{ borderColor: "var(--line-strong)" }} />
+                <span style={{ color: rawN ? "var(--ink)" : "var(--muted)" }}>{rawN} raw</span>
+              </span>
+              {doneN > 0 && (
+                <span className="flex items-center gap-1.5" title="Finished this week — drops off once the week passes">
+                  <svg width="11" height="11" viewBox="0 0 10 10" fill="none" style={{ color: READY }}>
+                    <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span style={{ color: READY }}>{doneN} done</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="mt-4 overflow-x-auto">
-          <div className="overflow-hidden rounded-xl border border-line glass-card" style={{ minWidth: gridMinW }}>
-            {/* column headers — just the week; capacity math removed (manual for now) */}
-            <div className="grid border-b border-line" style={{ gridTemplateColumns: cols }}>
-              {board.weeks.map((w) => (
-                <div key={w.idx} data-week={w.idx} className="border-l border-line first:border-l-0 px-3.5 py-3" style={{ background: cellBg(w.idx) }}>
-                  <div className="text-caption font-medium text-ink">
-                    {w.idx === 0 ? "This week" : w.idx === 1 ? "Next week" : `Week of ${fmtWk(w.weekStart)}`}
+        <div className="mt-5 overflow-x-auto pb-3">
+          <div className="relative" style={{ minWidth: gridMinW }}>
+            {/* week headers — label · date, with the week's committed load folded in
+                (amber past the max). Faint column rules only — no frame, no gauge row. */}
+            <div className="grid" style={{ gridTemplateColumns: cols }}>
+              {board.weeks.map((w) => {
+                const n = weekLoad[w.idx];
+                const over = n > maxPerWeek;
+                return (
+                  <div
+                    key={w.idx}
+                    data-week={w.idx}
+                    className="fast border-l border-line first:border-l-0 px-4 pb-2.5 pt-1"
+                    style={{ background: cellBg(w.idx), borderTop: w.idx === 0 ? "2px solid var(--accent)" : undefined }}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: w.idx === 0 ? "var(--accent)" : "var(--ink)" }}>
+                        {w.idx === 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />}
+                        {w.idx === 0 ? "This week" : w.idx === 1 ? "Next week" : `Week of ${fmtWk(w.weekStart)}`}
+                      </span>
+                      {n > 0 && (
+                        <span className="mono text-micro" title={`${n} committed · max ${maxPerWeek}`} style={{ color: over ? CAUTION : "var(--muted)" }}>
+                          {n}{over ? " ⚠" : ""}
+                        </span>
+                      )}
+                    </div>
+                    {w.idx < 2 && <div className="mono mt-0.5 text-micro text-muted">{fmtWk(w.weekStart)}</div>}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+            <div className="h-px w-full" style={{ background: "var(--line)" }} />
 
             {/* placed project rows — lane-packed so same-week cards stack in a column */}
             {rows.length === 0 ? (
-              <div className="px-4 py-8 text-center text-caption text-muted">
+              <div className="px-4 py-14 text-center text-caption text-muted">
                 No projects placed yet — drag one in from the inbox to give it a week. →
               </div>
             ) : (
-              rows.map((row, ri) => (
-                <div key={ri} className="relative border-t border-line first:border-t-0">
-                  {/* week cells — drop targets + gridlines/tint, and click-to-create
+              <div className="pt-2.5">
+              {rows.map((row, ri) => (
+                <div key={ri} className="relative">
+                  {/* week cells — drop targets + faint column rules + click-to-create
                       zones (empty space → new project placed in that week). */}
                   <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
                     {board.weeks.map((w) => (
@@ -333,10 +416,10 @@ export default function OnDeckPlanner() {
                         key={w.idx}
                         data-week={w.idx}
                         onClick={() => setCreateWeek(w.idx)}
-                        className="group/cell relative cursor-pointer border-l border-line transition-colors first:border-l-0 hover:bg-accent-soft/40"
+                        className="group/cell relative cursor-pointer border-l border-line transition-colors first:border-l-0 hover:bg-accent-soft/25"
                         style={{ background: cellBg(w.idx) }}
                       >
-                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-caption font-medium text-accent opacity-0 transition-opacity group-hover/cell:opacity-55">+ project</span>
+                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-caption font-medium text-accent opacity-0 transition-opacity group-hover/cell:opacity-45">+ project</span>
                       </div>
                     ))}
                   </div>
@@ -344,86 +427,107 @@ export default function OnDeckPlanner() {
                   {/* the cards in this row — each carries its full title (wraps) and is
                       itself the drag/resize/click target. In flow, so they set the row
                       height; items-stretch makes every card in the row equal height. */}
-                  <div className="pointer-events-none relative grid items-stretch px-1.5 py-2" style={{ gridTemplateColumns: cols }}>
+                  <div className="pointer-events-none relative grid items-stretch px-1.5 py-2.5" style={{ gridTemplateColumns: cols }}>
                     {row.map((g) => {
                       const { l } = g;
                       const { start, end, beyond } = effOf(g);
                       const dot = domainById(data, l.project.domainId)?.color ?? "var(--accent)";
-                      const color = STATE_COLOR[l.state];
+                      const color = TIER_COLOR[l.readyTier];
                       const dragging = preview?.id === l.project.id;
-                      const due = barLabel(l)?.replace("⚠ ", "") ?? null; // border color carries the warning
-                      const fillPct = l.state === "needs_shaping" ? 22 : 34;
+                      // pace is a SEPARATE axis from readiness — a red due-pill, never
+                      // mixed into the readiness color.
+                      const slipping = l.pace.read === "overdue" || l.pace.read === "behind" || l.pace.read === "stalled";
+                      const due = barLabel(l)?.replace("⚠ ", "") ?? null;
+                      const done = l.readyTier === "done";
+                      const segs = done ? [true, true, true] : [l.axes.defined, l.axes.planned, l.axes.fits];
+                      const hint = readyHint(l);
+                      const completing = completingId === l.project.id;
                       return (
                         <div
                           key={l.project.id}
                           data-project-drag={l.project.id}
-                          className="group/bar pointer-events-auto fast relative flex min-h-[52px] cursor-grab items-start gap-2 rounded-xl px-3.5 py-2.5 active:cursor-grabbing"
+                          className="group/bar bg-surface pointer-events-auto fast relative mx-1 flex min-h-[62px] cursor-grab flex-col gap-2 rounded-xl border py-3 pl-4 pr-3.5 active:cursor-grabbing"
                           style={{
                             gridColumn: `${start + 1} / ${end + 2}`,
                             gridRow: 1,
-                            background: `color-mix(in srgb, ${color} ${dragging ? fillPct + 16 : fillPct}%, var(--surface))`,
-                            border: `1.5px solid ${dragging || l.state === "needs_shaping" ? color : "transparent"}`,
-                            color: `color-mix(in srgb, ${color} 80%, var(--ink))`,
-                            boxShadow: dragging ? "var(--shadow-lift)" : beyond ? `5px 0 0 -1px ${color}` : "none",
-                            opacity: l.state === "parked" ? 0.5 : 1,
+                            borderColor: dragging ? dot : "var(--line)",
+                            boxShadow: dragging ? "var(--shadow-lift)" : beyond ? `5px 0 0 -1px ${dot}` : undefined,
+                            transform: dragging ? "translateY(-3px)" : undefined,
+                            opacity: l.readyTier === "parked" ? 0.6 : 1,
                           }}
                         >
-                          <span data-resize="start" className="absolute inset-y-0 left-0 flex w-2 cursor-ew-resize items-center justify-center" aria-hidden>
-                            <span className="h-5 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
-                          </span>
-                          <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-caption font-semibold leading-snug text-ink">{l.project.name}</div>
-                            <div className="mono mt-1 text-micro" style={{ color }}>
-                              {STATE_LABEL[l.state]}{due ? ` · ${due}` : ""}
+                          {/* domain rail — color demarcation of *which area* this is (identity);
+                              readiness lives in the meter below (status). Same as the Groom card. */}
+                          <span className="pointer-events-none absolute inset-y-2.5 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
+                          <span data-resize="start" className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" aria-hidden />
+                          {/* title row + readiness chip / pace pill */}
+                          <div className="flex items-start gap-2">
+                            {/* completion check — mirrors the Schedule's done toggle. Fills
+                                teal + blooms on complete; a finished project stays on the
+                                deck in a done state and the check toggles it back open. */}
+                            <button
+                              data-card-complete
+                              aria-label={done ? "Reopen project" : "Mark project complete"}
+                              title={done ? "Reopen" : "Mark complete"}
+                              onClick={(e) => { e.stopPropagation(); done ? reopenProject(l.project.id) : completeProject(l.project.id); }}
+                              className={`fast relative mt-[1px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border ${completing ? "bloom" : ""}`}
+                              style={done || completing ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
+                            >
+                              <svg
+                                width="10"
+                                height="10"
+                                viewBox="0 0 10 10"
+                                fill="none"
+                                className={done || completing ? "opacity-100" : "opacity-0 transition-opacity group-hover/bar:opacity-50"}
+                                style={{ color: done || completing ? "#fff" : READY }}
+                              >
+                                <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                            <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
+                            <div className={`min-w-0 flex-1 text-caption font-semibold leading-snug ${done ? "text-muted" : "text-ink"}`}>{l.project.name}</div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              {!done && slipping && due && (
+                                <span
+                                  className="mono rounded-full px-1.5 py-0.5 text-micro font-medium"
+                                  style={{ background: "color-mix(in srgb, var(--signal) 14%, transparent)", color: "var(--signal)" }}
+                                >
+                                  {due}
+                                </span>
+                              )}
+                              <span className="mono text-micro font-medium" style={{ color }}>{readyText(l)}</span>
                             </div>
                           </div>
-                          <span data-resize="end" className="absolute inset-y-0 right-0 flex w-2 cursor-ew-resize items-center justify-center" aria-hidden>
-                            <span className="h-5 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
-                          </span>
+                          {/* the definition-of-ready meter — Defined · Planned · Fits */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="flex flex-1 items-center gap-1" title={done ? "Complete" : "Defined · Planned · Fits"}>
+                              {segs.map((met, i) => (
+                                <span
+                                  key={i}
+                                  className="h-[5px] flex-1 rounded-full"
+                                  style={{ background: met ? color : "var(--line)" }}
+                                />
+                              ))}
+                            </span>
+                            {hint && <span className="mono shrink-0 text-micro" style={{ color }}>{hint}</span>}
+                          </div>
+                          <span data-resize="end" className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" aria-hidden />
                         </div>
                       );
                     })}
                   </div>
                 </div>
-              ))
-            )}
-
-            {/* per-week load — more than OVERLOAD_LIMIT projects in a week is a problem */}
-            {effGeom.length > 0 && (
-              <>
-                <div className="flex items-center gap-2 border-t border-line px-3.5 pt-2">
-                  <span className="section-label !p-0">projects / week</span>
-                  <span className="text-micro text-muted">· max {maxPerWeek}</span>
-                </div>
-                <div className="grid pb-1" style={{ gridTemplateColumns: cols }}>
-                  {board.weeks.map((w) => {
-                    const n = weekLoad[w.idx];
-                    const over = n > maxPerWeek;
-                    return (
-                      <div
-                        key={w.idx}
-                        data-week={w.idx}
-                        className="flex items-center justify-center border-l border-line first:border-l-0 py-1.5"
-                        style={{ background: dropWeek === w.idx ? "var(--accent-soft)" : over ? OVERLOAD_TINT : undefined }}
-                      >
-                        <span className="mono text-caption" style={{ color: over ? CAUTION : n > 0 ? "var(--ink)" : "var(--muted)" }}>
-                          {n}{over && " ⚠"}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
+              ))}
+              </div>
             )}
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <span className="text-micro text-muted">Drag onto a week to time-box · drag an edge to resize · click to edit</span>
-          {shapeable && (
+          {shapeable && onGroom && (
             <button
-              onClick={() => openFlow("refine", { pass: "project" })}
+              onClick={onGroom}
               className="tap fast rounded-xl px-5 py-2.5 text-body font-medium text-white active:scale-[.98]"
               style={{ background: "var(--accent)" }}
             >

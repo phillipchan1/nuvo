@@ -143,9 +143,9 @@ export function readNavState(raw: unknown): AppNavState | null {
     ...s,
     // The Week rail tab was retired (the board replaced it) — heal stale state.
     tab: s.tab === "inbox" ? "inbox" : "today",
-    // Heal retired project views ("portfolio" filing-cabinet default, "detail"
-    // full page) → On Deck, the new front door.
-    projectView: (["ondeck", "all", "sprint"] as ProjectView[]).includes(s.projectView as ProjectView) ? (s.projectView as ProjectView) : "ondeck",
+    // Heal retired project views ("portfolio"/"detail" full page, "sprint" This
+    // Week) → On Deck, the front door.
+    projectView: (["ondeck", "groom", "all"] as ProjectView[]).includes(s.projectView as ProjectView) ? (s.projectView as ProjectView) : "ondeck",
     // Heal the retired "portfolio" front door → On Deck, the new one; keep detail.
     initiativeView: (["ondeck", "groom", "all", "detail"] as DetailView[]).includes(s.initiativeView as DetailView)
       ? (s.initiativeView as DetailView)

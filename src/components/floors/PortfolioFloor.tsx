@@ -14,22 +14,14 @@ import {
   tasksOf,
 } from "../../lib/vertical";
 import { ripenessOfProject, verdictOf } from "../../lib/tending";
-import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL, RefinedSeal, useRefinedCelebration } from "./parts";
-import { readSpine } from "../../lib/readiness";
+import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
-import FloorStandingStrip from "./FloorStandingStrip";
-import GroomBlockCTA from "./GroomBlockCTA";
-import FloorReadinessPanel from "./FloorReadinessPanel";
-import { StandingToggle } from "./StandingToggle";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, updateProject, deleteProjects } = useVertical();
   const { openFloorModal } = useAppNavigation();
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
-  const [view, setView] = useState<"standing" | "board">("standing");
-  const atRest = readSpine(data).floors.project.calm;
-  const celebrate = useRefinedCelebration("project", atRest);
 
   const projects = data.projects.filter((p) => !domainFilter || p.domainId === domainFilter);
 
@@ -72,50 +64,37 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
       <FloorHeader
         eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => isProjectInFlight(p.status)).length} in flight`}
-        actions={atRest ? <RefinedSeal noun="projects" celebrate={celebrate} /> : undefined}
       >
-        <h1 className="text-display masthead">Projects</h1>
-        <p className="mt-1 text-body text-muted">Every project at a glance — switch the view, click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
+        <h1 className="text-display masthead">Table</h1>
+        <p className="mt-1 text-body text-muted">Every project at a glance — filter, sort, and bulk-edit. Click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
 
-      <StandingToggle value={view} onChange={setView} />
+      <DomainFilter value={domainFilter} onChange={setDomainFilter} />
 
-      {view === "standing" ? (
-        <>
-          <FloorStandingStrip kind="project" />
-          <GroomBlockCTA kind="project" />
-          <FloorReadinessPanel kind="project" />
-        </>
-      ) : (
-        <>
-          <DomainFilter value={domainFilter} onChange={setDomainFilter} />
-
-          <div className="flex min-h-0 flex-1 flex-col">
-            <Collection
-              config={{
-                records,
-                statusOptions: PROJECT_STATUS,
-                statusColors: PROJECT_STATUS_COLORS,
-                statusLabels: PROJECT_STATUS_LABEL,
-                extraColumns: [
-                  { key: "tasks", label: "Tasks" },
-                  { key: "week", label: "Week" },
-                ],
-                onNew: () => openFloorModal("new-project"),
-                newLabel: "+ new project",
-                storageKey: "projects",
-                selectable: true,
-                onBulkDelete: deleteProjects,
-                domains: data.domains,
-                // On Deck is the canonical timeline now — "All projects" is a
-                // pure browse/bulk filing cabinet.
-                views: ["table", "board"],
-              }}
-            />
-          </div>
-        </>
-      )}
-
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Collection
+          config={{
+            records,
+            statusOptions: PROJECT_STATUS,
+            statusColors: PROJECT_STATUS_COLORS,
+            statusLabels: PROJECT_STATUS_LABEL,
+            extraColumns: [
+              { key: "tasks", label: "Tasks" },
+              { key: "week", label: "Week" },
+            ],
+            onNew: () => openFloorModal("new-project"),
+            newLabel: "+ new project",
+            storageKey: "projects",
+            selectable: true,
+            onBulkDelete: deleteProjects,
+            domains: data.domains,
+            // On Deck is the canonical timeline; Table is a pure browse/bulk
+            // filing cabinet (readiness lives in the persistent strip above).
+            // Board view retired — On Deck is the visual/kanban surface now.
+            views: ["table"],
+          }}
+        />
+      </div>
     </div>
   );
 }

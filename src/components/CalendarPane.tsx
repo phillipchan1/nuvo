@@ -63,6 +63,13 @@ function blockColors(c: string, fillPct = 14) {
   };
 }
 
+// Google's web client accepts a base64 "{event_id} {calendar_id}" eid — no
+// official API for it, but the format is stable and widely relied on.
+function googleEventUrl(eventId: string, calendarId: string): string {
+  const eid = btoa(`${eventId} ${calendarId}`).replace(/=+$/, "");
+  return `https://calendar.google.com/calendar/event?eid=${encodeURIComponent(eid)}`;
+}
+
 // ── Recurrence scope dialog ────────────────────────────────────────────────
 function RecurrenceDialog({
   onConfirm,
@@ -1455,6 +1462,7 @@ export default function CalendarPane({
         const ev = eventMenu.event;
         const hiddenNow = isHidden(ev);
         const series = Boolean(eventSeriesKey(ev));
+        const account = accountById.get(ev.account_id);
         const left = Math.min(eventMenu.x, window.innerWidth - 210);
         const top = Math.min(eventMenu.y, window.innerHeight - 140);
         return (
@@ -1475,6 +1483,14 @@ export default function CalendarPane({
               </>
             ) : (
               <EventMenuItem onClick={() => hideEvent(ev, "THIS")}>Hide event</EventMenuItem>
+            )}
+            {account?.provider === "google" && ev.provider_event_id && ev.calendar_id && (
+              <EventMenuItem onClick={() => {
+                setEventMenu(null);
+                window.open(googleEventUrl(ev.provider_event_id, ev.calendar_id), "_blank", "noopener,noreferrer");
+              }}>
+                Open in Google Calendar
+              </EventMenuItem>
             )}
             {onConvertEventToTask && !ev.all_day && (
               <>

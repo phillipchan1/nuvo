@@ -13,7 +13,7 @@ import {
   type Project,
   type VerticalData,
 } from "./vertical";
-import { lensGaps, projectReadinessAxes, type LensGap } from "./lenses";
+import { lensGaps, projectReadinessAxes, type LensGap, type ReadinessAxes } from "./lenses";
 import { demandByWeekDetailed, projectPace, type ProjectPace } from "./pace";
 import { weekForecast, type WeekCapacity } from "./capacity";
 
@@ -28,12 +28,24 @@ const toBlocks = (mins: number) => Math.round(mins / BLOCK_MINS);
 
 export type LaneState = "ready" | "needs_shaping" | "stalled" | "idea" | "parked";
 
+/** The card's readiness ramp — how groomed a project is, independent of pace.
+ *  `ready` = all 3 checks met (pull it into a week), `grooming` = 1–2 met,
+ *  `raw` = 0 met (untouched idea), `parked` = deliberately resting, `done` =
+ *  completed but still shown in its week (drops off once that week is past). */
+export type ReadyTier = "ready" | "grooming" | "raw" | "parked" | "done";
+
 export interface OnDeckLane {
   project: Project;
   pace: ProjectPace;
   /** the named readiness gaps (lens router) — empty = nothing to groom. */
   gaps: LensGap[];
   state: LaneState;
+  /** the 3-check "definition of ready" — Defined · Planned · Fits. */
+  axes: ReadinessAxes;
+  /** how many of the 3 checks are met (0..3) — the meter fill + "N/3". */
+  readyCount: number;
+  /** readiness tier for the card's color ramp (pace-independent). */
+  readyTier: ReadyTier;
   /** first horizon week the bar starts in (0 = this week). */
   startWeekIdx: number;
   /** horizon week the finish line lands in; null = beyond the window (bar extends). */
@@ -91,6 +103,10 @@ export function readOnDeck(
   weeklyAvgMins: number,
   now: Date,
   horizonWeeks: number = HORIZON_WEEKS,
+  /** Keep completed projects on the board as long as their week is still in the
+   *  horizon (this week or later) — a "done, not gone" state for the planner.
+   *  Off by default so the compact hub / groom queue stay demand-only. */
+  includeCompleted: boolean = false,
 ): OnDeckBoard {
   const horizon = byWeek.slice(0, horizonWeeks);
   const forecast = weekForecast(d, now, horizon, weeklyAvgMins);
@@ -109,11 +125,23 @@ export function readOnDeck(
   const horizonStartMs = horizon.length ? horizon[0].weekStart.getTime() : now.getTime();
   const horizonEndMs = horizon.length ? addDays(horizon[horizon.length - 1].weekStart, 7).getTime() : now.getTime();
 
+  // A completed project stays on the board only while its finish week is still
+  // shown (this week or later) — once that week is behind us it's out of the
+  // horizon and drops off on its own.
+  const completeInHorizon = (p: Project): boolean => {
+    if (!includeCompleted || !isProjectComplete(p.status) || !p.targetDate) return false;
+    const t = new Date(p.targetDate + "T23:59:59").getTime();
+    return t >= horizonStartMs && t < horizonEndMs;
+  };
+
   const lanes: OnDeckLane[] = d.projects
-    .filter((p) => isProjectInFlight(p.status) && !isProjectComplete(p.status))
+    .filter((p) => (isProjectInFlight(p.status) && !isProjectComplete(p.status)) || completeInHorizon(p))
     .map((project) => {
+      const complete = isProjectComplete(project.status);
       const pace = projectPace(d, project, now);
       const gaps = lensGaps(d, "project", project, now);
+      const axes = projectReadinessAxes(d, project, now);
+      const readyCount = complete ? 3 : [axes.defined, axes.planned, axes.fits].filter((a) => a === true).length;
 
       // due week within the horizon: overdue / before window → 0, beyond → null.
       let dueWeekIdx: number | null = null;
@@ -141,12 +169,17 @@ export function readOnDeck(
                 ? "stalled"
                 : "ready";
 
-      return { project, pace, gaps, state, startWeekIdx: 0, dueWeekIdx };
+      const readyTier: ReadyTier = complete
+        ? "done"
+        : state === "parked" ? "parked" : readyCount >= 3 ? "ready" : readyCount === 0 ? "raw" : "grooming";
+
+      return { project, pace, gaps, state, axes, readyCount, readyTier, startWeekIdx: 0, dueWeekIdx };
     });
 
   // Demand order: most overdue first, then behind/stalled, then soonest due, then
   // undated ideas, parked last.
   const rank = (l: OnDeckLane): number => {
+    if (l.readyTier === "done") return 3e9; // finished — sits below live work
     if (l.state === "parked") return 2e9;
     if (l.pace.read === "overdue") return -1e6 - (l.pace.driftDays ?? 0);
     if (l.pace.read === "behind" || l.pace.read === "stalled") return -1e5 + (l.pace.daysLeft ?? 0);

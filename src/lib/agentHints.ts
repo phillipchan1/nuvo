@@ -42,14 +42,14 @@ export function agentHints(ctx: AgentHintContext): AgentHints {
       return scheduleHints(ctx.tab ?? "today");
 
     case "project":
-      if (ctx.projectView === "sprint") {
+      if (ctx.projectView === "groom") {
         return {
-          prompt: "This week's sprint — what's committed and what's stuck.",
+          prompt: "Grooming the deck — sharpen what each project is and how it gets done.",
           starters: [
-            "What's in this week's sprint?",
-            "Which sprint projects need attention?",
-            "What should I pull into the sprint?",
-            "Summarize sprint progress by domain",
+            "Which projects are rawest and need shaping?",
+            "Suggest an area for my unassigned projects",
+            "What's missing before these are ready to schedule?",
+            "Tighten the outcomes on my grooming projects",
           ],
         };
       }

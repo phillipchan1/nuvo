@@ -146,20 +146,22 @@ export default function Collection({ config }: { config: CollectionConfig }) {
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      {/* view toolbar */}
+      {/* view toolbar — the view switcher only earns its space with >1 view */}
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-md border border-line p-0.5">
-          {shownViews.map((v) => (
-            <button
-              key={v.id}
-              onClick={() => choose(v.id)}
-              className="fast mono rounded-[5px] px-3 py-1 text-label"
-              style={{ background: view === v.id ? "var(--accent)" : "transparent", color: view === v.id ? "#fff" : "var(--muted)" }}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
+        {shownViews.length > 1 && (
+          <div className="inline-flex rounded-md border border-line p-0.5">
+            {shownViews.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => choose(v.id)}
+                className="fast mono rounded-[5px] px-3 py-1 text-label"
+                style={{ background: view === v.id ? "var(--accent)" : "transparent", color: view === v.id ? "#fff" : "var(--muted)" }}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {view === "board" && (
           <div className="inline-flex items-center gap-1.5">
@@ -252,7 +254,7 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
       selection={selection}
       className=""
     >
-      <div className="grid shrink-0 items-center gap-3 border-b border-line px-2 py-2.5" style={{ gridTemplateColumns: cols }}>
+      <div className="grid shrink-0 items-center gap-3 border-b border-line py-2.5 pl-4 pr-2" style={{ gridTemplateColumns: cols }}>
         {selectable && (
           <SelectCheckbox checked={selection.allSelected} onToggle={selection.toggleAll} />
         )}
@@ -272,13 +274,21 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
             key={r.id}
             data-select-id={r.id}
             ref={(el) => selection.registerRef(r.id, el)}
-            onMouseDown={selection.itemPointerDown(r.id)}
-            onDoubleClick={r.open}
-            className={`lift-anim group grid cursor-default items-center gap-3 border-b border-line px-2 py-2.5 last:border-0 ${
+            onMouseDown={(e) => { if (e.shiftKey || e.metaKey || e.ctrlKey) selection.itemPointerDown(r.id)(e); }}
+            onClick={(e) => {
+              if (e.shiftKey || e.metaKey || e.ctrlKey) return;
+              // the whole row opens the record — except the parts that edit inline
+              // (name · status · domain · date · checkbox · the open arrow).
+              if ((e.target as HTMLElement).closest("[data-no-select], button, input, textarea, select, a")) return;
+              r.open();
+            }}
+            className={`lift-anim group relative grid cursor-pointer items-center gap-3 border-b border-line py-2.5 pl-4 pr-2 last:border-0 ${
               selectable ? itemSelectRowClass(selection, r.id) : "hover:bg-accent-soft/60"
             }`}
             style={{ gridTemplateColumns: cols }}
           >
+            {/* domain rail — the same identity cue as the On Deck / Groom cards */}
+            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[3px] rounded-full" style={{ background: r.accent }} aria-hidden />
             {selectable && (
               <SelectCheckbox
                 checked={visual === "selected"}
@@ -288,7 +298,7 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
             )}
             <div className="flex min-w-0 items-center gap-2" data-no-select onMouseDown={(e) => e.stopPropagation()}>
               {r.ripeness && <RipenessPip stage={r.ripeness} unsound={r.unsound} />}
-              <InlineText value={r.title} onChange={r.setTitle} placeholder="Untitled" className="text-body font-medium" />
+              <InlineText value={r.title} onChange={r.setTitle} placeholder="Untitled" className="text-body font-semibold" />
               {r.ripeness === "active" && !r.unsound && <RefinedTick />}
             </div>
             <div data-no-select onMouseDown={(e) => e.stopPropagation()}>
