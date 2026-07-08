@@ -35,6 +35,7 @@ import { demandContext, readOnDeck } from "../../lib/onDeck";
 import OnDeckTimeline from "../ondeck/OnDeckTimeline";
 import BriefLens from "../grooming/BriefLens";
 import PathLens from "../grooming/PathLens";
+import OKRLens from "../grooming/OKRLens";
 
 type Kind = "project" | "initiative";
 
@@ -285,6 +286,14 @@ function ItemLensRun({
           onDone={() => void advance()}
           doneLabel={doneLabel}
         />
+      ) : lens === "okr" ? (
+        <OKRLens
+          key={`${item.id}:okr`}
+          data={data}
+          item={item as Initiative}
+          onDone={() => void advance()}
+          doneLabel={doneLabel}
+        />
       ) : (
         <PathLens
           key={`${item.id}:path`}
@@ -326,7 +335,7 @@ function PassDone({
         {count === 0 ? (
           <p className="mt-1 text-caption text-muted">Every bet here is defined and planned — all at rest.</p>
         ) : initiative ? (
-          <p className="mt-1 text-caption text-muted">Defined and planned — ready for projects to run under them.</p>
+          <p className="mt-1 text-caption text-muted">Defined and measured — each bet now has a number to move.</p>
         ) : (
           <p className="mt-1 text-caption text-muted">
             {climbed

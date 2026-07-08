@@ -43,7 +43,7 @@ export type FloorModal = null | "new-initiative" | "new-project";
 export type FlowFocus = {
   kind?: "project" | "initiative";
   id?: string;
-  lens?: "brief" | "path";
+  lens?: "brief" | "path" | "okr";
   pass?: "initiative" | "project";
 };
 

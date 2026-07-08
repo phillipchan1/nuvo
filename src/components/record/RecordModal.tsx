@@ -9,6 +9,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVertical } from "../../hooks/useVertical";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
   domainById,
   initiativeById,
@@ -467,6 +468,7 @@ function InitiativeRecord({
     deleteKeyResult,
     routeTask,
   } = useVertical();
+  const { openFlow } = useAppNavigation();
   const initiative = initiativeById(data, id);
 
   useEffect(() => {
@@ -532,6 +534,53 @@ function InitiativeRecord({
       <Body
         main={
           <>
+            {/* Key results — the bet's prime property, first in the record */}
+            <Section
+              label={`Key results${initiative.keyResults.length ? ` · ${initiative.keyResults.length}` : ""}`}
+              action={
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openFlow("refine", { kind: "initiative", id: initiative.id, lens: "okr" })}
+                    className="tap fast flex items-center gap-1 rounded-md px-2.5 py-1 text-label font-medium text-white active:scale-95"
+                    style={{ background: accent }}
+                    title="Draft the objective + key results with Nuvo"
+                  >
+                    ✦ Draft with Nuvo
+                  </button>
+                  <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-label text-muted hover:text-ink">+ add</button>
+                </div>
+              }
+            >
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {initiative.keyResults.map((kr) => (
+                  <div key={kr.id} className="group glass-card rounded-[var(--radius)] border border-line p-3">
+                    <div className="flex items-center gap-2">
+                      <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-caption font-medium" />
+                      <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
+                        <DeleteBtn what="result" onDelete={() => deleteKeyResult(initiative.id, kr.id)} />
+                      </div>
+                    </div>
+                    <div className="mono mt-1 flex items-center gap-1 text-meta text-muted">
+                      <InlineNumber value={kr.baseline} onChange={(v) => updateKeyResult(initiative.id, kr.id, { baseline: v })} />
+                      <span>→</span>
+                      <span style={{ color: accent }}>
+                        <InlineNumber value={kr.current} onChange={(v) => updateKeyResult(initiative.id, kr.id, { current: v })} />
+                      </span>
+                      <span>→</span>
+                      <InlineNumber value={kr.target} onChange={(v) => updateKeyResult(initiative.id, kr.id, { target: v })} />
+                      <InlineText value={kr.unit} onChange={(v) => updateKeyResult(initiative.id, kr.id, { unit: v })} placeholder="unit" className="ml-1 w-10" />
+                    </div>
+                    <Bar pct={krPct(kr)} color={accent} />
+                  </div>
+                ))}
+              </div>
+              {initiative.keyResults.length === 0 && (
+                <div className="rounded-[var(--radius)] border border-dashed border-line p-4 text-center text-caption text-muted">
+                  No key results yet — this bet has no number to move. <button onClick={() => openFlow("refine", { kind: "initiative", id: initiative.id, lens: "okr" })} className="fast underline hover:text-ink" style={{ color: accent }}>Draft them with Nuvo</button>.
+                </div>
+              )}
+            </Section>
+
             <Section label="The bet">
               <InlineTextarea
                 value={initiative.description}
@@ -599,42 +648,6 @@ function InitiativeRecord({
         }
         side={
           <>
-            <Section
-              label="Key results"
-              action={
-                <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-label text-muted hover:text-ink">+ add</button>
-              }
-            >
-              <div className="space-y-3">
-                {initiative.keyResults.map((kr) => (
-                  <div key={kr.id} className="group glass-card rounded-[var(--radius)] border border-line p-3">
-                    <div className="flex items-center gap-2">
-                      <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-caption font-medium" />
-                      <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
-                        <DeleteBtn what="result" onDelete={() => deleteKeyResult(initiative.id, kr.id)} />
-                      </div>
-                    </div>
-                    <div className="mono mt-1 flex items-center gap-1 text-meta text-muted">
-                      <InlineNumber value={kr.baseline} onChange={(v) => updateKeyResult(initiative.id, kr.id, { baseline: v })} />
-                      <span>→</span>
-                      <span style={{ color: accent }}>
-                        <InlineNumber value={kr.current} onChange={(v) => updateKeyResult(initiative.id, kr.id, { current: v })} />
-                      </span>
-                      <span>→</span>
-                      <InlineNumber value={kr.target} onChange={(v) => updateKeyResult(initiative.id, kr.id, { target: v })} />
-                      <InlineText value={kr.unit} onChange={(v) => updateKeyResult(initiative.id, kr.id, { unit: v })} placeholder="unit" className="ml-1 w-10" />
-                    </div>
-                    <Bar pct={krPct(kr)} color={accent} />
-                  </div>
-                ))}
-                {initiative.keyResults.length === 0 && (
-                  <div className="rounded-[var(--radius)] border border-dashed border-line p-3 text-center text-label text-muted">
-                    Add measurable outcomes — each framed from a baseline, so you read the Gain.
-                  </div>
-                )}
-              </div>
-            </Section>
-
             <SuggestionPanel
               suggestions={suggestions}
               accent={accent}
