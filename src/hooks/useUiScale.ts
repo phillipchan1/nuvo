@@ -48,8 +48,17 @@ export function setUiScale(next: number) {
   apply();
   notify();
   // A stable id so rapid ⌘+/⌘− presses update one toast in place (extending its
-  // dismiss timer) instead of stacking — the standard OS volume/brightness-OSD pattern.
-  toast(`Zoom ${Math.round(scale * 100)}%`, { id: "zoom-level", duration: 1200 });
+  // dismiss timer) instead of stacking — the standard OS volume/brightness-OSD
+  // pattern. `unstyled` drops sonner's default 356px card chrome so this can be
+  // a small pill instead of a full-size toast.
+  toast(`${Math.round(scale * 100)}%`, {
+    id: "zoom-level",
+    duration: 1200,
+    closeButton: false,
+    unstyled: true,
+    className:
+      "glass-card mono inline-flex items-center justify-center rounded-full border border-line px-3 py-1 text-caption text-ink shadow-sm",
+  });
 }
 
 export function zoomIn() {
