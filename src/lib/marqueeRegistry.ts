@@ -72,7 +72,7 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     key: "initiatives",
     label: "Initiatives",
     nav: { kind: "rung", rung: "initiative" },
-    describe: "The Initiatives portfolio floor (all initiatives / bets). Point here for initiatives in general (one specific one → 'initiative').",
+    describe: "The Initiatives On Deck floor (all initiatives / bets, grouped by quarter). Point here for initiatives in general (one specific one → 'initiative').",
   },
   {
     key: "domains",

@@ -11,6 +11,7 @@ import { Keycap } from "./ui";
 import DomainFloor from "./floors/DomainFloor";
 import InitiativeFloor from "./floors/InitiativeFloor";
 import InitiativesFloor from "./floors/InitiativesFloor";
+import InitiativeOnDeckFloor from "./floors/InitiativeOnDeckFloor";
 import PortfolioFloor from "./floors/PortfolioFloor";
 import OnDeckFloor from "./floors/OnDeckFloor";
 import SprintFloor from "./floors/SprintFloor";
@@ -20,7 +21,11 @@ import NowFloor from "./floors/NowFloor";
 // Collection, demoted to a tab; "sprint" is This Week. A single project opens in
 // the Record modal now (the full-page ProjectFloor was retired).
 export type ProjectView = "ondeck" | "all" | "sprint";
-export type DetailView = "portfolio" | "detail";
+// The initiative rung mirrors the project one: "ondeck" (bets grouped by quarter,
+// the front door), "groom" (the readiness/quick-grooming surface), "all" (the
+// Collection table), and "detail" (one bet's full page). A single bet opens in the
+// Record modal; the full page is one "open full page ↗" away.
+export type DetailView = "ondeck" | "groom" | "all" | "detail";
 
 export default function FloorPane({
   rung,
@@ -57,7 +62,7 @@ export default function FloorPane({
   // so it works regardless of how the user arrived at the detail view (e.g. via
   // "full page ↗" from a Record modal, which would otherwise pop back to the modal).
   const backToProjects = () => setProjectView("ondeck");
-  const backToInitiatives = () => setInitiativeView("portfolio");
+  const backToInitiatives = () => setInitiativeView("ondeck");
 
   // Show a back arrow in the top bar when a detail is open AND there's no
   // natural breadcrumb (i.e. the user can't see which list to click back to).
@@ -102,7 +107,11 @@ export default function FloorPane({
         )}
         {rung === "initiative" && (
           <RungTabs
-            tabs={[{ id: "portfolio", label: "Initiatives", on: backToInitiatives }]}
+            tabs={[
+              { id: "ondeck", label: "On Deck", on: backToInitiatives },
+              { id: "groom", label: "Grooming", on: () => setInitiativeView("groom") },
+              { id: "all", label: "All initiatives", on: () => setInitiativeView("all") },
+            ]}
             active={initiativeView}
             detailName={initiativeView === "detail" ? initiativeById(data, focus.initiativeId)?.name ?? "Initiative" : null}
             accent={accent}
@@ -126,8 +135,12 @@ export default function FloorPane({
         {rung === "project" && projectView === "all" && <PortfolioFloor onOpen={openProjectRecord} />}
         {rung === "project" && projectView === "sprint" && <SprintFloor />}
 
-        {rung === "initiative" && initiativeView === "portfolio" && (
-          <InitiativesFloor onOpen={openInitiativeRecord} />
+        {rung === "initiative" && initiativeView === "ondeck" && <InitiativeOnDeckFloor />}
+        {rung === "initiative" && initiativeView === "groom" && (
+          <InitiativesFloor onOpen={openInitiativeRecord} pin="standing" />
+        )}
+        {rung === "initiative" && initiativeView === "all" && (
+          <InitiativesFloor onOpen={openInitiativeRecord} pin="board" />
         )}
         {rung === "initiative" && initiativeView === "detail" && (
           <InitiativeFloor

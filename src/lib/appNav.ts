@@ -43,7 +43,7 @@ export type FloorModal = null | "new-initiative" | "new-project";
 export type FlowFocus = {
   kind?: "project" | "initiative";
   id?: string;
-  lens?: "brief" | "path";
+  lens?: "brief" | "path" | "okr";
   pass?: "initiative" | "project";
 };
 
@@ -71,7 +71,7 @@ export const DEFAULT_NAV: AppNavState = {
   v: 1,
   rung: "day",
   projectView: "ondeck",
-  initiativeView: "portfolio",
+  initiativeView: "ondeck",
   focus: { domainId: "", initiativeId: "", projectId: "" },
   flow: null,
   flowStep: 0,
@@ -146,6 +146,10 @@ export function readNavState(raw: unknown): AppNavState | null {
     // Heal retired project views ("portfolio" filing-cabinet default, "detail"
     // full page) → On Deck, the new front door.
     projectView: (["ondeck", "all", "sprint"] as ProjectView[]).includes(s.projectView as ProjectView) ? (s.projectView as ProjectView) : "ondeck",
+    // Heal the retired "portfolio" front door → On Deck, the new one; keep detail.
+    initiativeView: (["ondeck", "groom", "all", "detail"] as DetailView[]).includes(s.initiativeView as DetailView)
+      ? (s.initiativeView as DetailView)
+      : "ondeck",
     focus: { ...DEFAULT_NAV.focus, ...(s.focus ?? {}) },
   };
 }

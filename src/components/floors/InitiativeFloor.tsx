@@ -4,6 +4,7 @@
 // + loose tasks that feed it. Everything editable in place.
 
 import { useVertical } from "../../hooks/useVertical";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
   domainById,
   initiativeAtRisk,
@@ -57,6 +58,7 @@ export default function InitiativeFloor({
   onOpenProject: (id: string) => void;
 }) {
   const { data, updateInitiative, deleteInitiative, addProject, updateProject, addKeyResult, updateKeyResult, deleteKeyResult } = useVertical();
+  const { openFlow } = useAppNavigation();
   const initiative = initiativeById(data, focus.initiativeId);
 
   if (!initiative) return <div className="text-body text-muted">No initiative selected.</div>;
@@ -190,15 +192,82 @@ export default function InitiativeFloor({
         />
       </div>
 
+      {/* Key results — the prime property, promoted above the execution layer */}
+      <section className="mb-8">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="section-label">Key results{hasKRs ? ` · ${initiative.keyResults.length}` : ""}</div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => openFlow("refine", { kind: "initiative", id: initiative.id, lens: "okr" })}
+              className="tap fast flex items-center gap-1 rounded-md px-2.5 py-1.5 text-caption font-medium text-white active:scale-[.98]"
+              style={{ background: accent }}
+              title="Draft the objective + key results with Nuvo"
+            >
+              ✦ Draft with Nuvo
+            </button>
+            <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-label text-muted hover:text-ink">+ add</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {initiative.keyResults.map((kr) => (
+            <div key={kr.id} className="group rounded-md border border-line bg-surface p-3">
+              <div className="flex items-center gap-2">
+                <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-caption font-medium" />
+                <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
+                  <DeleteBtn what="result" onDelete={() => deleteKeyResult(initiative.id, kr.id)} />
+                </div>
+              </div>
+              <div className="mono mt-1 flex items-center gap-1 text-meta text-muted">
+                <InlineNumber value={kr.baseline} onChange={(v) => updateKeyResult(initiative.id, kr.id, { baseline: v })} />
+                <span>→</span>
+                <span style={{ color: accent }}><InlineNumber value={kr.current} onChange={(v) => updateKeyResult(initiative.id, kr.id, { current: v })} /></span>
+                <span>→</span>
+                <InlineNumber value={kr.target} onChange={(v) => updateKeyResult(initiative.id, kr.id, { target: v })} />
+                <InlineText value={kr.unit} onChange={(v) => updateKeyResult(initiative.id, kr.id, { unit: v })} placeholder="unit" className="ml-1 w-10" />
+              </div>
+              <Bar pct={krPct(kr)} color={accent} />
+              {(() => {
+                const cov = krCoverage(data, kr.id);
+                const stale = krStaleDays(initiative);
+                return (
+                  <div className="mono mt-1.5 flex flex-wrap items-center gap-x-2 text-micro text-muted">
+                    {cov.covered ? (
+                      <span title="Open work pointed at this key result.">
+                        {cov.projects > 0 && `${cov.projects} project${cov.projects === 1 ? "" : "s"}`}
+                        {cov.projects > 0 && cov.openTasks > 0 && " · "}
+                        {cov.openTasks > 0 && `${cov.openTasks} task${cov.openTasks === 1 ? "" : "s"}`}
+                        {" working it"}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--signal)" }} title="No project or task is pointed at this number — link some work, or this outcome won't move.">
+                        ⚠ nothing is moving this
+                      </span>
+                    )}
+                    {stale != null && stale >= KR_STALE_DAYS && (
+                      <span title="This measurement hasn't been updated in a while.">· unmeasured {stale}d</span>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          ))}
+        </div>
+        {initiative.keyResults.length === 0 && (
+          <div className="rounded-md border border-dashed border-line p-5 text-center text-caption text-muted">
+            No key results yet — this bet has no number to move. <button onClick={() => openFlow("refine", { kind: "initiative", id: initiative.id, lens: "okr" })} className="fast underline hover:text-ink" style={{ color: accent }}>Draft them with Nuvo</button>, or add one from a baseline so you read the Gain, not just the gap.
+          </div>
+        )}
+      </section>
+
       {/* timeline */}
       <section className="mb-8">
         <div className="section-label mb-2">Timeline</div>
         <Timeline items={timelineItems} persistKey={`initiative-${initiative.id}`} />
       </section>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-        {/* projects feeding it */}
-        <section className="lg:col-span-7">
+      <div className="grid grid-cols-1 gap-8">
+        {/* projects feeding it — execution under the outcome */}
+        <section>
           <div className="mb-3 flex items-center justify-between">
             <div className="section-label">{projects.length} project{projects.length === 1 ? "" : "s"} feeding it</div>
             <Btn onClick={() => void addProject(initiative.domainId, initiative.id).then((p) => onOpenProject(p.id))}>+ new project</Btn>
@@ -258,63 +327,6 @@ export default function InitiativeFloor({
               emptyHint="Small things that don't deserve a project live here."
               keyResults={initiative.keyResults}
             />
-          </div>
-        </section>
-
-        {/* key results */}
-        <section className="lg:col-span-5">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="section-label">Key results</div>
-            <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-label text-muted hover:text-ink">+ add</button>
-          </div>
-          <div className="space-y-4">
-            {initiative.keyResults.map((kr) => (
-              <div key={kr.id} className="group rounded-md border border-line bg-surface p-3">
-                <div className="flex items-center gap-2">
-                  <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-caption font-medium" />
-                  <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
-                    <DeleteBtn what="result" onDelete={() => deleteKeyResult(initiative.id, kr.id)} />
-                  </div>
-                </div>
-                <div className="mono mt-1 flex items-center gap-1 text-meta text-muted">
-                  <InlineNumber value={kr.baseline} onChange={(v) => updateKeyResult(initiative.id, kr.id, { baseline: v })} />
-                  <span>→</span>
-                  <span style={{ color: accent }}><InlineNumber value={kr.current} onChange={(v) => updateKeyResult(initiative.id, kr.id, { current: v })} /></span>
-                  <span>→</span>
-                  <InlineNumber value={kr.target} onChange={(v) => updateKeyResult(initiative.id, kr.id, { target: v })} />
-                  <InlineText value={kr.unit} onChange={(v) => updateKeyResult(initiative.id, kr.id, { unit: v })} placeholder="unit" className="ml-1 w-10" />
-                </div>
-                <Bar pct={krPct(kr)} color={accent} />
-                {(() => {
-                  const cov = krCoverage(data, kr.id);
-                  const stale = krStaleDays(initiative);
-                  return (
-                    <div className="mono mt-1.5 flex flex-wrap items-center gap-x-2 text-micro text-muted">
-                      {cov.covered ? (
-                        <span title="Open work pointed at this key result.">
-                          {cov.projects > 0 && `${cov.projects} project${cov.projects === 1 ? "" : "s"}`}
-                          {cov.projects > 0 && cov.openTasks > 0 && " · "}
-                          {cov.openTasks > 0 && `${cov.openTasks} task${cov.openTasks === 1 ? "" : "s"}`}
-                          {" working it"}
-                        </span>
-                      ) : (
-                        <span style={{ color: "var(--signal)" }} title="No project or task is pointed at this number — link some work, or this outcome won't move.">
-                          ⚠ nothing is moving this
-                        </span>
-                      )}
-                      {stale != null && stale >= KR_STALE_DAYS && (
-                        <span title="This measurement hasn't been updated in a while.">· unmeasured {stale}d</span>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            ))}
-            {initiative.keyResults.length === 0 && (
-              <div className="rounded-md border border-dashed border-line p-4 text-center text-label text-muted">
-                No key results. Add measurable outcomes — each framed from a baseline so you read the Gain, not just the gap.
-              </div>
-            )}
           </div>
         </section>
       </div>

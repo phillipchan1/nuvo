@@ -13,7 +13,6 @@ import {
   isOpenStatus,
   isProjectComplete,
   projectById,
-  projectsOf,
   tasksOf,
   type Initiative,
   type ItemBrief,
@@ -23,11 +22,12 @@ import {
 import { projectPace } from "./pace";
 import { verdictOf } from "./tending";
 
-export type LensKind = "brief" | "path";
+export type LensKind = "brief" | "path" | "okr";
 
 export const LENS_LABEL: Record<LensKind, string> = {
   brief: "Brief",
   path: "Path",
+  okr: "OKRs",
 };
 
 /** A groomable target, optionally pinned to one lens — what the hub's chips and
@@ -59,9 +59,12 @@ export function projectReadinessAxes(d: VerticalData, p: Project, now: Date): Re
 }
 
 export function initiativeReadinessAxes(d: VerticalData, i: Initiative): ReadinessAxes {
+  void d;
   const defined = i.outcome.trim() !== "" && briefHasSubstance(i.brief) && i.targetDate != null;
-  const planned =
-    i.keyResults.length > 0 || projectsOf(d, i.id).some((p) => isOpenStatus(p.status));
+  // OKRs are a bet's prime property: it isn't "planned" until it carries at least
+  // one measurable key result. Child projects are execution *under* the outcome —
+  // they no longer substitute for having a number to move.
+  const planned = i.keyResults.length > 0;
   return { defined, planned, fits: null };
 }
 
@@ -112,7 +115,11 @@ export function lensGaps(
     });
   }
   if (!axes.planned) {
-    gaps.push({ lens: "path", label: kind === "project" ? "no steps" : "no structure" });
+    gaps.push(
+      kind === "project"
+        ? { lens: "path", label: "no steps" }
+        : { lens: "okr", label: "no key results" },
+    );
   }
   return gaps;
 }

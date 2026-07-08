@@ -53,7 +53,7 @@ export interface VerticalStore {
   deleteInitiatives: (ids: string[]) => void;
 
   // key results
-  addKeyResult: (initiativeId: string) => void;
+  addKeyResult: (initiativeId: string, init?: Partial<KeyResult>) => void;
   updateKeyResult: (initiativeId: string, krId: string, patch: Partial<KeyResult>) => void;
   deleteKeyResult: (initiativeId: string, krId: string) => void;
 
@@ -521,12 +521,18 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
 
       // ── key results ──────────────────────────────────────────────────────
-      addKeyResult: (initiativeId) => {
+      addKeyResult: (initiativeId, init) => {
         void userId().then(async (uid) => {
-          await supabase.from("key_results").insert({
-            user_id: uid, initiative_id: initiativeId, name: "New result",
+          const row: Record<string, unknown> = {
+            user_id: uid, initiative_id: initiativeId,
+            name: init?.name ?? "New result",
             sort_order: (data.initiatives.find((i) => i.id === initiativeId)?.keyResults.length ?? 0) + 1,
-          });
+          };
+          if (init?.baseline != null) row.baseline_value = init.baseline;
+          if (init?.current != null) row.current_value = init.current;
+          if (init?.target != null) row.target_value = init.target;
+          if (init?.unit != null) row.unit = init.unit;
+          await supabase.from("key_results").insert(row);
           invalidate(["vertical"]);
         });
       },
