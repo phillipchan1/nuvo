@@ -21,6 +21,7 @@ import { domainById, isOpenStatus, type Project } from "../../lib/vertical";
 import { readOnDeck, type LaneState, type OnDeckLane, type WeekColumn } from "../../lib/onDeck";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
+import NewProject from "../floors/NewProject";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -112,6 +113,14 @@ export default function OnDeckPlanner() {
   const [dropWeek, setDropWeek] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
   const [preview, setPreview] = useState<Preview>(null);
+  // Click an empty week cell → create a project placed in that week (calendar-style).
+  const [createWeek, setCreateWeek] = useState<number | null>(null);
+  const createInWeek = (i: number) => (id: string) => {
+    const ws = board.weeks[i]?.weekStart;
+    if (ws) updateProject(id, { startDate: toISO(ws), targetDate: toISO(addDays(ws, 4)), status: "in_progress" });
+    setCreateWeek(null);
+    openRecord("project", id);
+  };
 
   // Data-derived bar geometry. A project with no explicit start defaults to a
   // ONE-WEEK box at its due week — never a bar stretched from week 0.
@@ -316,10 +325,19 @@ export default function OnDeckPlanner() {
             ) : (
               rows.map((row, ri) => (
                 <div key={ri} className="relative border-t border-line first:border-t-0">
-                  {/* week cells — the drop targets + gridlines/tint (fill the row) */}
+                  {/* week cells — drop targets + gridlines/tint, and click-to-create
+                      zones (empty space → new project placed in that week). */}
                   <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
                     {board.weeks.map((w) => (
-                      <div key={w.idx} data-week={w.idx} className="border-l border-line first:border-l-0" style={{ background: cellBg(w.idx) }} />
+                      <div
+                        key={w.idx}
+                        data-week={w.idx}
+                        onClick={() => setCreateWeek(w.idx)}
+                        className="group/cell relative cursor-pointer border-l border-line transition-colors first:border-l-0 hover:bg-accent-soft/40"
+                        style={{ background: cellBg(w.idx) }}
+                      >
+                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-caption font-medium text-accent opacity-0 transition-opacity group-hover/cell:opacity-55">+ project</span>
+                      </div>
                     ))}
                   </div>
 
@@ -427,6 +445,11 @@ export default function OnDeckPlanner() {
           </div>
           <div className="mono mt-0.5 pl-4 text-micro text-muted">{drag.sub}</div>
         </div>
+      )}
+
+      {/* click-to-create — the composer, then place the new project in that week */}
+      {createWeek != null && (
+        <NewProject onClose={() => setCreateWeek(null)} onCreated={createInWeek(createWeek)} />
       )}
     </div>
   );
