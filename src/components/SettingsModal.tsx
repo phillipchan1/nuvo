@@ -14,6 +14,7 @@ import { useMaxPerWeek } from "../hooks/usePlannerPrefs";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useSkin, useScheme, SKIN_LABELS, SCHEMES, SCHEME_GROUP, schemeModes, type Skin, type Scheme, type SchemeModes } from "../hooks/useSkin";
+import { useUiScale, UI_SCALE_MIN, UI_SCALE_MAX } from "../hooks/useUiScale";
 
 // ── Section registry ──────────────────────────────────────────────────────
 type SectionId = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account";
@@ -342,6 +343,7 @@ function AppearancePane({
   const [skin, setSkin] = useSkin();
   const { scheme, schemes, setScheme } = useScheme();
   const group = SCHEME_GROUP[skin];
+  const { scale, zoomIn, zoomOut, zoomReset } = useUiScale();
 
   const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const themeIsDark = theme === "dark" || (theme === "system" && sysDark);
@@ -401,6 +403,20 @@ function AppearancePane({
             onSelect={() => setScheme(sc.id)}
           />
         ))}
+      </div>
+
+      <div className="section-label mb-2 mt-6">Zoom</div>
+      <p className="text-caption mb-2.5 text-muted">Scale the whole interface — text, icons, and spacing together. Also ⌘+ / ⌘− / ⌘0.</p>
+      <div className="flex items-center gap-2.5">
+        <Btn onClick={zoomOut} disabled={scale <= UI_SCALE_MIN} title="Zoom out">−</Btn>
+        <button
+          type="button"
+          onClick={zoomReset}
+          className="text-caption min-w-14 rounded-md py-1.5 text-center text-muted hover:text-ink"
+        >
+          {Math.round(scale * 100)}%
+        </button>
+        <Btn onClick={zoomIn} disabled={scale >= UI_SCALE_MAX} title="Zoom in">+</Btn>
       </div>
     </div>
   );

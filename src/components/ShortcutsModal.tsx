@@ -35,6 +35,8 @@ const GROUPS: Group[] = [
       { keys: [["⌘", "K"]], label: "Command bar" },
       { keys: [["⌘", "J"]], label: "Toggle Nuvo" },
       { keys: [["⌘", ","]], label: "Settings" },
+      { keys: [["⌘", "+"], ["⌘", "−"]], sep: "/", label: "Zoom in / out" },
+      { keys: [["⌘", "0"]], label: "Reset zoom" },
       { keys: [["P"]], label: "New project" },
       { keys: [["I"]], label: "New initiative" },
       { keys: [["?"]], label: "This panel" },

@@ -25,6 +25,7 @@ import CapacityRun from "./capacity/CapacityRun";
 import QuickCreate from "./floors/QuickCreate";
 import NewProject from "./floors/NewProject";
 import NewInitiative from "./floors/NewInitiative";
+import { zoomIn, zoomOut, zoomReset } from "../hooks/useUiScale";
 
 export type Rung = "now" | "day" | "project" | "initiative" | "domain";
 export interface Focus {
@@ -244,6 +245,26 @@ function AppShellInner() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleFocus]);
+
+  // ⌘= / ⌘+ zoom in, ⌘− zooms out, ⌘0 resets — whole-UI zoom, works from any
+  // focus (including inputs), matching the OS/browser zoom convention.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        zoomIn();
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        zoomOut();
+      } else if (e.key === "0") {
+        e.preventDefault();
+        zoomReset();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // P / I summon the fast composer from anywhere (no modifier, so ⌘P print is
   // untouched). Stay out of the way while typing or when another surface owns
