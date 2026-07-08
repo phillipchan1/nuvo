@@ -128,6 +128,21 @@ export default function OnDeckPlanner() {
   // Projects committed to each week (live under the drag) — the overload gauge.
   const weekLoad = board.weeks.map((_, i) => effGeom.filter((g) => i >= g.start && i <= g.end).length);
 
+  // Lane-packing: bars that don't overlap in time share a row, so the same week's
+  // projects stack together in a column instead of staggering one-per-row. Row
+  // assignment uses the BASE geom (stable during a drag); the preview only slides
+  // a bar's column within its row.
+  const rows: (typeof geom)[] = [];
+  for (const g of [...geom].sort((a, b) => a.start - b.start || a.end - b.end)) {
+    const row = rows.find((r) => r.every((x) => !(g.start <= x.end && x.start <= g.end)));
+    if (row) row.push(g);
+    else rows.push([g]);
+  }
+  const effOf = (g: (typeof geom)[number]) =>
+    preview && preview.id === g.l.project.id
+      ? { start: clampIdx(preview.start, H), end: clampIdx(preview.end, H), beyond: false }
+      : { start: g.start, end: g.end, beyond: g.beyond };
+
   const projectById = useMemo(() => new Map(data.projects.map((p) => [p.id, p])), [data.projects]);
   const live = useRef({ projectById, board, updateProject, openRecord, data });
   live.current = { projectById, board, updateProject, openRecord, data };
@@ -293,62 +308,67 @@ export default function OnDeckPlanner() {
               ))}
             </div>
 
-            {/* placed project rows */}
-            {effGeom.length === 0 ? (
+            {/* placed project rows — lane-packed so same-week cards stack in a column */}
+            {rows.length === 0 ? (
               <div className="px-4 py-8 text-center text-caption text-muted">
                 No projects placed yet — drag one in from the inbox to give it a week. →
               </div>
             ) : (
-              effGeom.map(({ l, start, end, beyond }) => {
-                const dot = domainById(data, l.project.domainId)?.color ?? "var(--accent)";
-                const color = STATE_COLOR[l.state];
-                const dragging = preview?.id === l.project.id;
-                const due = barLabel(l)?.replace("⚠ ", "") ?? null; // border color carries the warning
-                const fillPct = l.state === "needs_shaping" ? 22 : 34;
-
-                return (
-                  <div key={l.project.id} className="relative border-t border-line first:border-t-0">
-                    {/* week cells — the drop targets + gridlines/tint (fill the row) */}
-                    <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
-                      {board.weeks.map((w) => (
-                        <div key={w.idx} data-week={w.idx} className="border-l border-line first:border-l-0" style={{ background: cellBg(w.idx) }} />
-                      ))}
-                    </div>
-
-                    {/* the CARD — carries the full title (wraps, no ellipsis) and is
-                        itself the drag/resize/click target. In flow, so it sets the
-                        row height; pointer-events-none wrapper lets empty cells drop. */}
-                    <div className="pointer-events-none relative grid items-center px-1.5 py-2" style={{ gridTemplateColumns: cols }}>
-                      <div
-                        data-project-drag={l.project.id}
-                        className="group/bar pointer-events-auto fast relative flex min-h-[52px] cursor-grab items-start gap-2 rounded-xl px-3.5 py-2.5 active:cursor-grabbing"
-                        style={{
-                          gridColumn: `${start + 1} / ${end + 2}`,
-                          background: `color-mix(in srgb, ${color} ${dragging ? fillPct + 16 : fillPct}%, var(--surface))`,
-                          border: `1.5px solid ${dragging || l.state === "needs_shaping" ? color : "transparent"}`,
-                          color: `color-mix(in srgb, ${color} 80%, var(--ink))`,
-                          boxShadow: dragging ? "var(--shadow-lift)" : beyond ? `5px 0 0 -1px ${color}` : "none",
-                          opacity: l.state === "parked" ? 0.5 : 1,
-                        }}
-                      >
-                        <span data-resize="start" className="absolute inset-y-0 left-0 flex w-2 cursor-ew-resize items-center justify-center" aria-hidden>
-                          <span className="h-5 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
-                        </span>
-                        <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-caption font-semibold leading-snug text-ink">{l.project.name}</div>
-                          <div className="mono mt-1 text-micro" style={{ color }}>
-                            {STATE_LABEL[l.state]}{due ? ` · ${due}` : ""}
-                          </div>
-                        </div>
-                        <span data-resize="end" className="absolute inset-y-0 right-0 flex w-2 cursor-ew-resize items-center justify-center" aria-hidden>
-                          <span className="h-5 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
-                        </span>
-                      </div>
-                    </div>
+              rows.map((row, ri) => (
+                <div key={ri} className="relative border-t border-line first:border-t-0">
+                  {/* week cells — the drop targets + gridlines/tint (fill the row) */}
+                  <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
+                    {board.weeks.map((w) => (
+                      <div key={w.idx} data-week={w.idx} className="border-l border-line first:border-l-0" style={{ background: cellBg(w.idx) }} />
+                    ))}
                   </div>
-                );
-              })
+
+                  {/* the cards in this row — each carries its full title (wraps) and is
+                      itself the drag/resize/click target. In flow, so they set the row
+                      height; pointer-events-none wrapper lets empty cells drop. */}
+                  <div className="pointer-events-none relative grid items-start px-1.5 py-2" style={{ gridTemplateColumns: cols }}>
+                    {row.map((g) => {
+                      const { l } = g;
+                      const { start, end, beyond } = effOf(g);
+                      const dot = domainById(data, l.project.domainId)?.color ?? "var(--accent)";
+                      const color = STATE_COLOR[l.state];
+                      const dragging = preview?.id === l.project.id;
+                      const due = barLabel(l)?.replace("⚠ ", "") ?? null; // border color carries the warning
+                      const fillPct = l.state === "needs_shaping" ? 22 : 34;
+                      return (
+                        <div
+                          key={l.project.id}
+                          data-project-drag={l.project.id}
+                          className="group/bar pointer-events-auto fast relative flex min-h-[52px] cursor-grab items-start gap-2 rounded-xl px-3.5 py-2.5 active:cursor-grabbing"
+                          style={{
+                            gridColumn: `${start + 1} / ${end + 2}`,
+                            gridRow: 1,
+                            background: `color-mix(in srgb, ${color} ${dragging ? fillPct + 16 : fillPct}%, var(--surface))`,
+                            border: `1.5px solid ${dragging || l.state === "needs_shaping" ? color : "transparent"}`,
+                            color: `color-mix(in srgb, ${color} 80%, var(--ink))`,
+                            boxShadow: dragging ? "var(--shadow-lift)" : beyond ? `5px 0 0 -1px ${color}` : "none",
+                            opacity: l.state === "parked" ? 0.5 : 1,
+                          }}
+                        >
+                          <span data-resize="start" className="absolute inset-y-0 left-0 flex w-2 cursor-ew-resize items-center justify-center" aria-hidden>
+                            <span className="h-5 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
+                          </span>
+                          <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-caption font-semibold leading-snug text-ink">{l.project.name}</div>
+                            <div className="mono mt-1 text-micro" style={{ color }}>
+                              {STATE_LABEL[l.state]}{due ? ` · ${due}` : ""}
+                            </div>
+                          </div>
+                          <span data-resize="end" className="absolute inset-y-0 right-0 flex w-2 cursor-ew-resize items-center justify-center" aria-hidden>
+                            <span className="h-5 w-[3px] rounded-full opacity-0 transition-opacity group-hover/bar:opacity-40" style={{ background: "currentColor" }} />
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
             )}
 
             {/* per-week load — more than OVERLOAD_LIMIT projects in a week is a problem */}
