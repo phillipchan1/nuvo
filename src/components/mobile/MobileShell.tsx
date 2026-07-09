@@ -255,7 +255,12 @@ export default function MobileShell() {
   );
 
   return (
-    <div className="atmosphere flex h-full flex-col">
+    // Pin to the layout viewport with `fixed inset-0` rather than a percentage/
+    // dvh height: on iOS standalone PWAs `100dvh`/`innerHeight` can resolve to the
+    // shorter *dynamic* viewport, floating the bottom nav above the screen edge
+    // with a dead strip of body background beneath it. The layout viewport (what
+    // fixed positioning fills) is the true full-screen box, so the nav sits flush.
+    <div className="atmosphere fixed inset-0 flex flex-col">
       {/* Top bar */}
       <header className="mobile-topbar pt-safe flex shrink-0 items-center gap-2 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur">
         <span className="wordmark wordmark-grad text-lead">Nuvo</span>
