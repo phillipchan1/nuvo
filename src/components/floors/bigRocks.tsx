@@ -2,7 +2,7 @@
 // user-facing name is "Priorities"). A small, varying set that sit above the
 // task funnel. A priority OWNS its work directly via tasks.big_rock_id, so it
 // tracks progress (done / scheduled) without needing any initiative or project
-// — and can optionally link an existing bet/project to spotlight its work, or
+// — and can optionally link an existing initiative/project to spotlight its work, or
 // stay a loose one-off. Authored here (free-text brain-dump), held on Today as
 // a ribbon, read back in the Gain. See src/lib/types.ts BigRock.
 //
@@ -13,20 +13,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
-import { domainById, initiativeById, isOpenStatus, projectById, type VerticalData } from "../../lib/vertical";
+import { domainById, initiativeById, isOpenStatus, projectById, type ItemBrief, type Project, type VerticalData } from "../../lib/vertical";
 import { priorityWork, proposedPriorities, type ProposedPriority, type RockWork } from "../../lib/priorities";
+import { projectReadinessAxes, lensGaps, type ReadinessAxes } from "../../lib/lenses";
 import type { BigRock } from "../../lib/types";
 import { ENERGY_META, type Energy } from "../../lib/energy";
 import { supabase } from "../../lib/supabase";
 import { ASSISTANT_NAME } from "../../lib/assistant";
-import { fmtHours as hrs, todayISO } from "../../lib/dates";
+import { fmtHours as hrs, parseDateISO, toDateISO, todayISO } from "../../lib/dates";
 import { InlineText } from "./parts";
 import { Btn } from "../ui";
 
 type ParsedTask = { title: string; energy: Energy; durationMins: number; deadline: string | null };
 type ParsedPriority = { title: string; win: string; initiativeId: string | null; projectId: string | null; tasks: ParsedTask[] };
 
-/** The color a rock inherits from the bet/project it's anchored to. */
+/** The color a rock inherits from the initiative/project it's anchored to. */
 function rockColor(data: VerticalData, rock: BigRock): string | null {
   const init = initiativeById(data, rock.initiative_id);
   if (init) return domainById(data, init.domainId)?.color ?? null;
@@ -37,6 +38,44 @@ function rockColor(data: VerticalData, rock: BigRock): string | null {
 
 // ("what moves this?" — priorityWork/RockWork now live in src/lib/priorities.ts,
 //  shared with the Week's Plan / Review.)
+
+/** A priority bound to a project is a PUSH (a project moves this week). Everything
+ *  else — loose or initiative-linked — is an AIM. A Push reads the project's
+ *  readiness (Defined · Planned · Fits) so Sunday can gate it: ready → an execution
+ *  slice; not ready → groom it on the spot or push it out. */
+type PushRead =
+  | { isPush: false }
+  | { isPush: true; proj: Project; axes: ReadinessAxes; gaps: ReturnType<typeof lensGaps>; ready: boolean };
+
+function pushReadiness(data: VerticalData, rock: BigRock, now: Date): PushRead {
+  const proj = projectById(data, rock.project_id ?? null);
+  if (!proj) return { isPush: false };
+  const axes = projectReadinessAxes(data, proj, now);
+  const gaps = lensGaps(data, "project", proj, now);
+  return { isPush: true, proj, axes, gaps, ready: gaps.length === 0 };
+}
+
+function ordinalWeek(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]} week`;
+}
+
+const EMPTY_BRIEF: ItemBrief = { scope: [], nonGoals: [], doneWhen: [], openQuestions: [], constraints: [] };
+
+// A 3-segment readiness pip — Defined · Planned · Fits. Filled = met.
+function ReadinessPip({ axes, accent }: { axes: ReadinessAxes; accent: string }) {
+  const seg = (on: boolean | null, key: string) => (
+    <span key={key} className="h-1 w-4 rounded-full" title={key} style={{ background: on ? accent : "var(--line)" }} />
+  );
+  return (
+    <span className="inline-flex items-center gap-1" aria-hidden>
+      {seg(axes.defined, "defined")}
+      {seg(axes.planned, "planned")}
+      {seg(axes.fits, "fits")}
+    </span>
+  );
+}
 
 // ── the editor — author the week's priorities ────────────────────────────────
 export function BigRocks() {
@@ -137,23 +176,39 @@ export function BigRocks() {
         </div>
       </div>
 
-      {(groomed.length > 0 || ungroomed > 0) && (
+      {(groomed.length > 0 || ungroomed.length > 0) && (
         <ProjectsAskingForYou data={data} groomed={groomed} ungroomed={ungroomed} onBringIn={bringIn} />
       )}
 
       {rocks.length > 0 && (
         <div className="mt-4 space-y-3">
-          {rocks.map((rock, i) => (
-            <RockCard
-              key={rock.id}
-              rock={rock}
-              index={i}
-              data={data}
-              onUpdate={(patch) => updateBigRock(rock.id, patch)}
-              onRemove={() => removeBigRock(rock.id)}
-              onToggleDone={() => toggleBigRockDone(rock.id)}
-            />
-          ))}
+          {(() => {
+            const pushes = rocks.filter((r) => r.project_id);
+            const aims = rocks.filter((r) => !r.project_id);
+            const card = (rock: BigRock) => (
+              <RockCard
+                key={rock.id}
+                rock={rock}
+                index={rocks.indexOf(rock)}
+                data={data}
+                onUpdate={(patch) => updateBigRock(rock.id, patch)}
+                onRemove={() => removeBigRock(rock.id)}
+                onToggleDone={() => toggleBigRockDone(rock.id)}
+              />
+            );
+            return (
+              <>
+                {pushes.length > 0 && aims.length > 0 && (
+                  <div className="section-label flex items-center gap-1.5 pt-0.5">Pushes <span className="mono font-normal normal-case tracking-normal text-muted">a project moves</span></div>
+                )}
+                {pushes.map(card)}
+                {pushes.length > 0 && aims.length > 0 && (
+                  <div className="section-label flex items-center gap-1.5 pt-2">Aims <span className="mono font-normal normal-case tracking-normal text-muted">outcomes of your own</span></div>
+                )}
+                {aims.map(card)}
+              </>
+            );
+          })()}
         </div>
       )}
     </section>
@@ -171,9 +226,32 @@ function ProjectsAskingForYou({
 }: {
   data: VerticalData;
   groomed: ProposedPriority[];
-  ungroomed: number;
+  ungroomed: ProposedPriority[];
   onBringIn: (p: ProposedPriority) => void;
 }) {
+  const row = (p: ProposedPriority, ready: boolean) => {
+    const color = domainById(data, p.project.domainId)?.color ?? "var(--accent)";
+    return (
+      <button
+        key={p.project.id}
+        onClick={() => onBringIn(p)}
+        title={ready ? `Push "${p.project.name}" this week` : `Bring "${p.project.name}" in and groom it here`}
+        className="fast tap group/row flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-surface-2"
+      >
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: ready ? color : "var(--line-strong)" }} aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-body">{p.project.name}</span>
+          <span className="mono block truncate text-micro text-muted">
+            {p.reason}
+            {!ready && " · needs grooming"}
+          </span>
+        </span>
+        <span className="mono shrink-0 text-meta text-muted transition-colors group-hover/row:text-accent">
+          {ready ? "＋ push" : "＋ groom"}
+        </span>
+      </button>
+    );
+  };
   return (
     <div className="mt-4">
       <div className="mb-1.5 flex items-baseline gap-2">
@@ -181,43 +259,15 @@ function ProjectsAskingForYou({
         <span className="mono text-micro text-muted">slipping or due to start</span>
       </div>
       <div className="divide-y divide-line overflow-hidden rounded-lg border border-line">
-        {groomed.map((p) => {
-          const color = domainById(data, p.project.domainId)?.color ?? "var(--accent)";
-          return (
-            <button
-              key={p.project.id}
-              onClick={() => onBringIn(p)}
-              title={`Make "${p.project.name}" a priority this week`}
-              className="fast tap group/row flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-surface-2"
-            >
-              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-body">{p.project.name}</span>
-                <span className="mono block truncate text-micro text-muted">{p.reason}</span>
-              </span>
-              <span className="mono shrink-0 text-meta text-muted transition-colors group-hover/row:text-accent">
-                ＋ priority
-              </span>
-            </button>
-          );
-        })}
-        {ungroomed > 0 && (
-          <div className="flex items-center gap-2 px-3.5 py-2.5 text-meta text-muted">
-            <span aria-hidden>✦</span>
-            <span className="min-w-0">
-              {ungroomed} more {ungroomed === 1 ? "project is" : "projects are"} slipping but{" "}
-              {ungroomed === 1 ? "needs" : "need"} grooming first — groom{" "}
-              {ungroomed === 1 ? "it" : "them"} to bring {ungroomed === 1 ? "it" : "them"} in.
-            </span>
-          </div>
-        )}
+        {groomed.map((p) => row(p, true))}
+        {ungroomed.map((p) => row(p, false))}
       </div>
     </div>
   );
 }
 
 // ── a priority as a tracked object — title, win, its work beneath, a progress
-//    gauge, and an optional (de-emphasized) anchor to a bet/project ───────────
+//    gauge, and an optional (de-emphasized) anchor to an initiative/project ───────────
 function RockCard({
   rock,
   index,
@@ -236,6 +286,13 @@ function RockCard({
   const done = Boolean(rock.done_at);
   const accent = rockColor(data, rock) ?? "var(--accent)";
   const work = priorityWork(data, rock);
+  const push = pushReadiness(data, rock, new Date());
+  const rolls = rock.roll_count ?? 0;
+  const carried = !done && rolls > 0;
+  // The Push's weekly verdict is NOT the project's finish line: landing this
+  // week's slice while open work remains means the project simply continues.
+  const projContinues = done && push.isPush && work.tasks.some((t) => t.status !== "done");
+  const gated = push.isPush && !push.ready && !done;
 
   return (
     <div
@@ -245,7 +302,7 @@ function RockCard({
       <div className="flex items-start gap-3">
         <button
           onClick={onToggleDone}
-          title={done ? "Moved — click to reopen" : "Mark moved"}
+          title={done ? "Push landed — click to reopen" : push.isPush ? "Mark this week's push landed" : "Mark moved"}
           className="fast mono mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-meta"
           style={{ borderColor: done ? "var(--accent)" : accent, background: done ? "var(--accent)" : "transparent", color: done ? "#fff" : "var(--muted)" }}
         >
@@ -253,6 +310,29 @@ function RockCard({
         </button>
 
         <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span
+              className="rounded-full px-1.5 py-0.5 text-micro font-medium tracking-wide"
+              style={push.isPush ? { background: "var(--accent-soft)", color: "var(--accent)" } : { border: "1px solid var(--line)", color: "var(--muted)" }}
+            >
+              {push.isPush ? "PUSH" : "AIM"}
+            </span>
+            {push.isPush && !done && (
+              <span className="inline-flex items-center gap-1.5">
+                <ReadinessPip axes={push.axes} accent={accent} />
+                <span className="mono text-micro" style={{ color: push.ready ? accent : "var(--muted)" }}>
+                  {push.ready ? "Ready" : !push.axes.planned ? "Not ready" : "Almost"}
+                </span>
+              </span>
+            )}
+            {carried && (
+              <span className="mono rounded-full px-1.5 py-0.5 text-micro" style={{ border: "1px solid var(--signal)", color: "var(--signal)" }}>
+                carried · {ordinalWeek(rolls + 1)}
+              </span>
+            )}
+            {projContinues && <span className="mono text-micro text-muted">project continues →</span>}
+          </div>
+
           <InlineText
             value={rock.title}
             onChange={(title) => onUpdate({ title })}
@@ -269,12 +349,15 @@ function RockCard({
               className="text-caption text-muted"
             />
           </div>
-          {work.label && (
+          {work.label && !push.isPush && (
             <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: accent }} aria-hidden />
-              <span className="mono truncate text-micro text-muted">
-                {rock.project_id ? "advances" : "serves"} {work.label}
-              </span>
+              <span className="mono truncate text-micro text-muted">serves {work.label}</span>
+            </div>
+          )}
+          {carried && rolls >= 2 && (
+            <div className="mono mt-1.5 text-micro" style={{ color: "var(--signal)" }}>
+              Carried {rolls} weeks — is the slice too big, or the project stuck?
             </div>
           )}
         </div>
@@ -288,7 +371,211 @@ function RockCard({
         </button>
       </div>
 
-      {rock.title.trim() && <PriorityWork rock={rock} data={data} work={work} accent={accent} onUpdate={onUpdate} />}
+      {gated && <PushGate rock={rock} proj={push.proj} gaps={push.gaps} accent={accent} onRemove={onRemove} />}
+      {rock.title.trim() && (!gated || work.total > 0) && (
+        <PriorityWork rock={rock} data={data} work={work} accent={accent} onUpdate={onUpdate} />
+      )}
+    </div>
+  );
+}
+
+// ── the readiness gate — a not-ready Push can't fake execution, so Sunday offers
+//    three honest moves: groom it on the spot, or push the project out to a later
+//    week. (The passive fallback is a groom slot — the "Shape it" step below.) ────
+function PushGate({
+  rock,
+  proj,
+  gaps,
+  accent,
+  onRemove,
+}: {
+  rock: BigRock;
+  proj: Project;
+  gaps: ReturnType<typeof lensGaps>;
+  accent: string;
+  onRemove: () => void;
+}) {
+  const { updateProject, addTasksToWeek } = useVertical();
+  const [grooming, setGrooming] = useState(false);
+  const [deferring, setDeferring] = useState(false);
+  const [proposed, setProposed] = useState<ProposedTask[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const needsOutcome = gaps.some((g) => g.label === "no outcome");
+  const needsScope = gaps.some((g) => g.label === "scope unclear");
+  const needsFinish = gaps.some((g) => g.label === "no finish line");
+  const needsSteps = gaps.some((g) => g.lens === "path");
+  const gapText = gaps.map((g) => g.label).join(" · ");
+
+  const scaffold = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { data: res, error: fnErr } = await supabase.functions.invoke("agent", {
+        body: { scaffoldDraft: { name: proj.name, outcome: proj.outcome, initiativeId: proj.initiativeId ?? null, domainId: proj.domainId } },
+      });
+      if (fnErr) throw fnErr;
+      const tasks = (res?.tasks ?? []) as { title: string; energy: Energy; durationMins: number }[];
+      if (!tasks.length) { setError("Couldn't suggest steps — add one by hand below."); return; }
+      setProposed(tasks.map((t) => ({ ...t, included: true })));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "couldn't scaffold");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const acceptSteps = async () => {
+    const chosen = (proposed ?? []).filter((t) => t.included);
+    if (!chosen.length) { setProposed(null); return; }
+    await addTasksToWeek(
+      { projectId: proj.id, initiativeId: proj.initiativeId ?? null, domainId: proj.domainId },
+      chosen.map((t) => ({ title: t.title, energy: t.energy, durationMins: t.durationMins, bigRockId: rock.id })),
+    );
+    setProposed(null);
+  };
+
+  // The passive fallback — keep it in the week, but the only thing it earns is a
+  // groom slot: a small task whose job is to make the project ready.
+  const addGroomSlot = () =>
+    void addTasksToWeek(
+      { projectId: proj.id, initiativeId: proj.initiativeId ?? null, domainId: proj.domainId },
+      [{ title: `Shape "${proj.name}" — outcome, finish line, first steps`, energy: "decide", durationMins: 20, bigRockId: rock.id }],
+    );
+
+  // Push it out — shift the project's window to a later week and drop the Push.
+  const defer = (weeks: number) => {
+    const shift = (iso: string | null) => (iso ? toDateISO(new Date(parseDateISO(iso).getTime() + weeks * 7 * 86_400_000)) : null);
+    updateProject(proj.id, { startDate: shift(proj.startDate), targetDate: shift(proj.targetDate) });
+    onRemove();
+  };
+
+  const setBrief = (scope: string, doneWhen: string) =>
+    updateProject(proj.id, {
+      brief: {
+        ...(proj.brief ?? EMPTY_BRIEF),
+        scope: scope.trim() ? [scope.trim()] : (proj.brief?.scope ?? []),
+        doneWhen: doneWhen.trim() ? [doneWhen.trim()] : (proj.brief?.doneWhen ?? []),
+      },
+    });
+
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="text-caption text-muted">
+          Not ready — {gapText}. It can earn a{" "}
+          <button onClick={addGroomSlot} className="fast text-accent hover:underline">groom slot</button>, or:
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <button onClick={() => setGrooming((g) => !g)} className="fast mono text-meta text-accent hover:underline">
+          {grooming ? "▾ close groomer" : "✦ Groom now"}
+        </button>
+        <button onClick={() => setDeferring((d) => !d)} className="fast mono text-meta text-muted hover:text-accent">
+          Push it out ▾
+        </button>
+        {error && <span className="text-micro text-signal">{error}</span>}
+      </div>
+
+      {deferring && (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="mono text-micro text-muted">move the project to:</span>
+          <button onClick={() => defer(1)} className="fast mono rounded-md border border-line px-2 py-1 text-micro text-muted hover:border-line-strong hover:text-accent">next week</button>
+          <button onClick={() => defer(2)} className="fast mono rounded-md border border-line px-2 py-1 text-micro text-muted hover:border-line-strong hover:text-accent">in 2 weeks</button>
+        </div>
+      )}
+
+      {grooming && (
+        <div className="mt-2.5 space-y-2.5 rounded-md border border-line bg-surface-2 p-3">
+          {needsOutcome && (
+            <label className="block">
+              <span className="mono text-micro text-muted">Outcome — one line, "done" looks like…</span>
+              <input
+                defaultValue={proj.outcome}
+                onBlur={(e) => e.target.value.trim() && updateProject(proj.id, { outcome: e.target.value.trim() })}
+                placeholder="a new user reaches their first plan"
+                className="mt-1 w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-body outline-none focus:border-accent"
+              />
+            </label>
+          )}
+          {needsScope && (
+            <BriefFields brief={proj.brief} onCommit={setBrief} />
+          )}
+          {needsFinish && (
+            <label className="block">
+              <span className="mono text-micro text-muted">Finish line</span>
+              <input
+                type="date"
+                defaultValue={proj.targetDate ?? ""}
+                onChange={(e) => e.target.value && updateProject(proj.id, { targetDate: e.target.value })}
+                className="mt-1 w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-body outline-none focus:border-accent"
+              />
+            </label>
+          )}
+          {needsSteps && !proposed && (
+            <button onClick={() => void scaffold()} disabled={busy} className="fast mono text-meta text-accent hover:underline disabled:opacity-50">
+              {busy ? "✦ scaffolding…" : "✦ Scaffold the first steps"}
+            </button>
+          )}
+          {proposed && (
+            <div className="space-y-1">
+              {proposed.map((t, i) => (
+                <button
+                  key={i}
+                  onClick={() => setProposed((p) => p!.map((x, j) => (j === i ? { ...x, included: !x.included } : x)))}
+                  className="fast flex w-full items-center gap-2 text-left text-label"
+                >
+                  <span
+                    className="mono flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[4px] border text-micro"
+                    style={{ borderColor: t.included ? "var(--accent)" : "var(--line)", background: t.included ? "var(--accent)" : "transparent", color: "#fff" }}
+                  >
+                    {t.included ? "✓" : ""}
+                  </span>
+                  <span className={`min-w-0 flex-1 truncate ${t.included ? "" : "text-muted line-through"}`}>{t.title}</span>
+                  <span className="mono shrink-0 text-micro text-muted">{ENERGY_META[t.energy]?.icon ?? "·"} {t.durationMins}m</span>
+                </button>
+              ))}
+              <div className="flex items-center gap-2 pt-1">
+                <Btn kind="primary" onClick={() => void acceptSteps()}>add these steps</Btn>
+                <button onClick={() => setProposed(null)} className="fast mono text-meta text-muted hover:text-ink">discard</button>
+              </div>
+            </div>
+          )}
+          <p className="text-micro text-muted" style={{ color: accent }}>Fill the gaps and this becomes an execution Push.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Scope + acceptance — the two lines that make a brief adjudicable (briefHasSubstance).
+function BriefFields({ brief, onCommit }: { brief: ItemBrief | null | undefined; onCommit: (scope: string, doneWhen: string) => void }) {
+  const [scope, setScope] = useState(brief?.scope?.[0] ?? "");
+  const [doneWhen, setDoneWhen] = useState(brief?.doneWhen?.[0] ?? "");
+  return (
+    <div className="space-y-2">
+      <label className="block">
+        <span className="mono text-micro text-muted">In scope — what this covers</span>
+        <input
+          value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          onBlur={() => onCommit(scope, doneWhen)}
+          placeholder="the empty-state onboarding checklist"
+          className="mt-1 w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-body outline-none focus:border-accent"
+        />
+      </label>
+      <label className="block">
+        <span className="mono text-micro text-muted">Done when — how you'll know it's finished</span>
+        <input
+          value={doneWhen}
+          onChange={(e) => setDoneWhen(e.target.value)}
+          onBlur={() => onCommit(scope, doneWhen)}
+          placeholder="a fresh account hits the plan screen"
+          className="mt-1 w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-body outline-none focus:border-accent"
+        />
+      </label>
     </div>
   );
 }
@@ -427,7 +714,7 @@ function PriorityWork({
   );
 }
 
-/** Optional anchor — link an EXISTING bet or project (its work counts toward
+/** Optional anchor — link an EXISTING initiative or project (its work counts toward
  *  the rock). Defaults to none: a wrong tie is worse than no tie. */
 function AnchorPicker({ data, rock, onUpdate }: { data: VerticalData; rock: BigRock; onUpdate: (patch: Partial<Omit<BigRock, "id">>) => void }) {
   const inits = data.initiatives.filter((i) => isOpenStatus(i.status));
@@ -446,11 +733,11 @@ function AnchorPicker({ data, rock, onUpdate }: { data: VerticalData; rock: BigR
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-[200px] cursor-pointer truncate rounded-md border border-line bg-surface px-2.5 py-1.5 text-body text-muted outline-none hover:border-line-strong focus:border-accent"
-        title="Link an existing bet or project (optional)"
+        title="Link an existing initiative or project (optional)"
       >
         <option value="">not linked</option>
         {inits.length > 0 && (
-          <optgroup label="Bets">
+          <optgroup label="Initiatives">
             {inits.map((i) => <option key={i.id} value={`i:${i.id}`}>{i.name}</option>)}
           </optgroup>
         )}

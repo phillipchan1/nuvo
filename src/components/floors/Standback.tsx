@@ -65,7 +65,7 @@ export default function Standback({
 
         <div className="mono mt-3 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-label">
           <span className="flex items-center gap-1.5 text-accent"><span>⏱</span>{fmtH(read.hoursThisWeek)} this week</span>
-          {read.betsMoved > 0 && <span className="flex items-center gap-1.5 text-muted"><span>↗</span>{read.betsMoved} bet{read.betsMoved === 1 ? "" : "s"} moved</span>}
+          {read.betsMoved > 0 && <span className="flex items-center gap-1.5 text-muted"><span>↗</span>{read.betsMoved} initiative{read.betsMoved === 1 ? "" : "s"} moved</span>}
           {read.wins.length > 0 && <span className="flex items-center gap-1.5 text-muted"><span>✓</span>{read.wins.length} win{read.wins.length === 1 ? "" : "s"}</span>}
         </div>
       </div>

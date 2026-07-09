@@ -109,7 +109,7 @@ export default function MobileSearch({
 
       <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto pb-4">
         {!results ? (
-          <Note>Type to jump to anything — a project, a bet, a domain, or a task.</Note>
+          <Note>Type to jump to anything — a project, an initiative, a domain, or a task.</Note>
         ) : results.total === 0 ? (
           <Note>No matches for “{q.trim()}”.</Note>
         ) : (

@@ -146,7 +146,7 @@ function LoadCard({ item, onKeep, onPark, onCut, onReschedule }: {
         <span className="mt-[7px] h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent }} />
         <div className="min-w-0 flex-1">
           <h2 className="text-lead leading-snug">{item.name}</h2>
-          <div className="mt-0.5 section-label !p-0 text-muted">{item.kind === "initiative" ? "Bet" : "Project"}</div>
+          <div className="mt-0.5 section-label !p-0 text-muted">{item.kind === "initiative" ? "Initiative" : "Project"}</div>
         </div>
       </div>
 

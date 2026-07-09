@@ -17,7 +17,6 @@ import { useRealtime } from "../../hooks/useRealtime";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
 import { readTending } from "../../lib/tending";
-import { itemsNeedingLenses } from "../../lib/lenses";
 import type { Task } from "../../lib/types";
 import NowFloor from "../floors/NowFloor";
 import SettingsModal from "../SettingsModal";
@@ -25,7 +24,6 @@ import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
 import MobilePlan, { type PlanTarget } from "./MobilePlan";
 import MobileReadiness from "./MobileReadiness";
-import RefineRun from "../refine/RefineRun";
 import MobileSearch, { type JumpKind } from "./MobileSearch";
 import QuickTaskSheet from "./QuickTaskSheet";
 import ChatPane from "./ChatPane";
@@ -110,7 +108,6 @@ export default function MobileShell() {
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [refineOpen, setRefineOpen] = useState(false);
   // A detail to open in the Plan tab, set when you jump from global search.
   const [planTarget, setPlanTarget] = useState<PlanTarget | null>(null);
 
@@ -175,19 +172,12 @@ export default function MobileShell() {
   }, [inbox, todayTasks, weekTasks, allTasks]);
   const openTask = taskId ? taskById.get(taskId) ?? null : null;
 
-  // Plan-tab demand: how many bets/projects in the vertical want a look (the
+  // Plan-tab demand: how many initiatives/projects in the vertical want a look (the
   // silent + raw failure modes). The phone's echo of the spine's Build cues.
   const planDemand = useMemo(() => {
     const t = readTending(vertical);
     return t.silent.length + t.raw.length;
   }, [vertical]);
-
-  // How many projects still carry a readiness gap — the guided pass's size.
-  // Same axis source the On Deck lanes route by (lib/lenses.ts).
-  const refineCount = useMemo(
-    () => itemsNeedingLenses(vertical, "project", new Date()).length,
-    [vertical],
-  );
 
   const subCount = (s: MobileTab) =>
     s === "inbox"
@@ -275,28 +265,13 @@ export default function MobileShell() {
           <div className="px-4 pt-4 pb-24">
             <div className="mb-4">
               <MobileReadiness data={vertical} onAskNuvo={openChat} onOpenPlan={() => setTab("plan")} />
-              {refineCount > 0 && (
-                <button
-                  onClick={() => setRefineOpen(true)}
-                  className="tap fast mt-3 flex w-full items-center justify-between rounded-xl border border-line glass-card px-4 py-3 active:scale-[.99]"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <span className="text-lead" style={{ color: "var(--accent)" }}>✦</span>
-                    <span className="text-left">
-                      <span className="block text-body font-medium">Groom your projects</span>
-                      <span className="block text-caption text-muted">{refineCount} ready to groom</span>
-                    </span>
-                  </span>
-                  <span className="text-muted">→</span>
-                </button>
-              )}
             </div>
             <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
           </div>
         ) : tab === "calendar" ? (
           <MobileCalendar now={now} onTapEvent={setCalendarTap} />
         ) : tab === "plan" ? (
-          <MobilePlan target={planTarget} onRefine={() => setRefineOpen(true)} />
+          <MobilePlan target={planTarget} />
         ) : (
           <div className="pb-24">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
@@ -337,7 +312,7 @@ export default function MobileShell() {
 
         <NavTab tab={NAV[0]} active={tab === NAV[0].id} onClick={() => setTab(NAV[0].id)} />
         <NavTab tab={NAV[1]} active={tab === NAV[1].id} onClick={() => setTab(NAV[1].id)} />
-        {/* Plan — the strategic vertical, badged when bets want a look. */}
+        {/* Plan — the strategic vertical, badged when initiatives want a look. */}
         <NavTab tab={NAV[3]} active={tab === NAV[3].id} onClick={() => setTab(NAV[3].id)} badge={planDemand} />
         <NavTab
           tab={NAV[2]}
@@ -359,7 +334,6 @@ export default function MobileShell() {
       </nav>
 
       {/* The Refine run — a full-screen card deck over the shell */}
-      {refineOpen && <RefineRun onClose={() => setRefineOpen(false)} />}
 
       {/* Sheets */}
       {quickOpen && (

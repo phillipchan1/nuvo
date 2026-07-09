@@ -20,7 +20,6 @@ import Marquee from "./Marquee";
 import { useAgentContext } from "../hooks/useAgentContext";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
-import RefineRun from "./refine/RefineRun";
 import CapacityRun from "./capacity/CapacityRun";
 import QuickCreate from "./floors/QuickCreate";
 import NewProject from "./floors/NewProject";
@@ -340,7 +339,6 @@ function AppShellInner() {
           onNewBet={() => openFloorModal("new-initiative")}
         />
       )}
-      {flow === "refine" && <RefineRun onClose={closeFlow} />}
       {flow === "capacity" && <CapacityRun onClose={closeFlow} />}
 
       {/* The fast composer — summoned by P / I or any "+ new" button, mounted
@@ -390,11 +388,6 @@ function AppShellInner() {
           kind={nav.overlay === "project-record" ? "project" : "initiative"}
           id={nav.overlayId}
           onClose={closeOverlay}
-          onExpand={() =>
-            nav.overlay === "project-record"
-              ? openProjectDetail(nav.overlayId!)
-              : openInitiativeDetail(nav.overlayId!)
-          }
           onOpenProject={(pid) => openRecord("project", pid)}
           onOpenInitiative={(iid) => openRecord("initiative", iid)}
         />

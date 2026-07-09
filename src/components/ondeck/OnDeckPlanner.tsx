@@ -19,9 +19,11 @@ import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useMaxPerWeek } from "../../hooks/usePlannerPrefs";
 import { domainById, isOpenStatus, type Project } from "../../lib/vertical";
 import { readOnDeck, type OnDeckLane, type ReadyTier, type WeekColumn } from "../../lib/onDeck";
+import { sprintNumber } from "../../lib/sprint";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
-import NewProject from "../floors/NewProject";
+import ShippedStrip from "../floors/ShippedStrip";
+import InlineAdd from "./InlineAdd";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -97,13 +99,16 @@ function weekSpan(p: Project, ws: Date): { startDate: string; targetDate: string
 
 type Preview = { id: string; start: number; end: number } | null;
 
-export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
-  const { data, updateProject } = useVertical();
+export default function OnDeckPlanner() {
+  const { data, updateProject, addProject } = useVertical();
   const { byWeek, weeklyAvgMins } = useCapacity();
   const { openRecord, openFloorModal } = useAppNavigation();
   const [maxPerWeek] = useMaxPerWeek();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, PLANNER_HORIZON, true), [data, byWeek, weeklyAvgMins, now]);
+  // The domain a lane-composed project lands in (reassignable in the record); the
+  // first domain, mirroring the full composer's default.
+  const defaultDomain = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort)[0] ?? null, [data.domains]);
 
   const H = board.horizonWeeks;
   // No project column — the bar carries the title. One uniform week grid.
@@ -116,8 +121,6 @@ export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
   // yet it still needs a week — it belongs here, not lost between the two.
   const placedIds = new Set(placed.map((l) => l.project.id));
   const inbox = data.projects.filter((p) => isOpenStatus(p.status) && !placedIds.has(p.id));
-  const needShaping = placed.filter((l) => l.gaps.length > 0).length;
-  const shapeable = placed.some((l) => l.gaps.length > 0);
   // Readiness distribution across the deck — the header rollup. Parked is excluded
   // (it's settled by choice, not a grooming deficit).
   const readyN = placed.filter((l) => l.readyTier === "ready").length;
@@ -143,13 +146,18 @@ export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
   };
   // Reopen a finished project — the check toggles it back into flight.
   const reopenProject = (id: string) => updateProject(id, { status: "in_progress" });
-  // Click an empty week cell → create a project placed in that week (calendar-style).
-  const [createWeek, setCreateWeek] = useState<number | null>(null);
-  const createInWeek = (i: number) => (id: string) => {
+  // Click an empty week → compose a project inline, right there in that week (no
+  // modal). The full composer (domain, tasks, links) stays a click away in the inbox.
+  const [composeWeek, setComposeWeek] = useState<number | null>(null);
+  const createInWeek = async (i: number, name: string) => {
     const ws = board.weeks[i]?.weekStart;
-    if (ws) updateProject(id, { startDate: toISO(ws), targetDate: toISO(addDays(ws, 4)), status: "in_progress" });
-    setCreateWeek(null);
-    openRecord("project", id);
+    if (!ws || !defaultDomain) { openFloorModal("new-project"); return; }
+    await addProject(defaultDomain.id, null, {
+      name,
+      startDate: toISO(ws),
+      targetDate: toISO(addDays(ws, 4)),
+      status: "in_progress",
+    });
   };
 
   // Data-derived bar geometry. A project with no explicit start defaults to a
@@ -187,6 +195,33 @@ export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
     preview && preview.id === g.l.project.id
       ? { start: clampIdx(preview.start, H), end: clampIdx(preview.end, H), beyond: false }
       : { start: g.start, end: g.end, beyond: g.beyond };
+
+  // Where the inline composer slots in for the week being composed: the first row
+  // that has no card in that week, so the draft lands *directly beneath* that
+  // column's last card (as the next slot) — not pinned to the column's bottom.
+  // -1 = not composing; rows.length = every row is occupied there, so append one.
+  const cw = composeWeek;
+  const composeRowIdx =
+    cw == null
+      ? -1
+      : (() => {
+          const idx = rows.findIndex((row) => !row.some((g) => g.start <= cw && g.end >= cw));
+          return idx === -1 ? rows.length : idx;
+        })();
+  // The draft card itself — a real card-sized cell in the clicked week's column,
+  // top-aligned so it doesn't stretch to a tall sibling. Slotted into the grid at
+  // composeRowIdx below.
+  const composerCell =
+    cw == null ? null : (
+      <div style={{ gridColumn: `${cw + 1} / ${cw + 2}`, gridRow: 1 }} className="pointer-events-auto mx-1 self-start">
+        <InlineAdd
+          placeholder="Name a project…"
+          accent={defaultDomain?.color ?? "var(--accent)"}
+          onCreate={(name) => createInWeek(cw, name)}
+          onClose={() => setComposeWeek(null)}
+        />
+      </div>
+    );
 
   const projectById = useMemo(() => new Map(data.projects.map((p) => [p.id, p])), [data.projects]);
   const live = useRef({ projectById, board, updateProject, openRecord, data });
@@ -285,9 +320,10 @@ export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
-  // "You are here" — a faint warm band down the current week (idx 0), the focus
-  // column, so the eye lands on now first. Drop-highlight still wins while dragging.
-  const THISWEEK_BAND = "color-mix(in srgb, var(--accent) 5%, transparent)";
+  // "You are here" — a warm band down the current week (idx 0), the focus column
+  // and the one that matters most, so the eye lands on now first. Drop-highlight
+  // still wins while dragging.
+  const THISWEEK_BAND = "color-mix(in srgb, var(--accent) 8%, transparent)";
   const cellBg = (i: number) => (dropWeek === i ? "var(--accent-soft)" : i === 0 ? THISWEEK_BAND : undefined);
 
   return (
@@ -303,36 +339,49 @@ export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
       >
         <div className="flex items-center justify-between gap-2 px-1.5 pb-2">
           <span className="section-label !p-0">Needs a week · {inbox.length}</span>
-          <button
-            onClick={() => openFloorModal("new-project")}
-            className="tap fast rounded-md px-1.5 py-0.5 text-caption font-medium text-muted hover:text-ink"
-            title="New project"
-          >
-            + project
-          </button>
         </div>
         {inbox.length === 0 ? (
-          <p className="px-1.5 py-6 text-center text-caption text-muted">Nothing waiting — every project has a week. <button onClick={() => openFloorModal("new-project")} className="fast underline hover:text-ink">Add one</button> or drag a project here to shelve it.</p>
+          // empty state — one dashed card is the whole affordance (text + "+ project"
+          // read as a single clickable region, not text above a separate small button).
+          <button
+            onClick={() => openFloorModal("new-project")}
+            className="tap fast flex w-full flex-col items-center gap-3 rounded-lg border border-dashed border-line px-3 py-6 text-center hover:border-line-strong hover:bg-surface"
+            title="New project"
+          >
+            <p className="text-caption text-muted">Nothing waiting — every project has a week. Drag a project here to shelve it, or tap to add one.</p>
+            <span className="text-caption font-medium text-muted">+ project</span>
+          </button>
         ) : (
-          <div className="flex flex-col gap-2">
-            {inbox.map((p) => {
-              const dot = domainById(data, p.domainId)?.color ?? "var(--accent)";
-              const sub = !p.targetDate ? "no finish line" : `due ${format(new Date(p.targetDate + "T00:00:00"), "MMM d")}`;
-              return (
-                <div
-                  key={p.id}
-                  data-project-drag={p.id}
-                  className="fast cursor-grab select-none rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-line-strong active:cursor-grabbing"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-                    <span className="truncate text-caption text-ink">{p.name}</span>
+          <>
+            <div className="flex flex-col gap-2">
+              {inbox.map((p) => {
+                const dot = domainById(data, p.domainId)?.color ?? "var(--accent)";
+                const sub = !p.targetDate ? "no finish line" : `due ${format(new Date(p.targetDate + "T00:00:00"), "MMM d")}`;
+                return (
+                  <div
+                    key={p.id}
+                    data-project-drag={p.id}
+                    className="fast cursor-grab select-none rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-line-strong active:cursor-grabbing"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
+                      <span className="truncate text-caption text-ink">{p.name}</span>
+                    </div>
+                    <div className="mono mt-0.5 pl-4 text-micro text-muted">{sub}</div>
                   </div>
-                  <div className="mono mt-0.5 pl-4 text-micro text-muted">{sub}</div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+            {/* add-to-inbox — a full-width button pinned at the base (consistent with
+                the per-week buttons), with a generous tap target for quick capture. */}
+            <button
+              onClick={() => openFloorModal("new-project")}
+              className="tap fast mt-2 w-full rounded-lg border border-dashed border-line px-3 py-2.5 text-center text-caption font-medium text-muted hover:border-line-strong hover:text-ink"
+              title="New project"
+            >
+              + project
+            </button>
+          </>
         )}
       </aside>
 
@@ -384,50 +433,74 @@ export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: w.idx === 0 ? "var(--accent)" : "var(--ink)" }}>
                         {w.idx === 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />}
-                        {w.idx === 0 ? "This week" : w.idx === 1 ? "Next week" : `Week of ${fmtWk(w.weekStart)}`}
+                        Sprint {sprintNumber(w.weekStart)}
                       </span>
-                      {n > 0 && (
-                        <span className="mono text-micro" title={`${n} committed · max ${maxPerWeek}`} style={{ color: over ? CAUTION : "var(--muted)" }}>
-                          {n}{over ? " ⚠" : ""}
-                        </span>
-                      )}
+                      <span className="mono text-micro tabular-nums" title={`${n} committed · max ${maxPerWeek} — your per-week focus cap`} style={{ color: over ? CAUTION : n > 0 ? "var(--muted)" : "var(--line-strong)" }}>
+                        {n}/{maxPerWeek}{over ? " ⚠" : ""}
+                      </span>
                     </div>
-                    {w.idx < 2 && <div className="mono mt-0.5 text-micro text-muted">{fmtWk(w.weekStart)}</div>}
+                    <div className="mono mt-0.5 text-micro text-muted">
+                      {w.idx === 0 ? `This week · ${fmtWk(w.weekStart)}` : w.idx === 1 ? `Next week · ${fmtWk(w.weekStart)}` : `Week of ${fmtWk(w.weekStart)}`}
+                    </div>
                   </div>
                 );
               })}
             </div>
             <div className="h-px w-full" style={{ background: "var(--line)" }} />
 
-            {/* placed project rows — lane-packed so same-week cards stack in a column */}
-            {rows.length === 0 ? (
-              <div className="px-4 py-14 text-center text-caption text-muted">
-                No projects placed yet — drag one in from the inbox to give it a week. →
-              </div>
-            ) : (
-              <div className="pt-2.5">
-              {rows.map((row, ri) => (
-                <div key={ri} className="relative">
-                  {/* week cells — drop targets + faint column rules + click-to-create
-                      zones (empty space → new project placed in that week). */}
-                  <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
-                    {board.weeks.map((w) => (
-                      <div
-                        key={w.idx}
-                        data-week={w.idx}
-                        onClick={() => setCreateWeek(w.idx)}
-                        className="group/cell relative cursor-pointer border-l border-line transition-colors first:border-l-0 hover:bg-accent-soft/25"
-                        style={{ background: cellBg(w.idx) }}
-                      >
-                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-caption font-medium text-accent opacity-0 transition-opacity group-hover/cell:opacity-45">+ project</span>
+            {/* the timeline body — one relative box. Behind: full-height,
+                clickable week columns, each with a "+ project" pinned at its
+                base, so the whole empty area of a column starts a project in
+                that week (not just a hover sliver). In front: the lane-packed
+                cards, whose wrapper ignores the pointer so a click on empty space
+                falls through to the week column beneath. */}
+            <div className="relative" style={{ minHeight: 320 }}>
+              {/* week columns — drop targets + click-to-create + faint rules */}
+              <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
+                {board.weeks.map((w) => (
+                  <div
+                    key={w.idx}
+                    data-week={w.idx}
+                    onClick={() => setComposeWeek(w.idx)}
+                    title={composeWeek === w.idx ? undefined : w.idx === 0 ? "New project this week" : w.idx === 1 ? "New project next week" : `New project — week of ${fmtWk(w.weekStart)}`}
+                    className="group/col relative cursor-pointer border-l border-line transition-colors first:border-l-0 hover:bg-accent-soft/20"
+                    style={{ background: cellBg(w.idx) }}
+                  >
+                    {/* the base affordance — a pinned "+ project" hint. Clicking it
+                        (or anywhere in the column) drops the inline composer into the
+                        card flow above, right under this week's last card. Hidden while
+                        this week is the one being composed. */}
+                    {composeWeek !== w.idx && (
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 px-1.5 pb-1.5">
+                        <div className="fast w-full rounded-lg border border-dashed border-line px-2 py-1.5 text-center text-micro font-medium text-muted transition-colors group-hover/col:border-line-strong group-hover/col:text-ink">
+                          + project
+                        </div>
                       </div>
-                    ))}
+                    )}
                   </div>
+                ))}
+              </div>
 
-                  {/* the cards in this row — each carries its full title (wraps) and is
-                      itself the drag/resize/click target. In flow, so they set the row
-                      height; items-stretch makes every card in the row equal height. */}
-                  <div className="pointer-events-none relative grid items-stretch px-1.5 py-2.5" style={{ gridTemplateColumns: cols }}>
+              {/* cards — lane-packed rows float on top. items-stretch equalizes a
+                  row's card heights; pb clears the pinned + project button. The
+                  inline composer slots into the grid right under the clicked week's
+                  last card (composeRowIdx). */}
+              {rows.length === 0 ? (
+                cw != null ? (
+                  <div className="relative pb-16 pt-2.5">
+                    <div className="grid items-stretch px-1.5 py-1" style={{ gridTemplateColumns: cols }}>
+                      {composerCell}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="pointer-events-none relative px-4 pt-14 text-center text-caption text-muted">
+                    No projects placed yet — drag one in from the inbox, or tap a week to start one here.
+                  </div>
+                )
+              ) : (
+                <div className="pointer-events-none relative pb-16 pt-2.5">
+                  {rows.map((row, ri) => (
+                    <div key={ri} className="grid items-stretch px-1.5 py-1" style={{ gridTemplateColumns: cols }}>
                     {row.map((g) => {
                       const { l } = g;
                       const { start, end, beyond } = effOf(g);
@@ -515,25 +588,23 @@ export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
                         </div>
                       );
                     })}
-                  </div>
+                    {composeRowIdx === ri && composerCell}
+                    </div>
+                  ))}
+                  {composeRowIdx === rows.length && (
+                    <div className="grid items-stretch px-1.5 py-1" style={{ gridTemplateColumns: cols }}>
+                      {composerCell}
+                    </div>
+                  )}
                 </div>
-              ))}
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <span className="text-micro text-muted">Drag onto a week to time-box · drag an edge to resize · click to edit</span>
-          {shapeable && onGroom && (
-            <button
-              onClick={onGroom}
-              className="tap fast rounded-xl px-5 py-2.5 text-body font-medium text-white active:scale-[.98]"
-              style={{ background: "var(--accent)" }}
-            >
-              Groom the {needShaping} that need it →
-            </button>
-          )}
+          <ShippedStrip rung="project" />
         </div>
       </div>
 
@@ -549,11 +620,6 @@ export default function OnDeckPlanner({ onGroom }: { onGroom?: () => void }) {
           </div>
           <div className="mono mt-0.5 pl-4 text-micro text-muted">{drag.sub}</div>
         </div>
-      )}
-
-      {/* click-to-create — the composer, then place the new project in that week */}
-      {createWeek != null && (
-        <NewProject onClose={() => setCreateWeek(null)} onCreated={createInWeek(createWeek)} />
       )}
     </div>
   );

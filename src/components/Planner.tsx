@@ -32,7 +32,7 @@ import NuvoSpotlight, { type Command, type SearchHit } from "./NuvoSpotlight";
 import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
 import SettingsModal from "./SettingsModal";
 import ReconnectBanner from "./ReconnectBanner";
-import { EveningShutdown, MorningPlan } from "./Rituals";
+import { EveningShutdown } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
 
 export default function Planner({
@@ -61,8 +61,6 @@ export default function Planner({
 
   const { tab, calView: view, overlay, overlayId, agentOpen, settingsSection, rung } = nav;
   const onSchedule = rung === "day";
-
-  const morningAutoRef = useRef(false);
 
   const [range, setRangeLocal] = useState<{ start: string; end: string }>(() => {
     const now = new Date();
@@ -298,26 +296,6 @@ export default function Planner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoaded, today]);
 
-  // Morning plan auto-prompt on first open of the day — replaces current entry, no stack push.
-  useEffect(() => {
-    if (!settingsLoaded) return;
-    const key = `nuvo-morning-${today}`;
-    if (!localStorage.getItem(key)) {
-      localStorage.setItem(key, "1");
-      morningAutoRef.current = true;
-      navigate({ overlay: "morning" }, "replace");
-    }
-  }, [settingsLoaded, today, navigate]);
-
-  const closeMorning = () => {
-    if (morningAutoRef.current) {
-      morningAutoRef.current = false;
-      navigate({ overlay: "none" }, "replace");
-    } else {
-      closeOverlay();
-    }
-  };
-
   // ⌘K / Ctrl+K → command bar  |  ⌘J → agent  |  ⌘, → settings
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -353,7 +331,6 @@ export default function Planner({
   const slotPanel = overlay === "slot" && overlayId ? { id: overlayId } : null;
   const showCmd = overlay === "cmd";
   const showSettings = overlay === "settings";
-  const showMorning = overlay === "morning";
   const showEvening = overlay === "evening";
 
   const panelRect = panelAnchor ?? fallbackPanelAnchor();
@@ -374,7 +351,7 @@ export default function Planner({
     : null;
   const openSlot = slotPanel ? (slots.find((s) => s.id === slotPanel.id) ?? null) : null;
 
-  const anyModalOpen = showCmd || showSettings || showMorning || showEvening || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
+  const anyModalOpen = showCmd || showSettings || showEvening || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
 
   // The searchable vertical for ⌘K — every task / project / initiative / domain
   // as a SearchHit whose `run` navigates to it. Built from the shared builder
@@ -409,8 +386,6 @@ export default function Planner({
     { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
     { id: "sunday", title: "Sunday — compose the week", run: () => openFlow("sunday") },
     { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
-    { id: "refine", title: "Groom — shape your projects toward done", run: () => openFlow("refine") },
-    { id: "plan", title: "Plan my day (morning ritual)", run: () => { morningAutoRef.current = false; openOverlay("morning"); } },
     { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
     { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
     { id: "view-week", title: "Calendar: week view", run: () => setCalView("timeGridWeek") },
@@ -631,16 +606,6 @@ export default function Planner({
           accounts={accounts}
           section={settingsSection}
           onClose={closeOverlay}
-        />
-      )}
-      {showMorning && (
-        <MorningPlan
-          inbox={inbox}
-          weekPool={weekTasks.filter((t) => t.status !== "done" && !t.do_date)}
-          prepared={allTasksArray.filter((t) => t.status !== "done" && t.prework_at && t.prework)}
-          todayCount={todayTasks.filter((t) => t.status !== "done").length}
-          mutations={mutations}
-          onClose={closeMorning}
         />
       )}
       {showEvening && (

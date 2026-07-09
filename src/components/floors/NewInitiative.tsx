@@ -1,6 +1,6 @@
-// New initiative — a composer, not a form. Type the bet name, pick the domain,
+// New initiative — a composer, not a form. Type the initiative name, pick the domain,
 // set a finish line, create. Shaping it (key results, projects, first tasks) is
-// the ◇ Tending ritual's job — create the bet bare here, ripen it there.
+// the ◇ Tending ritual's job — create the initiative bare here, ripen it there.
 // ⏎ moves focus through name → outcome → creates.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -87,8 +87,8 @@ export default function NewInitiative({
           <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full border border-line text-lead text-muted">◇</div>
           <h2 className="text-lead font-semibold tracking-tight">Start with a domain</h2>
           <p className="mx-auto mt-1.5 max-w-[320px] text-body leading-relaxed text-muted">
-            Initiatives are bets you place inside a life domain — Health, Craft, Family.
-            Create your first domain, then the bets have somewhere to live.
+            Initiatives are the moves you place inside a life domain — Health, Craft, Family.
+            Create your first domain, then the initiatives have somewhere to live.
           </p>
           <div className="mt-5 flex items-center justify-center gap-2">
             <button onClick={onClose} className="fast rounded-md border border-line px-3 py-1.5 text-caption font-medium text-ink hover:border-line-strong hover:bg-surface-2">Not now</button>
@@ -114,7 +114,7 @@ export default function NewInitiative({
             if (e.key === "Enter") { e.preventDefault(); outcomeRef.current?.focus(); }
             if (e.key === "Escape") onClose();
           }}
-          placeholder="Name this bet…"
+          placeholder="Name this initiative…"
           autoFocus
           className="w-full bg-transparent text-display font-semibold tracking-tight text-ink outline-none placeholder:font-normal placeholder:text-muted/35"
         />

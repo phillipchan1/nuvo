@@ -192,10 +192,10 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     describe: "The Sunday ritual — compose the week (name priorities, block them in). Point here when the user wants to plan/compose their week.",
   },
   {
-    key: "refine",
-    label: "Refine",
-    nav: { kind: "flow", flow: "refine" },
-    describe: "The Groom run — the grooming card-game that sharpens projects toward done. Point here when the user wants to groom, tidy, or refine their projects/backlog.",
+    key: "groom-projects",
+    label: "Groom",
+    nav: { kind: "rung", rung: "project" },
+    describe: "The Build rung, where projects and bets are groomed toward done (the Groom deck is a tab there). Point here when the user wants to groom, shape, or refine their projects/backlog.",
   },
   {
     key: "summit",

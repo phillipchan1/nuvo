@@ -4,7 +4,7 @@
 //
 // Day-level faithfulness already lives in NowFloor's domain balance, so this
 // stays focused on what the phone otherwise can't see — is the week composed,
-// and are the bets ready. Build-floor work isn't fully tendable on a phone, so
+// and are the initiatives ready. Build-floor work isn't fully tendable on a phone, so
 // its demand routes to the Plan tab (browse/light edits) or Nuvo (the planner).
 
 import { FLOOR_LABEL, readSpine, topTurn } from "../../lib/readiness";

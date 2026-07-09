@@ -42,7 +42,7 @@ export default function QuickCreate({
   const [initiativeId, setInitiativeId] = useState<string | null>(initialInitiativeId ?? null);
   const [name, setName] = useState("");
   // a project's target is optional; an initiative wants a finish line — default
-  // it to quarter end so a fast bet still reads as a span, not a wish.
+  // it to quarter end so a fast initiative still reads as a span, not a wish.
   const [target, setTarget] = useState<string | null>(
     kind === "initiative" ? format(endOfQuarter(new Date()), "yyyy-MM-dd") : null,
   );
@@ -240,7 +240,7 @@ export default function QuickCreate({
         accent={accent}
         icon={domain?.icon ?? "◆"}
         eyebrow={kind === "project" ? "New project" : "New initiative"}
-        title={kind === "project" ? "Name it, then rattle off the tasks" : "Name the bet, then its first tasks"}
+        title={kind === "project" ? "Name it, then rattle off the tasks" : "Name the initiative, then its first tasks"}
         onClose={onClose}
       />
 
@@ -274,7 +274,7 @@ export default function QuickCreate({
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={onNameKey}
-          placeholder={kind === "project" ? "Name the project…" : "Name the bet…"}
+          placeholder={kind === "project" ? "Name the project…" : "Name the initiative…"}
           autoFocus
           className="mt-4 w-full rounded-md border border-line bg-surface px-3 py-2.5 text-[17px] font-semibold outline-none transition placeholder:font-normal placeholder:text-muted/55"
           style={{ boxShadow: "inset 0 0 0 1px transparent" }}

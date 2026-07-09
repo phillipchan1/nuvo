@@ -64,9 +64,9 @@ export interface ProposedPriority {
 export interface PriorityProposals {
   /** Groomed (tended + sound) projects — one tap brings them in with real durations. */
   groomed: ProposedPriority[];
-  /** Slipping projects that AREN'T groomed yet — count only. We won't bring in
-   *  fiction, but we name them so the human knows to refine them first. */
-  ungroomed: number;
+  /** Slipping projects that AREN'T groomed yet. Bring-in-able as a NOT-READY Push —
+   *  the Sunday card's gate then lets you groom it on the spot or push it out. */
+  ungroomed: ProposedPriority[];
 }
 
 function pressReason(p: ProjectPace): string {
@@ -86,12 +86,12 @@ export function proposedPriorities(
   limit = 4,
 ): PriorityProposals {
   const groomed: ProposedPriority[] = [];
+  const ungroomed: ProposedPriority[] = [];
   const seen = new Set<string>();
-  let ungroomed = 0;
   const add = (project: Project, reason: string): boolean => {
     if (seen.has(project.id) || boundProjectIds.has(project.id)) return false;
     seen.add(project.id);
-    if (!isTended(d, "project", project.id)) { ungroomed++; return false; } // refine first — no fiction
+    if (!isTended(d, "project", project.id)) { ungroomed.push({ project, reason, win: project.outcome }); return false; }
     groomed.push({ project, reason, win: project.outcome });
     return true;
   };
@@ -111,5 +111,5 @@ export function proposedPriorities(
     if (isTended(d, "project", project.id)) { seen.add(project.id); groomed.push({ project, reason: "starts this week", win: project.outcome }); }
   }
 
-  return { groomed: groomed.slice(0, limit), ungroomed };
+  return { groomed: groomed.slice(0, limit), ungroomed: ungroomed.slice(0, limit) };
 }

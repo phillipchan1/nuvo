@@ -7,6 +7,6 @@
 
 import OnDeckPlanner from "../ondeck/OnDeckPlanner";
 
-export default function OnDeckFloor({ onGroom }: { onGroom?: () => void }) {
-  return <OnDeckPlanner onGroom={onGroom} />;
+export default function OnDeckFloor() {
+  return <OnDeckPlanner />;
 }

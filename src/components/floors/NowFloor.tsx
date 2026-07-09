@@ -17,6 +17,7 @@ import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useAgent } from "../../hooks/useAgent";
 import { useCoachNudges, type CoachNudges } from "../../hooks/useCoachNudges";
 import { todayISO, tomorrowISO } from "../../lib/dates";
+import { sprintLabel } from "../../lib/sprint";
 import { domainById, initiativeById, initiativeProgress, taskDomainColor, type VerticalData } from "../../lib/vertical";
 import { fmtMins, isEventHidden, readDay, toBusyBlocks, type BusyBlock, type Gap } from "../../lib/now";
 import { composeCall, detectMoves, readVitals, type CoachMove, type DayCall, type SlippedItem } from "../../lib/coach";
@@ -248,7 +249,6 @@ export default function NowFloor({
               onFix={onFix}
               onDismissPrimary={() => setDismissedPrimary(true)}
               onOrder={proposeOrder}
-              onPlan={() => openOverlay("morning")}
               onShutdown={() => openOverlay("evening")}
               onOpenDay={onOpenDay}
               nudges={nudges}
@@ -324,7 +324,7 @@ export default function NowFloor({
 function CoachToday({
   now, call, primary, recoverTask, fixes, slipped, busy, blocks, missedIds, windowGap,
   windowStart, windowEnd, wide,
-  onHold, onRoll, onDropAt, onToggleBlock, onFix, onDismissPrimary, onOrder, onPlan, onShutdown, onOpenDay, nudges, onBlockMenu,
+  onHold, onRoll, onDropAt, onToggleBlock, onFix, onDismissPrimary, onOrder, onShutdown, onOpenDay, nudges, onBlockMenu,
 }: {
   now: Date;
   call: DayCall;
@@ -346,7 +346,6 @@ function CoachToday({
   onFix: (m: CoachMove) => void;
   onDismissPrimary: () => void;
   onOrder: () => void;
-  onPlan: () => void;
   onShutdown: () => void;
   onOpenDay: () => void;
   nudges: CoachNudges;
@@ -367,7 +366,6 @@ function CoachToday({
           <span className="text-muted">{call.rightNow}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <button onClick={onPlan} className={`fast rounded-full border px-2.5 py-1 text-label ${evening ? "border-line text-muted hover:border-accent hover:text-accent" : "border-accent/40 bg-accent-soft font-medium text-accent hover:bg-accent/15"}`}>✷ Plan</button>
           <button onClick={onShutdown} className={`fast rounded-full border px-2.5 py-1 text-label ${evening ? "border-accent/40 bg-accent-soft font-medium text-accent hover:bg-accent/15" : "border-line text-muted hover:border-accent hover:text-accent"}`}>☾ Shut down</button>
         </div>
       </div>
@@ -376,7 +374,7 @@ function CoachToday({
       <div data-marquee="today-call" className="border-b border-line pb-5">
         <div className="mb-2 flex items-center gap-2.5">
           <span className="mono rounded-full px-2 py-0.5 text-micro" style={{ color: toneColor, background: "color-mix(in srgb, " + toneColor + " 10%, transparent)", border: "0.5px solid color-mix(in srgb, " + toneColor + " 30%, transparent)" }}>{call.chip}</span>
-          <span className="mono text-micro text-muted">{weekday}</span>
+          <span className="mono text-micro text-muted">{weekday} · {sprintLabel(now)}</span>
         </div>
         <h1 className="text-display masthead max-w-[680px] leading-[1.18]">{call.headline}</h1>
       </div>

@@ -63,15 +63,15 @@ export default function CommitmentMeter({ onRefine, onAllocate }: { onRefine?: (
   } else if (!hasDemand) {
     synthesis = `${latent} project${latent === 1 ? " is" : "s are"} in flight but not yet counted — size them and set a finish line to see your commitment.`;
   } else if (capMins <= 0) {
-    synthesis = `Your bets need ≈${fmtH(demandMins)} a week. Set your working hours to gauge that against real capacity.`;
+    synthesis = `Your initiatives need ≈${fmtH(demandMins)} a week. Set your working hours to gauge that against real capacity.`;
   } else {
-    const head = `Your bets need ≈${fmtH(demandMins)} a week against ≈${fmtH(capMins)} of open time`;
+    const head = `Your initiatives need ≈${fmtH(demandMins)} a week against ≈${fmtH(capMins)} of open time`;
     synthesis =
       band === "over"
-        ? `${head} — you're ${pct}% committed. Move a finish line, cut scope, or drop a bet.`
+        ? `${head} — you're ${pct}% committed. Move a finish line, cut scope, or drop an initiative.`
         : band === "committed"
           ? `${head}. ${pct}% committed — full, but it fits.`
-          : `${head}. ${pct}% committed — room to pull another bet.`;
+          : `${head}. ${pct}% committed — room to pull another initiative.`;
   }
 
   const BAND_LABEL: Record<Band, string> = { room: "Room to commit", committed: "Committed", over: "Overcommitted" };
@@ -139,7 +139,7 @@ export default function CommitmentMeter({ onRefine, onAllocate }: { onRefine?: (
       )}
 
       <div className="mt-3 flex flex-col gap-1.5 text-caption">
-        {/* concurrency — folded in from the old WIP "Capacity" gauge: how many bets
+        {/* concurrency — folded in from the old WIP "Capacity" gauge: how many initiatives
             are in flight at once, and whether any lack a path. Distinct from hours. */}
         {standing.inFlight > 0 && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

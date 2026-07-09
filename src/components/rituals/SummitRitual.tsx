@@ -1,5 +1,5 @@
 // Summit — the quarterly flow. Inputs: the quarter's ledger and the standing
-// vows. Output: a re-affirmed set of domains and a decided portfolio of bets,
+// vows. Output: a re-affirmed set of domains and a decided portfolio of initiatives,
 // rough-cut across the months. Four steps: the Quarter's Gain → the Vows →
 // the Portfolio → the Months.
 
@@ -95,7 +95,7 @@ export default function SummitRitual({
       inputs={{ label: "the season", value: `90 days · ${data.domains.length} domains` }}
       output={{
         label: "the quarter",
-        value: done ? `${active.length} bets sealed` : `${active.length} bets in play`,
+        value: done ? `${active.length} initiatives sealed` : `${active.length} initiatives in play`,
         reached: done,
       }}
       stages={stages}
@@ -108,7 +108,7 @@ export default function SummitRitual({
             <div className="max-w-[460px] text-center">
               <div className="text-display masthead">The quarter is shaped.</div>
               <div className="mt-2 text-body text-muted">
-                Vows re-affirmed, bets decided, months rough-cut. The Sunday flow takes it from here, week by week.
+                Vows re-affirmed, initiatives decided, months rough-cut. The Sunday flow takes it from here, week by week.
               </div>
               <div className="mt-6"><Btn kind="primary" onClick={onClose}>Back to the week</Btn></div>
             </div>
@@ -211,7 +211,7 @@ function QuarterGainStep() {
               })}
             </div>
           ) : (
-            <div className="text-caption text-muted italic">Nothing shipped yet this season — the bets below are how that changes.</div>
+            <div className="text-caption text-muted italic">Nothing shipped yet this season — the initiatives below are how that changes.</div>
           )}
 
           {gain.moved.length > 0 && (
@@ -268,16 +268,16 @@ function VowsStep() {
   );
 }
 
-// ── 3 · The Portfolio — every bet gets a verdict; new bets get a blueprint ──
+// ── 3 · The Portfolio — every initiative gets a verdict; new initiatives get a blueprint ──
 function PortfolioStep({ onNewBet }: { onNewBet: () => void }) {
   const { data, updateInitiative } = useVertical();
   const rows = data.initiatives.filter((i) => isOpenStatus(i.status));
 
   return (
     <div>
-      <StepTitle title="The Portfolio" sub="Every bet gets a verdict — ship it, keep it, pause it, or drop it. No zombies into the new quarter. Name the next bet here, then ripen it in Grooming." />
+      <StepTitle title="The Portfolio" sub="Every initiative gets a verdict — ship it, keep it, pause it, or drop it. No zombies into the new quarter. Name the next initiative here, then ripen it in Grooming." />
       <div className="mb-4">
-        <Btn kind="primary" onClick={onNewBet}>✦ name a new bet</Btn>
+        <Btn kind="primary" onClick={onNewBet}>✦ name a new initiative</Btn>
       </div>
       <div className="space-y-1.5">
         {rows.map((i) => {
@@ -308,7 +308,7 @@ function PortfolioStep({ onNewBet }: { onNewBet: () => void }) {
         })}
         {rows.length === 0 && (
           <div className="rounded-md border border-dashed border-line p-8 text-center text-caption text-muted">
-            No live bets. Blueprint the first one above.
+            No live initiatives. Blueprint the first one above.
           </div>
         )}
       </div>
@@ -336,7 +336,7 @@ function MonthsStep() {
 
   return (
     <div>
-      <StepTitle title="The Months" sub="Drag the bars: target dates staggered on purpose are plans; stacked on the same month they're wishes. Undated bets wait in the tray below — drag them onto the grid. Projects inherit the rhythm in their own floors." />
+      <StepTitle title="The Months" sub="Drag the bars: target dates staggered on purpose are plans; stacked on the same month they're wishes. Undated initiatives wait in the tray below — drag them onto the grid. Projects inherit the rhythm in their own floors." />
       <Timeline items={items} defaultZoom="quarter" persistKey="summit-months" />
       {data.initiatives.filter((i) => isProjectInFlight(i.status)).length === 0 && (
         <div className="mt-3 text-caption text-muted italic">Nothing in flight to place.</div>

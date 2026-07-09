@@ -4,7 +4,7 @@
 //
 //   · the pull + the compose run the moment it opens (no "compose" button)
 //   · every block still carries its reason — you keep the map, never lost
-//   · one gesture overrides anything — drop a block, add a candidate, flag a bet
+//   · one gesture overrides anything — drop a block, add a candidate, flag an initiative
 //   · the only required click is Commit
 //
 // Defaults are pre-decided, settings live in Settings (working hours tuck away),
@@ -34,6 +34,7 @@ import {
   type VerticalData,
 } from "../../lib/vertical";
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO, planningWeekStartISO, todayISO } from "../../lib/dates";
+import { sprintLabel } from "../../lib/sprint";
 import { CONTEXT_META, composeWeek, type DayContext, type Placement } from "../../lib/compose";
 import { isEventHidden } from "../../lib/now";
 import { aiBatchInbox, batchWeek, type BatchResult, type InboxGroup } from "../../lib/batch";
@@ -92,7 +93,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     [events, hiddenCals, hiddenEventKeys],
   );
 
-  // ── the two buckets, intelligence picks: projects (lead bets, next-up,
+  // ── the two buckets, intelligence picks: projects (lead initiatives, next-up,
   //    deadlines) + inbox (deadlines, faithfulness top-ups). One ranked set. ──
   const suggestions = useMemo(() => suggestPull(data), [data]);
   const [kept, setKept] = useState<Set<string>>(new Set());
@@ -425,7 +426,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
           {/* ── ACT 1 · set the week — open with the look-back, then the intent ── */}
           {/* hero: ceremony + the gain folded in as the supporting read, not a stray line */}
           <header className="mb-8">
-            <div className="section-label">Set the week · {planningAhead ? "the week ahead" : "this week"}</div>
+            <div className="section-label"><span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · Set the week · {planningAhead ? "the week ahead" : "this week"}</div>
             <h1 className="mt-1.5 text-display masthead leading-[1.05]">
               Week of {format(parseDateISO(weekStartISO), "MMMM d")}
             </h1>
@@ -440,7 +441,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
             </p>
           </header>
 
-          {/* the bets — the strategic backdrop; a quiet check above the week's intent */}
+          {/* the initiatives — the strategic backdrop; a quiet check above the week's intent */}
           <BetsStrip />
 
           {/* priorities — the heart: name what would make this week a win */}
@@ -642,7 +643,7 @@ function IntentBar({ priorityCount, leadCount, onNext }: { priorityCount: number
   );
 }
 
-// ── the bets — ≤3 leads, carried forward; verdicts on the stalled ────────────
+// ── the initiatives — ≤3 leads, carried forward; verdicts on the stalled ────────────
 function BetsStrip() {
   const { data, setFocusInitiatives, updateInitiative } = useVertical();
   const leads = data.focusInitiativeIds;
@@ -664,7 +665,7 @@ function BetsStrip() {
     <section>
       <div className="mb-2 flex items-baseline justify-between">
         <div className="section-label">
-          The bets <span className="mono normal-case tracking-normal text-muted">· ★ {leads.length}/3 leads</span>
+          The initiatives <span className="mono normal-case tracking-normal text-muted">· ★ {leads.length}/3 leads</span>
         </div>
         {rows.length > 0 && (
           <button onClick={() => setManage((m) => !m)} className="fast mono text-meta text-muted hover:text-ink">
@@ -676,7 +677,7 @@ function BetsStrip() {
       {!open ? (
         <div className="flex flex-wrap gap-1.5">
           {leadInits.length === 0 && (
-            <span className="text-caption text-muted italic">No lead bets — the week runs on faithfulness and deadlines. Tap adjust to pick up to three.</span>
+            <span className="text-caption text-muted italic">No lead initiatives — the week runs on faithfulness and deadlines. Tap adjust to pick up to three.</span>
           )}
           {leadInits.map((i) => {
             const domain = domainById(data, i.domainId);
@@ -708,7 +709,7 @@ function BetsStrip() {
           ))}
           {rows.length === 0 && (
             <p className="py-2 text-caption text-muted">
-              No active initiatives. Start a bet on the Initiative floor (⌘4).
+              No active initiatives. Start an initiative on the Initiative floor (⌘4).
             </p>
           )}
         </div>
@@ -782,7 +783,7 @@ function BetRow({
           <button
             onClick={onToggleLead}
             disabled={!lead && leadFull}
-            title={lead ? "Remove lead" : leadFull ? "Three leads already" : "Make this a lead bet"}
+            title={lead ? "Remove lead" : leadFull ? "Three leads already" : "Make this a lead initiative"}
             className="fast mono shrink-0 rounded-sm border px-2 py-1 text-meta disabled:opacity-30"
             style={{
               borderColor: lead ? "var(--signal)" : "var(--line)",
@@ -826,8 +827,9 @@ function InboxRun({
       ) : (
         <>
           <p className="text-caption text-muted">
-            {count} loose capture{count === 1 ? "" : "s"} with no time yet. Group what's like each
-            other and drop each run into the week's open slots.
+            {count} loose capture{count === 1 ? "" : "s"} with no time yet. Unlike a Push, these
+            don't move a project — group like with like into <span className="text-ink">runs</span> and
+            drop each into open time.
           </p>
           <button
             onClick={onTheme}
@@ -835,7 +837,7 @@ function InboxRun({
             className="tap fast mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
             style={{ background: "var(--accent-soft)" }}
           >
-            {theming ? "Theming the inbox…" : `✦ Theme & slot ${count} item${count === 1 ? "" : "s"}`}
+            {theming ? "Grouping into runs…" : `✦ Group ${count} into runs`}
           </button>
           {error && <p className="mt-1.5 text-meta text-signal">{error}</p>}
         </>
@@ -1527,10 +1529,11 @@ function DoneState({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex min-h-[50vh] items-center justify-center">
       <div className="max-w-[460px] text-center">
+        <div className="mono mb-2 text-micro uppercase tracking-wide" style={{ color: "var(--accent)" }}>{sprintLabel()}</div>
         <div className="text-display masthead">Your week is set.</div>
         {data.sprintGoal && <div className="mt-2 text-head text-muted">“{data.sprintGoal}”</div>}
         <div className="mono mt-3 text-label text-muted">
-          {hrs(totalMins)}h committed · {committed.length} tasks · {split.length} domain{split.length === 1 ? "" : "s"} · ★ {data.focusInitiativeIds.length} lead bet{data.focusInitiativeIds.length === 1 ? "" : "s"}
+          {hrs(totalMins)}h committed · {committed.length} tasks · {split.length} domain{split.length === 1 ? "" : "s"} · ★ {data.focusInitiativeIds.length} lead initiative{data.focusInitiativeIds.length === 1 ? "" : "s"}
         </div>
         {split.length > 0 && (
           <div className="mx-auto mt-4 flex h-2 max-w-[300px] overflow-hidden rounded-full bg-surface">

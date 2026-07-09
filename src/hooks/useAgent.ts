@@ -25,6 +25,13 @@ function uid() {
   return crypto.randomUUID();
 }
 
+// The server resends the full history every turn (there's no server-side
+// session) — cap how much of it we resend so a long-running conversation
+// doesn't keep growing the per-message token cost without bound. The system
+// prompt already carries a fresh data snapshot each turn, so older turns
+// mostly serve as conversational memory; this many recent turns is plenty.
+const MAX_HISTORY_MESSAGES = 24;
+
 function toApiMessage(m: AgentMessage): AgentRequestMessage {
   const text = m.content.trim();
   const images = (m.attachments ?? []).filter(isImageAttachment);
@@ -85,7 +92,7 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
       };
 
       try {
-        const history = [...messages, userMsg].map(toApiMessage);
+        const history = [...messages, userMsg].slice(-MAX_HISTORY_MESSAGES).map(toApiMessage);
 
         // The agent replies over SSE; `functions.invoke` can't consume a stream,
         // so call the function endpoint directly and read the body ourselves.

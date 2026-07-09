@@ -13,7 +13,6 @@ export type OverlayKind =
   | "cmd"
   | "settings"
   | "shortcuts"
-  | "morning"
   | "evening"
   | "task"
   | "event"
@@ -145,9 +144,10 @@ export function readNavState(raw: unknown): AppNavState | null {
     tab: s.tab === "inbox" ? "inbox" : "today",
     // Heal retired project views ("portfolio"/"detail" full page, "sprint" This
     // Week) → On Deck, the front door.
-    projectView: (["ondeck", "groom", "all"] as ProjectView[]).includes(s.projectView as ProjectView) ? (s.projectView as ProjectView) : "ondeck",
-    // Heal the retired "portfolio" front door → On Deck, the new one; keep detail.
-    initiativeView: (["ondeck", "groom", "all", "detail"] as DetailView[]).includes(s.initiativeView as DetailView)
+    projectView: (["ondeck", "groom", "all", "shipped"] as ProjectView[]).includes(s.projectView as ProjectView) ? (s.projectView as ProjectView) : "ondeck",
+    // Heal retired initiative views (old "portfolio" front door, and the now-gone
+    // "detail" full page — a bet opens in the Record modal instead) → On Deck.
+    initiativeView: (["ondeck", "groom", "all", "shipped"] as DetailView[]).includes(s.initiativeView as DetailView)
       ? (s.initiativeView as DetailView)
       : "ondeck",
     focus: { ...DEFAULT_NAV.focus, ...(s.focus ?? {}) },

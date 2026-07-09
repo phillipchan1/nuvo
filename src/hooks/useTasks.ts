@@ -385,10 +385,12 @@ function todayLocalISO(d: Date): string {
 
 /**
  * Passive inbox grooming. While the app is open, quietly ask the `enrichInbox`
- * edge path to guess a home / duration / energy for any capture that lacks a
- * fresh suggestion — one at a time, gently, so the inbox is already thought-about
- * by the time the user looks. Server-side `sig` caching means each capture is
- * groomed once until its text changes, so this stays cheap across re-renders.
+ * edge path to guess a home / duration / energy for every capture that lacks a
+ * fresh suggestion, so the inbox is already thought-about by the time the user
+ * looks. All pending captures go out in ONE batched request (the edge function
+ * fans them into at most two LLM completions) rather than one call per capture.
+ * Server-side `sig` caching means each capture is groomed once until its text
+ * changes, so this stays cheap across re-renders.
  */
 export function useGroomInbox(inbox: Task[], enabled = true) {
   const qc = useQueryClient();
@@ -403,14 +405,10 @@ export function useGroomInbox(inbox: Task[], enabled = true) {
     running.current = true;
     let cancelled = false;
     (async () => {
-      for (const t of pending) {
-        if (cancelled) break;
-        const { error } = await supabase.functions.invoke("agent", {
-          body: { enrichInbox: { taskId: t.id } },
-        });
-        // Reveal each guess as it lands rather than waiting for the whole pass.
-        if (!error && !cancelled) qc.invalidateQueries({ queryKey: ["tasks", "inbox"] });
-      }
+      const { error } = await supabase.functions.invoke("agent", {
+        body: { enrichInbox: { taskIds: pending.map((t) => t.id) } },
+      });
+      if (!error && !cancelled) qc.invalidateQueries({ queryKey: ["tasks", "inbox"] });
       running.current = false;
     })();
 

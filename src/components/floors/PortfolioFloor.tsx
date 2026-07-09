@@ -17,6 +17,7 @@ import { ripenessOfProject, verdictOf } from "../../lib/tending";
 import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABEL } from "./parts";
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
+import ShippedStrip from "./ShippedStrip";
 
 export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, updateProject, deleteProjects } = useVertical();
@@ -64,6 +65,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
     <div className="mx-auto flex min-h-full max-w-[1480px] flex-col">
       <FloorHeader
         eyebrow={`${data.projects.length} projects · ${data.projects.filter((p) => isProjectInFlight(p.status)).length} in flight`}
+        actions={<ShippedStrip rung="project" />}
       >
         <h1 className="text-display masthead">Table</h1>
         <p className="mt-1 text-body text-muted">Every project at a glance — filter, sort, and bulk-edit. Click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
@@ -88,10 +90,6 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
             selectable: true,
             onBulkDelete: deleteProjects,
             domains: data.domains,
-            // On Deck is the canonical timeline; Table is a pure browse/bulk
-            // filing cabinet (readiness lives in the persistent strip above).
-            // Board view retired — On Deck is the visual/kanban surface now.
-            views: ["table"],
           }}
         />
       </div>

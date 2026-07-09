@@ -1,5 +1,5 @@
 // WeekStory — the week as a paced recap that NARRATES its own emblem. The graphic
-// is symbolic (sun = dominant bet, rings = domains, satellites = priorities, dots
+// is symbolic (sun = dominant initiative, rings = domains, satellites = priorities, dots
 // = done-work); a static, silent version means nothing to the reader. So here the
 // emblem is *persistent* and *accretes a layer per scene*, and each scene names
 // the part it just revealed — the story IS the legend. You also watch it get

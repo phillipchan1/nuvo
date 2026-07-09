@@ -865,11 +865,13 @@ textarea:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* …except the capture/command palette input (⌘K + ⌥Space): it IS the focal
-   element of the panel, so a ring around it is redundant noise. Focus reads
-   from the live caret + the panel itself. (Higher specificity than the rule
-   above; both unlayered, so this wins.) */
-.nuvo-capture-input:focus {
+/* …except inputs that ARE the focal element of their own card/panel (the
+   capture palette ⌘K/⌥Space, and the On Deck inline composer): a ring around
+   the field is redundant noise there — focus reads from the live caret + the
+   lifted card itself. (Higher specificity than the rule above; both unlayered,
+   so this wins.) */
+.nuvo-capture-input:focus,
+.nuvo-inline-input:focus {
   box-shadow: none;
 }
 

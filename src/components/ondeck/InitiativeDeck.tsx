@@ -1,13 +1,15 @@
-// Initiative On Deck — the bets, grouped by the quarter they land in. The sibling
-// of OnDeckPlanner (projects → weeks); here a bet time-boxes onto a QUARTER. A
-// kanban, not a Gantt: each column is a quarter, each card an initiative, and you
-// drag a card between columns to move its finish line. An inbox rail on the left
-// holds bets with no quarter yet (mirrors the project planner's "needs a week").
+// Initiative On Deck — the initiatives, grouped by the quarter they land in. The
+// sibling of OnDeckPlanner (projects → weeks); here an initiative time-boxes onto a
+// QUARTER. A kanban, not a Gantt: each column is a quarter, each card an initiative,
+// and you drag a card between columns to move its finish line. An inbox rail on the
+// left holds initiatives with no quarter yet (mirrors the project planner's "needs a
+// week").
 //
 // Every card leads with its OKR health — attainment, KR count, coverage — because
-// that is what grooming a bet is *for*: making the outcome measurable and sound.
-// Unlinked bets (no domain) surface a one-tap auto-link to the "main" they belong
-// under (suggestDomainForInitiative), so the tree stays connected without a form.
+// that is what grooming an initiative is *for*: making the outcome measurable and
+// sound. Unlinked initiatives (no domain) surface a one-tap auto-link to the "main"
+// they belong under (suggestDomainForInitiative), so the tree stays connected
+// without a form.
 //
 // Pointer-events drag (HTML5 DnD is swallowed by Tauri) — the same idiom as
 // OnDeckPlanner / WeekBoard: one document-level capture pointerdown, a 5px move
@@ -16,6 +18,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
+import { useMaxPerQuarter } from "../../hooks/usePlannerPrefs";
+import { sprintsBetween } from "../../lib/sprint";
 import {
   domainById,
   isProjectComplete,
@@ -25,6 +29,7 @@ import {
 } from "../../lib/vertical";
 import {
   quarterEndISO,
+  quarterRangeLabel,
   readInitiativeDeck,
   suggestDomainForInitiative,
   type InitiativeLane,
@@ -32,7 +37,8 @@ import {
 } from "../../lib/initiativeDeck";
 import { DomainPicker, MomentumChip, PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
-import NewInitiative from "../floors/NewInitiative";
+import ShippedStrip from "../floors/ShippedStrip";
+import InlineAdd from "./InlineAdd";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const COL_PX = 248;
@@ -55,10 +61,14 @@ const STATE_LABEL: Record<InitiativeLaneState, string> = {
 };
 
 export default function InitiativeDeck() {
-  const { data, updateInitiative, updateProject } = useVertical();
-  const { openRecord, openFlow, openFloorModal } = useAppNavigation();
+  const { data, updateInitiative, updateProject, addInitiative } = useVertical();
+  const { openRecord, openFloorModal } = useAppNavigation();
+  const [maxPerQuarter] = useMaxPerQuarter();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readInitiativeDeck(data, now), [data, now]);
+  // The domain a lane-composed initiative lands in (reassignable in the record);
+  // the first domain, mirroring the full composer's default.
+  const defaultDomain = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort)[0] ?? null, [data.domains]);
 
   // group placed lanes by their quarter column
   const byColumn = useMemo(() => {
@@ -78,7 +88,6 @@ export default function InitiativeDeck() {
   }, [board.lanes]);
 
   const needShaping = board.lanes.filter((l) => l.gaps.length > 0 || l.state === "needs_okrs").length;
-  const shapeable = needShaping > 0;
 
   // ── domain re-home cascade (same rule as InitiativesFloor) ──────────────────
   const setDomain = (i: Initiative, domainId: string) => {
@@ -92,13 +101,17 @@ export default function InitiativeDeck() {
   const [drag, setDrag] = useState<{ name: string; dot: string; x: number; y: number } | null>(null);
   const [dropCol, setDropCol] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
-  // click an empty column → create an initiative placed in that quarter
-  const [createCol, setCreateCol] = useState<number | null>(null);
-  const createInCol = (i: number) => (id: string) => {
+  // click into a quarter → compose an initiative inline, right there (no modal). The
+  // full composer (domain, finish line) stays a click away in the inbox rail.
+  const [composeCol, setComposeCol] = useState<number | null>(null);
+  const createInCol = async (i: number, name: string) => {
     const col = board.quarters[i];
-    if (col) updateInitiative(id, { targetDate: quarterEndISO(col.start), status: "in_progress" });
-    setCreateCol(null);
-    openRecord("initiative", id);
+    if (!col || !defaultDomain) { openFloorModal("new-initiative"); return; }
+    await addInitiative(defaultDomain.id, {
+      name,
+      targetDate: quarterEndISO(col.start),
+      status: "in_progress",
+    });
   };
 
   const initiativeById = useMemo(() => new Map(data.initiatives.map((i) => [i.id, i])), [data.initiatives]);
@@ -171,14 +184,14 @@ export default function InitiativeDeck() {
         <div>
           <h1 className="text-display masthead leading-none">On deck</h1>
           <p className="mt-1.5 text-body text-muted">
-            The bets with finish lines, grouped by the quarter they land in — drag one onto a quarter to commit it. {board.inbox.length > 0 && <span className="text-ink">{board.inbox.length} still {board.inbox.length === 1 ? "needs" : "need"} a quarter.</span>}
+            The initiatives with finish lines, grouped by the quarter they land in — drag one onto a quarter to commit it. {board.inbox.length > 0 && <span className="text-ink">{board.inbox.length} still {board.inbox.length === 1 ? "needs" : "need"} a quarter.</span>}
           </p>
         </div>
         <span className="shrink-0 text-caption text-muted">{inFlight} in flight{needShaping > 0 && <> · {needShaping} need grooming</>}</span>
       </div>
 
       <div className="flex min-h-0 gap-5">
-        {/* ── inbox — bets with no quarter yet ─────────────────────────────── */}
+        {/* ── inbox — initiatives with no quarter yet ──────────────────────── */}
         <aside
           data-inbox-drop
           className="fast w-72 shrink-0 self-start rounded-xl border p-3"
@@ -189,90 +202,165 @@ export default function InitiativeDeck() {
         >
           <div className="flex items-center justify-between gap-2 px-1.5 pb-2">
             <span className="section-label !p-0">Needs a quarter · {board.inbox.length}</span>
-            <button
-              onClick={() => openFloorModal("new-initiative")}
-              className="tap fast rounded-md px-1.5 py-0.5 text-caption font-medium text-muted hover:text-ink"
-              title="New initiative"
-            >
-              + bet
-            </button>
           </div>
           {board.inbox.length === 0 ? (
-            <p className="px-1.5 py-6 text-center text-caption text-muted">
-              Every bet has a quarter. <button onClick={() => openFloorModal("new-initiative")} className="fast underline hover:text-ink">Add one</button> or drag a bet here to shelve it.
-            </p>
+            // empty state — one dashed card is the whole affordance (text + "+ initiative"
+            // read as a single clickable region, not text above a separate small button).
+            <button
+              onClick={() => openFloorModal("new-initiative")}
+              className="tap fast flex w-full flex-col items-center gap-3 rounded-lg border border-dashed border-line px-3 py-6 text-center hover:border-line-strong hover:bg-surface"
+              title="New initiative"
+            >
+              <p className="text-caption text-muted">Every initiative has a quarter. Drag an initiative here to shelve it, or tap to add one.</p>
+              <span className="text-caption font-medium text-muted">+ initiative</span>
+            </button>
           ) : (
-            <div className="flex flex-col gap-2">
-              {board.inbox.map((i) => (
-                <InitiativeCard
-                  key={i.id}
-                  lane={{
-                    initiative: i,
-                    state: "idea",
-                    attainment: null,
-                    krCount: i.keyResults.length,
-                    uncovered: 0,
-                    atRisk: { atRisk: false, reasons: [] },
-                    gaps: [],
-                    needsDomain: !i.domainId || !domainById(data, i.domainId),
-                    quarterIdx: null,
-                    overdue: false,
-                  }}
-                  data={data}
-                  onSetDomain={setDomain}
-                  compact
-                />
-              ))}
-            </div>
+            <>
+              <div className="flex flex-col gap-2">
+                {board.inbox.map((i) => (
+                  <InitiativeCard
+                    key={i.id}
+                    lane={{
+                      initiative: i,
+                      state: "idea",
+                      attainment: null,
+                      krCount: i.keyResults.length,
+                      uncovered: 0,
+                      atRisk: { atRisk: false, reasons: [] },
+                      gaps: [],
+                      needsDomain: !i.domainId || !domainById(data, i.domainId),
+                      quarterIdx: null,
+                      overdue: false,
+                    }}
+                    data={data}
+                    onSetDomain={setDomain}
+                    compact
+                  />
+                ))}
+              </div>
+              {/* add-to-inbox — full-width button pinned at the base (consistent with
+                  the per-quarter buttons), with a generous tap target. */}
+              <button
+                onClick={() => openFloorModal("new-initiative")}
+                className="tap fast mt-2 w-full rounded-lg border border-dashed border-line px-3 py-2.5 text-center text-caption font-medium text-muted hover:border-line-strong hover:text-ink"
+                title="New initiative"
+              >
+                + initiative
+              </button>
+            </>
           )}
         </aside>
 
         {/* ── the quarter columns ──────────────────────────────────────────── */}
         <div className="min-w-0 flex-1 overflow-x-auto pb-2">
-          <div className="flex gap-3" style={{ minWidth: board.quarters.length * (COL_PX + 12) }}>
+          <div
+            className="grid gap-3"
+            style={{ gridTemplateColumns: `repeat(${board.quarters.length}, minmax(${COL_PX}px, 1fr))` }}
+          >
             {board.quarters.map((q) => {
               const lanes = byColumn.get(q.idx) ?? [];
               const risky = lanes.filter((l) => l.atRisk.atRisk).length;
+              const over = lanes.length > maxPerQuarter;
               const dropping = dropCol === q.idx;
+              // The current quarter is the one that matters most — lift it off the
+              // rest: accent border + tinted paper + a top rail + an accent label.
+              const current = q.idx === 0;
               return (
                 <div
                   key={q.key}
-                  data-quarter={q.later ? undefined : q.idx}
-                  onClick={() => !q.later && lanes.length === 0 && setCreateCol(q.idx)}
-                  className="fast flex shrink-0 flex-col rounded-xl border p-2.5"
+                  data-quarter={q.idx}
+                  className="fast relative flex min-w-0 flex-col overflow-hidden rounded-xl border p-2.5"
                   style={{
-                    width: COL_PX,
-                    borderColor: dropping ? "var(--accent)" : "var(--line)",
-                    background: dropping ? "var(--accent-soft)" : q.later ? "transparent" : "var(--surface-2)",
-                    opacity: q.later ? 0.85 : 1,
+                    borderColor: dropping
+                      ? "var(--accent)"
+                      : current
+                        ? "color-mix(in srgb, var(--accent) 45%, var(--line))"
+                        : "var(--line)",
+                    background: dropping
+                      ? "var(--accent-soft)"
+                      : current
+                        ? "color-mix(in srgb, var(--accent) 7%, var(--surface))"
+                        : "var(--surface-2)",
+                    boxShadow: current ? "0 1px 3px color-mix(in srgb, var(--accent) 18%, transparent)" : undefined,
                   }}
                 >
-                  <div className="flex items-baseline justify-between gap-2 px-1 pb-2">
-                    <span className="text-caption font-semibold text-ink">{q.label}</span>
-                    <span className="mono text-micro text-muted">
-                      {lanes.length}{risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
+                  {current && <span className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: "var(--accent)" }} />}
+                  <div className="flex items-baseline justify-between gap-2 px-1 pb-0.5">
+                    <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: current ? "var(--accent)" : "var(--ink)" }}>
+                      {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />}
+                      {q.label}
+                    </span>
+                    <span className="mono text-micro tabular-nums" title={`${lanes.length} committed · max ${maxPerQuarter} — your per-quarter focus cap`} style={{ color: over ? CAUTION : "var(--muted)" }}>
+                      {lanes.length}/{maxPerQuarter}{over ? " ⚠" : ""}{risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
                     </span>
                   </div>
-                  {q.idx !== 0 && !q.later && (
-                    <div className="mono px-1 pb-1.5 text-micro text-muted">{q.shortLabel}</div>
-                  )}
+                  {/* month span + sprint scale — each column reads when it starts and
+                      ends, and (for the current quarter) how many sprints deep you are. */}
+                  <div className="mono px-1 pb-2 text-micro" style={{ color: current ? "color-mix(in srgb, var(--accent) 70%, var(--muted))" : "var(--muted)" }}>
+                    {quarterRangeLabel(q.start, q.end)}
+                    {current
+                      ? ` · sprint ${Math.min(sprintsBetween(q.start, q.end) + 1, Math.max(1, sprintsBetween(q.start, new Date()) + 1))}/${sprintsBetween(q.start, q.end) + 1}`
+                      : ` · ${sprintsBetween(q.start, q.end) + 1} sprints`}
+                  </div>
 
-                  <div className="flex min-h-[60px] flex-col gap-2">
-                    {lanes.length === 0 ? (
-                      <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-line px-2 py-6 text-center text-micro text-muted">
-                        {q.later ? "Nothing this far out" : "Drop a bet here"}
+                  <div className="flex min-h-[60px] flex-1 flex-col gap-2">
+                    {lanes.length === 0 && composeCol !== q.idx ? (
+                      <div
+                        onClick={() => setComposeCol(q.idx)}
+                        className="fast flex flex-1 cursor-pointer items-center justify-center rounded-lg border border-dashed border-line px-2 py-6 text-center text-micro text-muted hover:border-line-strong hover:text-ink"
+                        title="New initiative in this quarter"
+                      >
+                        Drop an initiative here, or tap to add
                       </div>
                     ) : (
-                      lanes.map((l) => (
-                        <InitiativeCard
-                          key={l.initiative.id}
-                          lane={l}
-                          data={data}
-                          onSetDomain={setDomain}
-                        />
-                      ))
+                      <>
+                        {lanes.map((l) => (
+                          <InitiativeCard
+                            key={l.initiative.id}
+                            lane={l}
+                            data={data}
+                            onSetDomain={setDomain}
+                          />
+                        ))}
+                        {composeCol === q.idx ? (
+                          // the draft, right under the cards — the next slot, not pinned
+                          // to the column's floor; a spacer fills whatever's left below.
+                          <>
+                            <div data-card-control onPointerDown={(e) => e.stopPropagation()}>
+                              <InlineAdd
+                                placeholder="Name an initiative…"
+                                accent={defaultDomain?.color ?? "var(--accent)"}
+                                onCreate={(name) => createInCol(q.idx, name)}
+                                onClose={() => setComposeCol(null)}
+                              />
+                            </div>
+                            <div className="flex-1" />
+                          </>
+                        ) : (
+                          // the empty space below the cards is a click target too —
+                          // tap anywhere here to start an initiative in this quarter
+                          <div
+                            onClick={() => setComposeCol(q.idx)}
+                            title="New initiative in this quarter"
+                            className="fast min-h-[28px] flex-1 cursor-pointer rounded-lg transition-colors hover:bg-accent-soft/20"
+                          />
+                        )}
+                      </>
                     )}
                   </div>
+
+                  {/* pinned "+ initiative" affordance — hidden while composing here */}
+                  {composeCol !== q.idx && (
+                    <button
+                      data-card-control
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); setComposeCol(q.idx); }}
+                      className="tap fast mt-2 w-full rounded-lg border border-dashed border-line px-2 py-2 text-center text-micro font-medium text-muted hover:border-line-strong hover:text-ink"
+                      title="New initiative in this quarter"
+                    >
+                      + initiative
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -282,15 +370,7 @@ export default function InitiativeDeck() {
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
         <span className="text-micro text-muted">Drag onto a quarter to commit a finish line · drag to the rail to shelve · click to open</span>
-        {shapeable && (
-          <button
-            onClick={() => openFlow("refine", { pass: "initiative" })}
-            className="tap fast rounded-xl px-5 py-2.5 text-body font-medium text-white active:scale-[.98]"
-            style={{ background: "var(--accent)" }}
-          >
-            Groom the {needShaping} that need it →
-          </button>
-        )}
+        <ShippedStrip rung="initiative" />
       </div>
 
       {/* drag ghost */}
@@ -305,15 +385,11 @@ export default function InitiativeDeck() {
           </div>
         </div>
       )}
-
-      {createCol != null && (
-        <NewInitiative onClose={() => setCreateCol(null)} onCreated={createInCol(createCol)} />
-      )}
     </div>
   );
 }
 
-// ── one bet card — OKR health up front, domain auto-link when unlinked ────────
+// ── one initiative card — OKR health up front, domain auto-link when unlinked ──
 function InitiativeCard({
   lane,
   data,
@@ -361,6 +437,16 @@ function InitiativeCard({
         ) : (
           !compact && <span className="text-muted">· no key results</span>
         )}
+        {(() => {
+          const left = i.targetDate && lane.state !== "parked" ? sprintsBetween(new Date(), i.targetDate) : null;
+          if (left == null || left < 0) return null;
+          return (
+            <>
+              <span className="text-muted">·</span>
+              <span className="text-muted">{left === 0 ? "due this sprint" : `${left} sprint${left === 1 ? "" : "s"} left`}</span>
+            </>
+          );
+        })()}
       </div>
 
       {/* at-risk reasons — named, not just a dot */}
@@ -370,7 +456,7 @@ function InitiativeCard({
         </div>
       )}
 
-      {/* the "main" this bet belongs under — a control, not a drag handle */}
+      {/* the "main" this initiative belongs under — a control, not a drag handle */}
       <div data-card-control className="mt-2 flex items-center gap-2 pl-4" onPointerDown={(e) => e.stopPropagation()}>
         {lane.needsDomain ? (
           suggestion ? (
@@ -378,7 +464,7 @@ function InitiativeCard({
               onClick={() => onSetDomain(i, suggestion.domain.id)}
               className="tap fast flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-medium"
               style={{ color: suggestion.domain.color, borderColor: `${suggestion.domain.color}66`, background: `${suggestion.domain.color}12` }}
-              title="Link this bet to its domain"
+              title="Link this initiative to its domain"
             >
               <span>{suggestion.domain.icon}</span>
               <span>Link → {suggestion.domain.name}</span>

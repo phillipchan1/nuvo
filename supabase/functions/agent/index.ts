@@ -5,7 +5,7 @@ import { refineProject } from "./refine.ts";
 import { blueprintInitiative } from "./blueprint.ts";
 import { draftOutcome } from "./draftOutcome.ts";
 import { clusterInbox } from "./clusterInbox.ts";
-import { enrichInbox } from "./enrichInbox.ts";
+import { enrichInboxBatch } from "./enrichInbox.ts";
 import { enrichDomain } from "./enrichDomain.ts";
 import { verifyItem } from "./verify.ts";
 import { parsePriorities, breakdownPriority } from "./priorities.ts";
@@ -62,10 +62,14 @@ function buildNavSection(navFocus: NavFocus | null | undefined, ctx: { vertical:
   return `\n\n## User's current view\n${parts.join(" › ")}\nWhen the user refers to "this" or "here" without context, they mean the item above.`;
 }
 
-function systemPrompt(ctxJson: string, today: string, nowLabel: string, nowISO: string, laUtcOffset: string, navSection = ""): string {
-  return `You are Nuvo — a personal chief-of-staff embedded in the user's daily planning app. You are not a general-purpose assistant. You are a focused, opinionated productivity partner with world-class judgment about how to spend limited time, what to protect, and what to let go.
-
-Today is ${today} (America/Los_Angeles). Current time: ${nowLabel} (${nowISO}).
+// Byte-identical across every request, every user, every turn — kept as its own
+// leading system message (never interpolated) so the provider's prompt-prefix
+// caching (OpenAI/OpenRouter both discount repeated prefixes) actually applies.
+// The interpolated date/context/nav bits live in dynamicContextPrompt below,
+// which is appended as a second, short-lived system message instead of being
+// spliced into this one — splicing it in here would break the prefix match on
+// every single turn and pay full price for the whole ~3k-token block again.
+const STATIC_SYSTEM_PROMPT = `You are Nuvo — a personal chief-of-staff embedded in the user's daily planning app. You are not a general-purpose assistant. You are a focused, opinionated productivity partner with world-class judgment about how to spend limited time, what to protect, and what to let go.
 
 ## Scope
 
@@ -206,7 +210,7 @@ create_task with no date, no parent → **inbox**.
 
 **Reading context times:** All formatted times in context (timeRange, nowLabel) are already in America/Los_Angeles. Use timeRange verbatim — never reconvert ISO timestamps yourself.
 
-**todaySchedule** is the authoritative list of timed calendar blocks for today (${today}). When the user asks about their schedule/calendar/day, answer ONLY from todaySchedule. Do NOT include inbox, todayTasks, or weekPool — those have no time slot and are not on the calendar.
+**todaySchedule** is the authoritative list of timed calendar blocks for today. When the user asks about their schedule/calendar/day, answer ONLY from todaySchedule. Do NOT include inbox, todayTasks, or weekPool — those have no time slot and are not on the calendar.
 
 **todayFreeSlots** — pre-computed open windows today (≥30 min, future-only, gaps between real busy blocks). When the user asks "am I free at X?", "what's my next open slot?", or "when can I fit Y?", answer ONLY from todayFreeSlots — never count gaps yourself by scanning todaySchedule. The server computed these by merging all overlapping events and tasks; your manual counting will be wrong. A window NOT in todayFreeSlots is not a viable slot, even if it looks like a gap.
 
@@ -280,6 +284,10 @@ Format: <suggestions>[{"label":"Short label","message":"exact text sent on tap"}
 2–4 options, labels under ~40 chars. Never say "reply with X or Y" in prose — use the block. The UI always adds "Other…".
 
 **Images:** When the user attaches images, read them carefully — screenshots of calendars, task lists, or notes are common context.
+`;
+
+function dynamicContextPrompt(ctxJson: string, today: string, nowLabel: string, nowISO: string, navSection: string): string {
+  return `Today is ${today} (America/Los_Angeles). Current time: ${nowLabel} (${nowISO}).
 
 ---
 
@@ -451,10 +459,12 @@ Deno.serve(async (req) => {
     if (body.clusterInbox) {
       return json(await clusterInbox(user.id, body.clusterInbox));
     }
-    // Passive grooming: guess one inbox capture's home (project/initiative/
-    // domain), duration and energy. Persists a suggestion only — files nothing.
-    if (body.enrichInbox?.taskId) {
-      return json(await enrichInbox(user.id, String(body.enrichInbox.taskId)));
+    // Passive grooming: guess a batch of inbox captures' homes (project/
+    // initiative/domain), duration and energy in one call. Persists
+    // suggestions only — files nothing.
+    if (body.enrichInbox?.taskIds) {
+      const taskIds = Array.isArray(body.enrichInbox.taskIds) ? body.enrichInbox.taskIds.map(String) : [];
+      return json(await enrichInboxBatch(user.id, taskIds));
     }
     // Domain refinement: expand a charter blurb into routing context (entities,
     // keywords, boundary) grooming reads. Proposes only — chapel persists it.
@@ -491,7 +501,8 @@ Deno.serve(async (req) => {
     const ctxJson = contextToPrompt(ctx);
     const navSection = buildNavSection(navFocus, ctx);
     const oaiMessages: ChatMessage[] = [
-      { role: "system", content: systemPrompt(ctxJson, ctx.today, ctx.nowLabel, ctx.nowISO, ctx.laUtcOffset, navSection) },
+      { role: "system", content: STATIC_SYSTEM_PROMPT },
+      { role: "system", content: dynamicContextPrompt(ctxJson, ctx.today, ctx.nowLabel, ctx.nowISO, navSection) },
       ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 

@@ -10,7 +10,7 @@ import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
 import { GitHubConnect } from "./GitHubConnect";
 import type { SettingsSection } from "../lib/appNav";
-import { useMaxPerWeek } from "../hooks/usePlannerPrefs";
+import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useSkin, useScheme, SKIN_LABELS, SCHEMES, SCHEME_GROUP, schemeModes, type Skin, type Scheme, type SchemeModes } from "../hooks/useSkin";
@@ -436,6 +436,7 @@ function SchedulePane({
   };
 
   const [maxPerWeek, setMaxPerWeekPref] = useMaxPerWeek();
+  const [maxPerQuarter, setMaxPerQuarterPref] = useMaxPerQuarter();
 
   // The weekly Review reveal — a per-device nudge, so it lives in localStorage
   // (not the synced settings row). Default Friday 1pm.
@@ -560,6 +561,28 @@ function SchedulePane({
               disabled={maxPerWeek >= 6}
               className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
               title="More per week"
+            >
+              +
+            </button>
+          </div>
+        </Row>
+
+        <Row title="Initiatives per quarter" desc="How many initiatives you'll commit to a single quarter before On Deck flags it as overloaded. Fewer = more focus.">
+          <div className="flex items-center overflow-hidden rounded-md border border-line">
+            <button
+              onClick={() => setMaxPerQuarterPref(Math.max(1, maxPerQuarter - 1))}
+              disabled={maxPerQuarter <= 1}
+              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+              title="Fewer per quarter"
+            >
+              −
+            </button>
+            <span className="mono w-9 select-none text-center text-caption tabular-nums text-text">{maxPerQuarter}</span>
+            <button
+              onClick={() => setMaxPerQuarterPref(Math.min(6, maxPerQuarter + 1))}
+              disabled={maxPerQuarter >= 6}
+              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
+              title="More per quarter"
             >
               +
             </button>

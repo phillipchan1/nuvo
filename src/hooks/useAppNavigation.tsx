@@ -51,7 +51,6 @@ interface AppNavigationContextValue {
   closeFloorModal: () => void;
   toggleAgent: () => void;
   focusDomain: (focus: Focus) => void;
-  focusInitiative: (focus: Focus) => void;
   openInitiative: (focus: Focus) => void;
   openProject: (focus: Focus) => void;
   setProjectView: (v: ProjectView) => void;
@@ -308,29 +307,13 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     [navigate],
   );
 
-  const focusInitiative = useCallback(
-    (focus: Focus) => navigate({ focus, initiativeView: "detail", floorModal: null }),
-    [navigate],
-  );
-
+  // A single bet / project has no full page anymore — both open in the Record
+  // modal (the same command center), so the two rungs stay symmetric.
   const openInitiative = useCallback(
-    (focus: Focus) => {
-      const patch: Partial<AppNavState> = {
-        focus,
-        rung: "initiative",
-        initiativeView: "detail",
-        flow: null,
-        flowStep: 0,
-        overlay: "none",
-        overlayId: null,
-        floorModal: null,
-      };
-      navigate(patch);
-    },
-    [navigate],
+    (focus: Focus) => { if (focus.initiativeId) openRecord("initiative", focus.initiativeId); },
+    [openRecord],
   );
 
-  // A single project has no full page anymore — it opens in the Record modal.
   const openProject = useCallback(
     (focus: Focus) => { if (focus.projectId) openRecord("project", focus.projectId); },
     [openRecord],
@@ -378,7 +361,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     closeFloorModal,
     toggleAgent,
     focusDomain,
-    focusInitiative,
     openInitiative,
     openProject,
     setProjectView,

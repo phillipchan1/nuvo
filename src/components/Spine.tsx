@@ -17,7 +17,7 @@ const RUNGS: { id: Rung; label: string }[] = [
 // useAppNavigation). The spine no longer launches them — it's navigation + the
 // readiness gauge. Flows open from the work surfaces instead: the floor "now
 // what" banners, Today's Plan, the Sunday nudge, and the command palette.
-export type FlowName = "sunday" | "summit" | "tending" | "refine" | "capacity";
+export type FlowName = "sunday" | "summit" | "tending" | "capacity";
 
 // The spine reads like a table of contents for your life. Two zones:
 // Execute (Today · Schedule — time horizons) and Build (Project · Initiative ·

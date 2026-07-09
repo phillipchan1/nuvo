@@ -9,6 +9,7 @@ import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopAr
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
+import { sprintLabel } from "../lib/sprint";
 import { addDays } from "date-fns";
 import { expandRule, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
@@ -238,6 +239,8 @@ export default function CalendarPane({
   mutationsRef.current = mutations;
 
   const [viewTitle, setViewTitle] = useState("");
+  // The date the view is anchored on — drives the ambient Sprint N label.
+  const [viewDate, setViewDate] = useState<Date>(() => new Date());
 
   // Hidden events (Fantastical-style): kept off the board + out of the busy math.
   // `showHidden` reveals them dimmed so you can bring one back. The context menu /
@@ -1427,6 +1430,7 @@ export default function CalendarPane({
   const handleDatesSet = (arg: DatesSetArg) => {
     onRangeChange(arg.start.toISOString(), arg.end.toISOString());
     setViewTitle(calRef.current?.getApi().view.title ?? "");
+    setViewDate(calRef.current?.getApi().getDate() ?? arg.start);
   };
 
   return (
@@ -1694,9 +1698,12 @@ export default function CalendarPane({
         {/* Editorial masthead, centered in the bar like the mockup. Absolute so
             it's window-centered regardless of the nav/toggle widths, and
             pointer-events-none so the drag region beneath it still drags. */}
-        <span className="masthead pointer-events-none absolute left-1/2 -translate-x-1/2 select-none text-lead leading-none text-text">
-          {viewTitle}
-        </span>
+        <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 select-none flex-col items-center leading-none">
+          {(view === "timeGridWeek" || view === "timeGridDay") && (
+            <span className="mono mb-0.5 text-micro uppercase tracking-wide text-muted">{sprintLabel(viewDate)}</span>
+          )}
+          <span className="masthead text-lead leading-none text-text">{viewTitle}</span>
+        </div>
 
         <button
           onClick={() => calRef.current?.getApi().today()}

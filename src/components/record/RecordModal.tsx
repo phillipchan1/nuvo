@@ -1,15 +1,14 @@
-// The Record modal — a project or initiative's command center. Clicking a
-// record anywhere in the app opens this beautiful, fully-editable "moment"
-// over whatever floor you're on: breadcrumb, inline title + goal, a progress
-// ring, status, dates, brief, tasks (full CRUD), and — the headline —
-// "Tasks that belong here", the intelligence that pulls matching loose/inbox
-// work in with one click. The full-page floor stays one "Open full page ↗"
-// away for the big-canvas Gantt / key-result work.
+// The Record modal — a project or initiative's command center, and the ONLY
+// single-record surface for both (neither rung has a full page anymore — the
+// modal is it, so the two stay symmetric). Clicking a record anywhere opens this
+// beautiful, fully-editable "moment" over whatever floor you're on: breadcrumb,
+// inline title + goal, a progress ring, status, dates, brief, key results / tasks
+// (full CRUD), and — the headline — "Tasks that belong here", the intelligence
+// that pulls matching loose/inbox work in with one click.
 
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVertical } from "../../hooks/useVertical";
-import { useAppNavigation } from "../../hooks/useAppNavigation";
 import {
   domainById,
   initiativeById,
@@ -49,15 +48,12 @@ export default function RecordModal({
   kind,
   id,
   onClose,
-  onExpand,
   onOpenProject,
   onOpenInitiative,
 }: {
   kind: RecordKind;
   id: string;
   onClose: () => void;
-  /** Promote this record to its full-page floor (the big canvas). */
-  onExpand: () => void;
   /** Hop to a project's record (child project / breadcrumb). */
   onOpenProject: (id: string) => void;
   /** Hop to an initiative's record (breadcrumb). */
@@ -90,7 +86,6 @@ export default function RecordModal({
         <InitiativeRecord
           id={id}
           onClose={onClose}
-          onExpand={onExpand}
           onOpenProject={onOpenProject}
         />
       )}
@@ -151,7 +146,6 @@ function Header({
   onGoal,
   goalPlaceholder,
   pct,
-  onExpand,
   onClose,
 }: {
   accent: string;
@@ -162,7 +156,6 @@ function Header({
   onGoal: (v: string) => void;
   goalPlaceholder: string;
   pct: number;
-  onExpand?: () => void;
   onClose: () => void;
 }) {
   return (
@@ -170,15 +163,6 @@ function Header({
       <div className="mono mb-2.5 flex items-center gap-1.5 text-meta">
         {crumbs}
         <div className="flex-1" />
-        {onExpand && (
-          <button
-            onClick={onExpand}
-            title="Open as a full page"
-            className="fast flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-meta text-muted hover:border-line-strong hover:text-ink"
-          >
-            ⤢ full page
-          </button>
-        )}
         <button onClick={onClose} className="keycap" title="Close">esc</button>
       </div>
 
@@ -449,12 +433,10 @@ function krPct(kr: KeyResult) {
 function InitiativeRecord({
   id,
   onClose,
-  onExpand,
   onOpenProject,
 }: {
   id: string;
   onClose: () => void;
-  onExpand: () => void;
   onOpenProject: (id: string) => void;
 }) {
   const {
@@ -468,7 +450,6 @@ function InitiativeRecord({
     deleteKeyResult,
     routeTask,
   } = useVertical();
-  const { openFlow } = useAppNavigation();
   const initiative = initiativeById(data, id);
 
   useEffect(() => {
@@ -505,7 +486,6 @@ function InitiativeRecord({
         onGoal={(v) => updateInitiative(initiative.id, { outcome: v })}
         goalPlaceholder="What does done look like, in one line?"
         pct={pct}
-        onExpand={onExpand}
         onClose={onClose}
       />
 
@@ -534,21 +514,11 @@ function InitiativeRecord({
       <Body
         main={
           <>
-            {/* Key results — the bet's prime property, first in the record */}
+            {/* Key results — the initiative's prime property, first in the record */}
             <Section
               label={`Key results${initiative.keyResults.length ? ` · ${initiative.keyResults.length}` : ""}`}
               action={
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => openFlow("refine", { kind: "initiative", id: initiative.id, lens: "okr" })}
-                    className="tap fast flex items-center gap-1 rounded-md px-2.5 py-1 text-label font-medium text-white active:scale-95"
-                    style={{ background: accent }}
-                    title="Draft the objective + key results with Nuvo"
-                  >
-                    ✦ Draft with Nuvo
-                  </button>
-                  <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-label text-muted hover:text-ink">+ add</button>
-                </div>
+                <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-label text-muted hover:text-ink">+ add</button>
               }
             >
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -576,12 +546,12 @@ function InitiativeRecord({
               </div>
               {initiative.keyResults.length === 0 && (
                 <div className="rounded-[var(--radius)] border border-dashed border-line p-4 text-center text-caption text-muted">
-                  No key results yet — this bet has no number to move. <button onClick={() => openFlow("refine", { kind: "initiative", id: initiative.id, lens: "okr" })} className="fast underline hover:text-ink" style={{ color: accent }}>Draft them with Nuvo</button>.
+                  No key results yet — this initiative has no number to move. Add one from a baseline (or draft the full set on the Groom deck) so you read the Gain, not just the gap.
                 </div>
               )}
             </Section>
 
-            <Section label="The bet">
+            <Section label="The initiative">
               <InlineTextarea
                 value={initiative.description}
                 onChange={(v) => updateInitiative(initiative.id, { description: v })}
@@ -652,7 +622,7 @@ function InitiativeRecord({
               suggestions={suggestions}
               accent={accent}
               onFold={(taskId) => routeTask(taskId, { projectId: null, initiativeId: initiative.id })}
-              hint="Nothing loose matches yet. Capture tasks to your inbox or describe the bet above, and matches surface here."
+              hint="Nothing loose matches yet. Capture tasks to your inbox or describe the initiative above, and matches surface here."
             />
           </>
         }
@@ -660,7 +630,6 @@ function InitiativeRecord({
 
       <Footer
         onClose={onClose}
-        onExpand={onExpand}
         deleteWhat="initiative"
         onDelete={() => { deleteInitiative(initiative.id); onClose(); }}
       />
@@ -671,13 +640,11 @@ function InitiativeRecord({
 // ── Shared footer ─────────────────────────────────────────────────────────────
 function Footer({
   onClose,
-  onExpand,
   deleteWhat,
   onDelete,
   note,
 }: {
   onClose: () => void;
-  onExpand?: () => void;
   deleteWhat: string;
   onDelete: () => void;
   note?: string | null;
@@ -687,7 +654,6 @@ function Footer({
       <DeleteBtn what={deleteWhat} onDelete={onDelete} />
       {note && <span className="text-label text-muted">{note}</span>}
       <div className="flex-1" />
-      {onExpand && <Btn onClick={onExpand}>Open full page ↗</Btn>}
       <Btn kind="primary" onClick={onClose}>Done</Btn>
     </div>
   );

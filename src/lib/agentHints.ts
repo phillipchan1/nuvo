@@ -19,7 +19,6 @@ export interface AgentHints {
 }
 
 export function agentHints(ctx: AgentHintContext): AgentHints {
-  const initiative = ctx.initiativeName?.trim();
   const domain = ctx.domainName?.trim();
 
   if (ctx.mobileTab) {
@@ -64,24 +63,13 @@ export function agentHints(ctx: AgentHintContext): AgentHints {
       };
 
     case "initiative":
-      if (ctx.initiativeView === "detail" && initiative) {
-        return {
-          prompt: `Inside ${initiative} — bets, projects, and momentum.`,
-          starters: [
-            `What projects belong under "${initiative}"?`,
-            `Summarize progress on "${initiative}"`,
-            "Which projects should move to the sprint?",
-            "What's blocking this initiative?",
-          ],
-        };
-      }
       return {
-        prompt: "Initiatives — shape bets and see how they're trending.",
+        prompt: "Initiatives — shape them and see how they're trending.",
         starters: [
           "Help me shape a new initiative",
           "Which initiatives need attention?",
           "Summarize progress across initiatives",
-          "What bet should I commit to this quarter?",
+          "What initiative should I commit to this quarter?",
         ],
       };
 

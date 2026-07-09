@@ -41,9 +41,11 @@ export function StepComposer({ lines, setLines, accent, placeholder, meta }: {
   };
 
   return (
-    <div className="rounded-md border border-line bg-bg/40 px-2 py-1.5">
+    // No box — inline lines on the paper (Todoist-style). The active line reads
+    // from the caret + a faint focus tint, never a bordered field.
+    <div className="-mx-1.5">
       {lines.map((line, idx) => (
-        <div key={line.id} className="group flex items-center gap-2.5 py-1">
+        <div key={line.id} className="group fast flex items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors focus-within:bg-surface-2/50">
           <span className="shrink-0 text-[10px]" style={{ color: line.text.trim() ? accent : "var(--line-strong)" }}>◦</span>
           <input
             ref={(el) => { if (el) refs.current.set(line.id, el); else refs.current.delete(line.id); }}
@@ -51,11 +53,11 @@ export function StepComposer({ lines, setLines, accent, placeholder, meta }: {
             onChange={(e) => setText(line.id, e.target.value)}
             onKeyDown={(e) => onKey(e, line, idx)}
             placeholder={idx === 0 ? placeholder : "…and the next"}
-            className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted/45"
+            className="nuvo-inline-input min-w-0 flex-1 border-0 bg-transparent py-0.5 text-body text-ink shadow-none outline-none placeholder:text-muted/45"
           />
           {meta && line.text.trim() !== "" && meta(line, idx)}
           {lines.length > 1 && (
-            <button onClick={() => removeLine(line.id)} tabIndex={-1} className="fast tap shrink-0 px-1.5 text-meta text-muted/60 hover:text-signal" title="Remove this line">✕</button>
+            <button onClick={() => removeLine(line.id)} tabIndex={-1} className="fast tap shrink-0 px-1.5 text-meta text-muted/60 opacity-0 transition-opacity hover:text-signal group-focus-within:opacity-100 group-hover:opacity-100" title="Remove this line">✕</button>
           )}
         </div>
       ))}

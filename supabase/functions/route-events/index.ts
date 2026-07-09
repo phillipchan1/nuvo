@@ -10,27 +10,28 @@
 // tokens on an event we've already judged.
 //
 // Standalone (not folded into `agent`) so it deploys on its own. Mirrors
-// agent/enrichInbox.ts; OpenAI call replicated from agent/llm.ts (temp 0.2).
+// agent/enrichInbox.ts; shares model selection with agent/llm.ts so a model
+// swap there doesn't silently miss this endpoint.
 
 import { admin, handleOptions, json, requireUser } from "../_shared/admin.ts";
+import { llmBaseUrl, llmHeaders, llmKey, llmModel } from "../agent/llm.ts";
 
 // deno-lint-ignore no-control-regex
 const clean = (s: unknown): string => (typeof s === "string" ? s : "").replace(/[\x00-\x1F\x7F]/g, " ").trim();
 
 async function completeJSON<T>(prompt: string): Promise<T> {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const key = llmKey();
+  const res = await fetch(`${llmBaseUrl()}/chat/completions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: llmHeaders(key),
     body: JSON.stringify({
-      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4.1-mini",
+      model: llmModel("gpt-4.1-mini"),
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2, // attribution is judgment, not prose — keep it stable
       response_format: { type: "json_object" },
     }),
   });
-  if (!res.ok) throw new Error(`OpenAI error ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text()}`);
   const completion = await res.json();
   return JSON.parse(completion.choices?.[0]?.message?.content ?? "{}") as T;
 }

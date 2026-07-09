@@ -181,7 +181,7 @@ export default function WeekEmblem({ spec, state = "sealed", size = 200, classNa
           );
         })}
 
-        {/* the sun — the dominant bet */}
+        {/* the sun — the dominant initiative */}
         {show("sun") && (
           <>
             <circle cx={C} cy={C} r={sunR + 12} fill={`url(#sun-${uid})`} />

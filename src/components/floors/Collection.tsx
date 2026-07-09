@@ -1,34 +1,20 @@
-// A Notion-style collection: one set of records, many views. Projects and
-// initiatives are the same shape of thing (a titled record with a status,
-// a parent, a progress, and a date range), so they share this component —
-// switch between Table · Board · Calendar · Timeline over the same data.
+// A Notion-style collection: one set of records shown as a filterable, sortable,
+// bulk-editable Table. Projects and initiatives are the same shape of thing (a
+// titled record with a status, a parent, a progress, and a date range), so they
+// share this component. (Board · Calendar · Timeline were retired — On Deck is
+// the canonical visual/time surface now.)
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import {
-  addMonths,
-  eachDayOfInterval,
-  endOfMonth,
-  endOfWeek,
-  format,
-  isSameDay,
-  isSameMonth,
-  isToday,
-  parseISO,
-  startOfMonth,
-  startOfWeek,
-} from "date-fns";
-import { Bar, DomainPicker, InlineDate, InlineText, RefinedTick, RipenessPip, StatusPill, Timeline, softTint, type TimelineItem } from "./parts";
+import { useMemo, useState, type ReactNode } from "react";
+import { Bar, DomainPicker, InlineDate, InlineText, RefinedTick, RipenessPip, StatusPill } from "./parts";
 import type { Domain } from "../../lib/vertical";
 import type { Ripeness } from "../../lib/tending";
 import { Btn } from "../ui";
-import { SELECT_INTERACTIVE, useCollectionSelection, type CollectionSelection } from "../../hooks/useCollectionSelection";
+import { useCollectionSelection, type CollectionSelection } from "../../hooks/useCollectionSelection";
 import {
   MarqueeOverlay,
   SelectCheckbox,
   SelectionBulkBar,
   SelectionHint,
-  itemSelectClass,
   itemSelectRowClass,
   itemSelectVisual,
 } from "./collectionSelection";
@@ -59,8 +45,6 @@ export interface CollectionRecord {
    *  timeline bar (which moves start + target together). */
   setDates?: (start: string | null, target: string | null) => void;
   open: () => void;
-  /** child TimelineItems shown in the accordion when this row is expanded (Timeline view only) */
-  childItems?: TimelineItem[];
 }
 
 export interface CollectionConfig {
@@ -77,34 +61,6 @@ export interface CollectionConfig {
   selectable?: boolean;
   onBulkDelete?: (ids: string[]) => void;
   domains?: Domain[];
-  /** Which views to offer. Defaults to all. Projects pass ["table","board"] —
-   *  On Deck is the canonical time-view, so Calendar/Timeline are retired there. */
-  views?: View[];
-}
-
-export type View = "table" | "board" | "calendar" | "timeline";
-type GroupBy = "status" | "domain";
-const VIEWS: { id: View; label: string }[] = [
-  { id: "table", label: "Table" },
-  { id: "board", label: "Board" },
-  { id: "calendar", label: "Calendar" },
-  { id: "timeline", label: "Timeline" },
-];
-
-function loadPref(key: string, fallback: { view: View; groupBy: GroupBy }) {
-  try {
-    const raw = localStorage.getItem(`nuvo.view.${key}`);
-    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
-  } catch {
-    return fallback;
-  }
-}
-function savePref(key: string, pref: { view: View; groupBy: GroupBy }) {
-  try {
-    localStorage.setItem(`nuvo.view.${key}`, JSON.stringify(pref));
-  } catch {
-    /* ignore */
-  }
 }
 
 /** Marquee-select surface — stretches to the floor pane so drag can start in open space. */
@@ -128,17 +84,8 @@ function SelectionSurface({
 }
 
 export default function Collection({ config }: { config: CollectionConfig }) {
-  const shownViews = config.views ? VIEWS.filter((v) => config.views!.includes(v.id)) : VIEWS;
-  const allowed = shownViews.map((v) => v.id);
-  const init = loadPref(config.storageKey, { view: "table", groupBy: "status" });
-  // heal a stale saved view that's no longer offered (e.g. projects' old Timeline)
-  const [view, setView] = useState<View>(allowed.includes(init.view) ? init.view : allowed[0]);
-  const [groupBy, setGroupBy] = useState<GroupBy>(init.groupBy);
   const orderedIds = useMemo(() => config.records.map((r) => r.id), [config.records]);
   const selection = useCollectionSelection(orderedIds, !!config.selectable, config.onBulkDelete);
-
-  const choose = (v: View) => { setView(v); savePref(config.storageKey, { view: v, groupBy }); };
-  const chooseGroup = (g: GroupBy) => { setGroupBy(g); savePref(config.storageKey, { view, groupBy: g }); };
 
   const selectionActive =
     !!config.selectable &&
@@ -146,41 +93,8 @@ export default function Collection({ config }: { config: CollectionConfig }) {
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      {/* view toolbar — the view switcher only earns its space with >1 view */}
+      {/* toolbar — record count / bulk actions on the right, create at the end */}
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
-        {shownViews.length > 1 && (
-          <div className="inline-flex rounded-md border border-line p-0.5">
-            {shownViews.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => choose(v.id)}
-                className="fast mono rounded-[5px] px-3 py-1 text-label"
-                style={{ background: view === v.id ? "var(--accent)" : "transparent", color: view === v.id ? "#fff" : "var(--muted)" }}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {view === "board" && (
-          <div className="inline-flex items-center gap-1.5">
-            <span className="mono text-meta text-muted">group</span>
-            <div className="inline-flex rounded-md border border-line p-0.5">
-              {(["status", "domain"] as GroupBy[]).map((g) => (
-                <button
-                  key={g}
-                  onClick={() => chooseGroup(g)}
-                  className="fast mono rounded-[5px] px-2 py-0.5 text-meta"
-                  style={{ background: groupBy === g ? "var(--bg)" : "transparent", color: groupBy === g ? "var(--text)" : "var(--muted)" }}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         <div className="flex-1" />
         <div className="relative flex h-7 shrink-0 items-center justify-end">
           <span
@@ -201,10 +115,7 @@ export default function Collection({ config }: { config: CollectionConfig }) {
       <MarqueeOverlay style={selection.marqueeStyle} />
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {view === "table" && <TableView config={config} selection={selection} />}
-        {view === "board" && <BoardView config={config} groupBy={groupBy} selection={selection} />}
-        {view === "calendar" && <CalendarView config={config} selection={selection} />}
-        {view === "timeline" && <TimelineView config={config} selection={selection} />}
+        <TableView config={config} selection={selection} />
       </div>
 
       <div className="mt-2 min-h-[14px]">
@@ -340,507 +251,6 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
       })}
       {records.length === 0 && <div className="py-10 text-center text-caption text-muted italic">Nothing here yet.</div>}
       <div className="min-h-[12rem] flex-1" aria-hidden />
-    </SelectionSurface>
-  );
-}
-
-// ── Board (drag a card to a lane to set its status / domain) ─────────────────
-function BoardView({
-  config,
-  groupBy,
-  selection,
-}: {
-  config: CollectionConfig;
-  groupBy: GroupBy;
-  selection: CollectionSelection;
-}) {
-  const { records, statusOptions, statusColors, statusLabels, selectable } = config;
-  // Pointer-based drag — HTML5 drag-and-drop is swallowed by the Tauri webview,
-  // so we mirror the Timeline's pointer pattern (works in the desktop app AND
-  // the browser). Live drag lives in a ref; mirrored to state for the ghost.
-  const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
-  const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
-  const justDraggedRef = useRef<boolean>(false);
-  const [overLane, setOverLane] = useState<string | null>(null);
-  const laneRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const [ctxMenu, setCtxMenu] = useState<{ r: CollectionRecord; x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setCtxMenu(null); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [!!ctxMenu]);
-
-  const lanes = useMemo(() => {
-    if (groupBy === "domain") {
-      const seen = new Map<string, { key: string; label: string; color: string }>();
-      records.forEach((r) => {
-        if (!seen.has(r.domainId)) seen.set(r.domainId, { key: r.domainId, label: r.domainName, color: r.accent });
-      });
-      return [...seen.values()].map((g) => ({ ...g, items: records.filter((r) => r.domainId === g.key) }));
-    }
-    return statusOptions.map((s) => ({
-      key: s,
-      label: statusLabels?.[s] ?? s,
-      color: statusColors[s] ?? "var(--muted)",
-      items: records.filter((r) => r.status === s),
-    }));
-  }, [records, groupBy, statusOptions, statusColors, statusLabels]);
-
-  const laneAtPoint = (x: number, y: number): string | null => {
-    for (const [key, el] of laneRefs.current) {
-      const b = el.getBoundingClientRect();
-      if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) return key;
-    }
-    return null;
-  };
-
-  // Start a drag from a card. Movement past a small threshold turns it into a
-  // real drag; a stationary press falls through to click / double-click.
-  const startCardDrag = (id: string, e: ReactPointerEvent) => {
-    if (e.button !== 0) return;
-    if ((e.target as HTMLElement).closest(SELECT_INTERACTIVE)) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    dragRef.current = { id, moved: false };
-
-    const onMove = (ev: PointerEvent) => {
-      const d = dragRef.current;
-      if (!d) return;
-      if (!d.moved && (Math.abs(ev.clientX - startX) > 4 || Math.abs(ev.clientY - startY) > 4)) {
-        d.moved = true;
-        selection.cancelPointer();
-      }
-      if (!d.moved) return;
-      ev.preventDefault();
-      setDrag({ id: d.id, x: ev.clientX, y: ev.clientY });
-      setOverLane(laneAtPoint(ev.clientX, ev.clientY));
-    };
-    const onUp = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      const d = dragRef.current;
-      dragRef.current = null;
-      setDrag(null);
-      setOverLane(null);
-      if (!d || !d.moved) return; // a click, not a drag — let click/dblclick run
-      justDraggedRef.current = true;
-      const laneKey = laneAtPoint(ev.clientX, ev.clientY);
-      if (!laneKey) return;
-      const r = records.find((x) => x.id === d.id);
-      if (!r) return;
-      if (groupBy === "status" && r.status !== laneKey) r.setStatus(laneKey);
-      if (groupBy === "domain" && r.domainId !== laneKey) r.setDomain?.(laneKey);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  };
-
-  const dragging = drag?.id ?? null;
-
-  return (
-    <>
-    <SelectionSurface selection={selection}>
-      <div className="grid min-h-full flex-1 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {lanes.map((lane) => {
-          const canDrop = groupBy === "status" || !!records.find((x) => x.id === dragging)?.setDomain;
-          const over = overLane === lane.key && dragging && canDrop;
-          const activeLane = groupBy === "status" && lane.key === "in_progress";
-          return (
-            <div
-              key={lane.key}
-              ref={(el) => { if (el) laneRefs.current.set(lane.key, el); else laneRefs.current.delete(lane.key); }}
-              className="fast flex min-h-full flex-col rounded-md p-1"
-              style={{
-                background: over ? "var(--accent-soft)" : activeLane ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent",
-                outline: over ? `1px dashed ${lane.color}` : activeLane ? "1px solid color-mix(in srgb, var(--accent) 25%, transparent)" : "none",
-              }}
-            >
-              <div className="mb-2 flex items-center gap-2 px-1">
-                <span className="h-2 w-2 rounded-full" style={{ background: lane.color, boxShadow: activeLane ? "0 0 6px var(--accent-glow)" : undefined }} />
-                <span className="section-label" style={{ color: activeLane ? "var(--accent)" : "var(--text)" }}>{lane.label}</span>
-                <span className="mono text-meta text-muted">{lane.items.length}</span>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col gap-2.5">
-                {lane.items.map((r) => (
-                  <BoardCard
-                    key={r.id}
-                    r={r}
-                    config={config}
-                    selectable={!!selectable}
-                    selection={selection}
-                    dragging={dragging === r.id}
-                    onStartDrag={(e) => startCardDrag(r.id, e)}
-                    onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ r, x: e.clientX, y: e.clientY }); }}
-                    justDraggedRef={justDraggedRef}
-                  />
-                ))}
-                {lane.items.length === 0 ? (
-                  <div className="flex flex-1 flex-col rounded-md border border-dashed border-line py-6 text-center text-label text-muted">
-                    {over ? "drop here" : "empty"}
-                  </div>
-                ) : (
-                  <div className="min-h-[4rem] flex-1" aria-hidden />
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* floating ghost following the cursor during a drag */}
-      {drag && (() => {
-        const r = records.find((x) => x.id === drag.id);
-        if (!r) return null;
-        return (
-          <div
-            className="glass-grab pointer-events-none fixed z-[300] w-[240px] overflow-hidden rounded-lg p-3"
-            style={{ left: drag.x - 16, top: drag.y - 14 }}
-          >
-            <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: r.accent }} />
-            <div className="pl-1.5">
-              <div className="truncate text-body font-medium text-ink">{r.title || "Untitled"}</div>
-              <div className="mono mt-0.5 truncate text-meta" style={{ color: r.accent }}>{r.domainIcon} {r.subtitle}</div>
-              <div className="mt-2"><Bar pct={r.progress} color={r.accent} h={1} /></div>
-            </div>
-          </div>
-        );
-      })()}
-    </SelectionSurface>
-    {ctxMenu && createPortal(
-      <>
-        <div className="fixed inset-0 z-[299]" onMouseDown={() => setCtxMenu(null)} />
-        <div
-          className="fixed z-[300] min-w-[200px] overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-xl"
-          style={{
-            left: Math.min(ctxMenu.x, window.innerWidth - 216),
-            top: Math.min(ctxMenu.y, window.innerHeight - (config.statusOptions.length * 34 + 100)),
-          }}
-        >
-          <button
-            className="fast flex w-full items-center justify-between gap-6 px-3 py-1.5 text-left text-label hover:bg-accent-soft"
-            onClick={() => { ctxMenu.r.open(); setCtxMenu(null); }}
-          >
-            <span>Open</span>
-            <span className="mono text-meta text-muted">↗</span>
-          </button>
-          <div className="my-1 border-t border-line" />
-          {config.statusOptions.map((s) => {
-            const active = ctxMenu.r.status === s;
-            return (
-              <button
-                key={s}
-                className="fast flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-label hover:bg-accent-soft"
-                onClick={() => { ctxMenu.r.setStatus(s); setCtxMenu(null); }}
-              >
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: config.statusColors[s] ?? "var(--muted)" }} />
-                <span className="flex-1">{config.statusLabels?.[s] ?? s}</span>
-                {active && <span className="mono text-meta" style={{ color: "var(--accent)" }}>✓</span>}
-              </button>
-            );
-          })}
-          {config.onBulkDelete && (
-            <>
-              <div className="my-1 border-t border-line" />
-              <button
-                className="fast flex w-full items-center px-3 py-1.5 text-left text-label text-signal hover:bg-signal/10"
-                onClick={() => { config.onBulkDelete?.([ctxMenu.r.id]); setCtxMenu(null); }}
-              >
-                Delete
-              </button>
-            </>
-          )}
-        </div>
-      </>,
-      document.body
-    )}
-  </>
-  );
-}
-
-function BoardCard({
-  r,
-  config,
-  selectable,
-  selection,
-  dragging,
-  onStartDrag,
-  onContextMenu,
-  justDraggedRef,
-}: {
-  r: CollectionRecord;
-  config: CollectionConfig;
-  selectable: boolean;
-  selection: CollectionSelection;
-  dragging: boolean;
-  onStartDrag: (e: ReactPointerEvent) => void;
-  onContextMenu?: (e: React.MouseEvent) => void;
-  justDraggedRef: React.MutableRefObject<boolean>;
-}) {
-  const metaEntries = (config.extraColumns ?? []).map((c) => r.meta[c.key]?.value).filter(Boolean);
-  const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
-  const inProgress = r.status === "in_progress";
-  return (
-    <div
-      data-select-id={r.id}
-      ref={(el) => selection.registerRef(r.id, el)}
-      onPointerDown={onStartDrag}
-      onContextMenu={onContextMenu}
-      onClick={(e) => {
-        // Don't open if we just finished a drag
-        if (justDraggedRef.current) {
-          justDraggedRef.current = false;
-          return;
-        }
-        // Open card on click unless clicking an interactive element (checkbox, status pill, etc.)
-        if (!(e.target as HTMLElement).closest(SELECT_INTERACTIVE)) {
-          r.open();
-        }
-      }}
-      onDoubleClick={r.open}
-      className={`lift-anim group relative cursor-pointer touch-none overflow-hidden rounded-lg border glass-tint p-3 hover:border-muted active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${visual === "selected" ? "" : "hover:-translate-y-px hover:[box-shadow:var(--shadow-2)]"} ${visual === "selected" ? "" : visual === "preview" ? "border-accent/50 border-dashed" : "border-line"} ${dragging ? "is-dragging" : ""}`}
-      style={{ "--tint": r.accent } as React.CSSProperties}
-    >
-      {/* The identity edge is ALWAYS the domain color — the same crimson/blue/etc.
-          the record wears in Table, Calendar and Timeline. "In progress" is a
-          status (the filled pill + the active lane), not the entity's color, so it
-          no longer repaints this edge mulberry and breaks cross-view identity. */}
-      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: r.accent }} />
-      <div className="flex items-start gap-2 pl-1.5">
-        {selectable && (
-          <SelectCheckbox
-            checked={visual === "selected"}
-            preview={visual === "preview"}
-            onToggle={() => selection.pick(r.id, { extend: true, range: false })}
-            className="mt-0.5"
-          />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            {r.ripeness && <RipenessPip stage={r.ripeness} unsound={r.unsound} />}
-            <span className="text-body font-medium">{r.title || "Untitled"}</span>
-          </div>
-          <div className="mono mt-0.5 truncate text-meta" style={{ color: r.accent }}>{r.domainIcon} {r.subtitle}</div>
-        </div>
-        <div data-no-select onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-          <StatusPill
-            value={r.status}
-            options={config.statusOptions}
-            colors={config.statusColors}
-            labels={config.statusLabels}
-            filled={inProgress ? new Set(["in_progress"]) : undefined}
-            onChange={r.setStatus}
-          />
-        </div>
-      </div>
-      <div className="mt-2 pl-1.5">
-        <Bar pct={r.progress} color={r.accent} h={1} />
-        <div className="mono flex items-center gap-2 text-meta text-muted">
-          <span style={{ color: r.accent }}>{r.progress}%</span>
-          {metaEntries.map((m, i) => <span key={i}>· {m}</span>)}
-          {r.targetDate && <span className="ml-auto">{r.targetDate.slice(5)}</span>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Calendar (drag a record onto a day to set its target date) ───────────────
-function CalendarChip({
-  r,
-  selectable,
-  selection,
-  dragging,
-  onDragStart,
-  onDragEnd,
-  className,
-  style,
-  dot = false,
-}: {
-  r: CollectionRecord;
-  selectable: boolean;
-  selection: CollectionSelection;
-  dragging: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  className: string;
-  style?: React.CSSProperties;
-  /** Lead with a domain-color dot — the tray's identity cue (the month chip
-   *  carries its color as a left bar instead). */
-  dot?: boolean;
-}) {
-  const visual = selectable ? itemSelectVisual(selection, r.id) : "none";
-  return (
-    <div
-      draggable
-      data-drag-item
-      data-select-id={r.id}
-      ref={(el) => selection.registerRef(r.id, el)}
-      onDragStart={(e) => {
-        selection.cancelPointer();
-        e.dataTransfer.effectAllowed = "move";
-        e.stopPropagation();
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
-      onClick={selectable ? selection.itemClickSelect(r.id) : undefined}
-      onDoubleClick={r.open}
-      className={`${className} cursor-grab active:cursor-grabbing ${itemSelectClass(selection, r.id)} ${visual === "preview" ? "border-dashed" : ""}`}
-      style={{ ...style, opacity: dragging ? 0.4 : 1 }}
-      title={r.title ? `${r.title} — drag to reschedule` : "Drag to reschedule"}
-    >
-      {selectable && (
-        <SelectCheckbox
-          checked={visual === "selected"}
-          preview={visual === "preview"}
-          onToggle={() => selection.pick(r.id, { extend: true, range: false })}
-          className="mr-1 inline-flex align-middle"
-        />
-      )}
-      {dot && <span className="mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full align-middle" style={{ background: r.accent }} />}
-      <span className="truncate">{r.title || "Untitled"}</span>
-    </div>
-  );
-}
-
-function CalendarView({ config, selection }: { config: CollectionConfig; selection: CollectionSelection }) {
-  const { selectable } = config;
-  const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overKey, setOverKey] = useState<string | null>(null);
-  const days = useMemo(() => {
-    const start = startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 });
-    const end = endOfWeek(endOfMonth(cursor), { weekStartsOn: 1 });
-    return eachDayOfInterval({ start, end });
-  }, [cursor]);
-
-  const onDay = (day: Date) => config.records.filter((r) => r.targetDate && isSameDay(parseISO(r.targetDate), day));
-  const unscheduled = config.records.filter((r) => !r.targetDate);
-
-  const setTarget = (iso: string | null) => {
-    const r = config.records.find((x) => x.id === dragId);
-    setDragId(null);
-    setOverKey(null);
-    if (r) r.setTargetDate(iso);
-  };
-
-  return (
-    <SelectionSurface selection={selection}>
-      <div className="flex min-h-0 flex-1 flex-col">
-        {/* month nav — floats on the paper, no frame */}
-        <div className="mb-3 flex shrink-0 items-center gap-3">
-          <button onClick={() => setCursor((c) => addMonths(c, -1))} title="Previous month" className="fast flex h-9 w-9 items-center justify-center rounded-lg border border-line text-body text-muted hover:border-line-strong hover:text-ink">‹</button>
-          <button onClick={() => setCursor((c) => addMonths(c, 1))} title="Next month" className="fast flex h-9 w-9 items-center justify-center rounded-lg border border-line text-body text-muted hover:border-line-strong hover:text-ink">›</button>
-          <span className="masthead text-lead">{format(cursor, "MMMM yyyy")}</span>
-          <button onClick={() => setCursor(startOfMonth(new Date()))} className="fast rounded-lg border border-line px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink">Today</button>
-          {dragId && <span className="mono text-meta text-muted">drag onto a day to reschedule</span>}
-        </div>
-
-        {/* weekday header */}
-        <div className="grid shrink-0 grid-cols-7 border-b border-line">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-            <div key={d} className="section-label px-2.5 py-2">{d}</div>
-          ))}
-        </div>
-
-        {/* days — the grid IS the paper; rows stretch to fill the floor */}
-        <div className="grid min-h-0 flex-1 grid-cols-7" style={{ gridAutoRows: "minmax(72px, 1fr)" }}>
-          {days.map((day, i) => {
-            const items = onDay(day);
-            const dim = !isSameMonth(day, cursor);
-            const key = format(day, "yyyy-MM-dd");
-            const over = overKey === key && dragId;
-            return (
-              <div
-                key={i}
-                onDragOver={(e) => { if (dragId) { e.preventDefault(); setOverKey(key); } }}
-                onDragLeave={() => setOverKey((k) => (k === key ? null : k))}
-                onDrop={(e) => { e.preventDefault(); setTarget(key); }}
-                className="overflow-hidden border-b border-r border-line p-1.5 last:border-r-0"
-                style={{ opacity: dim ? 0.4 : 1, background: over ? "var(--accent-soft)" : "transparent", outline: over ? "1px dashed var(--accent)" : "none", outlineOffset: -1 }}
-              >
-                <div className="mb-1 flex items-center">
-                  <span className="mono flex h-6 w-6 items-center justify-center rounded-full text-meta" style={{ background: isToday(day) ? "var(--signal)" : "transparent", color: isToday(day) ? "#fff" : "var(--muted)" }}>
-                    {format(day, "d")}
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  {items.slice(0, 4).map((r) => (
-                    <CalendarChip
-                      key={r.id}
-                      r={r}
-                      selectable={!!selectable}
-                      selection={selection}
-                      dragging={dragId === r.id}
-                      onDragStart={() => setDragId(r.id)}
-                      onDragEnd={() => { setDragId(null); setOverKey(null); }}
-                      className="fast flex w-full items-center truncate rounded-sm px-1.5 py-1 text-left text-meta"
-                      style={{ background: softTint(r.accent, 18), color: "var(--text)", borderLeft: `2px solid ${r.accent}` }}
-                    />
-                  ))}
-                  {items.length > 4 && <div className="mono px-1 text-micro text-muted">+{items.length - 4} more</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* unscheduled tray — matches the Timeline tray */}
-        <div
-          onDragOver={(e) => { if (dragId) { e.preventDefault(); setOverKey("unscheduled"); } }}
-          onDragLeave={() => setOverKey((k) => (k === "unscheduled" ? null : k))}
-          onDrop={(e) => { e.preventDefault(); setTarget(null); }}
-          className="fast mt-3 shrink-0 border-t border-line pt-3"
-          style={{ background: overKey === "unscheduled" && dragId ? "var(--accent-soft)" : "transparent" }}
-        >
-          <div className="section-label mb-2">No target date · {unscheduled.length}{dragId ? " · drop here to clear" : ""}</div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {unscheduled.map((r) => (
-              <CalendarChip
-                key={r.id}
-                r={r}
-                selectable={!!selectable}
-                selection={selection}
-                dragging={dragId === r.id}
-                dot
-                onDragStart={() => setDragId(r.id)}
-                onDragEnd={() => { setDragId(null); setOverKey(null); }}
-                className="glass-card fast flex shrink-0 items-center gap-2 rounded-lg border border-line px-3 py-2 text-caption hover:border-line-strong"
-              />
-            ))}
-            {unscheduled.length === 0 && <span className="mono text-label text-muted italic">Everything has a date.</span>}
-          </div>
-        </div>
-      </div>
-    </SelectionSurface>
-  );
-}
-
-// ── Timeline ─────────────────────────────────────────────────────────────────
-function TimelineView({ config, selection }: { config: CollectionConfig; selection: CollectionSelection }) {
-  const items: TimelineItem[] = config.records.map((r) => ({
-    id: r.id,
-    label: r.title || "Untitled",
-    color: r.accent,
-    start: r.startDate,
-    end: r.targetDate,
-    progress: r.progress,
-    dim: r.status === "complete" || r.status === "done" || r.status === "cancelled",
-    onClick: r.open,
-    onChangeDates: (start, end) => {
-      if (r.setDates) r.setDates(start, end);
-      else { r.setStartDate(start); r.setTargetDate(end); }
-    },
-    children: r.childItems,
-  }));
-  return (
-    <SelectionSurface selection={selection}>
-      <Timeline
-        items={items}
-        selection={config.selectable ? selection : undefined}
-        persistKey={config.storageKey}
-      />
     </SelectionSurface>
   );
 }
