@@ -25,7 +25,9 @@ import {
 } from "./vertical";
 import { lensGaps, type LensGap } from "./lenses";
 
-/** Concrete quarter columns before the "Later" overflow bucket (this + next 3). */
+/** Concrete quarter columns shown on the deck (this + next 3). Initiatives targeted
+ *  further out than this just clamp into the furthest column — the inbox already
+ *  covers "not committed to a near quarter yet." */
 export const HORIZON_QUARTERS = 4;
 
 const toISO = (d: Date) =>
@@ -36,6 +38,13 @@ export const quarterEndISO = (start: Date) => toISO(endOfQuarter(start));
 
 /** A quarter's short name, e.g. "Q3 2026". */
 export const quarterName = (d: Date) => `Q${getQuarter(d)} ${getYear(d)}`;
+
+/** A quarter's month span, e.g. "Jul – Sep 2026" — so a column reads its own
+ *  start and end at a glance, not just a Q-number. */
+export const quarterRangeLabel = (start: Date, end: Date) => {
+  const m = (x: Date) => x.toLocaleDateString(undefined, { month: "short" });
+  return `${m(start)} – ${m(end)} ${end.getFullYear()}`;
+};
 
 // ── lane state — OKR-first, mirroring onDeck's LaneState vocabulary ───────────
 export type InitiativeLaneState =
@@ -73,8 +82,6 @@ export interface QuarterColumn {
   key: string; // "2026-Q3"
   label: string; // "This quarter" | "Next quarter" | "Q1 2027"
   shortLabel: string; // "Q3 2026"
-  /** the overflow bucket that gathers everything beyond the concrete horizon. */
-  later: boolean;
 }
 
 export interface InitiativeDeckBoard {
@@ -90,12 +97,12 @@ export interface InitiativeDeckBoard {
 const quarterSerial = (d: Date) => getYear(d) * 4 + (getQuarter(d) - 1);
 
 /** Which horizon column a finish line lands in. Past → 0 (clamped, overdue);
- *  ≥ HORIZON_QUARTERS out → HORIZON_QUARTERS (the "Later" bucket). */
+ *  ≥ HORIZON_QUARTERS out → clamped into the furthest column. */
 export function targetQuarterIdx(targetISO: string, now: Date): number {
   const target = new Date(targetISO + "T12:00:00");
   const diff = quarterSerial(target) - quarterSerial(now);
   if (diff < 0) return 0;
-  if (diff >= HORIZON_QUARTERS) return HORIZON_QUARTERS;
+  if (diff >= HORIZON_QUARTERS) return HORIZON_QUARTERS - 1;
   return diff;
 }
 
@@ -110,6 +117,39 @@ function laneState(
   if (atRisk.atRisk) return "at_risk";
   if (gaps.length > 0) return "needs_shaping";
   return "on_track";
+}
+
+/** Build one initiative's lane — the OKR/tending/lens rollup shared by the deck
+ *  (grouped by quarter) and the Groom wall (every open bet, quarter or not). */
+export function buildInitiativeLane(d: VerticalData, i: Initiative, now: Date): InitiativeLane {
+  const gaps = lensGaps(d, "initiative", i, now);
+  const atRisk = initiativeAtRisk(d, i, now);
+  const lane: InitiativeLane = {
+    initiative: i,
+    state: laneState(i, gaps, atRisk),
+    attainment: initiativeAttainment(d, i),
+    krCount: i.keyResults.length,
+    uncovered: uncoveredKeyResults(d, i).length,
+    atRisk,
+    gaps,
+    needsDomain: !i.domainId || !domainById(d, i.domainId),
+    quarterIdx: null,
+    overdue: false,
+  };
+  if (i.targetDate) {
+    lane.quarterIdx = targetQuarterIdx(i.targetDate, now);
+    lane.overdue = quarterSerial(new Date(i.targetDate + "T12:00:00")) < quarterSerial(now);
+  }
+  return lane;
+}
+
+/** Every open, in-flight bet as a lane — the Groom wall's source (grooming is a
+ *  defining/measuring concern, so it spans bets whether or not they have a
+ *  quarter yet, unlike the deck which only places the ones with a finish line). */
+export function allOpenInitiativeLanes(d: VerticalData, now: Date): InitiativeLane[] {
+  return d.initiatives
+    .filter((i) => isOpenStatus(i.status) && !isProjectComplete(i.status))
+    .map((i) => buildInitiativeLane(d, i, now));
 }
 
 /** Read the whole initiative On Deck board in one pass. */
@@ -130,20 +170,8 @@ export function readInitiativeDeck(
       key: quarterName(start),
       label: i === 0 ? "This quarter" : i === 1 ? "Next quarter" : quarterName(start),
       shortLabel: quarterName(start),
-      later: false,
     });
   }
-  // the overflow bucket — everything beyond the concrete horizon
-  const laterStart = addQuarters(thisStart, horizonQuarters);
-  quarters.push({
-    idx: horizonQuarters,
-    start: laterStart,
-    end: endOfQuarter(laterStart),
-    key: "later",
-    label: "Later",
-    shortLabel: "Later",
-    later: true,
-  });
 
   const open = d.initiatives.filter(
     (i) => isOpenStatus(i.status) && !isProjectComplete(i.status),
@@ -153,29 +181,8 @@ export function readInitiativeDeck(
   const inbox: Initiative[] = [];
 
   for (const i of open) {
-    const gaps = lensGaps(d, "initiative", i, now);
-    const atRisk = initiativeAtRisk(d, i, now);
-    const lane: InitiativeLane = {
-      initiative: i,
-      state: laneState(i, gaps, atRisk),
-      attainment: initiativeAttainment(d, i),
-      krCount: i.keyResults.length,
-      uncovered: uncoveredKeyResults(d, i).length,
-      atRisk,
-      gaps,
-      needsDomain: !i.domainId || !domainById(d, i.domainId),
-      quarterIdx: null,
-      overdue: false,
-    };
-    if (!i.targetDate) {
-      inbox.push(i);
-    } else {
-      const idx = targetQuarterIdx(i.targetDate, now);
-      const target = new Date(i.targetDate + "T12:00:00");
-      lane.quarterIdx = idx;
-      lane.overdue = quarterSerial(target) < quarterSerial(now);
-      lanes.push(lane);
-    }
+    if (!i.targetDate) inbox.push(i);
+    else lanes.push(buildInitiativeLane(d, i, now));
   }
 
   return { quarters, lanes, inbox, horizonQuarters };
@@ -209,28 +216,39 @@ function domainCorpus(dom: Domain): string {
   return `${dom.name} ${dom.name} ${dom.charter} ${dom.intention} ${scope} ${entities} ${keywords}`;
 }
 
-/** Best-guess domain for an unlinked (or any) initiative, or null when nothing
- *  clears the bar. Returns the score so the UI can hedge weak matches. */
-export function suggestDomainForInitiative(
+/** Best-guess domain for any free text (a project/initiative's name + outcome +
+ *  description), or null when nothing clears the bar. Instant and offline — the
+ *  same token-overlap matcher the initiative deck routes on, factored out so the
+ *  Shipped wall can propose a home for loose, already-finished work. Returns the
+ *  score so the UI can hedge weak matches. */
+export function suggestDomainForText(
   d: VerticalData,
-  i: Initiative,
+  text: string,
 ): { domain: Domain; score: number } | null {
   if (d.domains.length === 0) return null;
-  const betTokens = new Set(tokenize(`${i.name} ${i.outcome} ${i.description}`));
-  if (betTokens.size === 0) return null;
+  const tokens = new Set(tokenize(text));
+  if (tokens.size === 0) return null;
+  const lower = text.toLowerCase();
 
   let best: { domain: Domain; score: number } | null = null;
   for (const dom of d.domains) {
-    const domTokens = tokenize(domainCorpus(dom));
-    if (domTokens.length === 0) continue;
-    // count how many distinct bet tokens the domain corpus contains
-    const domSet = new Set(domTokens);
+    const domSet = new Set(tokenize(domainCorpus(dom)));
+    if (domSet.size === 0) continue;
     let score = 0;
-    for (const t of betTokens) if (domSet.has(t)) score += 1;
+    for (const t of tokens) if (domSet.has(t)) score += 1;
     // a direct name mention is decisive
-    if (i.name.toLowerCase().includes(dom.name.toLowerCase()) && dom.name.length >= 3) score += 3;
+    if (lower.includes(dom.name.toLowerCase()) && dom.name.length >= 3) score += 3;
     if (!best || score > best.score) best = { domain: dom, score };
   }
   // require at least one real overlap to make a suggestion
   return best && best.score >= 1 ? best : null;
+}
+
+/** Best-guess domain for an unlinked (or any) initiative, or null when nothing
+ *  clears the bar. Thin wrapper over {@link suggestDomainForText}. */
+export function suggestDomainForInitiative(
+  d: VerticalData,
+  i: Initiative,
+): { domain: Domain; score: number } | null {
+  return suggestDomainForText(d, `${i.name} ${i.outcome} ${i.description}`);
 }
