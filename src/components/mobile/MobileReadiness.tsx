@@ -4,21 +4,22 @@
 //
 // Day-level faithfulness already lives in NowFloor's domain balance, so this
 // stays focused on what the phone otherwise can't see — is the week composed,
-// and are the initiatives ready. Build-floor work isn't fully tendable on a phone, so
-// its demand routes to the Plan tab (browse/light edits) or Nuvo (the planner).
+// and are the initiatives ready. Build-floor work isn't fully tendable on a
+// phone, so its demand routes to the matching On Deck tab (Projects /
+// Initiatives) or Nuvo (the planner).
 
-import { FLOOR_LABEL, readSpine, topTurn } from "../../lib/readiness";
+import { FLOOR_LABEL, readSpine, topTurn, type Floor } from "../../lib/readiness";
 import type { VerticalData } from "../../lib/vertical";
 import { ReadinessBanner } from "../floors/ReadinessBanner";
 
 export default function MobileReadiness({
   data,
   onAskNuvo,
-  onOpenPlan,
+  onReview,
 }: {
   data: VerticalData;
   onAskNuvo: (seed?: string) => void;
-  onOpenPlan: () => void;
+  onReview: (floor: Floor) => void;
 }) {
   const spine = readSpine(data);
   const turn = topTurn(spine);
@@ -28,15 +29,15 @@ export default function MobileReadiness({
     return <ReadinessBanner eyebrow="This week" readiness={spine.floors.day.readiness} cue={null} />;
   }
 
-  // The action depends on where the turn lives and what kind it is. The week's
-  // own planning is a Nuvo job on the phone; everything in the vertical routes
-  // to the Plan tab (browse + light edits).
+  // The action depends on where the turn lives. The week's own planning is a Nuvo
+  // job on the phone; vertical turns route to their On Deck tab (domains, which
+  // have no tab, ride along to Initiatives where their bets live).
+  const reviewLabel =
+    turn.floor === "project" ? "Open Projects" : turn.floor === "day" ? "Review week" : "Open Initiatives";
   const action =
-    turn.floor === "day"
-      ? turn.cue?.tone === "invite"
-        ? { label: "Plan with Nuvo", run: () => onAskNuvo("Help me plan this week") }
-        : { label: "Review in Plan", run: onOpenPlan }
-      : { label: "Review in Plan", run: onOpenPlan };
+    turn.floor === "day" && turn.cue?.tone === "invite"
+      ? { label: "Plan with Nuvo", run: () => onAskNuvo("Help me plan this week") }
+      : { label: reviewLabel, run: () => onReview(turn.floor) };
 
   return (
     <ReadinessBanner

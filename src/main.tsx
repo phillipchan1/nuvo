@@ -5,6 +5,20 @@ import "./index.css";
 
 const isTauri = "__TAURI_INTERNALS__" in globalThis;
 
+// Pin the app to the *real* visible viewport. CSS `100dvh` is wrong in some iOS
+// standalone-PWA builds — it resolves short, leaving a dead strip of body
+// background under the bottom nav. `window.innerHeight` is the one measure those
+// builds report correctly, so mirror it into `--app-height` (consumed by the
+// html/body/#root height rule in index.css) and keep it fresh across rotation,
+// keyboard, and toolbar changes. No-op on desktop/Tauri (innerHeight == viewport).
+{
+  const setAppHeight = () =>
+    document.documentElement.style.setProperty("--app-height", `${window.innerHeight}px`);
+  setAppHeight();
+  window.addEventListener("resize", setAppHeight);
+  window.addEventListener("orientationchange", setAppHeight);
+}
+
 // Reserve left inset for macOS traffic lights when running in Tauri.
 if (isTauri) {
   document.documentElement.classList.add("tauri");

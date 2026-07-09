@@ -1,24 +1,17 @@
-// The mobile "Plan" screen — the strategic vertical (Domains · Initiatives ·
-// Projects) the desktop floors own. Reachable two ways, both fast:
-//   • a flat, segmented list (Projects / Initiatives / Domains) so you tap
-//     straight to any one item — no forced walk down the hierarchy, and
-//   • a `target` jumped in from global search, which opens a detail directly.
-// The hierarchy isn't gone — it lives in each detail as TAPPABLE breadcrumbs
-// (Domain › Initiative) so you can climb up when you actually want to.
+// The strategic-vertical detail stack — the rich, light-editing screens for a
+// single Domain / Initiative / Project, plus the flat browse list and all the
+// shared primitives they're built from. Extracted from the old MobilePlan so the
+// Projects and Initiatives tabs (and global search) can open the SAME detail
+// through one bottom Sheet.
 //
 // Viewing is rich (progress, the 13-week faithfulness pulse, key results);
 // editing stays light — name, outcome, status, momentum, dates, and a domain's
 // vow + weekly target. No new data layer: every read is a pure selector over the
 // live VerticalData snapshot, every write goes through useVertical()'s mutations.
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { addDays, format, parseISO, startOfWeek } from "date-fns";
-import { toDateISO } from "../../lib/dates";
-import { useVertical } from "../../hooks/useVertical";
-import { useWeekReport } from "../../hooks/useWeekReport";
-import { WeekPlanBody } from "../floors/WeekPlanFloor";
-import WeekStory from "../floors/WeekStory";
-import WeekEmblem from "../floors/WeekEmblem";
+import { type ReactNode } from "react";
+import { format, parseISO } from "date-fns";
+import { useVertical } from "../../../hooks/useVertical";
 import {
   domainById,
   faithfulness,
@@ -37,28 +30,26 @@ import {
   type ProjectStatus,
   type VTask,
   type VerticalData,
-} from "../../lib/vertical";
-import { RIPENESS_ADVANCE, readTending, ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../lib/tending";
-import { readinessOfInitiativeFloor, readinessOfProjectFloor, type FloorCue } from "../../lib/readiness";
-import { RipenessPip } from "../floors/parts";
-import { ReadinessBanner } from "../floors/ReadinessBanner";
+} from "../../../lib/vertical";
+import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../../lib/tending";
+import { RipenessPip } from "../../floors/parts";
 
-type Store = ReturnType<typeof useVertical>;
+export type Store = ReturnType<typeof useVertical>;
 
-/** A jump requested from global search — open this detail directly. `n` is a
- *  nonce so repeated jumps to the same id re-fire the effect. */
-export type PlanTarget = { kind: "domain" | "initiative" | "project"; id: string; n: number };
+/** A detail to open — from a tab row or a global-search jump. `n` is a nonce so
+ *  repeated jumps to the same id re-fire the effect. */
+export type DetailTarget = { kind: "domain" | "initiative" | "project"; id: string; n: number };
 
 // One status vocabulary, shared with the desktop floors (parts.tsx).
-const STATUS: ProjectStatus[] = ["backlog", "in_progress", "waiting", "cancelled", "complete"];
-const STATUS_LABEL: Record<ProjectStatus, string> = {
+export const STATUS: ProjectStatus[] = ["backlog", "in_progress", "waiting", "cancelled", "complete"];
+export const STATUS_LABEL: Record<ProjectStatus, string> = {
   backlog: "Backlog",
   in_progress: "Active",
   waiting: "Waiting",
   cancelled: "Cancelled",
   complete: "Complete",
 };
-const STATUS_COLOR: Record<ProjectStatus, string> = {
+export const STATUS_COLOR: Record<ProjectStatus, string> = {
   backlog: "var(--muted)",
   in_progress: "var(--accent)",
   waiting: "#D97706",
@@ -66,7 +57,7 @@ const STATUS_COLOR: Record<ProjectStatus, string> = {
   complete: "#0D9488",
 };
 // Active work floats to the top of the flat lists; finished/abandoned sinks.
-const STATUS_RANK: Record<ProjectStatus, number> = {
+export const STATUS_RANK: Record<ProjectStatus, number> = {
   in_progress: 0,
   waiting: 1,
   backlog: 2,
@@ -74,281 +65,25 @@ const STATUS_RANK: Record<ProjectStatus, number> = {
   cancelled: 4,
 };
 
-const MOMENTUM: { value: Momentum; glyph: string; label: string }[] = [
+export const MOMENTUM: { value: Momentum; glyph: string; label: string }[] = [
   { value: "up", glyph: "↗", label: "Rising" },
   { value: "flat", glyph: "→", label: "Steady" },
   { value: "down", glyph: "↘", label: "Slipping" },
 ];
 
-type Lens = "projects" | "initiatives" | "domains";
-const LENS_KEY = "nuvo-mobile-plan-lens";
-const LENSES: { id: Lens; label: string }[] = [
-  { id: "projects", label: "Projects" },
-  { id: "initiatives", label: "Initiatives" },
-  { id: "domains", label: "Domains" },
-];
-function readLens(): Lens {
-  try {
-    const v = localStorage.getItem(LENS_KEY) as Lens | null;
-    if (v && LENSES.some((l) => l.id === v)) return v;
-  } catch {
-    /* ignore */
-  }
-  return "projects";
-}
+export type Lens = "projects" | "initiatives" | "domains";
 
 // ── The navigation stack: a flat list at the base, details pushed on top ──────
-type Frame =
+export type Frame =
   | { level: "list" }
   | { level: "domain"; id: string }
   | { level: "initiative"; id: string }
   | { level: "project"; id: string };
 
-const frameFor = (t: PlanTarget): Frame => ({ level: t.kind, id: t.id });
-
-export default function MobilePlan({ target, onRefine }: { target?: PlanTarget | null; onRefine?: () => void }) {
-  const store = useVertical();
-  const d = store.data;
-  const [lens, setLensState] = useState<Lens>(readLens);
-  const setLens = (l: Lens) => {
-    setLensState(l);
-    try {
-      localStorage.setItem(LENS_KEY, l);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const [stack, setStack] = useState<Frame[]>(() => (target ? [{ level: "list" }, frameFor(target)] : [{ level: "list" }]));
-  // A search jump while the tab is already mounted: open that detail.
-  useEffect(() => {
-    if (target) setStack([{ level: "list" }, frameFor(target)]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target?.n]);
-
-  const frame = stack[stack.length - 1];
-  const push = (f: Frame) => setStack((s) => [...s, f]);
-  const pop = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
-
-  const detailTitle =
-    frame.level === "domain"
-      ? d.domains.find((x) => x.id === frame.id)?.name ?? "Domain"
-      : frame.level === "initiative"
-        ? d.initiatives.find((x) => x.id === frame.id)?.name ?? "Initiative"
-        : frame.level === "project"
-          ? d.projects.find((x) => x.id === frame.id)?.name ?? "Project"
-          : "";
-
-  const openDomain = (id: string) => push({ level: "domain", id });
-  const openInitiative = (id: string) => push({ level: "initiative", id });
-  const openProject = (id: string) => push({ level: "project", id });
-
-  return (
-    <div className="pb-24">
-      {/* Sticky header: the lens switch at the base, Back + title in a detail. */}
-      <div className="sticky top-0 z-10 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
-        {frame.level === "list" ? (
-          <div className="flex gap-1">
-            {LENSES.map((l) => {
-              const on = lens === l.id;
-              const count =
-                l.id === "projects" ? d.projects.length : l.id === "initiatives" ? d.initiatives.length : d.domains.length;
-              return (
-                <button
-                  key={l.id}
-                  onClick={() => setLens(l.id)}
-                  className={`tap fast flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-body font-medium ${
-                    on ? "bg-accent text-white" : "text-muted active:bg-surface-2"
-                  }`}
-                >
-                  {l.label}
-                  {count > 0 && (
-                    <span
-                      className="mono rounded-full px-1 text-micro font-semibold leading-[14px]"
-                      style={{
-                        minWidth: 14,
-                        height: 14,
-                        background: on ? "rgba(255,255,255,0.25)" : "var(--line-strong)",
-                        color: on ? "#fff" : "var(--surface)",
-                      }}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={pop}
-              className="tap fast -ml-1 flex items-center gap-0.5 rounded-lg px-2 text-head font-medium text-muted active:bg-surface-2"
-            >
-              ‹ Back
-            </button>
-            <span className="ml-1 min-w-0 flex-1 truncate text-head font-semibold">{detailTitle}</span>
-          </div>
-        )}
-      </div>
-
-      {frame.level === "list" && <WeekPlanCard />}
-
-      {frame.level === "list" && (
-        <PlanReadiness d={d} onRefine={onRefine} onOpen={(k, id) => (k === "project" ? openProject(id) : openInitiative(id))} />
-      )}
-
-      {frame.level === "list" ? (
-        <ListScreen
-          d={d}
-          lens={lens}
-          onOpenProject={openProject}
-          onOpenInitiative={openInitiative}
-          onOpenDomain={openDomain}
-        />
-      ) : frame.level === "domain" ? (
-        <DomainScreen
-          key={frame.id}
-          d={d}
-          store={store}
-          id={frame.id}
-          onOpenInitiative={openInitiative}
-          onOpenProject={openProject}
-        />
-      ) : frame.level === "initiative" ? (
-        <InitiativeScreen
-          key={frame.id}
-          d={d}
-          store={store}
-          id={frame.id}
-          onOpenProject={openProject}
-          onOpenDomain={openDomain}
-        />
-      ) : (
-        <ProjectScreen
-          key={frame.id}
-          d={d}
-          store={store}
-          id={frame.id}
-          onOpenInitiative={openInitiative}
-          onOpenDomain={openDomain}
-        />
-      )}
-    </div>
-  );
-}
-
-// ── The Week's Plan / Review — the weekly narrated companion (mobile home) ────
-// A "This week" hero atop the Plan tab; tap to open the full surface in a Sheet,
-// where you can walk ‹ › back to sealed Reviews of past weeks.
-function weekLabelOf(weekISO: string): string {
-  const s = new Date(weekISO + "T00:00:00");
-  const e = addDays(s, 6);
-  return `${format(s, "MMM d")} – ${format(e, s.getMonth() === e.getMonth() ? "d" : "MMM d")}`;
-}
-
-function WeekPlanCard() {
-  const now = useMemo(() => new Date(), []);
-  const currentWeekISO = useMemo(() => toDateISO(startOfWeek(now, { weekStartsOn: 1 })), [now]);
-  const report = useWeekReport(currentWeekISO, now);
-  const [open, setOpen] = useState(false);
-  const total = report.priorityTotal;
-
-  return (
-    <div className="px-4 pt-4">
-      <button
-        onClick={() => setOpen(true)}
-        className="tap fast flex w-full items-center gap-3 rounded-xl border border-line bg-surface-2 px-3 py-3 text-left active:bg-surface"
-      >
-        <WeekEmblem spec={report.emblem} state="forming" size={48} hideAmbient />
-        <div className="min-w-0 flex-1">
-          <div className="section-label !p-0">This week</div>
-          <div className="truncate text-head font-semibold text-ink">{weekLabelOf(currentWeekISO)}</div>
-          <div className="truncate text-caption text-muted">
-            {total > 0 ? `${report.landedCount} of ${total} priorities landed` : "Set what matters most"}
-          </div>
-        </div>
-        <span className="shrink-0 text-muted">›</span>
-      </button>
-
-      {open && <WeekPlanSheet currentWeekISO={currentWeekISO} now={now} onClose={() => setOpen(false)} />}
-    </div>
-  );
-}
-
-function WeekPlanSheet({ currentWeekISO, now, onClose }: { currentWeekISO: string; now: Date; onClose: () => void }) {
-  const [viewedWeekISO, setViewedWeekISO] = useState(currentWeekISO);
-  const [mode, setMode] = useState<"story" | "detail">("story");
-  const report = useWeekReport(viewedWeekISO, now);
-  const isCurrent = viewedWeekISO === currentWeekISO;
-  const state = isCurrent ? "forming" : ("sealed" as const);
-  const walk = (deltaDays: number) =>
-    setViewedWeekISO((iso) => {
-      const next = toDateISO(addDays(new Date(iso + "T00:00:00"), deltaDays));
-      return next > currentWeekISO ? currentWeekISO : next;
-    });
-
-  // The recap opens full-screen by default (the received moment); "See the full
-  // week" drops into the detailed view — same as desktop.
-  if (mode === "story") {
-    return (
-      <div className="fixed inset-0 z-[60]">
-        <WeekStory report={report} state={state} weekLabel={weekLabelOf(viewedWeekISO)} onClose={onClose} onSeeDetail={() => setMode("detail")} />
-      </div>
-    );
-  }
-
-  const header = (
-    <div className="mb-5 flex items-center gap-2 pt-safe">
-      <button onClick={() => walk(-7)} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Previous week">‹</button>
-      <button onClick={isCurrent ? undefined : () => walk(7)} disabled={isCurrent} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2 disabled:opacity-30" aria-label="Next week">›</button>
-      <div className="min-w-0 flex-1 text-center">
-        <div className="section-label !p-0">{isCurrent ? "This week" : "The Review"}</div>
-        <div className="masthead text-head text-ink">{weekLabelOf(viewedWeekISO)}</div>
-      </div>
-      <button onClick={onClose} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Close">✕</button>
-    </div>
-  );
-
-  return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 96%, transparent)", backdropFilter: "blur(20px)" }}>
-      <div className="px-4 pb-24 pt-3">
-        <WeekPlanBody report={report} state={state} viewedWeekISO={viewedWeekISO} header={header} />
-      </div>
-    </div>
-  );
-}
-
-// ── "Now what" header — where to start when you land on the vertical ─────────
-function PlanReadiness({
-  d,
-  onOpen,
-  onRefine,
-}: {
-  d: VerticalData;
-  onOpen: (kind: "project" | "initiative", id: string) => void;
-  onRefine?: () => void;
-}) {
-  const top = readTending(d).groomable[0];
-  const readiness = (readinessOfProjectFloor(d) + readinessOfInitiativeFloor(d)) / 2;
-  const cue: FloorCue | null = top
-    ? { tone: top.silent ? "drift" : "attention", label: `${top.name} — ${RIPENESS_ADVANCE[top.ripeness.stage]}` }
-    : null;
-  return (
-    <div className="px-4 pt-4">
-      <ReadinessBanner
-        eyebrow="Your vertical"
-        readiness={readiness}
-        cue={cue}
-        actionLabel={top ? "Groom" : undefined}
-        onAction={top ? (onRefine ?? (() => onOpen(top.kind, top.id))) : undefined}
-      />
-    </div>
-  );
-}
+export const frameFor = (t: DetailTarget): Frame => ({ level: t.kind, id: t.id });
 
 // ── The flat, segmented list — tap straight to any item ──────────────────────
-function ListScreen({
+export function VerticalList({
   d,
   lens,
   onOpenProject,
@@ -449,7 +184,7 @@ function ListScreen({
 }
 
 // ── A single domain ──────────────────────────────────────────────────────────
-function DomainScreen({
+export function DomainScreen({
   d,
   store,
   id,
@@ -537,7 +272,7 @@ function DomainScreen({
 }
 
 // ── A single initiative ──────────────────────────────────────────────────────
-function InitiativeScreen({
+export function InitiativeScreen({
   d,
   store,
   id,
@@ -647,7 +382,7 @@ function InitiativeScreen({
 }
 
 // ── A single project ─────────────────────────────────────────────────────────
-function ProjectScreen({
+export function ProjectScreen({
   d,
   store,
   id,
@@ -721,7 +456,7 @@ function ProjectScreen({
 }
 
 // ── Context line for the flat project list (where it lives) ───────────────────
-function projectContext(d: VerticalData, p: Project): string {
+export function projectContext(d: VerticalData, p: Project): string {
   const dom = domainById(d, p.domainId);
   const init = p.initiativeId ? initiativeById(d, p.initiativeId) : null;
   const head = dom ? `${dom.icon} ${dom.name}` : "—";
@@ -729,7 +464,7 @@ function projectContext(d: VerticalData, p: Project): string {
 }
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
-function InitiativeRow({ d, i, onClick }: { d: VerticalData; i: Initiative; onClick: () => void }) {
+export function InitiativeRow({ d, i, onClick }: { d: VerticalData; i: Initiative; onClick: () => void }) {
   const mom = MOMENTUM.find((m) => m.value === i.momentum);
   return (
     <Row
@@ -748,7 +483,7 @@ function InitiativeRow({ d, i, onClick }: { d: VerticalData; i: Initiative; onCl
   );
 }
 
-function ProjectRow({ d, p, onClick }: { d: VerticalData; p: Project; onClick: () => void }) {
+export function ProjectRow({ d, p, onClick }: { d: VerticalData; p: Project; onClick: () => void }) {
   return (
     <Row
       onClick={onClick}
@@ -761,7 +496,7 @@ function ProjectRow({ d, p, onClick }: { d: VerticalData; p: Project; onClick: (
   );
 }
 
-function TaskRow({ t, onToggle }: { t: VTask; onToggle: () => void }) {
+export function TaskRow({ t, onToggle }: { t: VTask; onToggle: () => void }) {
   const done = t.status === "done";
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
@@ -780,7 +515,7 @@ function TaskRow({ t, onToggle }: { t: VTask; onToggle: () => void }) {
   );
 }
 
-function Row({
+export function Row({
   leading,
   title,
   subtitle,
@@ -812,11 +547,11 @@ function Row({
 }
 
 // ── Primitives ───────────────────────────────────────────────────────────────
-function StatusDot({ status }: { status: ProjectStatus }) {
+export function StatusDot({ status }: { status: ProjectStatus }) {
   return <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[status] }} />;
 }
 
-function Lamp({ lit, color }: { lit: boolean; color: string }) {
+export function Lamp({ lit, color }: { lit: boolean; color: string }) {
   return (
     <span
       className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -825,7 +560,7 @@ function Lamp({ lit, color }: { lit: boolean; color: string }) {
   );
 }
 
-function Pulse({ weeks, color }: { weeks: number[]; color: string }) {
+export function Pulse({ weeks, color }: { weeks: number[]; color: string }) {
   const max = Math.max(0.5, ...weeks);
   return (
     <div className="flex h-7 items-end gap-0.5">
@@ -843,7 +578,7 @@ function Pulse({ weeks, color }: { weeks: number[]; color: string }) {
   );
 }
 
-function ProgressBar({ pct, color }: { pct: number; color: string }) {
+export function ProgressBar({ pct, color }: { pct: number; color: string }) {
   return (
     <div className="relative mt-2 h-1.5 rounded-full" style={{ background: "var(--line)" }}>
       <div
@@ -854,7 +589,7 @@ function ProgressBar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-function StatusChips({ value, onPick }: { value: ProjectStatus; onPick: (s: ProjectStatus) => void }) {
+export function StatusChips({ value, onPick }: { value: ProjectStatus; onPick: (s: ProjectStatus) => void }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {STATUS.map((s) => (
@@ -867,7 +602,7 @@ function StatusChips({ value, onPick }: { value: ProjectStatus; onPick: (s: Proj
   );
 }
 
-function DateRow({
+export function DateRow({
   start,
   target,
   onStart,
@@ -886,7 +621,7 @@ function DateRow({
   );
 }
 
-function DateField({ label, value, onCommit }: { label: string; value: string | null; onCommit: (v: string | null) => void }) {
+export function DateField({ label, value, onCommit }: { label: string; value: string | null; onCommit: (v: string | null) => void }) {
   return (
     <label className="flex flex-1 flex-col gap-1">
       <span className="section-label !p-0">{label}</span>
@@ -901,7 +636,7 @@ function DateField({ label, value, onCommit }: { label: string; value: string | 
   );
 }
 
-function TextField({ value, onCommit, className = "" }: { value: string; onCommit: (v: string) => void; className?: string }) {
+export function TextField({ value, onCommit, className = "" }: { value: string; onCommit: (v: string) => void; className?: string }) {
   return (
     <input
       defaultValue={value}
@@ -914,7 +649,7 @@ function TextField({ value, onCommit, className = "" }: { value: string; onCommi
   );
 }
 
-function AreaField({
+export function AreaField({
   value,
   onCommit,
   placeholder,
@@ -939,7 +674,7 @@ function AreaField({
   );
 }
 
-function NumberField({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+export function NumberField({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
   return (
     <input
       type="number"
@@ -955,7 +690,7 @@ function NumberField({ value, onCommit }: { value: number; onCommit: (v: number)
   );
 }
 
-function Card({ children, accent }: { children: ReactNode; accent?: string }) {
+export function Card({ children, accent }: { children: ReactNode; accent?: string }) {
   return (
     <div
       className="rounded-xl border border-line bg-surface-2 p-3"
@@ -966,11 +701,11 @@ function Card({ children, accent }: { children: ReactNode; accent?: string }) {
   );
 }
 
-function CardList({ children }: { children: ReactNode }) {
+export function CardList({ children }: { children: ReactNode }) {
   return <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface-2">{children}</div>;
 }
 
-function Section({ label, children }: { label: string; children: ReactNode }) {
+export function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="mt-5">
       <div className="section-label mb-1.5 !p-0">{label}</div>
@@ -979,7 +714,7 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Chip({ children, on, onClick }: { children: ReactNode; on?: boolean; onClick: () => void }) {
+export function Chip({ children, on, onClick }: { children: ReactNode; on?: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -992,20 +727,20 @@ function Chip({ children, on, onClick }: { children: ReactNode; on?: boolean; on
   );
 }
 
-function Hint({ children }: { children: ReactNode }) {
+export function Hint({ children }: { children: ReactNode }) {
   return <div className="rounded-xl border border-dashed border-line px-3 py-4 text-center text-caption text-muted">{children}</div>;
 }
 
-function Empty({ children }: { children: ReactNode }) {
+export function Empty({ children }: { children: ReactNode }) {
   return <div className="px-4 py-16 text-center text-body text-muted">{children}</div>;
 }
 
-function Breadcrumb({ children }: { children: ReactNode }) {
+export function Breadcrumb({ children }: { children: ReactNode }) {
   return <div className="mono mb-2 flex flex-wrap items-center gap-1.5 text-caption text-muted">{children}</div>;
 }
 
 // A tappable breadcrumb segment — climb up the hierarchy on demand.
-function Crumb({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+export function Crumb({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (
     <button onClick={onClick} className="tap fast -my-1 truncate py-1 active:text-accent">
       {children}

@@ -252,24 +252,28 @@
   --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
 }
 
+/* iOS standalone PWA: a percentage-height chain (html/body/#root at 100%)
+   resolves *short* of the real screen, so the app shell stops above the bottom
+   edge and the leftover strip shows the bare body background — the "gap under
+   the nav bar." Two progressive fallbacks:
+   1. `100dvh` — the dynamic viewport, correct on most modern engines. The second
+      declaration wins where the unit is understood and is ignored otherwise, so
+      100% stays the floor.
+   2. `--app-height` — a JS-measured `window.innerHeight` (see main.tsx), the
+      only value some iOS standalone builds report correctly. It's the last rule
+      so it wins once set; while unset the `var()` is invalid and the cascade
+      falls back to 100dvh/100%. Desktop/Tauri innerHeight == viewport, so this
+      is a no-op for them. */
 html,
 body,
 #root {
   height: 100%;
+  height: 100dvh;
 }
-
-/* iOS standalone PWA: a percentage-height chain (html/body/#root at 100%)
-   resolves *short* of the real screen, so the app shell stops above the bottom
-   edge and the leftover strip shows the bare body background — the "gap under
-   the nav bar." Dynamic viewport units resolve to the true visible viewport, so
-   the warm-paper canvas fills top-to-bottom. Desktop/Tauri have no dynamic
-   chrome, so 100dvh == 100vh == 100% there — this is a no-op for them. */
-@supports (height: 100dvh) {
-  html,
-  body,
-  #root {
-    height: 100dvh;
-  }
+html,
+body,
+#root {
+  height: var(--app-height);
 }
 
 /* The canvas behind the safe-area insets (e.g. the iOS PWA home-indicator strip

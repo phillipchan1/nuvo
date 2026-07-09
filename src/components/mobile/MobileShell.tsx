@@ -16,37 +16,45 @@ import { useRecurrenceMutations } from "../../hooks/useRecurrence";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
-import { readTending } from "../../lib/tending";
+import type { Floor } from "../../lib/readiness";
+import type { AgentHintContext } from "../../lib/agentHints";
 import type { Task } from "../../lib/types";
 import NowFloor from "../floors/NowFloor";
 import SettingsModal from "../SettingsModal";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
-import MobilePlan, { type PlanTarget } from "./MobilePlan";
+import MobileProjects from "./MobileProjects";
+import MobileInitiatives from "./MobileInitiatives";
 import MobileReadiness from "./MobileReadiness";
+import WeekPlanCard from "./WeekPlanCard";
 import MobileSearch, { type JumpKind } from "./MobileSearch";
+import MobileDetailSheet from "./detail/MobileDetailSheet";
+import type { DetailTarget, Frame } from "./detail/verticalDetail";
 import QuickTaskSheet from "./QuickTaskSheet";
 import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 
-// Top-level destinations: the three jobs you do on the phone. Today/Week/Inbox
-// collapse into one "Tasks" screen (three lenses on one backlog) so the bar can
-// give Calendar a slot and make capture + Nuvo permanent first-class actions.
-// "nuvo" is the permanent chat destination — a real tab, not a modal sheet, so
-// the bottom bar stays put while you talk to the assistant.
-type Tab = "now" | "calendar" | "tasks" | "plan" | "nuvo";
-const TAB_KEY = "nuvo-mobile-tab-v2";
+// Top-level destinations — the five surfaces you work from on the phone, mirror-
+// ing the desktop altitudes: Now · Calendar · Tasks, then the two strategic
+// altitudes that On Deck makes first-class — Projects and Initiatives. Capture
+// (＋) and Nuvo (✦) are *actions*, not places, so they float above the bar
+// instead of taking a slot; Nuvo opens as an overlay over whatever screen you're
+// on, so its answers carry that screen's context.
+type Tab = "now" | "calendar" | "tasks" | "projects" | "initiatives";
+const TAB_KEY = "nuvo-mobile-tab-v3";
+const TAB_KEY_V2 = "nuvo-mobile-tab-v2"; // pre-redesign: now|calendar|tasks|plan|nuvo
 const SUB_KEY = "nuvo-mobile-tasksub";
-const LEGACY_KEY = "nuvo-mobile-tab"; // pre-refactor: now|today|week|inbox
+const LEGACY_KEY = "nuvo-mobile-tab"; // pre-v2: now|today|week|inbox
 
 const NAV: { id: Tab; label: string; glyph: string }[] = [
   { id: "now", label: "Now", glyph: "◉" },
   { id: "calendar", label: "Calendar", glyph: "▦" },
   { id: "tasks", label: "Tasks", glyph: "▤" },
-  // The strategic vertical — Domains › Initiatives › Projects, the "why" above
-  // the schedule. Browsed top-down as a drill-down stack (see MobilePlan).
-  { id: "plan", label: "Plan", glyph: "❖" },
+  // The concrete near-term unit (weeks) and the longer multi-facet arc (quarters),
+  // each opening to its read-first On Deck.
+  { id: "projects", label: "Projects", glyph: "◆" },
+  { id: "initiatives", label: "Initiatives", glyph: "❖" },
 ];
 
 const SUBTABS: { id: MobileTab; label: string }[] = [
@@ -55,11 +63,19 @@ const SUBTABS: { id: MobileTab; label: string }[] = [
   { id: "inbox", label: "Inbox" },
 ];
 
-// Read the active tab, migrating the legacy single-key state forward once.
+const isTab = (v: string | null): v is Tab => !!v && NAV.some((t) => t.id === v);
+
+// Read the active tab, migrating older single-key state forward once. The v2 nav
+// had a "plan" tab (now split into Projects/Initiatives) and a "nuvo" tab (now a
+// floating overlay), so both fold back to a live destination.
 function readTab(): Tab {
   try {
-    const v = localStorage.getItem(TAB_KEY) as Tab | null;
-    if (v && (v === "nuvo" || NAV.some((t) => t.id === v))) return v;
+    const v = localStorage.getItem(TAB_KEY);
+    if (isTab(v)) return v;
+    const v2 = localStorage.getItem(TAB_KEY_V2);
+    if (v2 === "plan") return "projects";
+    if (v2 === "nuvo") return "now";
+    if (isTab(v2)) return v2; // now | calendar | tasks carry over unchanged
     const legacy = localStorage.getItem(LEGACY_KEY);
     if (legacy === "now") return "now";
     if (legacy === "today" || legacy === "week" || legacy === "inbox") return "tasks";
@@ -102,14 +118,17 @@ export default function MobileShell() {
   };
 
   const [quickOpen, setQuickOpen] = useState(false);
-  // The tab Nuvo was opened from, so its starter hints match where you came from.
-  const [chatFrom, setChatFrom] = useState<"now" | MobileTab | undefined>(undefined);
+  // The Nuvo chat overlay — a floating action, reachable over any screen.
+  const [chatOpen, setChatOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  // A detail to open in the Plan tab, set when you jump from global search.
-  const [planTarget, setPlanTarget] = useState<PlanTarget | null>(null);
+  // A strategic-vertical detail to open in the shared Sheet — from a tab row or a
+  // global-search jump. `detailFrame` mirrors the Sheet's current breadcrumb frame
+  // so the agent's screen context follows you into the item.
+  const [detailTarget, setDetailTarget] = useState<DetailTarget | null>(null);
+  const [detailFrame, setDetailFrame] = useState<Frame | null>(null);
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -134,10 +153,17 @@ export default function MobileShell() {
   const { data: accounts = [] } = useCalendarAccounts();
   const mutations = useTaskMutations();
   const recurrenceMutations = useRecurrenceMutations();
-  const { agent, setRange } = useAgentContext();
+  const { agent, setRange, setNavFocus } = useAgentContext();
   useEffect(() => {
     setRange(range);
   }, [range, setRange]);
+
+  // Live screen context to the agent: the current tab, or — when a vertical detail
+  // is open — that item plus its parents. Set even while the chat is closed; it's
+  // only read on the next send, so the context is already right when you summon it.
+  useEffect(() => {
+    setNavFocus(navFocusFor(tab, detailFrame, vertical));
+  }, [tab, detailFrame, vertical, setNavFocus]);
 
   useRealtime(true);
 
@@ -172,13 +198,6 @@ export default function MobileShell() {
   }, [inbox, todayTasks, weekTasks, allTasks]);
   const openTask = taskId ? taskById.get(taskId) ?? null : null;
 
-  // Plan-tab demand: how many initiatives/projects in the vertical want a look (the
-  // silent + raw failure modes). The phone's echo of the spine's Build cues.
-  const planDemand = useMemo(() => {
-    const t = readTending(vertical);
-    return t.silent.length + t.raw.length;
-  }, [vertical]);
-
   const subCount = (s: MobileTab) =>
     s === "inbox"
       ? inbox.length
@@ -191,32 +210,49 @@ export default function MobileShell() {
     scrollRef.current?.scrollTo({ top: 0 });
   }, [tab, sub]);
 
-  // Opening Plan by hand starts at the flat list; only a search jump (which sets
-  // the target in the same tick it switches to Plan) opens a detail.
-  useEffect(() => {
-    if (tab !== "plan") setPlanTarget(null);
-  }, [tab]);
-
-  // Open the permanent Nuvo tab. Capture the tab we came from (for context-aware
-  // starter hints) before switching, and optionally seed a first message — e.g.
-  // "Ask Nuvo" from the Now view, instead of NowFloor's cramped inline rail.
+  // Open the Nuvo chat overlay, optionally seeding a first message — e.g. "Ask
+  // Nuvo" from the Now view. The shared agent means the conversation is already
+  // there; this just surfaces it over the current screen.
   const openChat = (seed?: string) => {
-    if (tab !== "nuvo") setChatFrom(tab === "now" ? "now" : tab === "tasks" ? sub : undefined);
-    setTab("nuvo");
+    setChatOpen(true);
     if (seed) void agent.sendMessage(seed);
   };
 
-  // Global-search jumps: a vertical item opens its Plan detail (nonce so the same
-  // id re-fires); a task opens the task sheet.
+  // Open a strategic-vertical item in the shared detail Sheet (nonce so the same
+  // id re-fires). Used by the Projects/Initiatives tabs and global search alike.
+  const openDetail = (kind: DetailTarget["kind"], id: string) => {
+    setDetailTarget({ kind, id, n: Date.now() });
+  };
+  const closeDetail = () => {
+    setDetailTarget(null);
+    setDetailFrame(null);
+  };
+
+  // Global-search jumps: a vertical item opens its detail Sheet over the current
+  // tab; a task opens the task sheet.
   const openPlanItem = (kind: JumpKind, id: string) => {
-    setPlanTarget({ kind, id, n: Date.now() });
-    setTab("plan");
     setSearchOpen(false);
+    openDetail(kind, id);
   };
   const openTaskFromSearch = (id: string) => {
     setSearchOpen(false);
     setTaskId(id);
   };
+
+  // Route a readiness "turn" to the surface that resolves it.
+  const reviewFloor = (floor: Floor) => {
+    if (floor === "project") setTab("projects");
+    else if (floor === "initiative" || floor === "domain") setTab("initiatives");
+    else {
+      setSub("today");
+      setTab("tasks");
+    }
+  };
+
+  const liveHint = useMemo(
+    () => liveHintFor(tab, sub, detailFrame, vertical),
+    [tab, sub, detailFrame, vertical],
+  );
 
   return (
     <div className="atmosphere flex h-full flex-col">
@@ -255,23 +291,24 @@ export default function MobileShell() {
         </button>
       </header>
 
-      {/* Content. Nuvo is its own destination: it fills the space between the
-          top bar and nav (both persist) rather than overlaying as a sheet. */}
-      {tab === "nuvo" ? (
-        <ChatPane agent={agent} mobileTab={chatFrom} />
-      ) : (
+      {/* Content */}
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         {tab === "now" ? (
           <div className="px-4 pt-4 pb-24">
             <div className="mb-4">
-              <MobileReadiness data={vertical} onAskNuvo={openChat} onOpenPlan={() => setTab("plan")} />
+              <MobileReadiness data={vertical} onAskNuvo={openChat} onReview={reviewFloor} />
+            </div>
+            <div className="mb-4">
+              <WeekPlanCard />
             </div>
             <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
           </div>
         ) : tab === "calendar" ? (
           <MobileCalendar now={now} onTapEvent={setCalendarTap} />
-        ) : tab === "plan" ? (
-          <MobilePlan target={planTarget} />
+        ) : tab === "projects" ? (
+          <MobileProjects onOpenItem={openDetail} />
+        ) : tab === "initiatives" ? (
+          <MobileInitiatives onOpenItem={openDetail} />
         ) : (
           <div className="pb-24">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
@@ -289,53 +326,59 @@ export default function MobileShell() {
           </div>
         )}
       </main>
-      )}
 
-      {/* Bottom bar — five equal navigation destinations: Now · Calendar · Plan ·
-          Tasks · Nuvo. Capture is an *action*, not a place, so it doesn't take a
-          tab slot: it floats as the single primary ＋ (below), which keeps the
-          nav row even and lets the one bold accent belong to the one action.
-          Nuvo is a permanent chat destination. */}
+      {/* Bottom bar — five equal navigation destinations. Capture (＋) and Nuvo
+          (✦) float above the bar as the two primary *actions* (bottom-right thumb
+          arc), so the row stays even and the bold accent belongs to capture. */}
       <nav className="pb-safe relative flex shrink-0 items-stretch border-t border-line bg-surface">
-        {/* Capture — the one primary action, floated above the bar in the
-            bottom-right thumb arc so it reads as a verb, not a destination.
-            Hidden on the Nuvo tab, where it would collide with the composer. */}
-        {tab !== "nuvo" && (
-          <button
-            onClick={() => setQuickOpen(true)}
-            aria-label="Quick task"
-            className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95"
-          >
-            ＋
-          </button>
+        {!chatOpen && (
+          <>
+            {/* Nuvo — the floating chat launcher, beside capture. Screen-aware:
+                its starters match wherever you are. */}
+            <button
+              onClick={() => openChat()}
+              aria-label="Ask Nuvo"
+              className="elev-2 fast absolute right-[calc(1rem_+_3.5rem_+_0.75rem)] bottom-[calc(100%_+_0.75rem_+_4px)] flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface text-[22px] leading-none text-accent active:scale-95"
+            >
+              ✦
+            </button>
+            {/* Capture — the one primary action. */}
+            <button
+              onClick={() => setQuickOpen(true)}
+              aria-label="Quick task"
+              className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95"
+            >
+              ＋
+            </button>
+          </>
         )}
 
-        <NavTab tab={NAV[0]} active={tab === NAV[0].id} onClick={() => setTab(NAV[0].id)} />
-        <NavTab tab={NAV[1]} active={tab === NAV[1].id} onClick={() => setTab(NAV[1].id)} />
-        {/* Plan — the strategic vertical, badged when initiatives want a look. */}
-        <NavTab tab={NAV[3]} active={tab === NAV[3].id} onClick={() => setTab(NAV[3].id)} badge={planDemand} />
-        <NavTab
-          tab={NAV[2]}
-          active={tab === NAV[2].id}
-          onClick={() => setTab(NAV[2].id)}
-          badge={inbox.length}
-        />
-        {/* Nuvo — permanent chat destination */}
-        <button
-          onClick={() => openChat()}
-          aria-label="Ask Nuvo"
-          className={`tap fast relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 ${
-            tab === "nuvo" ? "text-accent" : "text-muted"
-          }`}
-        >
-          <span className="flex h-7 items-center text-lead leading-none">✦</span>
-          <span className="text-meta font-medium leading-none">Nuvo</span>
-        </button>
+        {NAV.map((t) => (
+          <NavTab
+            key={t.id}
+            tab={t}
+            active={tab === t.id}
+            onClick={() => setTab(t.id)}
+            badge={t.id === "tasks" ? inbox.length : 0}
+          />
+        ))}
       </nav>
 
-      {/* The Refine run — a full-screen card deck over the shell */}
+      {/* The Nuvo chat — a full-screen overlay over the shell (its own scroll +
+          pinned composer sit better here than in a swipe-to-dismiss sheet). */}
+      {chatOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex flex-col pt-safe"
+          style={{ background: "color-mix(in srgb, var(--bg) 96%, transparent)", backdropFilter: "blur(20px)" }}
+        >
+          <ChatPane agent={agent} hint={liveHint} onClose={() => setChatOpen(false)} />
+        </div>
+      )}
 
       {/* Sheets */}
+      {detailTarget && (
+        <MobileDetailSheet target={detailTarget} onClose={closeDetail} onFrameChange={setDetailFrame} />
+      )}
       {quickOpen && (
         <QuickTaskSheet
           labels={labels}
@@ -383,6 +426,66 @@ export default function MobileShell() {
       )}
     </div>
   );
+}
+
+// The agent's "where am I" context. A vertical detail overrides the tab, carrying
+// the item plus its parents so Nuvo can act on exactly what's on screen.
+function navFocusFor(
+  tab: Tab,
+  frame: Frame | null,
+  d: ReturnType<typeof useVertical>["data"],
+) {
+  if (frame && frame.level !== "list") {
+    if (frame.level === "project") {
+      const p = d.projects.find((x) => x.id === frame.id);
+      return { rung: "project", projectId: frame.id, initiativeId: p?.initiativeId ?? undefined, domainId: p?.domainId ?? undefined };
+    }
+    if (frame.level === "initiative") {
+      const i = d.initiatives.find((x) => x.id === frame.id);
+      return { rung: "initiative", initiativeId: frame.id, domainId: i?.domainId ?? undefined };
+    }
+    return { rung: "domain", domainId: frame.id };
+  }
+  switch (tab) {
+    case "now":
+      return { rung: "now" };
+    case "projects":
+      return { rung: "project" };
+    case "initiatives":
+      return { rung: "initiative" };
+    default:
+      return { rung: "day" };
+  }
+}
+
+// The chat's empty-state starters. Reuses the day-lens mobile hints for the
+// execution surfaces and the richer rung starters for the strategic ones (and a
+// named item when a detail is open).
+function liveHintFor(
+  tab: Tab,
+  sub: MobileTab,
+  frame: Frame | null,
+  d: ReturnType<typeof useVertical>["data"],
+): AgentHintContext {
+  if (frame && frame.level !== "list") {
+    if (frame.level === "project")
+      return { rung: "project", projectName: d.projects.find((x) => x.id === frame.id)?.name };
+    if (frame.level === "initiative")
+      return { rung: "initiative", initiativeName: d.initiatives.find((x) => x.id === frame.id)?.name };
+    return { rung: "domain", domainName: d.domains.find((x) => x.id === frame.id)?.name };
+  }
+  switch (tab) {
+    case "now":
+      return { rung: "day", mobileTab: "now" };
+    case "calendar":
+      return { rung: "day", mobileTab: "today" };
+    case "projects":
+      return { rung: "project" };
+    case "initiatives":
+      return { rung: "initiative" };
+    default:
+      return { rung: "day", mobileTab: sub };
+  }
 }
 
 // A bottom-bar destination tab with optional count badge.

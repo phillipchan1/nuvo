@@ -3,25 +3,28 @@ import type { AgentAttachment } from "../../lib/agentTypes";
 import type { AgentHandle } from "../../hooks/useAgent";
 import { useFileDrop } from "../../hooks/useFileDrop";
 import { filesToAttachments } from "../../lib/agentAttachments";
-import { agentHints } from "../../lib/agentHints";
+import { agentHints, type AgentHintContext } from "../../lib/agentHints";
 import { ASSISTANT_NAME } from "../../lib/assistant";
 import AgentChatInput from "../AgentChatInput";
 import AgentMessageBubble from "../AgentMessageBubble";
 import AgentSuggestionChips from "../AgentSuggestionChips";
 
-// Full-height chat, reachable as its own bottom-bar destination. Unlike the
-// quick-capture and task sheets, Nuvo is a permanent tab — it fills the content
-// area between the top bar and the nav (both stay put), so you can switch tabs
-// without dismissing it. Reuses the same agent the desktop sidebar drives — it
-// can read the day, add tasks, and move blocks.
+// The Nuvo chat body. It rides inside a full-screen overlay summoned by the
+// floating ✦ launcher — a permanent action reachable from any screen, not a
+// bottom-bar destination. Reuses the same agent the desktop sidebar drives (so
+// the conversation persists across screens) — it can read the day, add tasks,
+// and move blocks. `hint` is the LIVE screen context, so the starter chips match
+// wherever you summoned it from.
 export default function ChatPane({
   agent,
-  mobileTab,
+  hint,
+  onClose,
 }: {
   agent: AgentHandle;
-  mobileTab?: "now" | "today" | "week" | "inbox";
+  hint: AgentHintContext;
+  onClose?: () => void;
 }) {
-  const hints = useMemo(() => agentHints({ rung: "day", mobileTab }), [mobileTab]);
+  const hints = useMemo(() => agentHints(hint), [hint]);
   const { messages, loading, error, sendMessage, clear } = agent;
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
@@ -73,11 +76,22 @@ export default function ChatPane({
 
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1 pt-2">
         <span className="mono text-label text-muted">{ASSISTANT_NAME} · your planner</span>
-        {messages.length > 0 && (
-          <button onClick={clear} className="fast text-caption text-muted hover:text-ink">
-            Clear
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {messages.length > 0 && (
+            <button onClick={clear} className="fast text-caption text-muted hover:text-ink">
+              Clear
+            </button>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              aria-label="Close chat"
+              className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted active:bg-surface-2"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mobile-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-2">
@@ -121,7 +135,7 @@ export default function ChatPane({
         </div>
       )}
 
-      <div className="shrink-0 border-t border-line p-3">
+      <div className="shrink-0 border-t border-line p-3 pb-safe">
         <AgentChatInput
           value={input}
           onChange={setInput}

@@ -151,7 +151,8 @@ payoff ("this makes *this* week composable") to beat present bias.
   derived faithfulness / sprint data (`vertical.ts`, per execution-flows §7).
 - **`Spine.tsx`** — per-rung meter + cue replacing the hover chip; active glass pill
   unchanged.
-- **Mobile** (`NowFloor` / `MobilePlan`) — the demand line + Plan-tab cue.
+- **Mobile** (`NowFloor` / `MobileReadiness`) — the demand line + a cue that routes to
+  the matching On Deck tab (`MobileProjects` / `MobileInitiatives`).
 
 **Gotcha:** do **not** roll up readiness with the existing `tendedScore` — it returns `0`
 for resting items (`effectiveScore ?? 0`), which would make a deliberately-parked item
