@@ -210,22 +210,24 @@ function domainRead(data: VerticalData, domain: Domain, now: Date): Read[] {
 export default function DomainFloor({
   focus,
   onSwitchDomain,
+  onExitDomain,
   onOpenInitiative,
   onOpenProject,
 }: {
   focus: Focus;
   onSwitchDomain: (id: string) => void;
+  onExitDomain: () => void;
   onOpenInitiative: (id: string) => void;
   onOpenProject: (id: string) => void;
 }) {
   const { data, addDomain } = useVertical();
   const domains = [...data.domains].sort((a, b) => a.sort - b.sort);
-  const [openId, setOpenId] = useState<string | null>(null);
   const [freshDomain, setFreshDomain] = useState<Domain | null>(null);
   const atRest = readSpine(data).floors.domain.calm;
   const celebrate = useRefinedCelebration("domain", atRest);
 
-  const enter = (id: string) => { onSwitchDomain(id); setOpenId(id); };
+  const enter = (id: string) => onSwitchDomain(id);
+  const openId = focus.domainId || null;
   const openIdx = openId ? domains.findIndex((d) => d.id === openId) : -1;
   const open = openIdx >= 0 ? domains[openIdx] : (openId && freshDomain?.id === openId ? freshDomain : null);
 
@@ -234,7 +236,7 @@ export default function DomainFloor({
   if (open) {
     return (
       <div className="floor-enter">
-        <Chapel key={open.id} domain={open} onBack={() => { setOpenId(null); setFreshDomain(null); }} onOpenInitiative={onOpenInitiative} onOpenProject={onOpenProject} />
+        <Chapel key={open.id} domain={open} onBack={() => { setFreshDomain(null); onExitDomain(); }} onOpenInitiative={onOpenInitiative} onOpenProject={onOpenProject} />
       </div>
     );
   }

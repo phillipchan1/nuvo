@@ -61,6 +61,13 @@ export default function FloorPane({
   const openProjectRecord = (id: string) => openRecord("project", id);
   const openInitiativeRecord = (id: string) => openRecord("initiative", id);
 
+  // "‹ all domains" always means the wall, full stop — it can't lean on
+  // history.back(): focus.domainId persists across rung switches, so landing
+  // on the domain rung (e.g. via the sidebar tab) with a domain already
+  // focused never pushed a fresh "wall" entry to pop back to. back() would
+  // instead exit the rung entirely, to whatever was open before Domains.
+  const exitDomain = () => focusDomain("");
+
   // Direct navigation back to each rung's front door (On Deck).
   const backToProjects = () => setProjectView("ondeck");
   const backToInitiatives = () => setInitiativeView("ondeck");
@@ -158,7 +165,7 @@ export default function FloorPane({
         {rung === "initiative" && initiativeView === "shipped" && <ShippedWall rung="initiative" />}
 
         {rung === "domain" && (
-          <DomainFloor focus={focus} onSwitchDomain={focusDomain} onOpenInitiative={openInitiativeRecord} onOpenProject={openProjectRecord} />
+          <DomainFloor focus={focus} onSwitchDomain={focusDomain} onExitDomain={exitDomain} onOpenInitiative={openInitiativeRecord} onOpenProject={openProjectRecord} />
         )}
       </div>
     </div>
