@@ -123,6 +123,38 @@ export default function TaskRow({
       ? "bg-bg"
       : "hover:bg-bg";
 
+  // Type the grooming guess so the inbox reads as two piles, not one uniform
+  // list. A project/initiative binding is a "push" — it moves a real object up
+  // the vertical, so it earns presence: a colored spine + the parent as an
+  // eyebrow + its weight up front. A domain/none guess is a loose task and stays
+  // a compact one-liner. Only inbox rows carry a guess, so nothing else changes.
+  const groomPush =
+    groom != null &&
+    (groom.level === "project" || groom.level === "initiative") &&
+    Boolean(groom.targetLabel);
+  // The push spine borrows the suggested domain color even before the task is
+  // filed; loose rows fall back to the row's own accent (usually none in inbox).
+  const spineColor = groomPush && groom ? (groom.domainColor ?? accent ?? null) : (accent ?? null);
+
+  // Accept / dismiss — shared by the push weight line and the loose one-liner.
+  const acceptControls = groom ? (
+    <span className="ml-auto flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={(e) => { e.stopPropagation(); onAcceptSuggestion?.(); }}
+        className="fast rounded px-1.5 py-px text-micro font-medium text-accent hover:bg-accent-soft"
+      >
+        Accept
+      </button>
+      <button
+        aria-label="Dismiss suggestion"
+        onClick={(e) => { e.stopPropagation(); onDismissSuggestion?.(); }}
+        className="fast rounded px-1 py-px text-micro text-muted hover:text-ink"
+      >
+        ✕
+      </button>
+    </span>
+  ) : null;
+
   return (
     <div
       data-task-drag={draggable ? task.id : undefined}
@@ -135,7 +167,7 @@ export default function TaskRow({
       className={`fast group flex cursor-pointer select-none items-start gap-2 border-b border-line px-3 py-2 ${
         completing ? "task-completing" : ""
       } ${bg}`}
-      style={accent ? { boxShadow: `inset 2px 0 0 0 ${accent}` } : undefined}
+      style={spineColor ? { boxShadow: `inset ${groomPush ? 3 : 2}px 0 0 0 ${spineColor}` } : undefined}
     >
       {/* Checkbox */}
       <button
@@ -156,6 +188,17 @@ export default function TaskRow({
 
       {/* Title + meta */}
       <div className="min-w-0 flex-1">
+        {/* Push eyebrow — the parent this work moves, small-caps in its color. */}
+        {groom && groomPush && (
+          <div
+            className="mb-[3px] flex items-center gap-1 truncate text-micro font-semibold uppercase tracking-[0.04em]"
+            style={{ color: groom.domainColor ?? "var(--muted)" }}
+            title={groom.rationale}
+          >
+            <span aria-hidden className="mono">✦</span>
+            <span className="truncate">{groom.targetLabel}</span>
+          </div>
+        )}
         {/* Primary line */}
         <div className="flex min-w-0 items-center gap-1.5">
           <span
@@ -190,10 +233,39 @@ export default function TaskRow({
               {fmtTime(task.start_time)}
             </span>
           )}
+
+          {/* Loose guess (domain / none) stays a compact one-liner: its whole
+              identity + weight rides the title row, so it reads as batchable. */}
+          {groom && !groomPush && (
+            <>
+              {groom.level === "domain" && groom.targetLabel && (
+                <span
+                  className="flex shrink-0 items-center gap-1 text-meta font-medium"
+                  style={{ color: groom.domainColor ?? "var(--muted)" }}
+                >
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ background: groom.domainColor ?? "var(--muted)" }}
+                  />
+                  <span className="max-w-[90px] truncate">{groom.targetLabel}</span>
+                </span>
+              )}
+              {groom.durationMinutes ? (
+                <span className="mono shrink-0 text-meta text-muted">{fmtDuration(groom.durationMinutes)}</span>
+              ) : null}
+              {groom.energy && (
+                <span className="shrink-0 text-meta text-muted">
+                  {ENERGY_META[groom.energy].icon} {ENERGY_META[groom.energy].label}
+                </span>
+              )}
+              {acceptControls}
+            </>
+          )}
         </div>
 
-        {/* Context line */}
-        {hasMeta && (
+        {/* Context line — the task's own filed meta (hidden while a guess is
+            still showing its proposed placement below). */}
+        {hasMeta && !groom && (
           <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-0.5">
             {(meta?.project || meta?.domain) && (
               <span
@@ -223,48 +295,25 @@ export default function TaskRow({
           </div>
         )}
 
-        {/* Passive grooming's guess — Nuvo did the filing homework; one tap to take it. */}
-        {groom && (
+        {/* Push weight line — the deep/decide register + estimate in the parent's
+            color, so the commitment reads before you accept it. */}
+        {groom && groomPush && (
           <div
-            className="mt-[5px] flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-dashed border-line bg-surface/40 px-1.5 py-1"
+            className="mt-[5px] flex items-center gap-2"
             onClick={(e) => e.stopPropagation()}
             title={groom.rationale}
           >
-            <span className="mono shrink-0 text-micro text-muted" aria-hidden>✦ groomed</span>
-            {groom.level !== "none" && groom.targetLabel && (
-              <span className="flex min-w-0 items-center gap-1 text-meta font-medium">
-                <span
-                  className="h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: groom.domainColor ?? "var(--muted)" }}
-                />
-                <span className="max-w-[130px] truncate" style={{ color: groom.domainColor ?? "var(--ink)" }}>
-                  {groom.targetLabel}
-                </span>
+            {(groom.energy || groom.durationMinutes) && (
+              <span
+                className="text-meta font-medium"
+                style={{ color: groom.domainColor ?? "var(--ink)" }}
+              >
+                {groom.energy ? `${ENERGY_META[groom.energy].icon} ${ENERGY_META[groom.energy].label}` : ""}
+                {groom.energy && groom.durationMinutes ? " · " : ""}
+                {groom.durationMinutes ? fmtDuration(groom.durationMinutes) : ""}
               </span>
             )}
-            {groom.durationMinutes ? (
-              <span className="mono text-meta text-muted">{fmtDuration(groom.durationMinutes)}</span>
-            ) : null}
-            {groom.energy && (
-              <span className="text-meta text-muted">
-                {ENERGY_META[groom.energy].icon} {ENERGY_META[groom.energy].label}
-              </span>
-            )}
-            <span className="ml-auto flex shrink-0 items-center gap-1">
-              <button
-                onClick={(e) => { e.stopPropagation(); onAcceptSuggestion?.(); }}
-                className="fast rounded px-1.5 py-px text-micro font-medium text-accent hover:bg-accent-soft"
-              >
-                Accept
-              </button>
-              <button
-                aria-label="Dismiss suggestion"
-                onClick={(e) => { e.stopPropagation(); onDismissSuggestion?.(); }}
-                className="fast rounded px-1 py-px text-micro text-muted hover:text-ink"
-              >
-                ✕
-              </button>
-            </span>
+            {acceptControls}
           </div>
         )}
       </div>
