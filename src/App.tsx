@@ -15,6 +15,24 @@ function errMsg(e: unknown) {
   return e instanceof Error ? e.message : "Something went wrong";
 }
 
+// A write that fails the instant you come back from offline (cold connection, or
+// a JWT that went stale while the tab slept) is transient — the mutation never
+// reached Postgres, so re-attempting is safe and lands it. We retry ONLY these:
+// a genuine rejection (409/400/RLS) must fail fast and roll the optimistic update
+// back, and a create must never be replayed after it actually inserted.
+function isTransientWriteError(error: unknown): boolean {
+  // Network-layer failure — the request never made it out.
+  if (error instanceof TypeError) return true;
+  const msg = (error as { message?: string } | null)?.message?.toLowerCase() ?? "";
+  if (/failed to fetch|networkerror|load failed|connection|timeout|fetch/.test(msg)) return true;
+  // Token expired while offline; the backoff below gives supabase-js time to
+  // refresh it before the next attempt, which then carries the fresh token.
+  const status = (error as { status?: number } | null)?.status;
+  const code = (error as { code?: string } | null)?.code;
+  if (status === 401 || code === "PGRST301" || /jwt (expired|invalid)|token/.test(msg)) return true;
+  return false;
+}
+
 // In Tauri, the dedicated "spotlight" window (the floating ⌥Space panel) loads
 // the same bundle as the main window; this flag swaps in the bare panel instead
 // of the full app. Always false in the browser / PWA.
@@ -57,6 +75,13 @@ const queryClient = new QueryClient({
       staleTime: 15_000,
       retry: 1,
       refetchOnWindowFocus: true,
+    },
+    mutations: {
+      // Save the first tap after a reconnect: a transient write blips and retries
+      // with backoff instead of rolling the optimistic update straight back (the
+      // "checked then instantly unchecked" bug). Real rejections still fail fast.
+      retry: (failureCount, error) => failureCount < 3 && isTransientWriteError(error),
+      retryDelay: (attempt) => Math.min(400 * 2 ** attempt, 4000),
     },
   },
 });
