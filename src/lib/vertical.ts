@@ -815,6 +815,50 @@ export function taskDomainColor(
   return domainById(d, domainId)?.color ?? null;
 }
 
+// ── Faithfulness rhythm — read from the 13-week pulse ────────────────────────
+/** Trailing run of most-recent weeks with any invested hours — the streak. */
+export function domainStreak(weeks: number[]): number {
+  let n = 0;
+  for (let i = weeks.length - 1; i >= 0; i--) {
+    if (weeks[i] > 0) n++;
+    else break;
+  }
+  return n;
+}
+
+/** How many of the last 13 weeks any time was kept — "kept faith N of 13". */
+export function domainKeptCount(weeks: number[]): number {
+  return weeks.filter((h) => h > 0).length;
+}
+
+/** The longest unbroken run of quiet (zero-hour) weeks in the pulse. */
+export function domainLongestQuiet(weeks: number[]): number {
+  let best = 0;
+  let run = 0;
+  for (const h of weeks) {
+    if (h > 0) run = 0;
+    else best = Math.max(best, ++run);
+  }
+  return best;
+}
+
+/** Completed blocks parked in a domain over the last 90 days — the "built" count
+ *  that pairs with `quarterHours` (the hours) in the chapel's Gain read. */
+export function domainQuarterDone(
+  d: VerticalData,
+  domainId: string,
+  now: Date = new Date(),
+): number {
+  const since = subDays(now, 90).getTime();
+  return d.tasks.filter(
+    (t) =>
+      t.status === "done" &&
+      t.domainId === domainId &&
+      t.completedAt != null &&
+      new Date(t.completedAt).getTime() >= since,
+  ).length;
+}
+
 /** Faithfulness read: lit = tended recently, dim = going quiet. */
 export function faithfulness(dom: Domain): { lit: boolean; note: string } {
   if (dom.lastTouchedDays <= 2) return { lit: true, note: "groomed" };
