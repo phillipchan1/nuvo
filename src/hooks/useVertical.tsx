@@ -175,6 +175,7 @@ export interface BlueprintTree {
   name: string;
   outcome: string;
   description?: string;
+  startDate?: string | null;
   targetDate?: string | null;
   keyResults: { name: string; baseline: number; target: number; unit: string }[];
   projects: {
@@ -946,7 +947,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           .insert({
             user_id: uid, domain_id: domainId, name: tree.name,
             outcome: tree.outcome, description: tree.description ?? "",
-            target_date: tree.targetDate ?? null,
+            start_date: tree.startDate ?? null, target_date: tree.targetDate ?? null,
           })
           .select("id")
           .single();

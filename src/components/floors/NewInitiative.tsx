@@ -1,14 +1,40 @@
 // New initiative — a composer, not a form. Type the initiative name, pick the domain,
-// set a finish line, create. Shaping it (key results, projects, first tasks) is
-// the ◇ Tending ritual's job — create the initiative bare here, ripen it there.
+// set a finish line, create. As soon as there's something to work with, the intelligence
+// blueprints the initiative below the composer: measurable key results (the OKR) + a
+// starter set of projects (each with first tasks), each an accept/reject chip. Accept
+// what fits, create — the whole subtree lands at once. Take nothing and it creates bare,
+// to be ripened later in the ◇ Groom ritual.
 // ⏎ moves focus through name → outcome → creates.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { endOfQuarter, format } from "date-fns";
 import * as chrono from "chrono-node";
 import { useVertical } from "../../hooks/useVertical";
+import { supabase } from "../../lib/supabase";
+import { ASSISTANT_NAME } from "../../lib/assistant";
+import { ENERGY_META, type Energy } from "../../lib/energy";
 import { fmtDate } from "./parts";
 import { Modal } from "../ui";
+
+interface DraftKR {
+  name: string;
+  baseline: number;
+  target: number;
+  unit: string;
+  included: boolean;
+}
+
+interface DraftProject {
+  name: string;
+  outcome: string;
+  tasks: { title: string; energy: Energy | null; durationMins: number }[];
+  included: boolean;
+}
+
+interface Blueprint {
+  keyResults: DraftKR[];
+  projects: DraftProject[];
+}
 
 export default function NewInitiative({
   onClose,
@@ -22,7 +48,7 @@ export default function NewInitiative({
   /** Carried over when expanding from the fast composer. */
   initialName?: string;
 }) {
-  const { data, addInitiative, addDomain } = useVertical();
+  const { data, addInitiative, addInitiativeTree, addDomain } = useVertical();
   const domains = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
 
   const [domainId, setDomainId] = useState(initialDomainId || domains[0]?.id || "");
@@ -34,10 +60,14 @@ export default function NewInitiative({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanding, setExpanding] = useState(false);
+  const [proposal, setProposal] = useState<Blueprint | null>(null);
+  const [draftPhase, setDraftPhase] = useState<"idle" | "thinking" | "ready">("idle");
 
   const nameRef = useRef<HTMLInputElement>(null);
   const outcomeRef = useRef<HTMLInputElement>(null);
   const dateRef = useRef<HTMLInputElement>(null);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastDraftKey = useRef("");
 
   const domain = domains.find((d) => d.id === domainId);
   const accent = domain?.color ?? "var(--accent)";
@@ -52,6 +82,37 @@ export default function NewInitiative({
     }
   }, []);
 
+  // As the bet takes shape, blueprint it — key results + starter projects. The
+  // person drives (name/outcome); Nuvo fills the executable structure around it.
+  const scheduleDraft = useCallback((nameVal: string, outcomeVal: string) => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    if (nameVal.trim().length < 4) return;
+    draftTimer.current = setTimeout(async () => {
+      const key = `${nameVal.trim()}|${outcomeVal.trim()}|${domainId}`;
+      if (key === lastDraftKey.current) return;
+      lastDraftKey.current = key;
+      setDraftPhase("thinking");
+      try {
+        const { data: res, error: fnErr } = await supabase.functions.invoke("agent", {
+          body: { blueprint: { name: nameVal.trim(), outcome: outcomeVal.trim(), domainId } },
+        });
+        if (fnErr) throw fnErr;
+        const krs = (res?.keyResults ?? []) as Omit<DraftKR, "included">[];
+        const projects = (res?.projects ?? []) as Omit<DraftProject, "included">[];
+        setProposal({
+          keyResults: krs.map((k) => ({ ...k, included: true })),
+          projects: projects.map((p) => ({ ...p, included: true })),
+        });
+        setDraftPhase("ready");
+      } catch {
+        setDraftPhase("idle");
+        lastDraftKey.current = "";
+      }
+    }, 1500);
+  }, [domainId]);
+
+  useEffect(() => () => { if (draftTimer.current) clearTimeout(draftTimer.current); }, []);
+
   // Collapse domain picker on outside click
   useEffect(() => {
     if (!expanding) return;
@@ -62,11 +123,31 @@ export default function NewInitiative({
     return () => window.removeEventListener("mousedown", close);
   }, [expanding]);
 
+  const krCount = (proposal?.keyResults ?? []).filter((k) => k.included).length;
+  const projectCount = (proposal?.projects ?? []).filter((p) => p.included).length;
+  const acceptCount = krCount + projectCount;
+
   const submit = async () => {
     if (!canCreate || busy) return;
     setBusy(true);
     setError(null);
     try {
+      const krs = (proposal?.keyResults ?? []).filter((k) => k.included);
+      const projects = (proposal?.projects ?? []).filter((p) => p.included);
+
+      if (krs.length || projects.length) {
+        const id = await addInitiativeTree(domainId, {
+          name: name.trim(),
+          outcome: outcome.trim(),
+          startDate: format(today, "yyyy-MM-dd"),
+          targetDate: finishLine,
+          keyResults: krs.map((k) => ({ name: k.name, baseline: k.baseline, target: k.target, unit: k.unit })),
+          projects: projects.map((p) => ({ name: p.name, outcome: p.outcome, tasks: p.tasks })),
+        });
+        onCreated(id);
+        return;
+      }
+
       const init = await addInitiative(domainId, {
         name: name.trim(),
         outcome: outcome.trim(),
@@ -109,7 +190,7 @@ export default function NewInitiative({
         <input
           ref={nameRef}
           value={name}
-          onChange={(e) => { setName(e.target.value); sniffDate(e.target.value); }}
+          onChange={(e) => { setName(e.target.value); sniffDate(e.target.value); scheduleDraft(e.target.value, outcome); }}
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); outcomeRef.current?.focus(); }
             if (e.key === "Escape") onClose();
@@ -121,7 +202,7 @@ export default function NewInitiative({
         <input
           ref={outcomeRef}
           value={outcome}
-          onChange={(e) => setOutcome(e.target.value)}
+          onChange={(e) => { setOutcome(e.target.value); scheduleDraft(name, e.target.value); }}
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); if (canCreate) void submit(); }
             if (e.key === "Escape") onClose();
@@ -150,7 +231,13 @@ export default function NewInitiative({
                 {domains.map((d) => (
                   <button
                     key={d.id}
-                    onClick={() => { setDomainId(d.id); setExpanding(false); }}
+                    onClick={() => {
+                      setDomainId(d.id);
+                      setExpanding(false);
+                      // Domain grounds the blueprint — re-draft against the new area.
+                      lastDraftKey.current = "";
+                      scheduleDraft(name, outcome);
+                    }}
                     className="fast flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-caption hover:bg-bg"
                     style={{ color: d.id === domainId ? d.color : "var(--text)", background: d.id === domainId ? `${d.color}12` : "transparent" }}
                   >
@@ -196,11 +283,111 @@ export default function NewInitiative({
         </div>
       </div>
 
+      {/* ── AI blueprint panel ── */}
+      {draftPhase !== "idle" && (
+        <div className="max-h-[42vh] overflow-y-auto border-t border-line px-6 py-3">
+          {draftPhase === "thinking" && (
+            <div className="flex items-center gap-2">
+              <span className="shimmer inline-block text-body" style={{ color: accent }}>✦</span>
+              <span className="text-label text-muted">
+                {ASSISTANT_NAME} is blueprinting key results + projects…
+              </span>
+            </div>
+          )}
+          {draftPhase === "ready" && proposal && (proposal.keyResults.length > 0 || proposal.projects.length > 0) && (
+            <div className="space-y-3.5">
+              {/* Key results — the measurable OKR */}
+              {proposal.keyResults.length > 0 && (
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-meta font-semibold uppercase tracking-wide" style={{ color: accent }}>
+                      ◈ key results
+                    </span>
+                    <span className="mono text-meta text-muted">{krCount}/{proposal.keyResults.length}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {proposal.keyResults.map((k, i) => (
+                      <div key={i} className="group flex items-center gap-2.5 rounded-md px-1 py-1 hover:bg-bg">
+                        <button
+                          onClick={() => setProposal((p) => p && ({ ...p, keyResults: p.keyResults.map((x, j) => j === i ? { ...x, included: !x.included } : x) }))}
+                          className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro text-white"
+                          style={{ borderColor: k.included ? accent : "var(--line)", background: k.included ? accent : "transparent" }}
+                        >
+                          {k.included ? "✓" : ""}
+                        </button>
+                        <span className={`min-w-0 flex-1 truncate text-caption ${k.included ? "text-ink" : "text-muted line-through"}`}>
+                          {k.name}
+                        </span>
+                        <span className="mono shrink-0 text-meta text-muted">
+                          {k.baseline}→{k.target}{k.unit && k.unit !== "done" ? k.unit : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Projects — each carries its own first tasks */}
+              {proposal.projects.length > 0 && (
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-meta font-semibold uppercase tracking-wide" style={{ color: accent }}>
+                      ◇ projects
+                    </span>
+                    <span className="mono text-meta text-muted">{projectCount}/{proposal.projects.length}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {proposal.projects.map((p, i) => (
+                      <div key={i} className="group flex items-start gap-2.5 rounded-md px-1 py-1 hover:bg-bg">
+                        <button
+                          onClick={() => setProposal((pr) => pr && ({ ...pr, projects: pr.projects.map((x, j) => j === i ? { ...x, included: !x.included } : x) }))}
+                          className="fast mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro text-white"
+                          style={{ borderColor: p.included ? accent : "var(--line)", background: p.included ? accent : "transparent" }}
+                        >
+                          {p.included ? "✓" : ""}
+                        </button>
+                        <span className="mt-0.5 shrink-0 text-label" style={{ color: accent }}>◇</span>
+                        <div className="min-w-0 flex-1">
+                          <div className={`truncate text-caption ${p.included ? "text-ink" : "text-muted line-through"}`}>{p.name}</div>
+                          {p.outcome && (
+                            <div className={`truncate text-meta ${p.included ? "text-muted" : "text-muted/60 line-through"}`}>{p.outcome}</div>
+                          )}
+                          {p.tasks.length > 0 && (
+                            <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-meta ${p.included ? "text-muted" : "text-muted/50"}`}>
+                              {p.tasks.slice(0, 4).map((t, ti) => (
+                                <span key={ti} className="inline-flex items-center gap-1">
+                                  <span style={{ color: accent }}>{t.energy ? ENERGY_META[t.energy].icon : "·"}</span>
+                                  <span className="truncate">{t.title}</span>
+                                </span>
+                              ))}
+                              {p.tasks.length > 4 && <span className="opacity-60">+{p.tasks.length - 4}</span>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={() => { lastDraftKey.current = ""; scheduleDraft(name, outcome); }}
+                className="fast mono text-meta text-muted hover:text-ink"
+              >
+                ↻ reshape
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {error && <div className="px-6 pb-3 text-caption text-signal">{error}</div>}
 
       {/* ── Footer ── */}
       <div className="flex items-center gap-2 border-t border-line bg-bg/40 px-6 py-3.5">
-        <span className="hidden text-meta text-muted/70 sm:inline">Shape it later in ◇ Groom</span>
+        <span className="hidden text-meta text-muted/70 sm:inline">
+          {acceptCount > 0 ? "Or shape it later in ◇ Groom" : "Shape it later in ◇ Groom"}
+        </span>
         <div className="flex-1" />
         <button
           onClick={onClose}
@@ -214,7 +401,11 @@ export default function NewInitiative({
           className="fast rounded-md px-3.5 py-1.5 text-caption font-medium text-white shadow-sm transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
           style={{ background: accent, boxShadow: canCreate ? `0 6px 16px -6px ${accent}` : "none" }}
         >
-          {busy ? "Creating…" : "Create initiative →"}
+          {busy
+            ? "Creating…"
+            : acceptCount > 0
+              ? `Create + ${projectCount ? `${projectCount} project${projectCount === 1 ? "" : "s"}` : ""}${projectCount && krCount ? " · " : ""}${krCount ? `${krCount} KR${krCount === 1 ? "" : "s"}` : ""} →`
+              : "Create initiative →"}
         </button>
       </div>
     </Modal>
