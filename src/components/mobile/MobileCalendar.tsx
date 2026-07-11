@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
   addMonths,
@@ -28,6 +28,14 @@ import WeatherIcon from "../WeatherIcon";
 // Both read from one buildDayPlan(), so "what counts as busy" lives in one place.
 
 const HORIZON_DAYS = 14;
+// The schedule is bidirectional: it loads history *behind* the anchor so you can
+// scroll up into the past (the default land is on the anchor day, with these days
+// already sitting above it), and reveals more in PAST_STEP chunks on demand.
+const PAST_WINDOW = 14; // days of history preloaded behind the anchor
+const PAST_STEP = 14; // how many more the "earlier" control reveals per tap
+// Where a pinned day sits below the two sticky bars (back header + date strip).
+// Matches the DayCard's scroll-mt so tap-to-jump and the scroll pin agree.
+const STICKY_OFFSET = 112;
 const DAY_MS = 24 * 3600_000;
 const SWIPE_PX = 48; // horizontal travel that counts as a month swipe
 // Monday-start weeks, matching the app's planning week (see dates.ts).
@@ -38,6 +46,20 @@ type Mode = "month" | "schedule";
 
 const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 const at = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+// The schedule renders inside the shell's <main> scroller, not its own. WebKit
+// (iOS PWA + Tauri WKWebView) has no `overflow-anchor`, so when we add days above
+// the viewport we have to correct scrollTop by hand — this finds the element that
+// actually scrolls so we can measure and adjust it.
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  let n = el?.parentElement ?? null;
+  while (n) {
+    const oy = getComputedStyle(n).overflowY;
+    if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight) return n;
+    n = n.parentElement;
+  }
+  return null;
+}
 
 interface TimedItem {
   title: string;
@@ -61,6 +83,7 @@ interface DayPlan {
   gaps: Gap[];
   openMins: number;
   isPast: boolean; // a fully-elapsed work window (today, after hours)
+  isBygone: boolean; // a calendar date strictly before today — a historical read
 }
 
 interface DayCtx {
@@ -78,7 +101,9 @@ function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
   const { visibleEvents, blocks, hidden, workStart, workEnd, now } = ctx;
   const dStart = startOfDay(date);
   const dEnd = new Date(dStart.getTime() + DAY_MS);
+  const startNow = startOfDay(now);
   const isToday = isSameDay(date, now);
+  const isBygone = dStart.getTime() < startNow.getTime();
 
   const allDay = visibleEvents.filter(
     (e) => e.all_day && new Date(e.start_at) < dEnd && new Date(e.end_at) > dStart,
@@ -122,9 +147,11 @@ function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
 
   const label = isToday
     ? "Today"
-    : isSameDay(date, addDays(startOfDay(now), 1))
+    : isSameDay(date, addDays(startNow, 1))
       ? "Tomorrow"
-      : date.toLocaleDateString([], { weekday: "long" });
+      : isSameDay(date, addDays(startNow, -1))
+        ? "Yesterday"
+        : date.toLocaleDateString([], { weekday: "long" });
 
   return {
     date,
@@ -135,6 +162,7 @@ function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
     gaps: read.gaps,
     openMins: read.openMins,
     isPast: isToday && now.getTime() >= we.getTime(),
+    isBygone,
   };
 }
 
@@ -164,18 +192,24 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
   // The month the grid is showing, and the day the schedule is anchored to.
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(now));
   const [selected, setSelected] = useState(() => startOfDay(now));
+  // How many days of history are loaded behind the anchor in the schedule. Reset
+  // to PAST_WINDOW on each entry so you always land with two weeks of scroll-up
+  // room; "Earlier" grows it.
+  const [pastDays, setPastDays] = useState(PAST_WINDOW);
 
   // The fetch window follows the active lens: the full month grid (up to 6
-  // weeks) in month mode, the 14-day agenda from the selected day otherwise.
+  // weeks) in month mode, or — in the schedule — the loaded history behind the
+  // selected day through the 14-day forward horizon.
   const range = useMemo(() => {
     if (mode === "month") {
       const gridStart = startOfWeek(startOfMonth(monthCursor), WEEK_OPTS);
       const gridEnd = addDays(endOfWeek(endOfMonth(monthCursor), WEEK_OPTS), 1);
       return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
     }
-    const start = startOfDay(selected);
-    return { start: start.toISOString(), end: new Date(start.getTime() + HORIZON_DAYS * DAY_MS).toISOString() };
-  }, [mode, monthCursor, selected]);
+    const anchor = startOfDay(selected);
+    const start = addDays(anchor, -pastDays);
+    return { start: start.toISOString(), end: new Date(anchor.getTime() + HORIZON_DAYS * DAY_MS).toISOString() };
+  }, [mode, monthCursor, selected, pastDays]);
 
   const { data: events = [], isLoading: evLoading } = useExternalEvents(range.start, range.end);
   const { data: blocks = [], isLoading: blkLoading } = useScheduledTasks(range.start, range.end);
@@ -200,12 +234,16 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
     const d = startOfDay(date);
     setSelected(d);
     setMonthCursor(startOfMonth(d));
+    setPastDays(PAST_WINDOW);
     setMode("schedule");
   };
 
   // Month is home; the schedule is the drill-in. Tapping a day (or swiping up)
   // pushes into the schedule; the schedule's back header pops back to the month.
-  const openSchedule = () => setMode("schedule");
+  const openSchedule = () => {
+    setPastDays(PAST_WINDOW);
+    setMode("schedule");
+  };
   const backToMonth = () => setMode("month");
 
   return (
@@ -232,6 +270,8 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
           ctx={dayCtx}
           weatherIndex={showWeather ? weatherIndex : null}
           loading={loading}
+          pastDays={pastDays}
+          onLoadEarlier={() => setPastDays((p) => p + PAST_STEP)}
           onTapEvent={onTapEvent}
           onBack={backToMonth}
         />
@@ -448,12 +488,18 @@ function SelectedSummary({ day, onOpen }: { day: DayPlan; onOpen: () => void }) 
 }
 
 // ── Schedule (agenda) ──────────────────────────────────────────────────────
-// The 14-day availability list, anchored on the day you tapped in the grid.
+// A bidirectional availability list. You land on the anchor day (today by
+// default) sitting just under the sticky bars, with PAST_WINDOW days of history
+// already loaded *above* it — so scrolling up walks you back through what
+// happened, and scrolling down runs the 14-day forward horizon. "Earlier" at the
+// top reveals more history on demand.
 function ScheduleView({
   anchor,
   ctx,
   weatherIndex,
   loading,
+  pastDays,
+  onLoadEarlier,
   onTapEvent,
   onBack,
 }: {
@@ -461,21 +507,85 @@ function ScheduleView({
   ctx: DayCtx;
   weatherIndex: ReturnType<typeof indexWeather> | null;
   loading: boolean;
+  pastDays: number;
+  onLoadEarlier: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onBack: () => void;
 }) {
   const days = useMemo<DayPlan[]>(() => {
-    const start = startOfDay(anchor);
-    return Array.from({ length: HORIZON_DAYS }, (_, i) => buildDayPlan(addDays(start, i), ctx));
-  }, [anchor, ctx]);
+    const start = addDays(startOfDay(anchor), -pastDays);
+    const total = pastDays + HORIZON_DAYS;
+    return Array.from({ length: total }, (_, i) => buildDayPlan(addDays(start, i), ctx));
+  }, [anchor, pastDays, ctx]);
 
+  const anchorKey = dayKey(startOfDay(anchor));
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const stripWrapRef = useRef<HTMLDivElement>(null);
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
+  const stripRefs = useRef<Record<string, HTMLElement | null>>({});
+
   const jumpTo = (key: string) => {
     dayRefs.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  // ── Scroll anchoring (WebKit has no `overflow-anchor`) ──────────────────
+  // A "pin": hold a given day at a given offset from the scroller top across
+  // layout changes — the initial land, an "earlier" prepend, and the async data
+  // fill that follows each — so the page never jumps under the reader's thumb.
+  const pin = useRef<{ key: string; offset: number } | null>(null);
+
+  // A fresh entry (new anchor) lands on the anchor day, tucked under the sticky
+  // bars, and holds it there through the first data load. Set during render so
+  // the pinning layout effect below sees it on the very first commit.
+  const prevAnchor = useRef<string | null>(null);
+  if (prevAnchor.current !== anchorKey) {
+    prevAnchor.current = anchorKey;
+    pin.current = { key: anchorKey, offset: STICKY_OFFSET };
+  }
+
+  useLayoutEffect(() => {
+    const p = pin.current;
+    if (!p) return;
+    const scroller = scrollParent(rootRef.current);
+    const el = dayRefs.current[p.key];
+    if (!scroller || !el) return;
+    const cur = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    const delta = cur - p.offset;
+    if (Math.abs(delta) > 1) scroller.scrollTop += delta;
+    // Release once the data has settled; while it's still loading, keep the pin
+    // so late-arriving day heights above the anchor don't shove it around.
+    if (!loading) pin.current = null;
+  }, [days, loading]);
+
+  // Center the anchor chip in the horizontally-scrolling date strip on entry,
+  // without disturbing the vertical pin.
+  useEffect(() => {
+    const wrap = stripWrapRef.current;
+    const el = stripRefs.current[anchorKey];
+    if (!wrap || !el) return;
+    const wr = wrap.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    wrap.scrollLeft += er.left - wr.left - (wr.width - er.width) / 2;
+  }, [anchorKey]);
+
+  // Reveal more history, holding the current top day in place so the new days
+  // arrive above the fold rather than yanking the list.
+  const loadEarlier = () => {
+    const scroller = scrollParent(rootRef.current);
+    const firstKey = dayKey(days[0].date);
+    const el = dayRefs.current[firstKey];
+    if (scroller && el) {
+      pin.current = {
+        key: firstKey,
+        offset: el.getBoundingClientRect().top - scroller.getBoundingClientRect().top,
+      };
+    }
+    onLoadEarlier();
+  };
+
   return (
-    <div>
+    <div ref={rootRef}>
       {/* Back header — pops to the month grid and names where you'll land. */}
       <div className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
         <button
@@ -487,9 +597,9 @@ function ScheduleView({
         </button>
       </div>
 
-      {/* Date strip — tap a day to jump to it */}
+      {/* Date strip — tap a day to jump to it. Past days read muted. */}
       <div className="sticky top-[45px] z-10 border-b border-line bg-surface/90 backdrop-blur">
-        <div className="mobile-scroll flex gap-1.5 overflow-x-auto px-3 py-2.5">
+        <div ref={stripWrapRef} className="mobile-scroll flex gap-1.5 overflow-x-auto px-3 py-2.5">
           {days.map((d) => {
             const key = dayKey(d.date);
             const busyDay = d.timed.length > 0 || d.allDay.length > 0;
@@ -498,15 +608,22 @@ function ScheduleView({
             return (
               <button
                 key={key}
+                ref={(el) => {
+                  stripRefs.current[key] = el;
+                }}
                 onClick={() => jumpTo(key)}
                 className={`tap fast flex w-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border py-1.5 ${
-                  d.isToday ? "border-accent bg-accent-soft" : "border-line"
+                  d.isToday ? "border-accent bg-accent-soft" : d.isBygone ? "border-line opacity-60" : "border-line"
                 }`}
               >
                 <span className={`text-micro font-medium uppercase ${d.isToday ? "text-accent" : "text-muted"}`}>
                   {d.date.toLocaleDateString([], { weekday: "short" }).slice(0, 2)}
                 </span>
-                <span className={`text-body font-semibold leading-none ${d.isToday ? "text-accent" : "text-ink"}`}>
+                <span
+                  className={`text-body font-semibold leading-none ${
+                    d.isToday ? "text-accent" : d.isBygone ? "text-muted" : "text-ink"
+                  }`}
+                >
                   {d.date.getDate()}
                 </span>
                 {wx ? (
@@ -526,7 +643,19 @@ function ScheduleView({
       {loading && days.every((d) => d.timed.length === 0 && d.allDay.length === 0) ? (
         <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>
       ) : (
-        <div className="divide-y divide-line">
+        // overflow-anchor: none so the one scroll-anchoring authority is our
+        // manual pin. Chromium would otherwise also shift scrollTop on prepend
+        // (double-correcting); WebKit — the real iOS/Tauri target — has no native
+        // anchoring at all. Opting out makes both engines behave identically.
+        <div className="divide-y divide-line" style={{ overflowAnchor: "none" }}>
+          {/* Reach further back — the top of history. */}
+          <button
+            onClick={loadEarlier}
+            className="tap fast flex w-full items-center justify-center gap-1.5 py-3.5 text-label font-medium text-muted active:bg-surface-2"
+          >
+            <span className="text-body leading-none">↑</span>
+            Earlier days
+          </button>
           {days.map((d) => (
             <DayCard
               key={dayKey(d.date)}
@@ -554,20 +683,38 @@ function DayCard({
   innerRef: (el: HTMLElement | null) => void;
   onTapEvent?: (tap: CalendarTap) => void;
 }) {
-  const { date, isToday, label, allDay, timed, gaps, openMins, isPast } = day;
+  const { date, isToday, label, allDay, timed, gaps, openMins, isPast, isBygone } = day;
   const fullyOpen = timed.length === 0 && allDay.length === 0;
+  const busyCount = timed.length + allDay.length;
+
+  // A past date is a record of what happened, not an availability question —
+  // its readout counts commitments and it never advertises open windows.
+  const readout = isBygone
+    ? busyCount > 0
+      ? `${busyCount} scheduled`
+      : ""
+    : isPast
+      ? "done for today"
+      : openMins > 0
+        ? `${fmtMins(openMins)} open`
+        : "fully booked";
+  const readoutAccent = !isBygone && !isPast && openMins > 0;
 
   return (
     <section ref={innerRef} className="scroll-mt-[112px] px-4 py-3.5">
       {/* Day header */}
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <span className={`text-head font-semibold ${isToday ? "text-accent" : "text-ink"}`}>{label}</span>
+          <span className={`text-head font-semibold ${isToday ? "text-accent" : isBygone ? "text-muted" : "text-ink"}`}>
+            {label}
+          </span>
           <span className="mono text-label text-muted">{date.toLocaleDateString([], { month: "short", day: "numeric" })}</span>
         </div>
-        <span className="mono text-label" style={{ color: openMins > 0 && !isPast ? "var(--accent)" : "var(--muted)" }}>
-          {isPast ? "done for today" : openMins > 0 ? `${fmtMins(openMins)} open` : "fully booked"}
-        </span>
+        {readout && (
+          <span className="mono text-label" style={{ color: readoutAccent ? "var(--accent)" : "var(--muted)" }}>
+            {readout}
+          </span>
+        )}
       </div>
 
       {/* All-day banners */}
@@ -633,8 +780,9 @@ function DayCard({
         </div>
       )}
 
-      {/* Open windows — the availability answer */}
-      {!isPast && gaps.length > 0 && (
+      {/* Open windows — the availability answer. A bygone day is history, so we
+          don't offer to fill windows that have already elapsed. */}
+      {!isPast && !isBygone && gaps.length > 0 && (
         <div className={timed.length > 0 || allDay.length > 0 ? "mt-3" : ""}>
           {!fullyOpen && <div className="section-label mb-1.5 !p-0">Free</div>}
           <div className="flex flex-wrap gap-1.5">
@@ -650,8 +798,8 @@ function DayCard({
         </div>
       )}
 
-      {fullyOpen && gaps.length === 0 && !isPast && (
-        <div className="text-body text-muted">No commitments — wide open.</div>
+      {fullyOpen && !isPast && (isBygone || gaps.length === 0) && (
+        <div className="text-body text-muted">{isBygone ? "Nothing scheduled." : "No commitments — wide open."}</div>
       )}
     </section>
   );
