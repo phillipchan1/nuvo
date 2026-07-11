@@ -50,12 +50,16 @@ const at = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-d
 // The schedule renders inside the shell's <main> scroller, not its own. WebKit
 // (iOS PWA + Tauri WKWebView) has no `overflow-anchor`, so when we add days above
 // the viewport we have to correct scrollTop by hand — this finds the element that
-// actually scrolls so we can measure and adjust it.
+// actually scrolls so we can measure and adjust it. Matched by overflow style
+// alone (not current scrollability): during the loading placeholder the content
+// isn't tall enough to overflow yet, but we still need the scroller to attach
+// listeners and land the anchor once data arrives. Walking *up* from the schedule
+// root never passes through the horizontal date strip, so this can't mismatch it.
 function scrollParent(el: HTMLElement | null): HTMLElement | null {
   let n = el?.parentElement ?? null;
   while (n) {
     const oy = getComputedStyle(n).overflowY;
-    if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight) return n;
+    if (oy === "auto" || oy === "scroll") return n;
     n = n.parentElement;
   }
   return null;
@@ -530,36 +534,66 @@ function ScheduleView({
   };
 
   // ── Scroll anchoring (WebKit has no `overflow-anchor`) ──────────────────
-  // A "pin": hold a given day at a given offset from the scroller top across
-  // layout changes — the initial land, an "earlier" prepend, and the async data
-  // fill that follows each — so the page never jumps under the reader's thumb.
-  const pin = useRef<{ key: string; offset: number } | null>(null);
+  // A "hold": keep a chosen day at a fixed offset from the scroller top across
+  // layout changes — the initial land and an "earlier" prepend — so the page
+  // never jumps under the reader's thumb.
+  //
+  // The subtle part is *when to stop holding*. The day the anchor sits above can
+  // fill in late (a heavy day arriving after `loading` already flipped false),
+  // and that reflow happens *above* the anchor — which, with no native scroll
+  // anchoring on WebKit, shoves the anchor down out of view. So we don't release
+  // on a single `loading` flip; we re-assert on every height change and only let
+  // go once the layout has been quiet for a beat, or the moment the user scrolls.
+  const hold = useRef<{ key: string; offset: number } | null>(null);
+  const releaseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const releaseHold = () => {
+    hold.current = null;
+    if (releaseTimer.current) clearTimeout(releaseTimer.current);
+  };
 
   // A fresh entry (new anchor) lands on the anchor day, tucked under the sticky
-  // bars, and holds it there through the first data load. Set during render so
-  // the pinning layout effect below sees it on the very first commit.
+  // bars. Set during render so the assert effect sees it on the very first commit.
   const prevAnchor = useRef<string | null>(null);
   if (prevAnchor.current !== anchorKey) {
     prevAnchor.current = anchorKey;
-    pin.current = { key: anchorKey, offset: STICKY_OFFSET };
+    hold.current = { key: anchorKey, offset: STICKY_OFFSET };
   }
 
   useLayoutEffect(() => {
-    const p = pin.current;
-    if (!p) return;
+    const h = hold.current;
+    if (!h) return;
     const scroller = scrollParent(rootRef.current);
-    const el = dayRefs.current[p.key];
+    const el = dayRefs.current[h.key];
+    // Not laid out yet (still loading, showing the placeholder) — keep the hold
+    // alive without arming release, so it survives the wait for first data.
     if (!scroller || !el) return;
     const cur = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    const delta = cur - p.offset;
+    const delta = cur - h.offset;
     if (Math.abs(delta) > 1) scroller.scrollTop += delta;
-    // Release once the data has settled; while it's still loading, keep the pin
-    // so late-arriving day heights above the anchor don't shove it around.
-    if (!loading) pin.current = null;
-  }, [days, loading]);
+    // Debounced release: every height change (data trickling in) pushes the
+    // release out, so we let go only after ~1s of layout quiet.
+    if (releaseTimer.current) clearTimeout(releaseTimer.current);
+    releaseTimer.current = setTimeout(() => {
+      hold.current = null;
+    }, 1000);
+  }, [days, loading, anchorKey]);
+
+  // The user taking over ends the hold immediately — a real scroll gesture must
+  // never be fought. (Programmatic scrollTop writes fire only `scroll`, which we
+  // don't listen for, so the hold can't cancel itself.)
+  useEffect(() => {
+    const scroller = scrollParent(rootRef.current);
+    if (!scroller) return;
+    const events = ["wheel", "touchstart", "pointerdown", "keydown"];
+    for (const e of events) scroller.addEventListener(e, releaseHold, { passive: true });
+    return () => {
+      for (const e of events) scroller.removeEventListener(e, releaseHold);
+    };
+  }, []);
 
   // Center the anchor chip in the horizontally-scrolling date strip on entry,
-  // without disturbing the vertical pin.
+  // without disturbing the vertical hold.
   useEffect(() => {
     const wrap = stripWrapRef.current;
     const el = stripRefs.current[anchorKey];
@@ -574,9 +608,9 @@ function ScheduleView({
   const loadEarlier = () => {
     const scroller = scrollParent(rootRef.current);
     const firstKey = dayKey(days[0].date);
-    const el = dayRefs.current[firstKey];
+    const el = scroller ? dayRefs.current[firstKey] : null;
     if (scroller && el) {
-      pin.current = {
+      hold.current = {
         key: firstKey,
         offset: el.getBoundingClientRect().top - scroller.getBoundingClientRect().top,
       };
