@@ -1,10 +1,30 @@
 import { useState } from "react";
+import { format } from "date-fns";
+import { toast } from "sonner";
 import type { Label, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
-import { todayISO, tomorrowISO, nextWeekISO, fmtDuration } from "../../lib/dates";
+import { todayISO, tomorrowISO, nextWeekISO, fmtDuration, parseDateISO } from "../../lib/dates";
+import { fmtSlot } from "../../lib/compose";
+import { useFindTime } from "../../hooks/useFindTime";
+import type { FindTimeResult } from "../../lib/findTime";
 import Sheet from "./Sheet";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
+
+// SPIKE: "Find time this week" reuses the Sunday compose engine to fit one
+// midweek task into a real slot. Off by default. On automatically under
+// `npm run dev`; on the deployed PWA, opt in per-device with
+//   localStorage.setItem("nuvo:find-time", "1")
+// (then reopen a task). Kept behind this flag until the flow proves out, so it
+// never surprises anyone who didn't ask for it.
+const findTimeOptIn = (() => {
+  try {
+    return localStorage.getItem("nuvo:find-time") === "1";
+  } catch {
+    return false;
+  }
+})();
+const FIND_TIME_SPIKE = import.meta.env.DEV || findTimeOptIn;
 
 // Tapping a task on a list opens this — the mobile stand-in for the desktop's
 // anchored task popover. The handful of actions a thumb actually needs: rename,
@@ -95,6 +115,12 @@ export default function MobileTaskSheet({
           )}
         </Section>
 
+        {FIND_TIME_SPIKE && !done && !task.start_time && (
+          <Section label="Find time">
+            <FindTimeAction task={task} onPlaced={onClose} />
+          </Section>
+        )}
+
         <Section label="Priority">
           <div className="flex flex-wrap gap-1.5">
             {priorities.map((p) => (
@@ -151,6 +177,78 @@ export default function MobileTaskSheet({
         </button>
       </div>
     </Sheet>
+  );
+}
+
+// The one-task fit: tap to ask the week composer for a slot, then place it.
+// Rendered only under FIND_TIME_SPIKE, so useFindTime (and its calendar
+// queries) mount lazily and never run in production.
+function FindTimeAction({ task, onPlaced }: { task: Task; onPlaced: () => void }) {
+  const { findTime, place } = useFindTime();
+  const [result, setResult] = useState<FindTimeResult | null>(null);
+  const [placing, setPlacing] = useState(false);
+
+  if (!result) {
+    return (
+      <button
+        onClick={() => setResult(findTime(task))}
+        className="tap fast w-full rounded-xl border border-accent/40 bg-accent-soft py-3 text-head font-medium text-accent active:translate-y-px"
+      >
+        ✨ Find time this week
+      </button>
+    );
+  }
+
+  if (!result.ok) {
+    return (
+      <div className="rounded-xl border border-line bg-surface-2 p-3">
+        <div className="text-body text-muted">No room this week — {result.reason}.</div>
+        <button
+          onClick={() => setResult(null)}
+          className="tap fast mt-2 text-caption font-medium text-accent"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  const { placement } = result;
+  const dayLabel = format(parseDateISO(placement.dayISO), "EEE");
+  const doPlace = async () => {
+    setPlacing(true);
+    try {
+      await place(task, placement);
+      toast.success(`Placed — ${dayLabel} ${fmtSlot(placement)}`);
+      onPlaced();
+    } catch {
+      toast.error("Couldn't place it — try again.");
+      setPlacing(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-line bg-surface-2 p-3">
+      <div className="text-head font-medium">
+        {dayLabel} · <span className="mono">{fmtSlot(placement)}</span>
+      </div>
+      {placement.reason && <div className="mt-0.5 text-caption text-muted">{placement.reason}</div>}
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          onClick={doPlace}
+          disabled={placing}
+          className="tap fast flex-1 rounded-lg border border-accent bg-accent py-2.5 text-head font-medium text-white active:translate-y-px disabled:opacity-60"
+        >
+          {placing ? "Placing…" : "Place it"}
+        </button>
+        <button
+          onClick={() => setResult(null)}
+          className="tap fast rounded-lg border border-line px-4 py-2.5 text-head font-medium text-muted active:translate-y-px"
+        >
+          Not now
+        </button>
+      </div>
+    </div>
   );
 }
 
