@@ -4,9 +4,8 @@
 // (SundayRitual.tsx) so a midweek single-task fit behaves exactly like the
 // weekly compose — same hidden-calendar rules, same budget, same contexts.
 //
-// SPIKE: currently only consumed by the dev-flagged "Find time this week"
-// action in MobileTaskSheet. Kept as a reusable hook so the desktop task
-// popover can adopt it without change.
+// Consumed by the "Find time this week" action in MobileTaskSheet. Kept as a
+// reusable hook so the desktop task popover can adopt it without change.
 
 import { useMemo } from "react";
 import { addDays } from "date-fns";

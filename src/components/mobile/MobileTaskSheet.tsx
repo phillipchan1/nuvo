@@ -11,20 +11,8 @@ import Sheet from "./Sheet";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
-// SPIKE: "Find time this week" reuses the Sunday compose engine to fit one
-// midweek task into a real slot. Off by default. On automatically under
-// `npm run dev`; on the deployed PWA, opt in per-device with
-//   localStorage.setItem("nuvo:find-time", "1")
-// (then reopen a task). Kept behind this flag until the flow proves out, so it
-// never surprises anyone who didn't ask for it.
-const findTimeOptIn = (() => {
-  try {
-    return localStorage.getItem("nuvo:find-time") === "1";
-  } catch {
-    return false;
-  }
-})();
-const FIND_TIME_SPIKE = import.meta.env.DEV || findTimeOptIn;
+// "Find time this week" reuses the Sunday compose engine to fit one midweek
+// task into a real slot. Shown for any unscheduled, not-done task.
 
 // Tapping a task on a list opens this — the mobile stand-in for the desktop's
 // anchored task popover. The handful of actions a thumb actually needs: rename,
@@ -115,7 +103,7 @@ export default function MobileTaskSheet({
           )}
         </Section>
 
-        {FIND_TIME_SPIKE && !done && !task.start_time && (
+        {!done && !task.start_time && (
           <Section label="Find time">
             <FindTimeAction task={task} onPlaced={onClose} />
           </Section>
