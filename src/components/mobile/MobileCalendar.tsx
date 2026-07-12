@@ -28,14 +28,15 @@ import WeatherIcon from "../WeatherIcon";
 // Both read from one buildDayPlan(), so "what counts as busy" lives in one place.
 
 const HORIZON_DAYS = 14;
-// The schedule is bidirectional: it loads history *behind* the anchor so you can
-// scroll up into the past (the default land is on the anchor day, with these days
-// already sitting above it), and reveals more in PAST_STEP chunks on demand.
-const PAST_WINDOW = 14; // days of history preloaded behind the anchor
-const PAST_STEP = 14; // how many more the "earlier" control reveals per tap
-// Where a pinned day sits below the two sticky bars (back header + date strip).
-// Matches the DayCard's scroll-mt so tap-to-jump and the scroll pin agree.
-const STICKY_OFFSET = 112;
+// The schedule opens on the anchor day (today) as the FIRST rendered day, so the
+// scroll starts at the top on it — correct by construction, nothing to measure or
+// race. History is revealed *upward* on demand: the "Earlier days" control at the
+// top prepends PAST_STEP days at a time, holding the prior top day in place.
+const PAST_STEP = 14; // days of history the "earlier" control reveals per tap
+// Where the newly-revealed most-recent past day is parked after an "earlier" tap:
+// just under the two sticky bars (back header + date strip). Matches DayCard's
+// scroll-mt so tap-to-jump and this reveal agree.
+const REVEAL_OFFSET = 112;
 const DAY_MS = 24 * 3600_000;
 const SWIPE_PX = 48; // horizontal travel that counts as a month swipe
 // Monday-start weeks, matching the app's planning week (see dates.ts).
@@ -196,10 +197,10 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
   // The month the grid is showing, and the day the schedule is anchored to.
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(now));
   const [selected, setSelected] = useState(() => startOfDay(now));
-  // How many days of history are loaded behind the anchor in the schedule. Reset
-  // to PAST_WINDOW on each entry so you always land with two weeks of scroll-up
-  // room; "Earlier" grows it.
-  const [pastDays, setPastDays] = useState(PAST_WINDOW);
+  // How many days of history are loaded above the anchor in the schedule. Starts
+  // at 0 so the schedule always opens ON the anchor day (top of the list); the
+  // "Earlier" control grows it. Reset to 0 on each entry.
+  const [pastDays, setPastDays] = useState(0);
 
   // The fetch window follows the active lens: the full month grid (up to 6
   // weeks) in month mode, or — in the schedule — the loaded history behind the
@@ -238,14 +239,14 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
     const d = startOfDay(date);
     setSelected(d);
     setMonthCursor(startOfMonth(d));
-    setPastDays(PAST_WINDOW);
+    setPastDays(0);
     setMode("schedule");
   };
 
   // Month is home; the schedule is the drill-in. Tapping a day (or swiping up)
   // pushes into the schedule; the schedule's back header pops back to the month.
   const openSchedule = () => {
-    setPastDays(PAST_WINDOW);
+    setPastDays(0);
     setMode("schedule");
   };
   const backToMonth = () => setMode("month");
@@ -492,11 +493,11 @@ function SelectedSummary({ day, onOpen }: { day: DayPlan; onOpen: () => void }) 
 }
 
 // ── Schedule (agenda) ──────────────────────────────────────────────────────
-// A bidirectional availability list. You land on the anchor day (today by
-// default) sitting just under the sticky bars, with PAST_WINDOW days of history
-// already loaded *above* it — so scrolling up walks you back through what
-// happened, and scrolling down runs the 14-day forward horizon. "Earlier" at the
-// top reveals more history on demand.
+// An availability list that opens ON the anchor day (today by default): it is the
+// first row, so the list simply starts at the top on it — no scroll math, nothing
+// to race on first load. Forward runs the 14-day horizon; the past is revealed
+// upward on demand via "Earlier days" at the top, which surfaces recent history
+// (most-recent day under the sticky bars, older above, today below).
 function ScheduleView({
   anchor,
   ctx,
@@ -522,28 +523,23 @@ function ScheduleView({
     return Array.from({ length: total }, (_, i) => buildDayPlan(addDays(start, i), ctx));
   }, [anchor, pastDays, ctx]);
 
-  const anchorKey = dayKey(startOfDay(anchor));
-
   const rootRef = useRef<HTMLDivElement>(null);
-  const stripWrapRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const stripPrevWidth = useRef<number | null>(null);
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
-  const stripRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const jumpTo = (key: string) => {
     dayRefs.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // ── Scroll anchoring (WebKit has no `overflow-anchor`) ──────────────────
-  // A "hold": keep a chosen day at a fixed offset from the scroller top across
-  // layout changes — the initial land and an "earlier" prepend — so the page
-  // never jumps under the reader's thumb.
-  //
-  // The subtle part is *when to stop holding*. The day the anchor sits above can
-  // fill in late (a heavy day arriving after `loading` already flipped false),
-  // and that reflow happens *above* the anchor — which, with no native scroll
-  // anchoring on WebKit, shoves the anchor down out of view. So we don't release
-  // on a single `loading` flip; we re-assert on every height change and only let
-  // go once the layout has been quiet for a beat, or the moment the user scrolls.
+  // ── Revealing history (WebKit has no `overflow-anchor`) ──────────────────
+  // The schedule opens on the anchor day as the first row, so first-load needs no
+  // scroll math — the list simply starts at the top. The only scroll we manage by
+  // hand is the "earlier" prepend: when we add days *above* the current top, we
+  // hold that prior top day at its place so the new days arrive above the fold
+  // instead of yanking the list down. We keep the hold for a beat because the
+  // freshly-fetched days fill in their heights asynchronously; the user's first
+  // scroll gesture releases it so we never fight a real drag.
   const hold = useRef<{ key: string; offset: number } | null>(null);
   const releaseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -552,36 +548,25 @@ function ScheduleView({
     if (releaseTimer.current) clearTimeout(releaseTimer.current);
   };
 
-  // A fresh entry (new anchor) lands on the anchor day, tucked under the sticky
-  // bars. Set during render so the assert effect sees it on the very first commit.
-  const prevAnchor = useRef<string | null>(null);
-  if (prevAnchor.current !== anchorKey) {
-    prevAnchor.current = anchorKey;
-    hold.current = { key: anchorKey, offset: STICKY_OFFSET };
-  }
-
   useLayoutEffect(() => {
     const h = hold.current;
     if (!h) return;
     const scroller = scrollParent(rootRef.current);
     const el = dayRefs.current[h.key];
-    // Not laid out yet (still loading, showing the placeholder) — keep the hold
-    // alive without arming release, so it survives the wait for first data.
     if (!scroller || !el) return;
     const cur = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
     const delta = cur - h.offset;
     if (Math.abs(delta) > 1) scroller.scrollTop += delta;
-    // Debounced release: every height change (data trickling in) pushes the
+    // Debounced release: every height change (fetched days filling in) pushes the
     // release out, so we let go only after ~1s of layout quiet.
     if (releaseTimer.current) clearTimeout(releaseTimer.current);
     releaseTimer.current = setTimeout(() => {
       hold.current = null;
     }, 1000);
-  }, [days, loading, anchorKey]);
+  }, [days, loading]);
 
-  // The user taking over ends the hold immediately — a real scroll gesture must
-  // never be fought. (Programmatic scrollTop writes fire only `scroll`, which we
-  // don't listen for, so the hold can't cancel itself.)
+  // A real scroll gesture ends the hold immediately. (Programmatic scrollTop
+  // writes fire only `scroll`, which we don't listen for, so it can't self-cancel.)
   useEffect(() => {
     const scroller = scrollParent(rootRef.current);
     if (!scroller) return;
@@ -592,29 +577,26 @@ function ScheduleView({
     };
   }, []);
 
-  // Center the anchor chip in the horizontally-scrolling date strip on entry,
-  // without disturbing the vertical hold.
-  useEffect(() => {
-    const wrap = stripWrapRef.current;
-    const el = stripRefs.current[anchorKey];
-    if (!wrap || !el) return;
-    const wr = wrap.getBoundingClientRect();
-    const er = el.getBoundingClientRect();
-    wrap.scrollLeft += er.left - wr.left - (wr.width - er.width) / 2;
-  }, [anchorKey]);
-
-  // Reveal more history, holding the current top day in place so the new days
-  // arrive above the fold rather than yanking the list.
-  const loadEarlier = () => {
-    const scroller = scrollParent(rootRef.current);
-    const firstKey = dayKey(days[0].date);
-    const el = scroller ? dayRefs.current[firstKey] : null;
-    if (scroller && el) {
-      hold.current = {
-        key: firstKey,
-        offset: el.getBoundingClientRect().top - scroller.getBoundingClientRect().top,
-      };
+  // Keep the date strip showing the same span after an "earlier" prepend adds
+  // chips on its left, so it doesn't jump to the oldest day. Chips are fixed-width
+  // (no async fill), so a one-shot width-delta correction suffices.
+  useLayoutEffect(() => {
+    if (stripPrevWidth.current == null) return;
+    const el = stripRef.current;
+    if (el) {
+      const added = el.scrollWidth - stripPrevWidth.current;
+      if (added > 0) el.scrollLeft += added;
     }
+    stripPrevWidth.current = null;
+  }, [days]);
+
+  // Reveal more history. Park the newly-loaded block's most-recent day just under
+  // the sticky bars — so the tap visibly surfaces recent history (that day at the
+  // top, older days above it, today below), and the hold keeps it there while the
+  // fetched days fill in their heights.
+  const loadEarlier = () => {
+    if (days.length) hold.current = { key: dayKey(addDays(days[0].date, -1)), offset: REVEAL_OFFSET };
+    if (stripRef.current) stripPrevWidth.current = stripRef.current.scrollWidth;
     onLoadEarlier();
   };
 
@@ -633,7 +615,7 @@ function ScheduleView({
 
       {/* Date strip — tap a day to jump to it. Past days read muted. */}
       <div className="sticky top-[45px] z-10 border-b border-line bg-surface/90 backdrop-blur">
-        <div ref={stripWrapRef} className="mobile-scroll flex gap-1.5 overflow-x-auto px-3 py-2.5">
+        <div ref={stripRef} className="mobile-scroll flex gap-1.5 overflow-x-auto px-3 py-2.5">
           {days.map((d) => {
             const key = dayKey(d.date);
             const busyDay = d.timed.length > 0 || d.allDay.length > 0;
@@ -642,9 +624,6 @@ function ScheduleView({
             return (
               <button
                 key={key}
-                ref={(el) => {
-                  stripRefs.current[key] = el;
-                }}
                 onClick={() => jumpTo(key)}
                 className={`tap fast flex w-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border py-1.5 ${
                   d.isToday ? "border-accent bg-accent-soft" : d.isBygone ? "border-line opacity-60" : "border-line"
