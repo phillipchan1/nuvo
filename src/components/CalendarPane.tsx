@@ -24,6 +24,7 @@ import type { EmblemSpec } from "../lib/weekEmblem";
 import { useWeather, indexWeather, type WeatherDay } from "../hooks/useWeather";
 import WeatherIcon from "./WeatherIcon";
 import WeatherPopover from "./WeatherPopover";
+import TimeZoneChip from "./TimeZoneChip";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
 
@@ -1763,6 +1764,9 @@ export default function CalendarPane({
         )}
 
         <div data-tauri-drag-region className="flex-1 self-stretch" />
+
+        {/* Which clock the grid is in — quiet at home, explicit while traveling. */}
+        <TimeZoneChip now={now} className="mr-2" />
 
         {/* "This week" — the living-emblem button: an ambient gauge that fills
             across the week, and the door to the Week's Plan / Review floor. */}

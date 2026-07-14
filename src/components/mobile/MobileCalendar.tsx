@@ -19,6 +19,7 @@ import type { AttendeeStatus, ExternalEvent, Task } from "../../lib/types";
 import type { CalendarTap } from "./MobileEventSheet";
 import { useWeather, indexWeather } from "../../hooks/useWeather";
 import WeatherIcon from "../WeatherIcon";
+import TimeZoneChip from "../TimeZoneChip";
 
 // The mobile Calendar — two lenses on the same live day-shape math:
 //   • Month — the whole month at a glance (free/busy density per day), swipe or
@@ -602,8 +603,9 @@ function ScheduleView({
 
   return (
     <div ref={rootRef}>
-      {/* Back header — pops to the month grid and names where you'll land. */}
-      <div className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
+      {/* Back header — pops to the month grid and names where you'll land. The
+          timezone chip names the clock these times are in (and flags travel). */}
+      <div className="sticky top-0 z-20 flex items-center border-b border-line bg-surface/90 pr-3 backdrop-blur">
         <button
           onClick={onBack}
           className="tap fast flex items-center gap-0.5 px-3 py-2.5 text-body font-medium text-accent active:opacity-70"
@@ -611,6 +613,8 @@ function ScheduleView({
           <span className="text-head leading-none">‹</span>
           {format(anchor, "MMMM yyyy")}
         </button>
+        <div className="flex-1" />
+        <TimeZoneChip now={ctx.now} />
       </div>
 
       {/* Date strip — tap a day to jump to it. Past days read muted. */}

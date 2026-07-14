@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
@@ -15,6 +15,8 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useSkin, useScheme, SKIN_LABELS, SCHEMES, SCHEME_GROUP, schemeModes, type Skin, type Scheme, type SchemeModes } from "../hooks/useSkin";
 import { useUiScale, UI_SCALE_MIN, UI_SCALE_MAX } from "../hooks/useUiScale";
+import { useHomeTimezone } from "../hooks/useHomeTimezone";
+import { detectDeviceTz, supportedTimeZones, tzAbbrev, tzCity, tzStatus } from "../lib/timezone";
 
 // ── Section registry ──────────────────────────────────────────────────────
 type SectionId = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account";
@@ -422,6 +424,65 @@ function AppearancePane({
   );
 }
 
+// ── Time zone ──────────────────────────────────────────────────────────────
+// Home is the stable zone travel is measured against; the device zone is set by
+// the OS and only shown. Nuvo renders schedule times in wherever you are now, so
+// this is really "what counts as home" plus a live readout of any current shift.
+function TimeZonePicker() {
+  const [homeTz, setHomeTz] = useHomeTimezone();
+  const deviceTz = detectDeviceTz();
+  const now = new Date();
+  const s = tzStatus(homeTz, deviceTz, now);
+
+  // Group the IANA list by region (America / Europe / …) for a scannable select.
+  const groups = useMemo(() => {
+    const by = new Map<string, string[]>();
+    for (const z of supportedTimeZones()) {
+      const region = z.includes("/") ? z.split("/")[0] : "Other";
+      (by.get(region) ?? by.set(region, []).get(region)!).push(z);
+    }
+    return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, []);
+
+  return (
+    <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
+      <select
+        value={homeTz}
+        onChange={(e) => setHomeTz(e.target.value)}
+        className="mono max-w-[15rem] truncate rounded-md border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent"
+      >
+        {/* Keep the current value selectable even if the runtime omits it. */}
+        {!supportedTimeZones().includes(homeTz) && <option value={homeTz}>{tzCity(homeTz)}</option>}
+        {groups.map(([region, zones]) => (
+          <optgroup key={region} label={region}>
+            {zones.map((z) => (
+              <option key={z} value={z}>
+                {tzCity(z)} ({tzAbbrev(z, now)})
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      {s.traveling ? (
+        <div className="flex items-center gap-2 text-meta text-muted">
+          <span>
+            Now in <span className="text-ink">{tzCity(deviceTz)}</span> ({s.deviceAbbr}) · {s.deltaLabel} of home
+          </span>
+          <button
+            onClick={() => setHomeTz(deviceTz)}
+            className="fast rounded-full border border-line px-2 py-0.5 font-medium text-muted hover:border-line-strong hover:text-ink"
+            title={`Make ${tzCity(deviceTz)} your home zone`}
+          >
+            Set as home
+          </button>
+        </div>
+      ) : (
+        <span className="text-meta text-muted">Matches where you are now ({s.deviceAbbr}).</span>
+      )}
+    </div>
+  );
+}
+
 function SchedulePane({
   settings,
   updateSettings,
@@ -461,6 +522,13 @@ function SchedulePane({
     <div>
       <PaneHeader title="Schedule" sub="The shape of your day — what the calendar shows and when Nuvo plans for you." />
       <div className="divide-y divide-line">
+        <Row
+          title="Time zone"
+          desc="Your home zone. Nuvo shows schedule times wherever you are now, and flags on the schedule when that differs from home."
+        >
+          <TimeZonePicker />
+        </Row>
+
         <Row title="Day view window" desc="The span of hours shown in your calendar.">
           <div className="flex items-center gap-2">
             <select
