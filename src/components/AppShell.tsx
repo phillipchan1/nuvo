@@ -36,10 +36,10 @@ export interface Focus {
 // Top-to-bottom on the spine: ⌘1 = Now … ⌘5 = Domain. ⌘↓ widens, ⌘↑ narrows.
 export const LADDER: Rung[] = ["now", "day", "project", "initiative", "domain"];
 
-// Focus mode — one gesture (⌘. / the toolbar button / the left-edge reveal)
+// Focus mode — one gesture (⌘. / the toolbar's "Show panels" exit when collapsed)
 // slides the spine + the inbox·today rail out of the way so the calendar goes
 // full-bleed. Desktop-only chrome; persisted so the workspace opens the way you
-// left it.
+// left it. Enter via ⌘. — the Focus pill was removed from the default toolbar.
 const FOCUS_KEY = "nuvo-focus-mode";
 function readFocusMode(): boolean {
   try {

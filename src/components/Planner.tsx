@@ -179,16 +179,23 @@ export default function Planner({
   // concerns.
   const weekPlanned = Boolean(vertical.sprint?.reviewed_at);
 
-  // The week button rides the week's lifecycle:
-  //  · plan   — not composed yet → "Plan the week" → the compose ritual
-  //  · view   — composed         → "The week's plan" → the surface (re-run / shift)
-  //  · review — Friday reveal     → "Review ready" → the surface (look back)
+  // The week button rides the week's lifecycle (short labels — the emblem carries
+  // the ambient read; long copy was fighting the view pill in the toolbar):
+  //  · plan   — not composed yet → "Plan" → the compose ritual
+  //  · view   — composed         → "This week" → the surface (re-run / shift)
+  //  · review — Friday reveal     → "Review" → the surface (look back)
   // Forward states (plan/view) win over a still-glowing review at the turn of the
   // week (Sun/Mon); the Friday review wins the rest of the time.
   const weekDoorMode: "plan" | "view" | "review" =
     !planForward && weekReady ? "review" : weekPlanned ? "view" : "plan";
   const weekButtonLabel =
-    weekDoorMode === "review" ? "Review ready" : weekDoorMode === "view" ? "The week's plan" : "Plan the week";
+    weekDoorMode === "review" ? "Review" : weekDoorMode === "view" ? "This week" : "Plan";
+  const weekButtonTitle =
+    weekDoorMode === "review"
+      ? "Your week is ready to review"
+      : weekDoorMode === "view"
+        ? "The week's plan"
+        : "Plan the week";
 
   const openWeekDoor = useCallback(() => {
     if (weekDoorMode === "review") return openReview();
@@ -510,6 +517,7 @@ export default function Planner({
             weekGlyph={onSchedule ? glyphReport.emblem : null}
             onOpenWeekPlan={onSchedule ? openWeekDoor : undefined}
             weekButtonLabel={weekButtonLabel}
+            weekButtonTitle={weekButtonTitle}
             weekButtonGlow={onSchedule && weekDoorMode === "review"}
             focusMode={focusMode}
             onToggleFocus={onToggleFocus}

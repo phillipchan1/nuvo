@@ -39,6 +39,8 @@ type ExtendedProps = {
   recurring?: boolean;
   /** Baked-in done state so FC re-renders event content when status toggles. */
   done?: boolean;
+  /** Project-backed task — renders as a "project slot" (thicker bar + ▸ marker). */
+  projectBacked?: boolean;
   slotDone?: number;
   slotTotal?: number;
   slotChildren?: { title: string; done: boolean }[];
@@ -179,6 +181,7 @@ export default function CalendarPane({
   weekGlyph,
   onOpenWeekPlan,
   weekButtonLabel,
+  weekButtonTitle,
   weekButtonGlow,
   focusMode = false,
   onToggleFocus,
@@ -190,8 +193,10 @@ export default function CalendarPane({
   /** The living emblem for the current week — the toolbar's ambient gauge + door. */
   weekGlyph?: EmblemSpec | null;
   onOpenWeekPlan?: () => void;
-  /** Lifecycle label for the week door: "Plan the week" / "The week's plan" / "Review ready". */
+  /** Short toolbar label for the week door: "Plan" / "This week" / "Review". */
   weekButtonLabel?: string;
+  /** Longer tooltip for the week door (hover). Falls back to the short label. */
+  weekButtonTitle?: string;
   /** Friday-review glow — only the review state lights the signal ring. */
   weekButtonGlow?: boolean;
   tasks: Task[];
@@ -220,12 +225,13 @@ export default function CalendarPane({
   railRef: React.MutableRefObject<HTMLDivElement | null>;
   onConvertTaskToEvent?: (task: Task) => void;
   onConvertEventToTask?: (event: ExternalEvent) => void;
-  /** Focus mode is on — the toolbar button flips to "show panels". */
+  /** Focus mode is on — toolbar shows a slim "Show panels" exit (⌘. still toggles). */
   focusMode?: boolean;
-  /** Toggle focus mode (slide the side panels away / back). Enables the button. */
+  /** Toggle focus mode (slide the side panels away / back). Enables the exit button. */
   onToggleFocus?: () => void;
 }) {
   const calRef = useRef<FullCalendar>(null);
+  const [utilsOpen, setUtilsOpen] = useState(false);
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
   const eventsRef = useRef(events);
@@ -625,6 +631,7 @@ export default function CalendarPane({
             barColor: bar,
             recurring: Boolean(t.recurrence_id),
             done: t.status === "done",
+            projectBacked: !!t.project_id,
           },
         };
       });
@@ -1316,11 +1323,18 @@ export default function CalendarPane({
     const tiny = heightPx < 19; // ultra-short — kill the vertical padding
     const bar = barColor ?? calColor ?? "var(--accent)";
     const padY = tiny ? "py-0" : "py-[3px]";
+    // a project-backed task reads as a "project slot" — a thicker, doubled edge
+    const isProject = kind === "task" && (arg.event.extendedProps as ExtendedProps).projectBacked === true;
 
     const Bar = (
       <span
         className="shrink-0 self-stretch rounded-l-[5px]"
-        style={{ width: 3, background: bar, opacity: kind === "m365" ? 0.5 : 1 }}
+        style={{
+          width: isProject ? 4 : 3,
+          background: bar,
+          opacity: kind === "m365" ? 0.5 : 1,
+          boxShadow: isProject ? `inset 2px 0 0 color-mix(in srgb, ${bar} 45%, transparent)` : undefined,
+        }}
       />
     );
     const TimeLine = !compact ? (
@@ -1415,7 +1429,7 @@ export default function CalendarPane({
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1">
               <span className={`${titleCls} ${done ? "line-through opacity-55" : ""}`}>
-                {arg.event.title}
+                {isProject ? `▸ ${arg.event.title}` : arg.event.title}
               </span>
               {Recur}
             </div>
@@ -1644,169 +1658,202 @@ export default function CalendarPane({
         />
       )}
 
-      {/* ── Navigation bar — also fills the macOS titlebar zone (titlebar-pad)
-            and hosts the window-drag handle on its empty spacer. ──────────── */}
-      <div className="titlebar-pad relative flex shrink-0 items-center gap-1 px-3 py-1.5">
-        {/* Focus the calendar — slides the spine + inbox·today rail away. Always
-            present (even in Spread) and flips to "show panels" once collapsed.
-            A labeled pill so the way out (and back) is unmissable. */}
-        {onToggleFocus && (
-          <button
-            onClick={onToggleFocus}
-            className="fast mr-1 flex h-6 items-center gap-1.5 rounded-full border py-0.5 pl-1.5 pr-2.5 text-label font-medium"
-            style={
-              focusMode
-                ? { borderColor: "var(--accent)", color: "var(--accent)", background: "var(--accent-soft)" }
-                : { borderColor: "var(--line)", color: "var(--muted)" }
-            }
-            title={focusMode ? "Show panels (⌘.)" : "Focus the calendar (⌘.)"}
-            aria-pressed={focusMode}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" strokeWidth="1.3" />
-              <line x1="6" y1="2.75" x2="6" y2="13.25" strokeWidth="1.3" />
-              {focusMode ? (
+      {/* ── Navigation bar — three grid zones (nav · masthead · altitude/door).
+            Equal side columns keep the masthead truly centered; sides never
+            overlay the title. Also fills the macOS titlebar zone (titlebar-pad). */}
+      <div className="titlebar-pad grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 py-1.5">
+        {/* Left — Show panels (focus exit only) + period nav */}
+        <div className="flex min-w-0 items-center gap-1">
+          {onToggleFocus && focusMode && (
+            <button
+              onClick={onToggleFocus}
+              className="fast mr-0.5 flex h-6 shrink-0 items-center gap-1.5 rounded-full border py-0.5 pl-1.5 pr-2.5 text-label font-medium"
+              style={{ borderColor: "var(--accent)", color: "var(--accent)", background: "var(--accent-soft)" }}
+              title="Show panels (⌘.)"
+              aria-pressed={true}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" strokeWidth="1.3" />
+                <line x1="6" y1="2.75" x2="6" y2="13.25" strokeWidth="1.3" />
                 <path d="M8.75 6 10.75 8l-2 2" strokeWidth="1.2" />
-              ) : (
-                <path d="M10.75 6 8.75 8l2 2" strokeWidth="1.2" />
-              )}
-            </svg>
-            <span className="leading-none">{focusMode ? "Show panels" : "Focus"}</span>
-          </button>
-        )}
-
-        {view !== "board" && (
-        <>
-        <button
-          onClick={() => calRef.current?.getApi().prev()}
-          className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-          title="Previous (Alt+←)"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-        <button
-          onClick={() => calRef.current?.getApi().next()}
-          className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-          title="Next (Alt+→)"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-
-        {/* Editorial masthead, centered in the bar like the mockup. Absolute so
-            it's window-centered regardless of the nav/toggle widths, and
-            pointer-events-none so the drag region beneath it still drags. */}
-        <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 select-none flex-col items-center leading-none">
-          {(view === "timeGridWeek" || view === "timeGridDay") && (
-            <span className="mono mb-0.5 text-micro uppercase tracking-wide text-muted">{sprintLabel(viewDate)}</span>
+              </svg>
+              <span className="leading-none">Show panels</span>
+            </button>
           )}
-          <span className="masthead text-lead leading-none text-text">{viewTitle}</span>
+
+          {view !== "board" && (
+            <>
+              <button
+                onClick={() => calRef.current?.getApi().prev()}
+                className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
+                title="Previous (Alt+←)"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => calRef.current?.getApi().next()}
+                className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
+                title="Next (Alt+→)"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => calRef.current?.getApi().today()}
+                className="fast shrink-0 rounded border border-line px-2 py-0.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
+                title="Go to today (Alt+T)"
+              >
+                Today
+              </button>
+            </>
+          )}
+          <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
         </div>
 
-        <button
-          onClick={() => calRef.current?.getApi().today()}
-          className="fast ml-1 rounded border border-line px-2 py-0.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
-          title="Go to today (Alt+T)"
-        >
-          Today
-        </button>
-
-        {onRefreshCalendars && (
-          <button
-            onClick={(e) => e.shiftKey && onFullRefreshCalendars ? onFullRefreshCalendars() : onRefreshCalendars()}
-            disabled={refreshingCalendars}
-            className="fast ml-1 flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink disabled:opacity-40"
-            title="Refresh calendars (Shift+click to force full sync)"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 14 14"
-              fill="none"
-              className={refreshingCalendars ? "animate-spin" : undefined}
-            >
-              <path
-                d="M11.5 7A4.5 4.5 0 107.8 2.3M11.5 2.3v2.8H8.7"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        )}
-
-        {/* Reveal hidden events (dimmed) so you can bring one back. Only appears
-            once something is actually hidden. */}
-        {hiddenKeys.size > 0 && (
-          <button
-            onClick={() => setShowHidden((v) => !v)}
-            className="fast ml-1 flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-            style={showHidden ? { color: "var(--accent)" } : undefined}
-            title={showHidden ? `Hiding ${hiddenKeys.size} event${hiddenKeys.size > 1 ? "s" : ""} — click to tuck away again` : `Show ${hiddenKeys.size} hidden event${hiddenKeys.size > 1 ? "s" : ""}`}
-          >
-            {showHidden ? (
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
-                <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3"/>
-              </svg>
-            ) : (
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <path d="M6.3 3.8A6 6 0 018 3.5C12.2 3.5 14.5 8 14.5 8a11 11 0 01-1.9 2.4M3.4 5.6A11 11 0 001.5 8s2.3 4.5 6.5 4.5a6 6 0 002-.35M2 2l12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+        {/* Center — orientation masthead (its own column; cannot be overpainted) */}
+        {view !== "board" ? (
+          <div className="pointer-events-none flex max-w-[220px] select-none flex-col items-center truncate leading-none">
+            {(view === "timeGridWeek" || view === "timeGridDay") && (
+              <span className="mono mb-0.5 text-micro uppercase tracking-wide text-muted">{sprintLabel(viewDate)}</span>
             )}
-          </button>
-        )}
-        </>
-        )}
-
-        <div data-tauri-drag-region className="flex-1 self-stretch" />
-
-        {/* Which clock the grid is in — quiet at home, explicit while traveling. */}
-        <TimeZoneChip now={now} className="mr-2" />
-
-        {/* "This week" — the living-emblem button: an ambient gauge that fills
-            across the week, and the door to the Week's Plan / Review floor. */}
-        {onOpenWeekPlan && weekGlyph && (
-          <button
-            onClick={onOpenWeekPlan}
-            className={`fast relative mr-1 flex items-center gap-1.5 rounded-full border py-0.5 pl-1 pr-2.5 text-label font-medium ${
-              weekButtonGlow ? "text-ink" : "border-line text-muted hover:border-line-strong hover:text-ink"
-            }`}
-            style={weekButtonGlow ? { borderColor: "var(--signal)", boxShadow: "0 0 0 3px color-mix(in srgb, var(--signal) 18%, transparent)" } : undefined}
-            title={weekButtonGlow ? "Your week is ready to review" : weekButtonLabel}
-          >
-            <WeekEmblem spec={weekGlyph} state="forming" size={22} hideAmbient />
-            <span className="leading-none">{weekButtonLabel}</span>
-            {weekButtonGlow && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />}
-          </button>
-        )}
-
-        {onViewChange && (
-          <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
-            {(["board", "timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
-              const on = view === v;
-              return (
-                <button
-                  key={v}
-                  onClick={() => onViewChange(v)}
-                  className="fast rounded-full px-2.5 py-0.5 text-label leading-none"
-                  style={{
-                    background: on ? "var(--surface)" : "transparent",
-                    color: on ? "var(--accent)" : "var(--muted)",
-                    fontWeight: on ? 600 : 500,
-                    boxShadow: on ? "var(--shadow-1)" : "none",
-                  }}
-                >
-                  {v === "board" ? "Spread" : v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
-                </button>
-              );
-            })}
+            <span className="masthead truncate text-lead leading-none text-text">{viewTitle}</span>
           </div>
+        ) : (
+          <div className="w-0" data-tauri-drag-region />
         )}
+
+        {/* Right — quiet clock · week door · altitude · overflow. No overflow-hidden
+            here — the ··· menu drops below and must be allowed to paint. */}
+        <div className="flex min-w-0 items-center justify-end gap-1">
+          <TimeZoneChip now={now} />
+
+          {onOpenWeekPlan && weekGlyph && (
+            <button
+              onClick={onOpenWeekPlan}
+              className={`fast relative flex shrink-0 items-center gap-1 rounded-full border py-0.5 pl-0.5 pr-1.5 text-label font-medium ${
+                weekButtonGlow ? "text-ink" : "border-line text-muted hover:border-line-strong hover:text-ink"
+              }`}
+              style={weekButtonGlow ? { borderColor: "var(--signal)", boxShadow: "0 0 0 3px color-mix(in srgb, var(--signal) 18%, transparent)" } : undefined}
+              title={weekButtonTitle ?? weekButtonLabel}
+            >
+              <WeekEmblem spec={weekGlyph} state="forming" size={18} hideAmbient />
+              <span className="leading-none">{weekButtonLabel}</span>
+              {weekButtonGlow && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />}
+            </button>
+          )}
+
+          {onViewChange && (
+            <div className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
+              {(["board", "timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
+                const on = view === v;
+                return (
+                  <button
+                    key={v}
+                    onClick={() => onViewChange(v)}
+                    className="fast rounded-full px-1.5 py-0.5 text-label leading-none"
+                    style={{
+                      background: on ? "var(--surface)" : "transparent",
+                      color: on ? "var(--accent)" : "var(--muted)",
+                      fontWeight: on ? 600 : 500,
+                      boxShadow: on ? "var(--shadow-1)" : "none",
+                    }}
+                  >
+                    {v === "board" ? "Spread" : v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Overflow — refresh + show-hidden. Rare utilities, not peer chrome. */}
+          {(onRefreshCalendars || hiddenKeys.size > 0) && (
+            <div className="relative shrink-0">
+              <button
+                onClick={() => setUtilsOpen((o) => !o)}
+                className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
+                title="More calendar tools"
+                aria-expanded={utilsOpen}
+                aria-haspopup="menu"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden>
+                  <circle cx="3" cy="7" r="1.15" />
+                  <circle cx="7" cy="7" r="1.15" />
+                  <circle cx="11" cy="7" r="1.15" />
+                </svg>
+              </button>
+              {utilsOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setUtilsOpen(false)} />
+                  <div
+                    role="menu"
+                    className="rise elev-2 absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-[var(--radius)] border border-line bg-surface py-1"
+                  >
+                    {onRefreshCalendars && (
+                      <button
+                        role="menuitem"
+                        disabled={refreshingCalendars}
+                        onClick={(e) => {
+                          if (e.shiftKey && onFullRefreshCalendars) onFullRefreshCalendars();
+                          else onRefreshCalendars();
+                          setUtilsOpen(false);
+                        }}
+                        className="fast flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-label text-ink hover:bg-accent-soft disabled:opacity-40"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 14 14"
+                          fill="none"
+                          className={refreshingCalendars ? "animate-spin" : undefined}
+                        >
+                          <path
+                            d="M11.5 7A4.5 4.5 0 107.8 2.3M11.5 2.3v2.8H8.7"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span className="flex-1">Refresh calendars</span>
+                        <span className="text-micro text-muted">⇧ full</span>
+                      </button>
+                    )}
+                    {hiddenKeys.size > 0 && (
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          setShowHidden((v) => !v);
+                          setUtilsOpen(false);
+                        }}
+                        className="fast flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-label hover:bg-accent-soft"
+                        style={showHidden ? { color: "var(--accent)" } : undefined}
+                      >
+                        {showHidden ? (
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                            <path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                            <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3"/>
+                          </svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                            <path d="M6.3 3.8A6 6 0 018 3.5C12.2 3.5 14.5 8 14.5 8a11 11 0 01-1.9 2.4M3.4 5.6A11 11 0 001.5 8s2.3 4.5 6.5 4.5a6 6 0 002-.35M2 2l12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                        <span>
+                          {showHidden
+                            ? `Hide ${hiddenKeys.size} again`
+                            : `Show ${hiddenKeys.size} hidden`}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── The Week Board — "which day" altitude, a toggle away from the grid ── */}
