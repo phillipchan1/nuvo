@@ -5,7 +5,48 @@ export function Keycap({ children }: { children: ReactNode }) {
   return <kbd className="keycap">{children}</kbd>;
 }
 
-export function SectionLabel({ children }: { children: ReactNode }) {
+/** Section eyebrow. Pass `open` + `onToggle` to make it a collapse control
+ *  (same ▾/▸ affordance as Loose ends) — plain labels stay a static div. */
+export function SectionLabel({
+  children,
+  open,
+  onToggle,
+  count,
+}: {
+  children: ReactNode;
+  /** When set with onToggle, the label toggles its section. */
+  open?: boolean;
+  onToggle?: () => void;
+  /** Optional count — useful when collapsed so you still see what's hidden. */
+  count?: number;
+}) {
+  if (onToggle != null && open != null) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="section-label fast tap flex w-full items-center gap-2 px-3 pt-3 pb-1.5 text-left hover:text-ink"
+      >
+        <span>{children}</span>
+        {count != null && count > 0 && (
+          <span className="mono font-normal normal-case tracking-normal text-muted">{count}</span>
+        )}
+        <svg
+          aria-hidden
+          viewBox="0 0 16 16"
+          className="ml-auto h-3.5 w-3.5 shrink-0 text-muted"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          {open ? <path d="M4 6l4 4 4-4" /> : <path d="M6 4l4 4-4 4" />}
+        </svg>
+      </button>
+    );
+  }
   return <div className="section-label px-3 pt-3 pb-1.5">{children}</div>;
 }
 

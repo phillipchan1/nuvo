@@ -82,6 +82,10 @@ export default function LeftRail({
   const [capture, setCapture] = useState("");
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
+  // Today sections start open; collapse when you want visual quiet (Loose ends pattern).
+  const [todayOpen, setTodayOpen] = useState({ planned: true, scheduled: true, done: true });
+  const toggleToday = (key: keyof typeof todayOpen) =>
+    setTodayOpen((s) => ({ ...s, [key]: !s[key] }));
 
   // Dismiss rail micro-overlays when navigation changes (incl. browser back).
   useEffect(() => {
@@ -445,26 +449,53 @@ export default function LeftRail({
                 ))}
               </>
             )}
-            <SectionLabel>Planned</SectionLabel>
-            {todaySections.unblocked.map((t) => (
-              <TaskRow key={t.id} {...rowProps(t)} />
-            ))}
-            {todaySections.unblocked.length === 0 && (
-              <div className="px-3 py-2 text-caption text-muted">Nothing unblocked.</div>
+            <SectionLabel
+              open={todayOpen.planned}
+              onToggle={() => toggleToday("planned")}
+              count={todaySections.unblocked.length}
+            >
+              Planned
+            </SectionLabel>
+            {todayOpen.planned && (
+              <>
+                {todaySections.unblocked.map((t) => (
+                  <TaskRow key={t.id} {...rowProps(t)} />
+                ))}
+                {todaySections.unblocked.length === 0 && (
+                  <div className="px-3 py-2 text-caption text-muted">Nothing unblocked.</div>
+                )}
+              </>
             )}
-            <SectionLabel>Scheduled on calendar</SectionLabel>
-            {todaySections.scheduled.map((t) => (
-              <TaskRow key={t.id} {...rowProps(t)} />
-            ))}
-            {todaySections.scheduled.length === 0 && (
-              <div className="px-3 py-2 text-caption text-muted">Drag tasks onto the calendar to block time.</div>
+            <SectionLabel
+              open={todayOpen.scheduled}
+              onToggle={() => toggleToday("scheduled")}
+              count={todaySections.scheduled.length}
+            >
+              Scheduled on calendar
+            </SectionLabel>
+            {todayOpen.scheduled && (
+              <>
+                {todaySections.scheduled.map((t) => (
+                  <TaskRow key={t.id} {...rowProps(t)} />
+                ))}
+                {todaySections.scheduled.length === 0 && (
+                  <div className="px-3 py-2 text-caption text-muted">Drag tasks onto the calendar to block time.</div>
+                )}
+              </>
             )}
             {todaySections.done.length > 0 && (
               <>
-                <SectionLabel>Done</SectionLabel>
-                {todaySections.done.map((t) => (
-                  <TaskRow key={t.id} {...rowProps(t)} />
-                ))}
+                <SectionLabel
+                  open={todayOpen.done}
+                  onToggle={() => toggleToday("done")}
+                  count={todaySections.done.length}
+                >
+                  Done
+                </SectionLabel>
+                {todayOpen.done &&
+                  todaySections.done.map((t) => (
+                    <TaskRow key={t.id} {...rowProps(t)} />
+                  ))}
               </>
             )}
           </>

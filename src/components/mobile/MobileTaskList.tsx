@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Label, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import type { useVertical } from "../../hooks/useVertical";
@@ -64,6 +64,9 @@ export default function MobileTaskList({
 
   const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
   const weekPool = useMemo(() => buildWeekPool(week), [week]);
+  const [todayOpen, setTodayOpen] = useState({ planned: true, scheduled: true, done: true });
+  const toggleToday = (key: keyof typeof todayOpen) =>
+    setTodayOpen((s) => ({ ...s, [key]: !s[key] }));
 
   if (tab === "inbox") {
     return (
@@ -95,26 +98,47 @@ export default function MobileTaskList({
         )}
         {todaySections.unblocked.length > 0 && (
           <>
-            <SectionLabel>Planned</SectionLabel>
-            {todaySections.unblocked.map((t) => (
-              <TaskRow key={t.id} {...rowProps(t)} />
-            ))}
+            <SectionLabel
+              open={todayOpen.planned}
+              onToggle={() => toggleToday("planned")}
+              count={todaySections.unblocked.length}
+            >
+              Planned
+            </SectionLabel>
+            {todayOpen.planned &&
+              todaySections.unblocked.map((t) => (
+                <TaskRow key={t.id} {...rowProps(t)} />
+              ))}
           </>
         )}
         {todaySections.scheduled.length > 0 && (
           <>
-            <SectionLabel>On the clock</SectionLabel>
-            {todaySections.scheduled.map((t) => (
-              <TaskRow key={t.id} {...rowProps(t)} />
-            ))}
+            <SectionLabel
+              open={todayOpen.scheduled}
+              onToggle={() => toggleToday("scheduled")}
+              count={todaySections.scheduled.length}
+            >
+              On the clock
+            </SectionLabel>
+            {todayOpen.scheduled &&
+              todaySections.scheduled.map((t) => (
+                <TaskRow key={t.id} {...rowProps(t)} />
+              ))}
           </>
         )}
         {todaySections.done.length > 0 && (
           <>
-            <SectionLabel>Done</SectionLabel>
-            {todaySections.done.map((t) => (
-              <TaskRow key={t.id} {...rowProps(t)} />
-            ))}
+            <SectionLabel
+              open={todayOpen.done}
+              onToggle={() => toggleToday("done")}
+              count={todaySections.done.length}
+            >
+              Done
+            </SectionLabel>
+            {todayOpen.done &&
+              todaySections.done.map((t) => (
+                <TaskRow key={t.id} {...rowProps(t)} />
+              ))}
           </>
         )}
       </div>
