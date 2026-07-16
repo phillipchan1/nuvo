@@ -1,19 +1,15 @@
-// The coverage strip's two knobs, sitting above the aligned grid: the window length
-// (how many weeks the deck + coverage span) and a domain filter (which domains the
-// strip watches — hide the ones you don't need to balance every week). Both persist
-// via usePlannerPrefs; the filter stores the HIDDEN set so a new domain is watched by
-// default.
+// The coverage strip's toolbar: a collapse toggle (the deck is the primary surface,
+// so coverage folds to a one-line summary) and a domain filter (which domains the
+// strip watches — hide the ones you don't need to balance). Persist via usePlannerPrefs;
+// the filter stores the HIDDEN set so a new domain is watched by default.
 
 import type { Domain } from "../../lib/vertical";
-import { WEEKS_SHOWN_OPTIONS } from "../../hooks/usePlannerPrefs";
 
 export default function CoverageControls({
   collapsed,
   setCollapsed,
   covered,
   tracked,
-  weeksShown,
-  setWeeksShown,
   domains,
   hidden,
   toggleHidden,
@@ -22,11 +18,9 @@ export default function CoverageControls({
 }: {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
-  /** domains with a project in the window / total tracked — the collapsed summary. */
+  /** domains with work in the window / total tracked — the collapsed summary. */
   covered: number;
   tracked: number;
-  weeksShown: number;
-  setWeeksShown: (n: number) => void;
   domains: Domain[];
   hidden: Set<string>;
   toggleHidden: (id: string) => void;
@@ -37,41 +31,19 @@ export default function CoverageControls({
 
   return (
     <div className="mt-4 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-3">
-        {/* collapse toggle — the deck is the primary surface; fold coverage away */}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="fast tap flex items-center gap-1.5 text-left"
-          title={collapsed ? "Show coverage" : "Hide coverage"}
-          aria-expanded={!collapsed}
-        >
-          <span className="text-micro text-muted transition-transform" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(90deg)" }}>▸</span>
-          <span className="section-label !p-0">Coverage</span>
-          {collapsed && (
-            <span className="text-micro text-muted">· {covered}/{tracked} this window</span>
-          )}
-        </button>
-
-        {/* window length — how far the planner looks (deck + coverage) */}
-        <div className="flex items-center gap-2">
-          <span className="text-micro text-muted">Window</span>
-          <div className="flex items-center gap-0.5 rounded-lg border border-line p-0.5">
-          {WEEKS_SHOWN_OPTIONS.map((n) => {
-            const active = n === weeksShown;
-            return (
-              <button
-                key={n}
-                onClick={() => setWeeksShown(n)}
-                className="fast tap rounded-md px-2 py-0.5 text-caption"
-                style={active ? { background: "var(--accent)", color: "#fff" } : { color: "var(--muted)" }}
-              >
-                {n}w
-              </button>
-            );
-          })}
-          </div>
-        </div>
-      </div>
+      {/* collapse toggle — the deck is the primary surface; fold coverage away */}
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="fast tap flex items-center gap-1.5 text-left"
+        title={collapsed ? "Show coverage" : "Hide coverage"}
+        aria-expanded={!collapsed}
+      >
+        <span className="text-micro text-muted transition-transform" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(90deg)" }}>▸</span>
+        <span className="section-label !p-0">Coverage</span>
+        {collapsed && (
+          <span className="text-micro text-muted">· {covered}/{tracked} tracked</span>
+        )}
+      </button>
 
       {/* domain filter — which domains the coverage strip watches */}
       <div className="relative">

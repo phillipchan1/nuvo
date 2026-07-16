@@ -18,15 +18,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
-import { useMaxPerQuarter } from "../../hooks/usePlannerPrefs";
+import { useRecordContextMenu } from "../RecordContextMenu";
+import { useMaxPerQuarter, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
 import { sprintsBetween } from "../../lib/sprint";
 import {
   domainById,
-  isProjectComplete,
-  isProjectInFlight,
+  type Domain,
   type Initiative,
   type VerticalData,
 } from "../../lib/vertical";
+import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
+import CoverageControls from "./CoverageControls";
+import { initiativeReadinessAxes } from "../../lib/lenses";
 import {
   quarterEndISO,
   quarterRangeLabel,
@@ -35,13 +38,20 @@ import {
   type InitiativeLane,
   type InitiativeLaneState,
 } from "../../lib/initiativeDeck";
-import { DomainPicker, MomentumChip, PROJECT_STATUS_COLORS } from "../floors/parts";
+import { DomainPicker, PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const COL_PX = 248;
+const COL_GAP = 12; // matches the quarters grid `gap-3` — coverage aligns to it
+// The left label column — holds coverage domain names, empty in the deck; aligns the
+// coverage cells to the quarter columns beneath.
+const LABEL_W = 132;
+// A fixed near-term horizon — a year of quarters. Coverage now measures load per
+// domain (the pips), so a window selector was noise; near-term is what matters.
+const HORIZON_QUARTERS = 4;
 
 const STATE_COLOR: Record<InitiativeLaneState, string> = {
   on_track: READY,
@@ -64,11 +74,33 @@ export default function InitiativeDeck() {
   const { data, updateInitiative, updateProject, addInitiative } = useVertical();
   const { openRecord, openFloorModal } = useAppNavigation();
   const [maxPerQuarter] = useMaxPerQuarter();
+  const [coverageHidden, toggleCoverageHidden] = useCoverageHidden("initiative");
+  const [coverageCollapsed, setCoverageCollapsed] = useCoverageCollapsed("initiative");
+  const [filterOpen, setFilterOpen] = useState(false);
   const now = useMemo(() => new Date(), []);
-  const board = useMemo(() => readInitiativeDeck(data, now), [data, now]);
+  const board = useMemo(() => readInitiativeDeck(data, now, HORIZON_QUARTERS), [data, now]);
   // The domain a lane-composed initiative lands in (reassignable in the record);
   // the first domain, mirroring the full composer's default.
-  const defaultDomain = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort)[0] ?? null, [data.domains]);
+  const domainsSorted = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
+  const defaultDomain = domainsSorted[0] ?? null;
+
+  // ── domain coverage — a NAMED read of "which domains have an initiative, and in
+  // which quarter?", aligned OVER the quarter columns (shared grid + label gutter).
+  // One row per tracked domain, a cell per shown quarter lit where a bet lands. Empty
+  // cell = one-tap start an initiative for that domain in that quarter.
+  const Q = board.quarters.length;
+  const cols = `${LABEL_W}px repeat(${Q}, minmax(${COL_PX}px, 1fr))`;
+  const gridMinW = LABEL_W + Q * (COL_PX + COL_GAP);
+  const coverageRows: CoverageRow[] = domainsSorted
+    .filter((d) => !coverageHidden.has(d.id))
+    .map((domain) => {
+      const cells = new Array(Q).fill(0) as number[];
+      for (const l of board.lanes)
+        if (l.initiative.domainId === domain.id && l.quarterIdx != null && l.quarterIdx >= 0 && l.quarterIdx < Q)
+          cells[l.quarterIdx] += 1;
+      return { domain, cells };
+    });
+  const coveredCount = coverageRows.filter((r) => r.cells.some((c) => c > 0)).length;
 
   // group placed lanes by their quarter column
   const byColumn = useMemo(() => {
@@ -87,7 +119,11 @@ export default function InitiativeDeck() {
     return m;
   }, [board.lanes]);
 
-  const needShaping = board.lanes.filter((l) => l.gaps.length > 0 || l.state === "needs_okrs").length;
+  // header legend — the placed bets by health, mirroring the projects deck's
+  // ready/grooming/done rollup (grooming = still needs OKRs / shaping / a finish line).
+  const onTrack = board.lanes.filter((l) => l.state === "on_track").length;
+  const atRisk = board.lanes.filter((l) => l.state === "at_risk").length;
+  const grooming = board.lanes.filter((l) => l.state === "needs_okrs" || l.state === "needs_shaping" || l.state === "idea").length;
 
   // ── domain re-home cascade (same rule as InitiativesFloor) ──────────────────
   const setDomain = (i: Initiative, domainId: string) => {
@@ -103,15 +139,25 @@ export default function InitiativeDeck() {
   const [overInbox, setOverInbox] = useState(false);
   // click into a quarter → compose an initiative inline, right there (no modal). The
   // full composer (domain, finish line) stays a click away in the inbox rail.
+  // composeDomain carries an explicit domain when launched from a coverage cell.
   const [composeCol, setComposeCol] = useState<number | null>(null);
+  const [composeDomain, setComposeDomain] = useState<Domain | null>(null);
+  const composeDom = composeDomain ?? defaultDomain;
+  const closeCompose = () => { setComposeCol(null); setComposeDomain(null); };
+  const composeInCol = (i: number) => { setComposeDomain(null); setComposeCol(i); };
   const createInCol = async (i: number, name: string) => {
     const col = board.quarters[i];
-    if (!col || !defaultDomain) { openFloorModal("new-initiative"); return; }
-    await addInitiative(defaultDomain.id, {
+    if (!col || !composeDom) { openFloorModal("new-initiative"); return; }
+    await addInitiative(composeDom.id, {
       name,
       targetDate: quarterEndISO(col.start),
       status: "in_progress",
     });
+  };
+  // start an initiative for a domain in a chosen quarter — from the coverage cell.
+  const addForDomain = (dom: Domain, quarterIdx: number) => {
+    setComposeDomain(dom);
+    setComposeCol(quarterIdx);
   };
 
   const initiativeById = useMemo(() => new Map(data.initiatives.map((i) => [i.id, i])), [data.initiatives]);
@@ -176,20 +222,8 @@ export default function InitiativeDeck() {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
-  const inFlight = data.initiatives.filter((i) => isProjectInFlight(i.status) && !isProjectComplete(i.status)).length;
-
   return (
     <div className="mx-auto flex min-h-full max-w-[1600px] flex-col">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-display masthead leading-none">On deck</h1>
-          <p className="mt-1.5 text-body text-muted">
-            The initiatives with finish lines, grouped by the quarter they land in — drag one onto a quarter to commit it. {board.inbox.length > 0 && <span className="text-ink">{board.inbox.length} still {board.inbox.length === 1 ? "needs" : "need"} a quarter.</span>}
-          </p>
-        </div>
-        <span className="shrink-0 text-caption text-muted">{inFlight} in flight{needShaping > 0 && <> · {needShaping} need grooming</>}</span>
-      </div>
-
       <div className="flex min-h-0 gap-5">
         {/* ── inbox — initiatives with no quarter yet ──────────────────────── */}
         <aside
@@ -234,7 +268,6 @@ export default function InitiativeDeck() {
                     }}
                     data={data}
                     onSetDomain={setDomain}
-                    compact
                   />
                 ))}
               </div>
@@ -251,13 +284,55 @@ export default function InitiativeDeck() {
           )}
         </aside>
 
-        {/* ── the quarter columns ──────────────────────────────────────────── */}
-        <div className="min-w-0 flex-1 overflow-x-auto pb-2">
-          <div
-            className="grid gap-3"
-            style={{ gridTemplateColumns: `repeat(${board.quarters.length}, minmax(${COL_PX}px, 1fr))` }}
-          >
-            {board.quarters.map((q) => {
+        {/* ── the quarter columns, crowned by the aligned coverage strip ─────── */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* header — mirrors the projects deck (compact masthead + a health legend) */}
+          <div className="flex items-end justify-between gap-3">
+            <h1 className="text-lead masthead leading-none">On deck · next {board.quarters.length} quarters</h1>
+            {board.lanes.length > 0 && (
+              <div className="flex shrink-0 items-center gap-3 text-caption">
+                <span className="flex items-center gap-1.5" title="On track — groomed and healthy">
+                  <span className="h-2 w-2 rounded-full" style={{ background: READY }} />
+                  <span style={{ color: onTrack ? "var(--ink)" : "var(--muted)" }}>{onTrack} on track</span>
+                </span>
+                <span className="flex items-center gap-1.5" title="At risk">
+                  <span className="h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />
+                  <span style={{ color: atRisk ? "var(--ink)" : "var(--muted)" }}>{atRisk} at risk</span>
+                </span>
+                <span className="flex items-center gap-1.5" title="Still needs grooming (OKRs / shaping / a finish line)">
+                  <span className="h-2 w-2 rounded-full" style={{ background: CAUTION }} />
+                  <span style={{ color: grooming ? "var(--ink)" : "var(--muted)" }}>{grooming} grooming</span>
+                </span>
+              </div>
+            )}
+          </div>
+          <CoverageControls
+            collapsed={coverageCollapsed}
+            setCollapsed={setCoverageCollapsed}
+            covered={coveredCount}
+            tracked={coverageRows.length}
+            domains={domainsSorted}
+            hidden={coverageHidden}
+            toggleHidden={toggleCoverageHidden}
+            open={filterOpen}
+            setOpen={setFilterOpen}
+          />
+          <div className="mt-2 overflow-x-auto pb-2">
+            <div style={{ minWidth: gridMinW }}>
+              {!coverageCollapsed && (
+                <DomainCoverage
+                  rows={coverageRows}
+                  gridTemplate={cols}
+                  columnGap={COL_GAP}
+                  ruled={false}
+                  itemNoun="initiative"
+                  colNoun="quarter"
+                  onAdd={addForDomain}
+                />
+              )}
+              <div className="grid gap-3" style={{ gridTemplateColumns: cols }}>
+                <div aria-hidden />
+                {board.quarters.map((q) => {
               const lanes = byColumn.get(q.idx) ?? [];
               const risky = lanes.filter((l) => l.atRisk.atRisk).length;
               const over = lanes.length > maxPerQuarter;
@@ -306,7 +381,7 @@ export default function InitiativeDeck() {
                   <div className="flex min-h-[60px] flex-1 flex-col gap-2">
                     {lanes.length === 0 && composeCol !== q.idx ? (
                       <div
-                        onClick={() => setComposeCol(q.idx)}
+                        onClick={() => composeInCol(q.idx)}
                         className="fast flex flex-1 cursor-pointer items-center justify-center rounded-lg border border-dashed border-line px-2 py-6 text-center text-micro text-muted hover:border-line-strong hover:text-ink"
                         title="New initiative in this quarter"
                       >
@@ -328,10 +403,10 @@ export default function InitiativeDeck() {
                           <>
                             <div data-card-control onPointerDown={(e) => e.stopPropagation()}>
                               <InlineAdd
-                                placeholder="Name an initiative…"
-                                accent={defaultDomain?.color ?? "var(--accent)"}
+                                placeholder={composeDomain ? `Name a ${composeDomain.name} initiative…` : "Name an initiative…"}
+                                accent={composeDom?.color ?? "var(--accent)"}
                                 onCreate={(name) => createInCol(q.idx, name)}
-                                onClose={() => setComposeCol(null)}
+                                onClose={closeCompose}
                               />
                             </div>
                             <div className="flex-1" />
@@ -340,7 +415,7 @@ export default function InitiativeDeck() {
                           // the empty space below the cards is a click target too —
                           // tap anywhere here to start an initiative in this quarter
                           <div
-                            onClick={() => setComposeCol(q.idx)}
+                            onClick={() => composeInCol(q.idx)}
                             title="New initiative in this quarter"
                             className="fast min-h-[28px] flex-1 cursor-pointer rounded-lg transition-colors hover:bg-accent-soft/20"
                           />
@@ -354,7 +429,7 @@ export default function InitiativeDeck() {
                     <button
                       data-card-control
                       onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); setComposeCol(q.idx); }}
+                      onClick={(e) => { e.stopPropagation(); composeInCol(q.idx); }}
                       className="tap fast mt-2 w-full rounded-lg border border-dashed border-line px-2 py-2 text-center text-micro font-medium text-muted hover:border-line-strong hover:text-ink"
                       title="New initiative in this quarter"
                     >
@@ -364,6 +439,8 @@ export default function InitiativeDeck() {
                 </div>
               );
             })}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -389,77 +466,74 @@ export default function InitiativeDeck() {
   );
 }
 
-// ── one initiative card — OKR health up front, domain auto-link when unlinked ──
+// ── one initiative card — a sibling of the project deck card: same silhouette
+// (domain rail + dot + title, then a GROOMING METER + caption). The meter is the
+// initiative's analogue of the project's readiness bars, so "which bets need grooming"
+// scans at a glance — but with TWO segments (Defined · Measured), because a bet has two
+// readiness axes (outcome+finish line, and key results); it has no pace/Fits axis. The
+// deep OKR work (attainment, uncovered KRs, momentum) lives in Groom / the record. The
+// one deck-specific keeper is the auto-link chip, shown only when a bet has no domain.
 function InitiativeCard({
   lane,
   data,
   onSetDomain,
-  compact = false,
 }: {
   lane: InitiativeLane;
   data: VerticalData;
   onSetDomain: (i: Initiative, domainId: string) => void;
-  compact?: boolean;
 }) {
-  const { updateInitiative } = useVertical();
+  const { onContextMenu, menu } = useRecordContextMenu();
   const i = lane.initiative;
   const domain = domainById(data, i.domainId);
   const dot = domain?.color ?? "var(--line-strong)";
-  const color = STATE_COLOR[lane.state];
   const suggestion = lane.needsDomain ? suggestDomainForInitiative(data, i) : null;
+
+  // grooming meter — the two readiness axes, coloured by how many are met (teal =
+  // groomed, amber = mid, faint = raw), so a partial bar reads "needs grooming".
+  const axes = initiativeReadinessAxes(data, i);
+  const met = (axes.defined ? 1 : 0) + (axes.planned ? 1 : 0);
+  const groomColor =
+    lane.state === "parked" ? "var(--muted)" : met === 2 ? READY : met === 1 ? CAUTION : "var(--line-strong)";
+  const overdue = lane.overdue && lane.state !== "parked" ? "⚠ overdue · " : "";
+  // caption mirrors the project card: the specific gap while grooming, else the health
+  // word (on track / at risk). Coloured by state so health still reads.
+  const caption =
+    lane.state === "parked"
+      ? "parked"
+      : lane.gaps.length
+        ? overdue + lane.gaps.map((g) => g.label).join(" · ")
+        : overdue + STATE_LABEL[lane.state];
 
   return (
     <div
       data-init-drag={i.id}
-      className="group/card fast cursor-grab select-none rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-line-strong active:cursor-grabbing"
-      style={{ boxShadow: lane.overdue ? `inset 3px 0 0 var(--signal)` : undefined }}
+      onContextMenu={onContextMenu("initiative", i.id)}
+      className="group/card fast relative cursor-grab select-none rounded-lg border border-line bg-surface py-2.5 pl-4 pr-3 hover:border-line-strong active:cursor-grabbing"
     >
+      {menu}
+      {/* domain rail — identity demarcation, mirrors the project deck card */}
+      <span className="pointer-events-none absolute inset-y-2.5 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
+      {/* title row — dot + name, nothing else */}
       <div className="flex items-start gap-2">
         <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-caption font-semibold text-ink">{i.name}</div>
-          {i.outcome.trim() && <div className="mt-0.5 line-clamp-1 text-micro text-muted">{i.outcome}</div>}
-        </div>
+        <div className="min-w-0 flex-1 truncate text-caption font-semibold text-ink">{i.name}</div>
       </div>
 
-      {/* OKR line — the reason this surface exists */}
-      <div className="mono mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-4 text-micro">
-        <span style={{ color }}>
-          {lane.overdue && lane.state !== "parked" ? "⚠ overdue · " : ""}{STATE_LABEL[lane.state]}
+      {/* grooming meter — Defined · Measured, the initiative's readiness bars */}
+      <div className="mt-2 flex items-center gap-1.5" title="Defined · Measured (OKRs)">
+        <span className="flex flex-1 items-center gap-1">
+          {[axes.defined, axes.planned].map((m, k) => (
+            <span key={k} className="h-[5px] flex-1 rounded-full" style={{ background: m ? groomColor : "var(--line)" }} />
+          ))}
         </span>
-        {lane.krCount > 0 ? (
-          <>
-            <span className="text-muted">·</span>
-            <span className="text-ink">{lane.attainment ?? 0}%</span>
-            <span className="text-muted">{lane.krCount} KR{lane.krCount === 1 ? "" : "s"}</span>
-            {lane.uncovered > 0 && <span style={{ color: CAUTION }}>{lane.uncovered} uncovered</span>}
-          </>
-        ) : (
-          !compact && <span className="text-muted">· no key results</span>
-        )}
-        {(() => {
-          const left = i.targetDate && lane.state !== "parked" ? sprintsBetween(new Date(), i.targetDate) : null;
-          if (left == null || left < 0) return null;
-          return (
-            <>
-              <span className="text-muted">·</span>
-              <span className="text-muted">{left === 0 ? "due this sprint" : `${left} sprint${left === 1 ? "" : "s"} left`}</span>
-            </>
-          );
-        })()}
+        <span className="mono shrink-0 text-micro" style={{ color: STATE_COLOR[lane.state] }}>{caption}</span>
       </div>
 
-      {/* at-risk reasons — named, not just a dot */}
-      {lane.atRisk.reasons.length > 0 && (
-        <div className="mono mt-1 pl-4 text-micro" style={{ color: "var(--signal)" }}>
-          {lane.atRisk.reasons.join(" · ")}
-        </div>
-      )}
-
-      {/* the "main" this initiative belongs under — a control, not a drag handle */}
-      <div data-card-control className="mt-2 flex items-center gap-2 pl-4" onPointerDown={(e) => e.stopPropagation()}>
-        {lane.needsDomain ? (
-          suggestion ? (
+      {/* auto-link — only when the bet has no domain yet (a placement necessity, not
+          default clutter); the deep OKR work lives in Groom / the record */}
+      {lane.needsDomain && (
+        <div data-card-control className="mt-2 flex items-center gap-2 pl-4" onPointerDown={(e) => e.stopPropagation()}>
+          {suggestion ? (
             <button
               onClick={() => onSetDomain(i, suggestion.domain.id)}
               className="tap fast flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-medium"
@@ -475,13 +549,9 @@ function InitiativeCard({
               value=""
               onChange={(id) => onSetDomain(i, id)}
             />
-          )
-        ) : (
-          <span className="mono text-micro text-muted">{domain?.icon} {domain?.name}</span>
-        )}
-        {!compact && <div className="flex-1" />}
-        {!compact && <MomentumChip value={i.momentum} onChange={(m) => updateInitiative(i.id, { momentum: m })} />}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

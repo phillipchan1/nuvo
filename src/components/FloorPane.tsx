@@ -18,7 +18,7 @@ import GroomFloor from "./floors/GroomFloor";
 import InitiativeGroomFloor from "./floors/InitiativeGroomFloor";
 import ShippedWall from "./floors/ShippedWall";
 import ProjectReadinessStrip from "./floors/ProjectReadinessStrip";
-import NowFloor from "./floors/NowFloor";
+import InitiativeReadinessStrip from "./floors/InitiativeReadinessStrip";
 
 // The faces of the project altitude: "ondeck" answers WHEN (time-box projects
 // across weeks, with the needs-a-week inbox); "groom" answers WHAT (shape each
@@ -105,7 +105,6 @@ export default function FloorPane({
         className="app-topbar flex h-11 shrink-0 items-center gap-1.5 border-b border-line px-5"
       >
 
-        {rung === "now" && <span className="mono text-label font-medium text-ink">Today</span>}
         {rung === "domain" && <span className="mono text-label font-medium text-ink">Domains</span>}
         {rung === "project" && (
           <RungTabs
@@ -147,8 +146,6 @@ export default function FloorPane({
       </div>
 
       <div key={`${rung}-${viewKey}`} className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7">
-        {rung === "now" && <NowFloor onOpenDay={() => goRung("day")} />}
-
         {rung === "project" && projectView !== "shipped" && (
           <ProjectReadinessStrip onGroom={projectView === "groom" ? undefined : () => setProjectView("groom")} />
         )}
@@ -157,6 +154,9 @@ export default function FloorPane({
         {rung === "project" && projectView === "all" && <PortfolioFloor onOpen={openProjectRecord} />}
         {rung === "project" && projectView === "shipped" && <ShippedWall rung="project" />}
 
+        {rung === "initiative" && initiativeView !== "shipped" && (
+          <InitiativeReadinessStrip onGroom={initiativeView === "groom" ? undefined : () => setInitiativeView("groom")} />
+        )}
         {rung === "initiative" && initiativeView === "ondeck" && <InitiativeOnDeckFloor />}
         {rung === "initiative" && initiativeView === "groom" && <InitiativeGroomFloor />}
         {rung === "initiative" && initiativeView === "all" && (

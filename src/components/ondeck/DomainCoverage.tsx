@@ -1,33 +1,50 @@
-// The coverage strip — a NAMED read of "which domains am I working, and when?",
-// aligned OVER the deck's sprint columns (it shares the deck's grid template, so a lit
-// cell sits directly above its week). Color alone can't answer it — you don't memorize
-// the palette — so every row is labeled in the left gutter; the cells carry the rest.
-// A filled bar under a sprint = that domain lands there; an empty row = nothing on the
-// board; an empty cell is a one-tap "start it that sprint". No status words, no "idle"
-// label — the timeline is the message.
+// The coverage strip — a NAMED read of "which domains am I working, how much, and
+// when?", aligned OVER the deck's columns (it shares the deck's grid template, so a
+// cell sits directly above its sprint/quarter). Color alone can't answer it — you
+// don't memorize the palette — so every row is labeled in the left gutter; the cells
+// carry the rest. Each unit of work (a project / an initiative in that column) is one
+// IDENTICAL accumulating pip: more work = more pips = more ink (never diluted, unlike
+// subdividing a fixed bar). Countable at a glance, and it self-quiets — light domains
+// shrink to a single pip. An empty cell is a one-tap "start it there".
 
 import type { Domain } from "../../lib/vertical";
 
 const NOW_BAND = "color-mix(in srgb, var(--accent) 8%, transparent)";
+const PIP_W = 22; // each unit of work is one fixed-size block
+const MAX_PIPS = 8; // clamp (a domain rarely carries this many in one column)
 
 export interface CoverageRow {
   domain: Domain;
-  /** length = shown weeks; true where a placed project touches that sprint. */
-  cells: boolean[];
+  /** length = shown columns; the COUNT of work items for this domain in that column. */
+  cells: number[];
 }
 
 export default function DomainCoverage({
   rows,
   gridTemplate,
+  columnGap = 0,
+  ruled = true,
+  itemNoun = "project",
+  colNoun = "week",
   onAdd,
 }: {
   rows: CoverageRow[];
-  /** the deck's grid template, so cells align to the sprint columns. */
+  /** the deck's grid template, so cells align to the columns. */
   gridTemplate: string;
-  /** start a project for a domain in a given week (0 = this sprint). */
+  /** px gap between columns — 0 for the Gantt (adjacent + rules), 12 for the kanban. */
+  columnGap?: number;
+  /** whether cells carry a left rule line — the Gantt's demarcation; off when gapped. */
+  ruled?: boolean;
+  /** what an empty cell starts — "project" (weeks) or "initiative" (quarters). */
+  itemNoun?: string;
+  /** the column cadence noun — "week" or "quarter". */
+  colNoun?: string;
+  /** start work for a domain in a given column (0 = now). */
   onAdd: (domain: Domain, weekIdx: number) => void;
 }) {
   if (rows.length === 0) return null;
+  // a gap between columns makes the left rule redundant (and misplaced), so drop it
+  const rule = ruled && columnGap === 0 ? "border-l border-line" : "";
 
   // No ruler — the deck's sprint headers directly below label the (aligned) columns,
   // so coverage stays a compact band that doesn't crowd the deck.
@@ -35,9 +52,9 @@ export default function DomainCoverage({
     <div className="pb-1.5 pt-0.5">
       {rows.map((r) => {
         const { domain: d } = r;
-        const covered = r.cells.some(Boolean);
+        const covered = r.cells.some((n) => n > 0);
         return (
-          <div key={d.id} className="grid items-center" style={{ gridTemplateColumns: gridTemplate }}>
+          <div key={d.id} className="grid items-center" style={{ gridTemplateColumns: gridTemplate, columnGap }}>
             <div className="sticky left-0 z-10 flex min-w-0 items-center gap-2 py-[3px] pl-0.5 pr-2" style={{ background: "var(--bg)" }}>
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
@@ -47,18 +64,24 @@ export default function DomainCoverage({
                 {d.name}
               </span>
             </div>
-            {r.cells.map((lit, i) =>
-              lit ? (
-                <div key={i} className="border-l border-line px-1 py-[3px]" style={i === 0 ? { background: NOW_BAND } : undefined} title={`${d.name} · ${i === 0 ? "this sprint" : `sprint +${i}`}`}>
-                  <div className="h-2 rounded-full" style={{ background: d.color }} />
+            {r.cells.map((count, i) =>
+              count > 0 ? (
+                <div key={i} className={`${rule} px-1 py-[3px]`} style={i === 0 ? { background: NOW_BAND } : undefined} title={`${d.name} · ${count} ${itemNoun}${count === 1 ? "" : "s"} ${i === 0 ? `this ${colNoun}` : `${colNoun} +${i}`}`}>
+                  {/* accumulating pips — one identical block per unit of work; more = more */}
+                  <div className="flex items-center gap-[3px]">
+                    {Array.from({ length: Math.min(count, MAX_PIPS) }).map((_, k) => (
+                      <span key={k} className="h-2 shrink-0 rounded-[2px]" style={{ width: PIP_W, background: d.color }} />
+                    ))}
+                    {count > MAX_PIPS && <span className="mono text-micro leading-none" style={{ color: d.color }}>+{count - MAX_PIPS}</span>}
+                  </div>
                 </div>
               ) : (
                 <button
                   key={i}
                   onClick={() => onAdd(d, i)}
-                  aria-label={`Start a ${d.name} project ${i === 0 ? "this week" : i === 1 ? "next week" : `in ${i} weeks`}`}
-                  title={`Start a ${d.name} project here`}
-                  className="group/cell fast border-l border-line px-1 py-[3px]"
+                  aria-label={`Start a ${d.name} ${itemNoun} ${i === 0 ? `this ${colNoun}` : i === 1 ? `next ${colNoun}` : `in ${i} ${colNoun}s`}`}
+                  title={`Start a ${d.name} ${itemNoun} here`}
+                  className={`group/cell fast ${rule} px-1 py-[3px]`}
                   style={i === 0 ? { background: NOW_BAND } : undefined}
                 >
                   <div className="h-2 rounded-full border border-dashed opacity-40 transition-opacity group-hover/cell:opacity-100" style={{ borderColor: "var(--line-strong)" }} />

@@ -16,7 +16,7 @@ import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
-import { useMaxPerWeek, useWeeksShown, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
+import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
 import { useRecordContextMenu } from "../RecordContextMenu";
 import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
 import { readOnDeck, type OnDeckLane, type ReadyTier, type WeekColumn } from "../../lib/onDeck";
@@ -37,6 +37,10 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 // The left label column — holds coverage domain names, empty in the deck; wide enough
 // for a domain name, so coverage cells align to the sprint columns beneath.
 const LABEL_W = 132;
+// A fixed near-term horizon — the deck is for scaffolding the next stretch; coverage
+// measures load per domain over it. (A window selector proved to be noise once the
+// pips carried "how much" per lane.)
+const HORIZON_WEEKS = 4;
 // Cards now carry the readiness meter + completion control, so give them room:
 // wide columns mean ~4 weeks fill a typical pane comfortably and the rest scroll.
 const WEEK_COL_PX = 288;
@@ -98,11 +102,10 @@ export default function OnDeckPlanner() {
   const { byWeek, weeklyAvgMins } = useCapacity();
   const { openRecord, openFloorModal } = useAppNavigation();
   const [maxPerWeek] = useMaxPerWeek();
-  const [weeksShown, setWeeksShown] = useWeeksShown();
   const [coverageHidden, toggleCoverageHidden] = useCoverageHidden();
   const [coverageCollapsed, setCoverageCollapsed] = useCoverageCollapsed();
   const now = useMemo(() => new Date(), []);
-  const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, weeksShown, true), [data, byWeek, weeklyAvgMins, now, weeksShown]);
+  const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, HORIZON_WEEKS, true), [data, byWeek, weeklyAvgMins, now]);
   // The domain a lane-composed project lands in (reassignable in the record); the
   // first domain, mirroring the full composer's default.
   const defaultDomain = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort)[0] ?? null, [data.domains]);
@@ -201,13 +204,13 @@ export default function OnDeckPlanner() {
   const coverageRows: CoverageRow[] = domainsSorted
     .filter((domain) => !coverageHidden.has(domain.id))
     .map((domain) => {
-      const cells = new Array(H).fill(false) as boolean[];
+      const cells = new Array(H).fill(0) as number[];
       for (const g of effGeom)
         if (g.l.project.domainId === domain.id)
-          for (let i = g.start; i <= g.end; i++) if (i >= 0 && i < H) cells[i] = true;
+          for (let i = g.start; i <= g.end; i++) if (i >= 0 && i < H) cells[i] += 1;
       return { domain, cells };
     });
-  const coveredCount = coverageRows.filter((r) => r.cells.some(Boolean)).length;
+  const coveredCount = coverageRows.filter((r) => r.cells.some((c) => c > 0)).length;
 
   // Lane-packing: bars that don't overlap in time share a row, so the same week's
   // projects stack together in a column instead of staggering one-per-row. Row
@@ -456,8 +459,6 @@ export default function OnDeckPlanner() {
           setCollapsed={setCoverageCollapsed}
           covered={coveredCount}
           tracked={coverageRows.length}
-          weeksShown={weeksShown}
-          setWeeksShown={setWeeksShown}
           domains={domainsSorted}
           hidden={coverageHidden}
           toggleHidden={toggleCoverageHidden}
