@@ -355,12 +355,13 @@ export function useTaskMutations() {
     fileToProject: (t: Task) => patchTask(t.id, { status: "backlog" }),
 
     /** An over-planned day degrades into the week pool, not into guilt-rolling:
-     *  drop the date, keep the sprint commitment. */
+     *  drop the date (and any slot), keep the sprint commitment. */
     backToWeek: (t: Task) =>
       patchTask(t.id, {
         status: restingStatus({ ...t, do_date: null }),
         do_date: null,
         start_time: null,
+        slot_id: null,
       }),
 
     setLabels: async (taskId: string, labelIds: string[]) => {

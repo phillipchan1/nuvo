@@ -229,9 +229,12 @@ export function weekReadiness(d: VerticalData): WeekReadinessItem[] {
   const composed = Boolean(d.sprint?.reviewed_at);
   const rocks = d.bigRocks.length;
   const inbox = inboxTasks(d).length;
-  // placed = committed this week but with no day yet (a day counts as placed;
-  // status flips to "scheduled" once a start_time exists, so "ready" = no block).
-  const toPlace = sprintTasks(d).filter((t) => t.status === "ready" && !t.doDate).length;
+  // placed = committed this week but with no day yet. A do_date OR a slot (which
+  // carries the day) counts as placed; status is "scheduled" once a start_time
+  // or slot_id exists, so "ready" = no block and no day.
+  const toPlace = sprintTasks(d).filter(
+    (t) => t.status === "ready" && !t.doDate && !t.slotId,
+  ).length;
   return [
     { key: "planned", label: "Week planned", detail: composed ? null : "plan the week", done: composed, count: 0 },
     { key: "priorities", label: "Priorities named", detail: rocks ? null : "name what matters", done: rocks > 0, count: 0 },

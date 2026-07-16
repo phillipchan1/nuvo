@@ -159,6 +159,8 @@ export interface VTask {
   sprint?: boolean;
   // pass-throughs the rituals need
   doDate: string | null;
+  /** Inside a time slot — the slot carries the day/time; the task's own start_time is null. */
+  slotId: string | null;
   completedAt: string | null;
   assignee: "me" | "agent";
   rollCount: number;
@@ -309,11 +311,14 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
     deadlineDaysAway: t.deadline
       ? differenceInCalendarDays(parseDateISO(t.deadline), parseDateISO(today))
       : null,
-    status: t.status === "done" ? "done" : t.start_time ? "scheduled" : "ready",
+    // A slot is a calendar commitment — children ride the slot's block, so they
+    // count as scheduled even though their own start_time is null.
+    status: t.status === "done" ? "done" : t.start_time || t.slot_id ? "scheduled" : "ready",
     loose: !t.project_id,
     inbox: t.status === "inbox",
     sprint: Boolean(currentSprintId && t.sprint_id === currentSprintId),
     doDate: t.do_date,
+    slotId: t.slot_id,
     completedAt: t.completed_at,
     assignee: t.assignee ?? "me",
     rollCount: t.roll_count ?? 0,

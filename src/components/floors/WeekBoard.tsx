@@ -22,6 +22,7 @@ import {
   useSprintTasks,
   type useTaskMutations,
 } from "../../hooks/useTasks";
+import { useSlotTasks, useSlots } from "../../hooks/useSlots";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useVertical } from "../../hooks/useVertical";
 
@@ -52,6 +53,20 @@ export default function WeekBoard({
 
   const { data: scheduled = [] } = useScheduledTasks(rangeStart, rangeEnd);
   const { data: anytime = [] } = usePlannedAnytimeTasks(rangeStart, rangeEnd);
+  const { data: slots = [] } = useSlots(rangeStart, rangeEnd);
+  const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
+  const { data: slotChildren = [] } = useSlotTasks(slotIds);
+  const slotDayById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of slots) m.set(s.id, s.do_date);
+    return m;
+  }, [slots]);
+  /** A task's day. The slot wins when present — children can briefly carry a
+   *  stale do_date after the slot moves, and the left rail already trusts the slot. */
+  const taskDay = (t: Task): string | null =>
+    (t.slot_id ? slotDayById.get(t.slot_id) ?? null : null)
+    ?? t.do_date
+    ?? (t.start_time ? toDateISO(new Date(t.start_time)) : null);
   const { data: events = [] } = useExternalEvents(rangeStart, rangeEnd);
   const { data: vertical, setSprintGoal, toggleTaskSprint } = useVertical();
   const sprintId = vertical.sprint?.id ?? null;
@@ -63,40 +78,49 @@ export default function WeekBoard({
   const workStartMin = settings?.work_start_minutes ?? 480;
   const workEndMin = settings?.work_end_minutes ?? 990;
 
-  // Dated task rows this week (timed + anytime), keyed by their day.
+  // Dated task rows this week (timed + anytime + slot children), keyed by their day.
+  // Slot children often have start_time null and can briefly have a stale do_date;
+  // the slot is the source of truth for "which day" — same as the Today rail.
   const placed = useMemo(() => {
     const map = new Map<string, Task[]>();
-    for (const t of [...scheduled, ...anytime]) {
-      const day = t.do_date ?? (t.start_time ? toDateISO(new Date(t.start_time)) : null);
+    const seen = new Set<string>();
+    for (const t of [...scheduled, ...anytime, ...slotChildren]) {
+      if (seen.has(t.id)) continue;
+      const day = taskDay(t);
       if (!day) continue;
+      seen.add(t.id);
       const arr = map.get(day);
       if (arr) arr.push(t);
       else map.set(day, [t]);
     }
     return map;
-  }, [scheduled, anytime]);
+  }, [scheduled, anytime, slotChildren, slotDayById]);
 
   // The "Needs a day" tray: committed-but-unplaced work + anything that slipped
-  // (dated before today, still open). Both want a day — drag them onto one.
+  // (dated before today, still open). Slotted work already has a day — never tray it.
   const tray = useMemo(() => {
     const seen = new Set<string>();
     const out: Task[] = [];
-    for (const t of [...sprintTasks, ...scheduled, ...anytime]) {
+    for (const t of [...sprintTasks, ...scheduled, ...anytime, ...slotChildren]) {
       if (t.status === "done" || seen.has(t.id)) continue;
-      const loose = !t.do_date && !t.start_time;
-      const overdue = t.do_date != null && t.do_date < today;
+      const day = taskDay(t);
+      // In a slot (or otherwise dated/timed) → placed. Only undated work is loose.
+      const loose = !day && !t.start_time && !t.slot_id;
+      const overdue = day != null && day < today && !t.slot_id;
       if (loose || overdue) {
         seen.add(t.id);
         out.push(t);
       }
     }
     return out.sort((a, b) => {
-      const ao = a.do_date != null && a.do_date < today;
-      const bo = b.do_date != null && b.do_date < today;
+      const ad = taskDay(a);
+      const bd = taskDay(b);
+      const ao = ad != null && ad < today;
+      const bo = bd != null && bd < today;
       if (ao !== bo) return ao ? -1 : 1; // overdue first
-      return (a.do_date ?? "z").localeCompare(b.do_date ?? "z");
+      return (ad ?? "z").localeCompare(bd ?? "z");
     });
-  }, [sprintTasks, scheduled, anytime, today]);
+  }, [sprintTasks, scheduled, anytime, slotChildren, slotDayById, today]);
 
   const dayTasks = (iso: string): Task[] => {
     const list = placed.get(iso) ?? [];
@@ -147,9 +171,9 @@ export default function WeekBoard({
   // Resolve any draggable id → its Task across every pool the board can touch.
   const taskById = useMemo(() => {
     const m = new Map<string, Task>();
-    for (const t of [...inbox, ...sprintTasks, ...scheduled, ...anytime]) m.set(t.id, t);
+    for (const t of [...inbox, ...sprintTasks, ...scheduled, ...anytime, ...slotChildren]) m.set(t.id, t);
     return m;
-  }, [inbox, sprintTasks, scheduled, anytime]);
+  }, [inbox, sprintTasks, scheduled, anytime, slotChildren]);
 
   // Latest values for the (mount-once) document listener to read without resubscribing.
   const live = useRef({ taskById, mutations, toggleTaskSprint, sprintId, onOpenTask });

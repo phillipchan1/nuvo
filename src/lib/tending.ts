@@ -69,7 +69,7 @@ const RECENTLY_CREATED_DAYS = 10;
 
 // ── A task carries a "time commitment" once it's on the week or the calendar ──
 function hasTimeCommitment(t: VTask): boolean {
-  return t.status === "scheduled" || Boolean(t.sprint) || Boolean(t.doDate);
+  return t.status === "scheduled" || Boolean(t.sprint) || Boolean(t.doDate) || Boolean(t.slotId);
 }
 
 // ── Score a single item ──────────────────────────────────────────────────────

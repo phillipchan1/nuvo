@@ -122,21 +122,43 @@ export function useSlotMutations() {
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<Slot> }) => {
       const { error } = await supabase.from("slots").update(patch).eq("id", id);
       if (error) throw error;
+      // Children ride the slot's day — keep their do_date in lockstep so the
+      // week board / readiness don't treat slotted work as "needs a day".
+      if (patch.do_date !== undefined) {
+        const { error: childErr } = await supabase
+          .from("tasks")
+          .update({ do_date: patch.do_date })
+          .eq("slot_id", id);
+        if (childErr) throw childErr;
+      }
       return { id, patch };
     },
     onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: ["slots"] });
+      await qc.cancelQueries({ queryKey: ["tasks"] });
       const snapshot = qc.getQueriesData<Slot[]>({ queryKey: ["slots"] });
+      const taskSnapshot = qc.getQueriesData<Task[]>({ queryKey: ["tasks"] });
       patchSlotCaches(qc, id, patch);
-      return { snapshot };
+      if (patch.do_date !== undefined) {
+        qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+          old?.map((t) => (t.slot_id === id ? { ...t, do_date: patch.do_date! } : t)),
+        );
+      }
+      return { snapshot, taskSnapshot };
     },
     onSuccess: ({ id }) => invokeQuiet("slot-mirror", { slotId: id }),
     onError: (_err, _vars, ctx) => {
       if (ctx?.snapshot) {
         for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
       }
+      if (ctx?.taskSnapshot) {
+        for (const [key, data] of ctx.taskSnapshot) qc.setQueryData(key, data);
+      }
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["slots"] }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["slots"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
   });
 
   const remove = useMutation({
