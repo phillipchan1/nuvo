@@ -16,21 +16,27 @@ import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
-import { useMaxPerWeek } from "../../hooks/usePlannerPrefs";
-import { domainById, isOpenStatus, type Project } from "../../lib/vertical";
+import { useMaxPerWeek, useWeeksShown, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
+import { useRecordContextMenu } from "../RecordContextMenu";
+import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
 import { readOnDeck, type OnDeckLane, type ReadyTier, type WeekColumn } from "../../lib/onDeck";
 import { sprintNumber } from "../../lib/sprint";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
 import ShippedStrip from "../floors/ShippedStrip";
+import { ProjectShipAssess } from "../record/ShipAssess";
 import InlineAdd from "./InlineAdd";
+import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
+import CoverageControls from "./CoverageControls";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 // A planning surface wants runway — show more weeks than the compact hub and let
 // it scroll. More than this many projects committed to one week is a red flag.
-const PLANNER_HORIZON = 8;
+// The left label column — holds coverage domain names, empty in the deck; wide enough
+// for a domain name, so coverage cells align to the sprint columns beneath.
+const LABEL_W = 132;
 // Cards now carry the readiness meter + completion control, so give them room:
 // wide columns mean ~4 weeks fill a typical pane comfortably and the rest scroll.
 const WEEK_COL_PX = 288;
@@ -44,22 +50,17 @@ const TIER_COLOR: Record<ReadyTier, string> = {
   parked: "var(--muted)",
   done: READY,
 };
-/** The right-side readiness chip text — a word for the extremes, the fraction
- *  while grooming, so "how close" is always legible. */
-function readyText(l: OnDeckLane): string {
+/** The one readiness label beside the meter — the meter carries "how many of 3"
+ *  (so no redundant N/3 number), this names the *state*: a word for the extremes,
+ *  the specific missing check while grooming ("no steps"). Never null — the label
+ *  is the meter's caption. */
+function meterHint(l: OnDeckLane): string {
   if (l.readyTier === "done") return "Done";
   if (l.readyTier === "parked") return "Parked";
-  if (l.readyTier === "ready") return "Ready · 3/3";
-  if (l.readyTier === "raw") return "Raw · 0/3";
-  return `${l.readyCount}/3`;
-}
-
-/** The one missing-check hint under the meter — pulled from the lens router, or
- *  the capacity axis when only "Fits" is unmet. Null when fully ready/parked/done. */
-function readyHint(l: OnDeckLane): string | null {
-  if (l.readyTier === "ready" || l.readyTier === "parked" || l.readyTier === "done") return null;
+  if (l.readyTier === "ready") return "Ready";
   if (l.gaps.length) return l.gaps.map((g) => g.label).join(" · ");
-  return l.axes.fits === false ? "won't fit the week" : null;
+  if (l.axes.fits === false) return "won't fit the week";
+  return "Raw";
 }
 
 const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -77,14 +78,6 @@ function weekIndex(weeks: WeekColumn[], iso: string | null): number {
   return ms < (weeks[0]?.weekStart.getTime() ?? 0) ? 0 : weeks.length - 1;
 }
 
-function barLabel(l: OnDeckLane): string | null {
-  if (!l.project.targetDate) return null;
-  const d = new Date(l.project.targetDate + "T00:00:00");
-  const dl = l.pace.daysLeft;
-  const when = dl != null && dl >= 0 && dl <= 6 ? format(d, "EEE") : format(d, "MMM d");
-  const warn = l.state === "needs_shaping" || l.pace.read === "overdue";
-  return `${warn ? "⚠ " : ""}due ${when}`;
-}
 
 /** Whole-week span for a project dropped so it STARTS on the Monday `ws`,
  *  preserving its current width in weeks (default 1). Always Mon → Fri. */
@@ -101,19 +94,27 @@ type Preview = { id: string; start: number; end: number } | null;
 
 export default function OnDeckPlanner() {
   const { data, updateProject, addProject } = useVertical();
+  const { onContextMenu, menu } = useRecordContextMenu();
   const { byWeek, weeklyAvgMins } = useCapacity();
   const { openRecord, openFloorModal } = useAppNavigation();
   const [maxPerWeek] = useMaxPerWeek();
+  const [weeksShown, setWeeksShown] = useWeeksShown();
+  const [coverageHidden, toggleCoverageHidden] = useCoverageHidden();
+  const [coverageCollapsed, setCoverageCollapsed] = useCoverageCollapsed();
   const now = useMemo(() => new Date(), []);
-  const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, PLANNER_HORIZON, true), [data, byWeek, weeklyAvgMins, now]);
+  const board = useMemo(() => readOnDeck(data, byWeek, weeklyAvgMins, now, weeksShown, true), [data, byWeek, weeklyAvgMins, now, weeksShown]);
   // The domain a lane-composed project lands in (reassignable in the record); the
   // first domain, mirroring the full composer's default.
   const defaultDomain = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort)[0] ?? null, [data.domains]);
 
   const H = board.horizonWeeks;
-  // No project column — the bar carries the title. One uniform week grid.
-  const cols = `repeat(${H}, minmax(${WEEK_COL_PX}px, 1fr))`;
-  const gridMinW = H * WEEK_COL_PX;
+  // A leading LABEL column runs down the left of the whole planner — it holds the
+  // coverage strip's domain names, and stays empty in the deck below, so the coverage
+  // cells sit in TRUE columns above their sprints (the aligned demarcation). Deck +
+  // coverage share this one template, so a lit coverage cell points straight down at
+  // its week column.
+  const cols = `${LABEL_W}px repeat(${H}, minmax(${WEEK_COL_PX}px, 1fr))`;
+  const gridMinW = LABEL_W + H * WEEK_COL_PX;
 
   const placed = board.lanes.filter((l) => l.project.targetDate);
   // Inbox = every open project NOT on the timeline. That's not just the undated
@@ -134,30 +135,46 @@ export default function OnDeckPlanner() {
   const [dropWeek, setDropWeek] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
   const [preview, setPreview] = useState<Preview>(null);
-  // Mark-complete: fire after a beat so the check bloom + card fade can play before
-  // the project drops off the deck (readOnDeck excludes complete projects).
+  // Shipping asks first — the card's check is one click, and a project with open
+  // tasks used to get sealed by it silently. The assessment owns the write; the
+  // check bloom + card fade only play once you've actually said yes (readOnDeck
+  // excludes complete projects, so the card drops off after).
   const [completingId, setCompletingId] = useState<string | null>(null);
-  const completeProject = (id: string) => {
+  const [shipId, setShipId] = useState<string | null>(null);
+  const completeProject = (id: string) => setShipId(id);
+  const onShipped = (id: string) => {
     setCompletingId(id);
-    window.setTimeout(() => {
-      updateProject(id, { status: "complete" });
-      setCompletingId(null);
-    }, 260);
+    window.setTimeout(() => setCompletingId(null), 260);
   };
   // Reopen a finished project — the check toggles it back into flight.
   const reopenProject = (id: string) => updateProject(id, { status: "in_progress" });
   // Click an empty week → compose a project inline, right there in that week (no
   // modal). The full composer (domain, tasks, links) stays a click away in the inbox.
+  // composeDomain carries an explicit domain when the compose was launched from a
+  // coverage chip ("start a Frontier project"); otherwise the default domain stands.
   const [composeWeek, setComposeWeek] = useState<number | null>(null);
+  const [composeDomain, setComposeDomain] = useState<Domain | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const domainsSorted = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
+  const composeDom = composeDomain ?? defaultDomain;
+  const closeCompose = () => { setComposeWeek(null); setComposeDomain(null); };
   const createInWeek = async (i: number, name: string) => {
     const ws = board.weeks[i]?.weekStart;
-    if (!ws || !defaultDomain) { openFloorModal("new-project"); return; }
-    await addProject(defaultDomain.id, null, {
+    if (!ws || !composeDom) { openFloorModal("new-project"); return; }
+    await addProject(composeDom.id, null, {
       name,
       startDate: toISO(ws),
       targetDate: toISO(addDays(ws, 4)),
       status: "in_progress",
     });
+  };
+
+  // start a project for a domain in a chosen sprint — drop the inline composer into
+  // that week's column, pre-bound to the domain (the one-tap recovery from a gap,
+  // straight from the coverage cell you clicked).
+  const addForDomain = (dom: Domain, weekIdx: number) => {
+    setComposeDomain(dom);
+    setComposeWeek(weekIdx);
   };
 
   // Data-derived bar geometry. A project with no explicit start defaults to a
@@ -175,6 +192,22 @@ export default function OnDeckPlanner() {
   // Projects committed to each week (live under the drag) — the overload gauge.
   // Finished projects don't count as load (they're no longer pending work).
   const weekLoad = board.weeks.map((_, i) => effGeom.filter((g) => i >= g.start && i <= g.end && g.l.readyTier !== "done").length);
+
+  // ── domain coverage — a NAMED read (color alone fails: you don't memorize the
+  // palette), aligned OVER the deck columns. Off effGeom (previews live under a drag):
+  // one row per tracked domain, a cell per shown week lit under the sprints it lands
+  // in. The cells carry the meaning — no status words, no "idle" label. Hidden domains
+  // (the coverage filter) drop out entirely.
+  const coverageRows: CoverageRow[] = domainsSorted
+    .filter((domain) => !coverageHidden.has(domain.id))
+    .map((domain) => {
+      const cells = new Array(H).fill(false) as boolean[];
+      for (const g of effGeom)
+        if (g.l.project.domainId === domain.id)
+          for (let i = g.start; i <= g.end; i++) if (i >= 0 && i < H) cells[i] = true;
+      return { domain, cells };
+    });
+  const coveredCount = coverageRows.filter((r) => r.cells.some(Boolean)).length;
 
   // Lane-packing: bars that don't overlap in time share a row, so the same week's
   // projects stack together in a column instead of staggering one-per-row. Row
@@ -213,12 +246,12 @@ export default function OnDeckPlanner() {
   // composeRowIdx below.
   const composerCell =
     cw == null ? null : (
-      <div style={{ gridColumn: `${cw + 1} / ${cw + 2}`, gridRow: 1 }} className="pointer-events-auto mx-1 self-start">
+      <div style={{ gridColumn: `${cw + 2} / ${cw + 3}`, gridRow: 1 }} className="pointer-events-auto mx-1 self-start">
         <InlineAdd
-          placeholder="Name a project…"
-          accent={defaultDomain?.color ?? "var(--accent)"}
+          placeholder={composeDomain ? `Name a ${composeDomain.name} project…` : "Name a project…"}
+          accent={composeDom?.color ?? "var(--accent)"}
           onCreate={(name) => createInWeek(cw, name)}
-          onClose={() => setComposeWeek(null)}
+          onClose={closeCompose}
         />
       </div>
     );
@@ -328,6 +361,7 @@ export default function OnDeckPlanner() {
 
   return (
     <div className="flex min-h-0 gap-6">
+      {menu}
       {/* ── the inbox — a left panel, mirroring Schedule's task inbox ──────── */}
       <aside
         data-pool-drop
@@ -361,6 +395,7 @@ export default function OnDeckPlanner() {
                   <div
                     key={p.id}
                     data-project-drag={p.id}
+                    onContextMenu={onContextMenu("project", p.id)}
                     className="fast cursor-grab select-none rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-line-strong active:cursor-grabbing"
                   >
                     <div className="flex items-center gap-2">
@@ -415,11 +450,31 @@ export default function OnDeckPlanner() {
           )}
         </div>
 
-        <div className="mt-5 overflow-x-auto pb-3">
+        {/* coverage controls — collapse + window length + domain filter (fixed, outside the scroll) */}
+        <CoverageControls
+          collapsed={coverageCollapsed}
+          setCollapsed={setCoverageCollapsed}
+          covered={coveredCount}
+          tracked={coverageRows.length}
+          weeksShown={weeksShown}
+          setWeeksShown={setWeeksShown}
+          domains={domainsSorted}
+          hidden={coverageHidden}
+          toggleHidden={toggleCoverageHidden}
+          open={filterOpen}
+          setOpen={setFilterOpen}
+        />
+
+        <div className="mt-2 overflow-x-auto pb-3">
           <div className="relative" style={{ minWidth: gridMinW }}>
+            {/* domain coverage — a NAMED read aligned OVER the sprint columns (shares
+                the grid template), so a lit cell points straight down at its sprint.
+                Collapsible: the deck is the primary surface. */}
+            {!coverageCollapsed && <DomainCoverage rows={coverageRows} gridTemplate={cols} onAdd={addForDomain} />}
             {/* week headers — label · date, with the week's committed load folded in
                 (amber past the max). Faint column rules only — no frame, no gauge row. */}
             <div className="grid" style={{ gridTemplateColumns: cols }}>
+              <div aria-hidden />
               {board.weeks.map((w) => {
                 const n = weekLoad[w.idx];
                 const over = n > maxPerWeek;
@@ -455,15 +510,17 @@ export default function OnDeckPlanner() {
                 cards, whose wrapper ignores the pointer so a click on empty space
                 falls through to the week column beneath. */}
             <div className="relative" style={{ minHeight: 320 }}>
-              {/* week columns — drop targets + click-to-create + faint rules */}
+              {/* week columns — drop targets + click-to-create + faint rules. The
+                  leading spacer holds the label gutter so columns align with coverage. */}
               <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
+                <div aria-hidden />
                 {board.weeks.map((w) => (
                   <div
                     key={w.idx}
                     data-week={w.idx}
-                    onClick={() => setComposeWeek(w.idx)}
+                    onClick={() => { setComposeDomain(null); setComposeWeek(w.idx); }}
                     title={composeWeek === w.idx ? undefined : w.idx === 0 ? "New project this week" : w.idx === 1 ? "New project next week" : `New project — week of ${fmtWk(w.weekStart)}`}
-                    className="group/col relative cursor-pointer border-l border-line transition-colors first:border-l-0 hover:bg-accent-soft/20"
+                    className="group/col relative cursor-pointer border-l border-line transition-colors hover:bg-accent-soft/20"
                     style={{ background: cellBg(w.idx) }}
                   >
                     {/* the base affordance — a pinned "+ project" hint. Clicking it
@@ -507,21 +564,18 @@ export default function OnDeckPlanner() {
                       const dot = domainById(data, l.project.domainId)?.color ?? "var(--accent)";
                       const color = TIER_COLOR[l.readyTier];
                       const dragging = preview?.id === l.project.id;
-                      // pace is a SEPARATE axis from readiness — a red due-pill, never
-                      // mixed into the readiness color.
-                      const slipping = l.pace.read === "overdue" || l.pace.read === "behind" || l.pace.read === "stalled";
-                      const due = barLabel(l)?.replace("⚠ ", "") ?? null;
                       const done = l.readyTier === "done";
                       const segs = done ? [true, true, true] : [l.axes.defined, l.axes.planned, l.axes.fits];
-                      const hint = readyHint(l);
+                      const hint = meterHint(l);
                       const completing = completingId === l.project.id;
                       return (
                         <div
                           key={l.project.id}
                           data-project-drag={l.project.id}
+                          onContextMenu={onContextMenu("project", l.project.id)}
                           className="group/bar bg-surface pointer-events-auto fast relative mx-1 flex min-h-[62px] cursor-grab flex-col gap-2 rounded-xl border py-3 pl-4 pr-3.5 active:cursor-grabbing"
                           style={{
-                            gridColumn: `${start + 1} / ${end + 2}`,
+                            gridColumn: `${start + 2} / ${end + 3}`,
                             gridRow: 1,
                             borderColor: dragging ? dot : "var(--line)",
                             boxShadow: dragging ? "var(--shadow-lift)" : beyond ? `5px 0 0 -1px ${dot}` : undefined,
@@ -533,7 +587,9 @@ export default function OnDeckPlanner() {
                               readiness lives in the meter below (status). Same as the Groom card. */}
                           <span className="pointer-events-none absolute inset-y-2.5 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
                           <span data-resize="start" className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" aria-hidden />
-                          {/* title row + readiness chip / pace pill */}
+                          {/* title row — just the check, domain dot, and name. Readiness
+                              lives entirely in the meter below; the sprint column carries
+                              the "when" so no due-date pill. */}
                           <div className="flex items-start gap-2">
                             {/* completion check — mirrors the Schedule's done toggle. Fills
                                 teal + blooms on complete; a finished project stays on the
@@ -559,19 +615,10 @@ export default function OnDeckPlanner() {
                             </button>
                             <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
                             <div className={`min-w-0 flex-1 text-caption font-semibold leading-snug ${done ? "text-muted" : "text-ink"}`}>{l.project.name}</div>
-                            <div className="flex shrink-0 items-center gap-1.5">
-                              {!done && slipping && due && (
-                                <span
-                                  className="mono rounded-full px-1.5 py-0.5 text-micro font-medium"
-                                  style={{ background: "color-mix(in srgb, var(--signal) 14%, transparent)", color: "var(--signal)" }}
-                                >
-                                  {due}
-                                </span>
-                              )}
-                              <span className="mono text-micro font-medium" style={{ color }}>{readyText(l)}</span>
-                            </div>
                           </div>
-                          {/* the definition-of-ready meter — Defined · Planned · Fits */}
+                          {/* the definition-of-ready meter — Defined · Planned · Fits — with
+                              its one caption (state word, or the specific missing check). The
+                              meter IS the "N of 3", so no redundant number. */}
                           <div className="flex items-center gap-1.5">
                             <span className="flex flex-1 items-center gap-1" title={done ? "Complete" : "Defined · Planned · Fits"}>
                               {segs.map((met, i) => (
@@ -582,7 +629,7 @@ export default function OnDeckPlanner() {
                                 />
                               ))}
                             </span>
-                            {hint && <span className="mono shrink-0 text-micro" style={{ color }}>{hint}</span>}
+                            <span className="mono shrink-0 text-micro" style={{ color }}>{hint}</span>
                           </div>
                           <span data-resize="end" className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" aria-hidden />
                         </div>
@@ -620,6 +667,14 @@ export default function OnDeckPlanner() {
           </div>
           <div className="mono mt-0.5 pl-4 text-micro text-muted">{drag.sub}</div>
         </div>
+      )}
+
+      {shipId && (
+        <ProjectShipAssess
+          id={shipId}
+          onClose={() => setShipId(null)}
+          onShipped={() => onShipped(shipId)}
+        />
       )}
     </div>
   );
