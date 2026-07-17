@@ -4,8 +4,9 @@ import ReactMarkdown from "react-markdown";
 import { createPortal } from "react-dom";
 import { Draggable } from "@fullcalendar/interaction";
 import { format } from "date-fns";
-import type { AttendeeStatus, ExternalEvent, GoogleAttendee, Label, Recurrence, Slot, Task } from "../lib/types";
+import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleAttendee, Label, Recurrence, Slot, Task } from "../lib/types";
 import { ruleOf } from "../lib/types";
+import { providerLabel, writableCalendarTargets, type MoveTargetGroup } from "../lib/calendarWrite";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
@@ -687,6 +688,150 @@ function DescriptionHtml({ html }: { html: string }) {
   );
 }
 
+/** Flatten an event description (Google can store HTML) to editable plain text. */
+function plainTextFromHtml(s: string): string {
+  if (!s) return "";
+  if (!/[<&]/.test(s)) return s; // already plain
+  const doc = new DOMParser().parseFromString(
+    s.replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div)>/gi, "\n"),
+    "text/html",
+  );
+  return (doc.body.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// ── CalendarPicker — the calendar/account field + grouped move menu ──────
+// A real button (big hit target) that opens a menu grouped by account, each
+// with its writable calendars. Same-account picks move natively; cross-account
+// picks copy-then-delete, so when that's lossy (repeats / guests) we confirm.
+function CalendarPicker({
+  groups,
+  currentAccountId,
+  currentCalendarId,
+  currentLabel,
+  currentColor,
+  accountEmail,
+  lossyWarn,
+  onPick,
+}: {
+  groups: MoveTargetGroup[];
+  currentAccountId: string;
+  currentCalendarId?: string;
+  currentLabel?: string;
+  currentColor?: string | null;
+  accountEmail?: string;
+  lossyWarn: boolean;
+  onPick: (accountId: string, calendarId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<{ accountId: string; calendarId: string; name: string } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setPending(null);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const choose = (accountId: string, calendarId: string, name: string) => {
+    if (accountId === currentAccountId && calendarId === currentCalendarId) {
+      setOpen(false);
+      return;
+    }
+    if (accountId !== currentAccountId && lossyWarn) {
+      setPending({ accountId, calendarId, name });
+      return;
+    }
+    onPick(accountId, calendarId);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className="relative min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title="Move to another calendar or account"
+        className="fast -ml-1 flex w-full items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-bg"
+      >
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: currentColor ?? "var(--muted)" }} />
+        <span className="min-w-0 flex-1 truncate text-body text-ink">{currentLabel ?? "Calendar"}</span>
+        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" className="shrink-0 text-muted">
+          <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {accountEmail && !open && (
+        <div className="truncate pl-[18px] text-meta text-muted/60">{accountEmail}</div>
+      )}
+      {open && (
+        <div
+          className="pop-in absolute left-0 right-0 top-full z-10 mt-1 max-h-[280px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
+          style={{ boxShadow: "var(--shadow-3)" }}
+        >
+          {pending ? (
+            <div className="px-3 py-2.5">
+              <p className="text-caption text-ink">
+                Move a copy to <span className="font-medium">{pending.name}</span>?
+              </p>
+              <p className="mt-0.5 text-meta text-muted">Repeats and guests won't carry over.</p>
+              <div className="mt-2.5 flex gap-1.5">
+                <button
+                  onClick={() => {
+                    onPick(pending.accountId, pending.calendarId);
+                    setPending(null);
+                    setOpen(false);
+                  }}
+                  className="fast flex-1 rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-caption font-medium text-white hover:opacity-90"
+                >
+                  Move
+                </button>
+                <button
+                  onClick={() => setPending(null)}
+                  className="fast flex-1 rounded-[var(--radius-sm)] border border-line px-2 py-1 text-caption text-muted hover:text-ink"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            groups.map((g) => (
+              <div key={g.accountId} className="py-0.5">
+                <div className="truncate px-3 pb-0.5 pt-1 text-micro uppercase tracking-wide text-muted/70">
+                  {g.accountLabel} · {providerLabel(g.provider)}
+                </div>
+                {g.calendars.map((c) => {
+                  const active = g.accountId === currentAccountId && c.id === currentCalendarId;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => choose(g.accountId, c.id, c.summary)}
+                      className="fast flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-bg"
+                    >
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color ?? "var(--muted)" }} />
+                      <span className="min-w-0 flex-1 truncate text-caption text-ink">{c.summary}</span>
+                      {active && (
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0 text-accent">
+                          <path d="M2.5 6.5L4.8 8.8L9.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── EventPopover — anchored to the clicked event element ─────────────────
 const POP_W = 340;
 const POP_GAP = 10;
@@ -695,8 +840,10 @@ export function EventPopover({
   event,
   anchor,
   editable,
+  calendarId,
   calendarName,
   calendarColor,
+  accounts,
   accountEmail,
   eventMutations,
   onClose,
@@ -705,8 +852,11 @@ export function EventPopover({
   event: ExternalEvent;
   anchor: DOMRect;
   editable: boolean;
+  calendarId?: string;
   calendarName?: string;
   calendarColor?: string | null;
+  /** All connected accounts — grouped into the calendar/account move picker. */
+  accounts?: CalendarAccount[];
   accountEmail?: string;
   eventMutations: ReturnType<typeof useExternalEventMutations>;
   onClose: () => void;
@@ -715,6 +865,8 @@ export function EventPopover({
   const [title, setTitle] = useState(event.title);
   const [startAt, setStartAt] = useState(event.start_at);
   const [endAt, setEndAt] = useState(event.end_at);
+  const [location, setLocation] = useState(event.location ?? "");
+  const [notes, setNotes] = useState("");
   const [notify, setNotify] = useState(true);
   const [pendingRsvp, setPendingRsvp] = useState<AttendeeStatus | null>(null);
   const [rsvpError, setRsvpError] = useState<string | null>(null);
@@ -724,6 +876,17 @@ export function EventPopover({
   const [newGuests, setNewGuests] = useState<string[]>([]);
   const [inviting, setInviting] = useState(false);
   const popRef = useRef<HTMLDivElement>(null);
+
+  // Writable move targets grouped by account (the event's current calendar is
+  // always kept so the picker shows the right value even on a read-only feed).
+  const moveGroups = useMemo(
+    () => writableCalendarTargets(accounts ?? [], calendarId),
+    [accounts, calendarId],
+  );
+  const moveTargetCount = useMemo(
+    () => moveGroups.reduce((n, g) => n + g.calendars.length, 0),
+    [moveGroups],
+  );
 
   const { data: raw, isLoading: detailsLoading } = useEventDetails(event.id);
   // Google marks instances with recurringEventId in raw; iCloud (CalDAV)
@@ -736,10 +899,18 @@ export function EventPopover({
     setTitle(event.title);
     setStartAt(event.start_at);
     setEndAt(event.end_at);
+    setLocation(event.location ?? "");
     setPendingRsvp(null);
     setConfirmDelete(false);
     setHideMode(false);
-  }, [event.id, event.title, event.start_at, event.end_at]);
+  }, [event.id, event.title, event.start_at, event.end_at, event.location]);
+
+  // Seed the notes field once the raw payload (with the description) arrives.
+  // Notes edit as plain text — matching Apple Calendar / Fantastical — so a
+  // Google HTML description is flattened to text for editing.
+  useEffect(() => {
+    setNotes(plainTextFromHtml(raw?.description ?? ""));
+  }, [event.id, raw?.description]);
 
   const { isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const hiddenNow = isHidden(event);
@@ -819,13 +990,32 @@ export function EventPopover({
     d.setHours(h, m, 0, 0);
     return d.toISOString();
   };
+  const toDateInput = (iso: string) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  // Move the event to a new day, preserving time-of-day and duration (shift both
+  // ends by the same delta). Commits on change — a date input has no natural blur.
+  const commitDate = (ymd: string) => {
+    const [y, mo, d] = ymd.split("-").map(Number);
+    if (!y || !mo || !d) return;
+    const ns = new Date(startAt);
+    ns.setFullYear(y, mo - 1, d);
+    const deltaMs = ns.getTime() - new Date(startAt).getTime();
+    if (!deltaMs) return;
+    const newStart = ns.toISOString();
+    const newEnd = new Date(new Date(endAt).getTime() + deltaMs).toISOString();
+    setStartAt(newStart);
+    setEndAt(newEnd);
+    eventMutations.updateEvent({ id: event.id, patch: { start_at: newStart, end_at: newEnd } });
+  };
 
   return createPortal(
     <>
       {/* Popover card */}
       <div
         ref={popRef}
-        className="moment fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
+        className="pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
         style={{
           top: pos.top,
           left: pos.left,
@@ -893,65 +1083,121 @@ export function EventPopover({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
           <div className="space-y-3">
 
-            {/* Time */}
-            <div className="mono flex items-center gap-2 text-label text-muted">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/60">
-                <rect x="1" y="2" width="10" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
-                <path d="M1 5h10" stroke="currentColor" strokeWidth="1.2"/>
-                <path d="M4 1v2M8 1v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-              </svg>
+            {/* When — the primary edit. Date + time carry ink weight (this is
+                what the popover is most often opened to change). */}
+            <div className="flex items-center gap-2.5">
+              <span className="flex w-3.5 shrink-0 justify-center text-muted/70">
+                <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+                  <rect x="1" y="2" width="10" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
+                  <path d="M1 5h10" stroke="currentColor" strokeWidth="1.2"/>
+                  <path d="M4 1v2M8 1v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                </svg>
+              </span>
               {editable ? (
-                <span className="flex items-center gap-1">
-                  <span>{format(new Date(startAt), "EEE MMM d ·")}</span>
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1 text-body text-ink">
+                  <input
+                    type="date"
+                    value={toDateInput(startAt)}
+                    onChange={(e) => commitDate(e.target.value)}
+                    className="fast rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+                  />
                   <input
                     type="time"
                     value={toTimeInput(startAt)}
                     onChange={(e) => setStartAt(applyTime(startAt, e.target.value))}
                     onBlur={() => startAt !== event.start_at && eventMutations.updateEvent({ id: event.id, patch: { start_at: startAt } })}
-                    className="mono border-b border-transparent bg-transparent text-label text-muted outline-none transition-colors hover:border-muted focus:border-ink focus:text-ink"
+                    className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
                   />
-                  <span>–</span>
+                  <span className="text-muted">–</span>
                   <input
                     type="time"
                     value={toTimeInput(endAt)}
                     onChange={(e) => setEndAt(applyTime(endAt, e.target.value))}
                     onBlur={() => endAt !== event.end_at && eventMutations.updateEvent({ id: event.id, patch: { end_at: endAt } })}
-                    className="mono border-b border-transparent bg-transparent text-label text-muted outline-none transition-colors hover:border-muted focus:border-ink focus:text-ink"
+                    className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
                   />
-                </span>
+                </div>
               ) : (
-                <>
+                <span className="text-body text-ink">
                   {format(new Date(event.start_at), "EEE MMM d · h:mm a")}
                   {" – "}
                   {format(new Date(event.end_at), "h:mm a")}
-                </>
+                </span>
               )}
             </div>
 
-            {/* Calendar */}
-            {calendarName && (
-              <div className="flex items-center gap-2 text-label text-muted">
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: calendarColor ?? "var(--muted)" }}
-                />
-                <span className="truncate">{calendarName}</span>
-                {accountEmail && (
-                  <span className="shrink-0 text-muted/60">· {accountEmail}</span>
+            {/* Calendar / account — one field. The picker moves the event to any
+                writable calendar in any account (native within an account, a
+                confirmed copy across). Static label for read-only / single-target. */}
+            {(calendarName || moveTargetCount > 0) && (
+              <div className="flex items-start gap-2.5">
+                {editable && moveTargetCount > 1 ? (
+                  <CalendarPicker
+                    groups={moveGroups}
+                    currentAccountId={event.account_id}
+                    currentCalendarId={calendarId}
+                    currentLabel={calendarName}
+                    currentColor={calendarColor}
+                    accountEmail={accountEmail}
+                    lossyWarn={recurring || hasAttendees}
+                    onPick={(accountId, cid) =>
+                      eventMutations.moveEventToCalendar({
+                        id: event.id,
+                        targetAccountId: accountId,
+                        targetCalendarId: cid,
+                      })
+                    }
+                  />
+                ) : (
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: calendarColor ?? "var(--muted)" }}
+                      />
+                      <span className="truncate text-body text-ink">{calendarName ?? "Calendar"}</span>
+                    </div>
+                    {accountEmail && (
+                      <div className="truncate pl-[18px] text-meta text-muted/60">{accountEmail}</div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
 
             {/* Location */}
-            {event.location && (
-              <div className="flex items-start gap-2 text-caption text-muted">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="mt-[1px] shrink-0">
-                  <path d="M6 1C4.067 1 2.5 2.567 2.5 4.5c0 2.917 3.5 6.5 3.5 6.5s3.5-3.583 3.5-6.5C9.5 2.567 7.933 1 6 1z" stroke="currentColor" strokeWidth="1.2"/>
-                  <circle cx="6" cy="4.5" r="1.2" stroke="currentColor" strokeWidth="1.1"/>
-                </svg>
+            {editable ? (
+              <div className="flex items-center gap-2.5">
+                <span className="flex w-3.5 shrink-0 justify-center text-muted/70">
+                  <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+                    <path d="M6 1C4.067 1 2.5 2.567 2.5 4.5c0 2.917 3.5 6.5 3.5 6.5s3.5-3.583 3.5-6.5C9.5 2.567 7.933 1 6 1z" stroke="currentColor" strokeWidth="1.2"/>
+                    <circle cx="6" cy="4.5" r="1.2" stroke="currentColor" strokeWidth="1.1"/>
+                  </svg>
+                </span>
+                <input
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  onBlur={() => {
+                    const next = location.trim();
+                    if (next !== (event.location ?? "")) {
+                      eventMutations.updateEvent({ id: event.id, patch: { location: next || null } });
+                    }
+                  }}
+                  placeholder="Add location"
+                  className="fast -mx-1 min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-body text-ink outline-none transition-colors placeholder:text-body placeholder:text-muted/50 hover:bg-bg focus:bg-bg"
+                />
+              </div>
+            ) : event.location ? (
+              <div className="flex items-start gap-2.5 text-body text-ink">
+                <span className="mt-[3px] flex w-3.5 shrink-0 justify-center text-muted/70">
+                  <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+                    <path d="M6 1C4.067 1 2.5 2.567 2.5 4.5c0 2.917 3.5 6.5 3.5 6.5s3.5-3.583 3.5-6.5C9.5 2.567 7.933 1 6 1z" stroke="currentColor" strokeWidth="1.2"/>
+                    <circle cx="6" cy="4.5" r="1.2" stroke="currentColor" strokeWidth="1.1"/>
+                  </svg>
+                </span>
                 <span className="leading-snug">{event.location}</span>
               </div>
-            )}
+            ) : null}
 
             {/* Join meeting */}
             {joinEntry && (
@@ -1104,13 +1350,30 @@ export function EventPopover({
               </div>
             )}
 
-            {/* Description */}
-            {raw?.description && (
+            {/* Notes / description */}
+            {editable ? (
+              <div className="space-y-1.5 border-t border-line pt-3">
+                <div className="section-label !p-0">Notes</div>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  onBlur={() => {
+                    const original = plainTextFromHtml(raw?.description ?? "");
+                    if (notes !== original) {
+                      eventMutations.updateEvent({ id: event.id, patch: { description: notes } });
+                    }
+                  }}
+                  placeholder="Add notes"
+                  rows={notes ? Math.min(6, notes.split("\n").length + 1) : 2}
+                  className="w-full resize-none rounded-md border border-line bg-transparent px-2 py-1.5 text-caption leading-relaxed text-text outline-none transition-colors placeholder:text-muted/50 focus:border-ink"
+                />
+              </div>
+            ) : raw?.description ? (
               <div className="space-y-1.5 border-t border-line pt-3">
                 <div className="section-label !p-0">Description</div>
                 <DescriptionHtml html={raw.description} />
               </div>
-            )}
+            ) : null}
 
             {detailsLoading && (
               <div className="shimmer text-label pt-1">Loading details…</div>
@@ -1473,7 +1736,7 @@ export function SlotPopover({
     <>
       <div
         ref={popRef}
-        className="moment fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
+        className="pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
         style={{
           top: pos.top,
           left: pos.left,

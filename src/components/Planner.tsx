@@ -557,8 +557,10 @@ export default function Planner({
               event={openEvent}
               anchor={panelRect}
               editable={isWritableAccount(openEventAccount)}
+              calendarId={openEvent.calendar_id}
               calendarName={openEventCalendar?.summary}
               calendarColor={openEventCalendar?.color}
+              accounts={accounts}
               accountEmail={openEventAccount?.email}
               eventMutations={eventMutations}
               onClose={closeOverlay}

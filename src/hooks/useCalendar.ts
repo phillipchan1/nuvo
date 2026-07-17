@@ -122,15 +122,23 @@ export function useExternalEventMutations() {
       scope = "THIS",
     }: {
       id: string;
-      patch: Partial<Pick<ExternalEvent, "title" | "start_at" | "end_at">>;
+      // `description` isn't a column on external_events (it lives in `raw`), so
+      // it rides along to the edge fn / provider but is stripped before the row
+      // write. Everything else maps to a real column.
+      patch: Partial<Pick<ExternalEvent, "title" | "start_at" | "end_at" | "location">> & {
+        description?: string;
+      };
       scope?: RecurrenceScope;
     }) => {
       // For THIS-only edits, write the instance row immediately so optimistic
       // update is consistent. For ALL, the master PATCH in Google will push a
       // sync back that rewrites all instances — skip the local row update.
       if (scope === "THIS") {
-        const { error } = await supabase.from("external_events").update(patch).eq("id", id);
-        if (error) throw error;
+        const { description: _description, ...columns } = patch;
+        if (Object.keys(columns).length) {
+          const { error } = await supabase.from("external_events").update(columns).eq("id", id);
+          if (error) throw error;
+        }
       }
       invokeQuiet(eventsFunctionFor(providerForEvent(id)), { eventId: id, patch, scope });
     },
@@ -138,12 +146,55 @@ export function useExternalEventMutations() {
       if (scope !== "THIS") return;
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
+      const { description, ...columns } = patch;
+      if (Object.keys(columns).length) {
+        qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
+          old?.map((e) => (e.id === id ? { ...e, ...columns } : e)),
+        );
+      }
+      // Reflect a notes edit in the open inspector immediately (raw cache).
+      const hadDescription = description !== undefined;
+      const detailSnapshot = hadDescription
+        ? qc.getQueryData<GoogleRawEvent | null>(["event_details", id])
+        : undefined;
+      if (hadDescription) {
+        qc.setQueryData<GoogleRawEvent | null>(["event_details", id], (old) =>
+          old ? { ...old, description } : old,
+        );
+      }
+      return { snapshot, detailSnapshot, hadDescription, id };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) {
+        for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
+      }
+      if (ctx?.hadDescription) {
+        qc.setQueryData(["event_details", ctx.id], ctx.detailSnapshot);
+      }
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
+  });
+
+  // Move an event to a different calendar within the same account. Google uses
+  // its native move endpoint; iCloud re-homes the CalDAV resource (PUT to the
+  // new collection + DELETE the old). Optimistically retag the mirror row's
+  // calendar_id so the event recolors to the destination immediately.
+  const move = useMutation({
+    mutationFn: async ({ id, calendarId }: { id: string; calendarId: string }) => {
+      const { error } = await supabase.functions.invoke(eventsFunctionFor(providerForEvent(id)), {
+        body: { action: "move", eventId: id, calendarId },
+      });
+      if (error) throw error;
+    },
+    onMutate: async ({ id, calendarId }) => {
+      await qc.cancelQueries({ queryKey: ["external_events"] });
+      const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
-        old?.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+        old?.map((e) => (e.id === id ? { ...e, calendar_id: calendarId } : e)),
       );
       return { snapshot };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (_e, _v, ctx) => {
       if (ctx?.snapshot) {
         for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
       }
@@ -227,6 +278,9 @@ export function useExternalEventMutations() {
       recurrence,
       attendees,
       accountId,
+      calendarId,
+      location,
+      description,
     }: {
       title: string;
       start_at: string;
@@ -237,10 +291,14 @@ export function useExternalEventMutations() {
       attendees?: string[];
       /** calendar_accounts.id to create on; omit for the first connected account. */
       accountId?: string;
+      /** Target calendar within the account; omit for the account's default. */
+      calendarId?: string;
+      location?: string;
+      description?: string;
     }) => {
       const provider = providerForAccount(accountId) ?? "google";
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
-        body: { action: "create", title, start_at, end_at, recurrence, attendees, accountId },
+        body: { action: "create", title, start_at, end_at, recurrence, attendees, accountId, calendarId, location, description },
       });
       if (error) throw error;
       return data;
@@ -287,8 +345,57 @@ export function useExternalEventMutations() {
     },
   });
 
+  const findEvent = (id: string): ExternalEvent | undefined => {
+    for (const [, data] of qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] })) {
+      const found = data?.find((e) => e.id === id);
+      if (found) return found;
+    }
+    return undefined;
+  };
+
+  // Move an event to any writable calendar in any account. Within the same
+  // account it's a clean native move; across accounts (or providers) there is
+  // no native move — copy this event onto the target, then remove it from the
+  // source. Recurrence and guests don't carry: it's a single-instance copy, so
+  // for a series we detach just this occurrence (delete THIS) and leave the rest.
+  const moveEventToCalendar = async ({
+    id,
+    targetAccountId,
+    targetCalendarId,
+  }: {
+    id: string;
+    targetAccountId: string;
+    targetCalendarId: string;
+  }) => {
+    const ev = findEvent(id);
+    if (!ev) return;
+    if (targetAccountId === ev.account_id) {
+      move.mutate({ id, calendarId: targetCalendarId });
+      return;
+    }
+    // Notes live in `raw` — pull them so they carry across the copy.
+    let description = qc.getQueryData<GoogleRawEvent | null>(["event_details", id])?.description;
+    if (description === undefined) {
+      const { data } = await supabase.from("external_events").select("raw").eq("id", id).single();
+      description = (data?.raw as GoogleRawEvent | null)?.description ?? undefined;
+    }
+    await create.mutateAsync({
+      accountId: targetAccountId,
+      calendarId: targetCalendarId,
+      title: ev.title,
+      start_at: ev.start_at,
+      end_at: ev.end_at,
+      location: ev.location ?? undefined,
+      description,
+    });
+    // Only remove the source after the copy lands (mutateAsync throws on failure).
+    del.mutate({ id, scope: "THIS" });
+  };
+
   return {
     updateEvent: update.mutate,
+    moveEvent: move.mutate,
+    moveEventToCalendar,
     rsvpEvent: rsvp.mutateAsync,
     createEvent: create.mutateAsync,
     deleteEvent: del.mutate,

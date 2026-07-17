@@ -46,23 +46,33 @@ Deno.serve(async (req) => {
       if (!account) return json({ error: "no google account connected" }, 400);
 
       const attendees = Array.isArray(body.attendees) ? (body.attendees as string[]) : [];
+      const targetCal = (body.calendarId as string | undefined)?.trim();
+      const location = (body.location as string | undefined) ?? undefined;
+      const description = (body.description as string | undefined) ?? undefined;
 
-      const res = await gFetch(account, `/calendars/primary/events?sendUpdates=all`, {
-        method: "POST",
-        body: JSON.stringify({
-          summary: title,
-          start: { dateTime: new Date(start_at).toISOString() },
-          end: { dateTime: new Date(end_at).toISOString() },
-          ...(recurrence?.length ? { recurrence } : {}),
-          ...(attendees.length ? { attendees: attendees.map((email) => ({ email })) } : {}),
-        }),
-      });
+      const res = await gFetch(
+        account,
+        `/calendars/${encodeURIComponent(targetCal || "primary")}/events?sendUpdates=all`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            summary: title,
+            start: { dateTime: new Date(start_at).toISOString() },
+            end: { dateTime: new Date(end_at).toISOString() },
+            ...(location ? { location } : {}),
+            ...(description ? { description } : {}),
+            ...(recurrence?.length ? { recurrence } : {}),
+            ...(attendees.length ? { attendees: attendees.map((email) => ({ email })) } : {}),
+          }),
+        },
+      );
       if (!res.ok) throw new Error(`create event failed: ${res.status} ${await res.text()}`);
       const created = await res.json();
 
-      // The primary calendar's id is the account email (Google returns it as
-      // the organizer). Write the row now so it shows without waiting on sync.
-      const calendarId = (created.organizer?.email as string) ?? account.email;
+      // Prefer the explicit target calendar; else the primary's id (the account
+      // email, which Google returns as the organizer). Write the row now so it
+      // shows without waiting on sync.
+      const calendarId = targetCal || (created.organizer?.email as string) || account.email;
       const row = mapGoogleEvent(account, calendarId, created);
       let event = null;
       if (row) {
@@ -219,6 +229,24 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    // ── Move: re-home the event onto a different calendar in this account ─
+    if (action === "move") {
+      const dest = ((body.calendarId as string) ?? "").trim();
+      if (!dest) return json({ error: "calendarId required" }, 400);
+      if (dest === evt.calendar_id) return json({ ok: true });
+
+      const res = await gFetch(
+        account,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(evt.provider_event_id)}/move?destination=${encodeURIComponent(dest)}&sendUpdates=none`,
+        { method: "POST" },
+      );
+      if (!res.ok) throw new Error(`move event failed: ${res.status} ${await res.text()}`);
+
+      await admin.from("external_events").update({ calendar_id: dest }).eq("id", eventId);
+      await logSync("google", "event-move", "ok", undefined, user.id);
+      return json({ ok: true });
+    }
+
     if (scope === "ALL") {
       // Patch the master recurring event so every instance shifts together.
       const recurringEventId = (evt.raw as Record<string, unknown>)?.recurringEventId as string | undefined;
@@ -273,6 +301,9 @@ Deno.serve(async (req) => {
     if (patch.title) gPatch.summary = patch.title;
     if (patch.start_at) gPatch.start = { dateTime: patch.start_at };
     if (patch.end_at) gPatch.end = { dateTime: patch.end_at };
+    // location / description are nullable — send "" to clear the field in Google.
+    if (patch.location !== undefined) gPatch.location = patch.location ?? "";
+    if (patch.description !== undefined) gPatch.description = patch.description ?? "";
 
     const res = await gFetch(
       account,
@@ -280,6 +311,19 @@ Deno.serve(async (req) => {
       { method: "PATCH", body: JSON.stringify(gPatch) },
     );
     if (!res.ok) throw new Error(`google patch failed: ${res.status} ${await res.text()}`);
+
+    // Keep the mirror row's raw (and location column) fresh so the inspector's
+    // notes/location reflect the write without waiting for the next sync.
+    const updated = await res.json().catch(() => null);
+    if (updated) {
+      await admin
+        .from("external_events")
+        .update({
+          raw: updated,
+          ...(patch.location !== undefined ? { location: patch.location ?? null } : {}),
+        })
+        .eq("id", eventId);
+    }
 
     await logSync("google", "event-writeback", "ok", undefined, user.id);
     return json({ ok: true });

@@ -15,7 +15,7 @@ import { expandRule, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrenc
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useHiddenEvents, type useExternalEventMutations } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
-import { isWritableAccount } from "../lib/calendarWrite";
+import { isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateKind } from "./DraftComposer";
@@ -260,6 +260,10 @@ export default function CalendarPane({
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent } | null>(null);
   // Delete is a hard API call (Google only) — confirm in-place rather than firing on one click.
   const [eventDeleteConfirm, setEventDeleteConfirm] = useState<RecurrenceScope | null>(null);
+  // Right-click "Move to…" — expands to a grouped calendar/account list in place;
+  // a lossy cross-account pick asks to confirm the copy.
+  const [eventMoveMode, setEventMoveMode] = useState(false);
+  const [eventMoveConfirm, setEventMoveConfirm] = useState<{ accountId: string; calendarId: string; name: string } | null>(null);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: Task; el: HTMLElement } | null>(null);
   const [slotMenu, setSlotMenu] = useState<{ x: number; y: number; slot: Slot; el: HTMLElement } | null>(null);
 
@@ -854,6 +858,8 @@ export default function CalendarPane({
   const eventMenuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     setEventDeleteConfirm(null);
+    setEventMoveMode(false);
+    setEventMoveConfirm(null);
   }, [eventMenu]);
   useEffect(() => {
     if (!eventMenu) return;
@@ -1512,12 +1518,15 @@ export default function CalendarPane({
         const hiddenNow = isHidden(ev);
         const series = Boolean(eventSeriesKey(ev));
         const account = accountById.get(ev.account_id);
+        const writable = isWritableAccount(account);
+        const moveGroups = writable ? writableCalendarTargets(accounts, ev.calendar_id) : [];
+        const moveCount = moveGroups.reduce((n, g) => n + g.calendars.length, 0);
         const left = fixedCssPx(Math.min(eventMenu.x, window.innerWidth - 210));
         const top = fixedCssPx(Math.min(eventMenu.y, window.innerHeight - 140));
         return (
           <div
             ref={eventMenuRef}
-            className="moment fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
             style={{ top, left, boxShadow: "var(--shadow-3)" }}
           >
             <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
@@ -1532,6 +1541,81 @@ export default function CalendarPane({
               </>
             ) : (
               <EventMenuItem onClick={() => hideEvent(ev, "THIS")}>Hide event</EventMenuItem>
+            )}
+            {/* Move to another calendar / account */}
+            {writable && moveCount > 1 && (
+              <>
+                <div className="my-1 border-t border-line" />
+                {eventMoveConfirm ? (
+                  <div className="px-3 py-2">
+                    <p className="text-caption text-ink">
+                      Move a copy to <span className="font-medium">{eventMoveConfirm.name}</span>?
+                    </p>
+                    <p className="mt-0.5 text-meta text-muted">Repeats and guests won't carry over.</p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          eventMutations.moveEventToCalendar({
+                            id: ev.id,
+                            targetAccountId: eventMoveConfirm.accountId,
+                            targetCalendarId: eventMoveConfirm.calendarId,
+                          });
+                          setEventMenu(null);
+                        }}
+                        className="fast flex-1 rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-center text-caption font-medium text-white hover:opacity-90"
+                      >
+                        Move
+                      </button>
+                      <button
+                        onClick={() => setEventMoveConfirm(null)}
+                        className="fast flex-1 rounded-[var(--radius-sm)] border border-line px-2 py-1 text-center text-caption text-muted hover:text-ink"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : eventMoveMode ? (
+                  <div className="max-h-[220px] overflow-y-auto py-0.5">
+                    {moveGroups.map((g) => (
+                      <div key={g.accountId}>
+                        <div className="truncate px-3 pb-0.5 pt-1 text-micro uppercase tracking-wide text-muted/70">
+                          {g.accountLabel} · {providerLabel(g.provider)}
+                        </div>
+                        {g.calendars.map((c) => {
+                          const isCurrent = g.accountId === ev.account_id && c.id === ev.calendar_id;
+                          return (
+                            <EventMenuItem
+                              key={c.id}
+                              onClick={() => {
+                                if (isCurrent) { setEventMenu(null); return; }
+                                const lossy = g.accountId !== ev.account_id && (series || Boolean(ev.self_rsvp));
+                                if (lossy) {
+                                  setEventMoveConfirm({ accountId: g.accountId, calendarId: c.id, name: c.summary });
+                                  return;
+                                }
+                                eventMutations.moveEventToCalendar({
+                                  id: ev.id,
+                                  targetAccountId: g.accountId,
+                                  targetCalendarId: c.id,
+                                });
+                                setEventMenu(null);
+                              }}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: c.color ?? "var(--muted)" }} />
+                                <span className="min-w-0 flex-1 truncate">{c.summary}</span>
+                                {isCurrent && <span className="shrink-0 text-accent">✓</span>}
+                              </span>
+                            </EventMenuItem>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EventMenuItem onClick={() => setEventMoveMode(true)}>Move to…</EventMenuItem>
+                )}
+              </>
             )}
             {account?.provider === "google" && ev.provider_event_id && ev.calendar_id && (
               <EventMenuItem onClick={() => {
@@ -1601,7 +1685,7 @@ export default function CalendarPane({
         return (
           <div
             ref={taskMenuRef}
-            className="moment fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
             style={{ top, left, boxShadow: "var(--shadow-3)" }}
           >
             <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
@@ -1667,7 +1751,7 @@ export default function CalendarPane({
         return (
           <div
             ref={slotMenuRef}
-            className="moment fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
+            className="pop-in fixed z-[60] min-w-[190px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
             style={{ top, left, boxShadow: "var(--shadow-3)" }}
           >
             <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">

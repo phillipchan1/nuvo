@@ -60,8 +60,10 @@ Deno.serve(async (req) => {
         (account.calendars?.[0]?.id as string | undefined);
       if (!calendarUrl) return json({ error: "no iCloud calendar to write to" }, 400);
 
+      const location = (body.location as string | undefined) ?? null;
+      const description = (body.description as string | undefined) ?? null;
       const uid = `nuvo-${crypto.randomUUID()}`;
-      const ics = buildEvent({ uid, title, startISO: start_at, endISO: end_at, recurrence });
+      const ics = buildEvent({ uid, title, startISO: start_at, endISO: end_at, location, description, recurrence });
       const href = `${calendarUrl.replace(/\/$/, "")}/${uid}.ics`;
       const etag = await putEvent(href, ics, account.email, password);
 
@@ -77,7 +79,7 @@ Deno.serve(async (req) => {
             start_at: new Date(start_at).toISOString(),
             end_at: new Date(end_at).toISOString(),
             all_day: false,
-            location: null,
+            location,
             busy: true,
             raw: { caldav_href: href, caldav_etag: etag },
             last_synced_at: new Date().toISOString(),
@@ -149,8 +151,48 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
-    // ── Move / resize / retitle ──────────────────────────────────────────
-    const p = patch as { title?: string; start_at?: string; end_at?: string };
+    // ── Move: re-home the CalDAV resource onto a different collection ─────
+    // CalDAV has no atomic move — PUT the event to the destination collection,
+    // then DELETE it from the old one. Occurrence-level moves aren't a thing;
+    // the whole resource (series) moves together.
+    if (action === "move") {
+      const dest = ((body.calendarId as string) ?? "").trim();
+      if (!dest) return json({ error: "calendarId required" }, 400);
+      if (dest.replace(/\/$/, "") === String(evt.calendar_id).replace(/\/$/, "")) {
+        return json({ ok: true });
+      }
+      const { ics } = await getEvent(href, account.email, password);
+      const newHref = `${dest.replace(/\/$/, "")}/${uidBase}.ics`;
+      const newEtag = await putEvent(newHref, ics, account.email, password);
+      const status = await deleteEvent(href, account.email, password);
+      if (status >= 400 && status !== 404 && status !== 410) {
+        // Roll back the copy so a failed delete doesn't leave a duplicate.
+        await deleteEvent(newHref, account.email, password).catch(() => {});
+        throw new Error(`move failed on delete: HTTP ${status}`);
+      }
+      // Retag every local row of this resource to the destination collection,
+      // and point the edited row's raw at the new href.
+      await admin
+        .from("external_events")
+        .update({ calendar_id: dest })
+        .eq("account_id", evt.account_id)
+        .or(`provider_event_id.eq.${uidBase},provider_event_id.like.${uidBase}::*`);
+      await admin
+        .from("external_events")
+        .update({ raw: { ...raw, caldav_href: newHref, caldav_etag: newEtag } })
+        .eq("id", eventId);
+      await logSync("icloud", "event-move", "ok", undefined, user.id);
+      return json({ ok: true });
+    }
+
+    // ── Move / resize / retitle / relocate / re-note ─────────────────────
+    const p = patch as {
+      title?: string;
+      start_at?: string;
+      end_at?: string;
+      location?: string | null;
+      description?: string | null;
+    };
     const { ics, etag } = await getEvent(href, account.email, password);
 
     let next: string;
@@ -164,21 +206,31 @@ Deno.serve(async (req) => {
         title: p.title,
         startISO: p.start_at,
         endISO: p.end_at,
+        location: p.location,
+        description: p.description,
       });
     } else {
       // Plain single event.
-      next = patchMaster(ics, { title: p.title, startISO: p.start_at, endISO: p.end_at });
+      next = patchMaster(ics, {
+        title: p.title,
+        startISO: p.start_at,
+        endISO: p.end_at,
+        location: p.location,
+        description: p.description,
+      });
     }
 
     await putEvent(href, next, account.email, password, etag);
 
     // Keep the local row consistent (THIS-scope only; ALL is rewritten by the
-    // next sync when every instance's new time comes back).
+    // next sync when every instance's new time comes back). description isn't a
+    // column — it lives in the ICS and comes back via sync.
     if (scope !== "ALL") {
       const rowPatch: Record<string, unknown> = {};
       if (p.title !== undefined) rowPatch.title = p.title;
       if (p.start_at !== undefined) rowPatch.start_at = new Date(p.start_at).toISOString();
       if (p.end_at !== undefined) rowPatch.end_at = new Date(p.end_at).toISOString();
+      if (p.location !== undefined) rowPatch.location = p.location;
       if (Object.keys(rowPatch).length) {
         await admin.from("external_events").update(rowPatch).eq("id", eventId);
       }

@@ -801,6 +801,16 @@ body.nuvo-selecting * {
 }
 .moment { animation: moment-in var(--d-moment) var(--ease-spring) both; }
 
+/* A popover snapping open at the cursor — event/task inspectors anchored to a
+   clicked element. Meant to feel instant (Fantastical-quick), so it uses the
+   fast duration + a plain out-ease, NOT the 540ms moment spring (that ceremony
+   read as lag on a click-to-open inspector). */
+@keyframes pop-in {
+  0% { opacity: 0; transform: translateY(4px) scale(0.985); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pop-in { animation: pop-in var(--d-fast) var(--ease-out) both; }
+
 /* A panel sliding in from the right edge — slide-overs, detail rails. */
 @keyframes slide-in-right {
   from { opacity: 0; transform: translateX(16px); }

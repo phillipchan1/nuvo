@@ -24,6 +24,7 @@ export function buildEvent(opts: {
   startISO: string;
   endISO: string;
   location?: string | null;
+  description?: string | null;
   /** RRULE bodies, e.g. ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"]. */
   recurrence?: string[];
 }): string {
@@ -40,6 +41,7 @@ export function buildEvent(opts: {
     `DTEND:${toIcalUtc(opts.endISO)}`,
     `SUMMARY:${escapeText(opts.title)}`,
     ...(opts.location ? [`LOCATION:${escapeText(opts.location)}`] : []),
+    ...(opts.description ? [`DESCRIPTION:${escapeText(opts.description)}`] : []),
     ...(opts.recurrence ?? []).map((r) => (r.startsWith("RRULE") ? r : `RRULE:${r}`)),
     "END:VEVENT",
     "END:VCALENDAR",
@@ -76,10 +78,17 @@ function setProp(vevent: string, name: string, value: string | null): string {
   return vevent.replace(/^(UID:.*|DTSTAMP:.*)$/im, `$&\r\n${name}:${value}`);
 }
 
-/** Patch the master event's title / start / end in place. */
+/** Patch the master event's title / start / end / location / notes in place.
+ *  A null or empty location/description removes the property line. */
 export function patchMaster(
   ics: string,
-  patch: { title?: string; startISO?: string; endISO?: string },
+  patch: {
+    title?: string;
+    startISO?: string;
+    endISO?: string;
+    location?: string | null;
+    description?: string | null;
+  },
 ): string {
   const { header, events, footer } = splitEvents(ics);
   const out = events.map((ve) => {
@@ -88,6 +97,8 @@ export function patchMaster(
     if (patch.title !== undefined) v = setProp(v, "SUMMARY", escapeText(patch.title));
     if (patch.startISO !== undefined) v = setProp(v, "DTSTART", toIcalUtc(patch.startISO));
     if (patch.endISO !== undefined) v = setProp(v, "DTEND", toIcalUtc(patch.endISO));
+    if (patch.location !== undefined) v = setProp(v, "LOCATION", patch.location ? escapeText(patch.location) : null);
+    if (patch.description !== undefined) v = setProp(v, "DESCRIPTION", patch.description ? escapeText(patch.description) : null);
     return v;
   });
   return header + out.join("\r\n") + footer;
@@ -108,7 +119,13 @@ export function addExdate(ics: string, occurrenceStartISO: string): string {
 export function upsertOverride(
   ics: string,
   occurrenceStartISO: string,
-  patch: { title?: string; startISO?: string; endISO?: string },
+  patch: {
+    title?: string;
+    startISO?: string;
+    endISO?: string;
+    location?: string | null;
+    description?: string | null;
+  },
 ): string {
   const { header, events, footer } = splitEvents(ics);
   const master = events.find(isMaster);
@@ -133,6 +150,8 @@ export function upsertOverride(
     `DTSTART:${toIcalUtc(startISO)}`,
     `DTEND:${toIcalUtc(endISO)}`,
     ...(patch.title !== undefined ? [`SUMMARY:${escapeText(patch.title)}`] : []),
+    ...(patch.location ? [`LOCATION:${escapeText(patch.location)}`] : []),
+    ...(patch.description ? [`DESCRIPTION:${escapeText(patch.description)}`] : []),
     "END:VEVENT",
   ].join("\r\n");
 
