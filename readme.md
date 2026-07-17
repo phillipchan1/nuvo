@@ -30,6 +30,9 @@ supabase/functions/         edge functions (all server-side logic)
   task-mirror/              scheduled task → "Nuvo" Google calendar reconciler
   m365-oauth/               Microsoft identity platform OAuth
   m365-sync/                Graph calendarView delta polling (read-only)
+  icloud-connect/           iCloud CalDAV connect (Apple ID + app-specific password)
+  icloud-sync/              iCloud CalDAV read sync (per-calendar calendar-query)
+  icloud-events/            iCloud CalDAV write-back (create/move/resize/delete)
   rollover/                 00:05 LA rollover + mirror cleanup
 ```
 
@@ -41,7 +44,8 @@ supabase/functions/         edge functions (all server-side logic)
 supabase link --project-ref YOUR_REF
 supabase db push                  # applies migrations
 supabase functions deploy google-oauth google-sync google-webhook google-events \
-  task-mirror m365-oauth m365-sync rollover agent
+  task-mirror m365-oauth m365-sync icloud-connect icloud-sync icloud-events \
+  rollover agent
 ```
 
 In the SQL editor, seed the two Vault secrets that pg_cron uses to invoke edge functions:
@@ -76,6 +80,12 @@ For local function dev: `supabase functions serve agent --env-file .env.local`.
 - **Microsoft Entra admin center:** app registration (personal + work accounts),
   redirect URI `https://YOUR_REF.supabase.co/functions/v1/m365-oauth`, delegated
   permissions `Calendars.Read`, `User.Read`, `offline_access`.
+- **Apple Calendar (iCloud):** no cloud console and no app secret to register —
+  Apple has no OAuth for calendars. Each user connects with their **Apple ID + an
+  app-specific password** (Settings → Calendars → Connect Apple Calendar walks
+  through generating one at [account.apple.com](https://account.apple.com/account/manage)
+  → Sign-In and Security → App-Specific Passwords). The password is stored in
+  Vault and used as the CalDAV credential; nothing goes in `supabase secrets`.
 
 ### 3. Frontend
 
@@ -124,6 +134,12 @@ After pulling: `supabase db push` (applies migrations 04-09 — incl. the
 `recurrences` table) and `supabase functions deploy agent google-events`
 (the latter gained native RRULE support for repeating calendar events).
 
+Apple Calendar support (migration `…32_icloud.sql` + the `icloud-*` functions)
+also arrives via `supabase db push` and
+`supabase functions deploy icloud-connect icloud-sync icloud-events`. No new
+`supabase secrets` are required — the credential is each user's app-specific
+password, entered in the app.
+
 ## Behavior notes
 
 - **Rollover** runs at 00:05 America/Los_Angeles via pg_cron (scheduled at both 07:05
@@ -159,6 +175,16 @@ After pulling: `supabase db push` (applies migrations 04-09 — incl. the
   ("Morning · 3 tasks") — so you drop a container on the grid and fill it without
   ever naming it.
 - **M365** events are read-only: striped fill, dashed border, not draggable.
+- **Apple Calendar (iCloud)** is two-way over CalDAV. All of the account's
+  calendars are discovered and polled every 15 min (`icloud-sync`, a
+  `calendar-query` REPORT per collection whose iCalendar is fed through the same
+  `parseIcs` the ICS feeds use). Events render and behave like Google's: drag /
+  resize / retitle / delete write straight back via `icloud-events` (CalDAV
+  `PUT`/`DELETE`), and new events can be created on an iCloud calendar. Times are
+  written as UTC. Editing a *single occurrence* of a repeating series is
+  best-effort (the `RECURRENCE-ID`/`EXDATE` are emitted in UTC); whole-series and
+  non-recurring edits are exact. A bad or revoked app-specific password flips
+  `needs_reconnect`, surfacing the reconnect banner like any other provider.
 - **Token failures** flip `needs_reconnect` on the account, which surfaces the orange
   reconnect banner — sync never fails silently. All sync operations write to `sync_log`.
 

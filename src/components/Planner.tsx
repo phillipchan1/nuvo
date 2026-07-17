@@ -17,6 +17,7 @@ import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { taskDomainColor } from "../lib/vertical";
+import { isWritableAccount } from "../lib/calendarWrite";
 import {
   applySpotlightNav,
   buildSearchHits,
@@ -467,7 +468,7 @@ export default function Planner({
           spine top + the toolbar's empty spacer. Plan/Shutdown → ⌘K + the morning
           prompt; Nuvo → right edge (⌘J); settings → spine (⌘,). */}
 
-      <ReconnectBanner accounts={accounts} />
+      <ReconnectBanner accounts={accounts} onManualReconnect={() => openOverlay("settings")} />
 
       {/* Priorities moved off Schedule — too much for the workspace. They live on
           Today (the ribbon) for now; a dedicated dashboard view is TBD. */}
@@ -539,7 +540,7 @@ export default function Planner({
             <EventPopover
               event={openEvent}
               anchor={panelRect}
-              editable={openEventAccount?.provider === "google"}
+              editable={isWritableAccount(openEventAccount)}
               calendarName={openEventCalendar?.summary}
               calendarColor={openEventCalendar?.color}
               accountEmail={openEventAccount?.email}

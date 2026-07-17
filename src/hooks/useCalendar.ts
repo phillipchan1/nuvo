@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
-import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleRawEvent, HiddenEvent, Label, RecurrenceScope } from "../lib/types";
+import type { AttendeeStatus, CalendarAccount, CalendarProvider, ExternalEvent, GoogleRawEvent, HiddenEvent, Label, RecurrenceScope } from "../lib/types";
 import { eventInstanceKey, eventSeriesKey, isEventHidden } from "../lib/now";
+import { eventsFunctionFor } from "../lib/calendarWrite";
 import { useSettings } from "./useSettings";
 
 export function useCalendarRefresh() {
@@ -97,6 +98,23 @@ export function useHiddenEvents() {
  *  scope="ALL" patches the master recurring event in Google instead of just this instance. */
 export function useExternalEventMutations() {
   const qc = useQueryClient();
+
+  // Route write-back to the provider that owns the event. Google → google-events,
+  // iCloud → icloud-events (CalDAV). Resolved from the query cache so callers keep
+  // passing just the event/account id.
+  const providerForAccount = (accountId?: string | null): CalendarProvider | null => {
+    if (!accountId) return null;
+    const accounts = qc.getQueryData<CalendarAccount[]>(["calendar_accounts"]);
+    return accounts?.find((a) => a.id === accountId)?.provider ?? null;
+  };
+  const providerForEvent = (id: string): CalendarProvider => {
+    for (const [, data] of qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] })) {
+      const ev = data?.find((e) => e.id === id);
+      if (ev) return providerForAccount(ev.account_id) ?? "google";
+    }
+    return "google";
+  };
+
   const update = useMutation({
     mutationFn: async ({
       id,
@@ -114,7 +132,7 @@ export function useExternalEventMutations() {
         const { error } = await supabase.from("external_events").update(patch).eq("id", id);
         if (error) throw error;
       }
-      invokeQuiet("google-events", { eventId: id, patch, scope });
+      invokeQuiet(eventsFunctionFor(providerForEvent(id)), { eventId: id, patch, scope });
     },
     onMutate: async ({ id, patch, scope = "THIS" }) => {
       if (scope !== "THIS") return;
@@ -184,7 +202,7 @@ export function useExternalEventMutations() {
     // it deletes the row itself. If we returned early (fire-and-forget) the
     // onSettled refetch would race the deletion and the event would pop back.
     mutationFn: async ({ id, scope = "THIS" }: { id: string; scope?: RecurrenceScope }) => {
-      const { error } = await supabase.functions.invoke("google-events", {
+      const { error } = await supabase.functions.invoke(eventsFunctionFor(providerForEvent(id)), {
         body: { action: "delete", eventId: id, scope },
       });
       if (error) throw error;
@@ -220,7 +238,8 @@ export function useExternalEventMutations() {
       /** calendar_accounts.id to create on; omit for the first connected account. */
       accountId?: string;
     }) => {
-      const { data, error } = await supabase.functions.invoke("google-events", {
+      const provider = providerForAccount(accountId) ?? "google";
+      const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
         body: { action: "create", title, start_at, end_at, recurrence, attendees, accountId },
       });
       if (error) throw error;

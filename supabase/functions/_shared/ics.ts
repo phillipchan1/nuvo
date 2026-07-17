@@ -30,7 +30,7 @@ export interface ExternalEventRow {
   all_day: boolean;
   location: string | null;
   busy: boolean;
-  raw: null;
+  raw: Record<string, unknown> | null;
   last_synced_at: string;
 }
 
@@ -95,9 +95,17 @@ function slimFeed(text: string, windowStart: Date, windowEnd: Date): string {
 
 export function parseIcs(
   icsText: string,
-  opts: { userId: string; accountId: string; windowStart: Date; windowEnd: Date; runStamp: string },
+  opts: {
+    userId: string;
+    accountId: string;
+    windowStart: Date;
+    windowEnd: Date;
+    runStamp: string;
+    /** Calendar collection id to stamp on every row (CalDAV has many); "primary" for ICS. */
+    calendarId?: string;
+  },
 ): { calName: string | null; rows: ExternalEventRow[] } {
-  const { userId, accountId, windowStart, windowEnd, runStamp } = opts;
+  const { userId, accountId, windowStart, windowEnd, runStamp, calendarId = "primary" } = opts;
   const slimmed = slimFeed(icsText, windowStart, windowEnd);
   const comp = new ICAL.Component(ICAL.parse(slimmed));
 
@@ -135,7 +143,7 @@ export function parseIcs(
       user_id: userId,
       account_id: accountId,
       provider_event_id: suffix ? `${uid}::${suffix}` : uid,
-      calendar_id: "primary",
+      calendar_id: calendarId,
       title: title || "(no title)",
       start_at: startJs.toISOString(),
       end_at: endJs.toISOString(),

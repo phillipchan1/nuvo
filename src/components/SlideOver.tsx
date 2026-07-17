@@ -726,7 +726,11 @@ export function EventPopover({
   const popRef = useRef<HTMLDivElement>(null);
 
   const { data: raw, isLoading: detailsLoading } = useEventDetails(event.id);
-  const recurring = Boolean((raw as { recurringEventId?: string } | null)?.recurringEventId);
+  // Google marks instances with recurringEventId in raw; iCloud (CalDAV)
+  // occurrences carry a `uid::<recurrence-id>` provider id.
+  const recurring =
+    Boolean((raw as { recurringEventId?: string } | null)?.recurringEventId) ||
+    event.provider_event_id.includes("::");
 
   useEffect(() => {
     setTitle(event.title);

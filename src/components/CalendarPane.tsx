@@ -15,6 +15,7 @@ import { expandRule, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrenc
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useHiddenEvents, type useExternalEventMutations } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
+import { isWritableAccount } from "../lib/calendarWrite";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateKind } from "./DraftComposer";
@@ -29,7 +30,7 @@ import TimeZoneChip from "./TimeZoneChip";
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
 
 type ExtendedProps = {
-  kind: "task" | "google" | "m365" | "ics" | "slot";
+  kind: "task" | "google" | "m365" | "ics" | "icloud" | "slot";
   refId: string;
   calColor?: string;
   /** Solid color of the 3px accent bar (domain / calendar / slot color). */
@@ -258,16 +259,18 @@ export default function CalendarPane({
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: Task; el: HTMLElement } | null>(null);
   const [slotMenu, setSlotMenu] = useState<{ x: number; y: number; slot: Slot; el: HTMLElement } | null>(null);
 
-  const googleAvailable = useMemo(
-    () => accounts.some((a) => a.provider === "google"),
+  // Can the user create real calendar events? True when any writable account
+  // (Google or iCloud two-way) is connected.
+  const canCreateEvents = useMemo(
+    () => accounts.some((a) => isWritableAccount(a)),
     [accounts],
   );
 
-  const writableGoogleAccounts = useMemo(
+  const writableAccounts = useMemo(
     () =>
       accounts
-        .filter((a) => a.provider === "google" && a.sync_direction === "two_way")
-        .map((a) => ({ id: a.id, email: a.email })),
+        .filter((a) => isWritableAccount(a))
+        .map((a) => ({ id: a.id, email: a.email, provider: a.provider })),
     [accounts],
   );
 
@@ -677,6 +680,9 @@ export default function CalendarPane({
         const eventHidden = isHidden(e);
         const isGoogle = account?.provider === "google";
         const isIcs = account?.provider === "ics";
+        const isIcloud = account?.provider === "icloud";
+        // Writable events (Google or iCloud two-way) can be dragged / resized.
+        const writable = isWritableAccount(account);
         const calColor =
           account?.calendars?.find((c) => c.id === e.calendar_id)?.color ?? "var(--event-default)";
         // Dim events where the user hasn't confirmed yet.
@@ -693,18 +699,18 @@ export default function CalendarPane({
           start: e.start_at,
           end: e.end_at,
           allDay: e.all_day,
-          editable: isGoogle && !e.all_day,
-          durationEditable: isGoogle && !e.all_day,
+          editable: writable && !e.all_day,
+          durationEditable: writable && !e.all_day,
           classNames: [
-            isGoogle ? "evt-google" : isIcs ? "evt-ics" : "evt-m365",
+            isGoogle || isIcloud ? "evt-google" : isIcs ? "evt-ics" : "evt-m365",
             ...(rsvpClass ? [rsvpClass] : []),
             ...(eventHidden ? ["evt-hidden"] : []),
           ],
-          // Google + ICS render as quiet tinted blocks (the "given" calendar, so
-          // your bolder tasks read on top); only M365 keeps the read-only hatch.
-          ...(isGoogle || isIcs ? blockColors(calColor, 13) : {}),
+          // Google / iCloud / ICS render as quiet tinted blocks (the "given"
+          // calendar, so bolder tasks read on top); only M365 keeps the hatch.
+          ...(isGoogle || isIcs || isIcloud ? blockColors(calColor, 13) : {}),
           extendedProps: {
-            kind: isGoogle ? ("google" as const) : isIcs ? ("ics" as const) : ("m365" as const),
+            kind: isGoogle ? ("google" as const) : isIcloud ? ("icloud" as const) : isIcs ? ("ics" as const) : ("m365" as const),
             refId: e.id,
             calColor,
             barColor: calColor,
@@ -716,8 +722,11 @@ export default function CalendarPane({
               (isGoogle && /_.{8}T\d{6}Z?$/.test(e.provider_event_id)
                 ? e.provider_event_id
                 : undefined),
+            // iCloud occurrences carry a `uid::<recurrence-id>` provider id.
             recurring: Boolean(
-              e.recurring_event_id ?? (isGoogle && /_.{8}T\d{6}Z?$/.test(e.provider_event_id)),
+              e.recurring_event_id ||
+                (isGoogle && /_.{8}T\d{6}Z?$/.test(e.provider_event_id)) ||
+                (isIcloud && e.provider_event_id.includes("::")),
             ),
           },
         };
@@ -1027,7 +1036,7 @@ export default function CalendarPane({
       return;
     }
 
-    if (kind === "google") {
+    if (kind === "google" || kind === "icloud") {
       // Capture new times before any revert call.
       const newStart = info.event.start;
       const newEnd = info.event.end;
@@ -1043,7 +1052,7 @@ export default function CalendarPane({
       return;
     }
 
-    info.revert(); // m365 is read-only
+    info.revert(); // m365 / ICS are read-only
   };
 
   const onResize = (info: EventResizeDoneArg) => {
@@ -1079,7 +1088,7 @@ export default function CalendarPane({
       return;
     }
 
-    if (kind === "google") {
+    if (kind === "google" || kind === "icloud") {
       const newStart = info.event.start;
       const newEnd = info.event.end;
       if (!newStart || !newEnd) { info.revert(); return; }
@@ -1129,7 +1138,7 @@ export default function CalendarPane({
     let kind: CreateKind = createMode;
     if (je?.altKey) kind = "event";
     else if (je?.metaKey || je?.ctrlKey) kind = "slot";
-    if (kind === "event" && !googleAvailable) kind = "task";
+    if (kind === "event" && !canCreateEvents) kind = "task";
     setDraft({
       start: arg.start,
       end: arg.end,
@@ -1154,7 +1163,7 @@ export default function CalendarPane({
     let kind: CreateKind = createMode;
     if (je?.altKey) kind = "event";
     else if (je?.metaKey || je?.ctrlKey) kind = "slot";
-    if (kind === "event" && !googleAvailable) kind = "task";
+    if (kind === "event" && !canCreateEvents) kind = "task";
     setDraft({ start, end, kind, point: { x: je.clientX, y: je.clientY } });
   };
 
@@ -1648,8 +1657,8 @@ export default function CalendarPane({
           point={draft.point}
           initialKind={draft.kind}
           allDay={draft.allDay}
-          googleAvailable={googleAvailable}
-          writableAccounts={writableGoogleAccounts}
+          googleAvailable={canCreateEvents}
+          writableAccounts={writableAccounts}
           onCreate={handleCreate}
           onCancel={() => {
             setDraft(null);

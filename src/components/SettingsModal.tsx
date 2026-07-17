@@ -769,12 +769,46 @@ function ConnectionsPane({
     qc.invalidateQueries({ queryKey: ["calendar_accounts"] });
   };
 
+  // ── iCloud / Apple Calendar (CalDAV, app-specific password) ──
+  const [showIcloud, setShowIcloud] = useState(false);
+  const [appleId, setAppleId] = useState("");
+  const [applePw, setApplePw] = useState("");
+  const [icloudBusy, setIcloudBusy] = useState(false);
+  const [icloudError, setIcloudError] = useState<string | null>(null);
+
+  const connectIcloud = async () => {
+    if (!appleId.trim() || !applePw.trim() || icloudBusy) return;
+    setIcloudBusy(true);
+    setIcloudError(null);
+    const { error } = await supabase.functions.invoke("icloud-connect", {
+      body: { appleId: appleId.trim(), appPassword: applePw.trim() },
+    });
+    if (error) {
+      let msg = error.message;
+      // deno-lint-ignore no-explicit-any
+      try {
+        const body = await (error as any).context?.json?.();
+        if (body?.error) msg = body.error;
+      } catch { /* keep the generic message */ }
+      setIcloudError(msg);
+      setIcloudBusy(false);
+      return;
+    }
+    setIcloudBusy(false);
+    setAppleId("");
+    setApplePw("");
+    setShowIcloud(false);
+    qc.invalidateQueries({ queryKey: ["calendar_accounts"] });
+  };
+
   const providerMeta = (p: CalendarAccount["provider"]) =>
     p === "google"
       ? { letter: "G", name: "Google", color: "#4285F4" }
       : p === "m365"
         ? { letter: "M", name: "Microsoft 365", color: "#2563EB" }
-        : { letter: "↻", name: "Subscribed calendar", color: "#0EA5E9" };
+        : p === "icloud"
+          ? { letter: "", name: "Apple Calendar", color: "#111111" }
+          : { letter: "↻", name: "Subscribed calendar", color: "#0EA5E9" };
 
   const hidden = new Set(settings?.hidden_calendar_ids ?? []);
   const toggleCalendar = (calId: string) => {
@@ -850,6 +884,17 @@ function ConnectionsPane({
                   }}
                 >
                   Update link
+                </Btn>
+              )}
+              {a.needs_reconnect && a.provider === "icloud" && (
+                <Btn
+                  kind="signal"
+                  onClick={() => {
+                    setAppleId(a.email);
+                    setShowIcloud(true);
+                  }}
+                >
+                  Reconnect
                 </Btn>
               )}
               <Btn onClick={() => disconnect(a.id)}>Disconnect</Btn>
@@ -952,10 +997,73 @@ function ConnectionsPane({
           {!accounts.some((a) => a.provider === "m365") && (
             <Btn onClick={() => connect("m365")}>Connect Microsoft 365</Btn>
           )}
+          {!accounts.some((a) => a.provider === "icloud") && !showIcloud && (
+            <Btn onClick={() => setShowIcloud(true)}>Connect Apple Calendar</Btn>
+          )}
           {!showIcs && (
             <Btn onClick={() => setShowIcs(true)}>Subscribe via calendar link</Btn>
           )}
         </div>
+
+        {showIcloud && (
+          <div className="space-y-2 rounded-lg border border-line bg-surface-2 p-3">
+            <div className="text-caption font-medium">Connect Apple Calendar (iCloud)</div>
+            <p className="text-label text-muted">
+              Apple has no “Sign in” button for calendars — instead you generate a one-off{" "}
+              <span className="font-medium">app-specific password</span> that grants Nuvo two-way access over
+              CalDAV. It’s stored encrypted and you can revoke it anytime from your Apple account.
+            </p>
+            <ol className="ml-4 list-decimal space-y-1 text-label text-muted">
+              <li>
+                Go to{" "}
+                <a
+                  href="https://account.apple.com/account/manage"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-accent underline"
+                >
+                  account.apple.com
+                </a>{" "}
+                and sign in.
+              </li>
+              <li>Under <span className="font-medium">Sign-In and Security</span>, choose <span className="font-medium">App-Specific Passwords</span>.</li>
+              <li>Select <span className="font-medium">＋ Generate an app-specific password</span>, name it “Nuvo”, and confirm.</li>
+              <li>Copy the password Apple shows (format <span className="mono">abcd-efgh-ijkl-mnop</span>) and paste it below.</li>
+            </ol>
+            <input
+              value={appleId}
+              onChange={(e) => setAppleId(e.target.value)}
+              placeholder="Apple ID email — e.g. you@icloud.com"
+              autoComplete="username"
+              className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-label outline-none focus:border-accent"
+              autoFocus
+            />
+            <input
+              value={applePw}
+              onChange={(e) => setApplePw(e.target.value)}
+              placeholder="App-specific password — abcd-efgh-ijkl-mnop"
+              type="password"
+              autoComplete="off"
+              className="mono w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-label outline-none focus:border-accent"
+              onKeyDown={(e) => e.key === "Enter" && connectIcloud()}
+            />
+            {icloudError && <div className="text-label text-signal">{icloudError}</div>}
+            <div className="flex gap-2">
+              <Btn kind="primary" disabled={icloudBusy || !appleId.trim() || !applePw.trim()} onClick={connectIcloud}>
+                {icloudBusy ? "Connecting…" : "Connect"}
+              </Btn>
+              <Btn
+                disabled={icloudBusy}
+                onClick={() => {
+                  setShowIcloud(false);
+                  setIcloudError(null);
+                }}
+              >
+                Cancel
+              </Btn>
+            </div>
+          </div>
+        )}
 
         {showIcs && (
           <div className="space-y-2 rounded-lg border border-line bg-surface-2 p-3">

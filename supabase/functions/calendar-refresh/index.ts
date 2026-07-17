@@ -31,6 +31,8 @@ Deno.serve(async (req) => {
         ? "google-sync"
         : account.provider === "m365"
         ? "m365-sync"
+        : account.provider === "icloud"
+        ? "icloud-sync"
         : "ics-sync";
       const body = account.provider === "google"
         ? { mode: fullSync ? "full" : "incremental", accountId: account.id }
