@@ -23,11 +23,12 @@ export type OverlayKind =
   | "initiative-record"
   // A task opened as a centered modal (from ⌘K search) — the same TaskPopover
   // UI, rung-agnostic, no anchor. Distinct from the on-Schedule anchored "task".
-  | "task-record";
+  | "task-record"
+  // The Week's Plan / Review — slides over the Schedule work area. History-
+  // backed so Esc / browser-back / ⌘[ dismiss it like every other overlay.
+  | "week-plan";
 
 export type SettingsSection = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account";
-
-export type NowMoment = "choose" | "focus" | "done";
 
 export type FloorModal = null | "new-initiative" | "new-project";
 
@@ -61,8 +62,6 @@ export interface AppNavState {
   overlayId: string | null;
   settingsSection: SettingsSection;
   agentOpen: boolean;
-  nowMoment: NowMoment;
-  nowTaskId: string | null;
   floorModal: FloorModal;
 }
 
@@ -81,8 +80,6 @@ export const DEFAULT_NAV: AppNavState = {
   overlayId: null,
   settingsSection: "appearance",
   agentOpen: readAgentOpen(),
-  nowMoment: "choose",
-  nowTaskId: null,
   floorModal: null,
 };
 
@@ -126,8 +123,6 @@ export function navEqual(a: AppNavState, b: AppNavState): boolean {
     a.overlayId === b.overlayId &&
     a.settingsSection === b.settingsSection &&
     a.agentOpen === b.agentOpen &&
-    a.nowMoment === b.nowMoment &&
-    a.nowTaskId === b.nowTaskId &&
     a.floorModal === b.floorModal
   );
 }
@@ -140,6 +135,9 @@ export function readNavState(raw: unknown): AppNavState | null {
   return {
     ...DEFAULT_NAV,
     ...s,
+    // The Today rung was retired (its coaching never earned the trip — the
+    // Schedule is where the day is actually run) → fall home to Schedule.
+    rung: (s.rung as string) === "now" ? "day" : s.rung,
     // The Week rail tab was retired (the board replaced it) — heal stale state.
     tab: s.tab === "inbox" ? "inbox" : "today",
     // Heal retired project views ("portfolio"/"detail" full page, "sprint" This

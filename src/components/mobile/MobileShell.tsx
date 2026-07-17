@@ -19,7 +19,6 @@ import { taskDomainColor } from "../../lib/vertical";
 import type { Floor } from "../../lib/readiness";
 import type { AgentHintContext } from "../../lib/agentHints";
 import type { Task } from "../../lib/types";
-import NowFloor from "../floors/NowFloor";
 import SettingsModal from "../SettingsModal";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
@@ -35,20 +34,19 @@ import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 
-// Top-level destinations — the five surfaces you work from on the phone, mirror-
-// ing the desktop altitudes: Now · Calendar · Tasks, then the two strategic
-// altitudes that On Deck makes first-class — Projects and Initiatives. Capture
-// (＋) and Nuvo (✦) are *actions*, not places, so they float above the bar
-// instead of taking a slot; Nuvo opens as an overlay over whatever screen you're
-// on, so its answers carry that screen's context.
-type Tab = "now" | "calendar" | "tasks" | "projects" | "initiatives";
+// Top-level destinations — the four surfaces you work from on the phone, mirror-
+// ing the desktop altitudes: Calendar · Tasks, then the two strategic altitudes
+// that On Deck makes first-class — Projects and Initiatives. Capture (＋) and
+// Nuvo (✦) are *actions*, not places, so they float above the bar instead of
+// taking a slot; Nuvo opens as an overlay over whatever screen you're on, so its
+// answers carry that screen's context.
+type Tab = "calendar" | "tasks" | "projects" | "initiatives";
 const TAB_KEY = "nuvo-mobile-tab-v3";
 const TAB_KEY_V2 = "nuvo-mobile-tab-v2"; // pre-redesign: now|calendar|tasks|plan|nuvo
 const SUB_KEY = "nuvo-mobile-tasksub";
 const LEGACY_KEY = "nuvo-mobile-tab"; // pre-v2: now|today|week|inbox
 
 const NAV: { id: Tab; label: string; glyph: string }[] = [
-  { id: "now", label: "Now", glyph: "◉" },
   { id: "calendar", label: "Calendar", glyph: "▦" },
   { id: "tasks", label: "Tasks", glyph: "▤" },
   // The concrete near-term unit (weeks) and the longer multi-facet arc (quarters),
@@ -67,22 +65,23 @@ const isTab = (v: string | null): v is Tab => !!v && NAV.some((t) => t.id === v)
 
 // Read the active tab, migrating older single-key state forward once. The v2 nav
 // had a "plan" tab (now split into Projects/Initiatives) and a "nuvo" tab (now a
-// floating overlay), so both fold back to a live destination.
+// floating overlay); the "now" tab was retired with the Today rung. All of them
+// fold back to a live destination.
 function readTab(): Tab {
   try {
     const v = localStorage.getItem(TAB_KEY);
     if (isTab(v)) return v;
     const v2 = localStorage.getItem(TAB_KEY_V2);
     if (v2 === "plan") return "projects";
-    if (v2 === "nuvo") return "now";
-    if (isTab(v2)) return v2; // now | calendar | tasks carry over unchanged
+    if (v2 === "nuvo" || v2 === "now") return "calendar";
+    if (isTab(v2)) return v2; // calendar | tasks carry over unchanged
     const legacy = localStorage.getItem(LEGACY_KEY);
-    if (legacy === "now") return "now";
+    if (legacy === "now") return "calendar";
     if (legacy === "today" || legacy === "week" || legacy === "inbox") return "tasks";
   } catch {
     /* ignore */
   }
-  return "now";
+  return "calendar";
 }
 
 function readSub(): MobileTab {
@@ -298,17 +297,7 @@ export default function MobileShell() {
 
       {/* Content */}
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
-        {tab === "now" ? (
-          <div className="px-4 pt-4 pb-24">
-            <div className="mb-4">
-              <MobileReadiness data={vertical} onAskNuvo={openChat} onReview={reviewFloor} />
-            </div>
-            <div className="mb-4">
-              <WeekPlanCard />
-            </div>
-            <NowFloor onOpenDay={() => { setSub("today"); setTab("tasks"); }} onAskNuvo={openChat} />
-          </div>
-        ) : tab === "calendar" ? (
+        {tab === "calendar" ? (
           <MobileCalendar now={now} onTapEvent={setCalendarTap} />
         ) : tab === "projects" ? (
           <MobileProjects onOpenItem={openDetail} />
@@ -317,6 +306,15 @@ export default function MobileShell() {
         ) : (
           <div className="pb-24">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
+            {/* The week's read, above the week's list — both are week-scoped, so
+                they sit at the top of the Week segment rather than on an
+                execution screen. */}
+            {sub === "week" && (
+              <div className="flex flex-col gap-4 px-4 pt-4">
+                <MobileReadiness data={vertical} onAskNuvo={openChat} onReview={reviewFloor} />
+                <WeekPlanCard />
+              </div>
+            )}
             <MobileTaskList
               tab={sub}
               inbox={inbox}
@@ -452,8 +450,6 @@ function navFocusFor(
     return { rung: "domain", domainId: frame.id };
   }
   switch (tab) {
-    case "now":
-      return { rung: "now" };
     case "projects":
       return { rung: "project" };
     case "initiatives":
@@ -480,8 +476,6 @@ function liveHintFor(
     return { rung: "domain", domainName: d.domains.find((x) => x.id === frame.id)?.name };
   }
   switch (tab) {
-    case "now":
-      return { rung: "day", mobileTab: "now" };
     case "calendar":
       return { rung: "day", mobileTab: "today" };
     case "projects":

@@ -4,7 +4,7 @@ import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { Draggable } from "@fullcalendar/interaction";
-import type { DatesSetArg, DateSelectArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from "@fullcalendar/core";
+import type { DatesSetArg, DateSelectArg, DayCellContentArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from "@fullcalendar/core";
 import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
@@ -26,6 +26,7 @@ import { useWeather, indexWeather, type WeatherDay } from "../hooks/useWeather";
 import WeatherIcon from "./WeatherIcon";
 import WeatherPopover from "./WeatherPopover";
 import TimeZoneChip from "./TimeZoneChip";
+import { fixedCssPx, useUiScale } from "../hooks/useUiScale";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
 
@@ -232,6 +233,7 @@ export default function CalendarPane({
   onToggleFocus?: () => void;
 }) {
   const calRef = useRef<FullCalendar>(null);
+  const { scale: uiScale } = useUiScale();
   const [utilsOpen, setUtilsOpen] = useState(false);
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
@@ -256,6 +258,8 @@ export default function CalendarPane({
   const { keys: hiddenKeys, isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const [showHidden, setShowHidden] = useState(false);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent } | null>(null);
+  // Delete is a hard API call (Google only) — confirm in-place rather than firing on one click.
+  const [eventDeleteConfirm, setEventDeleteConfirm] = useState<RecurrenceScope | null>(null);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: Task; el: HTMLElement } | null>(null);
   const [slotMenu, setSlotMenu] = useState<{ x: number; y: number; slot: Slot; el: HTMLElement } | null>(null);
 
@@ -537,8 +541,9 @@ export default function CalendarPane({
       }
       document.body.classList.toggle("over-slot", Boolean(slotEl));
       if (slotEl) {
-        chip.style.left = `${e.clientX + 14}px`;
-        chip.style.top = `${e.clientY + 16}px`;
+        // clientX/Y are post-zoom; fixed left/top are pre-zoom under CSS zoom.
+        chip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
+        chip.style.top = `${fixedCssPx(e.clientY + 16)}px`;
         chip.classList.add("is-visible");
       } else {
         chip.classList.remove("is-visible");
@@ -603,6 +608,13 @@ export default function CalendarPane({
     const api = calRef.current?.getApi();
     if (api && api.view.type !== view) api.changeView(view);
   }, [view]);
+
+  // Document CSS zoom breaks FullCalendar pointer → date math. The calendar host
+  // counters it (see wrap style) so interactions run at effective scale 1 —
+  // tell FC to reflow whenever the UI zoom changes.
+  useEffect(() => {
+    calRef.current?.getApi()?.updateSize();
+  }, [uiScale]);
 
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
   const hidden = useMemo(
@@ -801,6 +813,12 @@ export default function CalendarPane({
     if (key) unhide(key);
     setEventMenu(null);
   };
+  // Hard delete — Google only, the edge function has no write path for M365/ICS.
+  const deleteEventNow = (event: ExternalEvent, scope: RecurrenceScope) => {
+    eventMutations.deleteEvent({ id: event.id, scope });
+    setEventDeleteConfirm(null);
+    setEventMenu(null);
+  };
 
   // Right-click a calendar event → the hide/show menu (events only — tasks and
   // slots have their own editing paths). The listener is attached per element as
@@ -834,6 +852,9 @@ export default function CalendarPane({
   // Dismiss the menu on any outside interaction or Escape (a press inside the
   // menu is a selection, not a dismissal).
   const eventMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    setEventDeleteConfirm(null);
+  }, [eventMenu]);
   useEffect(() => {
     if (!eventMenu) return;
     const onDown = (e: PointerEvent) => {
@@ -1491,8 +1512,8 @@ export default function CalendarPane({
         const hiddenNow = isHidden(ev);
         const series = Boolean(eventSeriesKey(ev));
         const account = accountById.get(ev.account_id);
-        const left = Math.min(eventMenu.x, window.innerWidth - 210);
-        const top = Math.min(eventMenu.y, window.innerHeight - 140);
+        const left = fixedCssPx(Math.min(eventMenu.x, window.innerWidth - 210));
+        const top = fixedCssPx(Math.min(eventMenu.y, window.innerHeight - 140));
         return (
           <div
             ref={eventMenuRef}
@@ -1528,14 +1549,55 @@ export default function CalendarPane({
                 </EventMenuItem>
               </>
             )}
+            {account?.provider === "google" && (
+              <>
+                <div className="my-1 border-t border-line" />
+                {eventDeleteConfirm ? (
+                  <div className="px-3 py-2">
+                    <p className="text-caption text-ink">
+                      Delete {eventDeleteConfirm === "ALL" ? "all events in this series" : "this event"}?
+                    </p>
+                    <p className="mt-0.5 text-meta text-muted">This can't be undone.</p>
+                    <div className="mt-2.5 flex items-center gap-1.5">
+                      <button
+                        onClick={() => deleteEventNow(ev, eventDeleteConfirm)}
+                        className="fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-center text-caption font-medium text-white"
+                        style={{ background: "var(--signal)" }}
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setEventDeleteConfirm(null)}
+                        className="fast flex-1 rounded-[var(--radius-sm)] border border-line px-2 py-1 text-center text-caption text-muted hover:text-ink"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : series ? (
+                  <>
+                    <EventMenuItem onClick={() => setEventDeleteConfirm("THIS")}>
+                      <span style={{ color: "var(--signal)" }}>Delete this event</span>
+                    </EventMenuItem>
+                    <EventMenuItem onClick={() => setEventDeleteConfirm("ALL")}>
+                      <span style={{ color: "var(--signal)" }}>Delete all events in series</span>
+                    </EventMenuItem>
+                  </>
+                ) : (
+                  <EventMenuItem onClick={() => setEventDeleteConfirm("THIS")}>
+                    <span style={{ color: "var(--signal)" }}>Delete event</span>
+                  </EventMenuItem>
+                )}
+              </>
+            )}
           </div>
         );
       })()}
 
       {taskMenu && (() => {
         const task = taskMenu.task;
-        const left = Math.min(taskMenu.x, window.innerWidth - 210);
-        const top = Math.min(taskMenu.y, window.innerHeight - 200);
+        const left = fixedCssPx(Math.min(taskMenu.x, window.innerWidth - 210));
+        const top = fixedCssPx(Math.min(taskMenu.y, window.innerHeight - 200));
         return (
           <div
             ref={taskMenuRef}
@@ -1600,8 +1662,8 @@ export default function CalendarPane({
         const slot = slotMenu.slot;
         const childCount = slotTasks[slot.id]?.length ?? 0;
         const recurring = Boolean(slot.recurrence_id);
-        const left = Math.min(slotMenu.x, window.innerWidth - 210);
-        const top = Math.min(slotMenu.y, window.innerHeight - 160);
+        const left = fixedCssPx(Math.min(slotMenu.x, window.innerWidth - 210));
+        const top = fixedCssPx(Math.min(slotMenu.y, window.innerHeight - 160));
         return (
           <div
             ref={slotMenuRef}
@@ -1880,8 +1942,17 @@ export default function CalendarPane({
       {view !== "board" && (
       <div
         ref={wrapRef}
-        className="min-h-0 flex-1 p-2"
-        style={{ "--nuvo-hour": `${pxPerHour}px` } as React.CSSProperties}
+        className="nuvo-cal-host min-h-0 flex-1 p-2"
+        style={
+          {
+            "--nuvo-hour": `${pxPerHour}px`,
+            // Counter document CSS zoom so FC's getBoundingClientRect ↔ pageX
+            // math agrees (otherwise select/create/drag land on the wrong slot).
+            // Nested zoom keeps the host filling the pane visually — see
+            // docs in useUiScale / index.css `.fc-event-dragging`.
+            zoom: uiScale === 1 ? undefined : 1 / uiScale,
+          } as React.CSSProperties
+        }
       >
         <FullCalendar
           ref={calRef}
@@ -1893,6 +1964,7 @@ export default function CalendarPane({
           dayMaxEventRows={5}
           firstDay={settings?.week_start ?? 0}
           nowIndicator={!isMonth}
+          fixedMirrorParent={typeof document !== "undefined" ? document.body : undefined}
           nowIndicatorContent={(arg) =>
             arg.isAxis ? (
               <span className="whitespace-nowrap pr-1 text-micro font-semibold leading-none tabular-nums text-signal">
@@ -1923,22 +1995,41 @@ export default function CalendarPane({
             // en-CA locale reliably produces YYYY-MM-DD in local time
             const dateStr = arg.date.toLocaleDateString("en-CA");
             const wx = showWeather && !isMonth ? weatherIndex.get(dateStr) : undefined;
+            // Week/Day: today is a signal disc (the "now" colour — theme-aware).
+            // Month headers stay plain; the day *cell* carries the landmark.
+            const todayChip = isToday && !isMonth;
             return (
               <div className="flex flex-col items-center gap-0.5 py-1">
-                <span className="text-micro font-semibold tracking-widest text-muted">
+                <span
+                  className={`text-micro font-semibold tracking-widest ${
+                    todayChip ? "text-signal" : "text-muted"
+                  }`}
+                >
                   {weekday}
                 </span>
-                {/* Editorial serif numerals — judicious Fraunces, the day's anchor.
-                    Today is marked by accent ink + a small dot, not a heavy chip. */}
                 <span
                   className="masthead tabular-nums leading-none"
-                  style={{ fontSize: "20px", color: isToday ? "var(--accent)" : "var(--text)" }}
+                  style={
+                    todayChip
+                      ? {
+                          fontSize: "18px",
+                          color: "#fff",
+                          background: "var(--signal)",
+                          borderRadius: "999px",
+                          width: 28,
+                          height: 28,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }
+                      : {
+                          fontSize: "20px",
+                          color: isToday ? "var(--signal)" : "var(--text)",
+                        }
+                  }
                 >
                   {dateNum}
                 </span>
-                {isToday && !wx && (
-                  <span className="h-1 w-1 rounded-full" style={{ background: "var(--accent)" }} />
-                )}
                 {wx && (
                   <button
                     className="fast flex items-center gap-0.5 mt-0.5 rounded px-1 hover:bg-surface-2"
@@ -1958,6 +2049,36 @@ export default function CalendarPane({
                   </button>
                 )}
               </div>
+            );
+          }}
+          dayCellContent={(arg: DayCellContentArg) => {
+            // Only month cells need custom numerals — Week/Day put the date in
+            // the header, and injecting numbers into the anytime row is noise.
+            if (arg.view.type !== "dayGridMonth") return true;
+            return (
+              <span
+                className="masthead tabular-nums leading-none"
+                style={
+                  arg.isToday
+                    ? {
+                        fontSize: "13px",
+                        color: "#fff",
+                        background: "var(--signal)",
+                        borderRadius: "999px",
+                        width: 22,
+                        height: 22,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }
+                    : {
+                        fontSize: "16px",
+                        color: arg.isOther ? "var(--muted)" : "var(--text)",
+                      }
+                }
+              >
+                {arg.dayNumberText}
+              </span>
             );
           }}
           height="100%"

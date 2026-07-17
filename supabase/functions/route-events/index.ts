@@ -25,7 +25,7 @@ async function completeJSON<T>(prompt: string): Promise<T> {
     method: "POST",
     headers: llmHeaders(key),
     body: JSON.stringify({
-      model: llmModel("gpt-4.1-mini"),
+      model: llmModel("gpt-5.4-nano"),
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2, // attribution is judgment, not prose — keep it stable
       response_format: { type: "json_object" },

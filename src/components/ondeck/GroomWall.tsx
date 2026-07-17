@@ -12,12 +12,14 @@ import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useVertical } from "../../hooks/useVertical";
+import { useRecordContextMenu } from "../RecordContextMenu";
 import { domainById, tasksOf, type VerticalData } from "../../lib/vertical";
 import { type OnDeckLane, type ReadyTier } from "../../lib/onDeck";
 import { hasRoutingSignal, proofreadOutcome, suggestDomain, type DomainSuggestion, type ProofreadResult } from "../../lib/groomAI";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
 import { StepComposer, type StepLine } from "../grooming/StepComposer";
+import { ProjectShipAssess } from "../record/ShipAssess";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const MINS_CYCLE = [20, 45, 90];
@@ -39,6 +41,7 @@ function readyText(l: OnDeckLane): string {
 
 function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLane; onOpen: (id: string) => void }) {
   const store = useVertical();
+  const { onContextMenu, menu } = useRecordContextMenu();
   const p = lane.project;
   const accent = domainById(data, p.domainId)?.color ?? "var(--accent)";
   const color = TIER_COLOR[lane.readyTier];
@@ -62,12 +65,12 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
   };
 
   // ── status: finish it (drops off the wall) or park it (rests, greys, sorts right)
+  // Shipping asks first — same moment as the record and the deck. The card only
+  // fades once you've said yes; the assessment owns the write.
   const [completing, setCompleting] = useState(false);
+  const [shipping, setShipping] = useState(false);
   const parked = lane.readyTier === "parked";
-  const markDone = () => {
-    setCompleting(true);
-    window.setTimeout(() => store.updateProject(p.id, { status: "complete" }), 240);
-  };
+  const markDone = () => setShipping(true);
   const togglePark = () => store.updateProject(p.id, { status: parked ? "in_progress" : "waiting" });
 
   // ── AI · auto domain suggestion (only when the area is empty + there's signal)
@@ -211,6 +214,7 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
   return (
     <div
       onKeyDown={onKeyDown}
+      onContextMenu={onContextMenu("project", p.id)}
       className="fast flex w-[404px] shrink-0 flex-col gap-4 rounded-2xl border bg-surface px-6 pb-5 pt-5"
       style={{
         borderColor: "var(--line)",
@@ -219,6 +223,7 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
         transform: completing ? "scale(.97)" : undefined,
       }}
     >
+      {menu}
       {/* left domain rail — color demarcation of the area (identity); readiness
           lives in the meter below (status). */}
       <div className="relative">
@@ -430,6 +435,10 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
           {parked ? "Unpark" : "Park"}
         </button>
       </div>
+
+      {shipping && (
+        <ProjectShipAssess id={p.id} onClose={() => setShipping(false)} onShipped={() => setCompleting(true)} />
+      )}
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   itemSelectRowClass,
   itemSelectVisual,
 } from "./collectionSelection";
+import { useRecordContextMenu } from "../RecordContextMenu";
 
 export interface CollectionRecord {
   id: string;
@@ -61,6 +62,8 @@ export interface CollectionConfig {
   selectable?: boolean;
   onBulkDelete?: (ids: string[]) => void;
   domains?: Domain[];
+  /** Enables the shared right-click menu on each row (open · complete · park · delete). */
+  recordKind?: "project" | "initiative";
 }
 
 /** Marquee-select surface — stretches to the floor pane so drag can start in open space. */
@@ -129,7 +132,8 @@ export default function Collection({ config }: { config: CollectionConfig }) {
 type SortKey = "title" | "status" | "progress" | "targetDate";
 
 function TableView({ config, selection }: { config: CollectionConfig; selection: CollectionSelection }) {
-  const { records, statusOptions, statusColors, extraColumns = [], selectable } = config;
+  const { records, statusOptions, statusColors, extraColumns = [], selectable, recordKind } = config;
+  const { onContextMenu, menu } = useRecordContextMenu();
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "status", dir: 1 });
 
   const sorted = useMemo(() => {
@@ -165,6 +169,7 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
       selection={selection}
       className=""
     >
+      {menu}
       <div className="grid shrink-0 items-center gap-3 border-b border-line py-2.5 pl-4 pr-2" style={{ gridTemplateColumns: cols }}>
         {selectable && (
           <SelectCheckbox checked={selection.allSelected} onToggle={selection.toggleAll} />
@@ -185,6 +190,7 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
             key={r.id}
             data-select-id={r.id}
             ref={(el) => selection.registerRef(r.id, el)}
+            onContextMenu={recordKind ? onContextMenu(recordKind, r.id) : undefined}
             onMouseDown={(e) => { if (e.shiftKey || e.metaKey || e.ctrlKey) selection.itemPointerDown(r.id)(e); }}
             onClick={(e) => {
               if (e.shiftKey || e.metaKey || e.ctrlKey) return;

@@ -90,6 +90,7 @@ export default function FloorStanding({
   onRefine,
   onAllocate,
   showCapacity = true,
+  quietSynthesis = false,
 }: {
   kind: Kind;
   onRefine: () => void;
@@ -97,6 +98,10 @@ export default function FloorStanding({
   /** When false, the WIP Capacity gauge is omitted — the surface owns that read
    *  elsewhere (e.g. the projects Commitment meter folds it in). */
   showCapacity?: boolean;
+  /** Under a floor that already owns a `masthead` hero (the "Table" header), the
+   *  synthesis renders as a quiet muted line instead of a second serif hero —
+   *  one hero per surface. Standalone (Standing view), it stays the hero. */
+  quietSynthesis?: boolean;
 }) {
   const { data } = useVertical();
   const s = readStanding(data, kind);
@@ -138,7 +143,11 @@ export default function FloorStanding({
         />
       </div>
 
-      <p className="masthead mt-5 max-w-[44ch] text-lead text-ink">{s.synthesis}</p>
+      {quietSynthesis ? (
+        <p className="mt-4 max-w-[52ch] text-body text-muted">{s.synthesis}</p>
+      ) : (
+        <p className="masthead mt-5 max-w-[44ch] text-lead text-ink">{s.synthesis}</p>
+      )}
     </div>
   );
 }

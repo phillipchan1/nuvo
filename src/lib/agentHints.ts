@@ -7,7 +7,7 @@ export interface AgentHintContext {
   projectView?: ProjectView;
   initiativeView?: DetailView;
   tab?: RailTab;
-  mobileTab?: "now" | "today" | "week" | "inbox";
+  mobileTab?: "today" | "week" | "inbox";
   projectName?: string | null;
   initiativeName?: string | null;
   domainName?: string | null;
@@ -26,17 +26,6 @@ export function agentHints(ctx: AgentHintContext): AgentHints {
   }
 
   switch (ctx.rung) {
-    case "now":
-      return {
-        prompt: "Running today — prep, reschedule, or lighten the load.",
-        starters: [
-          "What should I prep for my next meeting?",
-          "Where are my open blocks later today?",
-          "Move my non-urgent afternoon to tomorrow",
-          "I'm wiped — lighten today's plan",
-        ],
-      };
-
     case "day":
       return scheduleHints(ctx.tab ?? "today");
 
@@ -129,8 +118,6 @@ function scheduleHints(tab: RailTab | "week"): AgentHints {
 
 function mobileHints(tab: AgentHintContext["mobileTab"]): AgentHints {
   switch (tab) {
-    case "now":
-      return agentHints({ rung: "now" });
     case "inbox":
       return scheduleHints("inbox");
     case "week":

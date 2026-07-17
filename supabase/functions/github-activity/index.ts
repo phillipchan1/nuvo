@@ -147,7 +147,7 @@ async function completeJSON<T>(prompt: string): Promise<T> {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4.1-mini",
+      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5.4-nano",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.4, // a little warmth — this is human-facing prose, lightly
       response_format: { type: "json_object" },

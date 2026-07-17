@@ -1,10 +1,7 @@
 // useWeekReport — the Week's Plan / Review data for a given week, composed
 // deterministically (composeWeek). The CURRENT week is forming and fully live.
-// Past weeks are SEALED and recomposed from data already persisted per-week — the
-// week's own sprint row (its priorities + verdicts) and the domain pulse
-// (`Domain.weeks`, 13-week invested-hours history) — so the emblem regenerates
-// instantly without a separate store. (Storage of the nano prose comes later;
-// the deterministic prose regenerates here.)
+// Past weeks prefer a sealed week_reviews snapshot when one exists; otherwise
+// they recompose from the week's sprint + Domain.weeks pulse.
 
 import { useMemo } from "react";
 import { addDays, differenceInCalendarWeeks, startOfWeek } from "date-fns";
@@ -15,6 +12,9 @@ import { useVertical } from "./useVertical";
 import { useExternalEvents } from "./useCalendar";
 import { useScheduledTasks } from "./useTasks";
 import { useSettings } from "./useSettings";
+import { useEventRouting } from "./useEventRouting";
+import { useActivityUnits } from "./useActivity";
+import { useWeekReviewRow } from "./useWeekReview";
 import { composeWeek, type WeekReport } from "../lib/composeWeek";
 import type { BigRock, Sprint } from "../lib/types";
 
@@ -28,6 +28,10 @@ export function weeksBackFrom(weekStartISO: string, now: Date): number {
   return differenceInCalendarWeeks(current, target, { weekStartsOn: 1 });
 }
 
+function isFullReport(r: unknown): r is WeekReport {
+  return !!r && typeof r === "object" && "emblem" in r && "domains" in r && "evidence" in r;
+}
+
 export function useWeekReport(weekStartISO: string, now: Date): WeekReport {
   const weekStart = parseDateISO(weekStartISO);
   const startISO = weekStart.toISOString();
@@ -39,6 +43,9 @@ export function useWeekReport(weekStartISO: string, now: Date): WeekReport {
   const { settings } = useSettings();
   const { data: events = [] } = useExternalEvents(startISO, endISO);
   const { data: blocks = [] } = useScheduledTasks(startISO, endISO);
+  const eventRouting = useEventRouting();
+  const { data: activityUnits = [] } = useActivityUnits(startISO, endISO);
+  const sealedRow = useWeekReviewRow(weekStartISO);
 
   // A past week reads its priorities from that week's own sprint row.
   const { data: pastSprint } = useQuery({
@@ -56,8 +63,23 @@ export function useWeekReport(weekStartISO: string, now: Date): WeekReport {
   });
 
   return useMemo(() => {
-    // Past-week overrides: priorities from the week's sprint, hours from the
-    // domain pulse (weeks[] is 13 entries oldest→now; index 12 = current week).
+    // Prefer a durable sealed snapshot for past weeks (evidence + Find intact).
+    if (isPast && isFullReport(sealedRow.data?.report)) {
+      const snap = sealedRow.data!.report;
+      // Overlay warmer narration if stored separately.
+      if (sealedRow.data?.find_narration && snap.find) {
+        return {
+          ...snap,
+          find: {
+            ...snap.find,
+            headline: sealedRow.data.find_narration.headline,
+            detail: sealedRow.data.find_narration.detail,
+          },
+        };
+      }
+      return snap;
+    }
+
     let bigRocks: BigRock[] | undefined;
     let domainHours: Record<string, number> | undefined;
     let ambient: number | undefined;
@@ -83,6 +105,23 @@ export function useWeekReport(weekStartISO: string, now: Date): WeekReport {
       domainHours,
       ambient,
       sealed: isPast,
+      calendarDomainMap: settings?.calendar_domain_map ?? {},
+      eventRouting,
+      activityUnits,
+      weeksBack: back,
     });
-  }, [weekStartISO, now, isPast, back, pastSprint, vertical, events, blocks, settings?.work_start_minutes, settings?.work_end_minutes, settings?.hidden_calendar_ids]);
+  }, [
+    weekStartISO,
+    now,
+    isPast,
+    back,
+    pastSprint,
+    vertical,
+    events,
+    blocks,
+    settings,
+    eventRouting,
+    activityUnits,
+    sealedRow.data,
+  ]);
 }

@@ -35,6 +35,99 @@ export function priorityWork(data: VerticalData, rock: BigRock): RockWork {
   };
 }
 
+// ── what's on deck for a week — the ONE definition ───────────────────────────
+// On Deck owns *when* a project happens: dragging it onto a week writes its
+// committed span (start_date → target_date). So the week's pushes are DERIVED
+// from that span, never stored. A stored membership list is what let Sunday drift
+// from the board (showing a project you'd already moved to another week, and
+// missing one you'd moved in). No span at all = "needs a week" — not on deck.
+//
+// The sprint's big_rocks jsonb survives ONLY as the per-week verdict (landed /
+// carried), looked up by project_id — that's the one fact a project can't tell
+// you, since a push landing isn't the project finishing. For PAST weeks the
+// snapshot is the historical record and must NOT be re-derived (that would
+// rewrite what you actually committed to back then).
+
+const DAY_MS = 86_400_000;
+
+/** Does the project's committed On Deck span cover any of this week's WORKING
+ *  days (Mon–Fri)?
+ *
+ *  Weekdays, not the whole 7, on purpose: the board anchors a span to its own
+ *  column's week start, which the user's `week_start` setting can put on a
+ *  Sunday — while the sprint week here is always Monday-based. Testing the full
+ *  7 days makes those two grids share a boundary day, so a project committed to
+ *  *next* week (e.g. Sun Jul 19 → Thu Jul 23) leaks into the Mon Jul 13–19 week
+ *  through that single overlapping Sunday. A span always covers its own week's
+ *  weekdays and never the prior week's, so this reads the same under either
+ *  convention. */
+function spansWeek(p: Project, weekStartISO: string): boolean {
+  const monday = new Date(weekStartISO + "T00:00:00").getTime();
+  const saturday = monday + 5 * DAY_MS; // exclusive — Mon 00:00 → Sat 00:00
+  if (!p.targetDate) return false; // no finish line = still needs a week
+  const end = new Date(p.targetDate + "T23:59:59").getTime();
+  const start = p.startDate ? new Date(p.startDate + "T00:00:00").getTime() : end;
+  if (Number.isNaN(end) || Number.isNaN(start)) return false;
+  return start < saturday && end >= monday;
+}
+
+/** Did this project ship *inside* the given week? (Its shipped_at stamp, set at
+ *  the updateProject choke point, is the only honest answer — target_date is
+ *  when it was DUE.) */
+function shippedInWeek(p: Project, weekStartISO: string): boolean {
+  if (p.status !== "complete" || !p.shippedAt) return false;
+  const monday = new Date(weekStartISO + "T00:00:00").getTime();
+  const at = new Date(p.shippedAt).getTime();
+  if (Number.isNaN(at)) return false;
+  return at >= monday && at < monday + 7 * DAY_MS;
+}
+
+/** The projects you can still WORK on this week — open, committed to this week.
+ *  This is the planning/pull question ("what should I pull from?"), so shipped
+ *  and dropped projects are correctly gone. For the week's SCOREBOARD, which
+ *  must keep what you shipped, use `weekPushes`. */
+export function projectsOnDeck(d: VerticalData, weekStartISO: string): Project[] {
+  return d.projects.filter((p) => {
+    if (p.status === "complete" || p.status === "cancelled") return false;
+    return spansWeek(p, weekStartISO);
+  });
+}
+
+/** A push: a project committed to this week, plus its stored verdict. */
+export interface WeekPush {
+  project: Project;
+  rock: BigRock | null; // the verdict record, if one exists yet
+  done: boolean;
+  /** shipped inside this week — the loudest possible verdict. */
+  shipped: boolean;
+}
+
+/** The week's SLATE — what you committed to this week, derived from the spans,
+ *  joined to the stored verdict.
+ *
+ *  Deliberately NOT `projectsOnDeck`: that drops anything complete, so shipping
+ *  a project on Wednesday used to erase it from the week's plan and quietly
+ *  shrink "N of M landed" — finishing your biggest thing made the scoreboard
+ *  forget it. A project that shipped *inside* this week stays on this week's
+ *  slate and reads as the win it is; one that shipped in an earlier week is
+ *  correctly gone. */
+export function weekPushes(d: VerticalData, weekStartISO: string): WeekPush[] {
+  return d.projects
+    .filter((p) => {
+      if (p.status === "cancelled") return false;
+      if (!spansWeek(p, weekStartISO)) return false;
+      return p.status === "complete" ? shippedInWeek(p, weekStartISO) : true;
+    })
+    .map((project) => {
+      const rock = d.bigRocks.find((r) => r.project_id === project.id) ?? null;
+      const shipped = project.status === "complete";
+      // Shipping the project inside the week says the week moved it, louder than
+      // the checkbox does — so it READS landed. Display only: shipping never
+      // writes the verdict, so un-shipping simply reveals the verdict again.
+      return { project, rock, done: Boolean(rock?.done_at) || shipped, shipped };
+    });
+}
+
 /** A priority's verdict for the Review / forming Plan. */
 export type PriorityVerdict = "landed" | "carried" | "open";
 

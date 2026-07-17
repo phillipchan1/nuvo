@@ -9,7 +9,7 @@ import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
 import TaskRow, { type TaskMeta } from "./TaskRow";
-import WeekReadiness from "./WeekReadiness";
+import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import { SectionLabel } from "./ui";
 
 export type RailTab = "inbox" | "today";
@@ -50,6 +50,7 @@ export default function LeftRail({
   now,
   railRef,
   collapsed = false,
+  weekDoor,
 }: {
   tab: RailTab;
   setTab: (t: RailTab) => void;
@@ -63,6 +64,8 @@ export default function LeftRail({
   railRef: React.MutableRefObject<HTMLDivElement | null>;
   /** Focus mode: slide the rail closed so the calendar takes the whole width. */
   collapsed?: boolean;
+  /** The week door's lifecycle, worn by the WeekPanel header that crowns us. */
+  weekDoor?: WeekDoor;
 }) {
   const { data: vertical, toggleTaskSprint } = useVertical();
   const { nav } = useAppNavigation();
@@ -82,8 +85,9 @@ export default function LeftRail({
   const [capture, setCapture] = useState("");
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
-  // Today sections start open; collapse when you want visual quiet (Loose ends pattern).
-  const [todayOpen, setTodayOpen] = useState({ planned: true, scheduled: true, done: true });
+  // Done starts collapsed — it's the quiet tail, a single line until you want it
+  // (the Loose-ends pattern). The active day work is one flat list, not sections.
+  const [todayOpen, setTodayOpen] = useState({ done: false });
   const toggleToday = (key: keyof typeof todayOpen) =>
     setTodayOpen((s) => ({ ...s, [key]: !s[key] }));
 
@@ -357,9 +361,14 @@ export default function LeftRail({
         onPointerDown={startResize}
         className={`absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35 ${collapsed ? "hidden" : ""}`}
       />
-      {/* Tabs */}
+      {/* The week's plan — priorities held in view all week + the readiness
+          "loose ends" line, crowning the rail. Intent on top; status a line.
+          Its header is the week door. */}
+      <WeekPanel door={weekDoor} />
+      {/* Tabs — Today first (the day is where the rail's lower zone lives);
+          Inbox second. This zone is "work the day," under the week crown. */}
       <div className="flex">
-        {(["inbox", "today"] as const).map((t) => (
+        {(["today", "inbox"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -373,43 +382,6 @@ export default function LeftRail({
           </button>
         ))}
       </div>
-
-      {/* Capture — the front door. Status (WeekReadiness) lives below, as a footer. */}
-      <form onSubmit={(e) => void submitCapture(e)} className="p-2">
-        <div className="relative">
-          {/* A quill — capture is organic free text, the front door, not a form. */}
-          <svg
-            aria-hidden
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-accent"
-            width="15" height="15" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
-          >
-            <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
-            <line x1="16" y1="8" x2="2" y2="22" />
-            <line x1="17.5" y1="15" x2="9" y2="15" />
-          </svg>
-          <input
-            ref={captureRef}
-            value={capture}
-            disabled={capturing}
-            onChange={(e) => {
-              setCapture(e.target.value);
-              if (captureError) setCaptureError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void submitCapture();
-              }
-            }}
-            placeholder='Capture… try "call David tomorrow 9am 30m #work !high"'
-            className="w-full rounded-lg border border-line bg-surface-2 py-2 pl-9 pr-3 text-body outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
-          />
-        </div>
-        {captureError && (
-          <div className="mt-1 px-0.5 text-label text-signal">{captureError}</div>
-        )}
-      </form>
 
       {/* List */}
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -441,6 +413,7 @@ export default function LeftRail({
 
         {tab === "today" && (
           <>
+            {/* Needs you — overdue / rolled work stays the one loud group. */}
             {todaySections.pinned.length > 0 && (
               <>
                 <SectionLabel>Needs you</SectionLabel>
@@ -449,63 +422,86 @@ export default function LeftRail({
                 ))}
               </>
             )}
-            <SectionLabel
-              open={todayOpen.planned}
-              onToggle={() => toggleToday("planned")}
-              count={todaySections.unblocked.length}
-            >
-              Planned
-            </SectionLabel>
-            {todayOpen.planned && (
-              <>
-                {todaySections.unblocked.map((t) => (
-                  <TaskRow key={t.id} {...rowProps(t)} />
-                ))}
-                {todaySections.unblocked.length === 0 && (
-                  <div className="px-3 py-2 text-caption text-muted">Nothing unblocked.</div>
-                )}
-              </>
+            {/* The day's work — planned + calendar-blocked as one flat list. The
+                old split into three titled, counted sections was three headers
+                doing one job; a blocked task already shows its time, and the
+                calendar sits right beside the rail. */}
+            {[...todaySections.unblocked, ...todaySections.scheduled].map((t) => (
+              <TaskRow key={t.id} {...rowProps(t)} />
+            ))}
+            {todaySections.pinned.length +
+              todaySections.unblocked.length +
+              todaySections.scheduled.length ===
+              0 && (
+              <div className="px-3 py-6 text-center text-caption text-muted">
+                Nothing for today yet — capture below, or drag from the calendar.
+              </div>
             )}
-            <SectionLabel
-              open={todayOpen.scheduled}
-              onToggle={() => toggleToday("scheduled")}
-              count={todaySections.scheduled.length}
-            >
-              Scheduled on calendar
-            </SectionLabel>
-            {todayOpen.scheduled && (
-              <>
-                {todaySections.scheduled.map((t) => (
-                  <TaskRow key={t.id} {...rowProps(t)} />
-                ))}
-                {todaySections.scheduled.length === 0 && (
-                  <div className="px-3 py-2 text-caption text-muted">Drag tasks onto the calendar to block time.</div>
-                )}
-              </>
-            )}
+            {/* Done — the quiet tail, folded to a single line (Loose-ends pattern). */}
             {todaySections.done.length > 0 && (
-              <>
-                <SectionLabel
-                  open={todayOpen.done}
-                  onToggle={() => toggleToday("done")}
-                  count={todaySections.done.length}
+              <div className="mt-1 border-t border-line">
+                <button
+                  onClick={() => toggleToday("done")}
+                  className="fast tap flex w-full items-center gap-2 px-3 py-2 text-left"
+                  aria-expanded={todayOpen.done}
                 >
-                  Done
-                </SectionLabel>
+                  <span className="text-caption text-muted">{todaySections.done.length} done today</span>
+                  <span className="ml-auto shrink-0 text-micro text-muted">{todayOpen.done ? "▾" : "▸"}</span>
+                </button>
                 {todayOpen.done &&
                   todaySections.done.map((t) => (
                     <TaskRow key={t.id} {...rowProps(t)} />
                   ))}
-              </>
+              </div>
             )}
           </>
         )}
       </div>
 
-      {/* This week — the inspectable "what's left to groom" checklist, demoted to
-          an ambient footer: status, not a primary action (the spine rung carries
-          the urgency). Quiet reassurance when groomed, a gentle nudge when not. */}
-      <WeekReadiness />
+      {/* Capture — floats at the foot of the rail as a pill, out of the
+          hierarchy: it interrupts every mode, so it isn't a titled section (and
+          mirrors the mobile ＋ FAB). Stays a real <input> so iOS dictation works
+          (low-data-entry). Press C to focus. */}
+      <form onSubmit={(e) => void submitCapture(e)} className="shrink-0 border-t border-line p-2.5">
+        <div className="relative">
+          {/* A quill — capture is organic free text, the front door, not a form. */}
+          <svg
+            aria-hidden
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-accent"
+            width="15" height="15" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+          >
+            <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
+            <line x1="16" y1="8" x2="2" y2="22" />
+            <line x1="17.5" y1="15" x2="9" y2="15" />
+          </svg>
+          <input
+            ref={captureRef}
+            value={capture}
+            disabled={capturing}
+            onChange={(e) => {
+              setCapture(e.target.value);
+              if (captureError) setCaptureError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void submitCapture();
+              }
+            }}
+            placeholder="Capture anything…"
+            className="w-full rounded-full border border-line-strong bg-surface py-2 pl-10 pr-9 text-body outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
+          />
+          {!capture && (
+            <kbd className="mono pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-line px-1 text-micro text-muted">
+              C
+            </kbd>
+          )}
+        </div>
+        {captureError && (
+          <div className="mt-1 px-1 text-label text-signal">{captureError}</div>
+        )}
+      </form>
 
       {/* Bulk action bar — slides up when ≥2 tasks are multi-selected */}
       {selectedIds.size > 1 && (

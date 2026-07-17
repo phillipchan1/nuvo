@@ -127,8 +127,14 @@ export interface Project {
   description: string;
   startDate: string | null;
   targetDate: string | null;
+  /** The EFFECTIVE status — every task done derives `complete` (buildVertical),
+   *  so this is the one honest answer every surface reads. */
   status: ProjectStatus;
+  /** The raw stored value, before the tasks got a vote — only the record needs
+   *  it, to tell "you set this" apart from "the tasks said so". */
+  storedStatus: ProjectStatus;
   progress: number; // 0..100 — fallback when no tasks yet
+  shippedAt: string | null; // when you SHIPPED it — the day the judgment was made
   createdAt: string | null; // when created — the "recently created" grooming prior
   tendedAt: string | null; // last groomed/rested in a Tending session — the snooze
   verification: SoundnessVerdict | null; // Nuvo's last soundness judgment (cached)
@@ -161,6 +167,8 @@ export interface VTask {
   doDate: string | null;
   /** Inside a time slot — the slot carries the day/time; the task's own start_time is null. */
   slotId: string | null;
+  /** when it was captured — lets a week judge the plan it made, not what landed after. */
+  createdAt: string | null;
   completedAt: string | null;
   assignee: "me" | "agent";
   rollCount: number;
@@ -245,6 +253,7 @@ export interface ProjectRow {
   target_date: string | null;
   status: string;
   progress: number;
+  shipped_at?: string | null;
   sort_order: number;
   created_at?: string;
   tended_at?: string | null;
@@ -319,6 +328,7 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
     sprint: Boolean(currentSprintId && t.sprint_id === currentSprintId),
     doDate: t.do_date,
     slotId: t.slot_id,
+    createdAt: t.created_at ?? null,
     completedAt: t.completed_at,
     assignee: t.assignee ?? "me",
     rollCount: t.roll_count ?? 0,
@@ -381,26 +391,78 @@ export function buildVertical(
 
   const initiativeDomain = new Map(initiatives.map((i) => [i.id, i.domainId]));
 
+  // ── the tasks' verdict on their project — computed BEFORE projects are built,
+  // straight off the raw rows, so a project's status can be derived once here and
+  // every consumer downstream reads the same honest answer (see below).
+  const roll = new Map<string, { open: number; total: number; lastDoneAt: string | null }>();
+  for (const t of taskRows) {
+    if (t.status === "trashed" || !t.project_id) continue;
+    const e = roll.get(t.project_id) ?? { open: 0, total: 0, lastDoneAt: null };
+    e.total++;
+    if (t.status === "done") {
+      if (t.completed_at && (!e.lastDoneAt || t.completed_at > e.lastDoneAt)) e.lastDoneAt = t.completed_at;
+    } else e.open++;
+    roll.set(t.project_id, e);
+  }
+
   const projects: Project[] = [...projectRows]
     .sort((a, b) => a.sort_order - b.sort_order)
-    .map((p) => ({
-      id: p.id,
-      initiativeId: p.initiative_id,
-      keyResultId: p.key_result_id ?? null,
-      domainId: p.domain_id ?? (p.initiative_id ? initiativeDomain.get(p.initiative_id) ?? "" : ""),
-      name: p.name,
-      outcome: p.outcome,
-      description: p.description,
-      startDate: p.start_date,
-      targetDate: p.target_date,
-      status: normalizeProjectStatus(p.status),
-      progress: p.progress,
-      createdAt: p.created_at ?? null,
-      tendedAt: p.tended_at ?? null,
-      verification: p.verification ?? null,
-      verifiedAt: p.verified_at ?? null,
-      brief: p.brief ?? null,
-    }));
+    .map((p) => {
+      const stored = normalizeProjectStatus(p.status);
+      const r = roll.get(p.id);
+      // ── the tasks decide whether a project is complete ──────────────────────
+      // Finish every task and the project IS complete — derived right here, so it
+      // lands everywhere at once (table, deck, week panel, readiness) the instant
+      // the last box is ticked. No cascade write to fire and no mutation path to
+      // miss (tasks close from the rail, the record, the agent…).
+      //
+      // It runs BOTH ways, which is the point: untick a task and the project
+      // un-completes itself, even one shipped by hand — a stored `complete` can't
+      // outvote live work, or a reopened task would leave a "Shipped" project with
+      // something still open (the false signal we just spent the day removing).
+      //
+      // Guards: it takes at least ONE task to be complete (an empty project is
+      // unstarted, not finished — a hand-set status is the only way there), and
+      // `waiting` / `cancelled` are yours and win outright. We never touch the
+      // backlog↔in_progress line — that's a stored distinction ("not started yet"
+      // is real even with tasks on it). The raw value survives as `storedStatus`
+      // for the record's "you set this" affordance.
+      const parked = stored === "waiting" || stored === "cancelled";
+      const byTasks: ProjectStatus | null =
+        parked || r == null || r.total === 0
+          ? null
+          : r.open === 0
+            ? "complete"
+            : stored === "complete"
+              ? "in_progress" // reopened — live work outvotes the old seal
+              : null;
+      const status = byTasks ?? stored;
+      const complete = status === "complete";
+      return {
+        id: p.id,
+        initiativeId: p.initiative_id,
+        keyResultId: p.key_result_id ?? null,
+        domainId: p.domain_id ?? (p.initiative_id ? initiativeDomain.get(p.initiative_id) ?? "" : ""),
+        name: p.name,
+        outcome: p.outcome,
+        description: p.description,
+        startDate: p.start_date,
+        targetDate: p.target_date,
+        status,
+        storedStatus: stored,
+        progress: p.progress,
+        // Derived-complete has no stamp of its own: it shipped when its last task
+        // did, which is exactly what the week's scoreboard needs to date it. And
+        // a reopened project has no ship date at all — clearing it keeps the old
+        // stamp from counting it as a win on the week's scoreboard.
+        shippedAt: complete ? p.shipped_at ?? r?.lastDoneAt ?? null : null,
+        createdAt: p.created_at ?? null,
+        tendedAt: p.tended_at ?? null,
+        verification: p.verification ?? null,
+        verifiedAt: p.verified_at ?? null,
+        brief: p.brief ?? null,
+      };
+    });
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
 
@@ -644,6 +706,17 @@ export function projectProgress(d: VerticalData, p: Project): number {
   if (ts.length === 0) return p.progress;
   const done = ts.filter((t) => t.status === "done").length;
   return Math.round((done / ts.length) * 100);
+}
+
+/** The project's still-open work — what wouldn't ship with it. */
+export function openTasksOf(d: VerticalData, projectId: string): VTask[] {
+  return tasksOf(d, projectId).filter((t) => t.status !== "done");
+}
+
+/** True when the stored status is one of the sticky human overrides the
+ *  derivation honors verbatim — used by the record to offer "back to auto". */
+export function isStatusOverride(status: string): boolean {
+  return status === "waiting" || status === "cancelled" || status === "complete";
 }
 
 /** An initiative's OUTCOME attainment — the mean of its key results' Gain.

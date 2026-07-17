@@ -348,8 +348,23 @@ export function useTaskMutations() {
 
     trash: (t: Task) => patchTask(t.id, { status: "trashed" }),
 
+    /** Release a task from its time. A task inside a PROJECT has a home and rests
+     *  there — it must never land in the inbox, which is for captures with no home
+     *  (forcing "inbox" here stranded project work in triage AND out of
+     *  backlogTasks, which requires !inbox, so it nagged from the inbox about a
+     *  project slotted to a different week entirely).
+     *
+     *  A domain tag is deliberately NOT a home: an SCE-tagged capture is still
+     *  unsorted. Note restingStatus() disagrees — it counts domain/sprint as
+     *  parented ("parked on a domain = someday"). That older model hasn't been
+     *  reconciled, so don't swap this for restingStatus() without settling it. */
     backToInbox: (t: Task) =>
-      patchTask(t.id, { status: "inbox", do_date: null, start_time: null, slot_id: null }),
+      patchTask(t.id, {
+        status: t.project_id ? "backlog" : "inbox",
+        do_date: null,
+        start_time: null,
+        slot_id: null,
+      }),
 
     /** Reverse of backToInbox: file an inbox task back under its project/initiative/domain. */
     fileToProject: (t: Task) => patchTask(t.id, { status: "backlog" }),

@@ -13,6 +13,7 @@
 import { useRef, useState } from "react";
 import { startOfQuarter } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
+import { useRecordContextMenu } from "../RecordContextMenu";
 import {
   domainById,
   initiativeAttainment,
@@ -54,6 +55,7 @@ function InitiativeGroomCard({
   onOpen: (id: string) => void;
 }) {
   const store = useVertical();
+  const { onContextMenu, menu } = useRecordContextMenu();
   const i = lane.initiative;
   const accent = domainById(data, i.domainId)?.color ?? "var(--accent)";
   const color = STATE_COLOR[lane.state];
@@ -171,6 +173,7 @@ function InitiativeGroomCard({
 
   return (
     <div
+      onContextMenu={onContextMenu("initiative", i.id)}
       className="fast flex w-[404px] shrink-0 flex-col gap-4 rounded-2xl border bg-surface px-6 pb-5 pt-5"
       style={{
         borderColor: "var(--line)",
@@ -179,6 +182,7 @@ function InitiativeGroomCard({
         transform: completing ? "scale(.97)" : undefined,
       }}
     >
+      {menu}
       {/* header — domain rail, done check, name, slip pill */}
       <div className="relative">
         <span className="absolute -left-5 top-0.5 h-[calc(100%-2px)] w-[3px] rounded-full" style={{ background: accent, opacity: 0.9 }} />

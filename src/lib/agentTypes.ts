@@ -1,4 +1,5 @@
 import type { MarqueeDirective } from "./marquee";
+import type { BigRock } from "./types";
 
 export interface AgentAttachment {
   id: string;
@@ -28,9 +29,37 @@ export interface AgentSuggestion {
   message: string;
 }
 
+/** What an action DID to the record — drives the card's ribbon, not its layout. */
+export type AgentVerb =
+  | "created"
+  | "slotted"
+  | "moved"
+  | "updated"
+  | "done"
+  | "trashed"
+  | "unslotted";
+
+/** A pointer to the row an action touched. The edge deliberately does NOT
+ *  serialize the record's fields: the card looks the row up in the live cache,
+ *  so scrolling back to it an hour later shows what's true now, not a snapshot
+ *  that quietly went stale the moment you moved the task somewhere else. */
+export interface AgentRef {
+  kind: "task" | "event" | "priority";
+  id: string;
+}
+
+/** The inverse of an action — see the same type in supabase/functions/agent/tools.ts. */
+export type AgentUndo =
+  | { kind: "task"; patch: Record<string, unknown> }
+  | { kind: "priority"; id: string; restore: BigRock | null };
+
 export interface AgentAction {
   tool: string;
+  /** Always populated — cards degrade to this line when the ref can't render. */
   summary: string;
+  verb?: AgentVerb;
+  ref?: AgentRef;
+  undo?: AgentUndo;
 }
 
 export type AgentContentPart =

@@ -447,6 +447,28 @@ html.tauri-macos .spine-top {
   transition: border-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
 }
 
+/* ── Inline edit ───────────────────────────────────────────────────────────
+   Always-editable text (contenteditable) that reads as plain text: no box, no
+   click-to-input mode flip. It inherits the surrounding typography and wraps
+   like normal text; a whisper of tint on hover/focus is the only affordance. */
+.inline-edit {
+  outline: none;
+  cursor: text;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  transition: background-color var(--d-fast) var(--ease-out);
+}
+.inline-edit:hover { background: var(--accent-soft); }
+.inline-edit:focus { background: var(--accent-soft); }
+.inline-edit:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  font-style: italic;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
 /* Elevation utilities */
 .elev-1 { box-shadow: var(--shadow-1); }
 .elev-2 { box-shadow: var(--shadow-2); }
@@ -931,8 +953,8 @@ textarea:focus {
      the spine, so the day reads as a single canvas, not a boxed widget. */
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: transparent;
-  /* No today wash — it filled the whole day in Day view and split the canvas.
-     Today is marked by its date number alone. */
+  /* No FC-wide today wash — Day view is a single column and a band would
+     tint the whole canvas. Month + Week mark today themselves (see below). */
   --fc-today-bg-color: transparent;
   --fc-now-indicator-color: var(--signal);
   --fc-event-border-color: transparent;
@@ -976,8 +998,7 @@ textarea:focus {
 }
 /* Weekend columns: a whisper of shading, never a filled band — Sat/Sun read
    as "lighter" days without breaking the warm-paper continuity. Declared
-   before the today rule below so today's underline still wins when today
-   falls on a weekend. */
+   before the today rules below so today still wins when it falls on a weekend. */
 .fc .fc-col-header-cell.fc-day-sat,
 .fc .fc-col-header-cell.fc-day-sun {
   background: color-mix(in srgb, var(--text) 3%, transparent);
@@ -990,10 +1011,34 @@ textarea:focus {
 .fc .fc-timegrid-col.fc-day-sun {
   background: color-mix(in srgb, var(--text) 3%, transparent);
 }
-/* Today column header: just a soft accent underline — no band. */
+
+/* ── Today — findable at a glance ─────────────────────────────────────────
+   `--signal` is the "now" token (theme/skin/palette-aware). Month gets a soft
+   cell wash; Week gets a whisper of column tint + a stronger header rule.
+   Day view is intentionally left alone (one column = whole canvas). */
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
+  background: color-mix(in srgb, var(--signal) 13%, transparent);
+}
+.fc .fc-daygrid-body .fc-daygrid-day.fc-day-today:hover .fc-daygrid-day-frame {
+  background: color-mix(in srgb, var(--signal) 18%, transparent);
+}
+/* Week column — a readable wash (5% vanished on warm paper). Scoped to
+   timeGridWeek so Day view never tints the whole canvas. */
+.fc-timeGridWeek-view .fc-timegrid-col.fc-day-today,
+.fc-timeGridWeek-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-frame {
+  background: color-mix(in srgb, var(--signal) 9%, transparent);
+}
+.fc-timeGridWeek-view .fc-col-header-cell.fc-day-today {
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--signal) 60%, transparent);
+}
 .fc .fc-col-header-cell.fc-day-today {
+  border-bottom: 2px solid color-mix(in srgb, var(--signal) 55%, transparent);
+}
+/* Month weekday headers (SUN…SAT): keep the underline, skip the wash — the
+   cell itself already carries the landmark. */
+.fc-dayGridMonth-view .fc-col-header-cell.fc-day-today {
   background: transparent;
-  border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 28%, transparent);
 }
 /* Column dividers: barely there — the grid recedes, the blocks carry the eye. */
 .fc .fc-timegrid-col {
@@ -1123,7 +1168,14 @@ textarea:focus {
   pointer-events: none;
 }
 
-/* External-drag mirror element */
+/* External-drag mirror (ElementMirror — position:fixed, class fc-event-dragging).
+   Document CSS zoom makes fixed left/top disagree with getBoundingClientRect —
+   counteract zoom so the ghost stays under the cursor. Do NOT apply this to
+   `.fc-event-mirror`: that class is the in-grid select/drag preview (absolute
+   inside the timegrid), and counter-zooming it breaks click-drag create. */
+.fc-event-dragging {
+  zoom: calc(1 / var(--ui-scale, 1));
+}
 .fc-event-dragging,
 .fc-event-mirror {
   opacity: 1;
@@ -1316,7 +1368,35 @@ textarea:focus {
   filter: brightness(1.015);
 }
 
-/* ── Month view: compact pills + overflow popover ────────────────────── */
+/* ── Month view: day numerals + compact pills ─────────────────────────── */
+/* FC defaults: day-number z=4, event z=6 — so multi-day bars paint over the
+   date (and our today chip). Lift the numeral layer above the pills. The
+   top row stays pointer-transparent so events under the empty corner still
+   receive clicks; only the number itself is hit-testable. */
+.fc .fc-daygrid-day-top {
+  position: relative;
+  z-index: 8;
+  pointer-events: none;
+}
+/* FC wraps dayCellContent in an <a>; kill its link chrome so our signal
+   chip (and muted other-month ink) read cleanly across themes. */
+.fc .fc-daygrid-day-number {
+  text-decoration: none !important;
+  color: inherit;
+  padding: 4px 6px 2px;
+  position: relative;
+  z-index: 8;
+  pointer-events: auto;
+}
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  color: inherit;
+}
+/* Month pills are dense — skip the glass frost so bars don't bleed across
+   cell seams or haze the day number underneath. Week/Day keep the frost. */
+.fc-dayGridMonth-view .fc-event {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 /* Make month events shorter so more fit before the "+N more" threshold */
 .fc .fc-daygrid-event {
   margin-top: 1px !important;

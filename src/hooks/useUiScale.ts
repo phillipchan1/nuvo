@@ -3,6 +3,12 @@
 // scales the entire rendered page (text, icons, padding, tap targets) together,
 // which is the only lever that works here since the type scale (index.css) is
 // hardcoded px, not rem — a root font-size multiplier wouldn't cascade into it.
+//
+// FullCalendar cannot resolve pointer → date under document zoom (upstream
+// #2492/#6825). The schedule host counters it with `zoom: 1/var(--ui-scale)` so
+// select/create/drag stay accurate; fixed drag ghosts on `document.body` use
+// `.fc-event-dragging { zoom: 1/var(--ui-scale) }` + `fixedCssPx()` for the same
+// reason.
 
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
@@ -30,6 +36,10 @@ const listeners = new Set<() => void>();
 
 function apply() {
   if (typeof document === "undefined") return;
+  // `--ui-scale` lets position:fixed ghosts (FullCalendar drag mirrors, etc.)
+  // counteract document zoom — clientX/getBoundingClientRect are post-zoom,
+  // while fixed left/top are pre-zoom layout coords.
+  document.documentElement.style.setProperty("--ui-scale", String(scale));
   document.documentElement.style.setProperty("zoom", String(scale));
 }
 
@@ -71,6 +81,20 @@ export function zoomOut() {
 
 export function zoomReset() {
   setUiScale(UI_SCALE_DEFAULT);
+}
+
+/** Current whole-UI zoom factor (1 = 100%). */
+export function getUiScale(): number {
+  return scale;
+}
+
+/**
+ * Convert a viewport/client coordinate into a CSS `position:fixed` left/top
+ * value under the current UI zoom. Without this, fixed elements drift off the
+ * cursor whenever zoom ≠ 100%.
+ */
+export function fixedCssPx(clientPx: number): number {
+  return scale === 0 ? clientPx : clientPx / scale;
 }
 
 function subscribe(cb: () => void) {

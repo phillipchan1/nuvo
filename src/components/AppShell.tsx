@@ -26,15 +26,15 @@ import NewProject from "./floors/NewProject";
 import NewInitiative from "./floors/NewInitiative";
 import { zoomIn, zoomOut, zoomReset } from "../hooks/useUiScale";
 
-export type Rung = "now" | "day" | "project" | "initiative" | "domain";
+export type Rung = "day" | "project" | "initiative" | "domain";
 export interface Focus {
   domainId: string;
   initiativeId: string;
   projectId: string;
 }
 
-// Top-to-bottom on the spine: ⌘1 = Now … ⌘5 = Domain. ⌘↓ widens, ⌘↑ narrows.
-export const LADDER: Rung[] = ["now", "day", "project", "initiative", "domain"];
+// Top-to-bottom on the spine: ⌘1 = Schedule … ⌘4 = Domain. ⌘↓ widens, ⌘↑ narrows.
+export const LADDER: Rung[] = ["day", "project", "initiative", "domain"];
 
 // Focus mode — one gesture (⌘. / the toolbar's "Show panels" exit when collapsed)
 // slides the spine + the inbox·today rail out of the way so the calendar goes
@@ -186,7 +186,7 @@ function AppShellInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, data.domains.length]);
 
-  // ⌘1–5 jump to a rung; ⌘↑ / ⌘↓ travel the ladder; ⌘[ goes back.
+  // ⌘1–4 jump to a rung; ⌘↑ / ⌘↓ travel the ladder; ⌘[ goes back.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;

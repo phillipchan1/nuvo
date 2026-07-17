@@ -78,6 +78,8 @@ interface TimedItem {
   eventId?: string;
   self_rsvp?: AttendeeStatus | null;
   taskId?: string;
+  /** Project-backed block — renders as a "project slot" (significant work). */
+  projectBacked?: boolean;
 }
 
 interface DayPlan {
@@ -148,6 +150,7 @@ function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
         done: t.status === "done",
         taskId: t.id,
         self_rsvp: null,
+        projectBacked: !!t.project_id,
       })),
   ].sort((a, b) => a.start.getTime() - b.start.getTime());
 
@@ -781,11 +784,11 @@ function DayCard({
                   {at(b.start)}
                 </span>
                 <span
-                  className="mt-[5px] h-1.5 w-1.5 shrink-0 self-start rounded-full"
+                  className={`mt-[5px] shrink-0 self-start ${b.projectBacked ? "h-2 w-2 rounded-[2px]" : "h-1.5 w-1.5 rounded-full"}`}
                   style={{ background: b.kind === "block" ? "var(--accent)" : "var(--line-strong)" }}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className={`truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>{b.title || "Untitled"}</div>
+                  <div className={`truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>{b.projectBacked ? `▸ ${b.title || "Untitled"}` : b.title || "Untitled"}</div>
                   <div className="mono text-meta text-muted">
                     {at(b.start)}–{at(b.end)}
                     {b.location ? ` · ${b.location}` : ""}

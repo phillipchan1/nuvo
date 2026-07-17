@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import AgentActions from "./AgentRecordCards";
 import type { AgentMessage } from "../lib/agentTypes";
 import { formatBytes, isImageAttachment } from "../lib/agentAttachments";
 
@@ -11,11 +12,15 @@ export default function AgentMessageBubble({
 }) {
   const isUser = message.role === "user";
   const textSize = compact ? "text-caption" : "text-body";
+  // A bubble hugs its text, but record cards are structure, not prose — left to
+  // hug, they squeeze into a narrow column with dead space beside them. A reply
+  // that carries records takes the full width.
+  const hasRecords = message.actions?.some((a) => a.ref) ?? false;
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`agent-bubble max-w-[90%] ${isUser ? "agent-bubble-user" : "agent-bubble-assistant"}`}
+        className={`agent-bubble ${hasRecords ? "w-full" : "max-w-[90%]"} ${isUser ? "agent-bubble-user" : "agent-bubble-assistant"}`}
       >
         {message.attachments && message.attachments.length > 0 && (
           <div className={`mb-2 flex flex-wrap gap-1.5 ${message.content ? "" : ""}`}>
@@ -59,13 +64,7 @@ export default function AgentMessageBubble({
         ) : null}
 
         {message.actions && message.actions.length > 0 && (
-          <ul className="mt-2 space-y-1 border-t border-line/50 pt-2">
-            {message.actions.map((a) => (
-              <li key={a.summary} className="mono text-meta text-muted">
-                ✓ {a.summary}
-              </li>
-            ))}
-          </ul>
+          <AgentActions actions={message.actions} />
         )}
       </div>
     </div>

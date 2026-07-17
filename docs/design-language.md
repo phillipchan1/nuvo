@@ -7,9 +7,9 @@ tokens are used the way they are, and the rules that keep new work coherent.
 The thesis, in one line: **one continuous sheet of warm paper, written on with an
 editorial hand — and the things you touch are panes of glass that lift toward you.**
 It is not a color theme. It is spacing, hierarchy, flatness, restraint, type, and a
-single, physical idea of "focus." Reference screens: **Today** (`NowFloor`), the
-**Domain** wall/chapel (`DomainFloor`), and the **Schedule** calendar. When in doubt,
-go look at those.
+single, physical idea of "focus." Reference screens: the **Schedule** calendar
+(`CalendarPane` + `LeftRail`) and the **Domain** wall/chapel (`DomainFloor`). When in
+doubt, go look at those.
 
 ---
 
@@ -122,6 +122,45 @@ on the held row, `--accent` drop bar at the computed gap, persist on release.
   committed focal element lifts.
 
 ---
+
+## Hierarchy — one hero per surface
+
+Density is fine; *competing anchors* are not. Every surface — a floor, the rail, a
+mobile screen — gets **exactly one hero**, and everything else recedes below it. This is
+the rule that keeps a dense screen calm.
+
+1. **One anchor, in the surface's own voice.** Each surface has a single element at the top
+   of its hierarchy, and nothing else competes with it. **The voice matches the surface:**
+   a *ceremony/identity* surface anchors with a Fraunces `masthead` — a floor's
+   `text-display masthead` name, the Review's date, a domain's vow (serif is for a *name*,
+   never a *number*). An *execution* surface anchors with a **functional header** — a
+   tracked-caps eyebrow over a quiet status line, numbers in `mono`, the meter idiom the
+   spine and Standing gauges use. The Schedule rail's crown is execution: "THIS WEEK · JUL
+   13–19" over "0 of 2 landed" + a thin landed meter — **not** a serif scoreboard (a count
+   in `masthead` reads like a marketing stat). If a second hero of either voice appears
+   below the anchor, demote one (see `FloorStanding`'s `quietSynthesis`: under the "Table"
+   masthead its synthesis drops to `text-body text-muted`). Never stack two near-equal peers
+   and hope the eye picks one — it won't.
+2. **Counters fold into the hero, or into one quiet signal.** A scoreboard doesn't earn
+   its own header. The week's "N priorities, M landed" lives *in* the crown, not as a
+   separate "Priorities" label + count. Status that isn't the hero collapses to a single
+   line that **names the first gap and vanishes when clean** — the "Loose ends" and "N done
+   today" pattern. Four counters in a column is the smell; two disappearing lines is the fix.
+3. **Sections earn their label, or they don't get one.** Don't title-and-count a list just
+   because it's a list. Merge sub-lists that do one job (the rail's Today work is one flat
+   list, not Planned · Scheduled · Done); reserve a `section-label` for a genuinely
+   distinct group ("Needs you"). If the calendar sits right beside a "Scheduled" list, the
+   list is redundant — cut it.
+4. **Altitude reads through type, not chrome.** Serif = intent (the week, a floor's name);
+   system = execution (the day, the rows). A change of altitude should feel like a change
+   of voice, marked by **one** `--line-strong` divider — not a pile of hairlines.
+5. **Persistent actions float; they don't take a hierarchy slot.** Capture interrupts every
+   mode, so on the rail it rides low as a pill (mirroring the mobile ＋ FAB), and on mobile
+   it's the FAB — never a titled row competing with the content.
+
+Reference: the **Schedule rail** (`WeekPanel` crown → one `--line-strong` zone divider →
+flat Today list → floating capture) and the **Projects/Initiatives floors** (`FloorHeader`
+hero → `FloorStanding` gauges + quiet synthesis → the Collection). They obey the same law.
 
 ## Typography
 

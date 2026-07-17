@@ -2,7 +2,8 @@
 // bars, status/momentum chips, an energy picker, and a zoomable Gantt timeline.
 // Everything is keyboard-friendly and uses the Twilight tokens.
 
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import {
   addDays,
   addMonths,
@@ -21,6 +22,85 @@ import type { Domain, KeyResult, Momentum, ProjectStatus } from "../../lib/verti
 import { RIPENESS_HINT, RIPENESS_LABEL, type Ripeness } from "../../lib/tending";
 import type { CollectionSelection } from "../../hooks/useCollectionSelection";
 import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
+
+/** Menu portaled to <body> so it isn't clipped or covered by later table rows /
+ *  overflow parents / the Record modal's `.moment` transform (which traps
+ *  `position: fixed`). Without this, DomainPicker clicks land on the row
+ *  underneath and the domain never changes. */
+function FloatingMenu({
+  open,
+  anchorRef,
+  align = "left",
+  minWidth = 150,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  anchorRef: RefObject<HTMLElement | null>;
+  align?: "left" | "right";
+  minWidth?: number;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const place = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const mw = menuRef.current?.offsetWidth ?? minWidth;
+      const mh = menuRef.current?.offsetHeight ?? 0;
+      let left = align === "right" ? r.right - mw : r.left;
+      let top = r.bottom + 4;
+      if (left + mw > window.innerWidth - 8) left = window.innerWidth - 8 - mw;
+      left = Math.max(8, left);
+      if (mh > 0 && top + mh > window.innerHeight - 8) top = Math.max(8, r.top - 4 - mh);
+      setPos({ top, left });
+    };
+    place();
+    const raf = requestAnimationFrame(place);
+    window.addEventListener("resize", place);
+    // capture: table bodies / modal scrollers scroll without bubbling
+    window.addEventListener("scroll", place, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, align, anchorRef, minWidth]);
+
+  if (!open) return null;
+  // Above RecordModal (z-60) and its scrim so pickers still work inside a record.
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-[70]"
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+      />
+      <div
+        ref={menuRef}
+        className="rise elev-2 fixed z-[71] rounded-md border border-line bg-surface py-1"
+        style={{
+          top: pos?.top ?? -9999,
+          left: pos?.left ?? -9999,
+          minWidth,
+          visibility: pos ? "visible" : "hidden",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </>,
+    document.body,
+  );
+}
 
 /** Translucent tint of an item's identity (domain) color — the one way every
  *  collection view fills a chip / bar. Uses color-mix so it is robust for hex,
@@ -43,7 +123,10 @@ export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
   in_progress: "In progress",
   waiting: "Waiting",
   cancelled: "Cancelled",
-  complete: "Complete",
+  // A project/initiative SHIPS; only a task is "done". This label read
+  // "Complete" while the record said "Done" and the wall said "Shipped" — three
+  // words for one act.
+  complete: "Shipped",
 };
 // Initiatives speak the same status vocabulary as projects now — reuse
 // PROJECT_STATUS / PROJECT_STATUS_COLORS / PROJECT_STATUS_LABEL above.
@@ -108,11 +191,15 @@ export function Hook({ dir, label, onClick }: { dir: "up" | "down"; label: strin
   );
 }
 
-// ── Inline single-line editor: click text → input, commit on blur/Enter ──────
+// ── Inline text: ALWAYS editable in place (contenteditable), no mode switch ───
+// Reads as plain text, inherits the surrounding typography, wraps naturally, and
+// commits on blur / Enter (Esc reverts). Uncontrolled by design — we write the
+// DOM's text only when the incoming value differs and the field isn't focused,
+// so React re-renders never yank the caret mid-edit.
 export function InlineText({
   value,
   onChange,
-  placeholder = "—",
+  placeholder = "",
   className = "",
   inputClassName = "",
   autoFocusEmpty = false,
@@ -121,49 +208,54 @@ export function InlineText({
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  /** @deprecated no separate edit state anymore — kept for call-site compat. */
   inputClassName?: string;
   autoFocusEmpty?: boolean;
 }) {
-  const [editing, setEditing] = useState(autoFocusEmpty && value === "");
-  const [draft, setDraft] = useState(value);
-  const ref = useRef<HTMLInputElement>(null);
+  const ref = useRef<HTMLSpanElement>(null);
 
-  useEffect(() => setDraft(value), [value]);
-  useLayoutEffect(() => {
-    if (editing) {
-      ref.current?.focus();
-      ref.current?.select();
+  // Keep the DOM text in sync with value, but never while the user is editing it.
+  useEffect(() => {
+    const el = ref.current;
+    if (el && document.activeElement !== el && el.textContent !== value) {
+      el.textContent = value;
     }
-  }, [editing]);
+  }, [value]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el && el.textContent !== value) el.textContent = value;
+    if (autoFocusEmpty && value === "") el?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const commit = () => {
-    setEditing(false);
-    if (draft !== value) onChange(draft.trim());
+    const el = ref.current;
+    if (!el) return;
+    const next = (el.textContent ?? "").trim();
+    if (next !== value) onChange(next);
   };
 
-  if (editing) {
-    return (
-      <input
-        ref={ref}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") { setDraft(value); setEditing(false); }
-        }}
-        className={`w-full rounded-sm border border-accent bg-surface px-1 py-0.5 outline-none ${inputClassName || className}`}
-      />
-    );
-  }
   return (
     <span
-      onClick={() => setEditing(true)}
-      className={`fast cursor-text rounded-sm hover:bg-accent-soft ${className} ${draft ? "" : "text-muted italic"}`}
-      title="Click to edit"
-    >
-      {draft || placeholder}
-    </span>
+      ref={ref}
+      role="textbox"
+      contentEditable
+      suppressContentEditableWarning
+      data-placeholder={placeholder}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+        if (e.key === "Escape") { e.currentTarget.textContent = value; e.currentTarget.blur(); }
+      }}
+      onPaste={(e) => {
+        e.preventDefault();
+        const text = e.clipboardData.getData("text/plain");
+        document.execCommand("insertText", false, text);
+      }}
+      className={`inline-edit ${className} ${inputClassName}`}
+      style={{ caretColor: "var(--accent)" }}
+    />
   );
 }
 
@@ -312,12 +404,14 @@ export function StatusPill<T extends string>({
   onChange: (v: T) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const label = labels?.[value] ?? value;
   const color = colors[value] ?? "var(--muted)";
   const isFilled = filled?.has(value);
   return (
     <span className="relative inline-block">
       <button
+        ref={btnRef}
         onClick={() => setOpen((o) => !o)}
         className="fast mono rounded-full border px-2 py-0.5 text-meta"
         style={{
@@ -328,23 +422,18 @@ export function StatusPill<T extends string>({
       >
         {label}
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="rise elev-2 absolute left-0 top-full z-50 mt-1 min-w-[110px] rounded-md border border-line bg-surface py-1">
-            {options.map((o) => (
-              <button
-                key={o}
-                onClick={() => { onChange(o); setOpen(false); }}
-                className="fast mono block w-full px-2.5 py-1 text-left text-label hover:bg-accent-soft"
-                style={{ color: colors[o] ?? "var(--muted)" }}
-              >
-                {labels?.[o] ?? o}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      <FloatingMenu open={open} anchorRef={btnRef} minWidth={110} onClose={() => setOpen(false)}>
+        {options.map((o) => (
+          <button
+            key={o}
+            onClick={() => { onChange(o); setOpen(false); }}
+            className="fast mono block w-full px-2.5 py-1 text-left text-label hover:bg-accent-soft"
+            style={{ color: colors[o] ?? "var(--muted)" }}
+          >
+            {labels?.[o] ?? o}
+          </button>
+        ))}
+      </FloatingMenu>
     </span>
   );
 }
@@ -370,17 +459,19 @@ export function DomainPicker({
   domains: Domain[];
   value: string;
   onChange: (domainId: string) => void;
-  /** Which edge the menu hangs from — "left" opens inward (safe inside an
-   *  overflow-clipped modal), "right" keeps a right-aligned trigger on-screen. */
+  /** Which edge the menu hangs from — "left" opens under the trigger, "right"
+   *  right-aligns it (for triggers near the right edge of the viewport). */
   align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const cur = domains.find((d) => d.id === value);
   const color = cur?.color ?? "var(--muted)";
   return (
     <span className="relative inline-block">
       <button
-        onClick={() => setOpen((o) => !o)}
+        ref={btnRef}
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
         className="fast flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-meta"
         style={{ color, borderColor: `${color}66`, background: `${color}12` }}
         title="Change domain"
@@ -389,25 +480,20 @@ export function DomainPicker({
         <span className="font-medium">{cur?.name ?? "Domain"}</span>
         <span className="opacity-40">▾</span>
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className={`rise elev-2 absolute ${align === "right" ? "right-0" : "left-0"} top-full z-50 mt-1 min-w-[150px] rounded-md border border-line bg-surface py-1`}>
-            {domains.map((d) => (
-              <button
-                key={d.id}
-                onClick={() => { onChange(d.id); setOpen(false); }}
-                className="fast flex w-full items-center gap-2 px-2.5 py-1 text-left text-label hover:bg-accent-soft"
-                style={{ color: d.id === value ? d.color : "var(--text)" }}
-              >
-                <span style={{ color: d.color }}>{d.icon}</span>
-                <span className="truncate">{d.name}</span>
-                {d.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={150} onClose={() => setOpen(false)}>
+        {domains.map((d) => (
+          <button
+            key={d.id}
+            onClick={() => { onChange(d.id); setOpen(false); }}
+            className="fast flex w-full items-center gap-2 px-2.5 py-1 text-left text-label hover:bg-accent-soft"
+            style={{ color: d.id === value ? d.color : "var(--text)" }}
+          >
+            <span style={{ color: d.color }}>{d.icon}</span>
+            <span className="truncate">{d.name}</span>
+            {d.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
+          </button>
+        ))}
+      </FloatingMenu>
     </span>
   );
 }
@@ -427,11 +513,13 @@ export function KrPicker({
   align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
   if (keyResults.length === 0) return null;
   const cur = keyResults.find((k) => k.id === value) ?? null;
   return (
     <span className="relative inline-block">
       <button
+        ref={btnRef}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
         className="fast flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-micro"
         style={
@@ -444,33 +532,28 @@ export function KrPicker({
         <span>◎</span>
         <span className="max-w-[120px] truncate font-medium">{cur ? cur.name : "link KR"}</span>
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
-          <div className={`rise elev-2 absolute ${align === "right" ? "right-0" : "left-0"} top-full z-50 mt-1 min-w-[170px] rounded-md border border-line bg-surface py-1`}>
-            {keyResults.map((k) => (
-              <button
-                key={k.id}
-                onClick={(e) => { e.stopPropagation(); onChange(k.id === value ? null : k.id); setOpen(false); }}
-                className="fast flex w-full items-center gap-2 px-2.5 py-1 text-left text-label hover:bg-accent-soft"
-                style={{ color: k.id === value ? color : "var(--text)" }}
-              >
-                <span style={{ color }}>◎</span>
-                <span className="truncate">{k.name}</span>
-                {k.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
-              </button>
-            ))}
-            {value && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onChange(null); setOpen(false); }}
-                className="fast mono mt-0.5 block w-full border-t border-line px-2.5 py-1 text-left text-micro text-muted hover:bg-accent-soft"
-              >
-                unlink
-              </button>
-            )}
-          </div>
-        </>
-      )}
+      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={170} onClose={() => setOpen(false)}>
+        {keyResults.map((k) => (
+          <button
+            key={k.id}
+            onClick={() => { onChange(k.id === value ? null : k.id); setOpen(false); }}
+            className="fast flex w-full items-center gap-2 px-2.5 py-1 text-left text-label hover:bg-accent-soft"
+            style={{ color: k.id === value ? color : "var(--text)" }}
+          >
+            <span style={{ color }}>◎</span>
+            <span className="truncate">{k.name}</span>
+            {k.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
+          </button>
+        ))}
+        {value && (
+          <button
+            onClick={() => { onChange(null); setOpen(false); }}
+            className="fast mono mt-0.5 block w-full border-t border-line px-2.5 py-1 text-left text-micro text-muted hover:bg-accent-soft"
+          >
+            unlink
+          </button>
+        )}
+      </FloatingMenu>
     </span>
   );
 }
@@ -512,6 +595,9 @@ export function IconBtn({ children, onClick, title, danger }: { children: ReactN
 }
 
 // ── Confirm-delete inline ────────────────────────────────────────────────────
+/** Destructive, so it says what it does. A bare ✕ next to a "Done" button reads
+ *  as "close" — the one thing it isn't. The word is the affordance; the arm step
+ *  is the safety. */
 export function DeleteBtn({ onDelete, what }: { onDelete: () => void; what: string }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
@@ -521,11 +607,23 @@ export function DeleteBtn({ onDelete, what }: { onDelete: () => void; what: stri
   }, [armed]);
   if (armed)
     return (
-      <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="fast mono rounded-sm border border-signal px-1.5 py-0.5 text-meta text-signal">
-        delete {what}?
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        className="fast rounded-md border px-2.5 py-1 text-meta font-medium"
+        style={{ borderColor: "var(--signal)", color: "var(--signal)" }}
+      >
+        Delete {what}?
       </button>
     );
-  return <IconBtn onClick={() => setArmed(true)} title={`Delete ${what}`} danger>✕</IconBtn>;
+  return (
+    <button
+      onClick={() => setArmed(true)}
+      title={`Delete this ${what}`}
+      className="fast rounded-md border border-line px-2.5 py-1 text-meta font-medium text-muted hover:border-signal hover:text-signal"
+    >
+      Delete
+    </button>
+  );
 }
 
 // ── Timeline / Gantt ─────────────────────────────────────────────────────────

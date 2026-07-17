@@ -56,7 +56,6 @@ interface AppNavigationContextValue {
   setProjectView: (v: ProjectView) => void;
   setInitiativeView: (v: DetailView) => void;
   setSettingsSection: (s: SettingsSection) => void;
-  setNowMoment: (m: AppNavState["nowMoment"], taskId?: string | null) => void;
 }
 
 const AppNavigationContext = createContext<AppNavigationContextValue | null>(null);
@@ -202,7 +201,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
 
   const clearCalendarOverlay = useCallback((patch: Partial<AppNavState>) => {
     const { overlay } = navRef.current;
-    if (overlay === "task" || overlay === "event" || overlay === "slot") {
+    if (overlay === "task" || overlay === "event" || overlay === "slot" || overlay === "week-plan") {
       patch.overlay = "none";
       patch.overlayId = null;
     }
@@ -334,12 +333,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     [navigate],
   );
 
-  const setNowMoment = useCallback(
-    (m: AppNavState["nowMoment"], taskId: string | null = null) =>
-      navigate({ nowMoment: m, nowTaskId: m === "choose" ? null : taskId }),
-    [navigate],
-  );
-
   const value: AppNavigationContextValue = {
     nav,
     navigate,
@@ -366,7 +359,6 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     setProjectView,
     setInitiativeView,
     setSettingsSection,
-    setNowMoment,
   };
 
   return <AppNavigationContext.Provider value={value}>{children}</AppNavigationContext.Provider>;

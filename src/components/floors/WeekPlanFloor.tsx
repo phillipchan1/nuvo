@@ -9,17 +9,21 @@
 // actually moved a domain. The big priority actions are just two: land it, or
 // carry it forward. No domain-linking here (that's not this moment's job).
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, useEffect, type ReactNode } from "react";
 import { toast } from "sonner";
 import { addDays } from "date-fns";
+import { useQueryClient } from "@tanstack/react-query";
 import { fmtHours, parseDateISO, toDateISO } from "../../lib/dates";
 import { sprintLabel } from "../../lib/sprint";
 import { fmtMins } from "../../lib/now";
 import type { WeekReport, WeekPriority } from "../../lib/composeWeek";
 import { useWeekSprintRocks } from "../../hooks/useWeekSprintRocks";
+import { useWeekReviewActions, useWeekReviewRow } from "../../hooks/useWeekReview";
 import WeekEmblem from "./WeekEmblem";
 import WeekStory from "./WeekStory";
 import { WhatYouBuilt } from "./WhatYouBuilt";
+import { WeekFindCard } from "./WeekFind";
+import { DomainEvidenceList } from "./WeekEvidence";
 import { Bar, InlineText } from "./parts";
 import type { BigRock } from "../../lib/types";
 
@@ -287,9 +291,10 @@ function NextWeek({ rocks, onAdd, onRemove }: { rocks: { id: string; title: stri
   );
 }
 
-/** Where the hours went — capacity + the per-domain weave. */
-function HoursWeave({ report }: { report: WeekReport }) {
-  const { capacity, domains } = report;
+/** Where the hours went — capacity + the per-domain weave, with expandable receipts. */
+function HoursWeave({ report, onCorrected }: { report: WeekReport; onCorrected?: () => void }) {
+  const { capacity, domains, evidence } = report;
+  const [openId, setOpenId] = useState<string | null>(null);
   const busyPct = capacity.workMins > 0 ? (capacity.busyMins / capacity.workMins) * 100 : 0;
   const maxH = Math.max(1, ...domains.map((d) => Math.max(d.hours, d.target)));
   return (
@@ -304,16 +309,32 @@ function HoursWeave({ report }: { report: WeekReport }) {
         <Bar pct={busyPct} color="var(--accent)" h={2} />
       </div>
       <div className="flex flex-col gap-2.5">
-        {domains.map((d) => (
-          <div key={d.id} className="flex items-center gap-3">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: d.quiet ? "var(--line-strong)" : d.color, opacity: d.quiet ? 0.5 : 1 }} />
-            <span className="w-24 shrink-0 truncate text-meta text-ink">{d.name}</span>
-            <div className="min-w-0 flex-1">
-              <Bar pct={(d.hours / maxH) * 100} color={d.quiet ? "var(--line-strong)" : d.color} baseline={d.target > 0 ? (d.target / maxH) * 100 : undefined} h={1.5} />
+        {domains.map((d) => {
+          const expanded = openId === d.id;
+          const hasReceipts = (evidence?.domains.find((e) => e.domainId === d.id)?.receipts.length ?? 0) > 0;
+          return (
+            <div key={d.id}>
+              <button
+                type="button"
+                onClick={() => hasReceipts && setOpenId(expanded ? null : d.id)}
+                className={`flex w-full items-center gap-3 text-left ${hasReceipts ? "tap cursor-pointer" : "cursor-default"}`}
+                aria-expanded={expanded}
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: d.quiet ? "var(--line-strong)" : d.color, opacity: d.quiet ? 0.5 : 1 }} />
+                <span className="w-24 shrink-0 truncate text-meta text-ink">{d.name}</span>
+                <div className="min-w-0 flex-1">
+                  <Bar pct={(d.hours / maxH) * 100} color={d.quiet ? "var(--line-strong)" : d.color} baseline={d.target > 0 ? (d.target / maxH) * 100 : undefined} h={1.5} />
+                </div>
+                <span className="mono w-14 shrink-0 text-right text-micro text-muted">{fmtHours(d.hours * 60)}h</span>
+              </button>
+              {expanded && evidence && (
+                <div className="mb-1 ml-5 mt-1 border-l border-line pl-3">
+                  <DomainEvidenceList evidence={evidence} domainId={d.id} onCorrected={onCorrected} />
+                </div>
+              )}
             </div>
-            <span className="mono w-14 shrink-0 text-right text-micro text-muted">{fmtHours(d.hours * 60)}h</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -367,7 +388,7 @@ export function WeekPlanBody({
   /** Launch the compose + time-block ritual. Omitted on surfaces where the
    *  ritual isn't mounted (e.g. mobile) — the CTA then hides itself. */
   onCompose?: () => void;
-  /** CTA wording — "Compose the week" when fresh, "Re-plan the week" once composed. */
+  /** CTA wording — "Plan the week" when fresh, "Re-plan the week" once planned. */
   composeLabel?: string;
 }) {
   const forming = state === "forming";
@@ -379,6 +400,28 @@ export function WeekPlanBody({
   const nextWeekISO = toDateISO(addDays(parseDateISO(viewedWeekISO), 7));
   const thisWeek = useWeekSprintRocks(viewedWeekISO);
   const nextWeek = useWeekSprintRocks(nextWeekISO);
+  const reviewActions = useWeekReviewActions(viewedWeekISO);
+  const sealedRow = useWeekReviewRow(viewedWeekISO);
+  const qc = useQueryClient();
+
+  // Seal the Review once when viewing a lived week that has no durable snapshot yet.
+  useEffect(() => {
+    if (ahead) return;
+    if (sealedRow.isLoading) return;
+    const hasFull = sealedRow.data?.report && typeof sealedRow.data.report === "object" && "emblem" in sealedRow.data.report;
+    if (hasFull) return;
+    void reviewActions.seal.mutateAsync(report).catch(() => {});
+    // Only on first open / week change — not on every report tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewedWeekISO, ahead, sealedRow.isLoading, sealedRow.data?.id]);
+
+  const reseal = () => {
+    void qc.invalidateQueries({ queryKey: ["vertical"] });
+    void qc.invalidateQueries({ queryKey: ["event_domain_routing"] });
+    window.setTimeout(() => {
+      void reviewActions.reseal(report).catch(() => {});
+    }, 400);
+  };
 
   const carry = (p: WeekPriority) => {
     const n = nextWeek.carryIn([p.rock]);
@@ -423,7 +466,7 @@ export function WeekPlanBody({
                 onClick={onCompose}
                 className="fast inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-label font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
               >
-                {composeLabel ?? "Compose the week"}
+                {composeLabel ?? "Plan the week"}
                 <span aria-hidden>→</span>
               </button>
               <p className="mt-2 text-meta text-muted">Pull your priorities into time blocks against your real calendar.</p>
@@ -478,9 +521,16 @@ export function WeekPlanBody({
 
         <div data-marquee="hours">
         <Col label={hoursLabel}>
-          <HoursWeave report={report} />
+          <HoursWeave report={report} onCorrected={reseal} />
         </Col>
         </div>
+
+        {/* The Find — one discovery; self-hides when nothing notable / ahead week. */}
+        {!ahead && report.find && (
+          <div className="md:col-span-2">
+            <WeekFindCard find={report.find} weekStartISO={viewedWeekISO} sealed={state === "sealed"} onReseal={reseal} />
+          </div>
+        )}
 
         {/* Next week capture is a forward-fold for the *lived* week. On a week
             you're planning ahead, "next week" would be two weeks out — drop it. */}
@@ -523,7 +573,7 @@ export interface WeekPlanFloorProps {
   canGoNext?: boolean;
   /** Launch the compose + time-block ritual from the forming hero. */
   onCompose?: () => void;
-  /** CTA wording — "Compose the week" when fresh, "Re-plan the week" once composed. */
+  /** CTA wording — "Plan the week" when fresh, "Re-plan the week" once planned. */
   composeLabel?: string;
   /** Play the paced recap animation on open — the Review's reveal moment only.
    *  A check-in / plan view opens straight to the static detail. */
@@ -534,6 +584,20 @@ export interface WeekPlanFloorProps {
  *  Opens as a paced story (the received moment); "See the full week" → the detail. */
 export default function WeekPlanFloor({ report, state, tense = "current", weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext, onCompose, composeLabel, story }: WeekPlanFloorProps) {
   const [mode, setMode] = useState<"story" | "detail">(story ? "story" : "detail");
+
+  // Esc dismisses the surface (story or detail) — same gesture as every other overlay.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const el = e.target as HTMLElement;
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
 
   if (mode === "story") {
     return (

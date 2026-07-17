@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase, supabaseUrl, supabaseAnonKey } from "../lib/supabase";
 import { attachmentPromptBlock, isImageAttachment } from "../lib/agentAttachments";
 import { marqueeManifest } from "../lib/marqueeRegistry";
+import { detectDeviceTz } from "../lib/timezone";
 import type {
   AgentAction,
   AgentAttachment,
@@ -111,6 +112,11 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
             rangeEnd: range.end,
             navFocus: navFocusRef.current,
             marqueeTargets: marqueeManifest(),
+            // Where the user physically is. The app renders every instant in the
+            // device zone (src/lib/timezone.ts), so the agent has to read and
+            // write times in that same zone — the edge used to assume Pacific,
+            // which silently landed "3pm" two hours late while traveling.
+            tz: detectDeviceTz(),
           }),
         });
 

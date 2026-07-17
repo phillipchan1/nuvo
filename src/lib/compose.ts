@@ -26,6 +26,10 @@ export interface Placement {
   startMin: number; // minutes from local midnight
   durationMin: number;
   reason: string;
+  /** Set when an overdue task was carved across sittings because no single
+   *  block fit. 1-indexed part / total parts. Undefined for whole placements. */
+  part?: number;
+  parts?: number;
 }
 
 /** Per-day boundary: where you are shapes what the day can hold. */
@@ -76,11 +80,28 @@ export interface ComposeInput {
   workingDays?: number[];
   /** Proven weekly pace (from calibration): stop placing past it. */
   weeklyBudgetMins?: number | null;
+  /** Ids that must never be carved across sittings. A project slot is a container
+   *  holding real tasks — half of it is meaningless, and two placements of one
+   *  slot would fight over the same members at commit. */
+  atomicIds?: string[];
 }
 
 const EVENT_BUFFER = 10; // minutes around immovable events
 const BREAK_AFTER_DEEP = 15; // breather after a long deep block
 const SNAP = 15;
+
+/** Project-backed work never schedules as a throwaway sliver. A capture-time
+ *  default or an AI guess of a few minutes for something that *moves a project*
+ *  is almost always wrong-low — so we floor it to a real sitting. The plan stays
+ *  honest and "significant work" reads like significant work on the grid. */
+export const MIN_PROJECT_BLOCK = 45;
+
+/** The minutes we actually plan for a task: its estimate, floored for project
+ *  work. Shared by the composer and the pull panel so both tell the same story. */
+export function plannedMinutes(durationMins: number | null | undefined, projectBacked: boolean): number {
+  const base = durationMins ?? 30;
+  return projectBacked ? Math.max(base, MIN_PROJECT_BLOCK) : base;
+}
 
 interface Slot { start: number; end: number }
 
@@ -166,6 +187,11 @@ export function composeWeek(input: ComposeInput): ComposeResult {
   const queue = [...input.tasks].sort((a, b) => {
     const d = deadlinePressure(a).localeCompare(deadlinePressure(b));
     if (d !== 0) return d;
+    // owed work first (deadlines, above), then the week's INTENT, then the rest:
+    // project-backed work outranks loose captures for the open slots, so a week
+    // can't fill up with errands while the projects you named go unplaced.
+    const p = Number(Boolean(b.project_id)) - Number(Boolean(a.project_id));
+    if (p !== 0) return p;
     const f = Number(focus.has(b.initiative_id ?? "")) - Number(focus.has(a.initiative_id ?? ""));
     if (f !== 0) return f;
     const e = (ENERGY_RANK[a.energy ?? "quick"] ?? 2) - (ENERGY_RANK[b.energy ?? "quick"] ?? 2);
@@ -189,12 +215,17 @@ export function composeWeek(input: ComposeInput): ComposeResult {
   const lastProjectOn = new Map<string, string | null>(); // dayISO -> project of last placement
 
   const tryPlace = (t: Task, relaxed: boolean): boolean => {
-    const dur = t.duration_minutes ?? 30;
+    const dur = plannedMinutes(t.duration_minutes, !!t.project_id);
     const win = windowFor(t.energy);
     const dueBefore = t.deadline ?? null;
+    // An already-passed deadline isn't a ceiling — it's a "do this first" flag.
+    // Overdue work is the most urgent thing you have; schedule it ASAP (the queue
+    // already sorts earliest-deadline first, so it lands in the first open slot)
+    // instead of stranding it in the pool forever.
+    const overdue = dueBefore != null && dueBefore < todayISO;
     const shallow = t.energy === "quick" || t.energy === "delegate" || t.energy == null;
     for (const day of days) {
-      if (dueBefore && day.iso > dueBefore) break; // deadline is a hard boundary
+      if (dueBefore && !overdue && day.iso > dueBefore) break; // a live deadline is a hard boundary
       // context rules are boundaries — hard in both passes
       if (day.rules.shallowOnly && !shallow) continue;
       if (t.energy === "deep" && day.deepCount >= day.rules.maxDeep) continue;
@@ -220,7 +251,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
         const batched = lastProjectOn.get(day.iso) != null && lastProjectOn.get(day.iso) === t.project_id;
         lastProjectOn.set(day.iso, t.project_id);
         const reasons = [
-          dueBefore ? `due ${dueBefore.slice(5)}` : null,
+          overdue ? "overdue — scheduled first" : dueBefore ? `due ${dueBefore.slice(5)}` : null,
           focus.has(t.initiative_id ?? "") ? "★ lead bet" : null,
           batched ? "batched with its project" : win.label,
           day.rules.note,
@@ -233,10 +264,65 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     return false;
   };
 
+  // Overdue work that won't fit as one block is carved across sittings. We ignore
+  // energy windows and the fill cap here — an overdue commitment outranks the
+  // week's shape, and the alternative is it never getting scheduled at all. Each
+  // piece is a real, separately-schedulable block (the commit materializes parts
+  // 2+ as their own rows, since a task row can only hold one time block).
+  const SPLIT_MIN_CHUNK = 30;
+  const MAX_SPLIT = 3;
+  const trySplit = (t: Task, total: number): Placement[] | null => {
+    if (total < SPLIT_MIN_CHUNK * 2) return null; // too small to be worth splitting
+    // open spans in day/time order — trySplit only runs after whole placement
+    // failed, so every span is smaller than `total` (guaranteeing ≥2 pieces)
+    const spans: { day: (typeof days)[number]; start: number; end: number }[] = [];
+    for (const day of days) {
+      if (day.rules.cap === 0) continue;
+      for (const slot of day.slots) {
+        const start = snapUp(slot.start);
+        const end = Math.min(slot.end, workEndMin);
+        if (end - start >= SPLIT_MIN_CHUNK) spans.push({ day, start, end });
+      }
+    }
+    let remaining = total;
+    const chosen: { day: (typeof days)[number]; start: number; dur: number }[] = [];
+    for (const span of spans) {
+      if (remaining <= 0 || chosen.length >= MAX_SPLIT) break;
+      let take = Math.floor(Math.min(span.end - span.start, remaining) / SNAP) * SNAP;
+      if (take < SPLIT_MIN_CHUNK) continue;
+      chosen.push({ day: span.day, start: span.start, dur: take });
+      remaining -= take;
+    }
+    if (remaining > 0) return null; // couldn't fit even split within MAX_SPLIT pieces
+
+    const parts = chosen.length;
+    return chosen.map((c, i) => {
+      const s = c.start;
+      const e = s + c.dur;
+      const slot = c.day.slots.find((sl) => sl.start <= s && sl.end >= e);
+      if (slot) {
+        const before: Slot = { start: slot.start, end: s };
+        const after: Slot = { start: e, end: slot.end };
+        c.day.slots.splice(c.day.slots.indexOf(slot), 1, ...[before, after].filter((x) => x.end - x.start >= SNAP));
+      }
+      c.day.placed += c.dur;
+      return {
+        task: t,
+        dayISO: c.day.iso,
+        startMin: s,
+        durationMin: c.dur,
+        reason: `overdue — split ${i + 1}/${parts}`,
+        part: i + 1,
+        parts,
+      };
+    });
+  };
+
+  const atomic = new Set(input.atomicIds ?? []);
   const budget = input.weeklyBudgetMins ?? null;
   let placedTotal = 0;
   for (const t of queue) {
-    const dur = t.duration_minutes ?? 30;
+    const dur = plannedMinutes(t.duration_minutes, !!t.project_id);
     // the proven-pace boundary: don't plan past what history says gets done
     if (budget != null && placedTotal + dur > budget) {
       unplaced.push({ task: t, reason: `past your proven pace (~${Math.round(budget / 60)}h/wk) — protect the win rate` });
@@ -246,15 +332,27 @@ export function composeWeek(input: ComposeInput): ComposeResult {
       placedTotal += dur;
       continue;
     }
+    const isOverdue = t.deadline != null && t.deadline < todayISO;
+    // last resort for overdue work: carve it across sittings so it still lands
+    if (isOverdue && !atomic.has(t.id)) {
+      const pieces = trySplit(t, dur);
+      if (pieces) {
+        placements.push(...pieces);
+        placedTotal += dur;
+        continue;
+      }
+    }
     const deepBlocked =
       t.energy === "deep" && days.every((d) => d.rules.maxDeep === 0 || d.deepCount >= d.rules.maxDeep);
     unplaced.push({
       task: t,
-      reason: t.deadline && days.every((d) => d.iso > t.deadline!)
-        ? "deadline already behind the remaining week"
-        : deepBlocked
-          ? "no deep-capable day left (contexts/limits)"
-          : "the week is full — slack protected",
+      reason: isOverdue
+        ? "overdue — no open time left this week"
+        : t.deadline && days.every((d) => d.iso > t.deadline!)
+          ? "deadline already behind the remaining week"
+          : deepBlocked
+            ? "no deep-capable day left (contexts/limits)"
+            : "the week is full — slack protected",
     });
   }
 

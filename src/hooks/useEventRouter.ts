@@ -32,17 +32,38 @@ export function useEventRouter() {
   const { settings } = useSettings();
 
   // The set of event keys already judged (domain or null) — so we never re-route.
+  // MUST be complete: PostgREST caps an unbounded select at 1000 rows, and a set
+  // that silently drops keys makes already-routed events read as candidates
+  // forever — which loops this hook against the LLM for as long as the app is
+  // open. Page through with a stable order so every key is present.
   const routedQ = useQuery({
     queryKey: ["event_domain_routing", "keys"],
     queryFn: async (): Promise<Set<string>> => {
-      const { data, error } = await supabase.from("event_domain_routing").select("event_key");
-      if (error) throw error;
-      return new Set((data ?? []).map((r) => r.event_key as string));
+      const PAGE = 1000;
+      const keys = new Set<string>();
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from("event_domain_routing")
+          .select("event_key")
+          .order("event_key")
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const rows = data ?? [];
+        for (const r of rows) keys.add(r.event_key as string);
+        if (rows.length < PAGE) break;
+      }
+      return keys;
     },
     staleTime: 60_000,
   });
 
   const inFlight = useRef(false);
+  // Every key we've already spent a completion on this session. The routing
+  // table is the durable cache; this is the backstop that guarantees we spend
+  // on a given event at most ONCE per load even if the cache read comes back
+  // incomplete or the write silently fails. Without it, any hole in the cache
+  // becomes an unbounded LLM billing loop.
+  const attempted = useRef<Set<string>>(new Set());
   const map = settings?.calendar_domain_map;
   const hiddenIds = settings?.hidden_calendar_ids;
 
@@ -58,10 +79,13 @@ export function useEventRouter() {
           eventCountsAsActual(e) && // past, busy, attended
           !map[calendarKey(e)] && // not deterministically mapped
           !hidden.has(e.calendar_id) && // user didn't hide this calendar
-          !routed.has(eventKey(e)), // not already judged
+          !routed.has(eventKey(e)) && // not already judged
+          !attempted.current.has(eventKey(e)), // never spend twice in one session
       )
       .slice(0, BATCH);
     if (!candidates.length) return;
+
+    for (const e of candidates) attempted.current.add(eventKey(e));
 
     const calName = new Map<string, string>();
     for (const a of accountsQ.data ?? []) for (const c of a.calendars ?? []) calName.set(c.id, c.summary);

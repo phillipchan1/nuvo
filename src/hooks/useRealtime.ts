@@ -14,8 +14,11 @@ const TABLE_TO_KEYS: Record<string, string[][]> = {
   domains: [["vertical"]],
   initiatives: [["vertical"]],
   projects: [["vertical"]],
+  record_comments: [["record_comments"]],
   key_results: [["vertical"]],
   sprints: [["sprint"]],
+  week_reviews: [["week_reviews"]],
+  event_domain_routing: [["event_domain_routing"], ["vertical"]],
 };
 
 /** Live updates: any server-side change (sync jobs, rollover, other devices)

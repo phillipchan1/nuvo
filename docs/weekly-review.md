@@ -1,8 +1,8 @@
 # The Weekly Review — the "Reflect" surface
 
-Status: **design / not yet built** (2026-06-19). This is the spec we converged on in
-the Friday-thinking session. Nothing here is in the code yet beyond the existing
-pieces it builds on (see "Build on what exists").
+Status: **shipped core + The Find** (2026-07-10). Week's Plan / Review lives on
+Schedule; evidence receipts, one scored Find, source-level correction, sealed
+`week_reviews` snapshots, optional AI narration, Keep, and Note to Monday are in.
 
 ## What it is
 
@@ -16,6 +16,39 @@ on the funnel (we had a forward weekly valve, Sunday, and no backward one).
 - Prompted at a **configurable time** (e.g. Friday afternoon). Not forced; an invitation.
 - Rejected names: Harvest / any farming or pastoral metaphor (Phil dislikes them, same
   reason he dislikes "tend"). Keep it agile-plain.
+
+## The Find (evidence-backed discovery)
+
+Every Review may surface **exactly one** Find — something the numbers noticed that you
+couldn't see while inside the week. Product rules:
+
+1. **Hide when nothing is notable.** Confidence + unexpectedness gates; no manufactured profundity.
+2. **Receipts are first-class.** Every claim expands into tasks / meetings / shipped work.
+3. **Corrections update the source** (`tasks.domain_id` or `event_domain_routing`), then
+   the Review reseals — never a cosmetic Review-only override.
+4. **Code owns the facts; AI only warms the voice.** `composeWeekFinds` is pure;
+   `agent/reviewFind` narrates the selected candidate only.
+5. **Investment loop:** That's true · Not quite · Keep this · Carry to Monday
+   (Note to Monday surfaces on Today Mon–Wed).
+
+Candidate kinds: hidden bet, plan/reality mismatch, comeback, protected time, domain
+shift, repeated carry, shipped off-book. Tone variety soft-prefers celebration over
+scolding when scores are close.
+
+### Storage
+
+`week_reviews` (migration 33): sealed `report` jsonb + `find_narration` + `find_response`
++ `find_kept` + `note_to_monday`. Past weeks prefer the snapshot; live recompute is the
+fallback. Source corrections call reseal.
+
+### Key files
+
+- `src/lib/weekEvidence.ts` — canonical receipts ledger
+- `src/lib/weekFinds.ts` — candidate engine + gating
+- `src/lib/composeWeek.ts` — WeekReport includes `evidence` + `find`
+- `src/hooks/useWeekReport.ts` / `useWeekReview.ts`
+- `src/components/floors/WeekFind.tsx` / `WeekEvidence.tsx`
+- `supabase/functions/agent/reviewFind.ts`
 
 ## Navigation — the third Spine section
 

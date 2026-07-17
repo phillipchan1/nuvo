@@ -18,6 +18,7 @@ import { FloorHeader, PROJECT_STATUS, PROJECT_STATUS_COLORS, PROJECT_STATUS_LABE
 import Collection, { type CollectionRecord } from "./Collection";
 import { DomainFilter } from "./DomainFilter";
 import ShippedStrip from "./ShippedStrip";
+import FloorStanding from "./FloorStanding";
 
 const MOMENTUM = {
   up: { value: "↑ rising", color: "var(--accent)" },
@@ -89,6 +90,15 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
         <p className="mt-1 text-body text-muted">Every initiative at a glance — filter, sort, and bulk-edit. Click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
       </FloorHeader>
 
+      {/* The Standing — the floor's readiness echo of the spine gauge (Defined ·
+          Capacity · Motion), status folded under the one "Table" hero. */}
+      <FloorStanding
+        kind="initiative"
+        onRefine={() => setInitiativeView("groom")}
+        onAllocate={() => setInitiativeView("ondeck")}
+        quietSynthesis
+      />
+
       <DomainFilter value={domainFilter} onChange={setDomainFilter} />
 
       <div className="flex min-h-0 flex-1 flex-col">
@@ -108,6 +118,7 @@ export default function InitiativesFloor({ onOpen }: { onOpen: (id: string) => v
             selectable: true,
             onBulkDelete: deleteInitiatives,
             domains: data.domains,
+            recordKind: "initiative",
           }}
         />
       </div>

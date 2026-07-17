@@ -1,12 +1,11 @@
 import type { CSSProperties } from "react";
 import { LADDER, type Rung } from "./AppShell";
 import { useVertical } from "../hooks/useVertical";
-import { readSpine, type Floor, type SpineState } from "../lib/readiness";
+import { readSpine, type SpineState } from "../lib/readiness";
 import { READY, toneColor } from "./floors/ReadinessBanner";
 
-// Top-to-bottom: Now (immediate) → Domain (widest). ⌘1 at top, ⌘5 at bottom.
+// Top-to-bottom: Schedule (immediate) → Domain (widest). ⌘1 at top, ⌘4 at bottom.
 const RUNGS: { id: Rung; label: string }[] = [
-  { id: "now", label: "Today" },
   { id: "day", label: "Schedule" },
   { id: "project", label: "Projects" },
   { id: "initiative", label: "Initiatives" },
@@ -20,15 +19,13 @@ const RUNGS: { id: Rung; label: string }[] = [
 export type FlowName = "sunday" | "summit" | "tending" | "capacity";
 
 // The spine reads like a table of contents for your life. Two zones:
-// Execute (Today · Schedule — time horizons) and Build (Project · Initiative ·
-// Domain — structure). The seam between them is the Week, the only gate from
-// the vertical to the calendar. The four *readiness* floors (Schedule · Project
-// · Initiative · Domain) each carry a gauge: a hairline meter ("ready for the
-// floor below") + a gentle cue for the one thing slipping — the funnel made
-// visible in the chrome. *Today* carries no gauge: it's the execution surface,
-// the bottom of the funnel where groomed work gets done, not a floor you groom.
-const EXECUTE = RUNGS.slice(0, 2);
-const BUILD = RUNGS.slice(2);
+// Execute (Schedule — where the day actually gets done) and Build (Project ·
+// Initiative · Domain — structure). The seam between them is the Week, the only
+// gate from the vertical to the calendar. Every rung carries a gauge: a hairline
+// meter ("ready for the floor below") + a gentle cue for the one thing slipping
+// — the funnel made visible in the chrome.
+const EXECUTE = RUNGS.slice(0, 1);
+const BUILD = RUNGS.slice(1);
 
 // The one whisper of glass in the app's chrome: the active chapter rises on a
 // frosted pane over the atmosphere — present, never stark.
@@ -67,9 +64,7 @@ export default function Spine({
   const renderRung = (r: { id: Rung; label: string }) => {
     const on = r.id === rung;
     const n = LADDER.indexOf(r.id) + 1;
-    // Today (the "now" rung) is the execution surface, not a readiness floor —
-    // it carries no gauge, just navigation. Every other rung reads its state.
-    const fs = r.id === "now" ? null : (spine?.floors[r.id as Floor] ?? null);
+    const fs = spine?.floors[r.id] ?? null;
     const cue = fs?.cue ?? null;
 
     return (
@@ -187,12 +182,13 @@ export default function Spine({
       {/* Pure drag region — clears the macOS traffic lights. */}
       <div data-tauri-drag-region className="spine-top shrink-0 w-full" />
 
-      {/* Wordmark home — brand + a tap back to Today. */}
+      {/* Wordmark home — brand + a tap back to the Schedule, the surface the
+          day actually runs on. */}
       <button
-        onClick={() => setRung("now")}
+        onClick={() => setRung("day")}
         title="Home"
-        className={`fast wordmark select-none px-4 py-3 text-left text-[15px] leading-none ${rung === "now" ? "wordmark-grad" : ""}`}
-        style={rung === "now" ? {} : { color: "var(--muted)", opacity: 0.5 }}
+        className={`fast wordmark select-none px-4 py-3 text-left text-[15px] leading-none ${rung === "day" ? "wordmark-grad" : ""}`}
+        style={rung === "day" ? {} : { color: "var(--muted)", opacity: 0.5 }}
       >
         Nuvo
       </button>

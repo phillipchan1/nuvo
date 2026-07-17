@@ -110,7 +110,7 @@ export default function Planner({
   // the lived week. On weekdays this equals currentWeekISO.
   const horizonWeekISO = useMemo(() => planningWeekStartISO(now), [now]);
   const glyphReport = useWeekReport(currentWeekISO, now);
-  const [weekPlanOpen, setWeekPlanOpen] = useState(false);
+  const weekPlanOpen = overlay === "week-plan";
   const [viewedWeekISO, setViewedWeekISO] = useState(currentWeekISO);
   const viewedReport = useWeekReport(viewedWeekISO, now);
   // The lived week and any week ahead are *forming* (a plan you build/adjust);
@@ -147,8 +147,8 @@ export default function Planner({
   const openWeekPlanAt = useCallback((weekISO: string, story = false) => {
     setViewedWeekISO(weekISO);
     setWeekPlanStory(story);
-    setWeekPlanOpen(true);
-  }, []);
+    openOverlay("week-plan");
+  }, [openOverlay]);
   const openReview = useCallback(() => {
     ackReveal();
     openWeekPlanAt(currentWeekISO, true);
@@ -164,7 +164,7 @@ export default function Planner({
     };
     const onClose = (e: Event) => {
       const surface = (e as CustomEvent<{ surface?: string }>).detail?.surface;
-      if (surface === "week-plan") setWeekPlanOpen(false);
+      if (surface === "week-plan" && overlay === "week-plan") closeOverlay();
     };
     window.addEventListener(MARQUEE_OPEN_EVENT, onOpen);
     window.addEventListener(MARQUEE_CLOSE_EVENT, onClose);
@@ -172,7 +172,7 @@ export default function Planner({
       window.removeEventListener(MARQUEE_OPEN_EVENT, onOpen);
       window.removeEventListener(MARQUEE_CLOSE_EVENT, onClose);
     };
-  }, [openWeekPlanAt, horizonWeekISO]);
+  }, [openWeekPlanAt, horizonWeekISO, overlay, closeOverlay]);
 
   // Is the plan-target week already composed? planWeek() stamps the sprint on
   // commit (the same signal the Sunday nudge reads), and data.sprint resolves to
@@ -392,7 +392,7 @@ export default function Planner({
     { id: "today", title: "Go to today", run: () => setTab("today") },
     { id: "week", title: "Go to the week (Spread)", run: () => setCalView("board") },
     { id: "inbox", title: "Go to inbox", run: () => setTab("inbox") },
-    { id: "sunday", title: "Sunday — compose the week", run: () => openFlow("sunday") },
+    { id: "sunday", title: "Plan the week", run: () => openFlow("sunday") },
     { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
     { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
     { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
@@ -416,7 +416,7 @@ export default function Planner({
   // Close the ⌘K palette and run the command in one step. We close with a
   // `replace` (not `closeOverlay`'s `history.back()`) because back() fires an
   // async popstate that would revert the command's own navigation a tick later
-  // — that race is why "Sunday — compose the week" (and every navigating
+  // — that race is why "Plan the week" (and every navigating
   // command) appeared to do nothing.
   const runCommand = useCallback(
     (cmd: Command) => {
@@ -486,8 +486,24 @@ export default function Planner({
           now={now}
           railRef={railRef}
           collapsed={focusMode}
+          weekDoor={
+            onSchedule
+              ? {
+                  mode: weekDoorMode,
+                  title: weekButtonTitle,
+                  glow: weekDoorMode === "review",
+                  glyph: glyphReport.emblem,
+                  onOpen: openWeekDoor,
+                }
+              : undefined
+          }
         />
         <div className="relative flex min-h-0 flex-1 min-w-[280px]">
+          {/* The week door lives on the rail's Week's Plan header — on top of the
+              priorities it opens. The toolbar's right cluster acts on the canvas
+              (zone · view · tools); the door acts on the plan, so it was the one
+              stranger there. It stays here ONLY in focus mode, where the rail is
+              slid shut: one door, always visible, never two opposite corners. */}
           <CalendarPane
             view={view}
             onViewChange={setCalView}
@@ -515,8 +531,8 @@ export default function Planner({
             railRef={railRef}
             onConvertTaskToEvent={handleConvertTaskToEvent}
             onConvertEventToTask={handleConvertEventToTask}
-            weekGlyph={onSchedule ? glyphReport.emblem : null}
-            onOpenWeekPlan={onSchedule ? openWeekDoor : undefined}
+            weekGlyph={onSchedule && focusMode ? glyphReport.emblem : null}
+            onOpenWeekPlan={onSchedule && focusMode ? openWeekDoor : undefined}
             weekButtonLabel={weekButtonLabel}
             weekButtonTitle={weekButtonTitle}
             weekButtonGlow={onSchedule && weekDoorMode === "review"}
@@ -573,12 +589,19 @@ export default function Planner({
             tense={viewedTense}
             weekLabel={weekLabel}
             viewedWeekISO={viewedWeekISO}
-            onClose={() => setWeekPlanOpen(false)}
+            onClose={closeOverlay}
             onPrevWeek={() => walkWeek(-7)}
             onNextWeek={() => walkWeek(7)}
             canGoNext={viewedWeekISO < horizonWeekISO}
-            onCompose={() => { setWeekPlanOpen(false); openFlow("sunday"); }}
-            composeLabel={weekPlanned && viewedWeekISO === horizonWeekISO ? "Re-plan the week" : "Compose the week"}
+            onCompose={() => {
+              // Replace the week-plan history entry so Back from the ritual
+              // returns to Schedule — not a reopened week plan.
+              navigate(
+                { flow: "sunday", flowStep: 0, flowFocus: null, overlay: "none", overlayId: null, floorModal: null },
+                "replace",
+              );
+            }}
+            composeLabel={weekPlanned && viewedWeekISO === horizonWeekISO ? "Re-plan the week" : "Plan the week"}
             story={weekPlanStory}
           />
         )}

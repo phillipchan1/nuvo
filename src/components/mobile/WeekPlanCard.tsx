@@ -3,10 +3,11 @@
 // you can walk ‹ › back to sealed Reviews of past weeks. Lifted out of the old
 // Plan tab so it survives that tab's removal.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { addDays, format, startOfWeek } from "date-fns";
 import { toDateISO } from "../../lib/dates";
 import { useWeekReport } from "../../hooks/useWeekReport";
+import { isRevealReady, isAcknowledged, acknowledge as ackReveal, readRevealConfig } from "../../lib/weekReveal";
 import { WeekPlanBody } from "../floors/WeekPlanFloor";
 import WeekStory from "../floors/WeekStory";
 import WeekEmblem from "../floors/WeekEmblem";
@@ -23,32 +24,58 @@ export default function WeekPlanCard() {
   const report = useWeekReport(currentWeekISO, now);
   const [open, setOpen] = useState(false);
   const total = report.priorityTotal;
+  const reviewReady = isRevealReady(now, currentWeekISO, readRevealConfig()) && !isAcknowledged(currentWeekISO);
+
+  const openSheet = () => {
+    if (reviewReady) ackReveal(currentWeekISO);
+    setOpen(true);
+  };
 
   return (
     <div>
       <button
-        onClick={() => setOpen(true)}
-        className="tap fast flex w-full items-center gap-3 rounded-xl border border-line bg-surface-2 px-3 py-3 text-left active:bg-surface"
+        onClick={openSheet}
+        className={`tap fast flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left active:bg-surface ${
+          reviewReady ? "border-[color:var(--signal)] bg-surface-2" : "border-line bg-surface-2"
+        }`}
+        style={reviewReady ? { boxShadow: "0 0 0 3px color-mix(in srgb, var(--signal) 18%, transparent)" } : undefined}
       >
         <WeekEmblem spec={report.emblem} state="forming" size={48} hideAmbient />
         <div className="min-w-0 flex-1">
-          <div className="section-label !p-0">This week</div>
-          <div className="truncate text-head font-semibold text-ink">{weekLabelOf(currentWeekISO)}</div>
+          <div className="section-label !p-0">{reviewReady ? "Review ready" : "This week"}</div>
+          <div className="masthead truncate text-head text-ink">{weekLabelOf(currentWeekISO)}</div>
           <div className="truncate text-caption text-muted">
-            {total > 0 ? `${report.landedCount} of ${total} priorities landed` : "Set what matters most"}
+            {reviewReady
+              ? report.find
+                ? "Your week left a pattern"
+                : "Your week is ready to receive"
+              : total > 0
+                ? `${report.landedCount} of ${total} priorities landed`
+                : "Set what matters most"}
           </div>
         </div>
+        {reviewReady && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--signal)" }} />}
         <span className="shrink-0 text-muted">›</span>
       </button>
 
-      {open && <WeekPlanSheet currentWeekISO={currentWeekISO} now={now} onClose={() => setOpen(false)} />}
+      {open && <WeekPlanSheet currentWeekISO={currentWeekISO} now={now} onClose={() => setOpen(false)} storyFirst={reviewReady} />}
     </div>
   );
 }
 
-function WeekPlanSheet({ currentWeekISO, now, onClose }: { currentWeekISO: string; now: Date; onClose: () => void }) {
+function WeekPlanSheet({
+  currentWeekISO,
+  now,
+  onClose,
+  storyFirst = true,
+}: {
+  currentWeekISO: string;
+  now: Date;
+  onClose: () => void;
+  storyFirst?: boolean;
+}) {
   const [viewedWeekISO, setViewedWeekISO] = useState(currentWeekISO);
-  const [mode, setMode] = useState<"story" | "detail">("story");
+  const [mode, setMode] = useState<"story" | "detail">(storyFirst ? "story" : "detail");
   const report = useWeekReport(viewedWeekISO, now);
   const isCurrent = viewedWeekISO === currentWeekISO;
   const state = isCurrent ? "forming" : ("sealed" as const);
@@ -58,8 +85,17 @@ function WeekPlanSheet({ currentWeekISO, now, onClose }: { currentWeekISO: strin
       return next > currentWeekISO ? currentWeekISO : next;
     });
 
-  // The recap opens full-screen by default (the received moment); "See the full
-  // week" drops into the detailed view — same as desktop.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
   if (mode === "story") {
     return (
       <div className="fixed inset-0 z-[60]">
@@ -70,13 +106,13 @@ function WeekPlanSheet({ currentWeekISO, now, onClose }: { currentWeekISO: strin
 
   const header = (
     <div className="mb-5 flex items-center gap-2 pt-safe">
-      <button onClick={() => walk(-7)} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Previous week">‹</button>
-      <button onClick={isCurrent ? undefined : () => walk(7)} disabled={isCurrent} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2 disabled:opacity-30" aria-label="Next week">›</button>
+      <button onClick={() => walk(-7)} className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Previous week">‹</button>
+      <button onClick={isCurrent ? undefined : () => walk(7)} disabled={isCurrent} className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2 disabled:opacity-30" aria-label="Next week">›</button>
       <div className="min-w-0 flex-1 text-center">
         <div className="section-label !p-0">{isCurrent ? "This week" : "The Review"}</div>
         <div className="masthead text-head text-ink">{weekLabelOf(viewedWeekISO)}</div>
       </div>
-      <button onClick={onClose} className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Close">✕</button>
+      <button onClick={onClose} className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Close">✕</button>
     </div>
   );
 

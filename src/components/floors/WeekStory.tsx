@@ -12,6 +12,7 @@ import { fmtHours } from "../../lib/dates";
 import { fmtMins } from "../../lib/now";
 import type { WeekReport } from "../../lib/composeWeek";
 import WeekEmblem, { type EmblemReveal } from "./WeekEmblem";
+import { WeekFindStoryCaption } from "./WeekFind";
 
 interface EmblemScene {
   reveal: EmblemReveal;
@@ -28,6 +29,7 @@ function buildScenes(report: WeekReport, state: "forming" | "sealed", weekLabel:
   const weave = report.domains.filter((d) => d.hours > 0).slice(0, 4);
   const dots = report.emblem.ambient;
   const highlights = report.highlights.slice(0, 3);
+  const find = report.find;
 
   const scenes: EmblemScene[] = [];
 
@@ -86,13 +88,21 @@ function buildScenes(report: WeekReport, state: "forming" | "sealed", weekLabel:
           </div>
         )}
         <p className="wk-in mx-auto mt-5 max-w-sm text-meta text-muted" style={wk(0.65)}>
-          Each ring is a domain; the longer its arc, the more hours it held.
+          Each ring is a domain; the longer its arc, the more hours it held. Tap a domain in the full week for receipts.
         </p>
       </>
     ),
   });
 
-  // 3 — Done-work: the ambient dots scatter in.
+  // 3 — The Find (only when we have one).
+  if (find) {
+    scenes.push({
+      reveal: {},
+      caption: <WeekFindStoryCaption find={find} />,
+    });
+  }
+
+  // 4 — Done-work: the ambient dots scatter in.
   scenes.push({
     reveal: {},
     caption: (
@@ -119,8 +129,7 @@ function buildScenes(report: WeekReport, state: "forming" | "sealed", weekLabel:
     ),
   });
 
-  // 4 — The seal: the whole mark, and what hands forward. (The closing/forward
-  // actions render in WeekStory's `last` block, below this caption.)
+  // 5 — The seal.
   scenes.push({
     reveal: {},
     caption: (

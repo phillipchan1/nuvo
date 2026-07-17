@@ -3,11 +3,11 @@
 // the ◇ Tending ritual's job — create the initiative bare here, ripen it there.
 // ⏎ moves focus through name → outcome → creates.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { endOfQuarter, format } from "date-fns";
 import * as chrono from "chrono-node";
 import { useVertical } from "../../hooks/useVertical";
-import { fmtDate } from "./parts";
+import { DomainPicker, fmtDate } from "./parts";
 import { Modal } from "../ui";
 
 export default function NewInitiative({
@@ -33,7 +33,6 @@ export default function NewInitiative({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expanding, setExpanding] = useState(false);
 
   const nameRef = useRef<HTMLInputElement>(null);
   const outcomeRef = useRef<HTMLInputElement>(null);
@@ -51,16 +50,6 @@ export default function NewInitiative({
       setFinishLine(format(results[0].start.date(), "yyyy-MM-dd"));
     }
   }, []);
-
-  // Collapse domain picker on outside click
-  useEffect(() => {
-    if (!expanding) return;
-    const close = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest("[data-chip-picker]")) setExpanding(false);
-    };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [expanding]);
 
   const submit = async () => {
     if (!canCreate || busy) return;
@@ -132,36 +121,11 @@ export default function NewInitiative({
       </div>
 
       {/* ── Context chips ── */}
-      <div className="relative border-t border-line px-6 py-3" data-chip-picker>
+      <div className="relative border-t border-line px-6 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Domain chip */}
-          <div className="relative">
-            <button
-              onClick={() => setExpanding(!expanding)}
-              className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label"
-              style={{ color: accent, borderColor: `${accent}55`, background: `${accent}12` }}
-            >
-              <span>{domain?.icon ?? "◆"}</span>
-              <span className="font-medium">{domain?.name ?? "Domain"}</span>
-              <span className="opacity-40">▾</span>
-            </button>
-            {expanding && (
-              <div className="elev-3 absolute top-full mt-1.5 left-0 z-50 flex flex-col gap-0.5 rounded-lg border border-line bg-surface p-1.5 min-w-[140px]">
-                {domains.map((d) => (
-                  <button
-                    key={d.id}
-                    onClick={() => { setDomainId(d.id); setExpanding(false); }}
-                    className="fast flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-caption hover:bg-bg"
-                    style={{ color: d.id === domainId ? d.color : "var(--text)", background: d.id === domainId ? `${d.color}12` : "transparent" }}
-                  >
-                    <span style={{ color: d.color }}>{d.icon}</span>
-                    {d.name}
-                    {d.id === domainId && <span className="ml-auto text-micro opacity-60">✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Same DomainPicker as project records — portaled menu so the pick
+              isn't eaten by the modal transform / overflow. */}
+          <DomainPicker domains={domains} value={domainId} onChange={setDomainId} />
 
           {/* Finish-line chip */}
           <div className="relative inline-flex">
@@ -200,7 +164,7 @@ export default function NewInitiative({
 
       {/* ── Footer ── */}
       <div className="flex items-center gap-2 border-t border-line bg-bg/40 px-6 py-3.5">
-        <span className="hidden text-meta text-muted/70 sm:inline">Shape it later in ◇ Groom</span>
+        <span className="hidden text-meta text-muted/70 sm:inline">Groom it later in ◇ Groom</span>
         <div className="flex-1" />
         <button
           onClick={onClose}

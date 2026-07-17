@@ -27,6 +27,7 @@ import {
   initiativeProgressAt,
   isOpenStatus,
   isProjectInFlight,
+  projectById,
   sprintMinsByDomain,
   sprintTasks,
   taskDomainColor,
@@ -35,16 +36,20 @@ import {
 } from "../../lib/vertical";
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO, planningWeekStartISO, todayISO } from "../../lib/dates";
 import { sprintLabel } from "../../lib/sprint";
-import { CONTEXT_META, composeWeek, type DayContext, type Placement } from "../../lib/compose";
+import { CONTEXT_META, composeWeek, plannedMinutes, type DayContext, type Placement } from "../../lib/compose";
 import { isEventHidden } from "../../lib/now";
-import { aiBatchInbox, batchWeek, type BatchResult, type InboxGroup } from "../../lib/batch";
+import { clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup } from "../../lib/batch";
 import { supabase } from "../../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../../lib/calibration";
 import { suggestPull, type PullSuggestion } from "../../lib/pull";
 import { MomentumChip } from "../floors/parts";
 import { BigRocks } from "../floors/bigRocks";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
-import { Btn, Modal } from "../ui";
+import { Btn } from "../ui";
+
+/** One board block's identity. A split overdue task yields several blocks that
+ *  share a task id, so the BLOCK — not the task — is what you move and resize. */
+const placementKey = (p: Placement) => (p.parts && p.parts > 1 ? `${p.task.id}#${p.part}` : p.task.id);
 
 const CONTEXT_CYCLE: DayContext[] = ["normal", "light", "travel", "off"];
 const DAY_GLYPH = ["S", "M", "T", "W", "T", "F", "S"]; // Sun…Sat, for working-day chips
@@ -59,7 +64,7 @@ const fmtMinShort = (m: number) => {
 type Phase = "intent" | "shape";
 
 export default function SundayRitual({ onClose }: { onClose: () => void }) {
-  const { data, planWeek, applySlots, applySchedule } = useVertical();
+  const { data, planWeek, applySlots } = useVertical();
   const { settings } = useSettings();
   const { data: allTasks = [] } = useAllTasks();
 
@@ -95,7 +100,9 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
 
   // ── the two buckets, intelligence picks: projects (lead initiatives, next-up,
   //    deadlines) + inbox (deadlines, faithfulness top-ups). One ranked set. ──
-  const suggestions = useMemo(() => suggestPull(data), [data]);
+  // the week's projects are the pull's primary source — pass the week so it can
+  // read them off On Deck instead of guessing from deadlines
+  const suggestions = useMemo(() => suggestPull(data, weekStartISO), [data, weekStartISO]);
   const [kept, setKept] = useState<Set<string>>(new Set());
   const seeded = useRef(false);
   // seed the draft once: the pull, PLUS anything already committed-but-unplaced
@@ -115,6 +122,33 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
   const keptTasks = useMemo<Task[]>(
     () => allTasks.filter((t) => kept.has(t.id) && !t.start_time && !t.slot_id && t.status !== "done"),
     [allTasks, kept],
+  );
+
+  // ── project work is slotted as PROJECT SLOTS, not loose per-task blocks ─────
+  // A project's steps belong to one sitting: "Thursday 1–3 is Stampede v3", not
+  // four errands scattered across three days. So we cluster the draft's project
+  // work into a slot per project (chunked to a sitting) and hand the composer the
+  // SLOT as one block; loose work still places per task.
+  const projectSlots = useMemo(
+    () => clusterWeek(keptTasks.filter((t) => t.project_id), data),
+    [keptTasks, data],
+  );
+
+  // AI-themed runs (the inbox tail + re-bundled carry-forward). They're drafts
+  // like everything else here — one board, one set of proposals you can move.
+  const [runs, setRuns] = useState<Batch[]>([]);
+  const runMemberIds = useMemo(() => new Set(runs.flatMap((r) => r.taskIds)), [runs]);
+
+  // a task inside a run is placed BY the run — it must not also place on its own
+  const looseTasks = useMemo(
+    () => keptTasks.filter((t) => !t.project_id && !runMemberIds.has(t.id)),
+    [keptTasks, runMemberIds],
+  );
+  const blocks_ = useMemo(() => [...projectSlots, ...runs], [projectSlots, runs]);
+  const slotById = useMemo(() => new Map(blocks_.map((b) => [b.id, b])), [blocks_]);
+  const composeTasks = useMemo<Task[]>(
+    () => [...blocks_.map(synthTask), ...looseTasks],
+    [blocks_, looseTasks],
   );
 
   // boundaries: working hours are a SETTING (not a step); per-day contexts live
@@ -142,7 +176,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
         weekStartISO,
         todayISO: today,
         now: new Date(),
-        tasks: keptTasks,
+        tasks: composeTasks,
         events: visibleEvents,
         blocks: onCalBlocks,
         workStartMin: workStart,
@@ -151,35 +185,41 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
         dayContexts,
         workingDays,
         weeklyBudgetMins: budget != null ? Math.max(0, budget - blockedMins) : null,
+        // a slot holds real tasks — it can't be carved in half
+        atomicIds: blocks_.map((b) => b.id),
       }),
-    [weekStartISO, today, keptTasks, visibleEvents, onCalBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays, budget, blockedMins],
+    [weekStartISO, today, composeTasks, blocks_, visibleEvents, onCalBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays, budget, blockedMins],
   );
 
   const gain = useMemo(() => computeGain(data), [data]);
 
   // Hand-edits on top of Nuvo's auto-placement: a move (day + start) or a resize
-  // (duration) per task. These override the composed placement and ride into the
+  // (duration) per BLOCK. These override the composed placement and ride into the
   // commit, so you build off the suggestion instead of accepting it whole.
+  //
+  // Keyed per placement, not per task: a split overdue task puts two blocks on the
+  // board sharing one task id, so keying by task made them move as one — which is
+  // why they were locked. The key is the block; the task id rides along for drop.
   const [overrides, setOverrides] = useState<Record<string, { dayISO: string; startMin: number; durationMin: number }>>({});
   const placements = useMemo(
     () => result.placements.map((p) => {
-      const o = overrides[p.task.id];
+      const o = overrides[placementKey(p)];
       return o ? { ...p, dayISO: o.dayISO, startMin: o.startMin, durationMin: o.durationMin } : p;
     }),
     [result.placements, overrides],
   );
-  const movePlacement = (taskId: string, dayISO: string, startMin: number) =>
+  const movePlacement = (key: string, dayISO: string, startMin: number) =>
     setOverrides((prev) => {
-      const base = result.placements.find((p) => p.task.id === taskId);
-      const durationMin = prev[taskId]?.durationMin ?? base?.durationMin ?? 30;
-      return { ...prev, [taskId]: { dayISO, startMin, durationMin } };
+      const base = result.placements.find((p) => placementKey(p) === key);
+      const durationMin = prev[key]?.durationMin ?? base?.durationMin ?? 30;
+      return { ...prev, [key]: { dayISO, startMin, durationMin } };
     });
-  const resizePlacement = (taskId: string, durationMin: number) =>
+  const resizePlacement = (key: string, durationMin: number) =>
     setOverrides((prev) => {
-      const base = result.placements.find((p) => p.task.id === taskId);
-      const dayISO = prev[taskId]?.dayISO ?? base?.dayISO ?? "";
-      const startMin = prev[taskId]?.startMin ?? base?.startMin ?? 0;
-      return { ...prev, [taskId]: { dayISO, startMin, durationMin } };
+      const base = result.placements.find((p) => placementKey(p) === key);
+      const dayISO = prev[key]?.dayISO ?? base?.dayISO ?? "";
+      const startMin = prev[key]?.startMin ?? base?.startMin ?? 0;
+      return { ...prev, [key]: { dayISO, startMin, durationMin } };
     });
 
   const plannedMins = placements.reduce((s, p) => s + p.durationMin, 0) + blockedMins;
@@ -192,68 +232,6 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       delete next[taskId];
       return next;
     });
-  };
-
-  // ── batch the committed week into named focus blocks (Slots) ──────────────
-  const [batch, setBatch] = useState<BatchResult | null>(null);
-  const proposeBatch = () => {
-    const pool = allTasks.filter(
-      (t) =>
-        t.sprint_id && t.sprint_id === data.sprint?.id &&
-        t.status !== "done" && t.status !== "trashed" && !t.start_time && !t.slot_id,
-    );
-    setBatch(
-      batchWeek({
-        tasks: pool,
-        data,
-        weekStartISO,
-        todayISO: today,
-        now: new Date(),
-        events: visibleEvents,
-        blocks: onCalBlocks,
-        workStartMin: workStart,
-        workEndMin: workEnd,
-        focusInitiativeIds: data.focusInitiativeIds,
-        dayContexts,
-        workingDays,
-      }),
-    );
-  };
-  const applyBatch = async () => {
-    if (!batch) return;
-    // stamp the sprint so themed inbox captures join the committed week (and
-    // leave the inbox); harmless for the deterministic batch — those tasks are
-    // already in this sprint.
-    const opts = { sprintId: data.sprint?.id ?? null };
-    const startISOof = (p: BatchResult["placed"][number]) => {
-      const [y, mo, d] = p.dayISO.split("-").map(Number);
-      return new Date(y, mo - 1, d, Math.floor(p.startMin / 60), p.startMin % 60).toISOString();
-    };
-    // a one-task run IS its own time block — schedule the task directly, no slot
-    // wrapper; only genuine multi-task runs become a slot container.
-    const solo = batch.placed.filter((p) => p.batch.taskIds.length === 1);
-    const runs = batch.placed.filter((p) => p.batch.taskIds.length > 1);
-    if (solo.length) {
-      await applySchedule(
-        solo.map((p) => ({ id: p.batch.taskIds[0], doDateISO: p.dayISO, startISO: startISOof(p), durationMins: p.durationMin })),
-        opts,
-      );
-    }
-    if (runs.length) {
-      await applySlots(
-        runs.map((p) => ({
-          title: p.batch.name,
-          doDateISO: p.dayISO,
-          startISO: startISOof(p),
-          durationMins: p.durationMin,
-          domainId: p.batch.domainId,
-          color: p.batch.color,
-          taskIds: p.batch.taskIds,
-        })),
-        opts,
-      );
-    }
-    setBatch(null);
   };
 
   // ── theme & slot the inbox: AI groups loose captures into named runs, the
@@ -276,23 +254,11 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
         setThemeErr("Nothing to theme — the inbox came back empty.");
         return;
       }
-      setBatch(
-        aiBatchInbox({
-          groups,
-          tasks: inboxRows,
-          data,
-          weekStartISO,
-          todayISO: today,
-          now: new Date(),
-          events: visibleEvents,
-          blocks: onCalBlocks,
-          workStartMin: workStart,
-          workEndMin: workEnd,
-          focusInitiativeIds: data.focusInitiativeIds,
-          dayContexts,
-          workingDays,
-        }),
-      );
+      // The runs join the DRAFT — they land on the board as proposals you can
+      // drag, exactly like a project slot. (They used to be placed behind their
+      // own back and shown in a modal: a second scheduler, with its own answer,
+      // that you couldn't touch.)
+      setRuns((prev) => [...prev, ...clusterInboxRuns(groups, inboxRows, data)]);
     } catch (e) {
       setThemeErr(e instanceof Error ? e.message : "Theming failed");
     } finally {
@@ -303,7 +269,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
   // ── re-bundle the carried/slipped work into themed focus blocks ────────────
   // The same AI theming the inbox uses, pointed at this week's slipped tasks: so
   // carry-forward becomes a few named focus blocks (each sized to its members),
-  // not a scatter of loose tasks. Reuses the SlotBatchModal + applyBatch tail.
+  // not a scatter of loose tasks. Lands in the draft, on the board, like the rest.
   const [themingCarried, setThemingCarried] = useState(false);
   const [carriedErr, setCarriedErr] = useState<string | null>(null);
   const themeCarried = async () => {
@@ -322,13 +288,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       if (error) throw error;
       const groups = (res?.groups ?? []) as InboxGroup[];
       if (!groups.length) { setCarriedErr("Couldn't bundle the carried work — try again."); return; }
-      setBatch(
-        aiBatchInbox({
-          groups, tasks: carried, data, weekStartISO, todayISO: today, now: new Date(),
-          events: visibleEvents, blocks: onCalBlocks, workStartMin: workStart, workEndMin: workEnd,
-          focusInitiativeIds: data.focusInitiativeIds, dayContexts, workingDays,
-        }),
-      );
+      setRuns((prev) => [...prev, ...clusterInboxRuns(groups, carried, data)]);
     } catch (e) {
       setCarriedErr(e instanceof Error ? e.message : "Bundling failed");
     } finally {
@@ -366,19 +326,55 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
 
   const commit = async () => {
     setApplying(true);
-    await planWeek({
-      commitTaskIds: [...kept],
-      placements: placements.map((p) => {
-        const [y, mo, d] = p.dayISO.split("-").map(Number);
-        return {
-          id: p.task.id,
+    const startISOof = (p: Placement) => {
+      const [y, mo, d] = p.dayISO.split("-").map(Number);
+      return new Date(y, mo - 1, d, Math.floor(p.startMin / 60), p.startMin % 60).toISOString();
+    };
+    // A project slot commits as a real Slot holding its tasks; loose work commits
+    // as its own block. Both ride the same paths the rest of the app already uses.
+    const slotSpecs: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; taskIds: string[] }[] = [];
+    const taskPlacements: { id: string; doDateISO: string; startISO: string; durationMins: number; splitChild?: { title: string } }[] = [];
+    for (const p of placements) {
+      const slot = slotById.get(p.task.id);
+      if (slot) {
+        // a one-task block IS its own time block — schedule the task directly,
+        // no slot wrapper; only a genuine multi-task sitting becomes a container
+        if (slot.taskIds.length === 1) {
+          taskPlacements.push({
+            id: slot.taskIds[0],
+            doDateISO: p.dayISO,
+            startISO: startISOof(p),
+            durationMins: p.durationMin,
+          });
+          continue;
+        }
+        slotSpecs.push({
+          title: slot.name,
           doDateISO: p.dayISO,
-          startISO: new Date(y, mo - 1, d, Math.floor(p.startMin / 60), p.startMin % 60).toISOString(),
+          startISO: startISOof(p),
           durationMins: p.durationMin,
-        };
-      }),
-      goal: goal.trim(),
-    });
+          domainId: slot.domainId,
+          color: slot.color,
+          taskIds: slot.taskIds,
+        });
+        continue;
+      }
+      // parts 2+ of a split overdue task are materialized as their own rows
+      const isChild = !!p.parts && p.parts > 1 && (p.part ?? 1) > 1;
+      taskPlacements.push({
+        id: p.task.id,
+        doDateISO: p.dayISO,
+        startISO: startISOof(p),
+        durationMins: p.durationMin,
+        ...(isChild ? { splitChild: { title: `${p.task.title} (${p.part}/${p.parts})` } } : {}),
+      });
+    }
+    // commit the pool first (every kept task joins the week), then time it.
+    // Run members ride along even if they were never "kept" — an inbox capture
+    // swept into a run is joining the week by virtue of being in one.
+    const commitTaskIds = [...new Set([...kept, ...runMemberIds])];
+    await planWeek({ commitTaskIds, placements: taskPlacements, goal: goal.trim() });
+    if (slotSpecs.length) await applySlots(slotSpecs, { sprintId: data.sprint?.id ?? null });
     setApplying(false);
     setCommitted(true);
   };
@@ -426,7 +422,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
           {/* ── ACT 1 · set the week — open with the look-back, then the intent ── */}
           {/* hero: ceremony + the gain folded in as the supporting read, not a stray line */}
           <header className="mb-8">
-            <div className="section-label"><span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · Set the week · {planningAhead ? "the week ahead" : "this week"}</div>
+            <div className="section-label"><span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · Slot the projects · {planningAhead ? "the week ahead" : "this week"}</div>
             <h1 className="mt-1.5 text-display masthead leading-[1.05]">
               Week of {format(parseDateISO(weekStartISO), "MMMM d")}
             </h1>
@@ -445,19 +441,18 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
           <BetsStrip />
 
           {/* priorities — the heart: name what would make this week a win */}
-          <div className="mt-8"><BigRocks /></div>
+          <div className="mt-8"><BigRocks weekStartISO={weekStartISO} /></div>
         </div>
       ) : (
         // ── ACT 2 · shape it — the composed week wide, pull + boundaries railed ──
         <div className="flex flex-col gap-6 lg:flex-row">
           <section className="min-w-0 flex-1">
             <div className="mb-2 flex items-baseline justify-between gap-3">
-              <div className="flex items-baseline gap-3">
-                <h2 className="text-head masthead">The week</h2>
-                <button onClick={proposeBatch} className="fast mono text-meta text-accent hover:underline" title="Group the week's committed work into a few intelligent focus blocks">
-                  ✦ batch into focus blocks
-                </button>
-              </div>
+              {/* no "batch into focus blocks" button: the board already composes
+                  project slots and themed runs. A second batcher over the
+                  already-committed week was a different answer to the same
+                  question, shown in a modal you couldn't edit. */}
+              <h2 className="text-head masthead">The week</h2>
               <span className="mono shrink-0 text-meta text-muted">
                 {placedCount} placed · {result.unplaced.length} in the pool
                 {eventCount > 0 && ` · ${eventCount} immovable`}
@@ -476,6 +471,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                   slots={weekSlots}
                   locked={onCalBlocks}
                   placements={placements}
+                  slotById={slotById}
                   data={data}
                   workStartMin={workStart}
                   workEndMin={workEnd}
@@ -486,6 +482,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                 />
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-meta text-muted">
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", borderLeft: "3px solid var(--accent)" }} /> ✦ placed for you</span>
+                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 26%, transparent)", borderLeft: "4px solid var(--accent)", boxShadow: "inset 3px 0 0 color-mix(in srgb, var(--accent) 45%, transparent)" }} /> ▸ project slot</span>
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 13%, transparent)", borderLeft: "3px solid var(--accent)" }} /> already set ✓</span>
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--ink) 5%, transparent)", borderLeft: "2px solid var(--line-strong)" }} /> immovable</span>
                   <span className="mono ml-auto">hover a placed block to drop it</span>
@@ -506,18 +503,11 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
             )}
           </section>
 
-          {/* right rail — the inbox + pull + boundaries beside the week */}
+          {/* right rail — carry forward → the week's projects → loose inbox.
+              That's the order the week is actually owed: debt you already carry,
+              then the intent you named, then whatever's discretionary. */}
           <aside className="shrink-0 space-y-5 lg:w-[360px]">
-            {/* clear the inbox — the GTD tail: loose captures get a when. AI finds
-                what's like each other, the composer drops each run into open time. */}
-            <InboxRun
-              count={inbox.length}
-              theming={theming}
-              error={themeErr}
-              onTheme={() => void themeInbox()}
-            />
-
-            {/* the candidates — the merged pull; toggle what belongs to the week */}
+            {/* the candidates — carrying forward, then the projects' work */}
             <Candidates
               suggestions={suggestions}
               kept={kept}
@@ -526,6 +516,15 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
               onThemeCarried={() => void themeCarried()}
               themingCarried={themingCarried}
               carriedErr={carriedErr}
+            />
+
+            {/* clear the inbox — the GTD tail: loose captures get a when. AI finds
+                what's like each other, the composer drops each run into open time. */}
+            <InboxRun
+              count={inbox.length}
+              theming={theming}
+              error={themeErr}
+              onTheme={() => void themeInbox()}
             />
 
             {/* boundaries — settings, tucked away; here when you need them */}
@@ -539,9 +538,6 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
             />
           </aside>
         </div>
-      )}
-      {batch && (
-        <SlotBatchModal batch={batch} data={data} onApply={() => void applyBatch()} onClose={() => setBatch(null)} />
       )}
     </Shell>
   );
@@ -593,8 +589,12 @@ function Shell({
 // and the dots jump freely between them.
 function StepNav({ phase, setPhase }: { phase: Phase; setPhase: (p: Phase) => void }) {
   const steps: { id: Phase; n: number; label: string }[] = [
-    { id: "intent", n: 1, label: "Set the week" },
-    { id: "shape", n: 2, label: "Shape it" },
+    // The flow is the app's two verbs, twice: slot the projects into the week,
+    // then slot their work into days. It used to invent "Set" / "Shape" for these
+    // — verbs that appear nowhere else — because we hadn't noticed it was doing
+    // the same act at two altitudes.
+    { id: "intent", n: 1, label: "Slot the projects" },
+    { id: "shape", n: 2, label: "Slot the work" },
   ];
   return (
     <div className="flex items-center gap-1">
@@ -637,7 +637,7 @@ function IntentBar({ priorityCount, leadCount, onNext }: { priorityCount: number
           {leadCount > 0 ? ` · ★ ${leadCount} lead${leadCount === 1 ? "" : "s"}` : ""}
           {" — set the intent, then shape the week around it"}
         </div>
-        <Btn kind="primary" onClick={onNext} className="shrink-0 px-4 py-2">Shape the week →</Btn>
+        <Btn kind="primary" onClick={onNext} className="shrink-0 px-4 py-2">Slot the work →</Btn>
       </div>
     </footer>
   );
@@ -888,15 +888,30 @@ function Candidates({
   const slippedMins = slipped.reduce((m, s) => m + s.task.durationMins, 0);
   const keptFresh = fresh.filter((s) => kept.has(s.task.id)).length;
 
-  const renderRow = (s: PullSuggestion) => (
+  // The fresh pull, split: work belonging to the week's projects (grouped under
+  // the project, so you SEE the projects you named) vs everything else.
+  const byProject = new Map<string, PullSuggestion[]>();
+  const looseFresh: PullSuggestion[] = [];
+  for (const s of fresh) {
+    const pid = s.projectId;
+    if (pid && projectById(data, pid)) {
+      if (!byProject.has(pid)) byProject.set(pid, []);
+      byProject.get(pid)!.push(s);
+    } else looseFresh.push(s);
+  }
+
+  // `grouped` rows sit under a heading that already names the project, so the
+  // per-row reason ("<project> moves this week") is pure repetition — and long
+  // enough to squeeze the task's own title out of the row.
+  const renderRow = (s: PullSuggestion, grouped = false) => (
     <CandidateRow
       key={s.task.id}
       on={kept.has(s.task.id)}
       onToggle={() => toggle(s.task.id)}
       color={domainById(data, s.task.domainId)?.color}
       title={s.task.title}
-      mins={s.task.durationMins}
-      reason={s.reason}
+      mins={plannedMinutes(s.task.durationMins, !!s.task.projectId)}
+      reason={grouped ? "" : s.reason}
       carried={s.task.rollCount > 0}
     />
   );
@@ -923,30 +938,59 @@ function Candidates({
             </button>
             {carriedErr && <p className="mt-1 text-meta text-signal">{carriedErr}</p>}
           </div>
-          <div className="space-y-1">{slipped.map(renderRow)}</div>
+          <div className="space-y-1">{slipped.map((s) => renderRow(s))}</div>
         </div>
       )}
 
       <div className="mb-2 flex items-baseline justify-between">
         <h2 className="text-head masthead">
-          Pulled for you <span className="mono text-meta font-normal text-muted">{keptFresh}/{fresh.length} in the week</span>
+          The projects <span className="mono text-meta font-normal text-muted">{keptFresh}/{fresh.length} in the week</span>
         </h2>
         <button onClick={() => setShowMore((s) => !s)} className="fast mono text-meta text-muted hover:text-ink">
           {showMore ? "hide" : "＋ add more"}
         </button>
       </div>
 
-      <div className="space-y-1">
-        {fresh.length === 0 && slipped.length === 0 && (
-          <p className="py-1 text-caption text-muted">
-            Nothing urgent to pull — no deadlines land and no domain's gone quiet. Add by hand, or theme the inbox above.
-          </p>
-        )}
-        {fresh.length === 0 && slipped.length > 0 && (
-          <p className="py-1 text-caption text-muted">Nothing else urgent to pull — the week's carrying its slipped work.</p>
-        )}
-        {fresh.map(renderRow)}
-      </div>
+      {byProject.size === 0 && looseFresh.length === 0 && slipped.length === 0 && (
+        <p className="py-1 text-caption text-muted">
+          No projects on deck for this week, and nothing urgent to pull. Slot a project in the step before this.
+        </p>
+      )}
+
+      {/* the week's projects, each with its own open work — the point of the week */}
+      {[...byProject.entries()].map(([pid, rows]) => {
+        const proj = projectById(data, pid)!;
+        const color = domainById(data, proj.domainId)?.color ?? "var(--accent)";
+        const on = rows.filter((r) => kept.has(r.task.id)).length;
+        const mins = rows
+          .filter((r) => kept.has(r.task.id))
+          .reduce((m, r) => m + plannedMinutes(r.task.durationMins, true), 0);
+        const allOn = on === rows.length;
+        return (
+          <div key={pid} className="mb-3">
+            <div className="mb-1 flex items-baseline gap-2">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
+              <span className="min-w-0 flex-1 truncate text-body">{proj.name}</span>
+              <button
+                onClick={() => {
+                  const next = new Set(kept);
+                  rows.forEach((r) => (allOn ? next.delete(r.task.id) : next.add(r.task.id)));
+                  setKept(next);
+                }}
+                className="fast mono shrink-0 text-micro text-muted hover:text-accent"
+              >
+                {allOn ? "none" : "all"}
+              </button>
+              <span className="mono shrink-0 text-micro text-muted">{on}/{rows.length} · {hrs(mins)}h</span>
+            </div>
+            <div className="space-y-1">{rows.map((r) => renderRow(r, true))}</div>
+          </div>
+        );
+      })}
+
+      {looseFresh.length > 0 && (
+        <div className="space-y-1">{looseFresh.map((s) => renderRow(s))}</div>
+      )}
 
       {showMore && (
         <div className="mt-2 max-h-[34vh] overflow-y-auto border-t border-line pt-2">
@@ -959,7 +1003,7 @@ function Candidates({
               onToggle={() => toggle(t.id)}
               color={domainById(data, t.domainId)?.color}
               title={t.title || "untitled"}
-              mins={t.durationMins}
+              mins={plannedMinutes(t.durationMins, !!t.projectId)}
               reason={t.inbox ? "from the inbox" : "from a backlog"}
               carried={t.rollCount > 0}
             />
@@ -1191,6 +1235,16 @@ interface GridItem {
   title: string;
   color: string | null;
   reason?: string;
+  /** The originating task row (== id for whole blocks; the shared base for split
+   *  pieces). Used for drop/remove, which acts on the whole task. */
+  taskId?: string;
+  /** Project-backed work reads as a "project slot" — significant, not errand
+   *  time. Carries the project name as an eyebrow above the title. */
+  project?: string | null;
+  /** how many tasks this block holds — set only on a project slot */
+  holds?: number;
+  /** Set on an overdue task carved across sittings — this piece is 1 of N. */
+  split?: { part: number; parts: number };
 }
 
 function WeekGrid({
@@ -1199,6 +1253,7 @@ function WeekGrid({
   slots,
   locked,
   placements,
+  slotById,
   data,
   workStartMin,
   workEndMin,
@@ -1212,6 +1267,8 @@ function WeekGrid({
   slots: Slot[];
   locked: Task[];
   placements: Placement[];
+  /** placements whose "task" is really a project slot, by synthetic id */
+  slotById: Map<string, Batch>;
   data: VerticalData;
   workStartMin: number;
   workEndMin: number;
@@ -1257,14 +1314,23 @@ function WeekGrid({
     });
   }
   for (const p of placements) {
+    const split = p.parts && p.parts > 1 ? { part: p.part!, parts: p.parts } : undefined;
+    // a project slot's "task" is the sitting itself — its title IS the project,
+    // and the tasks it holds are the detail
+    const slot = slotById.get(p.task.id);
     add(p.dayISO, {
-      id: p.task.id,
+      // the block's identity — split pieces share a task id, so they key by part
+      id: placementKey(p),
+      taskId: p.task.id,
       kind: "new",
       startMin: p.startMin,
       endMin: p.startMin + p.durationMin,
       title: p.task.title,
       color: taskDomainColor(data, p.task),
       reason: p.reason,
+      project: p.task.project_id ? projectById(data, p.task.project_id)?.name ?? null : null,
+      holds: slot ? slot.taskIds.length : undefined,
+      split,
     });
   }
   // batched focus blocks (Slots) the user has already created — shown as
@@ -1434,6 +1500,11 @@ function WeekGrid({
                 }
                 const isNew = it.kind === "new";
                 const isSlot = it.kind === "slot";
+                const isProject = isNew && !!it.project; // a "project slot" — significant work
+                const isSplit = isNew && !!it.split; // an overdue task carved across sittings
+                // everything Nuvo places is a proposal you can move — including a
+                // split sitting (overrides key per block, so pieces move apart)
+                const draggable = isNew;
                 const hue = it.color ?? "var(--accent)";
                 const dragging = drag?.id === it.id;
                 const moveSource = dragging && drag!.mode === "move";
@@ -1447,31 +1518,43 @@ function WeekGrid({
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
-                    onPointerDown={isNew ? (e) => startDrag(e, it, d.iso, "move") : undefined}
-                    className={`group lift-anim absolute inset-x-1 overflow-hidden rounded-[6px] px-1.5 py-1 ${isNew ? "cursor-grab" : ""}`}
+                    onPointerDown={draggable ? (e) => startDrag(e, it, d.iso, "move") : undefined}
+                    className={`group lift-anim absolute inset-x-1 overflow-hidden rounded-[6px] px-1.5 py-1 ${draggable ? "cursor-grab" : ""}`}
                     style={{
                       top: blkTop, height: blkHeight,
                       color: "var(--ink)",
-                      background: `color-mix(in srgb, ${hue} ${isNew ? 22 : isSlot ? 18 : 13}%, transparent)`,
-                      borderLeft: `3px solid ${hue}`,
+                      background: `color-mix(in srgb, ${hue} ${isProject ? 26 : isNew ? 22 : isSlot ? 18 : 13}%, transparent)`,
+                      borderLeft: `${isProject ? 4 : 3}px solid ${hue}`,
                       borderTop: moveSource ? "1px dashed var(--line-strong)" : undefined,
                       opacity: moveSource ? 0.3 : isNew || isSlot ? 1 : 0.85,
                       backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
-                      boxShadow: isNew && !moveSource ? "var(--shadow-lift)" : "none",
-                      touchAction: isNew ? "none" : undefined,
+                      // a project slot lifts a touch more — a real push, not errand time
+                      boxShadow: !isNew || moveSource ? "none" : isProject ? `var(--shadow-lift), inset 3px 0 0 color-mix(in srgb, ${hue} 45%, transparent)` : "var(--shadow-lift)",
+                      touchAction: draggable ? "none" : undefined,
                     }}
-                    title={isNew ? "drag to move · drag the bottom edge to resize" : isSlot ? "focus block — your batched work" : "already on the calendar — locked"}
+                    title={draggable ? `drag to move · drag the bottom edge to resize${isSplit ? " · one sitting of a split" : ""}` : isSlot ? "focus block — your batched work" : "already on the calendar — locked"}
                   >
+                    {/* the eyebrow names the project — pointless on a project SLOT,
+                        whose own title is already the project name */}
+                    {isProject && !it.holds && blkHeight > 34 && (
+                      <div
+                        className="section-label truncate leading-none"
+                        style={{ color: hue, letterSpacing: "0.06em" }}
+                        title={it.project ?? undefined}
+                      >
+                        {it.project}
+                      </div>
+                    )}
                     <div className="flex items-start gap-1">
                       <div className="min-w-0 flex-1 truncate text-meta font-semibold leading-tight">
-                        {isSlot ? `⛶ ${it.title}` : isNew ? `✦ ${it.title}` : it.title}
+                        {isSlot ? `⛶ ${it.title}` : isProject ? `▸ ${it.title}` : isNew ? `✦ ${it.title}` : it.title}
                       </div>
                       {isNew ? (
                         <button
                           onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() => onDrop(it.id)}
+                          onClick={() => onDrop(it.taskId ?? it.id)}
                           className="fast shrink-0 text-caption leading-none text-muted opacity-0 hover:text-signal group-hover:opacity-100"
-                          title="Remove from the week"
+                          title={isSplit ? "Remove the whole overdue task from the week" : "Remove from the week"}
                         >
                           ×
                         </button>
@@ -1482,9 +1565,11 @@ function WeekGrid({
                     {blkHeight > 30 && (
                       <div className="mono truncate text-micro leading-tight text-muted">
                         {fmtMinShort(it.startMin)}–{fmtMinShort(endMin)}
+                        {it.holds ? ` · ${it.holds} task${it.holds === 1 ? "" : "s"}` : ""}
+                        {isSplit && <span className="text-signal"> · sitting {it.split!.part}/{it.split!.parts}</span>}
                       </div>
                     )}
-                    {isNew && (
+                    {draggable && (
                       <div
                         onPointerDown={(e) => startDrag(e, it, d.iso, "resize")}
                         className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize"
@@ -1572,81 +1657,4 @@ function computeGain(data: VerticalData) {
     .slice(0, 2);
 
   return { doneCount: done.length, doneMins, topMove: moved[0] ?? null, quiet };
-}
-
-// ── the batched week — proposed focus blocks, reviewed before they're created ─
-function SlotBatchModal({
-  batch,
-  data,
-  onApply,
-  onClose,
-}: {
-  batch: BatchResult;
-  data: VerticalData;
-  onApply: () => void;
-  onClose: () => void;
-}) {
-  const titleOf = (id: string) => data.tasks.find((t) => t.id === id)?.title ?? "task";
-  const days = [...new Set(batch.placed.map((p) => p.dayISO))].sort();
-  return (
-    <Modal onClose={onClose} width="max-w-lg">
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div className="text-head font-semibold">Focus blocks</div>
-        <div className="mono text-caption text-muted">
-          {batch.placed.length} block{batch.placed.length === 1 ? "" : "s"}
-          {batch.unplaced.length ? ` · ${batch.unplaced.length} unplaced` : ""}
-        </div>
-      </div>
-
-      {batch.placed.length === 0 ? (
-        <div className="p-5 text-center text-body text-muted">
-          Nothing to batch — the week's committed work is empty or already blocked.
-        </div>
-      ) : (
-        <div className="max-h-[55vh] space-y-3 overflow-y-auto p-3">
-          {days.map((day) => (
-            <div key={day}>
-              <div className="section-label mb-1">{format(parseDateISO(day), "EEE MMM d")}</div>
-              <div className="space-y-1.5">
-                {batch.placed
-                  .filter((p) => p.dayISO === day)
-                  .sort((a, b) => a.startMin - b.startMin)
-                  .map((p) => (
-                    <div
-                      key={p.batch.id}
-                      className="rounded-md border border-line bg-surface px-3 py-2"
-                      style={{ borderLeft: `3px solid ${p.batch.color ?? "var(--accent)"}` }}
-                    >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-body font-medium">{p.batch.name}</span>
-                        <span className="mono shrink-0 text-meta text-muted">{fmtBlock(p.startMin)}–{fmtBlock(p.startMin + p.durationMin)}</span>
-                      </div>
-                      <div className="mono mt-0.5 truncate text-micro text-muted">{p.batch.taskIds.map(titleOf).join(" · ")}</div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {batch.unplaced.length > 0 && (
-        <div className="border-t border-line px-4 py-2 text-label text-muted">
-          {batch.unplaced.length} block{batch.unplaced.length === 1 ? "" : "s"} didn't fit — their tasks stay in the pool.
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 border-t border-line p-3">
-        {batch.placed.length > 0 && (
-          <Btn kind="primary" onClick={onApply}>Create {batch.placed.length} focus block{batch.placed.length === 1 ? "" : "s"} →</Btn>
-        )}
-        <Btn onClick={onClose}>{batch.placed.length > 0 ? "Cancel" : "Close"}</Btn>
-      </div>
-    </Modal>
-  );
-}
-
-function fmtBlock(m: number): string {
-  const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "p" : "a", hh = ((h + 11) % 12) + 1;
-  return mm === 0 ? `${hh}${ap}` : `${hh}:${String(mm).padStart(2, "0")}${ap}`;
 }

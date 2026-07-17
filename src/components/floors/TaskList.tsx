@@ -24,6 +24,7 @@ export default function TaskList({
   accent,
   emptyHint = "No tasks yet.",
   keyResults,
+  composerFirst = false,
 }: {
   tasks: VTask[];
   parent: TaskParent;
@@ -32,19 +33,44 @@ export default function TaskList({
   /** When present, each row gets a chip to point the task at the key result it
    *  moves (the OKR link). Omit to keep the plain list — desktop unchanged. */
   keyResults?: KeyResult[];
+  /** Pin the composer (and Groom) ABOVE the rows — the entry point is the first
+   *  thing, for scaffolding-first surfaces like the project record. */
+  composerFirst?: boolean;
 }) {
-  const { addTask, updateTask, deleteTask, restoreTask, toggleTask, toggleTaskInbox } = useVertical();
+  const { addTask, addTasks, updateTask, deleteTask, restoreTask, toggleTask, toggleTaskInbox } = useVertical();
   const [draft, setDraft] = useState("");
   const [refining, setRefining] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Turn one line of free text into a backlog draft — a trailing duration token
+  // ("…draft outline 30m") is parsed off the title.
+  const draftFromLine = (line: string) => {
+    const parsed = parseCapture(line);
+    return {
+      title: parsed.title || line,
+      energy: "quick" as VTask["energy"],
+      durationMins: parsed.durationMinutes ?? 20,
+    };
+  };
+
   // Type → Enter → land a backlog task → clear → stay focused for the next.
-  // A trailing duration token ("…draft outline 30m") is parsed off the title.
   const submit = () => {
     const text = draft.trim();
     if (!text) return;
     const parsed = parseCapture(text);
     addTask(parent, { title: parsed.title || text, durationMins: parsed.durationMinutes ?? undefined });
+    setDraft("");
+    inputRef.current?.focus();
+  };
+
+  // Paste a whole list → one task per non-empty line, in order. The single-line
+  // path stays untouched (React inserts it into the field as usual).
+  const onPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData("text");
+    const lines = text.split(/\r?\n/).map((l) => l.replace(/^\s*[-*•\d.)\]]+\s*/, "").trim()).filter(Boolean);
+    if (lines.length < 2) return; // let the browser handle a plain single-line paste
+    e.preventDefault();
+    void addTasks(parent, lines.map(draftFromLine));
     setDraft("");
     inputRef.current?.focus();
   };
@@ -62,10 +88,12 @@ export default function TaskList({
     if (!t.inbox) toast("Added to Inbox — triage it from there.");
   };
 
-  return (
-    <div>
+  const rows = (
+    <>
+      {/* rows are hairline-SEPARATED, so the last one doesn't close with a rule —
+          otherwise it doubles up with whatever section follows. */}
       {tasks.map((t) => (
-        <div key={t.id} className="group fast flex items-center gap-2.5 border-b border-line py-2 hover:bg-accent-soft/40">
+        <div key={t.id} className="group fast flex items-center gap-2.5 border-b border-line py-2 last:border-b-0 hover:bg-accent-soft/40">
           <button
             onClick={() => toggleTask(t.id)}
             className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-meta"
@@ -132,43 +160,78 @@ export default function TaskList({
       ))}
 
       {tasks.length === 0 && <div className="py-2 text-caption text-muted italic">{emptyHint}</div>}
+    </>
+  );
 
-      {/* persistent composer — the Todoist-fast add */}
-      <div className="mt-1.5 flex items-center gap-2.5 border-b border-transparent py-1.5">
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border border-dashed border-line text-meta text-muted">+</span>
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); submit(); }
-            if (e.key === "Escape") setDraft("");
-          }}
-          placeholder="Add a task… ↵ to add another"
-          className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted/70"
+  // The persistent composer — the Todoist-fast add, and (in the record) the
+  // PRIMARY action. No outline (that reads restrictive and fights the paper);
+  // it rests softly raised off the canvas and LIFTS on focus — presence through
+  // fill + float + the accent badge, per "focus lifts, it doesn't outline."
+  const composer = (
+    <div
+      className={`fast flex items-center gap-3 rounded-[var(--radius)] px-3.5 py-3 [box-shadow:var(--shadow-1)] focus-within:-translate-y-px focus-within:[box-shadow:var(--shadow-lift)] ${composerFirst ? "" : "mt-2.5"}`}
+      style={{ background: "var(--surface)" }}
+    >
+      <span
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-caption font-semibold text-white"
+        style={{ background: accent }}
+      >
+        +
+      </span>
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); submit(); }
+          if (e.key === "Escape") setDraft("");
+        }}
+        onPaste={onPaste}
+        placeholder="Add a task… ↵ to add another, or paste a list"
+        className="min-w-0 flex-1 bg-transparent text-lead outline-none placeholder:text-muted/60"
+        style={{ caretColor: accent }}
+      />
+    </div>
+  );
+
+  const groom = parent.projectId ? (
+    <div className={composerFirst ? "mt-2" : "mt-2"}>
+      {refining ? (
+        <TaskRefine
+          projectId={parent.projectId}
+          parent={parent}
+          tasks={tasks}
+          accent={accent}
+          onClose={() => setRefining(false)}
         />
-      </div>
+      ) : (
+        <button
+          onClick={() => setRefining(true)}
+          className="fast inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-meta text-muted hover:border-line-strong hover:text-ink"
+          title="Let Nuvo tighten wording, add missing steps, and suggest an order"
+        >
+          <span style={{ color: accent }}>✦</span> Groom with Nuvo
+        </button>
+      )}
+    </div>
+  ) : null;
 
-      {parent.projectId && (
-        <div className="mt-2">
-          {refining ? (
-            <TaskRefine
-              projectId={parent.projectId}
-              parent={parent}
-              tasks={tasks}
-              accent={accent}
-              onClose={() => setRefining(false)}
-            />
-          ) : (
-            <button
-              onClick={() => setRefining(true)}
-              className="fast inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-meta text-muted hover:border-line-strong hover:text-ink"
-              title="Let Nuvo tighten wording, add missing steps, and suggest an order"
-            >
-              <span style={{ color: accent }}>✦</span> Groom with Nuvo
-            </button>
-          )}
-        </div>
+  // Scaffolding-first surfaces pin the entry point on top; everywhere else keeps
+  // the familiar rows-then-composer order.
+  return (
+    <div>
+      {composerFirst ? (
+        <>
+          {composer}
+          {groom}
+          <div className="mt-3">{rows}</div>
+        </>
+      ) : (
+        <>
+          {rows}
+          {composer}
+          {groom}
+        </>
       )}
     </div>
   );

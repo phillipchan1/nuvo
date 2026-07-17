@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { addDays, format } from "date-fns";
 import { fmtDuration, parseDateISO, toDateISO } from "../lib/dates";
 import { expandRule, type RecurrenceRule } from "../lib/recurrence";
+import { fixedCssPx, getUiScale } from "../hooks/useUiScale";
 import { RepeatControl } from "./RecurrencePicker";
 import { GuestsInput } from "./GuestsInput";
 
@@ -50,10 +51,10 @@ export default function DraftComposer({
   const inputRef = useRef<HTMLInputElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  const [pos, setPos] = useState<{ top: number; left: number }>({
-    top: point.y,
-    left: point.x + 12,
-  });
+  const [pos, setPos] = useState<{ top: number; left: number }>(() => ({
+    top: fixedCssPx(point.y),
+    left: fixedCssPx(point.x + 12),
+  }));
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -65,14 +66,21 @@ export default function DraftComposer({
     const card = cardRef.current;
     if (!card) return;
     const place = () => {
+      const z = getUiScale();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const h = card.offsetHeight;
+      // Prefer visual size — under CSS zoom, offsetHeight is pre-zoom layout px
+      // while point/innerWidth are post-zoom viewport coords.
+      const h = card.getBoundingClientRect().height;
+      const w = COMPOSER_W * z;
       let left = point.x + 12;
-      if (left + COMPOSER_W > vw - 8) left = point.x - 12 - COMPOSER_W;
+      if (left + w > vw - 8) left = point.x - 12 - w;
       left = Math.max(8, left);
       const top = Math.max(8, Math.min(point.y - 20, vh - h - 8));
-      setPos({ top, left });
+      const next = { top: fixedCssPx(top), left: fixedCssPx(left) };
+      // Bail when unchanged — ResizeObserver + setState(new object) would
+      // otherwise re-render every frame and can tear down the composer.
+      setPos((prev) => (prev.top === next.top && prev.left === next.left ? prev : next));
     };
     place();
     const ro = new ResizeObserver(place);

@@ -28,17 +28,16 @@ import {
   ripenessOfProject,
   type GroomCandidate,
 } from "./tending";
+import { projectsOnDeck } from "./priorities";
+import { planningWeekStartISO } from "./dates";
 
 // ── Floors — the readiness elevations, by their Rung id ──────────────────────
 // Readiness is directional: a floor is ready when its contents are groomed
 // enough for the floor BELOW to consume. So readiness lives on the four
 // elevations that each groom for a consumer — Schedule (legacy id "day"),
-// Projects, Initiatives, Domains. *Today* (the Rung "now") is deliberately NOT
-// a readiness floor: it's the bottom of the funnel, the execution surface where
-// groomed work gets done — there is no floor below it to be ready for, and no
-// grooming ritual that fills a meter. Its rung is pure navigation; the "order
-// my day" coaching lives inside the Today tab, not the chrome. These strings
-// match `Rung` in AppShell so the Spine can pass its rung id straight through.
+// Projects, Initiatives, Domains. Schedule is the bottom of the funnel: it
+// grooms for the day itself. These strings match `Rung` in AppShell so the
+// Spine can pass its rung id straight through.
 export type Floor = "day" | "project" | "initiative" | "domain";
 export const FLOORS: Floor[] = ["day", "project", "initiative", "domain"];
 
@@ -227,8 +226,16 @@ export interface WeekReadinessItem {
 /** The week's grooming checklist, in priority order. Pure over the snapshot. */
 export function weekReadiness(d: VerticalData): WeekReadinessItem[] {
   const composed = Boolean(d.sprint?.reviewed_at);
-  const rocks = d.bigRocks.length;
-  const inbox = inboxTasks(d).length;
+  // "priorities named" = projects On Deck committed to this week (derived), not
+  // the stored snapshot — otherwise this reads green off a list that drifted.
+  const rocks = projectsOnDeck(d, d.sprint?.week_start ?? planningWeekStartISO()).length;
+  // The week is judged on the plan you made, not on what landed after you made it —
+  // a Wednesday capture is not Sunday's debt. Until the week is composed there's no
+  // plan to be true to, so the whole pile counts.
+  const composedAt = d.sprint?.reviewed_at ?? null;
+  const inbox = inboxTasks(d).filter(
+    (t) => !composedAt || !t.createdAt || t.createdAt < composedAt,
+  ).length;
   // placed = committed this week but with no day yet. A do_date OR a slot (which
   // carries the day) counts as placed; status is "scheduled" once a start_time
   // or slot_id exists, so "ready" = no block and no day.

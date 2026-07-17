@@ -51,16 +51,10 @@ export interface MarqueeTargetDef {
 export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
   // ── Floors (the altitude ladder) ─────────────────────────────────────────
   {
-    key: "today",
-    label: "Today",
-    nav: { kind: "rung", rung: "now" },
-    describe: "The Today floor — the day's execution coach (the Call, the next move, what's slipped, the schedule). Point here when the user asks about today, what to do now, or how their day looks.",
-  },
-  {
     key: "schedule",
     label: "Schedule",
     nav: { kind: "rung", rung: "day" },
-    describe: "The Schedule / calendar canvas. Point here when the user asks to see their calendar, their time blocks, or their schedule.",
+    describe: "The Schedule / calendar canvas — the surface the day is actually run on. Point here when the user asks to see their calendar, their time blocks, their schedule, how today looks, or what's on right now.",
   },
   {
     key: "projects",
@@ -140,34 +134,18 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     describe: "The week's highlights — the done work that actually moved a domain. Point here when the user asks what they got done or what moved this week.",
   },
   {
+    key: "find",
+    label: "Week's Plan",
+    nav: { kind: "surface", surface: "week-plan", rung: "day" },
+    spotlight: "find",
+    describe: "The Find — one evidence-backed discovery about the week (hidden bet, comeback, plan/reality mismatch, etc.). Point here when the user asks what Nuvo noticed or what stood out.",
+  },
+  {
     key: "next-week",
     label: "Week's Plan",
     nav: { kind: "surface", surface: "week-plan", rung: "day" },
     spotlight: "next-week",
     describe: "Next week's capture column on the Week's Plan. Point here when the user asks about, or wants to add to, next week.",
-  },
-
-  // ── Today floor sections ─────────────────────────────────────────────────
-  {
-    key: "today-call",
-    label: "Today",
-    nav: { kind: "rung", rung: "now" },
-    spotlight: "today-call",
-    describe: "Today's Call — the one-line posture/recommendation for the whole day. Point here when the user asks what the day is about or what they should focus on today.",
-  },
-  {
-    key: "today-move",
-    label: "Today",
-    nav: { kind: "rung", rung: "now" },
-    spotlight: "today-move",
-    describe: "Today's primary recommended move (the single most useful next action). Point here when the user asks what to do next right now.",
-  },
-  {
-    key: "today-slipped",
-    label: "Today",
-    nav: { kind: "rung", rung: "now" },
-    spotlight: "today-slipped",
-    describe: "What slipped today — overdue items not yet started. Point here when the user asks what they missed or what's overdue today.",
   },
 
   // ── Rail tabs + calendar views ───────────────────────────────────────────

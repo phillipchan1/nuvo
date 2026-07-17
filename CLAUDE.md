@@ -9,8 +9,8 @@ product model and backend; this file is how we build so the app stays consistent
 
 The app is converging on one design language; the full grammar + token vocabulary is in
 **`docs/design-language.md`** — read it before building any new surface. The reference
-screens are **Today** (`NowFloor`) and the **Domain** wall/chapel. The rules that prevent
-regressions:
+screens are the **Schedule** (`CalendarPane` + `LeftRail`) and the **Domain** wall/chapel.
+The rules that prevent regressions:
 
 - **Never paint an opaque `bg-*` over the `.atmosphere` canvas.** Full-bleed structural
   containers (floor wrappers, the calendar pane, the agent rail) stay **transparent** and
@@ -53,16 +53,16 @@ it needs to work on a phone.
 
 - `AppShell` → `ResponsiveShell` renders `MobileShell` (<768px) or `AppShellInner`
   (desktop) via `useIsMobile()`.
-- **Mobile UI lives in `src/components/mobile/`.** Bottom bar = five equal navigation
-  destinations **Now · Calendar · Plan · Tasks · Nuvo**. Capture is an *action*, not a
-  place, so it isn't a tab: it's the **floating ＋ (FAB)** anchored above the bar
-  (bottom-right), hidden only on the Nuvo tab where it would hit the composer. Capture
-  and the Nuvo chat are *permanent first-class actions*. Today/Week/Inbox are a segmented
-  control inside the Tasks screen.
-- **Shared "floors"** (e.g. `NowFloor`) render in both shells. Keep them responsive with
-  Tailwind `md:`/`xl:` collapse; add *optional* mobile-routing props (e.g. `onAskNuvo`)
-  rather than forking the component. Desktop behavior must stay unchanged when the prop is
-  omitted.
+- **Mobile UI lives in `src/components/mobile/`.** Bottom bar = four equal navigation
+  destinations **Calendar · Tasks · Projects · Initiatives**, opening on Calendar. Capture
+  and Nuvo are *actions*, not places, so neither is a tab: they float above the bar
+  (bottom-right) as the **＋ FAB** and the **✦ launcher**, both hidden only while the chat
+  is open. Capture and the Nuvo chat are *permanent first-class actions*. Today/Week/Inbox
+  are a segmented control inside the Tasks screen; the week's readiness + plan card ride
+  the top of the **Week** segment.
+- **Shared "floors"** render in both shells. Keep them responsive with Tailwind
+  `md:`/`xl:` collapse; add *optional* mobile-routing props (e.g. `onAskNuvo`) rather than
+  forking the component. Desktop behavior must stay unchanged when the prop is omitted.
 - **Desktop-only (NOT mounted on mobile):** rituals (Sunday/Summit/Blueprint), Record
   screens, Domain chapel, Project/Initiative floors, Collection board/table/timeline, and
   the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** (agenda + availability)

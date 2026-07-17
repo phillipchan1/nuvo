@@ -110,7 +110,7 @@ export default function TaskRow({
   })();
 
   const hasMeta = Boolean(
-    meta?.project || meta?.domain || task.duration_minutes || (dateLabel && !task.start_time) || taskLabels.length > 0,
+    meta?.project || meta?.domain || task.start_time || task.duration_minutes || (dateLabel && !task.start_time) || taskLabels.length > 0,
   );
 
   // Passive grooming's guess — surfaced only where the row wired up accept/dismiss
@@ -164,16 +164,16 @@ export default function TaskRow({
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onContextMenu={onContextMenu}
-      className={`fast group flex cursor-pointer select-none items-start gap-2 border-b border-line px-3 py-2 ${
-        completing ? "task-completing" : ""
-      } ${bg}`}
+      className={`fast group flex min-h-[52px] cursor-pointer select-none gap-2 border-b border-line px-3 py-2 ${
+        groom ? "items-start" : "items-center"
+      } ${completing ? "task-completing" : ""} ${bg}`}
       style={spineColor ? { boxShadow: `inset ${groomPush ? 3 : 2}px 0 0 0 ${spineColor}` } : undefined}
     >
       {/* Checkbox */}
       <button
         aria-label={done ? "Mark not done" : "Mark done"}
         onClick={(e) => { e.stopPropagation(); toggle(); }}
-        className={`fast relative mt-[2px] flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
+        className={`fast relative ${groom ? "mt-[2px]" : ""} flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
           completing ? "bloom" : ""
         } ${done || completing ? "border-accent bg-accent text-white" : "border-line hover:border-accent"}`}
       >
@@ -228,11 +228,6 @@ export default function TaskRow({
               ⚑{task.deadline.slice(5)}
             </span>
           )}
-          {task.start_time && (
-            <span className="mono shrink-0 text-meta text-muted">
-              {fmtTime(task.start_time)}
-            </span>
-          )}
 
           {/* Loose guess (domain / none) stays a compact one-liner: its whole
               identity + weight rides the title row, so it reads as batchable. */}
@@ -266,20 +261,26 @@ export default function TaskRow({
         {/* Context line — the task's own filed meta (hidden while a guess is
             still showing its proposed placement below). */}
         {hasMeta && !groom && (
-          <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-0.5 text-meta text-muted">
+            {/* Project — the domain color survives as a single dot; the name goes
+                quiet gray, so identity reads without the color shouting twice
+                (the row's spine already carries the thread). */}
             {(meta?.project || meta?.domain) && (
-              <span
-                className="max-w-[110px] truncate text-meta font-medium"
-                style={{ color: meta?.domainColor ?? "var(--muted)" }}
-              >
-                {meta?.project ?? meta?.domain}
+              <span className="flex min-w-0 items-center gap-1.5">
+                {meta?.domainColor && (
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: meta.domainColor }} aria-hidden />
+                )}
+                <span className="max-w-[140px] truncate font-medium">{meta?.project ?? meta?.domain}</span>
               </span>
             )}
+            {/* Start time lives here now, not on the title line — nothing crosses
+                the title but the checkbox. */}
+            {task.start_time && <span className="mono">{fmtTime(task.start_time)}</span>}
             {task.duration_minutes ? (
-              <span className="mono text-meta text-muted">{fmtDuration(task.duration_minutes)}</span>
+              <span className="mono">{fmtDuration(task.duration_minutes)}</span>
             ) : null}
             {dateLabel && !task.start_time && (
-              <span className={`mono text-meta ${dateLabel === "today" || overdue ? "text-signal" : "text-muted"}`}>
+              <span className={`mono ${dateLabel === "today" || overdue ? "text-signal" : ""}`}>
                 {dateLabel}
               </span>
             )}

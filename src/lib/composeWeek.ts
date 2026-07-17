@@ -11,11 +11,13 @@
 
 import { addDays } from "date-fns";
 import { parseDateISO, fmtHours } from "./dates";
-import { domainById, initiativeById, projectById, type VerticalData } from "./vertical";
+import { type VerticalData } from "./vertical";
 import { toBusyBlocks } from "./now";
 import { priorityWork, priorityVerdict, type PriorityVerdict } from "./priorities";
 import { seedFromWeek, satelliteAngles, type EmblemSpec } from "./weekEmblem";
-import type { BigRock, ExternalEvent, Task } from "./types";
+import { buildWeekEvidence, type WeekEvidence } from "./weekEvidence";
+import { composeWeekFinds, type WeekFind } from "./weekFinds";
+import type { ActivityUnit, BigRock, ExternalEvent, Task } from "./types";
 
 export interface WeekPriority {
   rock: BigRock;
@@ -64,6 +66,10 @@ export interface WeekReport {
   priorityTotal: number;
   /** the deterministic warm paragraph — the fallback the nano voice later replaces. */
   brief: string;
+  /** Canonical receipts behind domain hours — one ledger for weave + Find. */
+  evidence: WeekEvidence;
+  /** The one evidence-backed discovery for this week (null when nothing notable). */
+  find: WeekFind | null;
 }
 
 export interface ComposeWeekInput {
@@ -89,6 +95,13 @@ export interface ComposeWeekInput {
   ambient?: number;
   /** a past, closed week — shifts the prose to past tense (the Review register). */
   sealed?: boolean;
+  /** Calendar → domain map + AI routing cache — for event receipts. */
+  calendarDomainMap?: Record<string, string>;
+  eventRouting?: Record<string, string>;
+  /** Merged PRs / activity actuals in the week window. */
+  activityUnits?: ActivityUnit[];
+  /** How many whole weeks before the current week (0 = current). */
+  weeksBack?: number;
 }
 
 const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5];
@@ -168,18 +181,37 @@ export function composeWeek(input: ComposeWeekInput): WeekReport {
       return c >= weekStart && c < weekEnd;
     }).length;
 
-  // ── Highlights — done work that advanced a domain (felt impact) ────────────
-  const highlights: WeekHighlight[] = vertical.tasks
-    .filter((t) => t.status === "done" && t.completedAt && new Date(t.completedAt) >= weekStart && new Date(t.completedAt) < weekEnd)
-    .map((t) => {
-      const domId =
-        t.domainId ?? projectById(vertical, t.projectId)?.domainId ?? initiativeById(vertical, t.initiativeId)?.domainId ?? null;
-      const dom = domainById(vertical, domId);
-      return dom ? { title: t.title, domainName: dom.name, domainColor: dom.color, mins: t.durationMins } : null;
-    })
-    .filter((h): h is WeekHighlight => h !== null)
-    .sort((a, b) => b.mins - a.mins)
-    .slice(0, 6);
+  // ── Evidence ledger (tasks + meetings + activity) — one attribution rule ───
+  const evidence = buildWeekEvidence({
+    weekStartISO,
+    now,
+    vertical,
+    events,
+    calendarDomainMap: input.calendarDomainMap,
+    eventRouting: input.eventRouting,
+    activityUnits: input.activityUnits,
+    weeksBack: input.weeksBack ?? 0,
+    domainHoursOverride: input.domainHours,
+  });
+
+  // ── Highlights — top task receipts that advanced a domain (felt impact) ────
+  const highlights: WeekHighlight[] = evidence.receipts
+    .filter((r) => r.kind === "task")
+    .slice(0, 6)
+    .map((r) => ({ title: r.label, domainName: r.domainName, domainColor: r.domainColor, mins: r.mins }));
+
+  // Prefer evidence-derived hours for the live week so weave matches receipts.
+  // Sealed weeks keep the pulse override already applied in `domains` above.
+  if (!input.domainHours) {
+    for (const d of domains) {
+      const ev = evidence.domains.find((e) => e.domainId === d.id);
+      if (ev) {
+        d.hours = ev.mins / 60;
+        d.quiet = d.hours < QUIET_HOURS;
+      }
+    }
+    domains.sort((a, b) => b.hours - a.hours);
+  }
 
   // ── The emblem spec — ~30 numbers, all derived above ───────────────────────
   const seed = seedFromWeek(weekStartISO);
@@ -205,7 +237,7 @@ export function composeWeek(input: ComposeWeekInput): WeekReport {
 
   const brief = composeWeekBrief({ priorities, landedCount, domains, capacity, carryForward, now, sealed: !!input.sealed });
 
-  return {
+  const reportBase = {
     weekStartISO,
     emblem,
     priorities,
@@ -216,7 +248,16 @@ export function composeWeek(input: ComposeWeekInput): WeekReport {
     landedCount,
     priorityTotal: priorities.length,
     brief,
+    evidence,
   };
+  const findReport = composeWeekFinds({
+    report: { ...reportBase, find: null },
+    evidence,
+    vertical,
+    sealed: !!input.sealed,
+  });
+
+  return { ...reportBase, find: findReport.featured };
 }
 
 /**

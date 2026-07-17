@@ -3,7 +3,11 @@
 // per-item checklist: each axis is closed by exactly one lens (Brief → Defined,
 // Path → Planned; On Deck reads Fits as an advisory overlay). Pure over a
 // VerticalData snapshot, like readiness.ts — no new scoring, only predicates
-// over existing fields + the `brief` document.
+// over existing fields.
+//
+// Every predicate here must name something a real surface can CLOSE. If no UI
+// can write the field, it isn't readiness — it's a dead gate (see the note on
+// the brief document below).
 //
 // Schedulable = defined && planned. `fits` never gates — it's the timeline's
 // advisory read (pace vs the calendar), surfaced on On Deck, not a to-do.
@@ -15,7 +19,6 @@ import {
   projectById,
   tasksOf,
   type Initiative,
-  type ItemBrief,
   type Project,
   type VerticalData,
 } from "./vertical";
@@ -35,7 +38,7 @@ export const LENS_LABEL: Record<LensKind, string> = {
 export type LensRef = { kind: "project" | "initiative"; id: string; lens?: LensKind };
 
 export interface ReadinessAxes {
-  /** The Brief's axis: outcome + scope + acceptance + a finish line. */
+  /** The Brief's axis: an outcome + a finish line — what the Groom deck closes. */
   defined: boolean;
   /** The Path's axis: open steps exist (projects) / structure exists (bets). */
   planned: boolean;
@@ -43,14 +46,17 @@ export interface ReadinessAxes {
   fits: boolean | null;
 }
 
-/** A brief counts once it carries scope AND acceptance — the two sections that
- *  make "done" adjudicable. Questions/constraints are welcome but optional. */
-export function briefHasSubstance(brief: ItemBrief | null | undefined): boolean {
-  return (brief?.scope?.length ?? 0) > 0 && (brief?.doneWhen?.length ?? 0) > 0;
-}
+// The `brief` document (scope / non-goals / acceptance) is NOT part of Defined
+// any more. It used to be — `defined` required brief.scope + brief.doneWhen — but
+// the model moved on: the Groom deck collapsed the brief into the single outcome
+// line ("one line that defines done"), and no surface writes the jsonb document
+// at all. So the check could never pass: every project read "scope unclear"
+// forever, however well it was groomed, and "N need shaping" could never fall.
+// A gate with no door teaches nothing — it just punishes. Defined is now exactly
+// what the Groom deck actually closes: an outcome, and a week to do it in.
 
 export function projectReadinessAxes(d: VerticalData, p: Project, now: Date): ReadinessAxes {
-  const defined = p.outcome.trim() !== "" && briefHasSubstance(p.brief) && p.targetDate != null;
+  const defined = p.outcome.trim() !== "" && p.targetDate != null;
   const planned = tasksOf(d, p.id).some((t) => t.status !== "done");
   const verdict = verdictOf(d, "project", p.id);
   const fits =
@@ -60,7 +66,7 @@ export function projectReadinessAxes(d: VerticalData, p: Project, now: Date): Re
 
 export function initiativeReadinessAxes(d: VerticalData, i: Initiative): ReadinessAxes {
   void d;
-  const defined = i.outcome.trim() !== "" && briefHasSubstance(i.brief) && i.targetDate != null;
+  const defined = i.outcome.trim() !== "" && i.targetDate != null;
   // OKRs are a bet's prime property: it isn't "planned" until it carries at least
   // one measurable key result. Child projects are execution *under* the outcome —
   // they no longer substitute for having a number to move.
@@ -107,11 +113,9 @@ export function lensGaps(
   if (!axes.defined) {
     gaps.push({
       lens: "brief",
-      label: !item.outcome.trim()
-        ? "no outcome"
-        : !briefHasSubstance(item.brief)
-          ? "scope unclear"
-          : "no finish line",
+      // Both gaps name a thing you can actually go do. ("scope unclear" used to
+      // sit between them; it named a document that couldn't be written.)
+      label: !item.outcome.trim() ? "no outcome" : "no finish line",
     });
   }
   if (!axes.planned) {

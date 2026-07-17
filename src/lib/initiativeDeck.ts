@@ -21,6 +21,7 @@ import {
   uncoveredKeyResults,
   type Domain,
   type Initiative,
+  type Project,
   type VerticalData,
 } from "./vertical";
 import { lensGaps, type LensGap } from "./lenses";
@@ -251,4 +252,47 @@ export function suggestDomainForInitiative(
   i: Initiative,
 ): { domain: Domain; score: number } | null {
   return suggestDomainForText(d, `${i.name} ${i.outcome} ${i.description}`);
+}
+
+function initiativeCorpus(i: Initiative): string {
+  // repeat the name so an exact name mention dominates, same as domainCorpus
+  return `${i.name} ${i.name} ${i.outcome} ${i.description}`;
+}
+
+/** A confident ROUTE for a project — the domain and/or initiative it belongs
+ *  under, or nulls. Offline token-overlap (same matcher as the deck), and only
+ *  returns a suggestion that (a) clears a real confidence bar and (b) *differs*
+ *  from where the project already sits — so "Groom" only ever proposes a genuine
+ *  move, never re-confirms the current home. A direct name mention (+3) alone
+ *  clears the bar. */
+export function suggestRouteForProject(
+  d: VerticalData,
+  p: Project,
+): {
+  domain: { domain: Domain; score: number } | null;
+  initiative: { initiative: Initiative; score: number } | null;
+} {
+  const BAR = 3;
+  const text = `${p.name} ${p.outcome} ${p.description}`;
+  const tokens = new Set(tokenize(text));
+  const lower = text.toLowerCase();
+
+  const domHit = suggestDomainForText(d, text);
+  const domain = domHit && domHit.score >= BAR && domHit.domain.id !== p.domainId ? domHit : null;
+
+  let bestInit: { initiative: Initiative; score: number } | null = null;
+  if (tokens.size > 0) {
+    for (const i of d.initiatives) {
+      const iSet = new Set(tokenize(initiativeCorpus(i)));
+      if (iSet.size === 0) continue;
+      let score = 0;
+      for (const t of tokens) if (iSet.has(t)) score += 1;
+      if (lower.includes(i.name.toLowerCase()) && i.name.length >= 3) score += 3;
+      if (!bestInit || score > bestInit.score) bestInit = { initiative: i, score };
+    }
+  }
+  const initiative =
+    bestInit && bestInit.score >= BAR && bestInit.initiative.id !== p.initiativeId ? bestInit : null;
+
+  return { domain, initiative };
 }

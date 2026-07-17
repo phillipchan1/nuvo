@@ -3,6 +3,7 @@
 // proposes; only you promote work toward the calendar).
 
 import { fmtHours } from "./dates";
+import { projectsOnDeck } from "./priorities";
 import {
   backlogTasks,
   domainById,
@@ -13,6 +14,7 @@ import {
   isProjectInFlight,
   nextUpTask,
   projectById,
+  tasksOf,
   weeklyCapacityHours,
   type VerticalData,
   type VTask,
@@ -21,16 +23,51 @@ import {
 export interface PullSuggestion {
   task: VTask;
   reason: string;
+  /** the on-deck project whose work this is — the rail groups by it */
+  projectId?: string | null;
 }
 
-export function suggestPull(d: VerticalData): PullSuggestion[] {
+/** `weekStartISO` turns on the primary source: the projects On Deck committed to
+ *  that week. Without it the pull can only guess from deadlines + faithfulness —
+ *  which is how a fully-groomed week used to yield a single unrelated task. */
+export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggestion[] {
   const picked = new Map<string, PullSuggestion>();
-  const add = (task: VTask | null, reason: string) => {
+
+  // On Deck decides WHEN a project happens, so it also decides when its work
+  // happens. Without this, a deadline or a slip could drag a task back into a
+  // week you'd deliberately pushed its project out of — which made "push it out"
+  // a lie. A project with no week at all ("needs a week") is not this week's
+  // either. Loose work (no project) still answers to deadlines/faithfulness.
+  const onDeck = weekStartISO ? new Set(projectsOnDeck(d, weekStartISO).map((p) => p.id)) : null;
+  const elsewhere = (task: VTask) => onDeck != null && task.projectId != null && !onDeck.has(task.projectId);
+
+  const add = (task: VTask | null, reason: string, projectId?: string | null) => {
     if (!task || task.sprint || task.status === "done" || picked.has(task.id)) return;
-    picked.set(task.id, { task, reason });
+    if (elsewhere(task)) return; // its project isn't on deck this week
+    picked.set(task.id, { task, reason, projectId: projectId ?? task.projectId ?? null });
   };
 
-  // 1 · the lead bets: the next-up task of every active project under a
+  // 1 · SLIPPED — already-owed commitments, re-timed first. (The carry-forward
+  //     feed; exempt from the cap below, since it's debt, not a fresh pull.)
+  const slipped = d.tasks
+    .filter((t) => t.rollCount > 0 && t.status === "ready" && !t.inbox)
+    .sort((a, b) => b.rollCount - a.rollCount);
+  for (const t of slipped) add(t, `slipped ${t.rollCount}× — give it a new time`);
+
+  // 2 · THE WEEK'S PROJECTS — the pushes you named on Set the week (derived from
+  //     On Deck). Their open work IS the point of the week, so it comes before
+  //     anything discretionary. This is the bridge between the two steps: naming
+  //     a project has to bring its work with it, or Shape it has nothing to place.
+  if (weekStartISO) {
+    for (const p of projectsOnDeck(d, weekStartISO)) {
+      for (const t of tasksOf(d, p.id)) {
+        if (t.status === "done" || t.inbox) continue;
+        add(t, `${p.name} moves this week`, p.id);
+      }
+    }
+  }
+
+  // 3 · the lead bets: the next-up task of every active project under a
   //     focus initiative — the right next step, not a random middle.
   for (const initId of d.focusInitiativeIds) {
     const init = initiativeById(d, initId);
@@ -40,22 +77,14 @@ export function suggestPull(d: VerticalData): PullSuggestion[] {
     }
   }
 
-  // 2 · deadlines that land inside this week.
+  // 4 · deadlines that land inside this week.
   for (const t of [...backlogTasks(d), ...inboxTasks(d)]) {
     if (t.deadlineDaysAway != null && t.deadlineDaysAway <= 7) {
       add(t, t.deadlineDaysAway <= 0 ? "deadline passed" : `due in ${t.deadlineDaysAway}d`);
     }
   }
 
-  // 2.5 · slipped commitments: work that's already rolled forward and still has
-  //       no time. Bundle it back in so replanning RE-TIMES it, instead of letting
-  //       it quietly age out on Today. Most-slipped first. (The carry-forward feed.)
-  const slipped = d.tasks
-    .filter((t) => t.rollCount > 0 && t.status === "ready" && !t.inbox)
-    .sort((a, b) => b.rollCount - a.rollCount);
-  for (const t of slipped) add(t, `slipped ${t.rollCount}× — give it a new time`);
-
-  // 3 · faithfulness: one small task from each domain that's going quiet.
+  // 5 · faithfulness: one small task from each domain that's going quiet.
   for (const domain of d.domains) {
     if (faithfulness(domain).lit) continue;
     const candidates = d.tasks

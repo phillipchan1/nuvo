@@ -24,7 +24,7 @@ const GROUPS: Group[] = [
   {
     title: "Floors",
     items: [
-      { keys: [["⌘", "1"], ["⌘", "5"]], sep: "–", label: "Jump to a floor" },
+      { keys: [["⌘", "1"], ["⌘", "4"]], sep: "–", label: "Jump to a floor" },
       { keys: [["⌘", "↑"], ["⌘", "↓"]], sep: "/", label: "Travel the ladder" },
     ],
   },

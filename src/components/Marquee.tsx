@@ -13,7 +13,6 @@ import type { AgentMessage } from "../lib/agentTypes";
 // Where the agent left from, in words — shown in the return pill so "← Back"
 // reads as a place, not just a direction.
 const RUNG_LABEL: Record<Rung, string> = {
-  now: "Today",
   day: "Schedule",
   project: "Projects",
   initiative: "Initiatives",
@@ -91,7 +90,9 @@ export default function Marquee({ messages }: { messages: AgentMessage[] }) {
             await delay(60); // let the surface's listener mount before the event fires
             requestMarqueeSurface(n.surface);
           }
-          return { navigated: !alreadyThere, undo: () => { closeMarqueeSurface(n.surface); goRung(fromRung); }, clear: { rungNot: n.rung } };
+          // Week plan (and any future surface) is history-backed as an overlay —
+          // Esc / back clearing it should end the session, same as records.
+          return { navigated: !alreadyThere, undo: () => { closeMarqueeSurface(n.surface); goRung(fromRung); }, clear: { rungNot: n.rung, overlayNone: true } };
         case "tab":
           goRung(n.rung);
           setTab(n.tab);

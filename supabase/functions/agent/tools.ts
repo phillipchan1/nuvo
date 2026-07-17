@@ -1,33 +1,43 @@
-import { admin, todayLA } from "../_shared/admin.ts";
+import { admin } from "../_shared/admin.ts";
 import { parseCapture } from "../_shared/nlp.ts";
 import { executeVerticalTool, isVerticalTool, VERTICAL_TOOL_DEFINITIONS } from "./verticalTools.ts";
 
 const DEFAULT_DURATION = 30;
 const MIRROR_FIELDS = new Set(["start_time", "duration_minutes", "title", "status", "do_date"]);
 
+/** The zone to fall back on when the client didn't say where it is. The app's
+ *  established home — see APP_TZ in src/lib/dates.ts. */
+export const FALLBACK_TZ = "America/Los_Angeles";
+
 /**
- * Convert an America/Los_Angeles local datetime string ("YYYY-MM-DDTHH:MM")
- * to a UTC ISO string. Done server-side to avoid LLM midnight-rollover errors.
+ * Convert a local datetime string ("YYYY-MM-DDTHH:MM") in `tz` to a UTC ISO
+ * string. Done server-side to avoid LLM midnight-rollover errors.
+ *
+ * `tz` is the CLIENT'S zone, passed in per request — never a constant. The app
+ * renders every instant in the device zone ("a 9am block should read as 9am
+ * wherever you wake up" — src/lib/timezone.ts), so "3pm" from a user standing in
+ * Chicago means 3pm in Chicago. Hardcoding Pacific here silently landed every
+ * agent-created block at the wrong hour while traveling.
  */
-function localLAToUtc(localStr: string): string {
+function localToUtc(localStr: string, tz: string): string {
   // Treat the local string as UTC to get a reference point, then compute
-  // the real LA→UTC offset at that approximate moment and apply it.
+  // the real zone→UTC offset at that approximate moment and apply it.
   const asIfUtc = new Date(localStr + ":00Z");
-  const laStr = asIfUtc
+  const zoned = asIfUtc
     .toLocaleString("en-CA", {
-      timeZone: "America/Los_Angeles",
+      timeZone: tz,
       year: "numeric", month: "2-digit", day: "2-digit",
       hour: "2-digit", minute: "2-digit", second: "2-digit",
       hour12: false,
     })
     .replace(", ", "T");
-  const offsetMs = asIfUtc.getTime() - new Date(laStr + "Z").getTime();
+  const offsetMs = asIfUtc.getTime() - new Date(zoned + "Z").getTime();
   return new Date(asIfUtc.getTime() + offsetMs).toISOString();
 }
 
-function fmtLATime(isoUtc: string): string {
+function fmtZonedTime(isoUtc: string, tz: string): string {
   return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
+    timeZone: tz,
     month: "numeric",
     day: "numeric",
     year: "numeric",
@@ -35,6 +45,16 @@ function fmtLATime(isoUtc: string): string {
     minute: "2-digit",
     hour12: true,
   }).format(new Date(isoUtc));
+}
+
+/** Today's calendar date in `tz` — the day the user is actually living. */
+function todayIn(tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 function planningWeekStart(todayIso: string): string {
@@ -56,8 +76,8 @@ interface BigRock {
   roll_count: number;
 }
 
-async function getSprintRocks(userId: string): Promise<{ sprintId: string | null; weekStart: string; rocks: BigRock[] }> {
-  const weekStart = planningWeekStart(todayLA());
+async function getSprintRocks(userId: string, tz: string): Promise<{ sprintId: string | null; weekStart: string; rocks: BigRock[] }> {
+  const weekStart = planningWeekStart(todayIn(tz));
   const { data } = await admin
     .from("sprints")
     .select("id, big_rocks")
@@ -78,9 +98,39 @@ async function saveSprintRocks(userId: string, weekStart: string, rocks: BigRock
   if (error) throw new Error(error.message);
 }
 
+/** What an action DID to the record — drives the card's ribbon, not its layout. */
+export type AgentVerb =
+  | "created"
+  | "slotted"
+  | "moved"
+  | "updated"
+  | "done"
+  | "trashed"
+  | "unslotted";
+
+/** A pointer to the row an action touched. The edge never serializes the record
+ *  itself: the client renders it from its live cache, so a card scrolled back to
+ *  an hour later shows what's true NOW, not what was true at reply time. */
+export interface AgentRef {
+  kind: "task" | "event" | "priority";
+  id: string;
+}
+
+/** The inverse of an action, small enough to send and safe to apply blind.
+ *  Undo lives on the card because the card is the only surface that still knows
+ *  a trashed record existed — and because an agent that writes without a visible
+ *  reverse is one the user learns not to trust with a big batch. */
+export type AgentUndo =
+  | { kind: "task"; patch: Record<string, unknown> }
+  | { kind: "priority"; id: string; restore: BigRock | null };
+
 export interface AgentAction {
   tool: string;
+  /** Always populated — the card degrades to this line when the ref can't render. */
   summary: string;
+  verb?: AgentVerb;
+  ref?: AgentRef;
+  undo?: AgentUndo;
 }
 
 /** Marquee — drive the client's left canvas (navigate + spotlight) alongside the
@@ -109,7 +159,7 @@ export function buildPointAtTool(targets: MarqueeTargetSpec[]) {
     function: {
       name: "point_at",
       description:
-        "Show alongside telling. Drive the user's screen: bring the relevant destination forward (a floor, surface, record, or flow) and, where it's a section, hold a spotlight on it — so your answer lands on something visible. Call this when the user asks to SEE, OPEN, or asks ABOUT one of the targets below. Some targets are a specific item (a project, initiative, domain, task) — for those, pass its id as `ref` (use the ids in your context). After calling, answer normally with a real, self-contained reply (the highlight reinforces your words, it doesn't replace them). Use only for a genuine show-me moment, never on every message.\n\nAvailable targets:\n" +
+        "Show alongside telling. Drive the user's screen: bring the relevant destination forward (a floor, surface, record, or flow) and, where it's a section, hold a spotlight on it — so your answer lands on something visible. **Default to calling this whenever your answer is ABOUT one of the targets below — a data answer counts, not just an explicit 'show me' / 'open'.** Some targets are a specific item (a project, initiative, domain, task) — for those, pass its id as `ref` (use the ids in your context). After calling, answer normally with a real, self-contained reply (the highlight reinforces your words, it doesn't replace them). Skip it only for pure confirmations, chit-chat, or answers with no on-screen home — and don't re-surface the same target twice in a row.\n\nAvailable targets:\n" +
         bullets,
       parameters: {
         type: "object",
@@ -138,6 +188,18 @@ export function buildPointAtTool(targets: MarqueeTargetSpec[]) {
  *  functions like google-events; omit it for internal ones (task-mirror) that
  *  run as the service role. Returns whether the call succeeded. */
 async function invokeFn(name: string, body: Record<string, unknown>, token?: string): Promise<boolean> {
+  return (await invokeFnJson(name, body, token)) !== null;
+}
+
+/** invokeFn, but hands back the parsed response instead of just "did it work".
+ *  Some functions already return the row they wrote (google-events upserts into
+ *  external_events and returns it) — that id is what lets an action carry a ref
+ *  and render as a card instead of a receipt line. */
+async function invokeFnJson(
+  name: string,
+  body: Record<string, unknown>,
+  token?: string,
+): Promise<Record<string, unknown> | null> {
   const url = Deno.env.get("SUPABASE_URL")!;
   const bearer = token || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const res = await fetch(`${url}/functions/v1/${name}`, {
@@ -151,9 +213,11 @@ async function invokeFn(name: string, body: Record<string, unknown>, token?: str
   if (!res.ok) {
     const text = await res.text();
     console.warn(`[agent] ${name} failed: ${res.status} ${text}`);
-    return false;
+    return null;
   }
-  return true;
+  // A body that isn't JSON still means the call succeeded — don't fail the tool
+  // over it; the caller just won't get a ref.
+  return await res.json().catch(() => ({}));
 }
 
 async function mirrorTask(taskId: string) {
@@ -503,14 +567,15 @@ export const TOOL_DEFINITIONS = [
   ...VERTICAL_TOOL_DEFINITIONS,
 ];
 
+type TaskRow = Record<string, unknown> & { id: string; title: string };
+
+/** Resolve the task an action names — and hand back the row as it stands BEFORE
+ *  the write, which is what every undo patch is built from. */
 async function resolveTaskId(
   userId: string,
   args: { task_id?: string; task_title?: string },
-): Promise<{ id: string; title: string }> {
-  if (args.task_id) {
-    const t = await getTask(userId, args.task_id);
-    return { id: t.id, title: t.title };
-  }
+): Promise<TaskRow> {
+  if (args.task_id) return (await getTask(userId, args.task_id)) as TaskRow;
   if (args.task_title) {
     const matches = await findTaskByTitle(userId, args.task_title);
     if (matches.length === 0) throw new Error(`No task matching "${args.task_title}"`);
@@ -519,16 +584,29 @@ async function resolveTaskId(
         `Multiple tasks match "${args.task_title}": ${matches.map((m) => `"${m.title}" (${m.id})`).join(", ")}. Use task_id.`,
       );
     }
-    return { id: matches[0].id, title: matches[0].title };
+    return (await getTask(userId, matches[0].id)) as TaskRow;
   }
   throw new Error("Provide task_id or task_title");
 }
 
-function localDateISO(d: Date): string {
-  const y = d.getFullYear();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${day}`;
+/** The inverse of a write: the touched fields as they were. Undoing is then one
+ *  blind `update` on the client — no re-derivation, no second guess at intent. */
+function undoTask(before: TaskRow, ...fields: string[]): AgentUndo {
+  const patch: Record<string, unknown> = {};
+  for (const f of fields) patch[f] = before[f] ?? null;
+  return { kind: "task", patch };
+}
+
+/** The calendar date an instant falls on in `tz` — the user's day, not the
+ *  server's. Deno runs in UTC, so deriving this from the server clock put an
+ *  evening block on tomorrow's date. */
+function dateInTz(isoUtc: string, tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(isoUtc));
 }
 
 async function resolveEventId(
@@ -586,6 +664,10 @@ export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   userToken?: string,
+  /** The zone the CLIENT is in — every user-stated time is read in it, and every
+   *  time we narrate back is written in it. Defaults to the app's home zone when
+   *  an older client doesn't send one. */
+  tz: string = FALLBACK_TZ,
 ): Promise<{ result: string; action?: AgentAction; ui?: MarqueeDirective }> {
   if (isVerticalTool(name)) return executeVerticalTool(userId, name, args);
 
@@ -640,7 +722,7 @@ export async function executeTool(
       // Convert local LA time to UTC if the LLM passed "YYYY-MM-DDTHH:MM" format.
       const startTime =
         startTimeRaw && !startTimeRaw.includes("Z") && !startTimeRaw.includes("+")
-          ? localLAToUtc(startTimeRaw)
+          ? localToUtc(startTimeRaw, tz)
           : (startTimeRaw ?? null);
 
       // A task with a scheduled date/time is always "planned" — never backlog —
@@ -678,7 +760,7 @@ export async function executeTool(
       if (startTime) await mirrorTask(data.id);
 
       const when = startTime
-        ? `scheduled for ${fmtLATime(startTime)}`
+        ? `scheduled for ${fmtZonedTime(startTime, tz)}`
         : doDate
           ? `planned for ${doDate}`
           : parented
@@ -686,12 +768,21 @@ export async function executeTool(
             : "added to inbox";
       return {
         result: JSON.stringify({ id: data.id, title: data.title, status, doDate, startTime }),
-        action: { tool: name, summary: `Created "${data.title}" — ${when}` },
+        action: {
+          tool: name,
+          summary: `Created "${data.title}" — ${when}`,
+          verb: "created",
+          ref: { kind: "task", id: data.id },
+          // Undoing a create trashes it rather than hard-deleting: "trashed" IS
+          // deleted app-wide, and it stays recoverable from the tombstone card.
+          undo: { kind: "task", patch: { status: "trashed" } },
+        },
       };
     }
 
     case "plan_task": {
-      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const before = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { id, title } = before;
       const doDate = args.do_date as string;
       const { error } = await admin
         .from("tasks")
@@ -701,19 +792,26 @@ export async function executeTool(
       await mirrorTask(id);
       return {
         result: JSON.stringify({ id, doDate }),
-        action: { tool: name, summary: `Planned "${title}" for ${doDate}` },
+        action: {
+          tool: name,
+          summary: `Planned "${title}" for ${doDate}`,
+          verb: "slotted",
+          ref: { kind: "task", id },
+          undo: undoTask(before, "status", "do_date", "start_time"),
+        },
       };
     }
 
     case "schedule_task": {
-      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const before = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { id, title } = before;
       const startTimeRaw = args.start_time as string;
       const startTime =
         startTimeRaw && !startTimeRaw.includes("Z") && !startTimeRaw.includes("+")
-          ? localLAToUtc(startTimeRaw)
+          ? localToUtc(startTimeRaw, tz)
           : startTimeRaw;
       const duration = (args.duration_minutes as number) ?? DEFAULT_DURATION;
-      const doDate = localDateISO(new Date(startTime));
+      const doDate = dateInTz(startTime, tz);
       const { error } = await admin
         .from("tasks")
         .update({
@@ -729,31 +827,42 @@ export async function executeTool(
         result: JSON.stringify({ id, startTime, duration }),
         action: {
           tool: name,
-          summary: `Scheduled "${title}" for ${fmtLATime(startTime)} (${duration}m)`,
+          summary: `Scheduled "${title}" for ${fmtZonedTime(startTime, tz)} (${duration}m)`,
+          verb: "slotted",
+          ref: { kind: "task", id },
+          undo: undoTask(before, "status", "do_date", "start_time", "duration_minutes"),
         },
       };
     }
 
     case "unschedule_task": {
-      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const before = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { id, title } = before;
       const { error } = await admin.from("tasks").update({ start_time: null }).eq("id", id);
       if (error) throw new Error(error.message);
       await mirrorTask(id);
       return {
         result: JSON.stringify({ id }),
-        action: { tool: name, summary: `Unscheduled "${title}" from calendar` },
+        action: {
+          tool: name,
+          summary: `Unscheduled "${title}" from calendar`,
+          verb: "unslotted",
+          ref: { kind: "task", id },
+          undo: undoTask(before, "start_time"),
+        },
       };
     }
 
     case "reschedule_task": {
-      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const before = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { id, title } = before;
       const startTimeRaw = args.start_time as string;
       const startTime =
         startTimeRaw && !startTimeRaw.includes("Z") && !startTimeRaw.includes("+")
-          ? localLAToUtc(startTimeRaw)
+          ? localToUtc(startTimeRaw, tz)
           : startTimeRaw;
       const patch: Record<string, unknown> = {
-        do_date: localDateISO(new Date(startTime)),
+        do_date: dateInTz(startTime, tz),
         start_time: startTime,
       };
       if (args.duration_minutes != null) patch.duration_minutes = args.duration_minutes;
@@ -764,13 +873,17 @@ export async function executeTool(
         result: JSON.stringify({ id, ...patch }),
         action: {
           tool: name,
-          summary: `Rescheduled "${title}" to ${fmtLATime(startTime)}`,
+          summary: `Rescheduled "${title}" to ${fmtZonedTime(startTime, tz)}`,
+          verb: "moved",
+          ref: { kind: "task", id },
+          undo: undoTask(before, "do_date", "start_time", "duration_minutes"),
         },
       };
     }
 
     case "complete_task": {
-      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const before = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { id, title } = before;
       const { error } = await admin
         .from("tasks")
         .update({ status: "done", completed_at: new Date().toISOString() })
@@ -779,23 +892,37 @@ export async function executeTool(
       await mirrorTask(id);
       return {
         result: JSON.stringify({ id }),
-        action: { tool: name, summary: `Completed "${title}"` },
+        action: {
+          tool: name,
+          summary: `Completed "${title}"`,
+          verb: "done",
+          ref: { kind: "task", id },
+          undo: undoTask(before, "status", "completed_at"),
+        },
       };
     }
 
     case "trash_task": {
-      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const before = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { id, title } = before;
       const { error } = await admin.from("tasks").update({ status: "trashed" }).eq("id", id);
       if (error) throw new Error(error.message);
       await mirrorTask(id);
       return {
         result: JSON.stringify({ id }),
-        action: { tool: name, summary: `Trashed "${title}"` },
+        action: {
+          tool: name,
+          summary: `Trashed "${title}"`,
+          verb: "trashed",
+          ref: { kind: "task", id },
+          undo: undoTask(before, "status"),
+        },
       };
     }
 
     case "move_to_inbox": {
-      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const before = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { id, title } = before;
       const { error } = await admin
         .from("tasks")
         .update({ status: "inbox", do_date: null, start_time: null })
@@ -804,12 +931,19 @@ export async function executeTool(
       await mirrorTask(id);
       return {
         result: JSON.stringify({ id }),
-        action: { tool: name, summary: `Moved "${title}" to inbox` },
+        action: {
+          tool: name,
+          summary: `Moved "${title}" to inbox`,
+          verb: "moved",
+          ref: { kind: "task", id },
+          undo: undoTask(before, "status", "do_date", "start_time"),
+        },
       };
     }
 
     case "update_task": {
-      const { id, title } = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const before = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { id, title } = before;
       const patch: Record<string, unknown> = {};
       if (args.title) patch.title = args.title;
       if (args.notes !== undefined) patch.notes = args.notes;
@@ -821,7 +955,13 @@ export async function executeTool(
       if (Object.keys(patch).some((k) => MIRROR_FIELDS.has(k))) await mirrorTask(id);
       return {
         result: JSON.stringify({ id, patch }),
-        action: { tool: name, summary: `Updated "${title}"` },
+        action: {
+          tool: name,
+          summary: `Updated "${title}"`,
+          verb: "updated",
+          ref: { kind: "task", id },
+          undo: undoTask(before, ...Object.keys(patch)),
+        },
       };
     }
 
@@ -834,20 +974,28 @@ export async function executeTool(
       const endLocal = args.end_local as string;
       if (!startLocal || !endLocal) throw new Error("start_local and end_local are required");
 
-      const start_at = localLAToUtc(startLocal);
-      const end_at = localLAToUtc(endLocal);
+      const start_at = localToUtc(startLocal, tz);
+      const end_at = localToUtc(endLocal, tz);
 
-      const ok = await invokeFn(
+      const res = await invokeFnJson(
         "google-events",
         { action: "create", title, start_at, end_at, attendees },
         userToken,
       );
-      if (!ok) throw new Error("Failed to create calendar event — is a Google account connected?");
+      if (!res) throw new Error("Failed to create calendar event — is a Google account connected?");
+
+      // google-events writes the row before it returns, so the card can read it
+      // straight away instead of waiting on the next calendar sync.
+      const eventId = (res.event as { id?: string } | null)?.id;
       return {
         result: JSON.stringify({ created: true, title, start_at }),
         action: {
           tool: name,
-          summary: `Added "${title}" to calendar at ${fmtLATime(start_at)}`,
+          summary: `Added "${title}" to calendar at ${fmtZonedTime(start_at, tz)}`,
+          verb: "created",
+          // No undo: reversing means deleting off Google and notifying attendees
+          // — that's a fresh instruction, not a one-tap.
+          ...(eventId ? { ref: { kind: "event" as const, id: eventId } } : {}),
         },
       };
     }
@@ -897,7 +1045,12 @@ export async function executeTool(
         result: JSON.stringify({ id: eventId, patch }),
         action: {
           tool: name,
-          summary: `Rescheduled event "${evt.title}" to ${fmtLATime(patch.start_at)}`,
+          summary: `Rescheduled event "${evt.title}" to ${fmtZonedTime(patch.start_at, tz)}`,
+          verb: "moved",
+          ref: { kind: "event", id: eventId },
+          // No undo on calendar writes: reversing means another round-trip to
+          // Google (and possibly re-notifying attendees). The card shows the
+          // event; reversing it is a fresh instruction, not a one-tap.
         },
       };
     }
@@ -936,7 +1089,7 @@ export async function executeTool(
     }
 
     case "create_priority": {
-      const { weekStart, rocks } = await getSprintRocks(userId);
+      const { weekStart, rocks } = await getSprintRocks(userId, tz);
       const title = (args.title as string)?.trim();
       if (!title) throw new Error("Priority title is required");
       const newRock: BigRock = {
@@ -951,12 +1104,18 @@ export async function executeTool(
       await saveSprintRocks(userId, weekStart, [...rocks, newRock]);
       return {
         result: JSON.stringify({ id: newRock.id, title: newRock.title }),
-        action: { tool: name, summary: `Added priority "${newRock.title}"` },
+        action: {
+          tool: name,
+          summary: `Added priority "${newRock.title}"`,
+          verb: "created",
+          ref: { kind: "priority", id: newRock.id },
+          undo: { kind: "priority", id: newRock.id, restore: null },
+        },
       };
     }
 
     case "update_priority": {
-      const { weekStart, rocks } = await getSprintRocks(userId);
+      const { weekStart, rocks } = await getSprintRocks(userId, tz);
       const rock = resolvePriority(rocks, args as { priority_id?: string; priority_title?: string });
       const updated = rocks.map((r) => {
         if (r.id !== rock.id) return r;
@@ -970,12 +1129,18 @@ export async function executeTool(
       await saveSprintRocks(userId, weekStart, updated);
       return {
         result: JSON.stringify({ id: rock.id }),
-        action: { tool: name, summary: `Updated priority "${rock.title}"` },
+        action: {
+          tool: name,
+          summary: `Updated priority "${rock.title}"`,
+          verb: "updated",
+          ref: { kind: "priority", id: rock.id },
+          undo: { kind: "priority", id: rock.id, restore: rock },
+        },
       };
     }
 
     case "complete_priority": {
-      const { weekStart, rocks } = await getSprintRocks(userId);
+      const { weekStart, rocks } = await getSprintRocks(userId, tz);
       const rock = resolvePriority(rocks, args as { priority_id?: string; priority_title?: string });
       const updated = rocks.map((r) =>
         r.id === rock.id ? { ...r, done_at: new Date().toISOString() } : r,
@@ -983,17 +1148,31 @@ export async function executeTool(
       await saveSprintRocks(userId, weekStart, updated);
       return {
         result: JSON.stringify({ id: rock.id, done: true }),
-        action: { tool: name, summary: `Completed priority "${rock.title}"` },
+        action: {
+          tool: name,
+          summary: `Completed priority "${rock.title}"`,
+          verb: "done",
+          ref: { kind: "priority", id: rock.id },
+          undo: { kind: "priority", id: rock.id, restore: rock },
+        },
       };
     }
 
     case "delete_priority": {
-      const { weekStart, rocks } = await getSprintRocks(userId);
+      const { weekStart, rocks } = await getSprintRocks(userId, tz);
       const rock = resolvePriority(rocks, args as { priority_id?: string; priority_title?: string });
       await saveSprintRocks(userId, weekStart, rocks.filter((r) => r.id !== rock.id));
       return {
         result: JSON.stringify({ id: rock.id, deleted: true }),
-        action: { tool: name, summary: `Removed priority "${rock.title}"` },
+        action: {
+          tool: name,
+          summary: `Removed priority "${rock.title}"`,
+          verb: "trashed",
+          // The rock is gone from the sprint — the card carries the only copy
+          // left, which is exactly why it renders from `restore` and not a ref.
+          ref: { kind: "priority", id: rock.id },
+          undo: { kind: "priority", id: rock.id, restore: rock },
+        },
       };
     }
 

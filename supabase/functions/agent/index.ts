@@ -1,6 +1,7 @@
 import { handleOptions, json, requireUser, corsHeaders } from "../_shared/admin.ts";
 import { buildContext, contextToPrompt } from "./context.ts";
 import { scaffoldProject, scaffoldDraft } from "./scaffold.ts";
+import { assessRecord } from "./assess.ts";
 import { refineProject } from "./refine.ts";
 import { blueprintInitiative } from "./blueprint.ts";
 import { draftOutcome } from "./draftOutcome.ts";
@@ -11,7 +12,8 @@ import { verifyItem } from "./verify.ts";
 import { parsePriorities, breakdownPriority } from "./priorities.ts";
 import { prepareTask } from "./prepare.ts";
 import { narrate } from "./narrate.ts";
-import { executeTool, TOOL_DEFINITIONS, buildPointAtTool, type AgentAction, type MarqueeDirective, type MarqueeTargetSpec } from "./tools.ts";
+import { narrateReviewFind } from "./reviewFind.ts";
+import { executeTool, FALLBACK_TZ, TOOL_DEFINITIONS, buildPointAtTool, type AgentAction, type MarqueeDirective, type MarqueeTargetSpec } from "./tools.ts";
 import { llmKey, llmBaseUrl, llmModel, llmHeaders } from "./llm.ts";
 import { parseSuggestions } from "./suggestions.ts";
 import { sanitizeUserFacingText } from "./sanitizeReply.ts";
@@ -208,7 +210,7 @@ create_task with no date, no parent → **inbox**.
 
 ## Time and scheduling
 
-**Reading context times:** All formatted times in context (timeRange, nowLabel) are already in America/Los_Angeles. Use timeRange verbatim — never reconvert ISO timestamps yourself.
+**Reading context times:** All formatted times in context (timeRange, nowLabel) are already in the user's own time zone — the one named at the top of the snapshot below. Use timeRange verbatim — never reconvert ISO timestamps yourself.
 
 **todaySchedule** is the authoritative list of timed calendar blocks for today. When the user asks about their schedule/calendar/day, answer ONLY from todaySchedule. Do NOT include inbox, todayTasks, or weekPool — those have no time slot and are not on the calendar.
 
@@ -217,7 +219,7 @@ create_task with no date, no parent → **inbox**.
 **past / ongoing flags:** For "what's left / upcoming / next today", only include items where past = false. When listing the full day, include past items but note which already happened.
 
 **Building start_time / start_local / end_local for tools:**
-Always pass times as **America/Los_Angeles local time** in YYYY-MM-DDTHH:MM format (24h, no offset suffix). The server converts to UTC. Do NOT append Z or a UTC offset — local time only.
+Always pass times as **the user's LOCAL time** — their zone is named at the top of the snapshot below — in YYYY-MM-DDTHH:MM format (24h, no offset suffix). The server converts to UTC using that same zone. Do NOT append Z or a UTC offset, and never shift a stated time between zones: "3pm" means 3pm where the user is standing.
 - Tuesday Jun 30 at 5 PM → "2026-06-30T17:00"
 - Tomorrow 9 AM → "2026-06-29T09:00" (if today is Jun 28)
 - Friday at 2 PM → "2026-07-03T14:00"
@@ -263,11 +265,15 @@ After acting, confirm briefly and offer to adjust: "Added **Lunch with Cory** on
 
 ## Showing alongside telling (Marquee)
 
-You can drive the user's screen — the canvas to the left of this chat. The **point_at** tool lists the targets you can currently surface (it varies as the app grows). When the user asks to *see* one of them — or asks a question best answered by showing it — call point_at with the matching target BEFORE you reply. It brings the right surface forward and holds a spotlight on the target.
+You can drive the user's screen — the canvas to the left of this chat. The **point_at** tool lists the destinations you can surface (a floor, surface, record, section, or flow); the list grows as the app does. Calling it brings the right surface forward and holds a spotlight on the target.
 
-Then answer normally — give a real, useful reply that stands on its own: name the priorities, note what's landed or still open, add your read. The highlight on screen *reinforces* your words and draws the eye; it does not replace them. So the chat is informed by the visual, never dependent on it. (Stay concise — a tight summary, not an exhaustive dump.)
+**Default to showing.** Most answers are *about* something that has a target — the schedule, a project, the week's priorities, where the hours go, a domain, the inbox. Whenever your reply is about one of the targets, call point_at with the best match BEFORE you answer, so your words land on something the user can see. **A data answer is a show-me moment**, not just an explicit "show me": "what's my calendar look like" → point at schedule; "how are my priorities" → priorities; "where's my time going" → hours; "what did I get done" → highlights; "open Project X" → the project entity (pass its id as ref).
 
-Use point_at only for a genuine "show me / what's my plan" moment. Never call it on routine replies, confirmations, or every message — an unprompted screen move is worse than none.
+Pick the most specific target that fits. Prefer an entity target (project / initiative / domain / task, passing the item's id as ref) when the answer is about one particular item; use the general floor when it's about the whole set.
+
+Then answer normally — a real, self-contained reply that names the specifics and adds your read. The highlight *reinforces* your words and draws the eye; it never replaces them. Keep it tight — a summary, not a dump.
+
+**When NOT to point:** pure confirmations of an action you just took ("Deleted all 3"), greetings and chit-chat, or an answer with no on-screen home. And don't re-point at the same target you surfaced on the previous turn — one clean move, not a flicker.
 
 ## Communication
 
@@ -286,8 +292,22 @@ Format: <suggestions>[{"label":"Short label","message":"exact text sent on tap"}
 **Images:** When the user attaches images, read them carefully — screenshots of calendars, task lists, or notes are common context.
 `;
 
-function dynamicContextPrompt(ctxJson: string, today: string, nowLabel: string, nowISO: string, navSection: string): string {
-  return `Today is ${today} (America/Los_Angeles). Current time: ${nowLabel} (${nowISO}).
+/** Trust the client's zone only if Intl accepts it — the value flows straight
+ *  into DateTimeFormat, where a junk id throws and would take the whole reply
+ *  down rather than just mis-format a time. */
+function resolveTz(raw: unknown): string {
+  if (typeof raw !== "string" || !raw) return FALLBACK_TZ;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: raw });
+    return raw;
+  } catch {
+    console.warn(`[agent] unknown tz "${raw}" — falling back to ${FALLBACK_TZ}`);
+    return FALLBACK_TZ;
+  }
+}
+
+function dynamicContextPrompt(ctxJson: string, today: string, nowLabel: string, nowISO: string, navSection: string, tz: string): string {
+  return `Today is ${today} (${tz} — the user's current zone; every time below is in it, and every time you emit must be too). Current time: ${nowLabel} (${nowISO}).
 
 ---
 
@@ -419,6 +439,11 @@ Deno.serve(async (req) => {
     if (body.refine?.projectId) {
       return json(await refineProject(user.id, String(body.refine.projectId)));
     }
+    // Assess: a world-class coach's pass over a project or initiative, returning
+    // anchored findings the client overlays as inline margin notes (Accept/Dismiss).
+    if (body.assess?.id && (body.assess.kind === "project" || body.assess.kind === "initiative")) {
+      return json(await assessRecord(user.id, body.assess.kind, String(body.assess.id)));
+    }
     // Tending's "raw → shaped" advance: draft one outcome line for a project /
     // initiative that has a name but no goal yet.
     if (body.draftOutcome?.id) {
@@ -474,16 +499,27 @@ Deno.serve(async (req) => {
     if (body.narrate) {
       return json(await narrate(body.narrate));
     }
+    // Weekly Review Find — warm the one pre-selected discovery. Numbers stay client-side.
+    if (body.reviewFind) {
+      return json(await narrateReviewFind(body.reviewFind));
+    }
 
-    const { messages, rangeStart, rangeEnd, navFocus, marqueeTargets } = body as {
+    const { messages, rangeStart, rangeEnd, navFocus, marqueeTargets, tz: rawTz } = body as {
       messages: { role: "user" | "assistant"; content: string | ContentPart[] }[];
       rangeStart?: string;
       rangeEnd?: string;
       navFocus?: NavFocus;
       marqueeTargets?: MarqueeTargetSpec[];
+      tz?: string;
     };
 
     if (!messages?.length) return json({ error: "messages required" }, 400);
+
+    // Where the user physically is. Every stated time is read in this zone and
+    // every time narrated back is written in it — the app renders instants in
+    // the device zone, so the agent has to speak the same clock the screen does.
+    // An older client that sends nothing falls back to the app's home zone.
+    const tz = resolveTz(rawTz);
 
     // The agent's `point_at` vocabulary is whatever the client currently
     // supports — built fresh each request from the registry it sent. Adding a
@@ -497,12 +533,12 @@ Deno.serve(async (req) => {
 
     // Build context before opening the stream so auth/DB errors surface as
     // normal JSON error responses (not mid-stream failures).
-    const ctx = await buildContext(user.id, rangeStart, rangeEnd);
+    const ctx = await buildContext(user.id, rangeStart, rangeEnd, tz);
     const ctxJson = contextToPrompt(ctx);
     const navSection = buildNavSection(navFocus, ctx);
     const oaiMessages: ChatMessage[] = [
       { role: "system", content: STATIC_SYSTEM_PROMPT },
-      { role: "system", content: dynamicContextPrompt(ctxJson, ctx.today, ctx.nowLabel, ctx.nowISO, navSection) },
+      { role: "system", content: dynamicContextPrompt(ctxJson, ctx.today, ctx.nowLabel, ctx.nowISO, navSection, tz) },
       ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
@@ -538,7 +574,7 @@ Deno.serve(async (req) => {
             try { args = JSON.parse(tc.function.arguments || "{}"); } catch { args = {}; }
             let toolResult: string;
             try {
-              const { result, action, ui } = await executeTool(user.id, tc.function.name, args, userToken);
+              const { result, action, ui } = await executeTool(user.id, tc.function.name, args, userToken, tz);
               toolResult = result;
               if (action) actions.push(action);
               if (ui) directives.push(ui);
@@ -561,7 +597,7 @@ Deno.serve(async (req) => {
                 try { args = JSON.parse(tc.function.arguments || "{}"); } catch { args = {}; }
                 let toolResult: string;
                 try {
-                  const { result, action, ui } = await executeTool(user.id, tc.function.name, args, userToken);
+                  const { result, action, ui } = await executeTool(user.id, tc.function.name, args, userToken, tz);
                   toolResult = result;
                   if (action) actions.push(action);
                   if (ui) directives.push(ui);

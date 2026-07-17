@@ -1,0 +1,350 @@
+// The week's plan — the rail's crown. The week's priorities held in view all
+// week (glance, don't re-open the Review), each row tracking its OWN work, so a
+// priority reads honest even when you never tap it: progress derives from the
+// linked project's tasks, and a fully-worked priority *invites* the seal instead
+// of sitting at a silent 0. The readiness checklist folds in below as a single
+// quiet "Loose ends" line that vanishes once the week is groomed. Replaces the
+// buried WeekReadiness footer — intent on top, status demoted to a line.
+//
+// The header IS the week door (the toolbar's copy is gone — it sat in the
+// calendar's control cluster, which acts on the *canvas*, while the door acts on
+// the *plan* that lives right here). It takes the lifecycle from Planner so the
+// door on top of the priorities is the same one, not a weaker twin: identity on
+// the left, the state's verb on the right. The toolbar keeps a door only in
+// focus mode, where this rail is slid shut.
+
+import { useState } from "react";
+import { addDays, format } from "date-fns";
+import { useVertical } from "../hooks/useVertical";
+import { useAppNavigation } from "../hooks/useAppNavigation";
+import { priorityWork, weekPushes } from "../lib/priorities";
+import { planningWeekStartISO } from "../lib/dates";
+import { weekReadiness, type WeekReadinessKey } from "../lib/readiness";
+import { domainById, initiativeById, projectById, type VerticalData } from "../lib/vertical";
+import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
+import { ProjectShipAssess } from "./record/ShipAssess";
+import type { EmblemSpec } from "../lib/weekEmblem";
+import type { BigRock } from "../lib/types";
+
+/** The week door's lifecycle, owned by Planner and worn by this header. */
+export interface WeekDoor {
+  /** plan — not composed · view — composed · review — the Friday reveal landed. */
+  mode: "plan" | "view" | "review";
+  title: string;
+  /** The reveal is waiting: the door should call, quietly. */
+  glow: boolean;
+  glyph: EmblemSpec | null;
+  onOpen: () => void;
+}
+
+/** The color a priority inherits from the initiative/project it's anchored to. */
+function rockColor(data: VerticalData, rock: BigRock): string | null {
+  const init = initiativeById(data, rock.initiative_id);
+  if (init) return domainById(data, init.domainId)?.color ?? null;
+  const proj = projectById(data, rock.project_id ?? null);
+  if (proj) return domainById(data, proj.domainId)?.color ?? null;
+  return null;
+}
+
+export default function WeekPanel({ door }: { door?: WeekDoor }) {
+  const { data, togglePushLanded } = useVertical();
+  const { openFlow, setTab, setCalView, setRung, openRecord } = useAppNavigation();
+  const [looseOpen, setLooseOpen] = useState(false);
+  const [shipId, setShipId] = useState<string | null>(null);
+  if (!data) return null;
+
+  // The week's priorities ARE the projects On Deck committed to this week —
+  // derived, so this rail can never drift from the board (or from Set-the-week).
+  // The stored rock, when one exists, carries only the verdict.
+  const pushes = weekPushes(data, data.sprint?.week_start ?? planningWeekStartISO());
+  const rocks: BigRock[] = pushes.map(
+    ({ project, rock }) =>
+      rock ?? {
+        id: `derived:${project.id}`,
+        title: project.name,
+        win: project.outcome ?? "",
+        initiative_id: null,
+        project_id: project.id,
+        done_at: null,
+        roll_count: 0,
+      },
+  );
+  // `done` already folds in "shipped inside this week" — a shipped project must
+  // count on the scoreboard, not vanish from it.
+  const landed = pushes.filter((p) => p.done).length;
+  const shippedIds = new Set(pushes.filter((p) => p.shipped).map((p) => p.project.id));
+  const composed = Boolean(data.sprint?.reviewed_at);
+
+  const weekLabel = (() => {
+    const iso = data.sprint?.week_start;
+    if (!iso) return "";
+    const s = new Date(iso + "T00:00:00");
+    const e = addDays(s, 6);
+    return `${format(s, "MMM d")} – ${format(e, s.getMonth() === e.getMonth() ? "d" : "MMM d")}`;
+  })();
+
+  // The panel is the ambient face of the Week's Plan: composed → open the
+  // surface (view), not yet → the compose ritual (plan). Planner owns the real
+  // lifecycle (it alone knows the Friday reveal); this stands in when the door
+  // isn't wired, so the panel is never a dead end.
+  const openWeekPlan =
+    door?.onOpen ??
+    (() => {
+      if (composed) window.dispatchEvent(new CustomEvent(MARQUEE_OPEN_EVENT, { detail: { surface: "week-plan" } }));
+      else openFlow("sunday");
+    });
+  const mode = door?.mode ?? (composed ? "view" : "plan");
+  // The verb the door is offering, right-aligned: identity left, action right.
+  const action = mode === "review" ? "Review" : mode === "plan" ? "Plan" : "open ▸";
+
+  // Open a priority where its work lives: a project-bound one → its Record
+  // (manage/close its tasks, complete the project); an aim → the Week's Plan.
+  const openRow = (rock: BigRock) => {
+    if (rock.project_id) openRecord("project", rock.project_id);
+    else openWeekPlan();
+  };
+
+  // Ticking a priority SHIPS its project — one completion act, not two. The
+  // circle used to write only the week's verdict (done_at), which read as
+  // "complete" and finalized nothing, so a priority could go struck-through
+  // while five tasks stayed live underneath. Now it opens the same assessment
+  // every other ship path uses: you see what's still open before anything is
+  // written. (A legacy landed-but-not-shipped verdict can still be tapped to
+  // reopen; shipped rows are inert — reopen from the record.)
+  const onTick = (rock: BigRock) => {
+    if (!rock.project_id) return;
+    if (shippedIds.has(rock.project_id)) return;
+    if (rock.done_at) return togglePushLanded(rock.project_id);
+    setShipId(rock.project_id);
+  };
+
+  const loose = weekReadiness(data).filter((i) => !i.done);
+  const jump = (key: WeekReadinessKey) => {
+    switch (key) {
+      case "planned":
+      case "priorities":
+        openFlow("sunday"); // the compose ritual — goal + priorities live here
+        break;
+      case "inbox":
+        setTab("inbox");
+        break;
+      case "placed":
+        setRung("day");
+        setCalView("board"); // the Spread view, where the "Needs a day" tray sits
+        break;
+    }
+  };
+
+  return (
+    <div className="shrink-0 border-b border-line-strong px-3 pb-3 pt-3.5">
+      {/* The crown — the rail's anchor, in an EXECUTION voice, not ceremony: a
+          tracked-caps eyebrow (identity) over a functional scoreboard (numbers in
+          mono, words quiet) + a thin landed meter — the same meter idiom the spine
+          and Standing gauges use. NOT a Fraunces headline: a serif scoreboard read
+          like a marketing stat; a floor's NAME earns serif, a count does not. */}
+      <button
+        onClick={openWeekPlan}
+        title={door?.title ?? "The week's plan"}
+        className="fast tap group mb-3 flex w-full items-start gap-2 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="section-label !px-0 !pb-0" style={{ color: "var(--accent)" }}>
+            This week{weekLabel ? ` · ${weekLabel}` : ""}
+          </div>
+          {rocks.length === 0 ? (
+            <div className="mt-1 text-body text-muted">No priorities named yet</div>
+          ) : (
+            <div className="mt-1.5 flex items-center gap-2.5">
+              <span className="shrink-0 text-body">
+                <span className="mono font-medium text-ink">{landed}</span>
+                <span className="text-muted"> of </span>
+                <span className="mono font-medium text-ink">{rocks.length}</span>
+                <span className="text-muted"> landed</span>
+              </span>
+              <span className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+                <span
+                  className="block h-full rounded-full"
+                  style={{ width: `${(landed / rocks.length) * 100}%`, background: "var(--accent)" }}
+                />
+              </span>
+            </div>
+          )}
+        </div>
+        {mode === "view" ? (
+          <span className="mt-0.5 shrink-0 text-micro text-muted transition-colors group-hover:text-accent">{action}</span>
+        ) : (
+          <span
+            className="mono mt-0.5 flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-micro font-medium"
+            style={
+              mode === "review"
+                ? { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
+                : { color: "var(--accent)", background: "var(--accent-soft)" }
+            }
+          >
+            {door?.glow && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--signal)" }} aria-hidden />}
+            {action}
+          </span>
+        )}
+      </button>
+
+      {/* priorities — directly under the crown; the crown states the count, so
+          there's no repeated "Priorities" label. */}
+      {rocks.length > 0 ? (
+        <div className="flex flex-col gap-0.5">
+            {rocks.map((rock) => (
+              <PriorityRow
+                key={rock.id}
+                rock={rock}
+                data={data}
+                shipped={Boolean(rock.project_id && shippedIds.has(rock.project_id))}
+                onToggle={() => onTick(rock)}
+                onOpen={() => openRow(rock)}
+              />
+            ))}
+          </div>
+      ) : (
+        <button
+          onClick={() => openFlow("sunday")}
+          className="fast tap flex w-full items-center gap-1.5 py-1 text-label text-muted hover:text-accent"
+        >
+          ＋ Name this week's priorities
+        </button>
+      )}
+
+      {/* loose ends — the readiness checklist, folded to one quiet line that
+          names the first gap and vanishes once the week is groomed. */}
+      {loose.length > 0 && (
+        <div className="mt-2.5 border-t border-line pt-2.5">
+          <button onClick={() => setLooseOpen((v) => !v)} className="fast tap flex w-full items-center gap-2 text-left">
+            <span className="shrink-0 text-caption text-muted">
+              {loose.length} loose end{loose.length > 1 ? "s" : ""}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-caption" style={{ color: "var(--accent)" }}>
+              {looseOpen ? "" : `— ${loose[0].detail ?? loose[0].label}`}
+            </span>
+            <span className="ml-auto shrink-0 text-micro text-muted">{looseOpen ? "▾" : "▸"}</span>
+          </button>
+          {looseOpen && (
+            <div className="mt-1 flex flex-col">
+              {loose.map((it) => (
+                <button
+                  key={it.key}
+                  onClick={() => jump(it.key)}
+                  className="fast tap flex items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-surface-2"
+                >
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ border: "1.5px solid var(--accent)" }} aria-hidden />
+                  <span className="flex-1 text-caption text-ink">{it.label}</span>
+                  {it.detail && <span className="mono shrink-0 text-micro text-muted">{it.detail}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {shipId && <ProjectShipAssess id={shipId} onClose={() => setShipId(null)} />}
+    </div>
+  );
+}
+
+// ── one priority row — derived progress, one completion act ───────────────────
+// The leading dot is a domain-colored ring: tap it to SHIP the project this
+// priority is. Every priority here IS a project (weekPushes derives the slate
+// from the board), so there's one completion act, not two — the circle opens the
+// ship assessment, which shows what's still open before anything is written.
+// It's quiet (hover-revealed ✓) on partial rows so it doesn't invite a premature
+// ship; loud only when earned. The title opens the project's work.
+//  shipped  → shipped this week → the crown; the circle is inert (reopen in the record)
+//  landed   → a legacy week-verdict (done_at, no ship); struck, tap to reopen
+//  ship     → every task done → a loud `ship ✓` invite (the earned path)
+//  motion   → mini progress bar + done/total from priorityWork; hover to ship
+//  carrying → unfinished + rolled from a prior week → a quiet "wk N" nag
+function PriorityRow({
+  rock,
+  data,
+  shipped,
+  onToggle,
+  onOpen,
+}: {
+  rock: BigRock;
+  data: VerticalData;
+  /** the linked project SHIPPED inside this week — the loudest verdict there is */
+  shipped: boolean;
+  onToggle: () => void;
+  onOpen: () => void;
+}) {
+  const done = Boolean(rock.done_at) || shipped;
+  const work = priorityWork(data, rock);
+  const color = rockColor(data, rock) ?? "var(--accent)";
+  const rolls = rock.roll_count ?? 0;
+  const pct = work.total > 0 ? Math.round((work.done / work.total) * 100) : 0;
+  const looksDone = !done && work.total > 0 && work.done === work.total;
+  // Sealing a Push lands the WEEK, not the project: if it's project-bound with
+  // open work left, the project rolls on. Say so, so "landed" never reads as
+  // "closed the project" (or silently finished its tasks). (Push verdict ≠ done.)
+  // Shipped is the exception — there the project really did finish.
+  const continues = done && !shipped && Boolean(rock.project_id) && work.tasks.some((t) => t.status !== "done");
+
+  return (
+    <div className="group/row flex items-center gap-2 py-1">
+      <button
+        onClick={onToggle}
+        disabled={shipped}
+        title={
+          shipped
+            ? "Shipped this week"
+            : done
+              ? "Landed — tap to reopen"
+              : looksDone
+                ? "Every task is done — ship it"
+                : "Ship it — you'll see what's still open first"
+        }
+        aria-label={shipped ? "Shipped" : done ? "Reopen push" : "Ship project"}
+        className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-micro"
+        style={{ borderColor: color, background: done ? color : "transparent", color: done ? "#fff" : color }}
+      >
+        <span className={done ? "" : "opacity-0 group-hover/row:opacity-100"} style={{ lineHeight: 1 }}>✓</span>
+      </button>
+
+      <button onClick={onOpen} title="Open" className="fast min-w-0 flex-1 truncate text-left">
+        <span className={`text-body ${done ? "text-muted line-through" : "text-ink"}`}>{rock.title}</span>
+      </button>
+
+      {shipped ? (
+        // The week's win, crowned in the domain's own hue — never a vanished row.
+        <span
+          className="mono shrink-0 rounded-full px-1.5 py-0.5 text-micro font-medium"
+          style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
+        >
+          shipped
+        </span>
+      ) : done ? (
+        <span className="mono shrink-0 text-micro text-muted">{continues ? "landed · continues" : "landed"}</span>
+      ) : looksDone ? (
+        <button
+          onClick={onToggle}
+          title="Every task is done — ship it"
+          className="fast mono shrink-0 rounded-full border border-accent/50 px-2 py-0.5 text-micro font-medium text-accent hover:bg-accent-soft"
+        >
+          ship ✓
+        </button>
+      ) : (
+        <span className="flex shrink-0 items-center gap-1.5">
+          {rolls > 0 && (
+            <span className="mono rounded-full px-1.5 py-0.5 text-micro" style={{ border: "1px solid var(--signal)", color: "var(--signal)" }}>
+              wk {rolls + 1}
+            </span>
+          )}
+          {work.total > 0 && (
+            <>
+              <span className="block h-1 w-10 overflow-hidden rounded-full bg-line">
+                <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+              </span>
+              <span className="mono text-micro text-muted">{work.done}/{work.total}</span>
+            </>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}

@@ -1,6 +1,17 @@
-import { admin, todayLA } from "../_shared/admin.ts";
+import { admin } from "../_shared/admin.ts";
 
-const APP_TZ = "America/Los_Angeles";
+/** Fallback when the client didn't say where it is — the app's established home. */
+const FALLBACK_TZ = "America/Los_Angeles";
+
+/** Today's calendar date in `tz`. */
+function todayIn(tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 const TASK_COLS =
   "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count";
 const MIN_SLOT_MINUTES = 30;
@@ -70,29 +81,29 @@ function planningWeekStart(todayIso: string): string {
   return dt.toISOString().slice(0, 10);
 }
 
-function localDateISO(iso: string): string {
+function localDateISO(iso: string, tz: string): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: APP_TZ,
+    timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(iso));
 }
 
-function fmtTimeLA(iso: string): string {
+function fmtTimeLocal(iso: string, tz: string): string {
   return new Intl.DateTimeFormat("en-US", {
-    timeZone: APP_TZ,
+    timeZone: tz,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   }).format(new Date(iso));
 }
 
-function fmtTimeRangeLA(startIso: string, endIso: string): string {
-  return `${fmtTimeLA(startIso)}–${fmtTimeLA(endIso)}`;
+function fmtTimeRange(startIso: string, endIso: string, tz: string): string {
+  return `${fmtTimeLocal(startIso, tz)}–${fmtTimeLocal(endIso, tz)}`;
 }
 
-function fmtTask(t: Record<string, unknown>, today: string, nowMs: number) {
+function fmtTask(t: Record<string, unknown>, today: string, nowMs: number, tz: string) {
   const startTime = t.start_time as string | null;
   const duration = (t.duration_minutes as number) ?? 30;
   let past = false;
@@ -105,8 +116,8 @@ function fmtTask(t: Record<string, unknown>, today: string, nowMs: number) {
     const endMs = startMs + duration * 60_000;
     past = endMs <= nowMs;
     ongoing = startMs <= nowMs && nowMs < endMs;
-    localDate = localDateISO(startTime);
-    timeRange = fmtTimeRangeLA(startTime, new Date(endMs).toISOString());
+    localDate = localDateISO(startTime, tz);
+    timeRange = fmtTimeRange(startTime, new Date(endMs).toISOString(), tz);
   }
 
   return {
@@ -128,12 +139,12 @@ function fmtTask(t: Record<string, unknown>, today: string, nowMs: number) {
   };
 }
 
-function fmtEvent(e: Record<string, unknown>, today: string, now: number) {
+function fmtEvent(e: Record<string, unknown>, today: string, now: number, tz: string) {
   const startAt = e.start_at as string;
   const endAt = e.end_at as string;
   const start = startAt ? new Date(startAt).getTime() : null;
   const end = endAt ? new Date(endAt).getTime() : null;
-  const localDate = startAt ? localDateISO(startAt) : undefined;
+  const localDate = startAt ? localDateISO(startAt, tz) : undefined;
   const allDay = Boolean(e.all_day);
 
   return {
@@ -144,7 +155,7 @@ function fmtEvent(e: Record<string, unknown>, today: string, now: number) {
     allDay,
     location: e.location || undefined,
     localDate,
-    timeRange: startAt && endAt && !allDay ? fmtTimeRangeLA(startAt, endAt) : undefined,
+    timeRange: startAt && endAt && !allDay ? fmtTimeRange(startAt, endAt, tz) : undefined,
     isToday: localDate === today,
     past: end != null ? end <= now : false,
     ongoing: start != null && end != null ? start <= now && now < end : false,
@@ -206,6 +217,7 @@ function computeFreeSlots(
   scheduled: ReturnType<typeof fmtTask>[],
   today: string,
   nowMs: number,
+  tz: string,
 ): FreeSlot[] {
   const busy: Array<{ s: number; e: number }> = [];
 
@@ -242,7 +254,7 @@ function computeFreeSlots(
     if (mins < MIN_SLOT_MINUTES) continue;
     const startISO = new Date(gapStart).toISOString();
     const endISO = new Date(gapEnd).toISOString();
-    slots.push({ startISO, endISO, timeRange: fmtTimeRangeLA(startISO, endISO), minutes: mins });
+    slots.push({ startISO, endISO, timeRange: fmtTimeRange(startISO, endISO, tz), minutes: mins });
   }
   return slots;
 }
@@ -251,19 +263,23 @@ export async function buildContext(
   userId: string,
   rangeStart?: string,
   rangeEnd?: string,
+  /** The client's zone — the whole snapshot (today, now, day boundaries, every
+   *  formatted time) is built in it, so the model reasons about the day the user
+   *  is actually standing in. */
+  tz: string = FALLBACK_TZ,
 ): Promise<AgentContext> {
-  const today = todayLA();
+  const today = todayIn(tz);
   const now = new Date();
   const nowMs = now.getTime();
   const nowLabel = new Intl.DateTimeFormat("en-US", {
-    timeZone: APP_TZ,
+    timeZone: tz,
     weekday: "short",
     hour: "numeric",
     minute: "2-digit",
   }).format(now);
-  // Derive the current UTC offset for LA (handles PDT/PST automatically).
+  // Derive the zone's current UTC offset (handles DST automatically).
   const laOffsetParts = new Intl.DateTimeFormat("en-US", {
-    timeZone: APP_TZ,
+    timeZone: tz,
     timeZoneName: "longOffset",
   }).formatToParts(now);
   const laUtcOffset = (laOffsetParts.find((p) => p.type === "timeZoneName")?.value ?? "GMT-07:00").replace("GMT", "");
@@ -353,11 +369,11 @@ export async function buildContext(
     return e.recurring_event_id ? hiddenEventKeys.has(`${e.account_id}:series:${e.recurring_event_id}`) : false;
   };
 
-  const inbox = (inboxRes.data ?? []).map((t) => fmtTask(t, today, nowMs));
+  const inbox = (inboxRes.data ?? []).map((t) => fmtTask(t, today, nowMs, tz));
   const todayTasks = (todayRes.data ?? [])
     .filter((t) => !t.start_time)
-    .map((t) => fmtTask(t, today, nowMs));
-  const scheduled = (scheduledRes.data ?? []).map((t) => fmtTask(t, today, nowMs));
+    .map((t) => fmtTask(t, today, nowMs, tz));
+  const scheduled = (scheduledRes.data ?? []).map((t) => fmtTask(t, today, nowMs, tz));
   // Deduplicate events: same provider_event_id can appear from multiple synced
   // accounts (e.g. two Google accounts that can both see the same calendar).
   // Secondary dedup on title+start_at catches cross-account duplicates where
@@ -377,10 +393,10 @@ export async function buildContext(
       seenEventSlots.add(slot);
       return true;
     })
-    .map((e) => fmtEvent(e, today, nowMs));
+    .map((e) => fmtEvent(e, today, nowMs, tz));
 
   const todaySchedule = buildTodaySchedule(events, scheduled, today);
-  const todayFreeSlots = computeFreeSlots(events, scheduled, today, nowMs);
+  const todayFreeSlots = computeFreeSlots(events, scheduled, today, nowMs, tz);
 
   return {
     today,
@@ -402,7 +418,7 @@ export async function buildContext(
     scheduled,
     sprintGoal: sprint?.goal ?? null,
     weekPriorities: (sprint?.big_rocks ?? []) as unknown[],
-    weekPool: (weekRes.data ?? []).map((t) => fmtTask(t, today, nowMs)),
+    weekPool: (weekRes.data ?? []).map((t) => fmtTask(t, today, nowMs, tz)),
     events,
     labels: labelsRes.data ?? [],
     vertical: {

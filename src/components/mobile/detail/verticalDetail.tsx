@@ -9,9 +9,10 @@
 // vow + weekly target. No new data layer: every read is a pure selector over the
 // live VerticalData snapshot, every write goes through useVertical()'s mutations.
 
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { format, parseISO } from "date-fns";
 import { useVertical } from "../../../hooks/useVertical";
+import { ProjectShipAssess } from "../../record/ShipAssess";
 import {
   domainById,
   faithfulness,
@@ -395,6 +396,7 @@ export function ProjectScreen({
   onOpenInitiative: (id: string) => void;
   onOpenDomain: (id: string) => void;
 }) {
+  const [shipping, setShipping] = useState(false);
   const p = d.projects.find((x) => x.id === id);
   if (!p) return <Empty>This project is gone.</Empty>;
   const dom = d.domains.find((x) => x.id === p.domainId);
@@ -427,9 +429,12 @@ export function ProjectScreen({
         <ProgressBar pct={projectProgress(d, p)} color={accent} />
       </Card>
 
+      {/* Shipping asks first on the phone too — same moment, same rule: it closes
+          the open tasks, and you say whether they were done or dropped. */}
       <Section label="Status">
-        <StatusChips value={p.status} onPick={(s) => store.updateProject(p.id, { status: s })} />
+        <StatusChips value={p.status} onPick={(s) => (s === "complete" ? setShipping(true) : store.updateProject(p.id, { status: s }))} />
       </Section>
+      {shipping && <ProjectShipAssess id={p.id} onClose={() => setShipping(false)} />}
 
       <Section label="Timeline">
         <DateRow
