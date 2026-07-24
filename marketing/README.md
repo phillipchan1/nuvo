@@ -29,7 +29,7 @@ Second Vercel project, same GitHub repo:
 | Root Directory | `marketing` |
 | Build Command | `npm run build` |
 | Output Directory | `dist` |
-| Domain | `nuvo.app` / `www` (product stays on `app.` or current host) |
+| Domain | `nuvo.day` / `www` (product stays on `app.` or current host) |
 
 Optional: Ignored Build Step so commits that only touch `src/` / `supabase/` skip this project, and vice versa.
 
