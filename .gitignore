@@ -6,6 +6,10 @@ dist
 .DS_Store
 supabase/.temp
 
+# Marketing site installs its own deps (separate package.json)
+marketing/node_modules
+marketing/dist
+
 # Tauri
 src-tauri/target
 src-tauri/gen/schemas

@@ -1,0 +1,284 @@
+@import "tailwindcss";
+@import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
+@import "@fontsource-variable/fraunces/full.css";
+@import "@fontsource-variable/fraunces/full-italic.css";
+
+@source "./**/*.{tsx,ts,jsx,js,html}";
+
+/*
+  Daybreak light — curated subset of the product palette.
+  Source of truth: ../src/index.css (+ docs/design-language.md).
+  When packages/design lands, replace this block with an import.
+*/
+
+:root,
+[data-theme="light"] {
+  --bg: #f4f1ea;
+  --surface: #fffdf8;
+  --surface-2: #faf6ee;
+  --line: #e7e0d2;
+  --line-strong: #d8cfbc;
+  --text: #1f1a16;
+  --muted: #847b6b;
+  --accent: #92568a;
+  --accent-2: #b07fa8;
+  --accent-soft: rgba(146, 86, 138, 0.11);
+  --accent-glow: rgba(146, 86, 138, 0.20);
+  --slot: #2f8d86;
+  --signal: #e0620f;
+  --signal-soft: rgba(224, 98, 15, 0.11);
+  --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(60, 42, 20, 0.13), 0 1px 2px rgba(60, 42, 20, 0.06);
+  --shadow-3: 0 24px 60px -16px rgba(74, 52, 24, 0.26), 0 4px 12px -4px rgba(60, 42, 20, 0.12);
+  --shadow-lift: 0 30px 60px -18px rgba(74, 52, 24, 0.36), 0 10px 24px -10px rgba(60, 42, 20, 0.22);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: "Fraunces Variable", Fraunces, Georgia, "Times New Roman", serif;
+  --font-serif: "Fraunces Variable", Fraunces, Georgia, "Times New Roman", serif;
+  --font-brand: "Plus Jakarta Sans", var(--font-sans);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-slot: var(--slot);
+  --color-signal: var(--signal);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --font-brand: var(--font-brand);
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: clip;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  max-width: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+}
+
+.atmosphere {
+  background:
+    radial-gradient(1200px 600px at 0% 0%, rgba(255, 220, 180, 0.35), transparent 55%),
+    radial-gradient(1000px 700px at 100% 100%, rgba(146, 86, 138, 0.12), transparent 50%),
+    var(--bg);
+}
+
+.masthead {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-variation-settings: "SOFT" 32, "WONK" 0;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+}
+
+.serif {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  font-variation-settings: "SOFT" 40, "WONK" 0;
+  letter-spacing: -0.005em;
+}
+
+.section-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.text-display {
+  font-size: clamp(2.5rem, 7vw, 3.85rem);
+}
+
+.text-lead {
+  font-size: clamp(1.5rem, 3.2vw, 2rem);
+  line-height: 1.25;
+}
+
+/* Supporting hero line — body size, not lead (lead is for section titles) */
+.hero-support {
+  font-size: clamp(1.0625rem, 2.4vw, 1.25rem);
+  line-height: 1.55;
+}
+
+.text-body {
+  font-size: 1.0625rem;
+  line-height: 1.65;
+}
+
+.wordmark {
+  font-family: var(--font-brand);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.mono {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.003em;
+}
+
+.glass-card {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 12%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface) 56%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  backdrop-filter: blur(10px) saturate(1.3);
+}
+
+.tap {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.7rem 1.25rem;
+  border-radius: 9999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--shadow-2);
+  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lift);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.7rem 1.15rem;
+  border-radius: 9999px;
+  border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.btn-ghost:hover {
+  border-color: var(--accent-2);
+  background: var(--accent-soft);
+}
+
+/* Hero motion — 3 quiet beats */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal {
+  animation: rise-in 0.85s var(--ease-out) both;
+}
+
+.reveal-delay-1 { animation-delay: 0.1s; }
+.reveal-delay-2 { animation-delay: 0.2s; }
+.reveal-delay-3 { animation-delay: 0.32s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+  }
+  .btn-primary:hover {
+    transform: none;
+  }
+}
+
+/* Schedule product visual */
+.schedule-visual {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  min-height: 360px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.schedule-spine {
+  width: 7.5rem;
+}
+
+.schedule-rail {
+  min-width: 0;
+}
+
+.schedule-cal {
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .schedule-visual {
+    grid-template-columns: 7.5rem minmax(0, 11.5rem) minmax(0, 1fr);
+  }
+}
+
+.schedule-block {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.privacy-prose code {
+  font-size: 0.8em;
+  word-break: break-all;
+}
+
+@media (max-width: 639px) {
+  .schedule-visual {
+    grid-template-columns: 1fr;
+  }
+  .schedule-rail {
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .schedule-cal {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .schedule-cal > :last-child,
+  .schedule-cal > :nth-child(2) {
+    min-width: 520px;
+  }
+}

@@ -21,6 +21,8 @@ scheduled on the calendar. There is no separate event entity for tasks.
 
 ```
 src/                        SPA source
+marketing/                  Public one-pager (separate Vite app + Vercel project)
+packages/design/            Shared design tokens stub (app + marketing)
 supabase/migrations/        schema, RLS, vault wrappers, rollover fn, cron jobs
 supabase/functions/         edge functions (all server-side logic)
   google-oauth/             OAuth consent + callback, mirror-calendar setup
