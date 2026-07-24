@@ -14,7 +14,7 @@
     "tauri:build": "tauri build",
     "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons",
     "app:install": "npm run tauri build && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app",
-    "app:install:live": "tauri build --config '{\"build\":{\"frontendDist\":\"http://localhost:5173\",\"beforeBuildCommand\":\"\"},\"bundle\":{\"targets\":[\"app\"]}}' && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app"
+    "app:install:live": "tauri build --config '{\"build\":{\"frontendDist\":\"http://localhost:5717\",\"beforeBuildCommand\":\"\"},\"bundle\":{\"targets\":[\"app\"]}}' && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.2.9",

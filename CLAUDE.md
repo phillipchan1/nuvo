@@ -106,7 +106,7 @@ not the front door.** Use plain text `<input>`s so iOS dictation works out of th
 
 ## Build, verify, deploy
 
-- `npm run dev` — Vite dev server (5173).
+- `npm run dev` — Vite dev server (5717).
 - `npm run build` — **desktop bundle** (`tsc -b && vite build`). **Keep this green** —
   typecheck must pass.
 - `npm run build:web` — **web/PWA bundle** (`vite build`, skips `tsc`). This is what

@@ -52,10 +52,12 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), pwa],
   clearScreen: false,
   server: {
-    port: process.env.PORT ? Number(process.env.PORT) : 5173,
+    // Unique from the Vite default (5173) so other local Vite apps don't collide
+    // with Tauri's fixed `devUrl`.
+    port: process.env.PORT ? Number(process.env.PORT) : 5717,
     strictPort: true,
     host: host || false,
-    hmr: host ? { protocol: "ws", host, port: 5174 } : undefined,
+    hmr: host ? { protocol: "ws", host, port: 5718 } : undefined,
     watch: {
       ignored: ["**/src-tauri/**"],
     },
