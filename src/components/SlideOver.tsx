@@ -30,6 +30,58 @@ function localMinutes(iso: string): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+/**
+ * Quiet overflow for rare transforms (→ Inbox, → Event, …). Keeps the popover
+ * footer to one primary + one secondary so Trash never spills the 380px card.
+ */
+function PopoverMoreMenu({
+  items,
+}: {
+  items: { label: string; title?: string; onClick: () => void }[];
+}) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="More actions"
+        aria-expanded={open}
+        title="More actions"
+        className="fast flex h-9 w-9 items-center justify-center rounded-md border border-line text-muted hover:border-line-strong hover:bg-surface-2 hover:text-ink"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden>
+          <circle cx="3" cy="7" r="1.25" />
+          <circle cx="7" cy="7" r="1.25" />
+          <circle cx="11" cy="7" r="1.25" />
+        </svg>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full right-0 z-[61] mb-1 w-44 overflow-hidden rounded-md border border-line bg-surface elev-3">
+            {items.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                title={item.title}
+                onClick={() => {
+                  item.onClick();
+                  setOpen(false);
+                }}
+                className="fast block w-full px-3 py-2 text-left text-caption text-text hover:bg-bg"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function TaskPopover({
   task,
   anchor,
@@ -567,8 +619,11 @@ export function TaskPopover({
           </div>
         </div>
 
-        {/* ── Footer ── */}
-        <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
+        {/* ── Footer ──
+            Hierarchy: Done is the only primary. Unblock stays as a peer secondary
+            when the task is blocked. Rare transforms (→ Inbox, → Event) live in
+            ⋯ so they don't compete — and so Trash stays inside the card. */}
+        <div className="flex min-w-0 shrink-0 items-center gap-1.5 border-t border-line px-3 py-2.5">
           {task.status === "done" ? (
             <Btn onClick={() => mutations.uncomplete(task)}>Reopen</Btn>
           ) : (
@@ -577,13 +632,25 @@ export function TaskPopover({
             </Btn>
           )}
           {task.start_time && <Btn onClick={() => mutations.unblock(task)}>Unblock</Btn>}
-          {task.status !== "inbox" && task.status !== "done" && (
-            <Btn onClick={() => { mutations.backToInbox(task); onClose(); }}>→ Inbox</Btn>
-          )}
-          {onConvertToEvent && task.start_time && (
-            <Btn onClick={() => { onConvertToEvent(); onClose(); }} title="Convert to a calendar event and remove the task">→ Event</Btn>
-          )}
-          <div className="flex-1" />
+          <div className="min-w-0 flex-1" />
+          <PopoverMoreMenu
+            items={[
+              ...(task.status !== "inbox" && task.status !== "done"
+                ? [{
+                    label: "→ Inbox",
+                    title: "Move back to inbox",
+                    onClick: () => { mutations.backToInbox(task); onClose(); },
+                  }]
+                : []),
+              ...(onConvertToEvent && task.start_time
+                ? [{
+                    label: "→ Event",
+                    title: "Convert to a calendar event and remove the task",
+                    onClick: () => { onConvertToEvent(); onClose(); },
+                  }]
+                : []),
+            ]}
+          />
           <RecurrenceDeleteButton
             recurring={Boolean(task.recurrence_id && recurrence)}
             label="Trash"
@@ -1382,13 +1449,15 @@ export function EventPopover({
           </div>
         </div>
 
-        {/* Footer — open in Google / hide / delete */}
+        {/* Footer — open in Google / hide / delete.
+            → Task is a quiet text action (not a peer Btn) so convert never reads
+            as the primary CTA beside Hide / Delete. */}
         {(
-          <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5 border-t border-line px-3 py-2.5">
             {hideMode && !hiddenNow ? (
               <>
                 <span className="text-label text-muted">Hide…</span>
-                <div className="flex-1" />
+                <div className="min-w-0 flex-1" />
                 <Btn onClick={() => setHideMode(false)}>Cancel</Btn>
                 <Btn onClick={() => { hide(event, "THIS"); onClose(); }}>This event</Btn>
                 <Btn onClick={() => { hide(event, "ALL"); onClose(); }}>All events</Btn>
@@ -1400,7 +1469,7 @@ export function EventPopover({
                 href={raw.htmlLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="fast text-label text-muted hover:text-ink"
+                className="fast shrink-0 text-label text-muted hover:text-ink"
                 title="Open in Google Calendar"
               >
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className="inline-block align-middle">
@@ -1426,18 +1495,25 @@ export function EventPopover({
               )
             )}
             {onConvertToTask && !confirmDelete && (
-              <Btn onClick={() => { onConvertToTask(); onClose(); }} title="Create a task from this event and hide the event">→ Task</Btn>
+              <button
+                type="button"
+                onClick={() => { onConvertToTask(); onClose(); }}
+                title="Create a task from this event and hide the event"
+                className="fast shrink-0 px-1.5 py-1 text-label text-muted hover:text-ink"
+              >
+                → Task
+              </button>
             )}
             {editable && (
               !confirmDelete ? (
                 <>
-                  <div className="flex-1" />
+                  <div className="min-w-0 flex-1" />
                   <Btn kind="signal" onClick={() => setConfirmDelete(true)}>Delete</Btn>
                 </>
               ) : recurring ? (
                 <>
                   <span className="text-label text-muted">Delete…</span>
-                  <div className="flex-1" />
+                  <div className="min-w-0 flex-1" />
                   <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
                   <Btn
                     onClick={() => {
@@ -1460,7 +1536,7 @@ export function EventPopover({
               ) : (
                 <>
                   <span className="text-label text-muted">Delete this event?</span>
-                  <div className="flex-1" />
+                  <div className="min-w-0 flex-1" />
                   <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
                   <Btn
                     kind="signal"
@@ -1732,6 +1808,21 @@ export function SlotPopover({
     });
   };
 
+  // A standing "domain slot": tag the block to a domain directly (no project
+  // needed). With Repeat set, the weekly plan routes this domain's work here —
+  // see docs/standing-slots.md. Clears any project so the affinity reads clean.
+  const setDomain = (domainId: string) => {
+    const d = domainById(vertical, domainId || null);
+    slotMutations.updateSlot({
+      id: slot.id,
+      patch: {
+        domain_id: d?.id ?? null,
+        project_id: null,
+        color: d?.color ?? slot.color,
+      },
+    });
+  };
+
   return createPortal(
     <>
       <div
@@ -1843,6 +1934,29 @@ export function SlotPopover({
                 })}
             </select>
           </label>
+
+          {/* Domain chip — a standing "domain slot": with Repeat set, the weekly
+              plan routes this domain's work into it (docs/standing-slots.md).
+              Shown only when no project drives the domain, so it reads as one
+              affinity, not two. */}
+          {!slot.project_id && (
+            <label
+              className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
+              style={{ color: domain?.color ?? "var(--muted)" }}
+            >
+              <span>{slot.domain_id ? (domain?.name ?? "domain") : "+ domain"}</span>
+              <select
+                value={slot.domain_id ?? ""}
+                onChange={(e) => setDomain(e.target.value)}
+                className="absolute inset-0 w-full cursor-pointer opacity-0"
+              >
+                <option value="">— none —</option>
+                {vertical.domains.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
 
           {/* Repeat */}
           <RepeatControl

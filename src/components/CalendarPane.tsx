@@ -187,6 +187,7 @@ export default function CalendarPane({
   weekButtonGlow,
   focusMode = false,
   onToggleFocus,
+  domains = [],
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
@@ -231,6 +232,8 @@ export default function CalendarPane({
   focusMode?: boolean;
   /** Toggle focus mode (slide the side panels away / back). Enables the exit button. */
   onToggleFocus?: () => void;
+  /** Domains offered on the Slot create dialog (standing "domain slots"). */
+  domains?: Array<{ id: string; name: string; color: string }>;
 }) {
   const calRef = useRef<FullCalendar>(null);
   const { scale: uiScale } = useUiScale();
@@ -1194,7 +1197,9 @@ export default function CalendarPane({
     setDraft({ start, end, kind, point: { x: je.clientX, y: je.clientY } });
   };
 
-  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[] = [], calendarAccountId?: string) => {
+  const domainColor = (id: string | null) => (id ? domains.find((d) => d.id === id)?.color ?? null : null);
+
+  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[] = [], calendarAccountId?: string, domainId: string | null = null) => {
     if (!draft) return;
     const { start, end, point, allDay: draftAllDay } = draft;
     const duration = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
@@ -1244,7 +1249,7 @@ export default function CalendarPane({
           kind: "slot",
           rule: recurrence,
           anchorISO: doDate,
-          template: { title, duration_minutes: duration, time_of_day_minutes: minutes },
+          template: { title, duration_minutes: duration, time_of_day_minutes: minutes, domain_id: domainId, color: domainColor(domainId) },
         });
         revealFirstOccurrence();
       } else {
@@ -1253,6 +1258,8 @@ export default function CalendarPane({
           do_date: doDate,
           start_time: start.toISOString(),
           duration_minutes: duration,
+          domain_id: domainId,
+          color: domainColor(domainId),
         });
         // Open the new slot so the user can immediately fill it with tasks.
         onOpenSlot(slot, new DOMRect(point.x, point.y, 0, 0));
@@ -1805,6 +1812,7 @@ export default function CalendarPane({
           allDay={draft.allDay}
           googleAvailable={canCreateEvents}
           writableAccounts={writableAccounts}
+          domains={domains}
           onCreate={handleCreate}
           onCancel={() => {
             setDraft(null);

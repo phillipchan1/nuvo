@@ -146,6 +146,13 @@ export interface VerticalStore {
     slots: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; taskIds: string[] }[],
     opts?: { sprintId?: string | null },
   ) => Promise<void>;
+  /** Standing-slot routing (docs/standing-slots.md): move already-committed tasks
+   *  INTO pre-existing recurring slots as children — slot_id set, do_date = the
+   *  slot's day, start_time cleared, status planned. The plan's "layer 0". */
+  assignToStanding: (
+    specs: { slotId: string; doDateISO: string; taskIds: string[] }[],
+    opts?: { sprintId?: string | null },
+  ) => Promise<void>;
   /** The Plan flow's one commit: commit the kept candidates to the week,
    *  schedule the placed ones, and stamp the sprint goal + reviewed — all
    *  against the current planning week's sprint, in order, one await. */
@@ -1193,6 +1200,22 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             if (tErr) console.error("[batch] slot task assign failed", tErr);
           }
           invokeQuiet("slot-mirror", { slotId: slot.id });
+        }
+        invalidate(["slots"], ["tasks"]);
+      },
+
+      assignToStanding: async (specs, opts) => {
+        if (!specs.length) return;
+        for (const s of specs) {
+          if (!s.taskIds.length) continue;
+          // children ride the slot's day, lose their own block, and join the
+          // committed week (status leaves 'inbox'/'backlog' → planned)
+          const patch: Record<string, unknown> = {
+            slot_id: s.slotId, do_date: s.doDateISO, start_time: null, status: "planned",
+          };
+          if (opts?.sprintId) patch.sprint_id = opts.sprintId;
+          const { error } = await supabase.from("tasks").update(patch).in("id", s.taskIds);
+          if (error) console.error("[standing] assign failed", error);
         }
         invalidate(["slots"], ["tasks"]);
       },

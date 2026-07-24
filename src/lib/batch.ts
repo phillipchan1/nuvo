@@ -53,7 +53,7 @@ const CAP_PROJECT = 120;
 type Cls = "deep" | "decide" | "shallow";
 const classOf = (e: Energy | null): Cls => (e === "deep" ? "deep" : e === "decide" ? "decide" : "shallow");
 
-function resolveDomainId(data: VerticalData, t: Task): string | null {
+export function resolveDomainId(data: VerticalData, t: Task): string | null {
   return (
     t.domain_id ??
     projectById(data, t.project_id)?.domainId ??

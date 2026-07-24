@@ -16,7 +16,7 @@ import { useVertical } from "../../hooks/useVertical";
 import { useSettings } from "../../hooks/useSettings";
 import { useWorkingDays } from "../../hooks/useWorkingDays";
 import { useExternalEvents } from "../../hooks/useCalendar";
-import { useSlots } from "../../hooks/useSlots";
+import { useSlots, useSlotTasks } from "../../hooks/useSlots";
 import { useAllTasks, useScheduledTasks } from "../../hooks/useTasks";
 import {
   backlogTasks,
@@ -39,6 +39,7 @@ import { sprintLabel } from "../../lib/sprint";
 import { CONTEXT_META, composeWeek, plannedMinutes, type DayContext, type Placement } from "../../lib/compose";
 import { isEventHidden } from "../../lib/now";
 import { clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup } from "../../lib/batch";
+import { isStandingSlot, routeToStanding } from "../../lib/standingSlots";
 import { supabase } from "../../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../../lib/calibration";
 import { suggestPull, type PullSuggestion } from "../../lib/pull";
@@ -64,7 +65,7 @@ const fmtMinShort = (m: number) => {
 type Phase = "intent" | "shape";
 
 export default function SundayRitual({ onClose }: { onClose: () => void }) {
-  const { data, planWeek, applySlots } = useVertical();
+  const { data, planWeek, applySlots, assignToStanding } = useVertical();
   const { settings } = useSettings();
   const { data: allTasks = [] } = useAllTasks();
 
@@ -124,14 +125,44 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     [allTasks, kept],
   );
 
+  // ── layer 0 · standing slots: route matching work into the recurring blocks
+  //    you've dedicated (6–8a trading, Tue frontier…) BEFORE anything else is
+  //    placed. Cap-don't-cram, spill across occurrences. See docs/standing-slots.
+  const standingSlots = useMemo(() => weekSlots.filter(isStandingSlot), [weekSlots]);
+  const standingSlotIds = useMemo(() => standingSlots.map((s) => s.id), [standingSlots]);
+  const { data: standingChildren = [] } = useSlotTasks(standingSlotIds);
+  // minutes already inside each standing slot — a part-full block only takes
+  // what it has room for (children carry slot_id, so they're never in keptTasks)
+  const occupiedMins = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of standingChildren) {
+      if (!t.slot_id || t.status === "done") continue;
+      m.set(t.slot_id, (m.get(t.slot_id) ?? 0) + (t.duration_minutes ?? 30));
+    }
+    return m;
+  }, [standingChildren]);
+  const routing = useMemo(
+    () => routeToStanding(keptTasks, standingSlots, occupiedMins, data),
+    [keptTasks, standingSlots, occupiedMins, data],
+  );
+  // the pool the composer sees excludes work already routed into a standing slot
+  const pooledTasks = useMemo(
+    () => keptTasks.filter((t) => !routing.routedTaskIds.has(t.id)),
+    [keptTasks, routing],
+  );
+  const routedCount = useMemo(
+    () => routing.assignments.reduce((s, a) => s + a.taskIds.length, 0),
+    [routing],
+  );
+
   // ── project work is slotted as PROJECT SLOTS, not loose per-task blocks ─────
   // A project's steps belong to one sitting: "Thursday 1–3 is Stampede v3", not
   // four errands scattered across three days. So we cluster the draft's project
   // work into a slot per project (chunked to a sitting) and hand the composer the
   // SLOT as one block; loose work still places per task.
   const projectSlots = useMemo(
-    () => clusterWeek(keptTasks.filter((t) => t.project_id), data),
-    [keptTasks, data],
+    () => clusterWeek(pooledTasks.filter((t) => t.project_id), data),
+    [pooledTasks, data],
   );
 
   // AI-themed runs (the inbox tail + re-bundled carry-forward). They're drafts
@@ -139,10 +170,11 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
   const [runs, setRuns] = useState<Batch[]>([]);
   const runMemberIds = useMemo(() => new Set(runs.flatMap((r) => r.taskIds)), [runs]);
 
-  // a task inside a run is placed BY the run — it must not also place on its own
+  // a task inside a run is placed BY the run — it must not also place on its own;
+  // routed-into-a-standing-slot work is excluded via pooledTasks
   const looseTasks = useMemo(
-    () => keptTasks.filter((t) => !t.project_id && !runMemberIds.has(t.id)),
-    [keptTasks, runMemberIds],
+    () => pooledTasks.filter((t) => !t.project_id && !runMemberIds.has(t.id)),
+    [pooledTasks, runMemberIds],
   );
   const blocks_ = useMemo(() => [...projectSlots, ...runs], [projectSlots, runs]);
   const slotById = useMemo(() => new Map(blocks_.map((b) => [b.id, b])), [blocks_]);
@@ -375,6 +407,18 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     const commitTaskIds = [...new Set([...kept, ...runMemberIds])];
     await planWeek({ commitTaskIds, placements: taskPlacements, goal: goal.trim() });
     if (slotSpecs.length) await applySlots(slotSpecs, { sprintId: data.sprint?.id ?? null });
+    // layer 0 · file the routed work into its standing slots (sprint_id already
+    // stamped by planWeek via commitTaskIds; this sets slot_id + the slot's day)
+    if (routing.assignments.length) {
+      await assignToStanding(
+        routing.assignments.map((a) => ({
+          slotId: a.slot.id,
+          doDateISO: a.slot.do_date,
+          taskIds: a.taskIds,
+        })),
+        { sprintId: data.sprint?.id ?? null },
+      );
+    }
     setApplying(false);
     setCommitted(true);
   };
@@ -455,6 +499,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
               <h2 className="text-head masthead">The week</h2>
               <span className="mono shrink-0 text-meta text-muted">
                 {placedCount} placed · {result.unplaced.length} in the pool
+                {routedCount > 0 && ` · ${routedCount} in standing slots`}
                 {eventCount > 0 && ` · ${eventCount} immovable`}
               </span>
             </div>

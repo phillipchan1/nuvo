@@ -538,6 +538,7 @@ export default function Planner({
             weekButtonGlow={onSchedule && weekDoorMode === "review"}
             focusMode={focusMode}
             onToggleFocus={onToggleFocus}
+            domains={vertical.domains}
           />
 
           {onSchedule && openTask && taskPanel && (

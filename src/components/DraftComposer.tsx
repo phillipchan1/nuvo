@@ -26,6 +26,7 @@ export default function DraftComposer({
   allDay = false,
   googleAvailable,
   writableAccounts = [],
+  domains = [],
   onCreate,
   onCancel,
 }: {
@@ -36,7 +37,10 @@ export default function DraftComposer({
   allDay?: boolean;
   googleAvailable: boolean;
   writableAccounts?: Array<{ id: string; email: string }>;
-  onCreate: (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[], calendarAccountId?: string) => void;
+  /** Domains offered on the Slot tab — pick one to make a "domain slot" the
+   *  weekly plan routes matching work into (docs/standing-slots.md). */
+  domains?: Array<{ id: string; name: string; color: string }>;
+  onCreate: (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[], calendarAccountId: string | undefined, domainId: string | null) => void;
   onCancel: () => void;
 }) {
   // Anytime (all-day) drafts are task-only — events and slots require a specific time.
@@ -48,6 +52,7 @@ export default function DraftComposer({
   const [repeat, setRepeat] = useState<RecurrenceRule | null>(null);
   const [attendees, setAttendees] = useState<string[]>([]);
   const [calendarAccountId, setCalendarAccountId] = useState(() => writableAccounts[0]?.id ?? "");
+  const [domainId, setDomainId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -100,12 +105,12 @@ export default function DraftComposer({
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         if (kind !== "slot" && !title.trim()) return;
         e.preventDefault();
-        onCreate(kind, title.trim(), repeat, attendees, calendarAccountId || undefined);
+        onCreate(kind, title.trim(), repeat, attendees, calendarAccountId || undefined, kind === "slot" ? domainId : null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, onCreate, kind, title, repeat, attendees]);
+  }, [onCancel, onCreate, kind, title, repeat, attendees, calendarAccountId, domainId]);
 
   const durationMins = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
 
@@ -120,7 +125,7 @@ export default function DraftComposer({
 
   const submit = () => {
     if (!canCreate) return;
-    onCreate(kind, title.trim(), repeat, attendees, calendarAccountId || undefined);
+    onCreate(kind, title.trim(), repeat, attendees, calendarAccountId || undefined, kind === "slot" ? domainId : null);
   };
 
   const placeholder =
@@ -203,6 +208,43 @@ export default function DraftComposer({
             </span>
           )}
         </div>
+
+        {/* ── Domain — Slot tab only: makes a standing "domain slot" the weekly
+              plan routes matching work into (docs/standing-slots.md) ── */}
+        {kind === "slot" && domains.length > 0 && (
+          <div className="px-3.5 pt-2.5">
+            <div className="mb-1.5 flex items-center gap-1.5 text-label font-semibold uppercase tracking-wider text-muted">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M6 1l4.5 2.5v5L6 11 1.5 8.5v-5L6 1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+              </svg>
+              Domain
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {domains.map((d) => {
+                const on = domainId === d.id;
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setDomainId(on ? null : d.id)}
+                    className={`fast inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-caption font-medium transition-colors ${
+                      on ? "border-transparent text-white" : "border-line bg-surface-2 text-muted hover:text-ink"
+                    }`}
+                    style={on ? { background: d.color } : undefined}
+                  >
+                    <span className="h-2 w-2 rounded-full" style={{ background: on ? "rgba(255,255,255,.85)" : d.color }} />
+                    {d.name}
+                  </button>
+                );
+              })}
+            </div>
+            {domainId && (
+              <p className="mt-1.5 pl-1 text-meta text-muted">
+                {repeat ? "The weekly plan routes this domain's work here." : "Add a Repeat above to have the plan route this domain's work here."}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* ── Calendar account — only when multiple writable accounts ── */}
         {kind === "event" && writableAccounts.length > 1 && (
