@@ -32,6 +32,10 @@ const RAIL = [
   { title: 'Call David', meta: 'Inbox · 30m', accent: '#847b6b' },
 ]
 
+// Blocks land in reading order — day, then time — so the week assembles itself.
+const LAND_ORDER = [...BLOCKS].sort((a, b) => a.day - b.day || a.start - b.start)
+const landDelay = (b: Block) => 0.18 + LAND_ORDER.indexOf(b) * 0.07
+
 function fmtHour(h: number) {
   const hour = Math.floor(h)
   const suffix = hour >= 12 ? 'pm' : 'am'
@@ -162,8 +166,8 @@ export default function ScheduleVisual() {
               {BLOCKS.filter((b) => b.day === day).map((b) => (
                 <div
                   key={`${b.day}-${b.title}`}
-                  className="schedule-block absolute inset-x-0.5 overflow-hidden rounded-md px-1 py-0.5"
-                  style={blockStyle(b)}
+                  className="schedule-block sch-land absolute inset-x-0.5 overflow-hidden rounded-md px-1 py-0.5"
+                  style={{ ...blockStyle(b), animationDelay: `${landDelay(b)}s` }}
                 >
                   <p className="truncate text-[10px] font-medium leading-tight text-[var(--text)]">{b.title}</p>
                 </div>

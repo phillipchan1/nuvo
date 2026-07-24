@@ -217,8 +217,59 @@ body {
 .reveal-delay-2 { animation-delay: 0.2s; }
 .reveal-delay-3 { animation-delay: 0.32s; }
 
+/* Capacity bar grow — segments rise from the left */
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.bar-grow {
+  transform-origin: left center;
+  animation: bar-grow 1s var(--ease-out) both;
+}
+
+/* Schedule blocks landing — the week assembling itself */
+@keyframes block-land {
+  from { opacity: 0; transform: translateY(-7px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.sch-land {
+  animation: block-land 0.5s var(--ease-out) both;
+}
+
+/* Parsed chips popping in after capture */
+@keyframes chip-pop {
+  from { opacity: 0; transform: translateY(4px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.chip-pop {
+  animation: chip-pop 0.34s var(--ease-out) both;
+}
+
+/* Blinking caret for the typewriter */
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.caret {
+  animation: caret-blink 1s step-end infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal {
+    animation: none;
+  }
+  .bar-grow,
+  .sch-land,
+  .chip-pop {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+  .caret {
     animation: none;
   }
   .btn-primary:hover {
