@@ -408,9 +408,30 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
+      name: "move_event",
+      description:
+        "PREFERRED when the user wants an EXISTING event on a different calendar: 'put it on Family', 'apple family', 'switch to Work', 'move to …'. Pass event_id from the event you just created (or event_title). NEVER recreate with create_calendar_event — that duplicates. Cross-account/provider copies then deletes the original.",
+      parameters: {
+        type: "object",
+        properties: {
+          event_id: { type: "string", description: "Event id from context / prior create action when known." },
+          event_title: { type: "string", description: "Search by title if id unknown." },
+          calendar_name: {
+            type: "string",
+            description:
+              "Destination calendar display name from writableCalendars (e.g. 'Family', 'apple family calendar').",
+          },
+        },
+        required: ["calendar_name"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "create_calendar_event",
       description:
-        "Create a real Google Calendar event (not a Nuvo task). Use this when the user says 'add to calendar', 'block time', 'schedule a meeting', or mentions a personal/social appointment that doesn't belong in the task list (e.g. 'Suzy coming over', 'dentist appointment', 'dinner with David'). Prefer this over create_task for anything calendar-native.",
+        "Create a NEW calendar event (Google or Apple/iCloud). Only for first-time adds — NOT for 'put it on X calendar' when the event already exists (use move_event). Pass calendar_name to target a specific calendar; otherwise the default Google calendar. Always tell the user which calendar you used.",
       parameters: {
         type: "object",
         properties: {
@@ -427,8 +448,14 @@ export const TOOL_DEFINITIONS = [
           attendees: {
             type: "array",
             items: { type: "string" },
-            description: "Email addresses of attendees to invite (optional).",
+            description: "Email addresses of attendees to invite (optional; Google only).",
           },
+          calendar_name: {
+            type: "string",
+            description:
+              "Target calendar by display name from writableCalendars (e.g. 'Family', 'Apple Family', 'Work'). Match loosely — 'apple family' → Family on iCloud.",
+          },
+          location: { type: "string", description: "Optional location." },
         },
         required: ["title", "start_local", "end_local"],
       },
@@ -639,6 +666,257 @@ async function resolveEventId(
     return { id: data[0].id, title: data[0].title };
   }
   throw new Error("Provide event_id or event_title");
+}
+
+interface WritableCal {
+  accountId: string;
+  provider: "google" | "icloud";
+  accountEmail: string;
+  calendarId: string;
+  name: string;
+}
+
+function isReadOnlyCalendarId(id: string): boolean {
+  return (
+    id.includes("@import.calendar.google.com") ||
+    id.includes("#holiday@") ||
+    id.includes("@group.v.calendar.google.com")
+  );
+}
+
+function eventsFnFor(provider: string): "google-events" | "icloud-events" {
+  return provider === "icloud" ? "icloud-events" : "google-events";
+}
+
+async function loadWritableCalendars(userId: string): Promise<WritableCal[]> {
+  const { data } = await admin
+    .from("calendar_accounts")
+    .select("id, provider, email, sync_direction, calendars")
+    .eq("user_id", userId);
+  const out: WritableCal[] = [];
+  for (const a of data ?? []) {
+    if (a.sync_direction !== "two_way") continue;
+    if (a.provider !== "google" && a.provider !== "icloud") continue;
+    for (const c of (a.calendars as { id: string; summary: string }[] | null) ?? []) {
+      if (isReadOnlyCalendarId(c.id)) continue;
+      out.push({
+        accountId: a.id,
+        provider: a.provider,
+        accountEmail: a.email,
+        calendarId: c.id,
+        name: c.summary,
+      });
+    }
+  }
+  return out;
+}
+
+/** Fuzzy-match a user phrase ("apple family calendar") to a writable calendar. */
+function resolveCalendarByName(cals: WritableCal[], query: string): WritableCal {
+  const q = query.trim().toLowerCase();
+  if (!q) throw new Error("calendar_name is required");
+  if (!cals.length) throw new Error("No writable calendars connected");
+
+  const prefersApple = /\b(apple|icloud|family)\b/.test(q);
+  const prefersGoogle = /\bgoogle\b/.test(q);
+  // Strip provider words so "apple family calendar" still matches a cal named "Family".
+  const nameQ = q
+    .replace(/\b(apple|icloud|google|calendar|cal)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const score = (c: WritableCal): number => {
+    const name = c.name.toLowerCase();
+    let s = 0;
+    if (name === q || name === nameQ) s += 100;
+    else if (nameQ && (name.includes(nameQ) || nameQ.includes(name))) s += 60;
+    else if (name.includes(q) || q.includes(name)) s += 40;
+    else return 0;
+    if (prefersApple && c.provider === "icloud") s += 25;
+    if (prefersGoogle && c.provider === "google") s += 25;
+    // "family" alone → prefer a calendar literally named Family on iCloud.
+    if (/\bfamily\b/.test(q) && name.includes("family") && c.provider === "icloud") s += 15;
+    return s;
+  };
+
+  const ranked = cals
+    .map((c) => ({ c, s: score(c) }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s);
+
+  if (!ranked.length) {
+    const names = cals.map((c) => `"${c.name}" (${c.provider})`).join(", ");
+    throw new Error(`No calendar matching "${query}". Writable calendars: ${names}`);
+  }
+  if (ranked.length > 1 && ranked[0].s === ranked[1].s) {
+    throw new Error(
+      `Multiple calendars match "${query}": ${ranked
+        .filter((x) => x.s === ranked[0].s)
+        .map((x) => `"${x.c.name}" (${x.c.provider})`)
+        .join(", ")}. Be more specific.`,
+    );
+  }
+  return ranked[0].c;
+}
+
+/** Display name for a calendar_id within an account (falls back to provider). */
+function calendarLabel(cals: WritableCal[], accountId: string, calendarId: string, provider: string): string {
+  const hit = cals.find((c) => c.accountId === accountId && c.calendarId === calendarId);
+  if (hit) return hit.name;
+  return provider === "icloud" ? "Apple Calendar" : "Google Calendar";
+}
+
+type EventRow = {
+  id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  location: string | null;
+  account_id: string;
+  calendar_id: string;
+  raw: unknown;
+  calendar_accounts: { provider: string } | null;
+};
+
+/** Find an existing event with the same title whose start is within ±5 minutes.
+ *  Guards against the model re-creating instead of moving. Prefer a row that
+ *  is NOT already on `preferOffTarget` so a prior duplicate can still be cleaned up. */
+async function findNearDuplicate(
+  userId: string,
+  title: string,
+  startAt: string,
+  preferOffTarget?: WritableCal | null,
+): Promise<EventRow | null> {
+  const startMs = new Date(startAt).getTime();
+  if (!Number.isFinite(startMs)) return null;
+  const windowMs = 5 * 60_000;
+  const from = new Date(startMs - windowMs).toISOString();
+  const to = new Date(startMs + windowMs).toISOString();
+
+  const pick = (rows: EventRow[]): EventRow | null => {
+    if (!rows.length) return null;
+    if (preferOffTarget) {
+      const off = rows.find(
+        (r) =>
+          !(r.account_id === preferOffTarget.accountId && r.calendar_id === preferOffTarget.calendarId),
+      );
+      if (off) return off;
+    }
+    return rows[0];
+  };
+
+  const { data } = await admin
+    .from("external_events")
+    .select("id, title, start_at, end_at, location, account_id, calendar_id, raw, calendar_accounts(provider)")
+    .eq("user_id", userId)
+    .ilike("title", title)
+    .gte("start_at", from)
+    .lte("start_at", to)
+    .limit(8);
+  const exact = pick((data ?? []) as EventRow[]);
+  if (exact) return exact;
+
+  // Looser title match (partial) — slight variants of the same event.
+  const { data: loose } = await admin
+    .from("external_events")
+    .select("id, title, start_at, end_at, location, account_id, calendar_id, raw, calendar_accounts(provider)")
+    .eq("user_id", userId)
+    .ilike("title", `%${title}%`)
+    .gte("start_at", from)
+    .lte("start_at", to)
+    .limit(8);
+  return pick((loose ?? []) as EventRow[]);
+}
+
+/** Move (or copy+delete across accounts) an event onto a target calendar. */
+async function moveEventToTarget(
+  userId: string,
+  evt: EventRow,
+  target: WritableCal,
+  userToken?: string,
+): Promise<{ result: string; action: AgentAction }> {
+  const sourceProvider =
+    evt.calendar_accounts?.provider ?? "google";
+  if (sourceProvider !== "google" && sourceProvider !== "icloud") {
+    throw new Error(`Can't move events from ${sourceProvider} — only Google and Apple calendars are writable.`);
+  }
+
+  if (target.accountId === evt.account_id && target.calendarId === evt.calendar_id) {
+    return {
+      result: JSON.stringify({ id: evt.id, alreadyOn: target.name, calendar: target.name }),
+      action: {
+        tool: "move_event",
+        summary: `"${evt.title}" is already on ${target.name}`,
+        verb: "moved",
+        ref: { kind: "event", id: evt.id },
+      },
+    };
+  }
+
+  if (target.accountId === evt.account_id) {
+    const ok = await invokeFn(
+      eventsFnFor(sourceProvider),
+      { action: "move", eventId: evt.id, calendarId: target.calendarId },
+      userToken,
+    );
+    if (!ok) throw new Error(`Couldn't move "${evt.title}" to ${target.name}`);
+    return {
+      result: JSON.stringify({ id: evt.id, calendar: target.name, provider: target.provider }),
+      action: {
+        tool: "move_event",
+        summary: `Moved "${evt.title}" to ${target.name}`,
+        verb: "moved",
+        ref: { kind: "event", id: evt.id },
+      },
+    };
+  }
+
+  const description =
+    ((evt.raw as { description?: string } | null)?.description as string | undefined) ??
+    undefined;
+  const created = await invokeFnJson(
+    eventsFnFor(target.provider),
+    {
+      action: "create",
+      title: evt.title,
+      start_at: evt.start_at,
+      end_at: evt.end_at,
+      accountId: target.accountId,
+      calendarId: target.calendarId,
+      ...(evt.location ? { location: evt.location } : {}),
+      ...(description ? { description } : {}),
+    },
+    userToken,
+  );
+  if (!created) throw new Error(`Couldn't create "${evt.title}" on ${target.name}`);
+  const newId = (created.event as { id?: string } | null)?.id;
+
+  const deleted = await invokeFn(
+    eventsFnFor(sourceProvider),
+    { action: "delete", eventId: evt.id, scope: "THIS", sendUpdates: "none" },
+    userToken,
+  );
+  if (!deleted) {
+    throw new Error(
+      `Created "${evt.title}" on ${target.name}, but couldn't remove the original — you may have a duplicate.`,
+    );
+  }
+
+  return {
+    result: JSON.stringify({
+      from: sourceProvider,
+      to: target.name,
+      calendar: target.name,
+      provider: target.provider,
+      id: newId ?? null,
+    }),
+    action: {
+      tool: "move_event",
+      summary: `Moved "${evt.title}" to ${target.name}`,
+      verb: "moved",
+      ...(newId ? { ref: { kind: "event" as const, id: newId } } : {}),
+    },
+  };
 }
 
 function resolvePriority(rocks: BigRock[], args: { priority_id?: string; priority_title?: string }): BigRock {
@@ -976,28 +1254,106 @@ export async function executeTool(
 
       const start_at = localToUtc(startLocal, tz);
       const end_at = localToUtc(endLocal, tz);
+      const location = (args.location as string | undefined)?.trim() || undefined;
 
+      const writable = await loadWritableCalendars(userId);
+      let target: WritableCal | null = null;
+      const calendarName = (args.calendar_name as string | undefined)?.trim();
+      if (calendarName) {
+        target = resolveCalendarByName(writable, calendarName);
+      } else {
+        // Default write target — first Google calendar, else first writable.
+        target = writable.find((c) => c.provider === "google") ?? writable[0] ?? null;
+      }
+
+      // Safety net: the model often re-creates instead of moving. If the same
+      // title already sits at this time, relocate (or no-op) instead of duplicating.
+      const existing = await findNearDuplicate(userId, title, start_at, target);
+      if (existing) {
+        if (target) {
+          return moveEventToTarget(userId, existing, target, userToken);
+        }
+        const provider = existing.calendar_accounts?.provider ?? "google";
+        const where = calendarLabel(writable, existing.account_id, existing.calendar_id, provider);
+        return {
+          result: JSON.stringify({
+            alreadyExists: true,
+            id: existing.id,
+            calendar: where,
+            title: existing.title,
+          }),
+          action: {
+            tool: name,
+            summary: `"${existing.title}" is already on ${where}`,
+            verb: "moved",
+            ref: { kind: "event", id: existing.id },
+          },
+        };
+      }
+
+      if (!target) throw new Error("No writable calendar connected");
+
+      const provider = target.provider;
+      const fn = eventsFnFor(provider);
       const res = await invokeFnJson(
-        "google-events",
-        { action: "create", title, start_at, end_at, attendees },
+        fn,
+        {
+          action: "create",
+          title,
+          start_at,
+          end_at,
+          ...(location ? { location } : {}),
+          ...(attendees.length && provider === "google" ? { attendees } : {}),
+          accountId: target.accountId,
+          calendarId: target.calendarId,
+        },
         userToken,
       );
-      if (!res) throw new Error("Failed to create calendar event — is a Google account connected?");
+      if (!res) {
+        throw new Error(`Failed to create event on "${target.name}" — is that ${provider} account connected?`);
+      }
 
-      // google-events writes the row before it returns, so the card can read it
-      // straight away instead of waiting on the next calendar sync.
       const eventId = (res.event as { id?: string } | null)?.id;
       return {
-        result: JSON.stringify({ created: true, title, start_at }),
+        result: JSON.stringify({
+          created: true,
+          title,
+          start_at,
+          calendar: target.name,
+          provider,
+        }),
         action: {
           tool: name,
-          summary: `Added "${title}" to calendar at ${fmtZonedTime(start_at, tz)}`,
+          summary: `Added "${title}" to ${target.name} at ${fmtZonedTime(start_at, tz)}`,
           verb: "created",
-          // No undo: reversing means deleting off Google and notifying attendees
-          // — that's a fresh instruction, not a one-tap.
           ...(eventId ? { ref: { kind: "event" as const, id: eventId } } : {}),
         },
       };
+    }
+
+    case "move_event": {
+      const calendarName = (args.calendar_name as string)?.trim();
+      if (!calendarName) throw new Error("calendar_name is required");
+
+      let eventId = args.event_id as string | undefined;
+      if (!eventId) {
+        const resolved = await resolveEventId(userId, {
+          event_id: args.event_id as string | undefined,
+          event_title: args.event_title as string | undefined,
+        });
+        eventId = resolved.id;
+      }
+
+      const { data: evt, error } = await admin
+        .from("external_events")
+        .select("id, title, start_at, end_at, location, account_id, calendar_id, raw, calendar_accounts(provider)")
+        .eq("id", eventId)
+        .eq("user_id", userId)
+        .single();
+      if (error || !evt) throw new Error(`Event not found: ${eventId}`);
+
+      const target = resolveCalendarByName(await loadWritableCalendars(userId), calendarName);
+      return moveEventToTarget(userId, evt as EventRow, target, userToken);
     }
 
     case "reschedule_event": {

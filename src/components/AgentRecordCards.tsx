@@ -11,6 +11,7 @@
 // falls back to the summary line it always was.
 import { useState } from "react";
 import { useAgentUndo, useEventRecord, useTaskRecord } from "../hooks/useAgentRecords";
+import { useCalendarAccounts } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
 import { fmtDayLabel, fmtDuration, fmtTime } from "../lib/dates";
 import type { AgentAction, AgentVerb } from "../lib/agentTypes";
@@ -119,11 +120,14 @@ function TaskRecord({ action, variant }: { action: AgentAction; variant: Variant
 
 function EventRecord({ action, variant }: { action: AgentAction; variant: Variant }) {
   const event = useEventRecord(action.ref?.id);
+  const { data: accounts } = useCalendarAccounts();
   if (!event) return <SummaryFallback action={action} />;
 
   const mins = Math.round(
     (new Date(event.end_at).getTime() - new Date(event.start_at).getTime()) / 60000,
   );
+  const account = accounts?.find((a) => a.id === event.account_id);
+  const calName = account?.calendars?.find((c) => c.id === event.calendar_id)?.summary;
 
   return (
     <Shell
@@ -135,6 +139,7 @@ function EventRecord({ action, variant }: { action: AgentAction; variant: Varian
       chips={[
         fmtDayLabel(localDateISO(event.start_at)),
         event.all_day ? "All day" : `${fmtTime(event.start_at)} · ${fmtDuration(mins)}`,
+        calName,
         event.location,
       ]}
     />

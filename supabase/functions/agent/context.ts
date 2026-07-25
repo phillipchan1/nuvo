@@ -62,6 +62,14 @@ export interface AgentContext {
   /** Tasks committed to this week's sprint and not yet done. */
   weekPool: unknown[];
   events: unknown[];
+  /** Writable calendars the agent can create on or move events to (Google + iCloud). */
+  writableCalendars: {
+    accountId: string;
+    provider: string;
+    accountEmail: string;
+    calendarId: string;
+    name: string;
+  }[];
   labels: { id: string; name: string }[];
   /** Life structure — use ids from here when creating/updating vertical entities. */
   vertical: {
@@ -139,7 +147,13 @@ function fmtTask(t: Record<string, unknown>, today: string, nowMs: number, tz: s
   };
 }
 
-function fmtEvent(e: Record<string, unknown>, today: string, now: number, tz: string) {
+function fmtEvent(
+  e: Record<string, unknown>,
+  today: string,
+  now: number,
+  tz: string,
+  calMeta?: { name?: string; provider?: string },
+) {
   const startAt = e.start_at as string;
   const endAt = e.end_at as string;
   const start = startAt ? new Date(startAt).getTime() : null;
@@ -154,12 +168,23 @@ function fmtEvent(e: Record<string, unknown>, today: string, now: number, tz: st
     endAt,
     allDay,
     location: e.location || undefined,
+    calendarName: calMeta?.name,
+    provider: calMeta?.provider,
     localDate,
     timeRange: startAt && endAt && !allDay ? fmtTimeRange(startAt, endAt, tz) : undefined,
     isToday: localDate === today,
     past: end != null ? end <= now : false,
     ongoing: start != null && end != null ? start <= now && now < end : false,
   };
+}
+
+/** Google holiday / subscription feeds — readable but not writable. */
+function isReadOnlyCalendarId(id: string): boolean {
+  return (
+    id.includes("@import.calendar.google.com") ||
+    id.includes("#holiday@") ||
+    id.includes("@group.v.calendar.google.com")
+  );
 }
 
 function buildTodaySchedule(
@@ -286,7 +311,7 @@ export async function buildContext(
   const start = rangeStart ?? new Date(now.getTime() - 7 * 86400_000).toISOString();
   const end = rangeEnd ?? new Date(now.getTime() + 7 * 86400_000).toISOString();
 
-  const [inboxRes, todayRes, scheduledRes, eventsRes, labelsRes, settingsRes, domainsRes, initiativesRes, projectsRes] = await Promise.all([
+  const [inboxRes, todayRes, scheduledRes, eventsRes, labelsRes, settingsRes, domainsRes, initiativesRes, projectsRes, accountsRes] = await Promise.all([
     admin
       .from("tasks")
       .select(TASK_COLS)
@@ -325,6 +350,10 @@ export async function buildContext(
     admin.from("domains").select("id, name, intention, charter, context, icon, color, weekly_target_hours").eq("user_id", userId).order("sort_order"),
     admin.from("initiatives").select("id, name, domain_id, outcome, description, status, target_date, start_date, key_results(id, name, baseline_value, current_value, target_value, unit)").eq("user_id", userId).order("sort_order"),
     admin.from("projects").select("id, name, domain_id, initiative_id, outcome, description, status, start_date, target_date").eq("user_id", userId).order("sort_order"),
+    admin
+      .from("calendar_accounts")
+      .select("id, provider, email, sync_direction, calendars")
+      .eq("user_id", userId),
   ]);
 
   const weekStart = planningWeekStart(today);
@@ -354,6 +383,7 @@ export async function buildContext(
   if (domainsRes.error) throw new Error(domainsRes.error.message);
   if (initiativesRes.error) throw new Error(initiativesRes.error.message);
   if (projectsRes.error) throw new Error(projectsRes.error.message);
+  if (accountsRes.error) throw new Error(accountsRes.error.message);
 
   const hiddenCalendars = new Set<string>(
     (settingsRes.data?.hidden_calendar_ids as string[] | null) ?? [],
@@ -368,6 +398,39 @@ export async function buildContext(
     if (hiddenEventKeys.has(`${e.account_id}:${e.provider_event_id}`)) return true;
     return e.recurring_event_id ? hiddenEventKeys.has(`${e.account_id}:series:${e.recurring_event_id}`) : false;
   };
+
+  // Calendar name / provider lookup for events + the writable target list for
+  // create/move tools ("put it on Apple Family").
+  type CalRow = { id: string; summary: string; color: string | null; visible: boolean };
+  type AccountRow = {
+    id: string;
+    provider: string;
+    email: string;
+    sync_direction: string;
+    calendars: CalRow[] | null;
+  };
+  const accounts = (accountsRes.data ?? []) as AccountRow[];
+  const calLookup = new Map<string, { name: string; provider: string }>();
+  for (const a of accounts) {
+    for (const c of a.calendars ?? []) {
+      calLookup.set(`${a.id}:${c.id}`, { name: c.summary, provider: a.provider });
+      // Also key by calendar_id alone — most events resolve that way in practice.
+      if (!calLookup.has(c.id)) calLookup.set(c.id, { name: c.summary, provider: a.provider });
+    }
+  }
+  const writableCalendars = accounts
+    .filter((a) => a.sync_direction === "two_way" && (a.provider === "google" || a.provider === "icloud"))
+    .flatMap((a) =>
+      (a.calendars ?? [])
+        .filter((c) => !isReadOnlyCalendarId(c.id))
+        .map((c) => ({
+          accountId: a.id,
+          provider: a.provider,
+          accountEmail: a.email,
+          calendarId: c.id,
+          name: c.summary,
+        })),
+    );
 
   const inbox = (inboxRes.data ?? []).map((t) => fmtTask(t, today, nowMs, tz));
   const todayTasks = (todayRes.data ?? [])
@@ -393,7 +456,11 @@ export async function buildContext(
       seenEventSlots.add(slot);
       return true;
     })
-    .map((e) => fmtEvent(e, today, nowMs, tz));
+    .map((e) => {
+      const meta =
+        calLookup.get(`${e.account_id}:${e.calendar_id}`) ?? calLookup.get(e.calendar_id as string);
+      return fmtEvent(e, today, nowMs, tz, meta);
+    });
 
   const todaySchedule = buildTodaySchedule(events, scheduled, today);
   const todayFreeSlots = computeFreeSlots(events, scheduled, today, nowMs, tz);
@@ -420,6 +487,7 @@ export async function buildContext(
     weekPriorities: (sprint?.big_rocks ?? []) as unknown[],
     weekPool: (weekRes.data ?? []).map((t) => fmtTask(t, today, nowMs, tz)),
     events,
+    writableCalendars,
     labels: labelsRes.data ?? [],
     vertical: {
       domains: (domainsRes.data ?? []).map((d) => ({
