@@ -2,11 +2,13 @@ name: Release
 
 # Builds, signs, notarizes, and publishes the macOS desktop app.
 #
-# Triggers:
-#   • push to master        — ship whatever just landed
-#   • weekly cron (Mon 09:00 UTC) — safety net; the SHA guard below means it
-#     only actually builds if something changed since the last release
-#   • manual dispatch       — force a build (bypasses the SHA guard)
+# Triggers (deliberate — releases don't fire on every push, so macOS runner
+# minutes aren't burned on routine commits):
+#   • push a version tag `vX.Y.Z`  → releases that exact version
+#   • manual dispatch (Actions tab → Run workflow) → releases <major>.<minor>.<run>
+#
+# To cut a release:  git tag v0.2.0 && git push origin v0.2.0
+#              or:   click "Run workflow" on the Actions tab.
 #
 # Publishes a UNIVERSAL (Apple Silicon + Intel) DMG + the updater artifacts
 # (.app.tar.gz + .sig) + latest.json to the PUBLIC releases repo
@@ -16,9 +18,7 @@ name: Release
 # latest Nuvo.dmg.
 on:
   push:
-    branches: [master]
-  schedule:
-    - cron: "0 9 * * 1"
+    tags: ["v*"]
   workflow_dispatch:
 
 concurrency:
@@ -32,35 +32,7 @@ env:
   RELEASES_REPO: phillipchan1/nuvo-releases
 
 jobs:
-  # Cheap pre-flight: skip the expensive macOS build when HEAD is already the
-  # last thing we released (keeps the weekly cron from rebuilding an unchanged
-  # tree). Manual dispatch always builds.
-  check:
-    runs-on: ubuntu-latest
-    outputs:
-      should_build: ${{ steps.diff.outputs.should_build }}
-    steps:
-      - name: Compare HEAD to last-built SHA
-        id: diff
-        env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-        run: |
-          LAST_SHA=$(gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
-            --jq '.content' 2>/dev/null | base64 -d | tr -d '[:space:]' || echo "")
-          CURRENT="${{ github.sha }}"
-          echo "Last built : ${LAST_SHA:-<none>}"
-          echo "Current    : $CURRENT"
-          if [ "$LAST_SHA" = "$CURRENT" ]; then
-            echo "should_build=false" >> "$GITHUB_OUTPUT"
-            echo "No new commits — skipping build."
-          else
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-            echo "New commits — will build."
-          fi
-
   release:
-    needs: check
-    if: needs.check.outputs.should_build == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -87,14 +59,18 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Compute version
-        # Version = <major>.<minor> from package.json + the run number as the
-        # patch, so versions are always monotonic (run_number only increases).
-        # Written into BOTH tauri.conf.json (the app's real version, what the
-        # updater compares) and package.json (what the __APP_VERSION__ Vite
-        # define bakes in for display) — CI working tree only, never committed.
+        # Tag push (vX.Y.Z) → that exact version. Manual dispatch → <major>.<minor>
+        # from package.json + the run number as a monotonic patch. Written into
+        # BOTH tauri.conf.json (the app's real version, what the updater compares)
+        # and package.json (what the __APP_VERSION__ Vite define bakes in for
+        # display) — CI working tree only, never committed.
         run: |
-          MAJOR_MINOR=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
-          VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            MAJOR_MINOR=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+            VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+          fi
           node -e "for (const p of ['src-tauri/tauri.conf.json','package.json']) { const fs=require('fs'); const c=JSON.parse(fs.readFileSync(p)); c.version='$VERSION'; fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n'); }"
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Building version $VERSION"
@@ -223,20 +199,3 @@ jobs:
             --notes-file RELEASE_NOTES.md \
             --latest \
             "$DMG" "$STABLE_DMG" "$APPTAR" latest.json
-
-      - name: Record built SHA
-        env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-        run: |
-          set -euo pipefail
-          CONTENT=$(printf '%s' '${{ github.sha }}' | base64)
-          FILE_SHA=$(gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
-            --jq '.sha' 2>/dev/null || echo "")
-          EXTRA_ARGS=()
-          [ -n "$FILE_SHA" ] && EXTRA_ARGS+=(--field "sha=$FILE_SHA")
-          gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
-            --method PUT \
-            --field "message=Record built SHA ${{ github.sha }}" \
-            --field "content=$CONTENT" \
-            "${EXTRA_ARGS[@]}"
-          echo "Recorded built SHA: ${{ github.sha }}"

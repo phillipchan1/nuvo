@@ -26,15 +26,19 @@ is a Tauri v2 build of the same `dist/` the web/PWA ships; CI produces a
 
 ## Cutting a release
 
-**Just push to `master`.** The workflow builds, signs, notarizes, and publishes
-automatically. It also runs weekly (Mon 09:00 UTC) as a safety net and can be run
-manually from the Actions tab (`workflow_dispatch`). A "skip if the commit SHA is
-unchanged" pre-flight means the cron only builds when something actually changed.
+Releases are **deliberate**, not per-push (so routine commits don't spend macOS
+runner minutes). Two ways to trigger:
 
-Version = `<major>.<minor>` from `package.json` + the CI run number as the patch
-(e.g. `0.1.42`), so versions are always monotonic. Release notes are AI-generated
-from the commit range by `scripts/release-notes.mjs` (OpenAI, with a deterministic
-commit-filter fallback if `OPENAI_API_KEY` is absent).
+- **Version tag:** `git tag v0.2.0 && git push origin v0.2.0` → releases exactly `0.2.0`.
+- **Manual:** Actions tab → **Release** → **Run workflow** → releases `<major>.<minor>.<run>`.
+
+The workflow builds, signs, notarizes, and publishes automatically. Release notes are
+AI-generated from the commit range by `scripts/release-notes.mjs` (OpenAI, with a
+deterministic commit-filter fallback if `OPENAI_API_KEY` is absent).
+
+> The `nuvo` source repo is **public**, so GitHub Actions minutes are free/unlimited.
+> If it's ever made private again, macOS runners bill at 10× included minutes — the
+> tag/manual trigger keeps that in check.
 
 ## One-time setup (required before the first real release)
 
