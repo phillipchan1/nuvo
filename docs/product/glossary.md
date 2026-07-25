@@ -12,7 +12,7 @@ migrations)* should be confirmed against `supabase/migrations/` before being rel
 
 | User-facing | In code | What it is |
 |---|---|---|
-| **Domain** | `domains` *(per migrations)*, `domain_id` | An area of perpetual responsibility — one you are called to be faithful and produce in. **Not a folder or a tag.** Carries a color used as identity across calendar and rails. ⚠️ The seeded Work · Church · Trading · Family are **persona zero's instance, not the model** — see the five domain *kinds* in [`personas.md`](./personas.md) §1 and open question Q-06. The register of "called to be faithful" is itself unresolved (Q-08). |
+| **Domain** | `domains` *(per migrations)*, `domain_id` | An area of lasting responsibility — one you've committed to keep showing up in and producing from. **Not a folder or a tag.** Carries a color used as identity across calendar and rails. Signup seeds **none**; the account names its own via the first-run picker over the five domain *kinds* in [`personas.md`](./personas.md) §1 (D-026). |
 | **Initiative** | `initiatives` *(per migrations)* | A big outcome under a domain, usually a quarter's worth. Has vows / key results. |
 | **Project** | `projects` *(per migrations)*, `project_id` | A finite thing that gets *finished*. Has size (remaining effort) and a finish line — the two inputs to pace. |
 | **Task** | `tasks` | The atom. One row carries pool membership, planning, *and* scheduling. |

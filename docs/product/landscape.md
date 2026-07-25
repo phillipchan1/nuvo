@@ -60,7 +60,7 @@ Ranked by defensibility — how hard it would be for the tool above to copy it:
    completed blocks. Motion optimizes; nobody tells you *"you can't carry this."*
 3. **Evidence-based closing** — the Review with receipts and one scored Find. Everyone
    else's weekly review is a text box.
-4. **Multi-domain by construction** — domains as *areas you're called to be faithful in*,
+4. **Multi-domain by construction** — domains as *areas you've committed to show up in*,
    not folders. Family and church are first-class, not "personal" leftovers.
 5. **Two shells, one bundle** — a real macOS app and a real installable phone app from one
    SPA, with a mirror calendar so your phone shows truth even outside the app.

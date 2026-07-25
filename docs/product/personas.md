@@ -49,11 +49,12 @@ That's what we design against:
 | **The relational** | presence, on a calendar that doesn't care about your sprint | Never generates a ticket, so it never enters the system, and gets starved **silently** — the failure nobody notices until it's expensive. | family · marriage · aging parents · friendship |
 | **The stewardship** *(often implicit)* | periodic attention, high cost of neglect | Invisible until a deadline or a mistake. | finances · health · home · admin |
 
-> **Design consequence.** These are *kinds*, so the app must never assume names. Persona
-> zero's instance is Work / Church / Trading / Family ⓞ — which is exactly why the seeded
-> four-domain default is a Principle 16 violation rather than a helpful head start. Offer a
-> **template**, ask for names, and make the *discipline* and *relational* kinds first-class,
-> since those are the two every task-shaped competitor drops.
+> **Design consequence — now built (D-026).** These are *kinds*, so the app never assumes
+> names. Persona zero's instance is Work / Church / Trading / Family ⓞ, which is exactly why
+> the old four-domain seed was a Principle 16 violation rather than a helpful head start.
+> Signup now seeds nothing and the first-run picker offers these five kinds with examples,
+> each named by the account. The *discipline* and *relational* kinds are deliberately
+> first-class there — they're the two every task-shaped competitor drops.
 
 **A week in the life.** Sunday night they decide. Monday a work escalation eats the deep
 block. Wednesday someone mentions a thing in passing that becomes a promise. Thursday the
@@ -109,20 +110,19 @@ break the product.
 
 Ministry, nonprofit, or community lead. Hard recurring deadlines (Sunday, the event, the
 season), volunteer labor they can't assign work to, and a strong sense that the work is a
-calling rather than a job.
+vocation rather than a job.
 
-**Different from P1:** the vocabulary of *faithfulness*, *calling*, and *gain* lands
+**Different from P1:** the vocabulary of *faithfulness*, *stewardship*, and *gain* lands
 immediately and literally. Lower tolerance for anything that feels like corporate
 productivity theater.
 
-> **⚠ Multi-tenant tension, unresolved.** "Where you are called to be faithful" is the
-> definition of a Domain in the product today. For P3 it's the reason they'd choose Nuvo;
-> for a secular P2 it may read as a stance they didn't sign up for. This is a genuine fork
-> — *narrow and beloved* vs. *broad and blander* — and it should be **decided, not drifted
-> into**. Logged as Q-08 in [`decisions.md`](./decisions.md). The middle path worth testing
-> first: keep the *concept* (an area of perpetual responsibility you can be faithless to by
-> neglect) and let the *register* of the copy vary — the word "faithful" is doing work no
-> synonym quite does, but it doesn't have to be in the empty state.
+> **Register — resolved (D-027).** Nuvo's convictions are Christian; **its vocabulary
+> isn't, and you don't have to be to use it.** Explicit language ("where you are *called*
+> to be faithful") is out. Tangential language — *steward · faithful · vow · gain ·
+> discipline* — stays, because it carries the moral seriousness the product actually runs
+> on, and every one of those words is fully usable by someone who shares none of the
+> convictions. **The excellence is the witness; the copy doesn't have to be.** P3 still
+> gets a product whose weight they recognize; P2 is never asked to adopt a stance.
 
 ---
 
@@ -202,16 +202,21 @@ exactly why they're all unanswered — nobody in the building has ever needed an
 | # | The question | Where Nuvo answers it | Honesty |
 |---|---|---|---|
 | **O1** | What is this, and what do I do first? | — | ○ *no onboarding path; a fresh account lands in an empty system* |
-| **O2** | These aren't my domains — how do I make them mine? | Settings *(seeded Work/Church/Trading/Family)* | ○ *one operator's life presented as the model — Principle 16* |
+| **O2** | These aren't my domains — how do I make them mine? | **first-run picker** (`FirstRun.tsx`) — five kinds, named by you | ✅ *D-026. Unverified against a running app — see the note below.* |
 | **O3** | Do I have to connect a calendar before this is useful? | — | ○ *the whole capacity model degrades silently without one; nothing says so* |
 | **O4** | Who can see my calendar and my work? | — | ○ *no privacy surface. Single-player is a **selling point** we never state.* |
 | **O5** | What happens if I fall off for two weeks? | rollover · backlog stays undated | ◐ *the model handles it well; nothing reassures you it will* |
 | **O6** | Is this worth the setup before I trust it with my week? | — | ○ *no first-value moment defined. What's the 5-minute win?* |
 
-> **Read this cluster as a block.** Six ○s in one row isn't six features — it's one missing
-> thing (a cold start) and it's the difference between multi-tenant *architecture* and a
-> multi-tenant *product*. It's also the cheapest cluster on the board: O1/O2/O6 are
-> largely copy and a first-run flow, not new mechanism.
+> **Read this cluster as a block.** These ○s aren't separate features — they're one missing
+> thing (a cold start), and that's the difference between multi-tenant *architecture* and a
+> multi-tenant *product*. It's also the cheapest cluster on the board: O1/O2/O6 are largely
+> copy and a first-run flow, not new mechanism.
+>
+> **⚠️ O2's ✅ is provisional.** The picker is written, typechecks, and builds — but it has
+> **not been driven in a running app**, and the migration behind it has **not been applied**
+> to any project. Per the scoring bar, a row isn't honestly ✅ until someone watched it work.
+> Re-score this one in the next [stranger pass](./audit.md).
 
 ### How to use this ledger
 
@@ -239,7 +244,7 @@ below as hypotheses and the *categories* as sound.
 - Domains other than work never enter the system, so they starve invisibly.
 
 **Pull** (what attracts them to Nuvo)
-- One funnel from calling to calendar.
+- One funnel from commitment to calendar.
 - An honest answer to *"can I carry this week?"*
 - A Friday that produces evidence instead of a feeling.
 

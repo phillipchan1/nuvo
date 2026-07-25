@@ -82,7 +82,7 @@ export default function Home() {
             </h1>
             <p className="reveal reveal-delay-1 mt-5 max-w-xl text-pretty hero-support text-[var(--muted)]">
               Multiple teams. Multiple projects. Multiple initiatives. Nuvo holds the entire
-              vertical — so nothing gets lost between the calling and the calendar.
+              vertical — so nothing gets lost between the commitment and the calendar.
             </p>
             <CtaGroup className="reveal reveal-delay-2 mt-8" />
           </div>
@@ -102,7 +102,8 @@ export default function Home() {
               </h2>
               <div className="mt-6 space-y-5 text-body text-[var(--muted)]">
                 <p>
-                  Work has three teams and a roadmap. Church has a season. Family has a calendar
+                  Work has three teams and a roadmap. The thing you volunteer for has a season.
+                  Family has a calendar
                   that doesn’t care about your sprint. Somewhere there’s a project that mattered
                   in January and hasn’t been touched since March.
                 </p>
@@ -127,11 +128,12 @@ export default function Home() {
             <div>
               <p className="section-label text-[var(--muted)]">Domains</p>
               <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Where you are called to be faithful.
+                Where you've committed to show up.
               </h2>
               <p className="mt-5 max-w-md text-body text-[var(--muted)]">
-                Domains aren’t folders or tags. They are the areas of life you are perpetually
-                called to be faithful and produce in. Initiatives and projects grow under them.
+                Domains aren’t folders or tags. They are the areas of life you’ve taken lasting
+                responsibility for — the ones you keep showing up in and producing from.
+                Initiatives and projects grow under them.
                 The week decides what lands on the day — across every domain, not just work.
               </p>
             </div>

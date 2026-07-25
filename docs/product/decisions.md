@@ -126,8 +126,8 @@ this; the *product* doesn't yet ([`overview.md`](./overview.md) §5, "Tenancy st
 Consequences we're accepting:
 
 - **Defaults become product decisions.** The new-user trigger's four seeded domains
-  (Work / Church / Trading / Family) stop being a convenience and become a claim about the
-  user's life. They must become a named-by-the-account template (Q-06).
+  (Work / Church / Trading / Family) stopped being a convenience and became a claim about
+  the user's life. **Resolved in D-026** — signup now seeds none.
 - **Timezone and working hours can't be assumed.** Rollover is scheduled against
   America/Los_Angeles; 480/990 working hours are one operator's day.
 - **Signup stays open**, which reverses the "disable signups after your account exists"
@@ -147,6 +147,42 @@ verified instance of P1, cited as ⓞ; the archetype is what we design against.
 → Instance-level details are examples, never defaults (Principle 16). Claims marked ⓞ are
 **unvalidated beyond N=1** and get tested against real operators two and three.
 *Status: standing.*
+
+**D-026 · 2026-07-25 · Signup seeds no domains; the account names its own.** *(Resolves
+Q-06 → option B, "pick from kinds".)* `handle_new_user()` no longer inserts Work / Church /
+Trading / Family; it seeds the settings row only (migration
+`00000000000038_domain_seed.sql`). Zero domains is the client's signal to run the first-run
+picker (`src/components/FirstRun.tsx`), which offers the **five domain kinds** from
+[`personas.md`](./personas.md) §1 — work · community · discipline · people · stewardship —
+each with examples and an editable name, plus "add your own".
+→ Rejected: *start empty* (Principle 7 — the concept is too unusual to survive zero
+examples, and a blank canvas is something we refuse elsewhere) and *blander defaults*
+(Work / Personal / Health — the same mistake with worse names, and generic defaults are
+precisely the ones nobody edits). → Consequence: the weakest moment in the product becomes
+the moment that teaches what a domain is, and it teaches **by asking rather than
+asserting**. Closes ledger O2, and part of O1 and O6.
+*Status: standing. Migration written; **not yet applied to any project** — needs
+`supabase db push`.*
+
+**D-027 · 2026-07-25 · The register: convictions drive the product, vocabulary doesn't
+gate it.** *(Resolves Q-08.)* Nuvo is built on Christian convictions about time,
+responsibility, and doing work well — **and you don't have to share them to use it.**
+Explicit language is out (*called · calling · what God has given you · ministry* as a
+default); tangential language stays (*steward · faithful · vow · gain · discipline ·
+presence · showing up*), because it carries the moral seriousness the product runs on and
+is fully usable by anyone. **The excellence is the witness; the copy doesn't have to be.**
+→ Applied: Domain is now *"where you've committed to show up."* Marketing lost "the
+calling", "called to be faithful", and Church-as-a-default-tile. The `faithfulness()` code
+identifier stays (D-007 precedent — documented drift, not a rename).
+→ The test for any future copy: *would a reader who shares none of these convictions still
+find this the most precise word, or would they feel addressed as an outsider?*
+*Status: standing — full rule in [`brandscript.md`](./brandscript.md) §10.*
+
+**D-028 · 2026-07-25 · The first-value moment is "capture three things and watch them land
+on a real calendar."** *(Resolves Q-09.)* → Onboarding is designed backward from that
+moment; anything that delays it is cut. It's also the honest one — it demonstrates the
+capture→calendar path that no competitor's vertical reaches.
+*Status: standing — nothing built against it yet.*
 
 ---
 
@@ -176,7 +212,4 @@ verified instance of P1, cited as ⓞ; the archetype is what we design against.
 | **Q-03** | Does non-calendar work become visible via activity sources beyond GitHub? | W8 ("where did my time go") is ◐ while shipped-but-unblocked work is invisible | The GitHub instance proving the pattern |
 | **Q-04** | Should `TendingFlow` be retired now the Refine run has proven out? | Two grooming paths is a Principle 11 violation waiting to happen | Refine run confidence on real data |
 | **Q-05** | What is the transitional CTA on the marketing site? | Currently direct CTA only — the biggest funnel gap (brandscript §5) | Picking one and writing it |
-| **Q-06** | What replaces the four seeded domains? | Today a new account is handed one operator's life as fact (Principle 16, ledger O2). Options: pick-from-kinds, name-your-own, or start empty with one example | Deciding how much structure a stranger needs on day one |
 | **Q-07** | Where do timezone and working hours come from for a new account? | Rollover is LA-anchored and hours default to 480/990. Both are silent wrongness for anyone else — and capacity math depends on them | Reading how the rollover cron and `user_settings` actually resolve per user |
-| **Q-08** | Does the "called to be faithful" register stay, soften, or become selectable? | Domain's definition is currently religious in register. Beloved by P3, potentially alienating to P2. **Narrow-and-beloved vs. broad-and-blander is a positioning fork, not a copy tweak** | Wanting to know; testable with operators two and three |
-| **Q-09** | What is the first-value moment for a stranger (ledger O6)? | We can't design onboarding without naming the 5-minute win. Candidate: *capture three things and see them land on a real calendar* | Picking it |

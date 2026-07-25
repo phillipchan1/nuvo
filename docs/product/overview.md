@@ -4,9 +4,9 @@
 **Authority:** this file wins over any spec in `docs/`. If a spec contradicts it, the spec is
 stale or the canon needs an explicit change (log it in [`decisions.md`](./decisions.md)).
 
-> **The one-liner.** *Nuvo is the one funnel from the things you're called to, down to the
-> hour on your calendar — so a week of being busy is never mistaken for a week of being
-> faithful.*
+> **The one-liner.** *Nuvo is the one funnel from the things you're responsible for, down
+> to the hour on your calendar — so a week of being busy is never mistaken for a week of
+> being faithful.*
 
 ---
 
@@ -89,7 +89,7 @@ inbox  →  backlog  →  WEEK  →  Day
 
 | Altitude | Answers | Kept alive by |
 |---|---|---|
-| **Domain** | Where am I called to be faithful and produce? | Summit (quarterly) |
+| **Domain** | Where have I committed to keep showing up and producing? | Summit (quarterly) |
 | **Initiative** | What big outcome is this quarter for? | Summit · Blueprint |
 | **Project** | What finite thing gets finished? | On Deck · the Refine run |
 | **Week** | What am I actually carrying? | Sunday (compose) · the Review (close) |
@@ -137,14 +137,15 @@ RLS per user; nothing in the data model assumes one account). The *product* is n
 the deployment is configured for one operator, and several defaults encode the builder's
 life rather than a stranger's. Known gaps, all onboarding-shaped:
 
-- New-user seeding creates **four fixed domains** (Work / Church / Trading / Family) —
-  that's one operator's instance presented as the model. Should be a starting *template*
-  the account can name for itself.
+- ~~New-user seeding creates **four fixed domains**~~ — **fixed (D-026).** Signup seeds
+  none; a first-run picker offers the five domain kinds and the account names its own.
 - Working hours default to 480/990; timezone logic is anchored to America/Los_Angeles in
   rollover scheduling.
-- Signup is expected to be closed after the first account exists (see root `readme.md`).
-- There is no cold-start path: the first week in a brand-new account is unproven, which
-  collides head-on with Principle 7.
+- Signup is expected to be closed after the first account exists (see root `readme.md`) —
+  that guidance now describes a *personal deployment*, not the product.
+- Beyond the domain picker there is still no cold-start path: the first *week* in a
+  brand-new account is unproven, which collides head-on with Principle 7. The first-value
+  moment is now named (D-028) but nothing is built against it.
 
 *None of this is hard to fix. All of it is invisible until someone who isn't you signs up.*
 

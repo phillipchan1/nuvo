@@ -1,7 +1,7 @@
 /** The vertical as one funnel — domain → day, nothing stranded. */
 
 const STEPS = [
-  { label: 'Domain', hint: 'the calling', color: '#2563EB' },
+  { label: 'Domain', hint: 'what you carry', color: '#2563EB' },
   { label: 'Initiative', hint: 'the bet', color: '#7C3AED' },
   { label: 'Project', hint: 'the body of work', color: '#0D9488' },
   { label: 'Task', hint: 'the next move', color: '#92568a' },

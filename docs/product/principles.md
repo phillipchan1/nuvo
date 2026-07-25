@@ -137,10 +137,11 @@ trap for defaults. Anything that works *because the builder knows their own life
 domains, their timezone, their working hours, their calendar provider, their vocabulary —
 silently fails for everyone else, and fails **invisibly**, because the person who'd notice
 never signs up.
-**Violated when** a default encodes one operator's life as the model (four fixed domains,
-a hardcoded timezone, assumed working hours); a surface needs knowledge that only exists in
-the builder's head; a flow assumes existing data, a connected calendar, or a prior week; or
-copy addresses the reader as though they already know the system's nouns.
+**Violated when** a default encodes one operator's life as the model (the four seeded
+domains — fixed in D-026; a hardcoded timezone and assumed working hours — **still open**,
+Q-07); a surface needs knowledge that only exists in the builder's head; a flow assumes
+existing data, a connected calendar, or a prior week; or copy addresses the reader as
+though they already know the system's nouns.
 **The test:** *would this be true and usable in a brand-new account belonging to someone
 you've never met?* If you can't answer, you haven't tried it — make a fresh account and
 find out. (This is the "stranger pass" in [`audit.md`](./audit.md).)

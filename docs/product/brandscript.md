@@ -11,11 +11,11 @@ Every feature either helps the hero move through this story, or it's noise.
 
 ## The one-liner
 
-> **You run more than one world. Nuvo is the one funnel from what you're called to, down to
-> the hour on your calendar — so you can end a week knowing what actually moved.**
+> **You run more than one world. Nuvo is the one funnel from what you're responsible for,
+> down to the hour on your calendar — so you can end a week knowing what actually moved.**
 
 Short forms:
-- **7 words:** *One funnel, from your calling to your calendar.*
+- **7 words:** *One funnel, from your commitments to your calendar.*
 - **Tagline:** *Know your week is the right week.*
 - **Category line:** *A daily planner with a conscience.*
 
@@ -31,7 +31,7 @@ in [`personas.md`](./personas.md) §1. Names vary per operator; the shape doesn'
 **What they want (external):** to end each week knowing the things that matter actually
 moved — and to have a plan for next week they believe in.
 
-**What they want (deeper):** to be *faithful* in what they've been given. Not more
+**What they want (deeper):** to be *faithful* in what they're responsible for. Not more
 productive. Faithful. They don't want to squeeze more in; they want to stop losing the
 important thing to the urgent one.
 
@@ -77,7 +77,7 @@ built-for-one-user reads as a hobby. Same fact, and the second framing loses the
 **Authority** — earned, concrete, never boastful:
 - It holds **every calendar you actually own** — Google (two-way, with its own mirror
   calendar), Microsoft 365, Apple/iCloud, ICS — on one surface.
-- It carries the **whole vertical**, from a domain you're called to down to a 40-minute
+- It carries the **whole vertical**, from a domain you've committed to down to a 40-minute
   block on Tuesday. Nothing else does both ends.
 - It answers *"can I carry this week?"* with **arithmetic, not vibes** — demand ÷ capacity,
   calibrated against your own proven pace from completed blocks.
@@ -179,6 +179,25 @@ AI-powered · let AI run your day · unlock · game-changer · seamless.*
 **Retired forever** (see [`decisions.md`](./decisions.md) D-006): *harvest · tend · nurture
 · cultivate* and any farming or pastoral metaphor. Also avoid *grind*, and avoid *ritual*
 in user-facing copy where *flow* or the ceremony's own name will do.
+
+### The register — explicit out, tangential in (D-027)
+
+Nuvo is built on Christian convictions about time, responsibility, and doing work well.
+**Those convictions drive the product; they are not a prerequisite for using it.** The
+excellence is the witness — the copy doesn't have to be. So:
+
+| | | |
+|---|---|---|
+| **Explicit — out** | Presumes the reader shares the faith, or names it | *called · calling · what God has given you · ministry* (as a default domain) · scripture · any devotional register |
+| **Tangential — in** | Carries moral weight, fully usable by anyone | **steward · faithful · vow · gain · discipline · integrity · presence · showing up** |
+
+The test: *would a reader who shares none of these convictions still find this the most
+precise word — or would they feel addressed as an outsider?* "Steward" passes; "called"
+doesn't. When a tangential word is doing work no synonym does, **keep it** — the answer to
+"is this too much?" is precision, not dilution.
+
+Applied: Domain is now *"where you've committed to show up"*, not *"where you are called to
+be faithful."* Same idea, no entry fee.
 
 **Watch:** "Nuvo" is both the app and the assistant. In copy, say **"ask Nuvo"** for the
 assistant and **"in Nuvo"** for the app; never let a sentence need both.
