@@ -13,7 +13,7 @@ scheduled on the calendar. There is no separate event entity for tasks.
 - **Frontend** — Vite + React 18 + TypeScript + Tailwind CSS 4. Pure SPA, static bundle,
   zero server runtime (Tauri-ready). Calendar UI is FullCalendar (timegrid + interaction),
   chosen over Schedule-X because external drag-in from the task rail is natively supported.
-- **Backend** — Supabase: Postgres + RLS, Auth (email), Edge Functions (Deno), pg_cron,
+- **Backend** — Supabase: Postgres + RLS, Auth (Google), Edge Functions (Deno), pg_cron,
   pg_net, Vault, Realtime.
 - **State** — TanStack Query + Supabase Realtime invalidation. Boring on purpose.
 
@@ -57,8 +57,9 @@ select vault.create_secret('https://YOUR_REF.supabase.co', 'project_url');
 select vault.create_secret('YOUR_SERVICE_ROLE_KEY', 'service_role_key');
 ```
 
-Auth → disable signups after creating your account (single-user app). New-user trigger
-seeds the four domains (Work / Church / Trading / Family) and the settings row.
+Auth → Google only (disable the Email provider). Optionally disable signups after
+your account exists (single-user app). New-user trigger seeds the four domains
+(Work / Church / Trading / Family) and the settings row.
 
 ### 2. Edge function secrets
 

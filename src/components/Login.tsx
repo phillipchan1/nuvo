@@ -1,11 +1,8 @@
 import { useState } from "react";
-import { supabase, supabaseConfigured } from "../lib/supabase";
+import { supabaseConfigured } from "../lib/supabase";
 import { signInWithGoogle } from "../lib/googleAuth";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -18,15 +15,6 @@ export default function Login() {
       setBusy(false);
     }
     // On success the browser redirects to Google — leave busy true.
-  };
-
-  const withPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError(error.message);
-    setBusy(false);
   };
 
   return (
@@ -51,56 +39,10 @@ export default function Login() {
           className="tap fast flex w-full items-center justify-center gap-2.5 rounded-md border border-line bg-surface-2 px-3 py-3 text-body font-medium text-ink hover:bg-surface active:translate-y-px disabled:opacity-50"
         >
           <GoogleMark />
-          Continue with Google
+          {busy ? "Redirecting…" : "Continue with Google"}
         </button>
 
         {error && <div className="mt-3 text-caption text-signal">{error}</div>}
-
-        <div className="mt-6 flex items-center gap-3">
-          <div className="h-px flex-1 bg-line" />
-          <span className="text-micro uppercase tracking-wider text-muted">or</span>
-          <div className="h-px flex-1 bg-line" />
-        </div>
-
-        {!showPassword ? (
-          <button
-            type="button"
-            className="tap fast mt-4 w-full py-2 text-caption text-muted hover:text-ink"
-            onClick={() => setShowPassword(true)}
-          >
-            Sign in with password once to link Google
-          </button>
-        ) : (
-          <form onSubmit={withPassword} className="mt-4 space-y-3">
-            <p className="text-caption leading-relaxed text-muted">
-              Sign in with your existing email account, then open Settings → Account and tap{" "}
-              <span className="text-ink">Link Google</span>. That keeps your data on the same user.
-            </p>
-            <input
-              type="email"
-              required
-              placeholder="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-line bg-surface-2 px-3 py-2.5 text-body outline-none focus:border-accent"
-            />
-            <input
-              type="password"
-              required
-              placeholder="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-line bg-surface-2 px-3 py-2.5 text-body outline-none focus:border-accent"
-            />
-            <button
-              type="submit"
-              disabled={busy}
-              className="tap fast w-full rounded-md border border-accent bg-accent py-3 text-body font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px disabled:opacity-50"
-            >
-              Sign in
-            </button>
-          </form>
-        )}
       </div>
     </div>
   );

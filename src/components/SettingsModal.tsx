@@ -1238,35 +1238,25 @@ function AccountPane() {
         </Btn>
       </div>
 
-      <div className="mt-5">
-        <div className="section-label mb-2">Sign-in methods</div>
-        <div className="rounded-lg border border-line bg-surface-2 px-3 py-3">
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="text-body text-ink">Google</div>
-              <div className="text-caption text-muted">
-                {googleLinked
-                  ? "Linked — you can sign in with Google."
-                  : "Not linked. Link now to keep this account and all your data."}
+      {!googleLinked && (
+        <div className="mt-5">
+          <div className="section-label mb-2">Sign-in methods</div>
+          <div className="rounded-lg border border-line bg-surface-2 px-3 py-3">
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-body text-ink">Google</div>
+                <div className="text-caption text-muted">
+                  Link Google to keep this account and all your data.
+                </div>
               </div>
-            </div>
-            {googleLinked ? (
-              <span className="text-caption font-medium text-accent">Linked</span>
-            ) : (
               <Btn kind="primary" disabled={linking} onClick={linkGoogle}>
                 {linking ? "Redirecting…" : "Link Google"}
               </Btn>
-            )}
-          </div>
-          {providers.includes("email") && (
-            <div className="mt-3 border-t border-line pt-3 text-caption text-muted">
-              Email/password is still attached. After Google works, you can remove it in the
-              Supabase dashboard.
             </div>
-          )}
-          {linkError && <div className="mt-2 text-caption text-signal">{linkError}</div>}
+            {linkError && <div className="mt-2 text-caption text-signal">{linkError}</div>}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
