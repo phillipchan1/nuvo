@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { linkGoogleIdentity } from "../lib/googleAuth";
 import { formatHourLabel } from "../lib/dates";
 import { readRevealConfig, writeRevealConfig, type RevealConfig } from "../lib/weekReveal";
 import type { CalendarAccount, UserSettings } from "../lib/types";
@@ -1190,9 +1191,35 @@ function LabelsPane() {
 
 function AccountPane() {
   const [email, setEmail] = useState("");
+  const [providers, setProviders] = useState<string[]>([]);
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  const refresh = () => {
+    supabase.auth.getUser().then(({ data }) => {
+      setEmail(data.user?.email ?? "");
+      setProviders((data.user?.identities ?? []).map((i) => i.provider));
+    });
+  };
+
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ""));
+    refresh();
+    const { data: sub } = supabase.auth.onAuthStateChange(() => refresh());
+    return () => sub.subscription.unsubscribe();
   }, []);
+
+  const googleLinked = providers.includes("google");
+
+  const linkGoogle = async () => {
+    setLinking(true);
+    setLinkError(null);
+    const { error } = await linkGoogleIdentity();
+    if (error) {
+      setLinkError(error.message);
+      setLinking(false);
+    }
+    // On success the browser redirects to Google.
+  };
 
   return (
     <div>
@@ -1209,6 +1236,36 @@ function AccountPane() {
         <Btn kind="signal" onClick={() => supabase.auth.signOut()}>
           Sign out
         </Btn>
+      </div>
+
+      <div className="mt-5">
+        <div className="section-label mb-2">Sign-in methods</div>
+        <div className="rounded-lg border border-line bg-surface-2 px-3 py-3">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-body text-ink">Google</div>
+              <div className="text-caption text-muted">
+                {googleLinked
+                  ? "Linked — you can sign in with Google."
+                  : "Not linked. Link now to keep this account and all your data."}
+              </div>
+            </div>
+            {googleLinked ? (
+              <span className="text-caption font-medium text-accent">Linked</span>
+            ) : (
+              <Btn kind="primary" disabled={linking} onClick={linkGoogle}>
+                {linking ? "Redirecting…" : "Link Google"}
+              </Btn>
+            )}
+          </div>
+          {providers.includes("email") && (
+            <div className="mt-3 border-t border-line pt-3 text-caption text-muted">
+              Email/password is still attached. After Google works, you can remove it in the
+              Supabase dashboard.
+            </div>
+          )}
+          {linkError && <div className="mt-2 text-caption text-signal">{linkError}</div>}
+        </div>
       </div>
     </div>
   );

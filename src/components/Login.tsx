@@ -1,28 +1,36 @@
 import { useState } from "react";
 import { supabase, supabaseConfigured } from "../lib/supabase";
+import { signInWithGoogle } from "../lib/googleAuth";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
+  const withGoogle = async () => {
+    setBusy(true);
+    setError(null);
+    const { error } = await signInWithGoogle();
+    if (error) {
+      setError(error.message);
+      setBusy(false);
+    }
+    // On success the browser redirects to Google — leave busy true.
+  };
+
+  const withPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const fn =
-      mode === "signin"
-        ? supabase.auth.signInWithPassword({ email, password })
-        : supabase.auth.signUp({ email, password });
-    const { error } = await fn;
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setError(error.message);
     setBusy(false);
   };
 
   return (
-    <div className="atmosphere flex h-full items-center justify-center">
+    <div className="atmosphere flex h-full items-center justify-center px-4">
       <div className="moment elev-3 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-7">
         <div className="mb-5 flex items-center gap-2.5">
           <TwilightMark />
@@ -35,40 +43,89 @@ export default function Login() {
             <span className="mono">.env</span> and restart.
           </div>
         )}
-        <form onSubmit={submit} className="space-y-3">
-          <input
-            type="email"
-            required
-            placeholder="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-body outline-none focus:border-accent"
-          />
-          <input
-            type="password"
-            required
-            placeholder="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-body outline-none focus:border-accent"
-          />
-          {error && <div className="text-caption text-signal">{error}</div>}
-          <button
-            type="submit"
-            disabled={busy}
-            className="fast w-full rounded-md border border-accent bg-accent py-2 text-body font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_8px_20px_-6px_var(--accent-glow)] active:translate-y-px disabled:opacity-50"
-          >
-            {mode === "signin" ? "Sign in" : "Create account"}
-          </button>
-        </form>
+
         <button
-          className="fast mt-4 text-caption text-muted hover:text-ink"
-          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+          type="button"
+          disabled={busy || !supabaseConfigured}
+          onClick={withGoogle}
+          className="tap fast flex w-full items-center justify-center gap-2.5 rounded-md border border-line bg-surface-2 px-3 py-3 text-body font-medium text-ink hover:bg-surface active:translate-y-px disabled:opacity-50"
         >
-          {mode === "signin" ? "First run? Create the account" : "Back to sign in"}
+          <GoogleMark />
+          Continue with Google
         </button>
+
+        {error && <div className="mt-3 text-caption text-signal">{error}</div>}
+
+        <div className="mt-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-line" />
+          <span className="text-micro uppercase tracking-wider text-muted">or</span>
+          <div className="h-px flex-1 bg-line" />
+        </div>
+
+        {!showPassword ? (
+          <button
+            type="button"
+            className="tap fast mt-4 w-full py-2 text-caption text-muted hover:text-ink"
+            onClick={() => setShowPassword(true)}
+          >
+            Sign in with password once to link Google
+          </button>
+        ) : (
+          <form onSubmit={withPassword} className="mt-4 space-y-3">
+            <p className="text-caption leading-relaxed text-muted">
+              Sign in with your existing email account, then open Settings → Account and tap{" "}
+              <span className="text-ink">Link Google</span>. That keeps your data on the same user.
+            </p>
+            <input
+              type="email"
+              required
+              placeholder="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded-md border border-line bg-surface-2 px-3 py-2.5 text-body outline-none focus:border-accent"
+            />
+            <input
+              type="password"
+              required
+              placeholder="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-md border border-line bg-surface-2 px-3 py-2.5 text-body outline-none focus:border-accent"
+            />
+            <button
+              type="submit"
+              disabled={busy}
+              className="tap fast w-full rounded-md border border-accent bg-accent py-3 text-body font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px disabled:opacity-50"
+            >
+              Sign in
+            </button>
+          </form>
+        )}
       </div>
     </div>
+  );
+}
+
+function GoogleMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <path
+        fill="#4285F4"
+        d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z"
+      />
+      <path
+        fill="#34A853"
+        d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.997 8.997 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58Z"
+      />
+    </svg>
   );
 }
 
