@@ -42,10 +42,13 @@ import { DomainPicker, PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
+import PlannerRail from "./PlannerRail";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const COL_PX = 248;
-const COL_GAP = 12; // matches the quarters grid `gap-3` — coverage aligns to it
+// Quarters are adjacent, ruled columns now (not gapped boxes) — the same
+// demarcation the project deck's weeks use, so both decks read as one grid idiom.
+const COL_GAP = 0;
 // The left label column — holds coverage domain names, empty in the deck; aligns the
 // coverage cells to the quarter columns beneath.
 const LABEL_W = 132;
@@ -72,7 +75,7 @@ const STATE_LABEL: Record<InitiativeLaneState, string> = {
 
 export default function InitiativeDeck() {
   const { data, updateInitiative, updateProject, addInitiative } = useVertical();
-  const { openRecord, openFloorModal } = useAppNavigation();
+  const { openRecord, openFloorModal, setInitiativeView } = useAppNavigation();
   const [maxPerQuarter] = useMaxPerQuarter();
   const [coverageHidden, toggleCoverageHidden] = useCoverageHidden("initiative");
   const [coverageCollapsed, setCoverageCollapsed] = useCoverageCollapsed("initiative");
@@ -223,89 +226,67 @@ export default function InitiativeDeck() {
   }, []);
 
   return (
-    <div className="mx-auto flex min-h-full max-w-[1600px] flex-col">
-      <div className="flex min-h-0 gap-5">
-        {/* ── inbox — initiatives with no quarter yet ──────────────────────── */}
-        <aside
-          data-inbox-drop
-          className="fast w-72 shrink-0 self-start rounded-xl border p-3"
-          style={{
-            borderColor: overInbox ? "var(--accent)" : "var(--line)",
-            background: overInbox ? "var(--accent-soft)" : "var(--surface-2)",
-          }}
-        >
-          <div className="flex items-center justify-between gap-2 px-1.5 pb-2">
-            <span className="section-label !p-0">Needs a quarter · {board.inbox.length}</span>
+    <div className="flex h-full min-h-0">
+      {/* ── the pool — the same rail as the Schedule and the project deck, one
+          clock speed up again: a bet needs a QUARTER. ────────────────────────── */}
+      <PlannerRail
+        dropAttr="data-inbox-drop"
+        over={overInbox}
+        crown={{
+          eyebrow: `Next ${board.quarters.length} quarters`,
+          done: onTrack,
+          total: board.lanes.length,
+          noun: "on track",
+          onOpen: board.lanes.length > 0 ? () => setInitiativeView("groom") : undefined,
+          openTitle: "Shape the bets that need it",
+          gap:
+            grooming + atRisk > 0
+              ? {
+                  label: `${grooming + atRisk} need${grooming + atRisk === 1 ? "s" : ""} you`,
+                  detail: atRisk > 0 ? `${atRisk} at risk` : "needs OKRs or shaping",
+                  onJump: () => setInitiativeView("groom"),
+                }
+              : null,
+        }}
+        poolLabel="Needs a quarter"
+        poolCount={board.inbox.length}
+        footLabel="initiative"
+        footTitle="New initiative"
+        onFoot={() => openFloorModal("new-initiative")}
+      >
+        {board.inbox.length === 0 ? (
+          <p className="px-1 py-6 text-center text-caption text-muted">
+            Every initiative has a quarter. Drag one here to shelve it.
+          </p>
+        ) : (
+          <div className="mt-1.5 flex flex-col gap-2">
+            {board.inbox.map((i) => (
+              <InitiativeCard
+                key={i.id}
+                lane={{
+                  initiative: i,
+                  state: "idea",
+                  attainment: null,
+                  krCount: i.keyResults.length,
+                  uncovered: 0,
+                  atRisk: { atRisk: false, reasons: [] },
+                  gaps: [],
+                  needsDomain: !i.domainId || !domainById(data, i.domainId),
+                  quarterIdx: null,
+                  overdue: false,
+                }}
+                data={data}
+                onSetDomain={setDomain}
+              />
+            ))}
           </div>
-          {board.inbox.length === 0 ? (
-            // empty state — one dashed card is the whole affordance (text + "+ initiative"
-            // read as a single clickable region, not text above a separate small button).
-            <button
-              onClick={() => openFloorModal("new-initiative")}
-              className="tap fast flex w-full flex-col items-center gap-3 rounded-lg border border-dashed border-line px-3 py-6 text-center hover:border-line-strong hover:bg-surface"
-              title="New initiative"
-            >
-              <p className="text-caption text-muted">Every initiative has a quarter. Drag an initiative here to shelve it, or tap to add one.</p>
-              <span className="text-caption font-medium text-muted">+ initiative</span>
-            </button>
-          ) : (
-            <>
-              <div className="flex flex-col gap-2">
-                {board.inbox.map((i) => (
-                  <InitiativeCard
-                    key={i.id}
-                    lane={{
-                      initiative: i,
-                      state: "idea",
-                      attainment: null,
-                      krCount: i.keyResults.length,
-                      uncovered: 0,
-                      atRisk: { atRisk: false, reasons: [] },
-                      gaps: [],
-                      needsDomain: !i.domainId || !domainById(data, i.domainId),
-                      quarterIdx: null,
-                      overdue: false,
-                    }}
-                    data={data}
-                    onSetDomain={setDomain}
-                  />
-                ))}
-              </div>
-              {/* add-to-inbox — full-width button pinned at the base (consistent with
-                  the per-quarter buttons), with a generous tap target. */}
-              <button
-                onClick={() => openFloorModal("new-initiative")}
-                className="tap fast mt-2 w-full rounded-lg border border-dashed border-line px-3 py-2.5 text-center text-caption font-medium text-muted hover:border-line-strong hover:text-ink"
-                title="New initiative"
-              >
-                + initiative
-              </button>
-            </>
-          )}
-        </aside>
+        )}
+      </PlannerRail>
 
-        {/* ── the quarter columns, crowned by the aligned coverage strip ─────── */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* header — mirrors the projects deck (compact masthead + a health legend) */}
-          <div className="flex items-end justify-between gap-3">
-            <h1 className="text-lead masthead leading-none">On deck · next {board.quarters.length} quarters</h1>
-            {board.lanes.length > 0 && (
-              <div className="flex shrink-0 items-center gap-3 text-caption">
-                <span className="flex items-center gap-1.5" title="On track — groomed and healthy">
-                  <span className="h-2 w-2 rounded-full" style={{ background: READY }} />
-                  <span style={{ color: onTrack ? "var(--ink)" : "var(--muted)" }}>{onTrack} on track</span>
-                </span>
-                <span className="flex items-center gap-1.5" title="At risk">
-                  <span className="h-2 w-2 rounded-full" style={{ background: "var(--signal)" }} />
-                  <span style={{ color: atRisk ? "var(--ink)" : "var(--muted)" }}>{atRisk} at risk</span>
-                </span>
-                <span className="flex items-center gap-1.5" title="Still needs grooming (OKRs / shaping / a finish line)">
-                  <span className="h-2 w-2 rounded-full" style={{ background: CAUTION }} />
-                  <span style={{ color: grooming ? "var(--ink)" : "var(--muted)" }}>{grooming} grooming</span>
-                </span>
-              </div>
-            )}
-          </div>
+      {/* ── the grid ─────────────────────────────────────────────────────────
+          No hero: the crown anchors this surface (one hero per surface), and the
+          floor's top bar already names On Deck. */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-6 py-4">
           <CoverageControls
             collapsed={coverageCollapsed}
             setCollapsed={setCoverageCollapsed}
@@ -330,39 +311,36 @@ export default function InitiativeDeck() {
                   onAdd={addForDomain}
                 />
               )}
-              <div className="grid gap-3" style={{ gridTemplateColumns: cols }}>
+              <div className="grid" style={{ gridTemplateColumns: cols }}>
                 <div aria-hidden />
                 {board.quarters.map((q) => {
               const lanes = byColumn.get(q.idx) ?? [];
               const risky = lanes.filter((l) => l.atRisk.atRisk).length;
               const over = lanes.length > maxPerQuarter;
               const dropping = dropCol === q.idx;
-              // The current quarter is the one that matters most — lift it off the
-              // rest: accent border + tinted paper + a top rail + an accent label.
+              // NOW is `--signal` at every altitude, so the current quarter reads the
+              // same way the current week and the calendar's now-line do. The column
+              // is a RULED region on the paper — not a filled box — matching the
+              // project deck's weeks; a drop target washes `--slot` (open time).
               const current = q.idx === 0;
               return (
                 <div
                   key={q.key}
                   data-quarter={q.idx}
-                  className="fast relative flex min-w-0 flex-col overflow-hidden rounded-xl border p-2.5"
+                  className="fast relative flex min-w-0 flex-col border-l border-line px-2 pb-2.5"
                   style={{
-                    borderColor: dropping
-                      ? "var(--accent)"
-                      : current
-                        ? "color-mix(in srgb, var(--accent) 45%, var(--line))"
-                        : "var(--line)",
                     background: dropping
-                      ? "var(--accent-soft)"
+                      ? "color-mix(in srgb, var(--slot) 14%, transparent)"
                       : current
-                        ? "color-mix(in srgb, var(--accent) 7%, var(--surface))"
-                        : "var(--surface-2)",
-                    boxShadow: current ? "0 1px 3px color-mix(in srgb, var(--accent) 18%, transparent)" : undefined,
+                        ? "color-mix(in srgb, var(--signal) 7%, transparent)"
+                        : undefined,
+                    borderTop: current ? "2px solid var(--signal)" : undefined,
+                    boxShadow: dropping ? "inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 45%, transparent)" : undefined,
                   }}
                 >
-                  {current && <span className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: "var(--accent)" }} />}
-                  <div className="flex items-baseline justify-between gap-2 px-1 pb-0.5">
-                    <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: current ? "var(--accent)" : "var(--ink)" }}>
-                      {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />}
+                  <div className="flex items-baseline justify-between gap-2 px-1 pb-0.5 pt-1">
+                    <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: current ? "var(--signal)" : "var(--ink)" }}>
+                      {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--signal)" }} />}
                       {q.label}
                     </span>
                     <span className="mono text-micro tabular-nums" title={`${lanes.length} committed · max ${maxPerQuarter} — your per-quarter focus cap`} style={{ color: over ? CAUTION : "var(--muted)" }}>
@@ -371,7 +349,7 @@ export default function InitiativeDeck() {
                   </div>
                   {/* month span + sprint scale — each column reads when it starts and
                       ends, and (for the current quarter) how many sprints deep you are. */}
-                  <div className="mono px-1 pb-2 text-micro" style={{ color: current ? "color-mix(in srgb, var(--accent) 70%, var(--muted))" : "var(--muted)" }}>
+                  <div className="mono px-1 pb-2 text-micro" style={{ color: current ? "color-mix(in srgb, var(--signal) 70%, var(--muted))" : "var(--muted)" }}>
                     {quarterRangeLabel(q.start, q.end)}
                     {current
                       ? ` · sprint ${Math.min(sprintsBetween(q.start, q.end) + 1, Math.max(1, sprintsBetween(q.start, new Date()) + 1))}/${sprintsBetween(q.start, q.end) + 1}`
@@ -382,7 +360,7 @@ export default function InitiativeDeck() {
                     {lanes.length === 0 && composeCol !== q.idx ? (
                       <div
                         onClick={() => composeInCol(q.idx)}
-                        className="fast flex flex-1 cursor-pointer items-center justify-center rounded-lg border border-dashed border-line px-2 py-6 text-center text-micro text-muted hover:border-line-strong hover:text-ink"
+                        className="slot-open fast flex flex-1 cursor-pointer items-center justify-center rounded-lg border border-dashed px-2 py-6 text-center text-micro text-muted transition-colors"
                         title="New initiative in this quarter"
                       >
                         Drop an initiative here, or tap to add
@@ -417,7 +395,7 @@ export default function InitiativeDeck() {
                           <div
                             onClick={() => composeInCol(q.idx)}
                             title="New initiative in this quarter"
-                            className="fast min-h-[28px] flex-1 cursor-pointer rounded-lg transition-colors hover:bg-accent-soft/20"
+                            className="slot-col fast min-h-[28px] flex-1 cursor-pointer rounded-lg transition-colors"
                           />
                         )}
                       </>
@@ -430,7 +408,7 @@ export default function InitiativeDeck() {
                       data-card-control
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => { e.stopPropagation(); composeInCol(q.idx); }}
-                      className="tap fast mt-2 w-full rounded-lg border border-dashed border-line px-2 py-2 text-center text-micro font-medium text-muted hover:border-line-strong hover:text-ink"
+                      className="slot-open tap fast mt-2 w-full rounded-lg border border-dashed px-2 py-2 text-center text-micro font-medium text-muted transition-colors"
                       title="New initiative in this quarter"
                     >
                       + initiative
@@ -442,12 +420,11 @@ export default function InitiativeDeck() {
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <span className="text-micro text-muted">Drag onto a quarter to commit a finish line · drag to the rail to shelve · click to open</span>
-        <ShippedStrip rung="initiative" />
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <span className="text-micro text-muted">Drag onto a quarter to commit a finish line · drag to the rail to shelve · click to open</span>
+            <ShippedStrip rung="initiative" />
+          </div>
       </div>
 
       {/* drag ghost */}
@@ -508,7 +485,7 @@ function InitiativeCard({
     <div
       data-init-drag={i.id}
       onContextMenu={onContextMenu("initiative", i.id)}
-      className="group/card fast relative cursor-grab select-none rounded-lg border border-line bg-surface py-2.5 pl-4 pr-3 hover:border-line-strong active:cursor-grabbing"
+      className="group/card glass-card fast relative cursor-grab select-none rounded-lg border border-line py-2.5 pl-4 pr-3 hover:border-line-strong active:cursor-grabbing"
     >
       {menu}
       {/* domain rail — identity demarcation, mirrors the project deck card */}
@@ -516,7 +493,9 @@ function InitiativeCard({
       {/* title row — dot + name, nothing else */}
       <div className="flex items-start gap-2">
         <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-        <div className="min-w-0 flex-1 truncate text-caption font-semibold text-ink">{i.name}</div>
+        {/* A bet is a NAME, so it earns the serif — the one register tell that
+            separates this altitude from a project card (system) and a task row. */}
+        <div className="serif min-w-0 flex-1 truncate text-body text-ink">{i.name}</div>
       </div>
 
       {/* grooming meter — Defined · Measured, the initiative's readiness bars */}

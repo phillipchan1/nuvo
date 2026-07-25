@@ -73,6 +73,12 @@ export default function FloorPane({
   const backToInitiatives = () => setInitiativeView("ondeck");
 
   const viewKey = rung === "project" ? projectView : rung === "initiative" ? initiativeView : "";
+  // The planner faces (On Deck at either altitude) are full-height workspaces —
+  // the pool rail + the time grid own their own scrolling, so the floor shell must
+  // not wrap them in padding or a scroll container of its own.
+  const workspace =
+    (rung === "project" && projectView === "ondeck") ||
+    (rung === "initiative" && initiativeView === "ondeck");
 
   // Plain 1 · 2 · 3 · 4 switch the Build faces (On Deck · Groom · Table · Shipped)
   // — like the Schedule view's number keys. Scoped to the project & initiative
@@ -145,18 +151,23 @@ export default function FloorPane({
         <button onClick={() => goRung("day")} className="mono text-label text-muted hover:text-ink">Schedule ↓</button>
       </div>
 
-      <div key={`${rung}-${viewKey}`} className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7">
-        {rung === "project" && projectView !== "shipped" && (
-          <ProjectReadinessStrip onGroom={projectView === "groom" ? undefined : () => setProjectView("groom")} />
-        )}
+      {/* The On Deck faces are PLANNER surfaces, not documents: rail + grid filling
+          the pane, scrolling inside themselves, exactly like the Schedule. Every
+          other face stays a padded, scrolling floor. */}
+      <div
+        key={`${rung}-${viewKey}`}
+        className={`floor-enter min-h-0 flex-1 ${workspace ? "overflow-hidden" : "overflow-y-auto px-8 py-7"}`}
+      >
+        {/* Readiness has ONE home per surface. On a planner surface it's the rail's
+            crown, so the strip would be a second scoreboard — it only rides the
+            document faces (Groom · Table). */}
+        {rung === "project" && projectView === "groom" && <ProjectReadinessStrip />}
         {rung === "project" && projectView === "ondeck" && <OnDeckFloor />}
         {rung === "project" && projectView === "groom" && <GroomFloor />}
         {rung === "project" && projectView === "all" && <PortfolioFloor onOpen={openProjectRecord} />}
         {rung === "project" && projectView === "shipped" && <ShippedWall rung="project" />}
 
-        {rung === "initiative" && initiativeView !== "shipped" && (
-          <InitiativeReadinessStrip onGroom={initiativeView === "groom" ? undefined : () => setInitiativeView("groom")} />
-        )}
+        {rung === "initiative" && initiativeView === "groom" && <InitiativeReadinessStrip />}
         {rung === "initiative" && initiativeView === "ondeck" && <InitiativeOnDeckFloor />}
         {rung === "initiative" && initiativeView === "groom" && <InitiativeGroomFloor />}
         {rung === "initiative" && initiativeView === "all" && (

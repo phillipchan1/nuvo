@@ -569,6 +569,23 @@ body.odp-dragging [data-project-drag],
 body.odp-dragging [data-resize] {
   pointer-events: none !important;
 }
+/* Planner grids (the project deck's weeks, the initiative deck's quarters): an
+   empty column is OPEN TIME, so it wears `--slot` — the same dusty teal the
+   calendar's unclaimed slots use — instead of a neutral hairline. Hovering a
+   column washes it the same way, so "you could claim this" reads identically at
+   every altitude. (Inline styles carry the now-band / live drop target, which
+   deliberately win over this hover.) */
+.slot-open {
+  border-color: color-mix(in srgb, var(--slot) 40%, var(--line));
+}
+.group\/col:hover .slot-open,
+.slot-open:hover {
+  border-color: color-mix(in srgb, var(--slot) 75%, transparent);
+  color: var(--slot);
+}
+.slot-col:hover {
+  background: color-mix(in srgb, var(--slot) 7%, transparent);
+}
 /* Spring the lift in and out, so focus feels deliberate, not snapped. */
 .lift-anim {
   transition:

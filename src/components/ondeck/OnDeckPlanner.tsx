@@ -28,6 +28,7 @@ import { ProjectShipAssess } from "../record/ShipAssess";
 import InlineAdd from "./InlineAdd";
 import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
+import PlannerRail from "./PlannerRail";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -100,7 +101,7 @@ export default function OnDeckPlanner() {
   const { data, updateProject, addProject } = useVertical();
   const { onContextMenu, menu } = useRecordContextMenu();
   const { byWeek, weeklyAvgMins } = useCapacity();
-  const { openRecord, openFloorModal } = useAppNavigation();
+  const { openRecord, openFloorModal, setProjectView } = useAppNavigation();
   const [maxPerWeek] = useMaxPerWeek();
   const [coverageHidden, toggleCoverageHidden] = useCoverageHidden();
   const [coverageCollapsed, setCoverageCollapsed] = useCoverageCollapsed();
@@ -356,103 +357,82 @@ export default function OnDeckPlanner() {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
-  // "You are here" — a warm band down the current week (idx 0), the focus column
-  // and the one that matters most, so the eye lands on now first. Drop-highlight
+  // "You are here" — a band down the current week (idx 0), the focus column and the
+  // one that matters most, so the eye lands on now first. NOW is `--signal` at every
+  // altitude (it's the same idea as the calendar's now-line); `--accent` stays your
+  // *intent*. The drop target is `--slot` — open time you're about to claim — and it
   // still wins while dragging.
-  const THISWEEK_BAND = "color-mix(in srgb, var(--accent) 8%, transparent)";
-  const cellBg = (i: number) => (dropWeek === i ? "var(--accent-soft)" : i === 0 ? THISWEEK_BAND : undefined);
+  const THISWEEK_BAND = "color-mix(in srgb, var(--signal) 7%, transparent)";
+  const DROP_BAND = "color-mix(in srgb, var(--slot) 14%, transparent)";
+  const cellBg = (i: number) => (dropWeek === i ? DROP_BAND : i === 0 ? THISWEEK_BAND : undefined);
 
   return (
-    <div className="flex min-h-0 gap-6">
+    <div className="flex h-full min-h-0">
       {menu}
-      {/* ── the inbox — a left panel, mirroring Schedule's task inbox ──────── */}
-      <aside
-        data-pool-drop
-        className="fast w-72 shrink-0 self-start rounded-xl border p-3"
-        style={{
-          borderColor: overInbox ? "var(--accent)" : "var(--line)",
-          background: overInbox ? "var(--accent-soft)" : "var(--surface-2)",
+      {/* ── the pool — the same rail the Schedule wears, one clock speed up:
+          "needs a week" instead of "needs a time". Structure, not a panel. ──── */}
+      <PlannerRail
+        dropAttr="data-pool-drop"
+        over={overInbox}
+        crown={{
+          eyebrow: `Next ${H} weeks`,
+          // a finished project isn't waiting on you either — it counts as ready,
+          // so the meter can actually reach full at the end of a week.
+          done: readyN + doneN,
+          total: placed.length,
+          noun: "ready",
+          onOpen: placed.length > 0 ? () => setProjectView("groom") : undefined,
+          openTitle: "Shape the projects that need it",
+          gap:
+            groomN + rawN > 0
+              ? {
+                  label: `${groomN + rawN} need shaping`,
+                  detail: rawN > 0 ? `${rawN} raw` : "mid-groom",
+                  onJump: () => setProjectView("groom"),
+                }
+              : null,
         }}
+        poolLabel="Needs a week"
+        poolCount={inbox.length}
+        footLabel="project"
+        footTitle="New project"
+        onFoot={() => openFloorModal("new-project")}
       >
-        <div className="flex items-center justify-between gap-2 px-1.5 pb-2">
-          <span className="section-label !p-0">Needs a week · {inbox.length}</span>
-        </div>
         {inbox.length === 0 ? (
-          // empty state — one dashed card is the whole affordance (text + "+ project"
-          // read as a single clickable region, not text above a separate small button).
-          <button
-            onClick={() => openFloorModal("new-project")}
-            className="tap fast flex w-full flex-col items-center gap-3 rounded-lg border border-dashed border-line px-3 py-6 text-center hover:border-line-strong hover:bg-surface"
-            title="New project"
-          >
-            <p className="text-caption text-muted">Nothing waiting — every project has a week. Drag a project here to shelve it, or tap to add one.</p>
-            <span className="text-caption font-medium text-muted">+ project</span>
-          </button>
+          <p className="px-1 py-6 text-center text-caption text-muted">
+            Nothing waiting — every project has a week. Drag a project here to shelve it.
+          </p>
         ) : (
-          <>
-            <div className="flex flex-col gap-2">
-              {inbox.map((p) => {
-                const dot = domainById(data, p.domainId)?.color ?? "var(--accent)";
-                const sub = !p.targetDate ? "no finish line" : `due ${format(new Date(p.targetDate + "T00:00:00"), "MMM d")}`;
-                return (
-                  <div
-                    key={p.id}
-                    data-project-drag={p.id}
-                    onContextMenu={onContextMenu("project", p.id)}
-                    className="fast cursor-grab select-none rounded-lg border border-line bg-surface px-3 py-2.5 hover:border-line-strong active:cursor-grabbing"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-                      <span className="truncate text-caption text-ink">{p.name}</span>
-                    </div>
-                    <div className="mono mt-0.5 pl-4 text-micro text-muted">{sub}</div>
+          <div className="mt-1.5 flex flex-col gap-2">
+            {inbox.map((p) => {
+              const dot = domainById(data, p.domainId)?.color ?? "var(--accent)";
+              const sub = !p.targetDate ? "no finish line" : `due ${format(new Date(p.targetDate + "T00:00:00"), "MMM d")}`;
+              return (
+                <div
+                  key={p.id}
+                  data-project-drag={p.id}
+                  onContextMenu={onContextMenu("project", p.id)}
+                  className="glass-card fast relative cursor-grab select-none rounded-lg border border-line py-2.5 pl-4 pr-3 hover:border-line-strong active:cursor-grabbing"
+                >
+                  {/* domain rail — the same identity edge the placed cards wear */}
+                  <span className="pointer-events-none absolute inset-y-2.5 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
+                    <span className="truncate text-caption text-ink">{p.name}</span>
                   </div>
-                );
-              })}
-            </div>
-            {/* add-to-inbox — a full-width button pinned at the base (consistent with
-                the per-week buttons), with a generous tap target for quick capture. */}
-            <button
-              onClick={() => openFloorModal("new-project")}
-              className="tap fast mt-2 w-full rounded-lg border border-dashed border-line px-3 py-2.5 text-center text-caption font-medium text-muted hover:border-line-strong hover:text-ink"
-              title="New project"
-            >
-              + project
-            </button>
-          </>
+                  <div className="mono mt-0.5 pl-4 text-micro text-muted">{sub}</div>
+                </div>
+              );
+            })}
+          </div>
         )}
-      </aside>
+      </PlannerRail>
 
-      {/* ── the timeline ──────────────────────────────────────────────────── */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-end justify-between gap-3">
-          <h1 className="text-lead masthead leading-none">On deck · next {H} weeks</h1>
-          {placed.length > 0 && (
-            <div className="flex shrink-0 items-center gap-3 text-caption">
-              <span className="flex items-center gap-1.5" title="Ready to pull into a week (all 3 checks)">
-                <span className="h-2 w-2 rounded-full" style={{ background: READY }} />
-                <span style={{ color: readyN ? "var(--ink)" : "var(--muted)" }}>{readyN} ready</span>
-              </span>
-              <span className="flex items-center gap-1.5" title="Mid-groom (1–2 checks)">
-                <span className="h-2 w-2 rounded-full" style={{ background: CAUTION }} />
-                <span style={{ color: groomN ? "var(--ink)" : "var(--muted)" }}>{groomN} grooming</span>
-              </span>
-              <span className="flex items-center gap-1.5" title="Raw idea (no checks yet)">
-                <span className="h-2 w-2 rounded-full border" style={{ borderColor: "var(--line-strong)" }} />
-                <span style={{ color: rawN ? "var(--ink)" : "var(--muted)" }}>{rawN} raw</span>
-              </span>
-              {doneN > 0 && (
-                <span className="flex items-center gap-1.5" title="Finished this week — drops off once the week passes">
-                  <svg width="11" height="11" viewBox="0 0 10 10" fill="none" style={{ color: READY }}>
-                    <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <span style={{ color: READY }}>{doneN} done</span>
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
+      {/* ── the grid ──────────────────────────────────────────────────────────
+          No hero here: the crown is this surface's one anchor (execution voice),
+          and the floor's top bar already names On Deck — the same reason the
+          Schedule has no header over its calendar. */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-6 py-4">
         {/* coverage controls — collapse + window length + domain filter (fixed, outside the scroll) */}
         <CoverageControls
           collapsed={coverageCollapsed}
@@ -484,11 +464,11 @@ export default function OnDeckPlanner() {
                     key={w.idx}
                     data-week={w.idx}
                     className="fast border-l border-line first:border-l-0 px-4 pb-2.5 pt-1"
-                    style={{ background: cellBg(w.idx), borderTop: w.idx === 0 ? "2px solid var(--accent)" : undefined }}
+                    style={{ background: cellBg(w.idx), borderTop: w.idx === 0 ? "2px solid var(--signal)" : undefined }}
                   >
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: w.idx === 0 ? "var(--accent)" : "var(--ink)" }}>
-                        {w.idx === 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />}
+                      <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: w.idx === 0 ? "var(--signal)" : "var(--ink)" }}>
+                        {w.idx === 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--signal)" }} />}
                         Sprint {sprintNumber(w.weekStart)}
                       </span>
                       <span className="mono text-micro tabular-nums" title={`${n} committed · max ${maxPerWeek} — your per-week focus cap`} style={{ color: over ? CAUTION : n > 0 ? "var(--muted)" : "var(--line-strong)" }}>
@@ -521,7 +501,7 @@ export default function OnDeckPlanner() {
                     data-week={w.idx}
                     onClick={() => { setComposeDomain(null); setComposeWeek(w.idx); }}
                     title={composeWeek === w.idx ? undefined : w.idx === 0 ? "New project this week" : w.idx === 1 ? "New project next week" : `New project — week of ${fmtWk(w.weekStart)}`}
-                    className="group/col relative cursor-pointer border-l border-line transition-colors hover:bg-accent-soft/20"
+                    className="group/col slot-col relative cursor-pointer border-l border-line transition-colors"
                     style={{ background: cellBg(w.idx) }}
                   >
                     {/* the base affordance — a pinned "+ project" hint. Clicking it
@@ -530,7 +510,11 @@ export default function OnDeckPlanner() {
                         this week is the one being composed. */}
                     {composeWeek !== w.idx && (
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 px-1.5 pb-1.5">
-                        <div className="fast w-full rounded-lg border border-dashed border-line px-2 py-1.5 text-center text-micro font-medium text-muted transition-colors group-hover/col:border-line-strong group-hover/col:text-ink">
+                        {/* open, unclaimed time reads `--slot` at every altitude —
+                            the same teal the calendar's open slots wear. */}
+                        <div
+                          className="slot-open fast w-full rounded-lg border border-dashed px-2 py-1.5 text-center text-micro font-medium text-muted transition-colors"
+                        >
                           + project
                         </div>
                       </div>
@@ -552,7 +536,7 @@ export default function OnDeckPlanner() {
                   </div>
                 ) : (
                   <div className="pointer-events-none relative px-4 pt-14 text-center text-caption text-muted">
-                    No projects placed yet — drag one in from the inbox, or tap a week to start one here.
+                    No projects placed yet — drag one in from the rail, or tap a week to start one here.
                   </div>
                 )
               ) : (
@@ -574,7 +558,7 @@ export default function OnDeckPlanner() {
                           key={l.project.id}
                           data-project-drag={l.project.id}
                           onContextMenu={onContextMenu("project", l.project.id)}
-                          className="group/bar bg-surface pointer-events-auto fast relative mx-1 flex min-h-[62px] cursor-grab flex-col gap-2 rounded-xl border py-3 pl-4 pr-3.5 active:cursor-grabbing"
+                          className="group/bar glass-card pointer-events-auto fast relative mx-1 flex min-h-[62px] cursor-grab flex-col gap-2 rounded-xl border py-3 pl-4 pr-3.5 active:cursor-grabbing"
                           style={{
                             gridColumn: `${start + 2} / ${end + 3}`,
                             gridRow: 1,

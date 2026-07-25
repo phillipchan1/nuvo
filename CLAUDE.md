@@ -24,6 +24,12 @@ The rules that prevent regressions:
   Today cards). Progress tracks use `--line`, never `bg-bg`.
 - **Color is semantic and low-saturation** — always a token (`--accent` = intent,
   `--signal` = now, domain color = identity, `--slot` = open/unclaimed). Never a raw hex.
+- **Planner surfaces share one grammar.** The Schedule, the project deck and the
+  initiative deck are the same act at three clock speeds (pool left → grid of time
+  right). Pool = `PlannerRail` (transparent, full-height, crown carries readiness in
+  the execution voice, ＋ pill at the foot); grid fills the pane. `--signal` = now,
+  `--accent` = intent, `--slot` = open/claimable. Altitude reads through card weight
+  and voice, never a different frame. Full law in `docs/design-language.md`.
 - **Focus lifts, it doesn't outline.** Floating things rest as glass (`.glass-card` —
   translucent + frost), and the focal element (selected/active/dragged/open) *lifts* from
   it with `--shadow-lift` + a small rise, **no flat ring**: `.glass-lift` (cards/chips),
