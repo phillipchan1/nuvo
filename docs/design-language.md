@@ -193,6 +193,12 @@ The law, so a new planner surface can't drift:
    strip, Table has `FloorStanding`.)
 3. **Gesture is fixed** — press-hold → `.glass-grab` ghost following the pointer, and
    the destination always shown (column wash / drop bar / vacated slot).
+   **"Which shape am I looking at" has one control and one home:** the calendar's
+   view pill idiom (`rounded-full`, `--surface-2` trough, the active face lifted onto
+   `--surface` in the accent), right-aligned in the toolbar over the grid. The floor's
+   faces (On Deck · Groom · Table · Shipped) wear it too — number keys in the tooltip,
+   not printed in the pill. Don't invent a second switcher shape; the band's left is
+   the window-drag zone, and the crown below already names the surface.
 4. **Now is `--signal`; intent is `--accent`; open time is `--slot`.** The current
    week / quarter band matches the calendar's now-line. An empty, claimable cell —
    an unbooked column, an uncovered domain cell, the pool you drop into to *release*
