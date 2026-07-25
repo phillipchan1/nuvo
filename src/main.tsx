@@ -2,17 +2,14 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { isTauri as isTauriShell, isMac } from "./lib/platform";
 
-const isTauri = "__TAURI_INTERNALS__" in globalThis;
+const isTauri = isTauriShell();
 
 // Reserve left inset for macOS traffic lights when running in Tauri.
 if (isTauri) {
   document.documentElement.classList.add("tauri");
-  const mac =
-    navigator.userAgent.includes("Mac") ||
-    navigator.platform === "MacIntel" ||
-    navigator.platform === "MacArm";
-  if (mac) document.documentElement.classList.add("tauri-macos");
+  if (isMac()) document.documentElement.classList.add("tauri-macos");
 }
 
 // Register the PWA service worker — web/installed only. Never inside the Tauri

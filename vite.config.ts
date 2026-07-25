@@ -1,9 +1,17 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 const host = process.env.TAURI_DEV_HOST;
+
+// The running app version, baked in for display (Settings → Desktop app). CI
+// rewrites package.json's version to <major>.<minor>.<run> right before the
+// build, so production shows the real shipped version; dev shows the base.
+const appVersion = JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+).version as string;
 
 // The same `vite build` feeds both the iOS PWA and the Tauri desktop bundle. A
 // service worker must NOT ship inside the Tauri webview (custom protocol, can
@@ -50,6 +58,9 @@ const pwa = VitePWA({
 // Pure SPA static bundle — no SSR, no server runtime.
 export default defineConfig({
   plugins: [react(), tailwindcss(), pwa],
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   clearScreen: false,
   server: {
     // Unique from the Vite default (5173) so other local Vite apps don't collide

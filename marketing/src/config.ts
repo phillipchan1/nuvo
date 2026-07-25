@@ -6,3 +6,10 @@ export const ACCESS_MAILTO = `mailto:${ACCESS_EMAIL}?subject=${encodeURIComponen
 
 /** Same contact for privacy / legal (Google OAuth verification). */
 export const PRIVACY_URL = 'https://nuvo.day/privacy'
+
+/** Public releases repo that hosts the signed, notarized Mac builds + latest.json. */
+export const RELEASES_REPO = 'phillipchan1/nuvo-releases'
+/** Stable-named universal DMG — GitHub's `latest/download` alias always points at
+ *  the newest release, so this static link never goes stale (no JS required). The
+ *  hero button upgrades it to the exact asset URL on hover for an instant download. */
+export const DOWNLOAD_MAC_URL = `https://github.com/${RELEASES_REPO}/releases/latest/download/Nuvo.dmg`

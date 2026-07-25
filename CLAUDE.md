@@ -120,6 +120,13 @@ not the front door.** Use plain text `<input>`s so iOS dictation works out of th
 - `npm run typecheck` — must be clean before shipping.
 - `npm run tauri:dev` / `npm run app:install` — desktop. The Tauri build sets
   `TAURI_BUILD=1`, so **no `sw.js` / manifest ships inside the desktop app**.
+- **Public releases + auto-update:** pushing to `master` triggers
+  `.github/workflows/release.yml`, which builds a **notarized universal** DMG and
+  publishes it + `latest.json` to the public `phillipchan1/nuvo-releases` repo
+  (single stable channel). Installed apps background-update via `src/lib/appUpdate.ts`;
+  Settings → **Desktop app** surfaces version + manual check + "What's new". Full
+  setup (secrets, signing keys, the two-signing-systems note) is in
+  `docs/desktop-releases.md`. **Never commit the updater private key** (`~/.tauri`).
 - **PWA install (iOS) requires HTTPS** → deploy `dist/` to Vercel. Frontend is static; the
   Supabase anon key (`VITE_SUPABASE_*`) is baked at build time and is safe to embed.
   `start_url` / `scope` = "/". Icons live in `public/`.

@@ -5,7 +5,8 @@ import FunnelVisual from './components/FunnelVisual'
 import OperatorVisual from './components/OperatorVisual'
 import ScheduleVisual from './components/ScheduleVisual'
 import ThemesVisual from './components/ThemesVisual'
-import { ACCESS_MAILTO, APP_URL } from './config'
+import { useCallback, useState } from 'react'
+import { ACCESS_MAILTO, APP_URL, DOWNLOAD_MAC_URL, RELEASES_REPO } from './config'
 
 const CAPABILITIES = [
   {
@@ -40,10 +41,43 @@ const CAPABILITIES = [
   },
 ] as const
 
+// "Download for Mac" resolves to the exact latest DMG on hover/focus (the GitHub
+// Releases API is CORS-enabled), rewriting href to the asset's direct URL for an
+// instant download. The static releases/latest/download/Nuvo.dmg link is the
+// safety net when JS is off or the API is unreachable.
+function DownloadMacButton({ className = '' }: { className?: string }) {
+  const [href, setHref] = useState(DOWNLOAD_MAC_URL)
+  const [resolved, setResolved] = useState(false)
+
+  const resolve = useCallback(() => {
+    if (resolved) return
+    setResolved(true)
+    fetch(`https://api.github.com/repos/${RELEASES_REPO}/releases/latest`, {
+      headers: { accept: 'application/vnd.github+json' },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const assets: { name?: string; browser_download_url?: string }[] = data?.assets ?? []
+        const dmg = assets.find((a) => /\.dmg$/i.test(a.name ?? ''))
+        if (dmg?.browser_download_url) setHref(dmg.browser_download_url)
+      })
+      .catch(() => {
+        /* keep the static href */
+      })
+  }, [resolved])
+
+  return (
+    <a href={href} onPointerEnter={resolve} onFocus={resolve} className={`btn-primary tap ${className}`}>
+      Download for Mac
+    </a>
+  )
+}
+
 function CtaGroup({ className = '' }: { className?: string }) {
   return (
     <div className={`flex flex-wrap items-center gap-3 ${className}`}>
-      <a href={ACCESS_MAILTO} className="btn-primary tap">
+      <DownloadMacButton />
+      <a href={ACCESS_MAILTO} className="btn-ghost tap">
         Request access
       </a>
       <a href={APP_URL} className="btn-ghost tap" rel="noopener noreferrer">
@@ -312,13 +346,14 @@ export default function Home() {
               Native iOS &amp; Apple Watch.
             </h2>
             <p className="mt-4 max-w-xl text-body text-[var(--muted)]">
-              Today: Mac capture with ⌥Space, desktop app, installable iOS PWA. Next: native
-              iPhone and Watch — dictate a loose task from the wrist into the same funnel.
+              Today: the native Mac app (download above), Mac capture with ⌥Space, and an
+              installable iOS PWA. The Mac app updates itself quietly in the background. Next:
+              native iPhone and Watch — dictate a loose task from the wrist into the same funnel.
             </p>
             <div className="mt-8 flex flex-wrap gap-6">
               <div>
                 <p className="section-label text-[var(--muted)]">Now</p>
-                <p className="mt-1 text-[15px] text-[var(--text)]">macOS · ⌥Space · iOS PWA</p>
+                <p className="mt-1 text-[15px] text-[var(--text)]">Mac app · ⌥Space · iOS PWA</p>
               </div>
               <div>
                 <p className="section-label text-[var(--muted)]">Next</p>

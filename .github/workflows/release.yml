@@ -1,0 +1,242 @@
+name: Release
+
+# Builds, signs, notarizes, and publishes the macOS desktop app.
+#
+# Triggers:
+#   • push to master        — ship whatever just landed
+#   • weekly cron (Mon 09:00 UTC) — safety net; the SHA guard below means it
+#     only actually builds if something changed since the last release
+#   • manual dispatch       — force a build (bypasses the SHA guard)
+#
+# Publishes a UNIVERSAL (Apple Silicon + Intel) DMG + the updater artifacts
+# (.app.tar.gz + .sig) + latest.json to the PUBLIC releases repo
+# phillipchan1/nuvo-releases as GitHub's `--latest` release. Installed apps poll
+# releases/latest/download/latest.json (baked into src-tauri/tauri.conf.json) and
+# auto-update. The marketing "Download for Mac" link resolves the same repo's
+# latest Nuvo.dmg.
+on:
+  push:
+    branches: [master]
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  RELEASES_REPO: phillipchan1/nuvo-releases
+
+jobs:
+  # Cheap pre-flight: skip the expensive macOS build when HEAD is already the
+  # last thing we released (keeps the weekly cron from rebuilding an unchanged
+  # tree). Manual dispatch always builds.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.diff.outputs.should_build }}
+    steps:
+      - name: Compare HEAD to last-built SHA
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          LAST_SHA=$(gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
+            --jq '.content' 2>/dev/null | base64 -d | tr -d '[:space:]' || echo "")
+          CURRENT="${{ github.sha }}"
+          echo "Last built : ${LAST_SHA:-<none>}"
+          echo "Current    : $CURRENT"
+          if [ "$LAST_SHA" = "$CURRENT" ]; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "No new commits — skipping build."
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "New commits — will build."
+          fi
+
+  release:
+    needs: check
+    if: needs.check.outputs.should_build == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Compute version
+        # Version = <major>.<minor> from package.json + the run number as the
+        # patch, so versions are always monotonic (run_number only increases).
+        # Written into BOTH tauri.conf.json (the app's real version, what the
+        # updater compares) and package.json (what the __APP_VERSION__ Vite
+        # define bakes in for display) — CI working tree only, never committed.
+        run: |
+          MAJOR_MINOR=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+          node -e "for (const p of ['src-tauri/tauri.conf.json','package.json']) { const fs=require('fs'); const c=JSON.parse(fs.readFileSync(p)); c.version='$VERSION'; fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n'); }"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Building version $VERSION"
+
+      - name: Enable Apple signing when configured
+        # Swap the ad-hoc "-" signing identity for the real Developer ID only
+        # when the cert secrets exist; otherwise the build stays ad-hoc so it
+        # still succeeds (unsigned) before the Apple secrets are added.
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -n "$IDENTITY" ] && [ -n "$CERT" ] && [ -n "$CERT_PASSWORD" ]; then
+            node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(p));c.bundle.macOS.signingIdentity=process.env.IDENTITY;fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n')"
+            echo "Apple signing identity set — build will be signed + notarized."
+          else
+            echo "Missing cert/identity/password — building unsigned (ad-hoc)."
+          fi
+
+      - name: Generate release notes
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -uo pipefail
+          PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "PUB_DATE=$PUB_DATE" >> "$GITHUB_ENV"
+          BEFORE="${{ github.event.before }}"
+          ZEROS="0000000000000000000000000000000000000000"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZEROS" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            COMMITS=$(git log -1 --no-merges --pretty=format:'- %s')
+          else
+            COMMITS=$(git log "${BEFORE}..HEAD" --no-merges --pretty=format:'- %s')
+          fi
+          [ -z "$COMMITS" ] && COMMITS="- Minor improvements and behind-the-scenes fixes."
+          printf '%s\n' "$COMMITS" | node scripts/release-notes.mjs > RELEASE_NOTES.md
+          echo "Generated release notes:"; cat RELEASE_NOTES.md
+
+      - name: Assemble bundled changelog
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          set -uo pipefail
+          node scripts/assemble-changelog.mjs
+          echo "Bundled changelog:"; cat public/changelog.json
+
+      - name: Build, sign, and notarize
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Tauri updater signature (minisign) — proves the update payload.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Apple Developer ID codesign + notarization. Each is gated on the cert
+          # existing so an empty secret never triggers a failing keychain import.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          # Notarization via Apple ID + app-specific password (Tauri runs notarytool
+          # itself — no .p8 file to materialize). App Store Connect API-key auth is
+          # also supported by Tauri if you'd rather; swap these three for
+          # APPLE_API_ISSUER/APPLE_API_KEY/APPLE_API_KEY_PATH and write the .p8 to disk.
+          APPLE_ID: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_TEAM_ID || '' }}
+        run: |
+          set -uo pipefail
+          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                  APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+            echo "No Apple cert/password — building unsigned (ad-hoc)."
+          else
+            echo "Apple cert + password present — building signed + notarized."
+          fi
+          for attempt in 1 2 3; do
+            echo "::group::tauri build (attempt $attempt)"
+            if npm run tauri build -- --target universal-apple-darwin --verbose; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "Attempt $attempt failed — detaching stale volumes…"
+            for vol in /Volumes/Nuvo*; do
+              [ -d "$vol" ] && hdiutil detach "$vol" -force || true
+            done
+            sleep 5
+          done
+          echo "All build attempts failed"; exit 1
+
+      - name: Publish to releases repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${APP_VERSION}"
+          BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle"
+
+          DMG=$(ls "$BUNDLE"/dmg/*.dmg | head -1)
+          APPTAR=$(ls "$BUNDLE"/macos/*.app.tar.gz | head -1)
+          SIG=$(cat "$BUNDLE"/macos/*.app.tar.gz.sig)
+          APPTAR_NAME=$(basename "$APPTAR")
+          ASSET_URL="https://github.com/${RELEASES_REPO}/releases/download/${TAG}/${APPTAR_NAME}"
+
+          # Stable-named copy so the marketing site's static download link
+          # (releases/latest/download/Nuvo.dmg) always resolves.
+          STABLE_DMG="Nuvo.dmg"
+          cp "$DMG" "$STABLE_DMG"
+
+          # latest.json is what installed apps poll. Both arch keys point at the
+          # same universal artifact.
+          jq -n \
+            --arg v "$APP_VERSION" \
+            --rawfile notes RELEASE_NOTES.md \
+            --arg date "$PUB_DATE" \
+            --arg sig "$SIG" \
+            --arg url "$ASSET_URL" \
+            '{version:$v, notes:$notes, pub_date:$date, platforms:{"darwin-aarch64":{signature:$sig, url:$url},"darwin-x86_64":{signature:$sig, url:$url}}}' \
+            > latest.json
+
+          echo "Generated latest.json:"; cat latest.json
+
+          # --latest serves latest.json + Nuvo.dmg at releases/latest/download/…
+          gh release create "$TAG" \
+            --repo "$RELEASES_REPO" \
+            --title "Nuvo v${APP_VERSION}" \
+            --notes-file RELEASE_NOTES.md \
+            --latest \
+            "$DMG" "$STABLE_DMG" "$APPTAR" latest.json
+
+      - name: Record built SHA
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          set -euo pipefail
+          CONTENT=$(printf '%s' '${{ github.sha }}' | base64)
+          FILE_SHA=$(gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
+            --jq '.sha' 2>/dev/null || echo "")
+          EXTRA_ARGS=()
+          [ -n "$FILE_SHA" ] && EXTRA_ARGS+=(--field "sha=$FILE_SHA")
+          gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
+            --method PUT \
+            --field "message=Record built SHA ${{ github.sha }}" \
+            --field "content=$CONTENT" \
+            "${EXTRA_ARGS[@]}"
+          echo "Recorded built SHA: ${{ github.sha }}"

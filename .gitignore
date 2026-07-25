@@ -13,3 +13,13 @@ marketing/dist
 # Tauri
 src-tauri/target
 src-tauri/gen/schemas
+
+# Updater signing keys must NEVER be committed (they live in ~/.tauri; this is a
+# belt-and-suspenders guard against a stray copy in the repo).
+*.key
+src-tauri/*.key
+src-tauri/*.key.pub
+
+# Release pipeline build artifacts (generated in CI / dev, not source)
+public/changelog.json
+RELEASE_NOTES.md
