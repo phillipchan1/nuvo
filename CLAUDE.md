@@ -5,6 +5,27 @@ Single-user daily planner. **One React SPA, two shells:** a Tauri macOS desktop 
 product model and backend; this file is how we build so the app stays consistent and
 **mobile-ready by default.**
 
+## Product truth — read before deciding *what* to build
+
+This file governs **how** we build. **`docs/product/`** governs **what** and **why**, and
+[`docs/CLAUDE.md`](docs/CLAUDE.md) is the contract for working with it. Start at
+[`docs/README.md`](docs/README.md) for the map. The load-bearing ones:
+
+- **[`docs/product/overview.md`](docs/product/overview.md)** — the canon: what Nuvo is,
+  **what it is not**, the core model, how we know it's working. *Wins over any spec.*
+- **[`docs/product/principles.md`](docs/product/principles.md)** — 15 rules, each with a
+  *violated when*. The audit standard.
+- **[`docs/product/personas.md`](docs/product/personas.md)** — who this serves, and the
+  **Question Ledger**: the questions in their heads, scored by how honestly we answer them.
+  *Ideate from an unanswered row, not from a feature idea.*
+- **[`docs/product/decisions.md`](docs/product/decisions.md)** — including what we decided
+  **not** to do, so it stops coming back.
+
+Before proposing a product idea: name the ledger row it closes, the principle it strains,
+and check it wasn't already decided. Before calling a product task done: update the spec's
+status header, and add any new user-facing name to
+[`docs/product/glossary.md`](docs/product/glossary.md).
+
 ## Design language — "Warm Paper"
 
 The app is converging on one design language; the full grammar + token vocabulary is in

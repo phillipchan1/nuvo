@@ -8,6 +8,23 @@ that replaces Akiflow.
 `do_date` set + `start_time` null = planned for the day (unblocked); both set =
 scheduled on the calendar. There is no separate event entity for tasks.
 
+## Docs
+
+[`docs/README.md`](docs/README.md) is the map. Two layers:
+
+- **[`docs/product/`](docs/product/) — the why.** The canon
+  ([`overview.md`](docs/product/overview.md)), the rules
+  ([`principles.md`](docs/product/principles.md)), who it's for and the questions on their
+  minds ([`personas.md`](docs/product/personas.md)), the story
+  ([`brandscript.md`](docs/product/brandscript.md)), the field
+  ([`landscape.md`](docs/product/landscape.md)), the bets
+  ([`roadmap.md`](docs/product/roadmap.md)), the log
+  ([`decisions.md`](docs/product/decisions.md)), the names
+  ([`glossary.md`](docs/product/glossary.md)), and the methods for auditing
+  ([`audit.md`](docs/product/audit.md)) and ideating
+  ([`ideation.md`](docs/product/ideation.md)).
+- **`docs/*.md` — the how.** Mechanism specs, each with its own status header.
+
 ## Stack
 
 - **Frontend** — Vite + React 18 + TypeScript + Tailwind CSS 4. Pure SPA, static bundle,

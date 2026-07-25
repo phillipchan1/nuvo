@@ -1,0 +1,146 @@
+# Nuvo — Product overview (the canon)
+
+**Status:** canonical · maintained continuously · last reviewed 2026-07-25
+**Authority:** this file wins over any spec in `docs/`. If a spec contradicts it, the spec is
+stale or the canon needs an explicit change (log it in [`decisions.md`](./decisions.md)).
+
+> **The one-liner.** *Nuvo is the one funnel from the things you're called to, down to the
+> hour on your calendar — so a week of being busy is never mistaken for a week of being
+> faithful.*
+
+---
+
+## 1 · What Nuvo is (facts, not slogans)
+
+1. A **single-user daily planner** — GTD-style inbox, tasks, and every calendar you own on
+   one planning surface, with drag-and-drop time blocking.
+2. A **vertical**: Domain → Initiative → Project → Week → Day. The thing nobody else joins.
+3. **Phase 1 of LifeOS.** The daily driver that replaces Akiflow.
+4. **One React SPA, two shells** — a Tauri macOS app and an installable iOS PWA from the
+   same `dist/`.
+5. **An assistant that proposes, never promotes.** Nuvo drafts into quiet pools; only the
+   human moves work toward the calendar.
+
+## 2 · What Nuvo is not (the non-goals)
+
+These are not "not yet." They are **refusals**, and they are load-bearing — most of the
+product's coherence comes from what it declines to be.
+
+| Not | Because |
+|---|---|
+| A **team** tool | Single-user is the reason the funnel can be honest. Multi-user forces consensus objects (assignees, statuses, permissions) that dilute every altitude. |
+| A **Notion / second brain** | Nuvo is about *what happens next Tuesday*, not about knowledge. No wiki, no databases-as-a-service, no blank canvas. |
+| **"AI that runs your life"** | Auto-scheduling that owns your day removes the one thing the product is trying to build: your own judgment, informed. Nuvo composes a week *for you to accept*. |
+| A **habit / streak tracker** | Debt ledgers and streaks shame. The app reports; it never nags. |
+| A **generic project manager** | Boards stop at the board. Nuvo's whole claim is that a project lands on the hour. |
+| A **CRM, notes app, or email client** | Adjacent, tempting, and out of scope for Phase 1. |
+
+## 3 · The core model
+
+**A scheduled task IS a time block.** One row in `tasks`:
+
+| `do_date` | `start_time` | Means |
+|---|---|---|
+| null | null | Unplanned — lives in a pool |
+| set | null | Planned for the day, unblocked |
+| set | set | Scheduled on the calendar — *this row is the block* |
+
+There is **no separate event entity for tasks.** Everything downstream — rollover, the
+mirror calendar, capacity math, the Review's evidence — is cheap because of this one
+decision. Protect it.
+
+### Four pools, one gate
+
+```
+inbox  →  backlog  →  WEEK  →  Day
+(raw)     (processed,  (the only    (do_date,
+          undated)      gate)        optionally a block)
+```
+
+- **inbox** — raw captures. Never planned from directly.
+- **backlog** — processed and *deliberately undated*. Project and initiative work lives
+  here. Never on Today, never rolled.
+- **Week** — a `sprints` row; tasks point at it via `sprint_id`. **The only gate between
+  the vertical and the calendar.** Nothing reaches the day without passing through a week
+  you committed to.
+- **Day** — `do_date`, optionally a block.
+
+### The five altitudes
+
+| Altitude | Answers | Kept alive by |
+|---|---|---|
+| **Domain** | Where am I called to be faithful and produce? | Summit (quarterly) |
+| **Initiative** | What big outcome is this quarter for? | Summit · Blueprint |
+| **Project** | What finite thing gets finished? | On Deck · the Refine run |
+| **Week** | What am I actually carrying? | Sunday (compose) · the Review (close) |
+| **Day** | What am I doing right now? | Sunrise · Sundown |
+
+Every ceremony's output is **readiness for the floor below.** That is the whole machine.
+
+## 4 · Why it exists — the split
+
+Two halves of a life-in-motion never touch:
+
+- **The vertical** knows *what matters and why.* It's measured in **deadlines**.
+- **The planner** knows *what you're doing.* It's measured in **hours**.
+
+With no shared currency, *"am I over-committed?"* has no honest answer, and the important
+project quietly dies in a board while your Tuesday fills with the reactive. Nuvo's bridge
+is the conversion in [`commitment-model.md`](../commitment-model.md):
+
+```
+required pace = remaining effort ÷ weeks until target
+Commitment    = Σ required pace ÷ real available hours
+```
+
+That single conversion puts the portfolio and the week in the same unit. **It is the most
+important idea in the product.** Anything that makes effort or capacity less trustworthy
+attacks the core.
+
+## 5 · Where we are (2026-07)
+
+Statuses are owned by each spec's own header — this is a map, not the source of truth.
+
+**Shipped:** capture + NLP parsing · drag-and-drop blocking · Google (two-way + "Nuvo"
+mirror) / M365 (read) / iCloud (two-way CalDAV) / ICS · rollover · domains, initiatives,
+projects on live rows · the Week gate · Sunday compose + calibration · Sunrise / Sundown ·
+the Nuvo assistant (scaffold / blueprint / prepare / narrate) · Marquee · recurrence ·
+slots · the **Review** with evidence + the Find · the **Refine run** (phone-first) ·
+**On Deck**.
+
+**Spec, not fully built:** grooming lenses (What / How / In the way) · loose weeks ·
+project slots · standing slots (partially landed) · activity sources (GitHub) · Apple Watch
+capture.
+
+## 6 · How we know it's working
+
+A single-user tool has no DAU. These are the signals that actually mean something — and
+they should be *derivable from data we already have*, not new instrumentation.
+
+| Signal | Healthy | What it means when it rots |
+|---|---|---|
+| **Week composed** | every Sunday | The gate is being bypassed; the day is running the week |
+| **Roll rate** (`roll_count`) | low and falling | The week was over-committed, or blocks are fiction |
+| **Commitment ratio** | 0.7–1.0 | >1.0 = lying to yourself on Sunday; <0.7 = a bet isn't being pulled |
+| **Backlog age** | bounded | Work is being captured but never groomed — the funnel is clogged |
+| **Domain faithfulness** | no domain dark for a quarter | One world is eating the others (it's usually Family) |
+| **Capture → structure latency** | minutes | Capture works; routing doesn't |
+| **Review completed** | weekly | Nothing is closing the loop; Sunday starts cold |
+| **Prepared blocks used** | rising | The assistant is helping at the moment of work, not just at planning time |
+
+If a proposed feature can't move one of these, say out loud what it *is* for.
+
+## 7 · Scope boundary — Phase 1 of LifeOS
+
+Phase 1 ends when a full quarter can be run end-to-end without leaving Nuvo: a Summit sets
+initiatives, Blueprint builds the subtrees, On Deck + Refine keep projects ready, Sunday
+composes a week the calibration says you can carry, the day gets executed, and the Review
+proves what moved. **Everything else is Phase 2.** Write it down in
+[`roadmap.md`](./roadmap.md) → *Parked*; don't build it.
+
+---
+
+**See also:** [`principles.md`](./principles.md) (the rules) ·
+[`brandscript.md`](./brandscript.md) (the story) · [`personas.md`](./personas.md) (who and
+their questions) · [`landscape.md`](./landscape.md) (the field) ·
+[`glossary.md`](./glossary.md) (what we call things).
