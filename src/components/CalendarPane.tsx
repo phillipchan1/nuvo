@@ -17,7 +17,7 @@ import { useHiddenEvents, type useExternalEventMutations } from "../hooks/useCal
 import { eventSeriesKey } from "../lib/now";
 import { isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
 import type { useSlotMutations } from "../hooks/useSlots";
-import { HORIZON_DAYS, type useRecurrenceMutations } from "../hooks/useRecurrence";
+import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateKind } from "./DraftComposer";
 import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
@@ -268,7 +268,15 @@ export default function CalendarPane({
   const [eventMoveMode, setEventMoveMode] = useState(false);
   const [eventMoveConfirm, setEventMoveConfirm] = useState<{ accountId: string; calendarId: string; name: string } | null>(null);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: Task; el: HTMLElement } | null>(null);
+  // Recurring-task trash expands in place (this / following / series) — same
+  // scopes as RecurrenceDeleteButton in the task popover.
+  const [taskDeleteMode, setTaskDeleteMode] = useState(false);
   const [slotMenu, setSlotMenu] = useState<{ x: number; y: number; slot: Slot; el: HTMLElement } | null>(null);
+  const { data: recurrences = [] } = useRecurrences();
+  const recurrenceById = useMemo(
+    () => new Map(recurrences.map((r) => [r.id, r])),
+    [recurrences],
+  );
 
   // Can the user create real calendar events? True when any writable account
   // (Google or iCloud two-way) is connected.
@@ -883,6 +891,9 @@ export default function CalendarPane({
   }, [eventMenu]);
 
   const taskMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    setTaskDeleteMode(false);
+  }, [taskMenu]);
   useEffect(() => {
     if (!taskMenu) return;
     const onDown = (e: PointerEvent) => {
@@ -1687,8 +1698,23 @@ export default function CalendarPane({
 
       {taskMenu && (() => {
         const task = taskMenu.task;
+        const recurrence = task.recurrence_id ? recurrenceById.get(task.recurrence_id) ?? null : null;
+        const recurring = Boolean(task.recurrence_id && recurrence);
         const left = fixedCssPx(Math.min(taskMenu.x, window.innerWidth - 210));
-        const top = fixedCssPx(Math.min(taskMenu.y, window.innerHeight - 200));
+        const top = fixedCssPx(Math.min(taskMenu.y, window.innerHeight - (taskDeleteMode ? 260 : 200)));
+        const trashThis = () => {
+          if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
+          mutations.trash(task);
+          setTaskMenu(null);
+        };
+        const trashFollowing = () => {
+          if (recurrence && task.do_date) recurrenceMutations.deleteFollowing(recurrence, task.do_date);
+          setTaskMenu(null);
+        };
+        const trashSeries = () => {
+          if (recurrence) recurrenceMutations.deleteSeries(recurrence);
+          setTaskMenu(null);
+        };
         return (
           <div
             ref={taskMenuRef}
@@ -1698,53 +1724,74 @@ export default function CalendarPane({
             <div className="truncate border-b border-line px-3 py-1.5 text-meta text-muted">
               {task.title}
             </div>
-            <EventMenuItem onClick={() => {
-              const rect = taskMenu.el.getBoundingClientRect();
-              setTaskMenu(null);
-              onOpenTask(task, rect);
-            }}>
-              Open
-            </EventMenuItem>
-            <EventMenuItem onClick={() => {
-              setTaskMenu(null);
-              task.status === "done" ? mutations.uncomplete(task) : mutations.complete(task);
-            }}>
-              {task.status === "done" ? "Reopen" : "Mark done"}
-            </EventMenuItem>
-            <EventMenuItem onClick={() => {
-              setTaskMenu(null);
-              mutations.create({
-                title: task.title,
-                notes: task.notes || undefined,
-                do_date: task.do_date,
-                start_time: task.start_time,
-                duration_minutes: task.duration_minutes,
-                priority: task.priority !== "none" ? task.priority : undefined,
-                domain_id: task.domain_id,
-                project_id: task.project_id,
-                labelIds: task.task_labels?.map((l) => l.label_id),
-              });
-            }}>
-              Duplicate
-            </EventMenuItem>
-            {onConvertTaskToEvent && task.start_time && (
+            {taskDeleteMode && recurring ? (
               <>
+                <div className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
+                  Delete
+                </div>
+                <EventMenuItem onClick={trashThis}>This occurrence</EventMenuItem>
+                <EventMenuItem onClick={trashFollowing}>This & following</EventMenuItem>
+                <EventMenuItem onClick={trashSeries}>Whole series</EventMenuItem>
                 <div className="my-1 border-t border-line" />
+                <EventMenuItem onClick={() => setTaskDeleteMode(false)}>Cancel</EventMenuItem>
+              </>
+            ) : (
+              <>
+                <EventMenuItem onClick={() => {
+                  const rect = taskMenu.el.getBoundingClientRect();
+                  setTaskMenu(null);
+                  onOpenTask(task, rect);
+                }}>
+                  Open
+                </EventMenuItem>
                 <EventMenuItem onClick={() => {
                   setTaskMenu(null);
-                  onConvertTaskToEvent(task);
+                  task.status === "done" ? mutations.uncomplete(task) : mutations.complete(task);
                 }}>
-                  → Event
+                  {task.status === "done" ? "Reopen" : "Mark done"}
                 </EventMenuItem>
+                <EventMenuItem onClick={() => {
+                  setTaskMenu(null);
+                  mutations.create({
+                    title: task.title,
+                    notes: task.notes || undefined,
+                    do_date: task.do_date,
+                    start_time: task.start_time,
+                    duration_minutes: task.duration_minutes,
+                    priority: task.priority !== "none" ? task.priority : undefined,
+                    domain_id: task.domain_id,
+                    project_id: task.project_id,
+                    labelIds: task.task_labels?.map((l) => l.label_id),
+                  });
+                }}>
+                  Duplicate
+                </EventMenuItem>
+                {onConvertTaskToEvent && task.start_time && (
+                  <>
+                    <div className="my-1 border-t border-line" />
+                    <EventMenuItem onClick={() => {
+                      setTaskMenu(null);
+                      onConvertTaskToEvent(task);
+                    }}>
+                      → Event
+                    </EventMenuItem>
+                  </>
+                )}
+                <div className="my-1 border-t border-line" />
+                {recurring ? (
+                  <EventMenuItem onClick={() => setTaskDeleteMode(true)}>
+                    <span style={{ color: "var(--signal)" }}>Trash…</span>
+                  </EventMenuItem>
+                ) : (
+                  <EventMenuItem onClick={() => {
+                    setTaskMenu(null);
+                    mutations.trash(task);
+                  }}>
+                    <span style={{ color: "var(--signal)" }}>Trash</span>
+                  </EventMenuItem>
+                )}
               </>
             )}
-            <div className="my-1 border-t border-line" />
-            <EventMenuItem onClick={() => {
-              setTaskMenu(null);
-              mutations.trash(task);
-            }}>
-              <span style={{ color: "var(--signal)" }}>Trash</span>
-            </EventMenuItem>
           </div>
         );
       })()}

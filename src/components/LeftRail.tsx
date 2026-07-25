@@ -5,6 +5,7 @@ import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { captureTitle, parseCapture } from "../lib/nlp";
 import { acceptPatch, dismissPatch } from "../lib/grooming";
 import type { NewTaskInput, useTaskMutations } from "../hooks/useTasks";
+import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
@@ -625,11 +626,23 @@ function TaskContextMenu({
   onClose: () => void;
   toggleTaskSprint: (id: string) => void;
 }) {
+  const [deleteMode, setDeleteMode] = useState(false);
+  const { data: recurrences = [] } = useRecurrences();
+  const recurrenceMutations = useRecurrenceMutations();
+  const recurrence = task.recurrence_id
+    ? recurrences.find((r) => r.id === task.recurrence_id) ?? null
+    : null;
+  const recurring = Boolean(task.recurrence_id && recurrence);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (deleteMode) setDeleteMode(false);
+      else onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, deleteMode]);
 
   const done = task.status === "done";
   const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
@@ -643,9 +656,43 @@ function TaskContextMenu({
 
   type Item =
     | { kind: "action"; label: string; key?: string; danger?: boolean; action: () => void }
-    | { kind: "sep" };
+    | { kind: "sep" }
+    | { kind: "label"; label: string };
 
-  const items: Item[] = [
+  const deleteItems: Item[] = [
+    { kind: "label", label: "Delete" },
+    {
+      kind: "action",
+      label: "This occurrence",
+      action: () => {
+        if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
+        mutations.trash(task);
+        onClose();
+      },
+    },
+    {
+      kind: "action",
+      label: "This & following",
+      action: () => {
+        if (recurrence && task.do_date) recurrenceMutations.deleteFollowing(recurrence, task.do_date);
+        onClose();
+      },
+    },
+    {
+      kind: "action",
+      label: "Whole series",
+      action: () => {
+        if (recurrence) recurrenceMutations.deleteSeries(recurrence);
+        onClose();
+      },
+    },
+    { kind: "sep" },
+    { kind: "action", label: "Cancel", action: () => setDeleteMode(false) },
+  ];
+
+  const items: Item[] = deleteMode && recurring
+    ? deleteItems
+    : [
     {
       kind: "action", label: "Open", key: "↵",
       action: () => {
@@ -680,13 +727,21 @@ function TaskContextMenu({
     },
     { kind: "action", label: "Label…", key: "#", action: onLabel },
     { kind: "sep" },
-    {
-      kind: "action",
-      label: "Trash",
-      key: "X",
-      danger: true,
-      action: () => { mutations.trash(task); onClose(); },
-    },
+    recurring
+      ? {
+          kind: "action" as const,
+          label: "Trash…",
+          key: "X",
+          danger: true,
+          action: () => setDeleteMode(true),
+        }
+      : {
+          kind: "action" as const,
+          label: "Trash",
+          key: "X",
+          danger: true,
+          action: () => { mutations.trash(task); onClose(); },
+        },
   ];
 
   return createPortal(
@@ -699,6 +754,12 @@ function TaskContextMenu({
         {items.map((item, i) => {
           if (item.kind === "sep")
             return <div key={i} className="my-1 border-t border-line" />;
+          if (item.kind === "label")
+            return (
+              <div key={i} className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
+                {item.label}
+              </div>
+            );
           return (
             <button
               key={i}
