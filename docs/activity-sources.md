@@ -125,18 +125,29 @@ where they're read back.
 
 ## 6 · Integration — what you actually need (and what you don't)
 
-**You almost certainly do not need GitHub OAuth.** Nuvo is single-user, which collapses the
-auth choice:
+> **⚠️ Reasoning updated 2026-07-25 (D-024).** This section argued from "Nuvo is
+> single-user." That's now imprecise: Nuvo is **single-player but multi-tenant** — many
+> independent operators, each with their own account
+> ([`product/overview.md`](./product/overview.md) §2.1). **The conclusion below survives
+> the correction** — a per-operator fine-grained PAT is exactly the shape iCloud already
+> uses (each operator pastes their own credential, stored in Vault, no app registration).
+> What changes: the phrase *"the only user is you"* is wrong, "if you ever multi-user"
+> should read **multi-player**, and the GitHub App option becomes the right answer only if
+> we ever want org-wide install or webhooks — not merely because there's more than one
+> account.
+
+**You almost certainly do not need GitHub OAuth.** The auth choice collapses because each
+operator connects their own repos with their own credential:
 
 - **OAuth App ("Sign in with GitHub")** — the 3-legged flow. Worst fit here: most
-  machinery, fewest benefits for one user. Skip.
-- **GitHub App** — webhooks, per-repo install picker, short-lived tokens. The right
-  *multi-user* answer; overkill now. (If you ever multi-user, jump straight here and skip
+  machinery, fewest benefits. Skip.
+- **GitHub App** — webhooks, per-repo install picker, short-lived tokens. The right answer
+  *if* we ever want org-wide installs or push-based freshness. (Jump straight here and skip
   OAuth App entirely.)
-- **Fine-grained PAT** — ✅ generate a token scoped to exactly the repos you want,
-  read-only on Pull Requests, paste it into Nuvo settings. No callback, no app
-  registration. **Same "paste a token" shape as your ICS/calendar connections**, and it
-  matches the fact that the only user is you.
+- **Fine-grained PAT** — ✅ each operator generates a token scoped to exactly the repos
+  they want, read-only on Pull Requests, pasted into their own Nuvo settings. No callback,
+  no app registration. **Same "paste a credential" shape as the iCloud app-specific
+  password**, and it scales per-account without a central app registration.
 
 Almost every other piece already exists in calendar sync — this is the known pattern wearing
 a new `kind`:

@@ -36,8 +36,9 @@ Never open with a feature. Open with these, briefly, in the response itself:
    good ideas strain one — naming it is the point.
 3. **Has this already been decided?** Check [`decisions.md`](./product/decisions.md) §2
    (the N-list) and §3 (open questions). If it's there, lead with that.
-4. **The three no's** — does it add a pool, add an overlapping name, or only work with
-   clean data? Any yes → lead with the objection.
+4. **The four no's** — does it add a pool, add an overlapping name, only work with clean
+   data, or only hold true for the builder's own account (Principle 16)? Any yes → lead
+   with the objection.
 
 Then propose. This costs three sentences and prevents most wasted work.
 
@@ -92,8 +93,10 @@ and [`commitment-model.md`](./commitment-model.md) are the best examples.
   behavior, or usage data. If something is inferred from the repo, mark it inferred.
 - **Never fabricate a status.** If you don't know whether something shipped, check the code
   or say you didn't check. Wrong statuses poison the roadmap.
-- **Persona details are drafted, not researched.** Anything about the user's real life is a
-  draft for them to correct — flag it as such.
+- **Persona details are drafted, not researched.** [`personas.md`](./product/personas.md)
+  holds *archetypes*; the builder is **persona zero** — evidence, cited as ⓞ, never the
+  definition. Every ⓞ claim is N=1. Don't turn one operator's life into a default
+  (Principle 16), and don't quietly promote an inference to a finding.
 - **Distinguish "the doc says" from "the app does."** They drift. That drift is exactly what
   [`audit.md`](./product/audit.md) exists to find, so don't paper over it.
 - **Cite.** Claims about Nuvo should point at a doc, a file, or an observation in the running

@@ -23,9 +23,10 @@ Short forms:
 
 ## 1 · A Character — who wants what
 
-**The character:** an operator carrying **several worlds at once** — a job with teams and a
-roadmap, a ministry or community with a season, money to steward, and a family that does
-not care about any sprint.
+**The character:** an operator carrying **several worlds at once** — paid work with teams
+and a roadmap, a community that depends on them, a discipline that needs protected hours,
+and people at home whose calendar does not care about any sprint. *(The five domain kinds
+in [`personas.md`](./personas.md) §1. Names vary per operator; the shape doesn't.)*
 
 **What they want (external):** to end each week knowing the things that matter actually
 moved — and to have a plan for next week they believe in.
@@ -65,10 +66,13 @@ Every level of the problem:
 
 A guide needs two things: **empathy** and **authority.**
 
-**Empathy** — *"We know what it's like to hold four worlds and feel like you're failing at
-three of them. We didn't build a productivity app. We built the thing we needed on a Sunday
-night."* Nuvo is built by its user, for a real week with real church, real work, real
-family, real money.
+**Empathy** — *"We know what it's like to hold several worlds and feel like you're failing
+at most of them. We didn't build a productivity app. We built the thing we needed on a
+Sunday night."* Nuvo is built by one of its own operators, for a real week with real
+obligations — not designed from a market study.
+
+*Note the register: **"one of its operators," not "for me."** Built-by-a-user is authority;
+built-for-one-user reads as a hobby. Same fact, and the second framing loses the room.*
 
 **Authority** — earned, concrete, never boastful:
 - It holds **every calendar you actually own** — Google (two-way, with its own mirror
@@ -99,7 +103,9 @@ guide never panics, never hypes, never scolds. It says *"here's what's true,"* t
   without you moving it.
 - **We won't nag you.** No streaks, no red badges of shame, no debt ledger.
 - **We'll tell you the truth**, including when the truth is *"you can't carry this week."*
-- **Your data is yours** — single-user, your own calendars, no team surveillance.
+- **Your account is yours alone.** Nobody else is in your funnel — no manager's dashboard,
+  no shared board, no one watching your calendar. *Say this out loud: it's a real
+  differentiator that we currently never state (ledger row O4).*
 - **It works on your phone**, because your week doesn't wait for you to open a laptop.
 
 ## 5 · And calls them to Action

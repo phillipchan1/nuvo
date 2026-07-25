@@ -25,8 +25,15 @@
 
 ## Next — earned, not scheduled
 
+> **⚠️ Standing candidate for Now: the cold start.** Multi-tenancy (D-024) makes
+> **Arrival & trust** (ledger O1–O6, six ○s) the highest-value cluster on the board, and
+> the cheapest — it's largely a first-run flow and copy, not new mechanism. It isn't in Now
+> because Now is capped at three and reordering your bets is your call, not mine. But if
+> real operators are arriving this quarter, this displaces something. See the row below.
+
 | Bet | Closes | The case | Spec |
 |---|---|---|---|
+| **The cold start** *(candidate for Now)* | **O1–O6 ○**, and Principle 7 + 16 | A fresh account today lands in an empty system seeded with someone else's four domains, no path, no first-value moment, and no statement of the privacy that is genuinely differentiating. The architecture is multi-tenant; the product isn't. Decide Q-06, Q-07, Q-09 first — they're the design, and the build is small once they're answered. | *needs a spec* |
 | **Project slots** | W1 (accuracy), Q1 | On Deck's capacity counts *generic* free time, so it can call a week "fine" when there's zero protected project time. This makes the flagship number optimistic — the one number that must never lie. | [`project-slots.md`](../project-slots.md) |
 | **Activity sources (GitHub as instance #2)** | W8 ◐ | The calendar already proved the pattern; GitHub names it. Makes work that never became a task visible as *actuals*. Note Principle 10: this is the rare abstraction that **earned** its name via a second instance. | [`activity-sources.md`](../activity-sources.md) |
 | **A "what would this cost me?" read** | W3 ○, W4 ◐ | Two unanswered rows, one mechanism: we already compute demand ÷ capacity — showing the delta of adding or cutting one thing is arithmetic we own. Small surface, high answer-value. | *needs a spec* |
@@ -43,8 +50,11 @@
 - **Mobile vertical** — floors/records on the phone. Blocked on Q-01.
 - **Refusal as a first-class act** at Summit. Blocked on Q-02.
 - **Series → mirror calendar**, once there's a batched writer (D-010).
-- **Onboarding / cold start** — everything must be useful with an empty backlog
-  (Principle 7); today the first week is unproven.
+- **Switch interviews with operators two and three.** Every ⓞ claim in
+  [`personas.md`](./personas.md) is N=1. Two real conversations would validate or kill more
+  assumptions than a quarter of building — and they're the input to Q-06 and Q-08.
+- **De-persona-fying the defaults** — timezone, working hours, domain seeding (Q-06, Q-07).
+  Small work, but it's a *decision* first and belongs with the cold start.
 
 ## Parked — decided *not now*, on purpose
 

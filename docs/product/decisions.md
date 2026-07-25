@@ -26,9 +26,14 @@ this would double every sync path. *Status: standing — foundational.*
 **deliberately undated**. → Project work can't leak onto Today; the Sunday commitment number
 means something. *Status: standing.*
 
-**D-003 · Single-user only.** No assignees, permissions, or shared state. → Every altitude
-stays sharp; RLS stays trivial. Costs us the team market on purpose. *Status: standing —
-see [`personas.md`](./personas.md) §4.*
+**D-003 · Single-*player*, not single-*tenant*.** No assignees, permissions, or shared
+state **inside a funnel**. → Every altitude stays sharp and the arithmetic stays honest
+(pace and calibration both break if a task's progress depends on someone else). Costs us
+the team market on purpose. **Clarified 2026-07-25:** this was written as "single-user
+only," which conflated a product refusal with a deployment shape and was being used to
+argue against things it doesn't actually forbid. Serving many independent accounts is
+explicitly *in* scope — see D-024 and [`overview.md`](./overview.md) §2.1.
+*Status: standing (restated).*
 
 **D-004 · Priorities bind to projects along a crystallization line** rather than being
 either "just a sentence" or "always a project." A priority is always a real node that *can*
@@ -113,6 +118,36 @@ vocabulary.*
 (coarse calls), then the per-project card run. → Sorting by *when it's needed* rather than
 *how unready it is.* *Status: standing.*
 
+### Tenancy
+
+**D-024 · 2026-07-25 · Nuvo is a multi-tenant product.** Many independent operators, one
+deployment, each account isolated by RLS on `user_id`. → The data model already supports
+this; the *product* doesn't yet ([`overview.md`](./overview.md) §5, "Tenancy state").
+Consequences we're accepting:
+
+- **Defaults become product decisions.** The new-user trigger's four seeded domains
+  (Work / Church / Trading / Family) stop being a convenience and become a claim about the
+  user's life. They must become a named-by-the-account template (Q-06).
+- **Timezone and working hours can't be assumed.** Rollover is scheduled against
+  America/Los_Angeles; 480/990 working hours are one operator's day.
+- **Signup stays open**, which reverses the "disable signups after your account exists"
+  guidance in the root `readme.md` — that guidance now describes a *personal deployment*,
+  not the product.
+- **Cold start becomes load-bearing.** Principle 7 was always true; multi-tenancy makes it
+  the difference between a product and a personal tool, because the builder's account is
+  never empty and so day-one breakage is invisible to the only person testing.
+- **Aggregate signals become available and necessary** ([`overview.md`](./overview.md) §6) —
+  internal only, never surfaced to operators (Principles 4 and 9).
+
+*Status: standing — the direction. Implementation is unbuilt; see
+[`roadmap.md`](./roadmap.md).*
+
+**D-025 · 2026-07-25 · Persona zero is evidence, not the definition.** The builder is a
+verified instance of P1, cited as ⓞ; the archetype is what we design against.
+→ Instance-level details are examples, never defaults (Principle 16). Claims marked ⓞ are
+**unvalidated beyond N=1** and get tested against real operators two and three.
+*Status: standing.*
+
 ---
 
 ## 2 · Things we decided **not** to do
@@ -120,7 +155,7 @@ vocabulary.*
 | # | The idea | Why not | Would change if… |
 |---|---|---|---|
 | **N-01** | Auto-schedule the day (Motion-style) | Removes the judgment the product exists to build; when it's wrong you have no model of why | Never — this is identity, not a feature gap |
-| **N-02** | Team / multi-user | Consensus objects blunt every altitude (D-003) | A separate product, not this one |
+| **N-02** | Multi-**player**: shared funnels, assignees, someone else's dashboard | Consensus objects blunt every altitude (D-003). ⚠️ **Not** an argument against multi-tenancy — that's D-024, and it's a yes | A separate product, not this one |
 | **N-03** | A separate "event" entity for scheduled tasks | Doubles every sync path (D-001) | Never |
 | **N-04** | Streaks, scores, karma, debt ledgers | Serves *optimizer*; we serve *steward* | Never |
 | **N-05** | Notion-style databases / custom fields | A blank canvas is a product you have to finish | Never |
@@ -141,3 +176,7 @@ vocabulary.*
 | **Q-03** | Does non-calendar work become visible via activity sources beyond GitHub? | W8 ("where did my time go") is ◐ while shipped-but-unblocked work is invisible | The GitHub instance proving the pattern |
 | **Q-04** | Should `TendingFlow` be retired now the Refine run has proven out? | Two grooming paths is a Principle 11 violation waiting to happen | Refine run confidence on real data |
 | **Q-05** | What is the transitional CTA on the marketing site? | Currently direct CTA only — the biggest funnel gap (brandscript §5) | Picking one and writing it |
+| **Q-06** | What replaces the four seeded domains? | Today a new account is handed one operator's life as fact (Principle 16, ledger O2). Options: pick-from-kinds, name-your-own, or start empty with one example | Deciding how much structure a stranger needs on day one |
+| **Q-07** | Where do timezone and working hours come from for a new account? | Rollover is LA-anchored and hours default to 480/990. Both are silent wrongness for anyone else — and capacity math depends on them | Reading how the rollover cron and `user_settings` actually resolve per user |
+| **Q-08** | Does the "called to be faithful" register stay, soften, or become selectable? | Domain's definition is currently religious in register. Beloved by P3, potentially alienating to P2. **Narrow-and-beloved vs. broad-and-blander is a positioning fork, not a copy tweak** | Wanting to know; testable with operators two and three |
+| **Q-09** | What is the first-value moment for a stranger (ledger O6)? | We can't design onboarding without naming the 5-minute win. Candidate: *capture three things and see them land on a real calendar* | Picking it |

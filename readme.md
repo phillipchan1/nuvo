@@ -1,8 +1,12 @@
 # Nuvo
 
-A single-user daily planning app: GTD inbox + task list + Google/M365 calendars on one
+A personal daily planning app: GTD inbox + task list + Google/M365 calendars on one
 planning surface with drag-and-drop time blocking. Phase 1 of LifeOS — the daily driver
 that replaces Akiflow.
+
+**Single-player, multi-tenant.** One person's funnel per account, no shared objects — and
+many independent accounts on one deployment. The two are different claims; see
+[`docs/product/overview.md`](docs/product/overview.md) §2.1.
 
 **Core model decision:** a scheduled task IS a time block. One row in `tasks`:
 `do_date` set + `start_time` null = planned for the day (unblocked); both set =
@@ -74,9 +78,11 @@ select vault.create_secret('https://YOUR_REF.supabase.co', 'project_url');
 select vault.create_secret('YOUR_SERVICE_ROLE_KEY', 'service_role_key');
 ```
 
-Auth → Google only (disable the Email provider). Optionally disable signups after
-your account exists (single-user app). New-user trigger seeds the four domains
-(Work / Church / Trading / Family) and the settings row.
+Auth → Google only (disable the Email provider). For a **personal deployment**, optionally
+disable signups after your account exists; leave them open for the multi-tenant product.
+New-user trigger seeds four domains (Work / Church / Trading / Family) and the settings row
+— note that those four are one operator's instance, and making them a named-by-the-account
+template is open question Q-06 in [`docs/product/decisions.md`](docs/product/decisions.md).
 
 ### 2. Edge function secrets
 

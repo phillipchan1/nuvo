@@ -62,6 +62,8 @@ something the data doesn't support, or a Find is manufactured because the slot e
 
 **Why.** The strongest switching anxiety is "another system I'll abandon" ([`personas.md`](./personas.md) §6).
 Any feature that only works once everything is groomed is a feature that never turns on.
+**Multi-tenant raises the stakes:** the builder's account is never empty, so day-one
+breakage is invisible to the only person who tests. Pair this with Principle 16.
 **Violated when** a surface is empty, broken, or misleading without clean data — and
 doesn't degrade to something honest and useful.
 
@@ -95,12 +97,18 @@ drift is how a team ends up with three names for one object.
 **Violated when** a user-facing name has no [`glossary.md`](./glossary.md) entry, or two
 surfaces call the same thing different things.
 
-### 12 · Single-user honesty
+### 12 · Single-player by design, multi-tenant by deployment
 
-**Why.** No assignees, no permissions, no consensus objects. This is the constraint that
-lets every altitude stay sharp.
-**Violated when** a design assumes someone else will update state, or a field exists only
-to communicate to another person.
+**Why.** No assignees, no permissions, no consensus objects — *inside a funnel*. That's the
+constraint that lets every altitude stay sharp, and none of the arithmetic (pace, demand ÷
+capacity, calibration) survives a task whose progress depends on someone else's update.
+**Serving many independent accounts is orthogonal and fine** — see
+[`overview.md`](./overview.md) §2.1. Don't defend "single-user" when you mean
+"single-player"; the first is a deployment detail, the second is the product.
+**Violated when** a design assumes someone else will update state, a field exists only to
+communicate to another person, or an argument against a feature rests on "we're
+single-user" when the real objection is shared objects (or when there is no objection at
+all).
 
 ### 13 · Mobile-ready by default
 
@@ -122,9 +130,20 @@ focus ring replaces the lift, or a raw hex appears instead of a token.
 runtime. Boring on purpose — it's what makes two shells from one bundle possible.
 **Violated when** a feature needs a server runtime, a router, or a new state library.
 
----
+### 16 · Every account is a stranger's
 
-## Using the principles in a design review
+**Why.** The product is built by one of its users, which is a superpower for taste and a
+trap for defaults. Anything that works *because the builder knows their own life* — their
+domains, their timezone, their working hours, their calendar provider, their vocabulary —
+silently fails for everyone else, and fails **invisibly**, because the person who'd notice
+never signs up.
+**Violated when** a default encodes one operator's life as the model (four fixed domains,
+a hardcoded timezone, assumed working hours); a surface needs knowledge that only exists in
+the builder's head; a flow assumes existing data, a connected calendar, or a prior week; or
+copy addresses the reader as though they already know the system's nouns.
+**The test:** *would this be true and usable in a brand-new account belonging to someone
+you've never met?* If you can't answer, you haven't tried it — make a fresh account and
+find out. (This is the "stranger pass" in [`audit.md`](./audit.md).)
 
 Ask, in order:
 

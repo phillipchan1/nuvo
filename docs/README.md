@@ -17,15 +17,15 @@ Two layers, and the difference matters:
 | Doc | What it's for |
 |---|---|
 | **[overview.md](./product/overview.md)** | **The canon.** What Nuvo is, what it isn't, the core model, the funnel, where we are, and how we know it's working. *Wins over any spec.* |
-| **[principles.md](./product/principles.md)** | The 15 rules, each with a *violated when* — **the audit standard.** |
-| **[personas.md](./product/personas.md)** | Who this serves, who we disappoint on purpose, and **the Question Ledger** — the questions in their heads, scored by how honestly we answer them. |
+| **[principles.md](./product/principles.md)** | The 16 rules, each with a *violated when* — **the audit standard.** |
+| **[personas.md](./product/personas.md)** | Who this serves, who we disappoint on purpose, and **the Question Ledger** — the questions in their heads, scored by how honestly we answer them. Archetypes; the builder is cited as *persona zero*, not the definition. |
 | **[brandscript.md](./product/brandscript.md)** | StoryBrand SB7: the hero, the villain (**Drift**), the guide, the plan, the stakes. Governs product decisions, not just copy. |
 | **[landscape.md](./product/landscape.md)** | The field, the gap we own, and the feature-envy guardrail. |
 | **[roadmap.md](./product/roadmap.md)** | Bets with the question each one closes. Now (max three) · Next · Later · Parked. |
 | **[decisions.md](./product/decisions.md)** | The decision log — including **what we decided not to do**, so it stops coming back. |
 | **[glossary.md](./product/glossary.md)** | Naming canon, incl. user-facing ↔ code drift (`Priority` = `big_rocks`, `Week` = `sprints`). |
-| **[audit.md](./product/audit.md)** | The five-pass method for holding the running app against the truth, + the output template. |
-| **[ideation.md](./product/ideation.md)** | How we brainstorm without drifting: the three modes, the anchor pass, the three no's, and how to work with Claude on product thinking. |
+| **[audit.md](./product/audit.md)** | The six-pass method for holding the running app against the truth (incl. the **stranger pass**), + the output template. |
+| **[ideation.md](./product/ideation.md)** | How we brainstorm without drifting: the three modes, the anchor pass, the four no's, and how to work with Claude on product thinking. |
 
 ## The how layer — mechanism specs
 

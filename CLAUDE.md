@@ -1,6 +1,8 @@
 # Nuvo — working conventions
 
-Single-user daily planner. **One React SPA, two shells:** a Tauri macOS desktop app
+Personal daily planner — **single-player** (one person's funnel, no shared objects),
+**multi-tenant** (many independent accounts; see `docs/product/overview.md` §2.1).
+**One React SPA, two shells:** a Tauri macOS desktop app
 *and* an installable iOS PWA, served from the same `dist/`. Read `readme.md` for the
 product model and backend; this file is how we build so the app stays consistent and
 **mobile-ready by default.**
@@ -13,7 +15,7 @@ This file governs **how** we build. **`docs/product/`** governs **what** and **w
 
 - **[`docs/product/overview.md`](docs/product/overview.md)** — the canon: what Nuvo is,
   **what it is not**, the core model, how we know it's working. *Wins over any spec.*
-- **[`docs/product/principles.md`](docs/product/principles.md)** — 15 rules, each with a
+- **[`docs/product/principles.md`](docs/product/principles.md)** — 16 rules, each with a
   *violated when*. The audit standard.
 - **[`docs/product/personas.md`](docs/product/personas.md)** — who this serves, and the
   **Question Ledger**: the questions in their heads, scored by how honestly we answer them.

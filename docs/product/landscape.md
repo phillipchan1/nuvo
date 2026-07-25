@@ -43,7 +43,7 @@ target` — see [`commitment-model.md`](../commitment-model.md)).
 | **Things 3** | Taste. The best pure task app. Areas/Projects hierarchy | No calendar truth, no capacity, no pace | Restraint. Areas ≈ our domains | Beauty without arithmetic |
 | **Todoist** | Ubiquity, natural-language dates, the quick-add lane | A flat list at scale; no time model | NL parsing; the fast composer's quick lane | Karma/streaks — wrong identity (Principle 9) |
 | **Amazing Marvin** | Configurability; every methodology available | You must build your own product before using it | Nothing directly; a warning | Settings as a substitute for opinions |
-| **Asana / Linear / Monday** | Portfolios, dependencies, real project structure | Team-shaped, deadline-only. Work enters and never lands on a Tuesday | Dependency thinking → the *In the way* lens | Multi-user objects (Principle 12) |
+| **Asana / Linear / Monday** | Portfolios, dependencies, real project structure | Team-shaped, deadline-only. Work enters and never lands on a Tuesday | Dependency thinking → the *In the way* lens | Shared objects inside a funnel (Principle 12) |
 | **Notion / Obsidian** | Infinite modeling; the second brain | A blank canvas is a product you have to finish. Nothing schedules | Nothing | Databases-as-a-service; wiki drift |
 | **Google / Apple Calendar** | Truth about meetings. Everyone already lives here | Zero intent — your priorities aren't on it, so they don't happen | We *integrate*, we don't replace. The mirror calendar means the phone still shows truth | Becoming a calendar client |
 
@@ -64,6 +64,11 @@ Ranked by defensibility — how hard it would be for the tool above to copy it:
    not folders. Family and church are first-class, not "personal" leftovers.
 5. **Two shells, one bundle** — a real macOS app and a real installable phone app from one
    SPA, with a mirror calendar so your phone shows truth even outside the app.
+6. **Single-player in a world of team tools** — nobody else is in your funnel: no manager's
+   dashboard, no shared board, no visibility into how you actually spend your week. Easy for
+   others to copy in principle, structurally hard once their business model is seats. *We
+   currently never say this out loud (ledger O4) — it's the cheapest differentiator on the
+   list to start claiming.*
 
 ## 4 · Where we're genuinely behind — say it out loud
 
@@ -72,7 +77,9 @@ Ranked by defensibility — how hard it would be for the tool above to copy it:
   ("a promise I made that's nowhere in the system") is the live wound.*
 - **Mobile depth.** Rituals, record screens, floors, and the real calendar pane are
   desktop-only. The phone is capture + agenda + Refine.
-- **Onboarding.** Single-user and self-hosted-ish means the cold-start path is unpolished.
+- **Onboarding.** The deepest gap, and the one multi-tenancy exposes: a new account gets no
+  path, no first-value moment, and a set of domains borrowed from someone else's life. Every
+  competitor above beats us here today. See ledger rows **O1–O6**.
 - **Grooming.** Three of the four lenses are spec, so keeping projects ready is still
   more manual than the model promises.
 

@@ -12,7 +12,7 @@ migrations)* should be confirmed against `supabase/migrations/` before being rel
 
 | User-facing | In code | What it is |
 |---|---|---|
-| **Domain** | `domains` *(per migrations)*, `domain_id` | An area you are perpetually called to be faithful and produce in. **Not a folder or a tag.** Seeded: Work · Church · Trading · Family. Carries a color used as identity across calendar and rails. |
+| **Domain** | `domains` *(per migrations)*, `domain_id` | An area of perpetual responsibility — one you are called to be faithful and produce in. **Not a folder or a tag.** Carries a color used as identity across calendar and rails. ⚠️ The seeded Work · Church · Trading · Family are **persona zero's instance, not the model** — see the five domain *kinds* in [`personas.md`](./personas.md) §1 and open question Q-06. The register of "called to be faithful" is itself unresolved (Q-08). |
 | **Initiative** | `initiatives` *(per migrations)* | A big outcome under a domain, usually a quarter's worth. Has vows / key results. |
 | **Project** | `projects` *(per migrations)*, `project_id` | A finite thing that gets *finished*. Has size (remaining effort) and a finish line — the two inputs to pace. |
 | **Task** | `tasks` | The atom. One row carries pool membership, planning, *and* scheduling. |
@@ -23,6 +23,22 @@ migrations)* should be confirmed against `supabase/migrations/` before being rel
 | **Standing slot** | `slots` + affinity (`project_id` / `domain_id`) | Protected *recurring* time with an affinity that acts as a magnet during Sunday compose. [`standing-slots.md`](../standing-slots.md) |
 | **Project slot** | *(spec)* | A block typed as protected project time, so capacity is measured in real project hours. [`project-slots.md`](../project-slots.md) |
 | **Record** | `src/components/record/` | The full detail screen for a project/initiative/task. Desktop-only. |
+
+## Tenancy & people
+
+Use these precisely — the first two get conflated constantly, and the conflation has already
+been used to argue against things it doesn't forbid.
+
+| Term | Means | Our position |
+|---|---|---|
+| **Single-player** | One person inside a funnel. No assignees, no shared objects, no state someone else updates. | **Yes** — the product refusal (Principle 12, D-003) |
+| **Multi-tenant** | Many independent accounts on one deployment, isolated by RLS on `user_id`. | **Yes** — a deployment fact, not a product opinion (D-024) |
+| **Multi-player** | Several people sharing one funnel. | **No** (N-02) |
+| **Account** | One operator's entire funnel — the tenancy boundary. There is no workspace, team, or org object above it. | — |
+| **Operator** | What we call the person using Nuvo, in docs and copy. Preferred over "user". | — |
+| **Persona zero** | The builder, as a *verified instance* of P1. Evidence, cited **ⓞ**, never the definition. | [`personas.md`](./personas.md) |
+| **ⓞ** | Marks a claim sourced from persona zero — **unvalidated beyond N=1.** | — |
+| **The stranger test** | *Would this be true and usable in a fresh account belonging to someone you've never met?* | Principle 16 · [`audit.md`](./audit.md) Pass 6 |
 
 ## The pools
 

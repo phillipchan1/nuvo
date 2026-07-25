@@ -12,8 +12,8 @@ specs, never a screenshot, never your memory of what shipped. Start the dev serv
 **When to run:** at each Summit · before committing a quarter's bets · after any burst of
 shipping · whenever ideation starts feeling untethered.
 
-**Time budget:** ~90 minutes for the full five passes. Pass 2 alone (~25 min) is the
-highest-yield if you only do one.
+**Time budget:** ~2 hours for all six passes. If you only do one, do **Pass 2** (~25 min).
+If you only do two, add **Pass 6** — it's the one your own account can never tell you.
 
 ---
 
@@ -73,7 +73,9 @@ High-yield places to look:
 | 8 · one question | Name each surface's single question out loud. Which ones stutter? |
 | 10 · no new nouns | Diff the app's vocabulary against [`glossary.md`](./glossary.md) |
 | 13 · mobile | 375px, every reachable surface, tap targets, safe areas, bottom-bar clearance |
+| 12 · single-player | Any argument in the codebase or docs that says "single-user" where it means "single-player" — and anything genuinely shared |
 | 14 · Warm Paper | `grep` for opaque `bg-` on structural containers, raw hex, flat focus rings |
+| 16 · stranger's account | Seeded domains, hardcoded timezone, assumed working hours, copy that presumes system knowledge → **run Pass 6** |
 
 **Output:** violation · file/surface · intentional-or-drift · fix or log it in
 [`decisions.md`](./decisions.md).
@@ -81,7 +83,8 @@ High-yield places to look:
 ## Pass 4 · Story — does the plan survive contact?
 
 Walk [`brandscript.md`](./brandscript.md)'s three-step plan as a *new user with an empty
-account*: **capture → commit a week → land it and see the truth.**
+account*: **capture → commit a week → land it and see the truth.** *(If you're running Pass
+6, do it in that same fresh account — one login, two passes.)*
 
 - Where does the hero fall out? Name the exact screen.
 - Does anything make **Nuvo** the hero instead of the user?
@@ -111,6 +114,42 @@ surface costs more than an unbuilt feature.
 - **Dead specs** — docs describing something that never shipped and no longer should. Mark
   them `superseded` rather than deleting; delete only when it's actively misleading.
 
+## Pass 6 · The stranger — audit an account that isn't yours
+
+**The premise:** the builder's account is never empty, never mis-seeded, never in the wrong
+timezone, and never confused by the vocabulary. So the entire class of multi-tenant failure
+is *structurally invisible* to the only person who tests. This pass is the only way to see
+it.
+
+**How:** create a **genuinely fresh account** — not your account with filters, not a reset
+of your data. Sign up the way a stranger would and do not fix anything as you go; write it
+down and keep going.
+
+Walk it, in order, timing yourself:
+
+1. **Signup → first screen.** What are you looking at? Is there any instruction? Could you
+   name what this app is for from the screen alone? *(O1)*
+2. **The domains you were given.** They're Work / Church / Trading / Family. Are they yours?
+   Can you rename, remove, or replace them, and is that discoverable? *(O2, Principle 16)*
+3. **Timezone and hours.** Is the day right? Are working hours yours? Does rollover happen at
+   *your* midnight? *(Q-07 — silent wrongness is the worst kind)*
+4. **Before connecting a calendar.** Which surfaces are broken, empty, or quietly lying?
+   Does capacity math still present numbers it can't support? *(O3, Principle 7)*
+5. **The first-value moment.** How long to something that feels worth it? Can you name what
+   it was? *(O6, Q-09)*
+6. **The vocabulary.** Domain, Priority, the Week, Gain, readiness, On Deck — how many did
+   you have to guess at? Does any register land wrong on a stranger? *(Q-08)*
+7. **Privacy.** Can you tell who can see your work? *(O4 — we don't say it, and it's a
+   selling point)*
+8. **The empty week.** Try to compose a week with nothing in the backlog. What happens?
+
+**Output:** a numbered walk-through with timings, plus the re-scored O-rows in the ledger.
+Findings here are usually **cheap to fix and expensive to have missed** — copy, defaults,
+and a first-run path, not new mechanism.
+
+> **Do this pass before you tell anyone the product is ready for a second operator.** It is
+> the difference between multi-tenant architecture and a multi-tenant product.
+
 ---
 
 ## The output — audit template
@@ -121,7 +160,8 @@ Copy this into `docs/product/audits/YYYY-MM-DD.md`.
 # Product audit — YYYY-MM-DD
 
 **Driven against:** dev server, real data, commit `<sha>`
-**Passes run:** 1–5 (or note which)
+**Passes run:** 1–6 (or note which)
+**Stranger pass account:** <fresh account, or "not run" — say which>
 
 ## Verdict in three sentences
 <What's true. What's drifted. What to do about it.>
@@ -144,6 +184,13 @@ Copy this into `docs/product/audits/YYYY-MM-DD.md`.
 
 ## 5 · Surfaces
 | Surface | Its one question | Answers it? | Mobile | Warm Paper | Verdict |
+
+## 6 · Stranger
+**Time to first value:**
+**Defaults that weren't mine:**
+**Broken without a calendar / without data:**
+**Vocabulary I had to guess:**
+**O-rows re-scored:**
 
 ## Actions
 1. <fix now — small, obviously right>

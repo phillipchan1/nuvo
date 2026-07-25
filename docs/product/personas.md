@@ -1,7 +1,7 @@
 # Personas & the Question Ledger
 
-**Status:** canonical v1 (2026-07-25) · **drafted from repo evidence — correct anything
-that's wrong about you.** A persona you didn't verify is fiction with a headshot.
+**Status:** canonical v2 (2026-07-25) · **archetypes, not one person.** A persona you
+didn't verify is fiction with a headshot.
 
 Two things live here:
 
@@ -10,29 +10,59 @@ Two things live here:
    Nuvo answers them and how honestly. **This is the most useful artifact in `docs/product/`.**
    It's the input to every ideation session and the spine of the [audit](./audit.md).
 
+### On persona zero, and the N=1 risk
+
+Nuvo is built by one of its users. That's a real advantage — the taste and the problem
+diagnosis are first-hand, not focus-grouped. It's also the product's biggest research risk,
+and it gets worse the moment there's a second account.
+
+So we hold two things apart:
+
+- **Persona zero** (the builder) is *evidence* — a detailed, verified instance of P1. Cite
+  it as such: *"persona zero runs Work / Church / Trading / Family."*
+- **The archetype** is the *definition*, and it has to be true for operators whose worlds
+  are named nothing like that.
+
+**The discipline:** whenever a persona detail is specific enough to design against, ask
+whether it's archetypal or just persona zero's instance. Instance-level details make great
+*examples* and terrible *defaults* (Principle 16). Every claim below marked ⓞ comes from
+persona zero and is **unvalidated beyond N=1** — treat those as hypotheses to test with the
+second and third real operator, not as findings.
+
 ---
 
-## 1 · P1 — The Multi-Domain Operator *(primary; this is Phil)*
+## 1 · P1 — The Multi-Domain Operator *(primary)*
 
 > *"I don't need to do more. I need to stop losing the important thing to the urgent one —
-> in four different worlds at the same time."*
+> in several different worlds at the same time."*
 
-**Shape of the life.** Four standing domains, each with real obligations, none of which can
-be deferred indefinitely:
+**Shape of the life.** Three to five **standing domains** — areas of perpetual
+responsibility, not projects — each with real obligations, none deferrable indefinitely.
+The *names* vary wildly between operators; the **kinds** and their failure modes don't.
+That's what we design against:
 
-| Domain | What it demands | How it fails |
-|---|---|---|
-| **Work** | teams, a roadmap, meetings that fill the calendar by default | Eats every open hour. Wins by default because it's loudest. |
-| **Church** | a season, volunteers, Sunday is a hard deadline every week | Non-negotiable dates with no project plan behind them. |
-| **Trading** | market hours, review, discipline | Needs *protected recurring time*, not tasks. Dies first when work surges. |
-| **Family** | a calendar that doesn't care about your sprint | Never generates a ticket, so it never enters the system — and gets starved silently. |
+| Domain kind | What it demands | How it fails | Instances |
+|---|---|---|---|
+| **The paid work** | teams, a roadmap, meetings that fill the calendar by default | Eats every open hour. Wins by default because it's loudest and has other people enforcing it. | job · company · practice · clients |
+| **The committed community** | a season, other people depending on you, recurring hard dates | Non-negotiable deadlines with no project plan behind them. | church · nonprofit board · coaching · volunteering |
+| **The discipline** | protected recurring time; consistency matters more than output | Needs *time*, not tasks — so a task-shaped tool can't hold it. Dies first when work surges. | trading · training · writing · a craft · study |
+| **The relational** | presence, on a calendar that doesn't care about your sprint | Never generates a ticket, so it never enters the system, and gets starved **silently** — the failure nobody notices until it's expensive. | family · marriage · aging parents · friendship |
+| **The stewardship** *(often implicit)* | periodic attention, high cost of neglect | Invisible until a deadline or a mistake. | finances · health · home · admin |
 
-**A week in the life.** Sunday night he decides. Monday a work escalation eats the deep
-block. Wednesday someone mentions a thing in Slack that becomes a promise. Thursday church
-needs an answer by Sunday. Friday he can't tell whether the quarter's initiative moved at
-all. Saturday he feels vaguely behind on everything and specifically behind on nothing.
+> **Design consequence.** These are *kinds*, so the app must never assume names. Persona
+> zero's instance is Work / Church / Trading / Family ⓞ — which is exactly why the seeded
+> four-domain default is a Principle 16 violation rather than a helpful head start. Offer a
+> **template**, ask for names, and make the *discipline* and *relational* kinds first-class,
+> since those are the two every task-shaped competitor drops.
 
-**What he's tried, and why each fell short:**
+**A week in the life.** Sunday night they decide. Monday a work escalation eats the deep
+block. Wednesday someone mentions a thing in passing that becomes a promise. Thursday the
+community commitment needs an answer by the weekend. Friday they can't tell whether the
+quarter's initiative moved at all. Saturday they feel vaguely behind on everything and
+specifically behind on nothing.
+
+**What they've tried, and why each fell short** *(the specific tool history is ⓞ; the
+ceilings are structural and generalize):*
 
 | Tool | What it gave him | Where it broke |
 |---|---|---|
@@ -42,14 +72,20 @@ all. Saturday he feels vaguely behind on everything and specifically behind on n
 | **Calendars alone** | Truth about meetings | Nothing about intent. Your priorities aren't on it, so they don't happen. |
 
 **Emotional truth.** Competent, not overwhelmed — which is exactly why the failure mode is
-invisible. He can hold it all *this* week. He can't hold it all *this quarter*, and nothing
-tells him which one he's in.
+invisible. They can hold it all *this* week. They can't hold it all *this quarter*, and
+nothing tells them which one they're in.
 
-**Success for him:** Sunday takes 20 minutes and ends with a week he believes. Friday takes
-10 and ends with proof. No domain goes dark for a quarter without him deciding it.
+**Success for them:** Sunday takes 20 minutes and ends with a week they believe. Friday
+takes 10 and ends with proof. No domain goes dark for a quarter without them deciding it.
 
-**Anti-features for him:** anything that adds a place to check, requires clean data to be
+**Anti-features for them:** anything that adds a place to check, requires clean data to be
 useful, or nags.
+
+**What varies across instances of P1** — the axes to hold loosely until real operators
+tell us otherwise: how many domains (3–5), whether the paid work is employment or their own
+company, whether the *discipline* domain exists at all, how much of the week is
+meeting-bound (this drives capacity math hard), and how religiously they'd actually do a
+Sunday ritual. **Every one of these is currently a hypothesis with N=1.**
 
 ---
 
@@ -75,9 +111,18 @@ Ministry, nonprofit, or community lead. Hard recurring deadlines (Sunday, the ev
 season), volunteer labor they can't assign work to, and a strong sense that the work is a
 calling rather than a job.
 
-**Different from P1:** the vocabulary of *faithfulness*, *domain*, and *gain* lands
-immediately and literally — this persona is why that language is in the product and should
-stay there. Lower tolerance for anything that feels like corporate productivity theater.
+**Different from P1:** the vocabulary of *faithfulness*, *calling*, and *gain* lands
+immediately and literally. Lower tolerance for anything that feels like corporate
+productivity theater.
+
+> **⚠ Multi-tenant tension, unresolved.** "Where you are called to be faithful" is the
+> definition of a Domain in the product today. For P3 it's the reason they'd choose Nuvo;
+> for a secular P2 it may read as a stance they didn't sign up for. This is a genuine fork
+> — *narrow and beloved* vs. *broad and blander* — and it should be **decided, not drifted
+> into**. Logged as Q-08 in [`decisions.md`](./decisions.md). The middle path worth testing
+> first: keep the *concept* (an area of perpetual responsibility you can be faithless to by
+> neglect) and let the *register* of the copy vary — the word "faithful" is doing work no
+> synonym quite does, but it doesn't have to be in the empty state.
 
 ---
 
@@ -85,7 +130,7 @@ stay there. Lower tolerance for anything that feels like corporate productivity 
 
 | Anti-persona | What they'd ask for | Why we say no |
 |---|---|---|
-| **The team PM** | assignees, statuses, sprint boards, shared views | Multi-user forces consensus objects; every altitude gets blunter. |
+| **The team PM** | assignees, statuses, sprint boards, shared views | Shared objects force consensus; every altitude gets blunter. *Not a tenancy limit — see [`overview.md`](./overview.md) §2.1.* |
 | **The automation maximalist** | "just have AI schedule my whole day" | Removes the judgment the product exists to build. Nuvo proposes, you promote. |
 | **The quantified-self collector** | streaks, scores, time-tracking rollups | Serves *optimizer*, not *steward*. Debt ledgers shame. |
 | **The blank-canvas builder** | databases, custom fields, formulas | That's Notion. Nuvo has opinions on purpose. |
@@ -149,6 +194,25 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | A3 | Is there a promise I made that's nowhere in the system? | — | ○ *the hardest one; capture only catches what you remember to capture* |
 | A4 | Am I lying to myself about this week? | calibration (planned vs proven) | ✅ **rare and valuable — protect it** |
 
+### Arrival & trust — *the questions a stranger asks*
+
+These only exist once the account isn't yours. Persona zero never asks them, which is
+exactly why they're all unanswered — nobody in the building has ever needed an answer.
+
+| # | The question | Where Nuvo answers it | Honesty |
+|---|---|---|---|
+| **O1** | What is this, and what do I do first? | — | ○ *no onboarding path; a fresh account lands in an empty system* |
+| **O2** | These aren't my domains — how do I make them mine? | Settings *(seeded Work/Church/Trading/Family)* | ○ *one operator's life presented as the model — Principle 16* |
+| **O3** | Do I have to connect a calendar before this is useful? | — | ○ *the whole capacity model degrades silently without one; nothing says so* |
+| **O4** | Who can see my calendar and my work? | — | ○ *no privacy surface. Single-player is a **selling point** we never state.* |
+| **O5** | What happens if I fall off for two weeks? | rollover · backlog stays undated | ◐ *the model handles it well; nothing reassures you it will* |
+| **O6** | Is this worth the setup before I trust it with my week? | — | ○ *no first-value moment defined. What's the 5-minute win?* |
+
+> **Read this cluster as a block.** Six ○s in one row isn't six features — it's one missing
+> thing (a cold start) and it's the difference between multi-tenant *architecture* and a
+> multi-tenant *product*. It's also the cheapest cluster on the board: O1/O2/O6 are
+> largely copy and a first-run flow, not new mechanism.
+
 ### How to use this ledger
 
 - **Ideating?** Start from an ○ or ◐ row, not from a feature idea. A feature that closes
@@ -164,8 +228,10 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 
 ## 6 · Jobs to be done — the switch from Akiflow
 
-The forces acting on the moment of change (Bob Moesta's framing). Useful because our user
-*already switched*, so we can be precise.
+The forces acting on the moment of change (Bob Moesta's framing). Reconstructed from
+persona zero's switch ⓞ — precise, but **N=1**. The single highest-value research we could
+do is a real switch interview with operators two and three; until then, treat the weights
+below as hypotheses and the *categories* as sound.
 
 **Push** (what makes the old way intolerable)
 - The week is the ceiling. A project can't be "behind."

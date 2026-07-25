@@ -53,11 +53,14 @@ is the filter.
    strain one — that's fine. Naming it is not optional.
 6. **What does it replace?** New surfaces are a tax. The best ideas *retire* something.
 
-**The three no's** — if any is true, the answer is almost certainly no:
+**The four no's** — if any is true, the answer is almost certainly no:
 
 - **It adds a pool.** (Principle 10 · N-06)
 - **It adds a name that overlaps an existing one.** (Principle 11)
 - **It only works with clean data.** (Principle 7 — the abandonment trap)
+- **It's only true for you.** (Principle 16 — it works because *you* know your domains,
+  your timezone, your habits, your vocabulary. Would it hold in a stranger's fresh
+  account?)
 
 ## 4 · Idea intake template
 
@@ -74,7 +77,7 @@ Keep it short. If it doesn't fit on a screen, it's a spec, not an idea.
 **Principle strained:** <#n, and why it's worth it>
 **Replaces:** <what goes away — or "nothing", said honestly>
 **Smallest honest version:** <what could exist in a day and still be true>
-**Three no's:** pool? name? clean-data? — <no/no/no>
+**Four no's:** pool? name? clean-data? only-true-for-me? — <no/no/no/no>
 ```
 
 ## 5 · Spark → shipped: the pipeline
@@ -141,7 +144,7 @@ exactly this.
 
 **Prompts worth reusing:**
 
-- *"Run the [anchor pass](#3--the-anchor-pass--six-questions) on this idea. Be strict about the three no's."*
+- *"Run the [anchor pass](#3--the-anchor-pass--six-questions) on this idea. Be strict about the four no's."*
 - *"Which of our principles does this strain, and is the strain worth it?"*
 - *"Has some version of this already been decided? Check `decisions.md` §2."*
 - *"What's the smallest version of this that's still honest?"*
