@@ -23,10 +23,33 @@ This file governs **how** we build. **`docs/product/`** governs **what** and **w
 - **[`docs/product/decisions.md`](docs/product/decisions.md)** — including what we decided
   **not** to do, so it stops coming back.
 
-Before proposing a product idea: name the ledger row it closes, the principle it strains,
-and check it wasn't already decided. Before calling a product task done: update the spec's
-status header, and add any new user-facing name to
-[`docs/product/glossary.md`](docs/product/glossary.md).
+### The rules that apply while building — not just while planning
+
+These are here rather than only in `docs/CLAUDE.md` because that file loads when you're
+editing docs, and this one loads always. The contract has to be in context during the
+build, which is where it actually gets broken.
+
+**Before proposing or building a product change, in one or two sentences each:**
+
+1. **Which Question Ledger row does it close?** Cite the ID (`W3`, `D5`, `O2`…) from
+   [`personas.md`](docs/product/personas.md) §5. No row → argue that a human actually asks
+   it, or don't build it.
+2. **Which principle does it strain?** Cite the number. Most good ideas strain one; naming
+   it is the point. Silently straining one is the failure.
+3. **Was it already decided?** [`decisions.md`](docs/product/decisions.md) §2 (the N-list)
+   and §3 (open questions). If it's there, lead with that.
+4. **The four no's** — does it *add a pool* (P10), *add an overlapping name* (P11), *only
+   work with clean data* (P7), or *only hold true in the builder's own account* (P16)?
+   Any yes → lead with the objection, don't bury it.
+
+**Before calling a product change done:** update the spec's status header the same day ·
+add any new user-facing name to [`glossary.md`](docs/product/glossary.md) · log a real
+decision or a rejected idea in [`decisions.md`](docs/product/decisions.md) · re-score the
+ledger row if it moved.
+
+**Never** invent product facts, fabricate a spec's status, or turn one operator's life into
+a default. `/anchor` runs check 1–4 properly; `/product-audit` holds the running app
+against all of it.
 
 ## Design language — "Warm Paper"
 
