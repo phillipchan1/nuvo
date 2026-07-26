@@ -29,7 +29,7 @@ const DOWNLOAD_MAC_URL =
   "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "desktop" | "account" | "billing" | "about";
+type SectionId = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account" | "billing" | "about";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   {
@@ -80,16 +80,6 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
         <path d="M2.5 2.5h4.7l6.3 6.3a1 1 0 010 1.4l-3.3 3.3a1 1 0 01-1.4 0L2.5 7.2z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
         <circle cx="5.4" cy="5.4" r="0.95" fill="currentColor" />
-      </svg>
-    ),
-  },
-  {
-    id: "desktop",
-    label: "Desktop app",
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-        <rect x="2" y="3" width="12" height="8" rx="1.3" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M6 13.5h4M8 11v2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -1163,49 +1153,6 @@ function IntegrationsPane() {
   );
 }
 
-// ── Desktop app: version, auto-update controls, and "What's new" history ──
-// One responsive pane for both shells. The updater controls only render inside
-// the native Mac app (isDesktopTauri); on the web / iOS the pane shows a
-// "Download for Mac" link instead. The version + history show everywhere.
-function DesktopPane() {
-  const desktop = isDesktopTauri();
-  return (
-    <div>
-      <PaneHeader
-        title="Desktop app"
-        sub={
-          desktop
-            ? "The native Mac app updates itself quietly in the background. Here's your version and what's changed."
-            : "Nuvo runs great in the browser — and there's a native Mac app that updates itself in the background."
-        }
-      />
-      <div className="divide-y divide-line">
-        <Row
-          title="Version"
-          desc={desktop ? "You're running the native Mac app." : "The version you're on right now."}
-        >
-          <span className="mono text-caption text-muted">Nuvo {__APP_VERSION__}</span>
-        </Row>
-
-        {desktop ? (
-          <UpdateControls />
-        ) : (
-          <Row title="Download for Mac" desc="Universal build — Apple Silicon & Intel, updates itself.">
-            <a
-              href={DOWNLOAD_MAC_URL}
-              className="fast inline-block rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
-            >
-              Download
-            </a>
-          </Row>
-        )}
-      </div>
-
-      <ReleaseHistory />
-    </div>
-  );
-}
-
 // Desktop-only: manually check for an update and, when one is staged, restart
 // into it. Shares state with the bottom-right toast via the update store, so the
 // two never disagree.
@@ -1468,11 +1415,12 @@ function AccountPane() {
 // ── About: what Nuvo is + replay the welcome tour ─────────────────────────
 function AboutPane({ onClose }: { onClose: () => void }) {
   const { open: openOrientation } = useOrientation();
+  const desktop = isDesktopTauri();
   return (
     <div>
-      <PaneHeader title="About" sub="What Nuvo is, and how to get reacquainted." />
+      <PaneHeader title="About" sub="Your version, what's new, and how to get reacquainted." />
 
-      <div className="mb-6 flex flex-col items-center gap-1 rounded-xl border border-line bg-surface-2/40 px-4 py-7 text-center">
+      <div className="mb-2 flex flex-col items-center gap-1 rounded-xl border border-line bg-surface-2/40 px-4 py-7 text-center">
         <div className="wordmark text-lead text-ink">Nuvo</div>
         <p className="max-w-xs text-caption leading-snug text-muted">
           Your whole life — work, family, faith, health — held in one calm place.
@@ -1480,7 +1428,23 @@ function AboutPane({ onClose }: { onClose: () => void }) {
         <span className="mono mt-1 text-micro text-muted">v{__APP_VERSION__}</span>
       </div>
 
-      <div className="section-label mb-2">Getting started</div>
+      {/* Auto-update controls in the native app; a download link on web/iOS. */}
+      {desktop ? (
+        <UpdateControls />
+      ) : (
+        <Row title="Download for Mac" desc="Native app — Apple Silicon & Intel, updates itself in the background.">
+          <a
+            href={DOWNLOAD_MAC_URL}
+            className="fast inline-block rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
+          >
+            Download
+          </a>
+        </Row>
+      )}
+
+      <ReleaseHistory />
+
+      <div className="section-label mb-2 mt-6">Getting started</div>
       <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2/40 px-3.5 py-3">
         <div className="min-w-0 flex-1">
           <div className="text-body text-ink">Welcome tour</div>
@@ -1535,7 +1499,6 @@ export default function SettingsModal({
       )}
       {active === "integrations" && <IntegrationsPane />}
       {active === "labels" && <LabelsPane />}
-      {active === "desktop" && <DesktopPane />}
       {active === "account" && <AccountPane />}
       {active === "billing" && <BillingPane />}
       {active === "about" && <AboutPane onClose={onClose} />}
