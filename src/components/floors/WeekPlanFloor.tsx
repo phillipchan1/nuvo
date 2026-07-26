@@ -458,8 +458,8 @@ export function WeekPlanBody({
           {report.brief && !ahead && <p className="serif text-lead leading-relaxed text-ink">{report.brief}</p>}
           {ahead && <p className="serif text-lead leading-relaxed text-ink">Here's the week ahead. Name what matters, then compose it into time.</p>}
 
-          {/* The week's forward job: pull priorities into time blocks. The door
-              to the compose ritual lives here so the week button is one place. */}
+          {/* The week's forward job: turn the projects into time blocks. The door
+              to the planning flow lives here so the week button is one place. */}
           {forming && onCompose && (
             <div className="mt-5">
               <button
@@ -469,7 +469,7 @@ export function WeekPlanBody({
                 {composeLabel ?? "Plan the week"}
                 <span aria-hidden>→</span>
               </button>
-              <p className="mt-2 text-meta text-muted">Pull your priorities into time blocks against your real calendar.</p>
+              <p className="mt-2 text-meta text-muted">Projects, leftovers and the inbox — placed against your real calendar.</p>
             </div>
           )}
         </div>

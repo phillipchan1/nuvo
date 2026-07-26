@@ -291,6 +291,60 @@ edits via the same presets on the proposal and on Plan-the-week Pull (desktop + 
 minute fields (thumb-hostile, invites nonsense) and gating the week until every task is
 groomed (Principle 7 — useful on day one). *Status: standing.*
 
+**D-034 · 2026-07-26 · Plan the week is named after what it holds, not after our
+mechanics — and both shells run the same four steps.** *(Supersedes the step names in
+D-031; the shared-composer half of D-031 stands unchanged.)*
+
+The flow spoke three vocabularies for one act: the phone stepped **Slate → Pull →
+Shape**, the desktop said **"Slot the projects" → "Slot the work"** and railed its
+sources as *Carrying forward · The projects · Clear the inbox*. Every one of those
+verbs was ours, not the operator's — "slate", "pull" and "shape" appear nowhere else in
+the product, so the flow's own navigation taught a first-time reader nothing about what
+they were being asked to decide. Said out loud, the act is plain: **you're deciding on
+projects, on the stuff that didn't get done, and on new captures — then when it all
+happens.** → The steps are now **Projects · Leftovers · Inbox → The week**, identical on
+both shells, each opening with the question it answers rather than a verb. Code names
+(`suggestPull`, `PullSuggestion`, `weekSlate`, the `loose` lane key) are untouched —
+documented drift, per D-007.
+
+**Leftovers, chosen over "Loose ends", with the honesty moved into the question.** The
+lane also holds work that's *due* this week and one small task per quiet domain
+(`suggestPull` sources 4 and 5), neither of which is literally a leftover. Operator's
+call; the mitigation is that the step asks **"What didn't get done, and what's due?"**
+and labels its two groups *Carried over* and *Due, or going quiet*. Also avoids a
+collision: "Loose ends" is already the name of an unrelated line on `WeekPanel`
+(Principle 11).
+
+**The funnel is drawn, not implied.** `WeekIntakeBar` (over `src/lib/intake.ts`) is one
+component on both shells: the four steps as lanes with live counts, over a single
+capacity track — the immovable calendar, then each source stacked on it, against
+Calibration's proven pace, with the room left in `--slot` and any overrun in `--signal`.
+Nuvo already *had* a funnel (inbox → backlog → Week → Day) and the weekly plan is its
+gate; this just shows it. → **W1** ("can I carry this week?") is now answered *while*
+you decide instead of only at the commit bar, which is where it was useless. `laneOf`
+is the single lane rule — carried beats project attachment, because a slipped task is a
+leftover to re-time, not a fresh push, and burying it under its project is how
+carry-forward stopped being a decision.
+
+**Four steps, but deliberately not a wizard.** The desktop's five *gated* steps were
+removed once before and must not come back: every lane here is clickable at any time
+(including backwards from the grid), the week is fully composed on open, and the
+capacity track carries the live read on every step. That last part is what pays for
+splitting the sources off the grid — you no longer need them side by side to see the
+consequence of keeping something.
+
+**Strains Principle 10** (don't add a name without paying for it): "Leftovers" is one
+new user-facing name, paid for by retiring five (*Slate*, *Pull*, *Shape*, *Slot the
+projects*, *Slot the work*) and by being a step rather than a pool.
+→ Also fixed on the way: the `?planweek` harness crashed on open (its rows called
+`useVertical` outside a provider), so the step components are now fully prop-driven;
+and the phone's "group carried work into blocks" action was a 14px tap target.
+→ Left open: the ceremony's *doc* name is still **Sunday** while every surface says
+**Plan the week**. Flagged in [`glossary.md`](./glossary.md), not decided here.
+*Status: standing — typechecks, builds, and driven at 375px and desktop density in the
+`?planweek` harness; **not yet driven in a real account** (no credentials in the build
+environment), so W1/W2 stay scored as they were.*
+
 ---
 
 ## 2 · Things we decided **not** to do

@@ -1,23 +1,26 @@
-// Plan the week, on a phone — the same act the desktop ritual runs, laid out for
-// a thumb.
+// Plan the week, on a phone — the same act the desktop runs, laid out for a thumb.
 //
-// The desktop lays the week out as one wide board (intent left→right, then a
-// seven-column grid you drag on). A phone can't hold that board, but the *act*
-// isn't the board — it is three decisions in order:
+// The desktop lays the week out as one wide board (sources left, a seven-column
+// grid you drag on). A phone can't hold that board, but the *act* isn't the board:
+// it's deciding what the week carries, by source, and then when each piece happens.
 //
-//   1 · The slate   — which projects are you moving this week? (On Deck's derived
-//                     membership: bringing one in writes its span, exactly like
-//                     dropping it on this week's column — lib/priorities.ts)
-//   2 · The pull    — which of their work comes with them? (suggestPull, kept)
-//   3 · The shape   — where it lands, day by day, and the one honest read of
-//                     whether the week can carry it. Then commit.
+//   1 · Projects   — the projects you're moving, and the work that moves them
+//   2 · Leftovers  — what you already owed: carried over, due, or going quiet
+//   3 · Inbox      — raw captures, grouped into named runs
+//   4 · The week   — where it all lands, day by day, and whether it fits. Commit.
+//
+// The steps used to be called **Slate → Pull → Shape** — three verbs that appear
+// nowhere else in the product and that told a first-time reader nothing about what
+// they were being asked. They're now named after the thing itself, and the header
+// (`WeekIntakeBar`) draws the three sources pouring into one measured week, so the
+// funnel is visible instead of implied.
 //
 // Everything that decides *what* the week is comes from `useWeekDraft` — the same
-// hook SundayRitual uses. This file only lays it out and offers taps: no drag,
+// hook the desktop uses. This file only lays it out and offers taps: no drag,
 // every move has a tap path (mobile golden rule #4), 44px targets, safe areas.
 
 import { useMemo, useState } from "react";
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useWeekDraft } from "../../hooks/useWeekDraft";
 import { projectsOnDeck, weekPushes } from "../../lib/priorities";
@@ -26,16 +29,18 @@ import { domainById, taskDomainColor, type Project, type VerticalData } from "..
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
 import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { sprintLabel } from "../../lib/sprint";
+import { LANE_QUESTION } from "../../lib/intake";
+import type { Batch } from "../../lib/batch";
 import type { Placement } from "../../lib/compose";
+import WeekIntakeBar, { type WeekStep } from "../rituals/WeekIntake";
 import DurationSelect from "../DurationSelect";
 
-type Step = "slate" | "pull" | "shape";
-
-const STEPS: { id: Step; label: string }[] = [
-  { id: "slate", label: "Slate" },
-  { id: "pull", label: "Pull" },
-  { id: "shape", label: "Shape" },
-];
+/** The forward beat out of each step — plain words for the thing you're going to. */
+const NEXT: Partial<Record<WeekStep, { to: WeekStep; label: string }>> = {
+  projects: { to: "loose", label: "Leftovers →" },
+  loose: { to: "inbox", label: "Inbox →" },
+  inbox: { to: "week", label: "The week →" },
+};
 
 const fmtMinShort = (m: number) => {
   const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "pm" : "am", hh = ((h + 11) % 12) + 1;
@@ -44,21 +49,28 @@ const fmtMinShort = (m: number) => {
 
 export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
   const draft = useWeekDraft();
-  const { updateProject } = useVertical();
-  const [step, setStep] = useState<Step>("slate");
+  const { updateProject, updateTask } = useVertical();
+  const [step, setStep] = useState<WeekStep>("projects");
+  const [visited, setVisited] = useState<Set<WeekStep>>(new Set(["projects"]));
+  const go = (s: WeekStep) => {
+    setStep(s);
+    setVisited((v) => new Set([...v, s]));
+  };
 
   const {
     data,
     weekStartISO,
     planningAhead,
     gridDays,
-    suggestions,
+    byLane,
+    intake,
     kept,
     setKept,
     keptTasks,
     dropBlock,
     routedCount,
     slotById,
+    runs,
     result,
     placements,
     plannedMins,
@@ -79,7 +91,7 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
     committed,
   } = draft;
 
-  // The week's slate — derived from the On Deck spans, never stored. Bringing a
+  // The week's projects — derived from the On Deck spans, never stored. Bringing a
   // project in / taking it off IS the placement write, same as the deck's drop.
   const pushes = useMemo(() => weekPushes(data, weekStartISO), [data, weekStartISO]);
   const bringIn = (p: Project) => {
@@ -87,8 +99,10 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
     if (patch) updateProject(p.id, patch);
   };
   const takeOff = (p: Project) => updateProject(p.id, takeOffWeekPatch());
+  const setDuration = (taskId: string, mins: number) => updateTask(taskId, { durationMins: mins });
 
   const weekLabel = format(parseDateISO(weekStartISO), "MMMM d");
+  const spanLabel = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
 
   if (committed) {
     return (
@@ -109,6 +123,8 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
     );
   }
 
+  const next = NEXT[step];
+
   return (
     <Overlay>
       {/* Header — transparent over the atmosphere, hairline only */}
@@ -116,7 +132,7 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
         <div className="flex items-start gap-2 pt-2">
           <div className="min-w-0 flex-1">
             <div className="section-label !p-0">
-              <span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> ·{" "}
+              <span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · {spanLabel} ·{" "}
               {planningAhead ? "the week ahead" : "this week"}
             </div>
             <h1 className="masthead truncate text-head text-ink">Week of {weekLabel}</h1>
@@ -129,38 +145,52 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
             ✕
           </button>
         </div>
-        <StepRail step={step} setStep={setStep} />
+        <WeekIntakeBar intake={intake} step={step} onStep={go} visited={visited} waitingInbox={inboxCount} dense />
       </header>
 
       <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
-        {step === "slate" && (
-          <SlateStep
+        {step === "projects" && (
+          <ProjectsStep
             data={data}
             weekStartISO={weekStartISO}
             pushes={pushes}
             gain={gain}
+            suggestions={byLane.projects}
+            kept={kept}
+            setKept={setKept}
+            onDuration={setDuration}
             onBringIn={bringIn}
             onTakeOff={takeOff}
           />
         )}
-        {step === "pull" && (
-          <PullStep
+        {step === "loose" && (
+          <LeftoversStep
             data={data}
-            suggestions={suggestions}
+            suggestions={byLane.loose}
             kept={kept}
             setKept={setKept}
-            keptMins={keptTasks.reduce((s, t) => s + (t.duration_minutes ?? 30), 0)}
-            inboxCount={inboxCount}
-            onThemeInbox={() => void themeInbox()}
-            theming={theming}
-            themeErr={themeErr}
-            onThemeCarried={() => void themeCarried()}
-            themingCarried={themingCarried}
-            carriedErr={carriedErr}
+            onDuration={setDuration}
+            onBundleCarried={() => void themeCarried()}
+            bundling={themingCarried}
+            bundleErr={carriedErr}
           />
         )}
-        {step === "shape" && (
-          <ShapeStep
+        {step === "inbox" && (
+          <InboxStep
+            data={data}
+            suggestions={byLane.inbox}
+            runs={runs}
+            kept={kept}
+            setKept={setKept}
+            onDuration={setDuration}
+            inboxCount={inboxCount}
+            onGroup={() => void themeInbox()}
+            grouping={theming}
+            groupErr={themeErr}
+          />
+        )}
+        {step === "week" && (
+          <WeekStep
             data={data}
             days={gridDays}
             placements={placements}
@@ -176,44 +206,38 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
       </div>
 
       <Footer>
-        {step === "shape" ? (
-          <div className="flex items-center gap-3">
-            <div className="mono min-w-0 flex-1 text-meta text-muted">
-              {conf && cal ? (
-                <span style={{ color: conf.label === "stretch" ? "var(--signal)" : "var(--accent)" }}>
-                  {conf.pct}% · {conf.label} — {hrs(plannedMins)}h vs your ~{hrs(cal.avgWeeklyDoneMins)}h/wk
-                  {conf.deltaMins > 30 && ` · trim ~${hrs(conf.deltaMins)}h`}
-                </span>
-              ) : (
-                <span>{keptTasks.length} committed · {hrs(plannedMins)}h planned</span>
-              )}
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="mono min-w-0 flex-1 text-meta text-muted">
+            {step === "week" && conf && cal ? (
+              <span style={{ color: conf.label === "stretch" ? "var(--signal)" : "var(--accent)" }}>
+                {conf.pct}% · {conf.label} — {hrs(plannedMins)}h vs your ~{hrs(cal.avgWeeklyDoneMins)}h/wk
+                {conf.deltaMins > 30 && ` · trim ~${hrs(conf.deltaMins)}h`}
+              </span>
+            ) : (
+              <span>
+                {intake.loadMins > 0 ? `${hrs(intake.loadMins)}h in the week` : "nothing in the week yet"}
+                {intake.overMins > 0 && (
+                  <span style={{ color: "var(--signal)" }}> · {hrs(intake.overMins)}h over pace</span>
+                )}
+              </span>
+            )}
+          </div>
+          {next ? (
+            <PrimaryButton onClick={() => go(next.to)} compact>{next.label}</PrimaryButton>
+          ) : (
             <PrimaryButton onClick={() => void commit()} disabled={applying} compact>
               {applying ? "committing…" : "Commit the week"}
             </PrimaryButton>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            <div className="mono min-w-0 flex-1 text-meta text-muted">
-              {step === "slate"
-                ? pushes.length > 0
-                  ? `${pushes.length} on the slate`
-                  : "nothing on the slate yet"
-                : `${keptTasks.length} kept · ${hrs(keptTasks.reduce((s, t) => s + (t.duration_minutes ?? 30), 0))}h`}
-            </div>
-            <PrimaryButton onClick={() => setStep(step === "slate" ? "pull" : "shape")} compact>
-              {step === "slate" ? "Pull the work" : "Shape the week"}
-            </PrimaryButton>
-          </div>
-        )}
+          )}
+        </div>
       </Footer>
     </Overlay>
   );
 }
 
-/** The Week segment's entry to the ritual — the slate's live read, then the act.
- *  Sits above the week's plan/review card: you set the week here, you watch it
- *  land there. */
+/** The Week segment's entry to the flow — a live read of what's committed, then
+ *  the act. Sits above the week's plan/review card: you set the week here, you
+ *  watch it land there. */
 export function PlanWeekCard({ onOpen }: { onOpen: () => void }) {
   const { data } = useVertical();
   const weekStartISO = planningWeekStartISO();
@@ -237,8 +261,8 @@ export function PlanWeekCard({ onOpen }: { onOpen: () => void }) {
         <div className="masthead truncate text-head text-ink">Plan the week</div>
         <div className="truncate text-caption text-muted">
           {pushes.length === 0
-            ? "Nothing on the slate yet — pick what moves"
-            : `${pushes.length} on the slate · ${ready} ready to slot`}
+            ? "No projects yet — pick what moves"
+            : `${pushes.length} project${pushes.length === 1 ? "" : "s"} · ${ready} ready to schedule`}
         </div>
       </div>
       <span className="shrink-0 text-muted">›</span>
@@ -287,39 +311,34 @@ function PrimaryButton({
   );
 }
 
-function StepRail({ step, setStep }: { step: Step; setStep: (s: Step) => void }) {
-  return (
-    <div className="mt-2.5 flex gap-1">
-      {STEPS.map((s, i) => {
-        const on = step === s.id;
-        return (
-          <button
-            key={s.id}
-            onClick={() => setStep(s.id)}
-            className={`tap fast flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-body font-medium ${
-              on ? "bg-accent text-white" : "text-muted active:bg-surface-2"
-            }`}
-          >
-            <span className={`mono text-micro ${on ? "opacity-80" : "opacity-60"}`}>{i + 1}</span>
-            {s.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="py-3 text-caption text-muted">{children}</p>;
 }
 
-// ── 1 · the slate — what are you moving this week? ────────────────────────────
+/** Every step opens the same way: the question it answers, in the app's own
+ *  reporting voice, then the evidence. One hero per surface. */
+function StepHead({ question, note }: { question: string; note?: React.ReactNode }) {
+  return (
+    <div className="mb-3">
+      <h2 className="masthead text-head text-ink">{question}</h2>
+      {note && <p className="mt-1 text-caption text-muted">{note}</p>}
+    </div>
+  );
+}
 
-export function SlateStep({
+type Suggestion = ReturnType<typeof useWeekDraft>["suggestions"][number];
+
+// ── 1 · projects — what you're moving, and the work that moves it ─────────────
+
+export function ProjectsStep({
   data,
   weekStartISO,
   pushes,
   gain,
+  suggestions,
+  kept,
+  setKept,
+  onDuration,
   onBringIn,
   onTakeOff,
 }: {
@@ -327,6 +346,10 @@ export function SlateStep({
   weekStartISO: string;
   pushes: ReturnType<typeof weekPushes>;
   gain: { doneCount: number; doneMins: number; topMove: { name: string; from: number; to: number } | null; quiet: string[] };
+  suggestions: Suggestion[];
+  kept: Set<string>;
+  setKept: (next: Set<string>) => void;
+  onDuration: (taskId: string, mins: number) => void;
   onBringIn: (p: Project) => void;
   onTakeOff: (p: Project) => void;
 }) {
@@ -337,8 +360,16 @@ export function SlateStep({
   );
   // Projects with no week yet are the natural candidates; ones parked on another
   // week stay a tap away, labelled with where they sit — bringing one in MOVES it.
-  const needsSprint = open.filter((p) => !p.targetDate);
+  const needsWeek = open.filter((p) => !p.targetDate);
   const elsewhere = open.filter((p) => p.targetDate);
+
+  // each project's own open work, under its name — naming a project has to bring
+  // its work with it, or step 4 has nothing to place
+  const byProject = new Map<string, Suggestion[]>();
+  for (const s of suggestions) {
+    const key = s.projectId ?? "loose";
+    byProject.set(key, [...(byProject.get(key) ?? []), s]);
+  }
 
   return (
     <div>
@@ -352,7 +383,7 @@ export function SlateStep({
         )}
       </p>
 
-      <h2 className="masthead mt-4 text-head text-ink">What are you moving this week?</h2>
+      <h2 className="masthead mt-4 text-head text-ink">{LANE_QUESTION.projects}</h2>
 
       {pushes.length > 0 ? (
         <div className="mt-3 border-t border-line">
@@ -360,43 +391,77 @@ export function SlateStep({
             const color = domainById(data, project.domainId)?.color ?? "var(--accent)";
             const gaps = lensGaps(data, "project", project, new Date());
             const ready = gaps.length === 0;
+            const work = byProject.get(project.id) ?? [];
+            const on = work.filter((s) => kept.has(s.task.id)).length;
             return (
-              <div key={project.id} className="flex items-start gap-3 border-b border-line py-3">
-                <span
-                  className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                  style={ready ? { background: color } : { border: "1.5px solid var(--line-strong)" }}
-                  aria-hidden
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body text-ink">{project.name}</div>
-                  <div className="truncate text-caption text-muted">
-                    {project.outcome?.trim() || "no outcome yet"}
+              <div key={project.id} className="border-b border-line py-3">
+                <div className="flex items-start gap-3">
+                  <span
+                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                    style={ready ? { background: color } : { border: "1.5px solid var(--line-strong)" }}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-body text-ink">{project.name}</div>
+                    {/* a missing outcome is already reported by the gap line below —
+                        saying it twice made the row look broken */}
+                    {project.outcome?.trim() && (
+                      <div className="truncate text-caption text-muted">{project.outcome.trim()}</div>
+                    )}
+                    <div className="mono mt-0.5 text-micro" style={{ color: ready ? color : "var(--muted)" }}>
+                      {shipped ? "shipped this week" : ready ? "ready to schedule" : gaps.map((g) => g.label).join(" · ")}
+                      {work.length > 0 && ` · ${on}/${work.length} of its work in`}
+                    </div>
                   </div>
-                  <div className="mono mt-0.5 text-micro" style={{ color: ready ? color : "var(--muted)" }}>
-                    {shipped ? "shipped this week" : ready ? "ready to slot" : gaps.map((g) => g.label).join(" · ")}
-                  </div>
+                  <button
+                    onClick={() => onTakeOff(project)}
+                    aria-label={`Take ${project.name} off this week`}
+                    className="tap fast -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted active:bg-surface-2"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <button
-                  onClick={() => onTakeOff(project)}
-                  aria-label={`Take ${project.name} off this week`}
-                  className="tap fast -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted active:bg-surface-2"
-                >
-                  ✕
-                </button>
+                {work.length > 0 && (
+                  <div className="mt-1 pl-5">
+                    {work.map((s) => (
+                      <WorkRow
+                        key={s.task.id}
+                        data={data}
+                        s={s}
+                        on={kept.has(s.task.id)}
+                        onToggle={() => toggle(kept, setKept, s.task.id)}
+                        onDuration={onDuration}
+                        hideReason
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       ) : (
-        <Empty>Nothing on the slate for this week — bring a project in below.</Empty>
+        <Empty>No projects on this week yet — bring one in below.</Empty>
       )}
 
-      {(needsSprint.length > 0 || elsewhere.length > 0) && (
+      {(byProject.get("loose")?.length ?? 0) > 0 && (
+        <section className="mt-5">
+          <div className="section-label mb-1 !p-0">Project work, no week set</div>
+          <div className="border-t border-line">
+            {byProject.get("loose")!.map((s) => (
+              <WorkRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(kept, setKept, s.task.id)}
+                        onDuration={onDuration} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(needsWeek.length > 0 || elsewhere.length > 0) && (
         <div className="mt-5">
-          <div className="section-label mb-2 !p-0">Slot a project</div>
+          <div className="section-label mb-2 !p-0">Add a project</div>
           <div className="flex flex-wrap gap-2">
-            {needsSprint.map((p) => (
-              <ProjectChip key={p.id} data={data} p={p} reason="needs a sprint" onTap={() => onBringIn(p)} />
+            {needsWeek.map((p) => (
+              <ProjectChip key={p.id} data={data} p={p} reason="no week yet" onTap={() => onBringIn(p)} />
             ))}
             {showElsewhere &&
               elsewhere.map((p) => (
@@ -423,6 +488,12 @@ export function SlateStep({
   );
 }
 
+function toggle(kept: Set<string>, setKept: (n: Set<string>) => void, id: string) {
+  const next = new Set(kept);
+  next.has(id) ? next.delete(id) : next.add(id);
+  setKept(next);
+}
+
 function ProjectChip({
   data,
   p,
@@ -447,132 +518,189 @@ function ProjectChip({
   );
 }
 
-// ── 2 · the pull — which work comes with them ────────────────────────────────
+// ── 2 · leftovers — carried over, due, or going quiet ────────────────────────
 
-export function PullStep({
+export function LeftoversStep({
   data,
   suggestions,
   kept,
   setKept,
-  keptMins,
-  inboxCount,
-  onThemeInbox,
-  theming,
-  themeErr,
-  onThemeCarried,
-  themingCarried,
-  carriedErr,
+  onDuration,
+  onBundleCarried,
+  bundling,
+  bundleErr,
 }: {
   data: VerticalData;
-  suggestions: ReturnType<typeof useWeekDraft>["suggestions"];
+  suggestions: Suggestion[];
   kept: Set<string>;
   setKept: (next: Set<string>) => void;
-  keptMins: number;
-  inboxCount: number;
-  onThemeInbox: () => void;
-  theming: boolean;
-  themeErr: string | null;
-  onThemeCarried: () => void;
-  themingCarried: boolean;
-  carriedErr: string | null;
+  onDuration: (taskId: string, mins: number) => void;
+  onBundleCarried: () => void;
+  bundling: boolean;
+  bundleErr: string | null;
 }) {
-  const toggle = (id: string) => {
-    const next = new Set(kept);
-    next.has(id) ? next.delete(id) : next.add(id);
-    setKept(next);
-  };
-
-  // The pull's own order, kept: carried work first (already-owed), then each
-  // project's work under its name, then everything loose.
   const carried = suggestions.filter((s) => s.task.rollCount > 0);
-  const carriedIds = new Set(carried.map((s) => s.task.id));
-  const rest = suggestions.filter((s) => !carriedIds.has(s.task.id));
-  const groups = new Map<string, typeof suggestions>();
-  for (const s of rest) {
-    const key = s.projectId ?? "loose";
-    groups.set(key, [...(groups.get(key) ?? []), s]);
-  }
+  const rest = suggestions.filter((s) => s.task.rollCount === 0);
+  const carriedMins = carried.reduce((m, s) => m + s.task.durationMins, 0);
 
   return (
     <div>
-      <h2 className="masthead text-head text-ink">What moves them?</h2>
-      <p className="mt-1 text-caption text-muted">
-        {kept.size} kept · {hrs(keptMins)}h. Tap to drop anything the week can't carry.
-      </p>
+      <StepHead
+        question={LANE_QUESTION.loose}
+        note="Work you already owed, dates that landed, and the domains that have gone quiet. Tap to drop anything the week can't carry."
+      />
 
       {suggestions.length === 0 && (
-        <Empty>Nothing to pull — the slate's projects have no open work, or nothing is due.</Empty>
+        <Empty>Nothing owed and nothing due — last week closed clean.</Empty>
       )}
 
       {carried.length > 0 && (
-        <section className="mt-4">
-          <div className="section-label mb-1 flex items-baseline justify-between !p-0">
-            <span>Carrying forward · {carried.length}</span>
-            <button
-              onClick={onThemeCarried}
-              disabled={themingCarried}
-              className="tap fast text-meta text-accent disabled:opacity-50"
-            >
-              {themingCarried ? "bundling…" : "bundle into focus blocks"}
-            </button>
-          </div>
-          {carriedErr && <p className="text-meta text-signal">{carriedErr}</p>}
+        <section className="mt-1">
+          <div className="section-label mb-1 !p-0">Carried over · {carried.length} · {hrs(carriedMins)}h</div>
+          <p className="text-caption text-muted">
+            It rolled forward with no time yet — it's already in the week, so Nuvo finds it new slots.
+          </p>
+          {/* a full-width 44px target, not an inline text link: the same action on
+              the Inbox step is a real button, and a 14px tap zone fails golden rule 2 */}
+          <button
+            onClick={onBundleCarried}
+            disabled={bundling}
+            className="tap fast mb-2 mt-2 flex min-h-[44px] w-full items-center justify-center rounded-xl px-4 text-body text-accent active:opacity-80 disabled:opacity-50"
+            style={{ background: "var(--accent-soft)" }}
+          >
+            {bundling ? "Grouping…" : "✦ Group into focus blocks"}
+          </button>
+          {bundleErr && <p className="mb-1 text-meta text-signal">{bundleErr}</p>}
           <div className="border-t border-line">
             {carried.map((s) => (
-              <PullRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(s.task.id)} />
+              <WorkRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(kept, setKept, s.task.id)}
+                        onDuration={onDuration} />
             ))}
           </div>
         </section>
       )}
 
-      {[...groups.entries()].map(([key, rows]) => {
-        const project = key === "loose" ? null : data.projects.find((p) => p.id === key);
-        return (
-          <section key={key} className="mt-4">
-            <div className="section-label mb-1 !p-0">
-              {project ? project.name : "Loose work"} · {rows.length}
-            </div>
-            <div className="border-t border-line">
-              {rows.map((s) => (
-                <PullRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(s.task.id)} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
-
-      {inboxCount > 0 && (
-        <section className="mt-5 border-t border-line pt-3">
-          <div className="text-caption text-muted">
-            {inboxCount} loose capture{inboxCount === 1 ? "" : "s"} in the inbox. Nuvo can group them into named runs and
-            drop each into open time.
+      {rest.length > 0 && (
+        <section className="mt-5">
+          <div className="section-label mb-1 !p-0">Due, or going quiet · {rest.length}</div>
+          <div className="border-t border-line">
+            {rest.map((s) => (
+              <WorkRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(kept, setKept, s.task.id)}
+                        onDuration={onDuration} />
+            ))}
           </div>
-          <button
-            onClick={onThemeInbox}
-            disabled={theming}
-            className="tap fast mt-2 flex min-h-[44px] items-center rounded-xl border border-line px-4 text-body text-ink active:bg-surface-2 disabled:opacity-50"
-          >
-            {theming ? "theming…" : "Theme the inbox"}
-          </button>
-          {themeErr && <p className="mt-1 text-meta text-signal">{themeErr}</p>}
         </section>
       )}
     </div>
   );
 }
 
-function PullRow({
+// ── 3 · inbox — raw captures, grouped into named runs ────────────────────────
+
+export function InboxStep({
+  data,
+  suggestions,
+  runs,
+  kept,
+  setKept,
+  onDuration,
+  inboxCount,
+  onGroup,
+  grouping,
+  groupErr,
+}: {
+  data: VerticalData;
+  suggestions: Suggestion[];
+  runs: Batch[];
+  kept: Set<string>;
+  setKept: (next: Set<string>) => void;
+  onDuration: (taskId: string, mins: number) => void;
+  inboxCount: number;
+  onGroup: () => void;
+  grouping: boolean;
+  groupErr: string | null;
+}) {
+  return (
+    <div>
+      <StepHead
+        question={LANE_QUESTION.inbox}
+        note={
+          inboxCount === 0
+            ? "The inbox is clear — nothing loose waiting for a time."
+            : `${inboxCount} capture${inboxCount === 1 ? "" : "s"} with no time yet. Nuvo can group like with like into named blocks and drop each into open time.`
+        }
+      />
+
+      {inboxCount > 0 && (
+        <>
+          <button
+            onClick={onGroup}
+            disabled={grouping}
+            className="tap fast flex min-h-[44px] w-full items-center justify-center rounded-xl px-4 text-body text-accent active:opacity-80 disabled:opacity-50"
+            style={{ background: "var(--accent-soft)" }}
+          >
+            {grouping ? "Grouping…" : `✦ Group ${inboxCount} into blocks`}
+          </button>
+          {groupErr && <p className="mt-1 text-meta text-signal">{groupErr}</p>}
+        </>
+      )}
+
+      {runs.length > 0 && (
+        <section className="mt-5">
+          <div className="section-label mb-1 !p-0">Grouped · {runs.length}</div>
+          <div className="border-t border-line">
+            {runs.map((r) => (
+              <div key={r.id} className="flex items-start gap-3 border-b border-line py-3">
+                <span
+                  className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: r.color ?? "var(--accent)" }}
+                  aria-hidden
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body text-ink">{r.name}</div>
+                  <div className="mono truncate text-micro text-muted">
+                    {r.taskIds.length} capture{r.taskIds.length === 1 ? "" : "s"} · {r.durationMins}m — scheduled in step 4
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {suggestions.length > 0 && (
+        <section className="mt-5">
+          <div className="section-label mb-1 !p-0">Pulled in on their own · {suggestions.length}</div>
+          <div className="border-t border-line">
+            {suggestions.map((s) => (
+              <WorkRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(kept, setKept, s.task.id)}
+                        onDuration={onDuration} />
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ── a piece of work, on or off the week ──────────────────────────────────────
+
+function WorkRow({
   data,
   s,
   on,
   onToggle,
+  onDuration,
+  hideReason,
 }: {
   data: VerticalData;
-  s: ReturnType<typeof useWeekDraft>["suggestions"][number];
+  s: Suggestion;
   on: boolean;
   onToggle: () => void;
+  onDuration: (taskId: string, mins: number) => void;
+  /** Under a heading that already names the project, the reason is repetition. */
+  hideReason?: boolean;
 }) {
-  const { updateTask } = useVertical();
   const color = domainById(data, s.task.domainId)?.color ?? "var(--accent)";
   return (
     <button
@@ -589,11 +717,11 @@ function PullRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className={`block truncate text-body ${on ? "text-ink" : "text-muted"}`}>{s.task.title}</span>
-        <span className="mono block truncate text-micro text-muted">{s.reason}</span>
+        {!hideReason && <span className="mono block truncate text-micro text-muted">{s.reason}</span>}
       </span>
       <DurationSelect
         value={s.task.durationMins}
-        onChange={(m) => updateTask(s.task.id, { durationMins: m })}
+        onChange={(m) => onDuration(s.task.id, m)}
         className="tap shrink-0 rounded px-1.5 py-1 pt-0.5 hover:bg-surface-2"
         title="Sitting length"
       />
@@ -601,9 +729,9 @@ function PullRow({
   );
 }
 
-// ── 3 · the shape — where it lands, day by day ───────────────────────────────
+// ── 4 · the week — where it lands, day by day ────────────────────────────────
 
-export function ShapeStep({
+export function WeekStep({
   data,
   days,
   placements,
@@ -632,11 +760,15 @@ export function ShapeStep({
 
   return (
     <div>
-      <h2 className="masthead text-head text-ink">Here's the week</h2>
-      <p className="mt-1 text-caption text-muted">
-        {placements.length} placed · {unplaced.length} in the pool
-        {routedCount > 0 && ` · ${routedCount} in standing slots`}. Tap a block to drop it.
-      </p>
+      <StepHead
+        question="Here's the week"
+        note={
+          <>
+            {placements.length} scheduled · {unplaced.length} committed with no time yet
+            {routedCount > 0 && ` · ${routedCount} in standing slots`}. Tap a block to take it out.
+          </>
+        }
+      />
 
       {days.length === 0 && (
         <Empty>No working days set — choose your working days in Settings, then plan.</Empty>
@@ -674,7 +806,7 @@ export function ShapeStep({
                       </div>
                       <button
                         onClick={() => onDrop(p.task.id)}
-                        aria-label={`Drop ${title}`}
+                        aria-label={`Take ${title} out of the week`}
                         className="tap fast -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted active:bg-surface-2"
                       >
                         ✕
@@ -690,7 +822,7 @@ export function ShapeStep({
 
       {unplaced.length > 0 && (
         <section className="mt-5 border-t border-line pt-3">
-          <div className="section-label mb-1 !p-0">In the pool — committed, no time yet ({unplaced.length})</div>
+          <div className="section-label mb-1 !p-0">Committed, no time yet ({unplaced.length})</div>
           {unplaced.map(({ task, reason }) => (
             <div key={task.id} className="flex items-baseline gap-2 py-1">
               <span className="min-w-0 flex-1 truncate text-caption text-muted">{task.title}</span>
