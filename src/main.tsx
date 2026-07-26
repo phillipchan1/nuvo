@@ -42,14 +42,24 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harness for the week emblem — reached at ?emblem, no auth/shell.
-const showEmblemHarness = import.meta.env.DEV && new URLSearchParams(window.location.search).has("emblem");
+// Dev verify harnesses — reached at ?emblem / ?planweek, no auth/shell.
+const params = new URLSearchParams(window.location.search);
+const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
+const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
 
 if (showEmblemHarness) {
   void import("./components/floors/EmblemHarness").then(({ default: EmblemHarness }) => {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <EmblemHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showPlanWeekHarness) {
+  void import("./components/mobile/PlanWeekHarness").then(({ default: PlanWeekHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <PlanWeekHarness />
       </React.StrictMode>,
     );
   });

@@ -112,12 +112,18 @@ it needs to work on a phone.
   and Nuvo are *actions*, not places, so neither is a tab: they float above the bar
   (bottom-right) as the **＋ FAB** and the **✦ launcher**, both hidden only while the chat
   is open. Capture and the Nuvo chat are *permanent first-class actions*. Today/Week/Inbox
-  are a segmented control inside the Tasks screen; the week's readiness + plan card ride
-  the top of the **Week** segment.
+  are a segmented control inside the Tasks screen; the week's readiness, the **Plan the
+  week** card (`MobilePlanWeek` — the phone's weekly ritual: Slate → Pull → Shape) and the
+  week's plan card ride the top of the **Week** segment.
 - **Shared "floors"** render in both shells. Keep them responsive with Tailwind
   `md:`/`xl:` collapse; add *optional* mobile-routing props (e.g. `onAskNuvo`) rather than
   forking the component. Desktop behavior must stay unchanged when the prop is omitted.
-- **Desktop-only (NOT mounted on mobile):** rituals (Sunday/Summit/Blueprint), Record
+- **The weekly ritual runs on both shells, through one composer.** `useWeekDraft`
+  (`src/hooks/useWeekDraft.ts`) owns everything that decides *what* the week is — the pull,
+  standing-slot routing, project-slot clustering, `composeWeek`, the commit. `SundayRitual`
+  (desktop grid, drag) and `MobilePlanWeek` (phone steps, tap) are layouts over it. Never
+  compute a week in a surface.
+- **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), Record
   screens, Domain chapel, Project/Initiative floors, Collection board/table/timeline, and
   the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** (agenda + availability)
   instead of FullCalendar.

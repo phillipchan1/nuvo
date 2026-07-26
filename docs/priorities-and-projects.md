@@ -1,5 +1,14 @@
 # Priorities ↔ Projects — the binding model
 
+> **Status note · 2026-07-26 (D-031).** *What the app does today is narrower than this spec.*
+> Every built week surface — the Priorities editor (`BigRocks`), the phone's Plan the week
+> slate, the week's plan card, `readiness.ts` — renders **`weekPushes`**: the projects whose
+> On Deck span covers this week, derived, never stored. The sprint's `big_rocks` jsonb carries
+> only the per-week *verdict*. So a priority with no project (the "pure intention" end of the
+> line below) is real in the data model but **invisible on every planning surface**. The agent
+> now says so rather than writing one silently. Whether the crystallization line gets a surface
+> or D-004 narrows to "a priority is a project" is **open** — decide it deliberately.
+
 > The week's **Priorities** (code: `big_rocks`) and the vertical's **Projects** are not two
 > competing lists. They are the *same work at two time-horizons*, joined by one idea:
 > **a priority is a proto-object that tries to bind to standing work, and stays loose when it can't.**

@@ -36,6 +36,26 @@ export interface ScheduleItem {
   allDay?: boolean;
 }
 
+/** A project committed to the planning week — the app's own definition of a
+ *  week priority. Derived from the project's On Deck span, never stored. */
+export interface SlateProject {
+  id: string;
+  name: string;
+  outcome: string | null;
+  status: string;
+  domainId: string | null;
+  startDate: string | null;
+  targetDate: string | null;
+  /** the stored per-week verdict, when one exists (big_rocks joined by project) */
+  priorityId: string | null;
+  landed: boolean;
+  shipped: boolean;
+  /** open work filed under it — what "pull the work" actually pulls from */
+  openTasks: { id: string; title: string; status: string; durationMinutes: number; rollCount: number; scheduled: boolean }[];
+  openTaskCount: number;
+  scheduledTaskCount: number;
+}
+
 export interface AgentContext {
   today: string;
   /** Absolute current time, so the model can tell past from upcoming. */
@@ -55,9 +75,21 @@ export interface AgentContext {
   /** Tasks with do_date=today but no start_time — not on the calendar. */
   todayTasks: unknown[];
   scheduled: unknown[];
+  /** Monday of the planning week (Sundays plan the week ahead). */
+  weekStart: string;
+  /** THE WEEK'S SLATE — the projects committed to this week. This is what the
+   *  app's own week surfaces show as the week's priorities, so it is the honest
+   *  answer to "what am I moving this week", not weekPriorities. */
+  weekSlate: SlateProject[];
+  /** Open projects with no week yet — the candidates to bring in ("needs a sprint"). */
+  needsASprint: { id: string; name: string; outcome: string | null; domainId: string | null; openTaskCount: number }[];
+  /** Projects committed to NEXT week — what's already queued behind this one. */
+  nextWeekSlate: { id: string; name: string; startDate: string | null; targetDate: string | null }[];
   /** This week's sprint goal, if a sprint row exists. */
   sprintGoal: string | null;
-  /** The week's named priority outcomes (big rocks) — 3–5 commitments with a win condition. */
+  /** The stored per-week VERDICT records (big_rocks). One exists only once a
+   *  push has been checked off or annotated — an empty list does NOT mean the
+   *  week has no priorities. Read weekSlate for that. */
   weekPriorities: unknown[];
   /** Tasks committed to this week's sprint and not yet done. */
   weekPool: unknown[];
@@ -87,6 +119,39 @@ function planningWeekStart(todayIso: string): string {
   const sinceMonday = (dt.getUTCDay() + 6) % 7;
   dt.setUTCDate(dt.getUTCDate() - sinceMonday);
   return dt.toISOString().slice(0, 10);
+}
+
+const DAY_MS = 86_400_000;
+
+/** Does a project's committed On Deck span cover any of this week's WORKING days
+ *  (Mon–Fri)? The ONE definition of "on deck for this week" — kept byte-for-byte
+ *  in step with the client's `spansWeek` (src/lib/priorities.ts), because two
+ *  answers to "is this project this week's" is exactly the drift that made Nuvo
+ *  tell the user their week was empty while the deck held three projects.
+ *  Weekdays, not all 7: a span anchored to a Sunday-start week would otherwise
+ *  leak into the prior Monday-based sprint week through that shared Sunday. */
+function spansWeek(p: { start_date: string | null; target_date: string | null }, weekStartISO: string): boolean {
+  const monday = new Date(weekStartISO + "T00:00:00Z").getTime();
+  const saturday = monday + 5 * DAY_MS; // exclusive — Mon 00:00 → Sat 00:00
+  if (!p.target_date) return false; // no finish line = still needs a sprint
+  const end = new Date(p.target_date + "T23:59:59Z").getTime();
+  const start = p.start_date ? new Date(p.start_date + "T00:00:00Z").getTime() : end;
+  if (Number.isNaN(end) || Number.isNaN(start)) return false;
+  return start < saturday && end >= monday;
+}
+
+/** The project-status vocabulary, matching src/lib/vertical.ts. */
+const isCompleteStatus = (s: string) => s === "complete" || s === "done";
+const isDroppedStatus = (s: string) => s === "cancelled" || s === "dropped";
+
+/** Did the project ship inside the given week? (`shipped_at`, not target_date —
+ *  target is when it was DUE.) */
+function shippedInWeek(p: { status: string; shipped_at: string | null }, weekStartISO: string): boolean {
+  if (!isCompleteStatus(p.status) || !p.shipped_at) return false;
+  const monday = new Date(weekStartISO + "T00:00:00Z").getTime();
+  const at = new Date(p.shipped_at).getTime();
+  if (Number.isNaN(at)) return false;
+  return at >= monday && at < monday + 7 * DAY_MS;
 }
 
 function localDateISO(iso: string, tz: string): string {
@@ -349,7 +414,7 @@ export async function buildContext(
       .maybeSingle(),
     admin.from("domains").select("id, name, intention, charter, context, icon, color, weekly_target_hours").eq("user_id", userId).order("sort_order"),
     admin.from("initiatives").select("id, name, domain_id, outcome, description, status, target_date, start_date, key_results(id, name, baseline_value, current_value, target_value, unit)").eq("user_id", userId).order("sort_order"),
-    admin.from("projects").select("id, name, domain_id, initiative_id, outcome, description, status, start_date, target_date").eq("user_id", userId).order("sort_order"),
+    admin.from("projects").select("id, name, domain_id, initiative_id, outcome, description, status, start_date, target_date, shipped_at").eq("user_id", userId).order("sort_order"),
     admin
       .from("calendar_accounts")
       .select("id, provider, email, sync_direction, calendars")
@@ -384,6 +449,60 @@ export async function buildContext(
   if (initiativesRes.error) throw new Error(initiativesRes.error.message);
   if (projectsRes.error) throw new Error(projectsRes.error.message);
   if (accountsRes.error) throw new Error(accountsRes.error.message);
+
+  // ── the week's slate — derived from the On Deck spans, exactly like the app ──
+  // A "week priority" in Nuvo IS a project committed to the week; the sprint's
+  // big_rocks jsonb only records the per-week verdict. So the slate has to be
+  // derived here too, or the agent reads an empty rock list and tells the user
+  // their week is unplanned while three projects sit on this week's column.
+  type ProjRow = {
+    id: string;
+    name: string;
+    outcome: string | null;
+    status: string;
+    domain_id: string | null;
+    start_date: string | null;
+    target_date: string | null;
+    shipped_at: string | null;
+  };
+  const projectRows = (projectsRes.data ?? []) as ProjRow[];
+  const isOpen = (s: string) => !isCompleteStatus(s) && !isDroppedStatus(s);
+  const nextWeekStart = new Date(new Date(weekStart + "T00:00:00Z").getTime() + 7 * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
+
+  const slateRows = projectRows.filter(
+    (p) =>
+      !isDroppedStatus(p.status) &&
+      spansWeek(p, weekStart) &&
+      // a project that shipped INSIDE this week stays on the slate as the win it
+      // is; one that shipped in an earlier week is correctly gone
+      (isCompleteStatus(p.status) ? shippedInWeek(p, weekStart) : true),
+  );
+  const needsRows = projectRows.filter((p) => isOpen(p.status) && !p.target_date);
+  const nextRows = projectRows.filter((p) => isOpen(p.status) && spansWeek(p, nextWeekStart));
+
+  // the open work filed under the slate (and the candidates) — what "pull the
+  // work for this week" actually pulls from
+  const wantedProjectIds = [...new Set([...slateRows, ...needsRows].map((p) => p.id))];
+  const projTasksRes = wantedProjectIds.length
+    ? await admin
+        .from("tasks")
+        .select(`${TASK_COLS}, project_id`)
+        .eq("user_id", userId)
+        .in("project_id", wantedProjectIds)
+        .in("status", ["backlog", "planned"])
+        .order("sort_order")
+    : { data: [], error: null };
+
+  if (projTasksRes.error) throw new Error(projTasksRes.error.message);
+  const tasksByProject = new Map<string, Record<string, unknown>[]>();
+  for (const t of projTasksRes.data ?? []) {
+    const pid = (t as Record<string, unknown>).project_id as string | null;
+    if (!pid) continue;
+    tasksByProject.set(pid, [...(tasksByProject.get(pid) ?? []), t as Record<string, unknown>]);
+  }
+
 
   const hiddenCalendars = new Set<string>(
     (settingsRes.data?.hidden_calendar_ids as string[] | null) ?? [],
@@ -465,6 +584,36 @@ export async function buildContext(
   const todaySchedule = buildTodaySchedule(events, scheduled, today);
   const todayFreeSlots = computeFreeSlots(events, scheduled, today, nowMs, tz);
 
+  const rocks = (sprint?.big_rocks ?? []) as { id: string; project_id?: string | null; done_at: string | null }[];
+  const weekSlate: SlateProject[] = slateRows.map((p) => {
+    const rock = rocks.find((r) => r.project_id === p.id) ?? null;
+    const tasks = tasksByProject.get(p.id) ?? [];
+    const shipped = isCompleteStatus(p.status);
+    return {
+      id: p.id,
+      name: p.name,
+      outcome: p.outcome,
+      status: p.status,
+      domainId: p.domain_id,
+      startDate: p.start_date,
+      targetDate: p.target_date,
+      priorityId: rock?.id ?? null,
+      // shipping the project inside the week is the loudest possible verdict
+      landed: Boolean(rock?.done_at) || shipped,
+      shipped,
+      openTasks: tasks.slice(0, 12).map((t) => ({
+        id: t.id as string,
+        title: t.title as string,
+        status: t.status as string,
+        durationMinutes: (t.duration_minutes as number) ?? 30,
+        rollCount: (t.roll_count as number) ?? 0,
+        scheduled: Boolean(t.start_time),
+      })),
+      openTaskCount: tasks.length,
+      scheduledTaskCount: tasks.filter((t) => Boolean(t.start_time)).length,
+    };
+  });
+
   return {
     today,
     nowISO: now.toISOString(),
@@ -483,6 +632,21 @@ export async function buildContext(
     inbox,
     todayTasks,
     scheduled,
+    weekStart,
+    weekSlate,
+    needsASprint: needsRows.slice(0, 15).map((p) => ({
+      id: p.id,
+      name: p.name,
+      outcome: p.outcome,
+      domainId: p.domain_id,
+      openTaskCount: (tasksByProject.get(p.id) ?? []).length,
+    })),
+    nextWeekSlate: nextRows.map((p) => ({
+      id: p.id,
+      name: p.name,
+      startDate: p.start_date,
+      targetDate: p.target_date,
+    })),
     sprintGoal: sprint?.goal ?? null,
     weekPriorities: (sprint?.big_rocks ?? []) as unknown[],
     weekPool: (weekRes.data ?? []).map((t) => fmtTask(t, today, nowMs, tz)),

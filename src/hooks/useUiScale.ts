@@ -26,7 +26,10 @@ function clamp(n: number): number {
 function readScale(): number {
   try {
     const n = Number(localStorage.getItem(KEY));
-    if (Number.isFinite(n)) return clamp(n);
+    // A missing key reads as Number(null) === 0 — which IS finite, so it used to
+    // clamp to UI_SCALE_MIN and render every fresh install (and every new device,
+    // and the iOS PWA on first launch) at 80%. Only a positive number is a scale.
+    if (Number.isFinite(n) && n > 0) return clamp(n);
   } catch { /* ignore */ }
   return UI_SCALE_DEFAULT;
 }

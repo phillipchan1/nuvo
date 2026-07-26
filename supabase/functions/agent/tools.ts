@@ -91,6 +91,90 @@ async function getSprintRocks(userId: string, tz: string): Promise<{ sprintId: s
   };
 }
 
+// ── the week's slate — a priority IS a project committed to the week ─────────
+// The app derives the week's priorities from each project's On Deck span
+// (src/lib/priorities.ts); the sprint's big_rocks jsonb only carries the verdict.
+// So a priority written as a rock alone is a phantom: it appears nowhere the user
+// plans. Every priority write below therefore moves the PROJECT — bringing one in
+// writes its span for this week, taking one off clears it — exactly what dragging
+// its card onto (or off) this week's column does.
+
+const PROJECT_DAY_MS = 86_400_000;
+
+/** Mon → Fri of the planning week — the span a brought-in project takes. */
+function weekSpan(weekStart: string): { start_date: string; target_date: string } {
+  const monday = new Date(weekStart + "T00:00:00Z").getTime();
+  return { start_date: weekStart, target_date: new Date(monday + 4 * PROJECT_DAY_MS).toISOString().slice(0, 10) };
+}
+
+interface ProjectSpanRow {
+  id: string;
+  name: string;
+  status: string;
+  start_date: string | null;
+  target_date: string | null;
+}
+
+/** Does the project's committed span cover this week's working days? Mirrors
+ *  `spansWeek` in src/lib/priorities.ts and agent/context.ts — one definition. */
+function projectSpansWeek(p: Pick<ProjectSpanRow, "start_date" | "target_date">, weekStart: string): boolean {
+  const monday = new Date(weekStart + "T00:00:00Z").getTime();
+  const saturday = monday + 5 * PROJECT_DAY_MS;
+  if (!p.target_date) return false;
+  const end = new Date(p.target_date + "T23:59:59Z").getTime();
+  const start = p.start_date ? new Date(p.start_date + "T00:00:00Z").getTime() : end;
+  if (Number.isNaN(end) || Number.isNaN(start)) return false;
+  return start < saturday && end >= monday;
+}
+
+/** The project a priority tool is aimed at: by id, else by name (fuzzy), else by
+ *  the name of a project already on this week's slate. */
+async function findProjectForPriority(
+  userId: string,
+  weekStart: string,
+  args: { project_id?: string; priority_title?: string; title?: string },
+): Promise<ProjectSpanRow | null> {
+  const { data } = await admin
+    .from("projects")
+    .select("id, name, status, start_date, target_date")
+    .eq("user_id", userId)
+    .not("status", "in", "(cancelled,dropped)");
+  const rows = (data ?? []) as ProjectSpanRow[];
+  if (args.project_id) return rows.find((p) => p.id === args.project_id) ?? null;
+
+  const q = (args.priority_title ?? args.title ?? "").trim().toLowerCase();
+  if (!q) return null;
+  const byName = rows.filter((p) => p.name.toLowerCase().includes(q) || q.includes(p.name.toLowerCase()));
+  if (byName.length === 1) return byName[0];
+  // ambiguous by name — prefer one already committed to this week
+  const onSlate = byName.filter((p) => projectSpansWeek(p, weekStart));
+  return onSlate.length === 1 ? onSlate[0] : null;
+}
+
+/** Commit a project to the planning week (the "bring it in" write). Returns the
+ *  project's name when it actually moved, so the reply can say so. */
+async function bringProjectIntoWeek(userId: string, weekStart: string, p: ProjectSpanRow): Promise<string | null> {
+  if (projectSpansWeek(p, weekStart)) return null;
+  const patch: Record<string, unknown> = { ...weekSpan(weekStart) };
+  if (p.status === "backlog") patch.status = "in_progress";
+  const { error } = await admin.from("projects").update(patch).eq("user_id", userId).eq("id", p.id);
+  if (error) throw new Error(error.message);
+  return p.name;
+}
+
+/** Take a project off this week — back to "needs a sprint", same as dragging its
+ *  card off the board. Only touches a project actually committed to this week. */
+async function pushProjectOutOfWeek(userId: string, weekStart: string, p: ProjectSpanRow): Promise<string | null> {
+  if (!projectSpansWeek(p, weekStart)) return null;
+  const { error } = await admin
+    .from("projects")
+    .update({ start_date: null, target_date: null })
+    .eq("user_id", userId)
+    .eq("id", p.id);
+  if (error) throw new Error(error.message);
+  return p.name;
+}
+
 async function saveSprintRocks(userId: string, weekStart: string, rocks: BigRock[]): Promise<void> {
   const { error } = await admin
     .from("sprints")
@@ -529,14 +613,14 @@ export const TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "create_priority",
-      description: "Add a new weekly priority (big rock) to this week's plan.",
+      description: "Set a priority for this week. A priority IS a project committed to the week, so this brings the project onto this week's slate (writes its sprint span, Mon–Fri) — pass project_id whenever one matches. Without a project it only leaves a note on the week and will not show on the week's plan.",
       parameters: {
         type: "object",
         properties: {
           title: { type: "string", description: "The priority's name / outcome statement." },
           win: { type: "string", description: "What winning looks like — the definition of done in one line." },
           initiative_id: { type: "string", description: "The initiative this priority serves (optional)." },
-          project_id: { type: "string", description: "The project this priority spotlights (optional)." },
+          project_id: { type: "string", description: "The project being committed to this week — use an id from weekSlate / needsASprint / vertical.projects. Strongly preferred: this is what puts the priority on the week." },
         },
         required: ["title", "win"],
       },
@@ -564,12 +648,13 @@ export const TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "complete_priority",
-      description: "Mark a weekly priority as done/complete.",
+      description: "Mark a weekly priority as landed. Works for a priority that has no stored record yet — pass the project's id or name and it records the verdict for this week.",
       parameters: {
         type: "object",
         properties: {
-          priority_id: { type: "string", description: "The priority's id from context." },
-          priority_title: { type: "string", description: "Search by title if id unknown." },
+          priority_id: { type: "string", description: "The priority's id from weekSlate.priorityId / weekPriorities, when it has one." },
+          priority_title: { type: "string", description: "The priority or project name, if no id." },
+          project_id: { type: "string", description: "The slate project's id — use this when the priority has no stored id." },
         },
       },
     },
@@ -578,12 +663,13 @@ export const TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "delete_priority",
-      description: "Remove a weekly priority from this week's plan.",
+      description: "Take a priority off this week. Because a priority IS a project committed to the week, this clears that project's week span — the project goes back to \"needs a sprint\" with its work intact. Nothing is deleted.",
       parameters: {
         type: "object",
         properties: {
-          priority_id: { type: "string", description: "The priority's id from context." },
-          priority_title: { type: "string", description: "Search by title if id unknown." },
+          priority_id: { type: "string", description: "The priority's id from weekSlate.priorityId / weekPriorities, when it has one." },
+          priority_title: { type: "string", description: "The priority or project name, if no id." },
+          project_id: { type: "string", description: "The slate project's id — use this when the priority has no stored id." },
         },
       },
     },
@@ -1448,22 +1534,50 @@ export async function executeTool(
       const { weekStart, rocks } = await getSprintRocks(userId, tz);
       const title = (args.title as string)?.trim();
       if (!title) throw new Error("Priority title is required");
+      // Naming a priority = bringing its project into the week. Without this the
+      // rock is a phantom: the week's own surfaces derive the slate from project
+      // spans, so a rock with no committed project shows up nowhere.
+      const project = await findProjectForPriority(userId, weekStart, args as { project_id?: string; title?: string });
+      const brought = project ? await bringProjectIntoWeek(userId, weekStart, project) : null;
+      const existing = project ? rocks.find((r) => r.project_id === project.id) ?? null : null;
+      if (existing) {
+        return {
+          result: JSON.stringify({ id: existing.id, title: existing.title, alreadyOnSlate: project!.name, weekStart }),
+          action: {
+            tool: name,
+            summary: brought
+              ? `Brought "${brought}" into this week`
+              : `"${project!.name}" is already this week's`,
+            verb: brought ? "slotted" : "updated",
+            ref: { kind: "priority", id: existing.id },
+          },
+        };
+      }
       const newRock: BigRock = {
         id: crypto.randomUUID(),
         title,
         win: (args.win as string)?.trim() || "",
         initiative_id: (args.initiative_id as string) ?? null,
-        project_id: (args.project_id as string) ?? null,
+        project_id: project?.id ?? (args.project_id as string) ?? null,
         done_at: null,
         roll_count: 0,
       };
       await saveSprintRocks(userId, weekStart, [...rocks, newRock]);
       return {
-        result: JSON.stringify({ id: newRock.id, title: newRock.title }),
+        result: JSON.stringify({
+          id: newRock.id,
+          title: newRock.title,
+          projectId: newRock.project_id,
+          broughtIntoWeek: brought,
+          weekStart,
+          note: newRock.project_id
+            ? undefined
+            : "No project matched, so this priority is a note on the week only — it will not appear on the week's slate. Offer to create a project for it.",
+        }),
         action: {
           tool: name,
-          summary: `Added priority "${newRock.title}"`,
-          verb: "created",
+          summary: brought ? `Brought "${brought}" into this week` : `Added priority "${newRock.title}"`,
+          verb: brought ? "slotted" : "created",
           ref: { kind: "priority", id: newRock.id },
           undo: { kind: "priority", id: newRock.id, restore: null },
         },
@@ -1497,6 +1611,39 @@ export async function executeTool(
 
     case "complete_priority": {
       const { weekStart, rocks } = await getSprintRocks(userId, tz);
+      // Most of the week's priorities have no stored rock yet — they're derived
+      // from the project's span, and the rock is written the first time a verdict
+      // is recorded. So checking one off may have to create it.
+      const known = rocks.find(
+        (r) =>
+          r.id === args.priority_id ||
+          (args.priority_title != null && r.title.toLowerCase().includes(String(args.priority_title).toLowerCase())),
+      );
+      if (!known) {
+        const project = await findProjectForPriority(userId, weekStart, args as { project_id?: string; priority_title?: string });
+        if (project && projectSpansWeek(project, weekStart)) {
+          const landed: BigRock = {
+            id: crypto.randomUUID(),
+            title: project.name,
+            win: "",
+            initiative_id: null,
+            project_id: project.id,
+            done_at: new Date().toISOString(),
+            roll_count: 0,
+          };
+          await saveSprintRocks(userId, weekStart, [...rocks, landed]);
+          return {
+            result: JSON.stringify({ id: landed.id, done: true, project: project.name }),
+            action: {
+              tool: name,
+              summary: `Marked "${project.name}" landed this week`,
+              verb: "done",
+              ref: { kind: "priority", id: landed.id },
+              undo: { kind: "priority", id: landed.id, restore: null },
+            },
+          };
+        }
+      }
       const rock = resolvePriority(rocks, args as { priority_id?: string; priority_title?: string });
       const updated = rocks.map((r) =>
         r.id === rock.id ? { ...r, done_at: new Date().toISOString() } : r,
@@ -1516,13 +1663,32 @@ export async function executeTool(
 
     case "delete_priority": {
       const { weekStart, rocks } = await getSprintRocks(userId, tz);
+      const known = rocks.find(
+        (r) =>
+          r.id === args.priority_id ||
+          (args.priority_title != null && r.title.toLowerCase().includes(String(args.priority_title).toLowerCase())),
+      );
+      // Taking a priority off the week is taking its PROJECT off the week — the
+      // span goes back to "needs a sprint", same as dragging its card off the deck.
+      const project = await findProjectForPriority(
+        userId,
+        weekStart,
+        { project_id: (args.project_id as string) ?? known?.project_id ?? undefined, priority_title: args.priority_title as string | undefined },
+      );
+      const pushedOut = project ? await pushProjectOutOfWeek(userId, weekStart, project) : null;
+      if (!known && pushedOut) {
+        return {
+          result: JSON.stringify({ pushedOutOfWeek: pushedOut, weekStart }),
+          action: { tool: name, summary: `Took "${pushedOut}" off this week`, verb: "unslotted" },
+        };
+      }
       const rock = resolvePriority(rocks, args as { priority_id?: string; priority_title?: string });
       await saveSprintRocks(userId, weekStart, rocks.filter((r) => r.id !== rock.id));
       return {
-        result: JSON.stringify({ id: rock.id, deleted: true }),
+        result: JSON.stringify({ id: rock.id, deleted: true, pushedOutOfWeek: pushedOut }),
         action: {
           tool: name,
-          summary: `Removed priority "${rock.title}"`,
+          summary: pushedOut ? `Took "${pushedOut}" off this week` : `Removed priority "${rock.title}"`,
           verb: "trashed",
           // The rock is gone from the sprint — the card carries the only copy
           // left, which is exactly why it renders from `restore` and not a ref.

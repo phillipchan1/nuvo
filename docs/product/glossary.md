@@ -47,13 +47,14 @@ been used to argue against things it doesn't forbid.
 | **Inbox** | Raw captures. Never planned from directly. |
 | **Backlog** | Processed and **deliberately undated**. Project/initiative work lives here. Never on Today, never rolled. |
 | **The Week** | The gate. Committed work for this week (`sprint_id`). |
+| **The slate** | The projects committed to *this* week — the week's Priorities, derived from each project's On Deck span (`weekPushes`), never a stored list. Bringing a project in / taking it off IS the week's plan. |
 | **Today / the Day** | `do_date` set; optionally blocked. |
 
 ## The ceremonies (flows)
 
 | Name | Cadence | Output |
 |---|---|---|
-| **Sunday** | weekly, forward | A composed, accepted week. Gain → Sweep → Bets → Pull → **Compose**. |
+| **Sunday** | weekly, forward | A composed, accepted week. Gain → Sweep → Bets → Pull → **Compose**. On the phone the same act is **Plan the week** — Slate → Pull → Shape (D-031); both run one composer (`useWeekDraft`). |
 | **the Review** | weekly, backward | The closing valve. Evidence receipts, one scored **Find**, Keep, Note to Monday, a sealed `week_reviews` snapshot. [`weekly-review.md`](../weekly-review.md) |
 | **Sunrise** | daily, morning | The day's plan; pulls from the Week pool, surfaces prepared tasks. |
 | **Sundown** | daily, evening | Leads with the day's gain; "back to week" for leftovers. |

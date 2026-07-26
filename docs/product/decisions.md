@@ -214,6 +214,43 @@ long-press threshold (260 ms) and whether one-handed reach to the strip holds up
 thumbs. *Status: standing — built and driven at 375px in a render harness; **not yet
 driven in a real account on a real phone**.*
 
+**D-031 · 2026-07-26 · Plan the week is a phone act too — and the agent plans from the
+same slate the app does.** *(Further narrows Q-01: the phone now runs the weekly ritual;
+grooming — shaping a single project — is still the open half.)*
+Two halves of one problem. **(a)** Asking Nuvo to "help me plan this week" produced a read
+that never mentioned the projects already committed to the week — it said *"no week
+priorities set yet"* while the deck held several. The cause was a model mismatch, not a
+prompt gap: the app derives the week's priorities from each project's On Deck span
+(`weekPushes`), while the agent could only see the sprint's `big_rocks` jsonb — which is
+just the per-week **verdict** and is usually empty. The agent's context now derives the
+same slate (`weekSlate`, plus `needsASprint` / `nextWeekSlate` and each slate project's
+open tasks), and the priority tools move the **project**: `create_priority` with a
+project_id writes its Mon–Fri span (the same write as dropping its card on this week's
+column), `delete_priority` clears it, `complete_priority` can record a verdict for a slate
+project that has no stored record yet. A priority written with no project is now reported
+back as what it is — a note that appears on no planning surface. *Tension with D-004
+(priorities bind along a crystallization line and may stay pure intention): the model still
+allows an unbound priority, but every built week surface — the Priorities editor, the phone's
+slate, the week's plan card — renders the derived slate, so an unbound one is invisible in
+practice. The agent now says so instead of writing one silently. Where that lands for good is
+[`priorities-and-projects.md`](../priorities-and-projects.md), flagged there, not decided
+here.* **(b)** The desktop had a
+weekly ritual and the phone had none, so the phone's only route into the week was the chat.
+`src/components/mobile/MobilePlanWeek.tsx` runs the same act in three thumb-sized steps —
+**Slate → Pull → Shape** — entered from a card at the top of the Week segment.
+→ Consequence: the composer is now shared. Everything that decides *what* the week is (the
+pull, standing-slot routing, project-slot clustering, `composeWeek`, the commit) moved out
+of `SundayRitual` into **`useWeekDraft`**; each shell owns only its layout and gestures. Two
+surfaces computing their own week would have been two answers to "what is my week" — the
+exact drift (a) was caused by. → Also fixed on the way: dropping a project-slot block
+removed nothing (the block id isn't a task id), and a fresh install read UI zoom as
+`Number(null)` → clamped to **0.8**, rendering the whole app at 80% on any new device.
+→ Rejected: a phone port of the week *grid* (a seven-column time grid can't be tapped at
+375px; the day-by-day list is the same information at thumb scale) and teaching the agent to
+write `big_rocks` more cleverly (it would still be writing to a surface nobody reads).
+*Status: standing — typechecks, builds, and driven at 375px in a render harness
+(`?planweek`); **not yet driven in a real account**, so W1/W2 stay scored as they were.*
+
 ---
 
 ## 2 · Things we decided **not** to do
@@ -237,7 +274,7 @@ driven in a real account on a real phone**.*
 
 | # | Question | Why it matters | Blocked on |
 |---|---|---|---|
-| **Q-01** | ~~Does mobile get the vertical?~~ **Partly answered by D-030** — the phone gets the *planning* surfaces (the decks, editable) and the light records. Still open: does it get **grooming** (the Groom deck / rituals), or does shaping stay a desktop act? | Decides whether the phone can answer W5/Q1, or stays an execution surface | A real read on where grooming actually happens |
+| **Q-01** | ~~Does mobile get the vertical?~~ **Partly answered by D-030 and D-031** — the phone gets the *planning* surfaces (the decks, editable), the light records, and now the weekly ritual (Plan the week). Still open: does it get **grooming** — shaping one project to ready (the Groom deck / `ItemRun`) — or does shaping stay a desktop act? | Decides whether the phone can answer W5/Q1, or stays an execution surface | A real read on where grooming actually happens |
 | **Q-02** | Is *refusal* a first-class act at Summit — an explicit "not this quarter" object? | Q6 in the Question Ledger is ◐ because there's nowhere to put a no | Wanting a "refused bets" surface at all |
 | **Q-03** | Does non-calendar work become visible via activity sources beyond GitHub? | W8 ("where did my time go") is ◐ while shipped-but-unblocked work is invisible | The GitHub instance proving the pattern |
 | **Q-04** | Should `TendingFlow` be retired now the Refine run has proven out? | Two grooming paths is a Principle 11 violation waiting to happen | Refine run confidence on real data |

@@ -28,6 +28,7 @@ import MobileProjects from "./MobileProjects";
 import MobileInitiatives from "./MobileInitiatives";
 import MobileReadiness from "./MobileReadiness";
 import WeekPlanCard from "./WeekPlanCard";
+import MobilePlanWeek, { PlanWeekCard } from "./MobilePlanWeek";
 import MobileSearch, { type JumpKind } from "./MobileSearch";
 import MobileDetailSheet from "./detail/MobileDetailSheet";
 import type { DetailTarget, Frame } from "./detail/verticalDetail";
@@ -119,6 +120,8 @@ export default function MobileShell() {
   };
 
   const [quickOpen, setQuickOpen] = useState(false);
+  // Plan the week — the phone's weekly ritual, a full-screen overlay like the chat.
+  const [planOpen, setPlanOpen] = useState(false);
   // The Nuvo chat overlay — a floating action, reachable over any screen.
   const [chatOpen, setChatOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -316,6 +319,8 @@ export default function MobileShell() {
             {sub === "week" && (
               <div className="flex flex-col gap-4 px-4 pt-4">
                 <MobileReadiness data={vertical} onAskNuvo={openChat} onReview={reviewFloor} />
+                {/* Set the week (the ritual), then watch it land (the plan/review). */}
+                <PlanWeekCard onOpen={() => setPlanOpen(true)} />
                 <WeekPlanCard />
               </div>
             )}
@@ -381,6 +386,9 @@ export default function MobileShell() {
           <ChatPane agent={agent} hint={liveHint} onClose={() => setChatOpen(false)} />
         </div>
       )}
+
+      {/* Plan the week — the ritual, full-screen over the shell */}
+      {planOpen && <MobilePlanWeek onClose={() => setPlanOpen(false)} />}
 
       {/* Sheets */}
       {detailTarget && (
