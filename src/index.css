@@ -578,6 +578,21 @@ html.tauri-macos .spine-top {
   -webkit-user-select: none !important;
   user-select: none !important;
 }
+/* The phone's sprint deck: while a card is held, nothing scrolls (the pager and
+   the shell's column freeze) and the held cards ignore the pointer, so
+   elementFromPoint hit-tests the strip cells beneath the finger. Touch panning
+   is blocked directly in JS as well — a touch-action change mid-gesture can't
+   take a pan away from the browser once it owns one. */
+body.deck-dragging {
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.deck-dragging .mobile-scroll,
+body.deck-dragging [data-deck-pager] {
+  overflow: hidden !important;
+  touch-action: none;
+}
 /* On Deck planner: while dragging a bar/card, the bars + resize handles ignore
    the pointer so elementFromPoint hit-tests the week cells beneath them. */
 body.odp-dragging [data-project-drag],

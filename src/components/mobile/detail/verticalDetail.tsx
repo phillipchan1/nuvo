@@ -9,9 +9,13 @@
 // vow + weekly target. No new data layer: every read is a pure selector over the
 // live VerticalData snapshot, every write goes through useVertical()'s mutations.
 
-import { useState, type ReactNode } from "react";
-import { format, parseISO } from "date-fns";
+import { useMemo, useState, type ReactNode } from "react";
+import { addQuarters, endOfQuarter, format, parseISO, startOfQuarter } from "date-fns";
 import { useVertical } from "../../../hooks/useVertical";
+import { useCapacity } from "../../../hooks/useCapacity";
+import { sprintNumber, sprintsBetween } from "../../../lib/sprint";
+import { sprintSpanFor, sprintSpanWeeks } from "../../../lib/onDeck";
+import { quarterEndISO, quarterName, quarterRangeLabel } from "../../../lib/initiativeDeck";
 import { ProjectShipAssess } from "../../record/ShipAssess";
 import {
   domainById,
@@ -326,13 +330,10 @@ export function InitiativeScreen({
         </div>
       </Section>
 
-      <Section label="Timeline">
-        <DateRow
-          start={i.startDate}
-          target={i.targetDate}
-          onStart={(v) => store.updateInitiative(i.id, { startDate: v })}
-          onTarget={(v) => store.updateInitiative(i.id, { targetDate: v })}
-        />
+      {/* A bet's "when" is a QUARTER — and its runway is counted in sprints, the
+          unit you actually spend. */}
+      <Section label="Quarter">
+        <QuarterField i={i} store={store} />
       </Section>
 
       {i.keyResults.length > 0 && (
@@ -436,13 +437,10 @@ export function ProjectScreen({
       </Section>
       {shipping && <ProjectShipAssess id={p.id} onClose={() => setShipping(false)} />}
 
-      <Section label="Timeline">
-        <DateRow
-          start={p.startDate}
-          target={p.targetDate}
-          onStart={(v) => store.updateProject(p.id, { startDate: v })}
-          onTarget={(v) => store.updateProject(p.id, { targetDate: v })}
-        />
+      {/* A project's "when" is a SPRINT, not two dates — the same commitment the
+          deck makes when you drop it on a column. Exact dates stay one tap away. */}
+      <Section label="Sprint">
+        <SprintField p={p} store={store} />
       </Section>
 
       <Section label={tasks.length ? `Tasks · ${doneCount}/${tasks.length} done` : "Tasks"}>
@@ -603,6 +601,235 @@ export function StatusChips({ value, onPick }: { value: ProjectStatus; onPick: (
           {STATUS_LABEL[s]}
         </Chip>
       ))}
+    </div>
+  );
+}
+
+// ── Sprint-centric placement — the deck's move, without the gesture ───────────
+// Committing a project is one act ("it lands in Sprint 32, and it takes two of
+// them"), so it's one control: a scale of the next four sprints with the span lit
+// across it. Tapping a sprint places the project's START there and keeps its
+// width — the identical write the desktop drag and the phone's drop make
+// (`sprintSpanFor`), so the same project lands in the same place whichever
+// surface moved it. Raw dates stay reachable for the odd finish line that isn't
+// sprint-shaped, but they're no longer the front door.
+
+const HORIZON_SPRINTS = 4;
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const fmtDay = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+export function SprintField({ p, store }: { p: Project; store: Store }) {
+  const { byWeek } = useCapacity();
+  const [showDates, setShowDates] = useState(false);
+  const weeks = byWeek.slice(0, HORIZON_SPRINTS);
+
+  const idxOf = (iso: string | null): number => {
+    if (!iso) return -1;
+    const ms = new Date(iso + "T12:00:00").getTime();
+    return weeks.findIndex((w) => ms >= w.weekStart.getTime() && ms < w.weekStart.getTime() + WEEK_MS);
+  };
+  const dueIdx = idxOf(p.targetDate);
+  const startIdx = p.startDate ? idxOf(p.startDate) : dueIdx;
+  const span = sprintSpanWeeks(p);
+  const from = startIdx >= 0 ? startIdx : dueIdx;
+  const to = from >= 0 ? Math.min(HORIZON_SPRINTS - 1, from + span - 1) : -1;
+  // a finish line that exists but sits outside the shown horizon (past or far out)
+  const outside = Boolean(p.targetDate) && dueIdx < 0 && startIdx < 0;
+
+  const place = (i: number, width: number = span) => {
+    const ws = weeks[i]?.weekStart;
+    if (!ws) return;
+    store.updateProject(p.id, { ...sprintSpanFor(p, ws, width), status: "in_progress" });
+  };
+  const shelve = () => store.updateProject(p.id, { startDate: null, targetDate: null, status: "backlog" });
+
+  return (
+    <div>
+      <div className="flex items-stretch gap-1.5">
+        {weeks.map((w, i) => {
+          const lit = from >= 0 && i >= from && i <= to;
+          return (
+            <button
+              key={i}
+              onClick={() => place(i)}
+              className="tap fast flex-1 rounded-xl border px-1 py-2 text-center"
+              style={
+                lit
+                  ? {
+                      borderColor: "var(--accent)",
+                      background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+                      color: "var(--accent)",
+                    }
+                  : { borderColor: "var(--line)" }
+              }
+            >
+              <div className="mono text-caption font-semibold leading-none">{sprintNumber(w.weekStart)}</div>
+              <div className="mono mt-1 text-micro leading-none text-muted">{fmtDay(w.weekStart)}</div>
+              <div
+                className="mx-auto mt-1.5 h-1 w-1 rounded-full"
+                style={{ background: i === 0 ? "var(--signal)" : "transparent" }}
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      {from >= 0 ? (
+        <div className="mt-2.5 flex items-center gap-2">
+          <span className="shrink-0 text-caption text-muted">Spans</span>
+          <div className="flex items-center rounded-full border border-line">
+            <button
+              onClick={() => place(from, Math.max(1, span - 1))}
+              aria-label="One sprint shorter"
+              className="tap fast px-3 text-head text-muted"
+            >
+              −
+            </button>
+            <span className="mono w-[74px] text-center text-caption text-ink">
+              {span} sprint{span === 1 ? "" : "s"}
+            </span>
+            <button
+              onClick={() => place(from, Math.min(HORIZON_SPRINTS - from, span + 1))}
+              aria-label="One sprint longer"
+              className="tap fast px-3 text-head text-muted"
+            >
+              ＋
+            </button>
+          </div>
+          <button onClick={shelve} className="tap fast ml-auto shrink-0 text-caption text-muted active:text-accent">
+            Shelve
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2 text-caption text-muted">
+          {outside
+            ? `Finish line ${p.targetDate ? format(parseISO(p.targetDate), "MMM d") : ""} — outside the next ${HORIZON_SPRINTS} sprints. Tap one to pull it in.`
+            : "No sprint yet — tap one to commit it."}
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowDates((v) => !v)}
+        className="tap fast mt-1 text-micro text-muted active:text-accent"
+      >
+        Exact dates {showDates ? "▾" : "▸"}
+      </button>
+      {showDates && (
+        <div className="mt-1">
+          <DateRow
+            start={p.startDate}
+            target={p.targetDate}
+            onStart={(v) => store.updateProject(p.id, { startDate: v })}
+            onTarget={(v) => store.updateProject(p.id, { targetDate: v })}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function QuarterField({ i, store }: { i: Initiative; store: Store }) {
+  const [showDates, setShowDates] = useState(false);
+  const now = useMemo(() => new Date(), []);
+  const quarters = useMemo(
+    () =>
+      Array.from({ length: HORIZON_SPRINTS }, (_, k) => {
+        const start = addQuarters(startOfQuarter(now), k);
+        return { start, end: endOfQuarter(start), name: quarterName(start) };
+      }),
+    [now],
+  );
+
+  const targetName = i.targetDate ? quarterName(new Date(i.targetDate + "T12:00:00")) : null;
+  const idx = targetName ? quarters.findIndex((q) => q.name === targetName) : -1;
+  const chosen = idx >= 0 ? quarters[idx] : null;
+  // sprints of runway left to the finish line — the honest count at this altitude
+  const left = i.targetDate ? sprintsBetween(now, new Date(i.targetDate + "T12:00:00")) + 1 : 0;
+
+  const place = (k: number) =>
+    store.updateInitiative(i.id, { targetDate: quarterEndISO(quarters[k].start), status: "in_progress" });
+  const shelve = () => store.updateInitiative(i.id, { targetDate: null, status: "backlog" });
+
+  return (
+    <div>
+      <div className="flex items-stretch gap-1.5">
+        {quarters.map((q, k) => {
+          const lit = k === idx;
+          return (
+            <button
+              key={q.name}
+              onClick={() => place(k)}
+              className="tap fast flex-1 rounded-xl border px-1 py-2 text-center"
+              style={
+                lit
+                  ? {
+                      borderColor: "var(--accent)",
+                      background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+                      color: "var(--accent)",
+                    }
+                  : { borderColor: "var(--line)" }
+              }
+            >
+              <div className="mono text-caption font-semibold leading-none">{q.name.split(" ")[0]}</div>
+              <div className="mono mt-1 text-micro leading-none text-muted">{q.start.getFullYear()}</div>
+              <div
+                className="mx-auto mt-1.5 h-1 w-1 rounded-full"
+                style={{ background: k === 0 ? "var(--signal)" : "transparent" }}
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      {/* the runway — one pip per sprint between now and the finish line */}
+      {i.targetDate && left > 0 && (
+        <div className="mt-2.5 flex items-center gap-2">
+          <span className="flex flex-1 items-center gap-[3px]">
+            {Array.from({ length: Math.min(left, 26) }).map((_, k) => (
+              <span
+                key={k}
+                className="h-1.5 flex-1 rounded-full"
+                style={{ background: k === 0 ? "var(--signal)" : "var(--accent)", opacity: k === 0 ? 1 : 0.5 }}
+              />
+            ))}
+          </span>
+          <span className="mono shrink-0 text-micro tabular-nums text-muted">
+            {left} sprint{left === 1 ? "" : "s"} left
+          </span>
+        </div>
+      )}
+
+      <div className="mt-2 flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-caption text-muted">
+          {chosen
+            ? quarterRangeLabel(chosen.start, chosen.end)
+            : targetName
+              ? `Finish line in ${targetName} — beyond the shown quarters.`
+              : "No quarter yet — tap one to give this bet a finish line."}
+        </span>
+        {i.targetDate && (
+          <button onClick={shelve} className="tap fast shrink-0 text-caption text-muted active:text-accent">
+            Shelve
+          </button>
+        )}
+      </div>
+
+      <button
+        onClick={() => setShowDates((v) => !v)}
+        className="tap fast mt-1 text-micro text-muted active:text-accent"
+      >
+        Exact dates {showDates ? "▾" : "▸"}
+      </button>
+      {showDates && (
+        <div className="mt-1">
+          <DateRow
+            start={i.startDate}
+            target={i.targetDate}
+            onStart={(v) => store.updateInitiative(i.id, { startDate: v })}
+            onTarget={(v) => store.updateInitiative(i.id, { targetDate: v })}
+          />
+        </div>
+      )}
     </div>
   );
 }

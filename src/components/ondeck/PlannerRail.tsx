@@ -64,7 +64,7 @@ export default function PlannerRail({
   children,
 }: {
   crown: RailCrown;
-  /** the section label over the loose items ("Needs a week"). */
+  /** the section label over the loose items ("Needs a sprint"). */
   poolLabel: string;
   poolCount: number;
   /** a drag is hovering the rail — releasing here un-claims the item's time. */

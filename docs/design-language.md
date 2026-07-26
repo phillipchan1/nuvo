@@ -171,7 +171,7 @@ the right, and you drag from one into the other. Only the unit of time changes.
 | Altitude | The pool | The grid | The act | The mode you're in |
 |---|---|---|---|---|
 | Day | Inbox / Today (`LeftRail`) | hours, vertical | block a task | **Operator** — "what now" |
-| Project | "Needs a week" (`OnDeckPlanner`) | weeks, ruled columns | time-box a project | **Foreman** — "can next week hold this" |
+| Project | "Needs a sprint" (`OnDeckPlanner`) | sprints (weeks), ruled columns | time-box a project | **Foreman** — "can next sprint hold this" |
 | Initiative | "Needs a quarter" (`InitiativeDeck`) | quarters, ruled columns | commit a bet | **Strategist** — "are these the right bets" |
 
 The law, so a new planner surface can't drift:
@@ -214,6 +214,26 @@ The law, so a new planner surface can't drift:
 
    Resize handles only where duration is real is the honest tell that a project isn't
    an initiative. Don't reach for a different frame to say "this is a bigger thing."
+6. **On a phone the same surface ROTATES INTO A SWIPE — it does not become a list.**
+   The grammar is preserved by turning the horizontal axis into pages, not by
+   shrinking the grid or flattening it into rows: **page one is the pool, then one
+   page per column of time**, so swiping right walks forward through time exactly as
+   the eye walks right across the desktop grid. One implementation —
+   `src/components/mobile/deck/MobileDeck.tsx` — carries all of it; the rungs pass
+   columns, cards, and what a drop writes.
+
+   | Desktop | Phone | Same because |
+   |---|---|---|
+   | pool rail, left | page 0, reached by the strip's ◇ cell | dropping there *releases* time — `--slot` wash on both |
+   | crown above the pool | crown above the strip | one readiness hero per surface, execution voice |
+   | column headers | the **strip**: every column at once, load as a bar, `--signal` on now | it is also the navigation *and* the drop target |
+   | coverage strip aligned over the columns | same grid, collapsed by default, gutter = the ◇ cell's width | a lit cell still points at its column |
+   | press-drag a card onto a column | **press-and-hold** → `.glass-grab` ghost → drop on a strip cell | the destination is always shown (the pager follows the finger) |
+   | click a card → record | tap a card → record, whose picker makes the same move | never a drag-only affordance on a phone |
+
+   A bar spanning weeks becomes the **same card on each of those pages** with ◀ / ▶
+   continuation marks. Placement writes through one shared rule (`sprintSpanFor` in
+   `lib/onDeck.ts`), so a project lands identically whichever surface moved it.
 
 ## Typography
 

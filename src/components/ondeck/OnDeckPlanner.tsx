@@ -18,8 +18,14 @@ import { useCapacity } from "../../hooks/useCapacity";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
 import { useRecordContextMenu } from "../RecordContextMenu";
-import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
-import { readOnDeck, type OnDeckLane, type ReadyTier, type WeekColumn } from "../../lib/onDeck";
+import { domainById, isOpenStatus, type Domain } from "../../lib/vertical";
+import {
+  readOnDeck,
+  sprintSpanFor,
+  weekIndexIn,
+  type OnDeckLane,
+  type ReadyTier,
+} from "../../lib/onDeck";
 import { sprintNumber } from "../../lib/sprint";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
@@ -31,7 +37,6 @@ import CoverageControls from "./CoverageControls";
 import PlannerRail from "./PlannerRail";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 // A planning surface wants runway — show more weeks than the compact hub and let
 // it scroll. More than this many projects committed to one week is a red flag.
@@ -72,28 +77,10 @@ const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSta
 const fmtWk = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
 
-/** Which horizon week a date falls in (clamped into range; 0 when undated). */
-function weekIndex(weeks: WeekColumn[], iso: string | null): number {
-  if (!iso) return 0;
-  const ms = new Date(iso + "T12:00:00").getTime();
-  for (let i = 0; i < weeks.length; i++) {
-    const ws = weeks[i].weekStart.getTime();
-    if (ms >= ws && ms < ws + WEEK_MS) return i;
-  }
-  return ms < (weeks[0]?.weekStart.getTime() ?? 0) ? 0 : weeks.length - 1;
-}
-
-
-/** Whole-week span for a project dropped so it STARTS on the Monday `ws`,
- *  preserving its current width in weeks (default 1). Always Mon → Fri. */
-function weekSpan(p: Project, ws: Date): { startDate: string; targetDate: string } {
-  let widthWeeks = 1;
-  if (p.startDate && p.targetDate) {
-    const d = new Date(p.targetDate + "T00:00:00").getTime() - new Date(p.startDate + "T00:00:00").getTime();
-    widthWeeks = Math.max(1, Math.floor(d / WEEK_MS) + 1);
-  }
-  return { startDate: toISO(ws), targetDate: toISO(addDays(ws, (widthWeeks - 1) * 7 + 4)) };
-}
+// Placement geometry (which week a date lands in, and the span a drop writes) is
+// shared with the phone's sprint deck — one rule, in lib/onDeck.ts.
+const weekIndex = weekIndexIn;
+const weekSpan = sprintSpanFor;
 
 type Preview = { id: string; start: number; end: number } | null;
 
@@ -392,7 +379,7 @@ export default function OnDeckPlanner() {
                 }
               : null,
         }}
-        poolLabel="Needs a week"
+        poolLabel="Needs a sprint"
         poolCount={inbox.length}
         footLabel="project"
         footTitle="New project"
@@ -400,7 +387,7 @@ export default function OnDeckPlanner() {
       >
         {inbox.length === 0 ? (
           <p className="px-1 py-6 text-center text-caption text-muted">
-            Nothing waiting — every project has a week. Drag a project here to shelve it.
+            Nothing waiting — every project has a sprint. Drag a project here to shelve it.
           </p>
         ) : (
           <div className="mt-1.5 flex flex-col gap-2">
@@ -635,7 +622,7 @@ export default function OnDeckPlanner() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <span className="text-micro text-muted">Drag onto a week to time-box · drag an edge to resize · click to edit</span>
+          <span className="text-micro text-muted">Drag onto a sprint to time-box · drag an edge to resize · click to edit</span>
           <ShippedStrip rung="project" />
         </div>
       </div>

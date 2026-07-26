@@ -9,12 +9,15 @@ import { useEffect, useRef, useState } from "react";
 export default function InlineAdd({
   placeholder,
   accent = "var(--accent)",
+  hint = "⏎ to add · esc when done",
   onCreate,
   onClose,
 }: {
   placeholder: string;
   /** Dot + border tint — usually the destination domain's color. */
   accent?: string;
+  /** The footer line — names the destination on the phone ("⏎ adds it to Sprint 31"). */
+  hint?: string;
   /** Persist one entity by name. Awaited so we can re-focus for the next add. */
   onCreate: (name: string) => Promise<void>;
   onClose: () => void;
@@ -70,7 +73,7 @@ export default function InlineAdd({
           className="nuvo-inline-input min-w-0 flex-1 border-0 bg-transparent py-0.5 text-caption font-semibold leading-snug text-ink shadow-none outline-none placeholder:font-normal placeholder:text-muted/40"
         />
       </div>
-      <div className="mono pl-4 text-micro text-muted/70">⏎ to add · esc when done</div>
+      <div className="mono pl-4 text-micro text-muted/70">{hint}</div>
     </div>
   );
 }

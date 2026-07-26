@@ -28,6 +28,42 @@ const toBlocks = (mins: number) => Math.round(mins / BLOCK_MINS);
 
 export type LaneState = "ready" | "needs_shaping" | "stalled" | "idea" | "parked";
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const toISO = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** How many whole sprints (weeks) a project currently occupies — 1 when it has no
+ *  explicit start. The width a placement preserves when you move it. */
+export function sprintSpanWeeks(p: Pick<Project, "startDate" | "targetDate">): number {
+  if (!p.startDate || !p.targetDate) return 1;
+  const d = new Date(p.targetDate + "T00:00:00").getTime() - new Date(p.startDate + "T00:00:00").getTime();
+  return Math.max(1, Math.floor(d / WEEK_MS) + 1);
+}
+
+/** The dates for a project placed so it STARTS in the week beginning `ws`, keeping
+ *  its current width. The one placement rule — the desktop deck's drag-to-week and
+ *  the phone's drag-to-sprint (and its sprint picker) all go through here, so a
+ *  project lands identically whichever surface moved it. */
+export function sprintSpanFor(
+  p: Pick<Project, "startDate" | "targetDate">,
+  ws: Date,
+  widthWeeks: number = sprintSpanWeeks(p),
+): { startDate: string; targetDate: string } {
+  const w = Math.max(1, widthWeeks);
+  return { startDate: toISO(ws), targetDate: toISO(addDays(ws, (w - 1) * 7 + 4)) };
+}
+
+/** Which horizon week a date falls in (clamped into range; 0 when undated). */
+export function weekIndexIn(weeks: Pick<WeekColumn, "weekStart">[], iso: string | null): number {
+  if (!iso) return 0;
+  const ms = new Date(iso + "T12:00:00").getTime();
+  for (let i = 0; i < weeks.length; i++) {
+    const ws = weeks[i].weekStart.getTime();
+    if (ms >= ws && ms < ws + WEEK_MS) return i;
+  }
+  return ms < (weeks[0]?.weekStart.getTime() ?? 0) ? 0 : weeks.length - 1;
+}
+
 /** The card's readiness ramp — how groomed a project is, independent of pace.
  *  `ready` = all 3 checks met (pull it into a week), `grooming` = 1–2 met,
  *  `raw` = 0 met (untouched idea), `parked` = deliberately resting, `done` =

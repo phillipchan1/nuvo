@@ -194,6 +194,26 @@ moment; anything that delays it is cut. It's also the honest one — it demonstr
 capture→calendar path that no competitor's vertical reaches.
 *Status: standing — nothing built against it yet.*
 
+**D-030 · 2026-07-26 · The phone gets the planner decks, as decks — not as lists.**
+*(Partially resolves Q-01: the strategic altitudes are on mobile, and they now* edit *.)*
+The Projects and Initiatives tabs were read-only rankings; they are now the same surface
+the desktop runs, **rotated into a swipe**: page one is the pool, then one page per sprint
+(projects) or quarter (initiatives). Press-and-hold a card and drop it on the column strip
+to time-box it — the desktop drag, on a thumb — with a tap path through the record for
+every move, so nothing is drag-only (mobile golden rule #4). Editing is **sprint-centric**:
+a project's record now opens on a scale of the next four sprints with its span lit across
+them, not two date fields; a bet's opens on quarters with its runway counted in sprints.
+Both surfaces and the desktop deck write placement through one function
+(`sprintSpanFor`), so the same drop lands the same way anywhere.
+→ Consequence: the pool is named **"Needs a sprint"** at the project altitude on both
+shells (it read "Needs a week" on desktop while the columns said "Sprint 31" — an
+overlapping name, Principle 11). → Rejected: *vertical sprint sections* (loses the time
+axis, and the phone stops being the same surface) and *keeping the demand-ranked list*
+(it answered Q1/Q2 but could not make the call the deck exists to make). → Watch: the
+long-press threshold (260 ms) and whether one-handed reach to the strip holds up for real
+thumbs. *Status: standing — built and driven at 375px in a render harness; **not yet
+driven in a real account on a real phone**.*
+
 ---
 
 ## 2 · Things we decided **not** to do
@@ -217,7 +237,7 @@ capture→calendar path that no competitor's vertical reaches.
 
 | # | Question | Why it matters | Blocked on |
 |---|---|---|---|
-| **Q-01** | Does mobile get the vertical (floors, records), or stay capture + agenda + Refine? | Decides whether the phone can answer W5/Q1, or stays an execution surface | A real read on where grooming actually happens |
+| **Q-01** | ~~Does mobile get the vertical?~~ **Partly answered by D-030** — the phone gets the *planning* surfaces (the decks, editable) and the light records. Still open: does it get **grooming** (the Groom deck / rituals), or does shaping stay a desktop act? | Decides whether the phone can answer W5/Q1, or stays an execution surface | A real read on where grooming actually happens |
 | **Q-02** | Is *refusal* a first-class act at Summit — an explicit "not this quarter" object? | Q6 in the Question Ledger is ◐ because there's nowhere to put a no | Wanting a "refused bets" surface at all |
 | **Q-03** | Does non-calendar work become visible via activity sources beyond GitHub? | W8 ("where did my time go") is ◐ while shipped-but-unblocked work is invisible | The GitHub instance proving the pattern |
 | **Q-04** | Should `TendingFlow` be retired now the Refine run has proven out? | Two grooming paths is a Principle 11 violation waiting to happen | Refine run confidence on real data |
