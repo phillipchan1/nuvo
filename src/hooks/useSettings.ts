@@ -19,6 +19,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   last_rollover_date: null,
   show_weather: false,
   default_calendar_account_id: null,
+  onboarding_completed_version: null,
 };
 
 export function useSettings() {

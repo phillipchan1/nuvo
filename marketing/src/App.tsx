@@ -19,7 +19,7 @@ export default function App() {
     if (path === '/privacy') {
       document.title = 'Privacy Policy — Nuvo'
     } else {
-      document.title = 'Nuvo — One funnel for every domain you run'
+      document.title = 'Nuvo — One system for everything you run'
     }
     window.scrollTo(0, 0)
   }, [path])

@@ -11,3 +11,8 @@ verify_jwt = false
 
 [functions.google-webhook]
 verify_jwt = false
+
+# Stripe calls this directly (no Supabase JWT) — it verifies the Stripe
+# signature itself via STRIPE_WEBHOOK_SECRET instead of requireUser().
+[functions.stripe-webhook]
+verify_jwt = false

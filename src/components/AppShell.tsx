@@ -24,6 +24,9 @@ import CapacityRun from "./capacity/CapacityRun";
 import QuickCreate from "./floors/QuickCreate";
 import NewProject from "./floors/NewProject";
 import NewInitiative from "./floors/NewInitiative";
+import Orientation from "./orientation/Orientation";
+import { OrientationProvider } from "../hooks/useOrientation";
+import { TrialBanner } from "./billing/TrialBanner";
 import { zoomIn, zoomOut, zoomReset } from "../hooks/useUiScale";
 
 export type Rung = "day" | "project" | "initiative" | "domain";
@@ -59,7 +62,9 @@ function writeFocusMode(v: boolean) {
 export default function AppShell() {
   return (
     <VerticalProvider>
-      <ResponsiveShell />
+      <OrientationProvider>
+        <ResponsiveShell />
+      </OrientationProvider>
     </VerticalProvider>
   );
 }
@@ -86,6 +91,7 @@ function AppShellInner() {
     openRecord,
     openOverlay,
     closeOverlay,
+    setSettingsSection,
     setProjectView,
     setInitiativeView,
     navigate,
@@ -291,7 +297,9 @@ function AppShellInner() {
   }, [nav.overlay, nav.flow, nav.floorModal, openFloorModal, openOverlay]);
 
   return (
-    <div className="atmosphere flex h-full">
+    <div className="atmosphere flex h-full flex-col">
+      <TrialBanner />
+      <div className="flex min-h-0 flex-1">
       <Spine
         collapsed={focusMode}
         rung={rung}
@@ -328,6 +336,7 @@ function AppShellInner() {
         </div>
 
         <AgentSidebar agent={agent} open={effectiveAgentOpen} onToggle={toggleAgent} />
+      </div>
       </div>
 
       {flow === "sunday" && <SundayRitual onClose={closeFlow} />}
@@ -398,6 +407,17 @@ function AppShellInner() {
       {/* Marquee — lets Nuvo drive this canvas (navigate + spotlight) in step
           with its reply. Desktop only; the orb portals above everything. */}
       <Marquee messages={agent.messages} />
+
+      {/* First-run welcome — portals above everything; the Calendars CTA drops
+          the user into Settings › Connections. */}
+      <Orientation
+        onAction={(action) => {
+          if (action === "connect-calendars") {
+            setSettingsSection("connections");
+            openOverlay("settings");
+          }
+        }}
+      />
     </div>
   );
 }

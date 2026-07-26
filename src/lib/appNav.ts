@@ -28,7 +28,7 @@ export type OverlayKind =
   // backed so Esc / browser-back / ⌘[ dismiss it like every other overlay.
   | "week-plan";
 
-export type SettingsSection = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account";
+export type SettingsSection = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "desktop" | "account" | "billing" | "about";
 
 export type FloorModal = null | "new-initiative" | "new-project";
 

@@ -1,8 +1,11 @@
 # Nuvo
 
-A single-user daily planning app: GTD inbox + task list + Google/M365 calendars on one
+A subscription daily planning app: GTD inbox + task list + Google/M365 calendars on one
 planning surface with drag-and-drop time blocking. Phase 1 of LifeOS — the daily driver
 that replaces Akiflow.
+
+Paid, per-account: $29/mo or $19/mo billed annually, after a 14-day no-card trial.
+Billing setup and the gating model live in `docs/billing-setup.md`.
 
 **Core model decision:** a scheduled task IS a time block. One row in `tasks`:
 `do_date` set + `start_time` null = planned for the day (unblocked); both set =
@@ -57,9 +60,11 @@ select vault.create_secret('https://YOUR_REF.supabase.co', 'project_url');
 select vault.create_secret('YOUR_SERVICE_ROLE_KEY', 'service_role_key');
 ```
 
-Auth → Google only (disable the Email provider). Optionally disable signups after
-your account exists (single-user app). New-user trigger seeds the four domains
-(Work / Church / Trading / Family) and the settings row.
+Auth → Google only (disable the Email provider). **Signups must stay enabled** —
+Nuvo sells subscriptions, so anyone who can't sign up can't become a customer.
+(This used to say the opposite, back when it was a single-user app.) The
+new-user trigger seeds the four domains (Work / Church / Trading / Family), the
+settings row, and a 14-day trial — see `docs/billing-setup.md`.
 
 ### 2. Edge function secrets
 

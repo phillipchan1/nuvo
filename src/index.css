@@ -265,6 +265,21 @@ body,
   height: 100dvh;
 }
 
+/* Tauri's WKWebView often reports a shorter `100dvh` than the real window, so
+   `#root` stops early and the html `--surface` canvas shows as a fat white bar
+   under the Schedule. Pin to the window box instead — same trick as MobileShell.
+   Skip the ⌥Space spotlight window (transparent, sized to the card). */
+html.tauri:not(.spotlight-window),
+html.tauri:not(.spotlight-window) body,
+html.tauri:not(.spotlight-window) #root {
+  height: 100%;
+}
+html.tauri:not(.spotlight-window) #root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
 /* The canvas behind the safe-area insets (e.g. the iOS PWA home-indicator strip
    under the bottom bar). Painted with --surface so those insets match the top
    bar and bottom nav — not the gray --bg, which otherwise shows as a stray bar. */
@@ -837,6 +852,32 @@ body.nuvo-selecting * {
 
 /* Staggered entrance for lists / stations. Pair with --i index var. */
 .rise-stagger { animation: rise var(--d-base) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+
+/* ── Orientation walkthrough motion — crafted, calm, show-don't-tell ─────────
+   A shared stagger with a slightly longer step so the eye can follow each idea
+   appear, plus a "drop" for the timeblock (a project landing on the schedule)
+   and a soft breathing pulse for Nuvo's live suggestion. Reduced-motion neuters
+   all of it below. */
+.orient-stagger { animation: rise 0.5s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 90ms + 120ms); }
+@keyframes orient-drop {
+  0% { opacity: 0; transform: translateY(-18px) scale(0.96); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.orient-drop { animation: orient-drop 0.6s var(--ease-spring) both; animation-delay: 0.5s; }
+@keyframes orient-pulse {
+  0%, 100% { transform: translateY(0); box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 30%, transparent); }
+  50% { transform: translateY(-1px); box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 0%, transparent); }
+}
+.orient-pulse { animation: orient-pulse 2.4s var(--ease-in-out, ease-in-out) infinite; animation-delay: 0.8s; }
+@keyframes orient-flow {
+  from { stroke-dashoffset: 14; }
+  to { stroke-dashoffset: 0; }
+}
+.orient-flow { stroke-dasharray: 4 3; animation: orient-flow 1.1s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .orient-stagger, .orient-drop, .orient-pulse, .orient-flow { animation: none; }
+}
 
 /* The completion bloom — a soft ring of light, not confetti. */
 @keyframes bloom {

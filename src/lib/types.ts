@@ -247,6 +247,9 @@ export interface UserSettings {
   show_weather: boolean;
   /** calendar_accounts.id to use when Nuvo creates new Google Calendar events. Null = first connected account. */
   default_calendar_account_id: string | null;
+  /** The ORIENTATION_VERSION the user last finished/skipped. Null = never seen. The
+   *  welcome re-surfaces when this is null or below the current version in code. */
+  onboarding_completed_version: number | null;
 }
 
 /** One hidden calendar event. `key` is `account_id:provider_event_id` for a single

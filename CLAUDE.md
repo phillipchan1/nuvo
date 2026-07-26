@@ -1,6 +1,8 @@
 # Nuvo — working conventions
 
-Single-user daily planner. **One React SPA, two shells:** a Tauri macOS desktop app
+Subscription daily planner (per-account, 14-day trial → $29/mo or $19/mo annual;
+gating in `src/components/billing/`, setup in `docs/billing-setup.md`).
+**One React SPA, two shells:** a Tauri macOS desktop app
 *and* an installable iOS PWA, served from the same `dist/`. Read `readme.md` for the
 product model and backend; this file is how we build so the app stays consistent and
 **mobile-ready by default.**

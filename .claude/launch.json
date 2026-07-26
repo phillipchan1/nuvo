@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "dev"],
       "port": 5717,
       "autoPort": true
+    },
+    {
+      "name": "marketing",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview", "--prefix", "marketing", "--", "--port", "4183"],
+      "port": 4183,
+      "autoPort": true
     }
   ]
 }
