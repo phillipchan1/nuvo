@@ -2,13 +2,13 @@ name: Release
 
 # Builds, signs, notarizes, and publishes the macOS desktop app.
 #
-# Triggers (deliberate — releases don't fire on every push, so macOS runner
-# minutes aren't burned on routine commits):
+# Triggers (the repo is public, so Actions minutes are free — build on push):
+#   • push to master              → releases <major>.<minor>.<run> (every commit ships)
 #   • push a version tag `vX.Y.Z`  → releases that exact version
 #   • manual dispatch (Actions tab → Run workflow) → releases <major>.<minor>.<run>
 #
-# To cut a release:  git tag v0.2.0 && git push origin v0.2.0
-#              or:   click "Run workflow" on the Actions tab.
+# `concurrency: cancel-in-progress` below collapses rapid back-to-back pushes to
+# just the latest, so a burst of commits produces one release, not a pile-up.
 #
 # Publishes a UNIVERSAL (Apple Silicon + Intel) DMG + the updater artifacts
 # (.app.tar.gz + .sig) + latest.json to the PUBLIC releases repo
@@ -18,6 +18,7 @@ name: Release
 # latest Nuvo.dmg.
 on:
   push:
+    branches: [master]
     tags: ["v*"]
   workflow_dispatch:
 
