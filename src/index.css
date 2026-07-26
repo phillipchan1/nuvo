@@ -1706,52 +1706,64 @@ textarea:focus {
         flat for free, with no component edits.
    ════════════════════════════════════════════════════════════════════════ */
 
-/* ── FLAT — crisp white (light) / near-black (dark). Linear/Notion register:
-      pure surfaces, hairline borders, no frost, tight radii, minimal shadow.
-      Keeps Nuvo's mulberry accent so it still reads as Nuvo, just flattened. */
+/* ── FLAT — a conventional product UI: Notion / Linear / Akiflow register.
+      Deliberately the *least* Nuvo-ish material — no ceremony, no frost, no
+      editorial serif. Everything that carries voice in paper is traded for the
+      things a workhorse app is judged on: a legible rule between regions, one
+      sans in every size, a tinted sidebar against white content, tight radii.
+      Keeps the mulberry accent so it still reads as Nuvo, just flattened.
+
+      Three levers do the work (the rest is inherited):
+        · --font-serif → the sans, so every masthead/serif surface flattens for
+          free (`.masthead` weight is corrected in the MATERIAL section below).
+        · lines a full step darker than paper's — a flat UI has no shadow or
+          gradient to separate regions, so the rule has to actually be visible.
+        · --surface-2 as a real grey, not a whisper: it's the sidebar ground. */
 html[data-skin="flat"][data-theme="light"] {
   --bg: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f7f7f9;
-  --line: #ececef;
-  --line-strong: #dbdbe1;
+  --surface-2: #f6f6f7;
+  --line: #e3e3e6;
+  --line-strong: #c5c5cb;
   --text: #18181b;
-  --muted: #86868e;
+  --muted: #74747c;
   --accent: #92568a;
   --accent-2: #b07fa8;
   --accent-soft: rgba(146, 86, 138, 0.08);
   --accent-glow: rgba(146, 86, 138, 0.16);
   --slot: #0d8f9c;
   --event-default: #9aa0ac;
-  --radius-sm: 5px;
-  --radius: 8px;
-  --radius-lg: 10px;
+  --font-serif: var(--font-sans);
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
   --shadow-1: 0 1px 2px rgba(20, 20, 30, 0.05);
-  --shadow-2: 0 2px 8px -2px rgba(20, 20, 30, 0.10), 0 0 0 1px #eeeef2;
+  --shadow-2: 0 2px 8px -2px rgba(20, 20, 30, 0.10), 0 0 0 1px #e3e3e6;
   --shadow-3: 0 8px 24px -8px rgba(20, 20, 30, 0.14);
-  --shadow-lift: 0 12px 30px -12px rgba(20, 20, 30, 0.22);
+  --shadow-lift: 0 10px 26px -10px rgba(20, 20, 30, 0.20);
 }
 html[data-skin="flat"][data-theme="dark"] {
   --bg: #0c0c0e;
   --surface: #161619;
-  --surface-2: #1d1d21;
-  --line: #26262b;
-  --line-strong: #35353c;
+  --surface-2: #202024;
+  --line: #2e2e35;
+  --line-strong: #43434c;
   --text: #f1f1f4;
-  --muted: #8a8a92;
+  --muted: #93939c;
   --accent: #c692bf;
   --accent-2: #d6abce;
   --accent-soft: rgba(198, 146, 191, 0.13);
   --accent-glow: rgba(198, 146, 191, 0.24);
   --slot: #37b1a4;
   --event-default: #7a7f8c;
-  --radius-sm: 5px;
-  --radius: 8px;
-  --radius-lg: 10px;
+  --font-serif: var(--font-sans);
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 2px 10px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px #232329;
+  --shadow-2: 0 2px 10px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px #2e2e35;
   --shadow-3: 0 10px 28px -10px rgba(0, 0, 0, 0.6);
-  --shadow-lift: 0 14px 34px -12px rgba(0, 0, 0, 0.7);
+  --shadow-lift: 0 12px 30px -12px rgba(0, 0, 0, 0.66);
 }
 
 /* ── TERMINAL — mono console, amber-on-black phosphor, sharp corners, faint
@@ -1898,7 +1910,25 @@ html[data-skin="blueprint"] .atmosphere {
     var(--bg);
 }
 
+/* NO FROST outside paper. The .glass-* hooks below cover the shared material
+   classes, but frost also arrives as one-off inline `backdropFilter` (the Spine
+   chapter pill, the ritual scrims, the domain crest) and as Tailwind
+   `backdrop-blur-*` utilities in a dozen components — neither of which a class
+   override can reach. One universal !important rule retires all of it for every
+   skinned material at once; paper carries no data-skin attribute, so its glass
+   is untouched. (Inline styles lose to !important, which is the point here.) */
+html[data-skin] *,
+html[data-skin] *::before,
+html[data-skin] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 /* Resting glass → opaque token surface, no blur (all flat skins share this). */
+html[data-skin="flat"] .glass,
+html[data-skin="terminal"] .glass,
+html[data-skin="blueprint"] .glass,
+html[data-skin="eink"] .glass,
 html[data-skin="flat"] .glass-card,
 html[data-skin="flat"] .glass-tint,
 html[data-skin="flat"] .glass-lift-row,
@@ -1948,6 +1978,64 @@ html[data-skin="eink"] .glass-lift {
   /* no shadow on paper — selection is the border + the small rise */
   border-color: var(--line-strong) !important;
   box-shadow: none;
+}
+
+/* ── FLAT — the rest of the conventional-app conversion ───────────────────
+   The token block flattened colour, type and radius; these rules flatten the
+   remaining *behaviours* that read as "designed object" rather than "software":
+   the editorial weights, the borderless sidebar, the lift-on-select. */
+
+/* One sans, all sizes. --font-serif already points at the sans, but Fraunces'
+   settings came with it: an optical-sizing axis the sans doesn't have, and a
+   500 weight that reads limp on a hero. A conventional app leads with weight —
+   so heroes get 650, the chapel voice 600, and the tracking loosens back to
+   normal (the -0.014em was cut for Fraunces' tight fit). */
+html[data-skin="flat"] .masthead {
+  font-variation-settings: normal;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+html[data-skin="flat"] .serif {
+  font-variation-settings: normal;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+/* The sidebar is a REGION, not a pane floating on the canvas. Paper keeps the
+   spine transparent so one gradient reads across the whole window; flat does
+   the opposite — a grey nav ground against white content, which is how every
+   app in this register (Notion, Linear, Slack, Akiflow) states "you are here
+   vs. you are working here". The right rule comes from .spine-separator.
+   The spine pins `background: transparent` inline to enforce paper's law, so
+   the override has to be !important — this material is opting out of it. */
+html[data-skin="flat"] .spine {
+  background: var(--surface-2) !important;
+}
+/* The active chapter's inline pill is 72%-translucent glass — over an opaque
+   sidebar that's a barely-there smudge. Make it the solid selected row of a
+   conventional nav: full surface, a real border, no shadow. */
+html[data-skin="flat"] .spine [style*="backdrop-filter"],
+html[data-skin="flat"] .chapter-active {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+  box-shadow: none !important;
+}
+
+/* Selection doesn't levitate here. The glass hooks already went opaque, but the
+   -3px rise + 1.5% scale is a paper gesture; a flat UI shows selection with a
+   border and a fill, in place. (Drag ghosts keep their lift — a thing in your
+   hand should look picked up in any material.) */
+html[data-skin="flat"] .glass-lift,
+html[data-skin="flat"] .glass-lift-row {
+  transform: none;
+  box-shadow: var(--shadow-1);
+  border-color: var(--line-strong) !important;
+}
+
+/* Calendar blocks: paper wants tinted glass (the frost above is already gone
+   here) — flat wants a squarer chip, closer to a calendar app's. */
+html[data-skin="flat"] .fc .fc-event {
+  border-radius: 4px;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2085,28 +2173,28 @@ html[data-skin="terminal"][data-palette="catppuccin"][data-theme="light"] {
 /* ── FLAT — tones (theme-aware) ──────────────────────────────────────────── */
 html[data-skin="flat"][data-palette="arctic"][data-theme="light"] {
   --bg: #f6f8fc; --surface: #ffffff; --surface-2: #eef2f9;
-  --line: #e5eaf3; --line-strong: #d3daea; --text: #1a1f2b; --muted: #6b7385;
+  --line: #dde4f1; --line-strong: #c2cce1; --text: #1a1f2b; --muted: #656d80;
   --accent: #4f46e5; --accent-2: #6d64f0;
   --accent-soft: rgba(79, 70, 229, 0.08); --accent-glow: rgba(79, 70, 229, 0.16);
   --slot: #0d9488; --event-default: #94a3b8;
 }
 html[data-skin="flat"][data-palette="arctic"][data-theme="dark"] {
   --bg: #0b0d13; --surface: #141720; --surface-2: #1b1f2b;
-  --line: #232936; --line-strong: #333b4d; --text: #eaecf3; --muted: #8b93a7;
+  --line: #2a3142; --line-strong: #3d4658; --text: #eaecf3; --muted: #949cb0;
   --accent: #8b93ff; --accent-2: #a6acff;
   --accent-soft: rgba(139, 147, 255, 0.13); --accent-glow: rgba(139, 147, 255, 0.24);
   --slot: #2dd4bf; --event-default: #7a869c;
 }
 html[data-skin="flat"][data-palette="linen"][data-theme="light"] {
   --bg: #fdfbf6; --surface: #ffffff; --surface-2: #f6f1e8;
-  --line: #ebe4d7; --line-strong: #dcd2c0; --text: #26211a; --muted: #7d7362;
+  --line: #e2d9c8; --line-strong: #cfc3ab; --text: #26211a; --muted: #766c5b;
   --accent: #b06a3c; --accent-2: #c9885c;
   --accent-soft: rgba(176, 106, 60, 0.09); --accent-glow: rgba(176, 106, 60, 0.16);
   --slot: #2f8d86; --event-default: #a98a6f;
 }
 html[data-skin="flat"][data-palette="linen"][data-theme="dark"] {
   --bg: #100f0b; --surface: #1a1714; --surface-2: #221e18;
-  --line: #2a2620; --line-strong: #3a352b; --text: #efe9dd; --muted: #a4967f;
+  --line: #322d25; --line-strong: #453f33; --text: #efe9dd; --muted: #ac9f88;
   --accent: #d69b6a; --accent-2: #e3b489;
   --accent-soft: rgba(214, 155, 106, 0.14); --accent-glow: rgba(214, 155, 106, 0.24);
   --slot: #37b1a4; --event-default: #b89a7e;
