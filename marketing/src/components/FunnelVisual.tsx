@@ -12,12 +12,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+// Plain language only — the app's vocabulary ("domain", "block") stays in the
+// app. A first-time reader shouldn't have to learn two words to read a diagram.
 const STEPS = [
-  { label: 'Domain', hint: 'a part of your life', value: 'Work', color: '#2563EB' },
-  { label: 'Initiative', hint: 'the bet', value: 'Grow the product team', color: '#7C3AED' },
-  { label: 'Project', hint: 'the body of work', value: 'Rebuild onboarding', color: '#0D9488' },
-  { label: 'Task', hint: 'the next move', value: 'Draft the welcome email', color: '#92568a' },
-  { label: 'Block', hint: 'a real hour', value: 'Tue · 9:00–10:30', color: '#e0620f' },
+  { label: 'A world you run', hint: 'work, family, the side thing', value: 'Work', color: '#2563EB' },
+  { label: 'A bet you make', hint: 'what moves it this year', value: 'Grow the product team', color: '#7C3AED' },
+  { label: 'The body of work', hint: 'the actual project', value: 'Rebuild onboarding', color: '#0D9488' },
+  { label: 'The next move', hint: 'one task', value: 'Draft the welcome email', color: '#92568a' },
+  { label: 'The hour', hint: 'on your real calendar', value: 'Tue · 9:00–10:30', color: '#e0620f' },
 ] as const
 
 const STEP_MS = 850
