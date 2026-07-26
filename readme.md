@@ -7,9 +7,30 @@ that replaces Akiflow.
 Paid, per-account: $29/mo or $19/mo billed annually, after a 14-day no-card trial.
 Billing setup and the gating model live in `docs/billing-setup.md`.
 
+**Single-player, multi-tenant.** One person's funnel per account, no shared objects — and
+many independent accounts on one deployment. The two are different claims; see
+[`docs/product/overview.md`](docs/product/overview.md) §2.1.
+
 **Core model decision:** a scheduled task IS a time block. One row in `tasks`:
 `do_date` set + `start_time` null = planned for the day (unblocked); both set =
 scheduled on the calendar. There is no separate event entity for tasks.
+
+## Docs
+
+[`docs/README.md`](docs/README.md) is the map. Two layers:
+
+- **[`docs/product/`](docs/product/) — the why.** The canon
+  ([`overview.md`](docs/product/overview.md)), the rules
+  ([`principles.md`](docs/product/principles.md)), who it's for and the questions on their
+  minds ([`personas.md`](docs/product/personas.md)), the story
+  ([`brandscript.md`](docs/product/brandscript.md)), the field
+  ([`landscape.md`](docs/product/landscape.md)), the bets
+  ([`roadmap.md`](docs/product/roadmap.md)), the log
+  ([`decisions.md`](docs/product/decisions.md)), the names
+  ([`glossary.md`](docs/product/glossary.md)), and the methods for auditing
+  ([`audit.md`](docs/product/audit.md)) and ideating
+  ([`ideation.md`](docs/product/ideation.md)).
+- **`docs/*.md` — the how.** Mechanism specs, each with its own status header.
 
 ## Stack
 
@@ -62,9 +83,12 @@ select vault.create_secret('YOUR_SERVICE_ROLE_KEY', 'service_role_key');
 
 Auth → Google only (disable the Email provider). **Signups must stay enabled** —
 Nuvo sells subscriptions, so anyone who can't sign up can't become a customer.
-(This used to say the opposite, back when it was a single-user app.) The
-new-user trigger seeds the four domains (Work / Church / Trading / Family), the
-settings row, and a 14-day trial — see `docs/billing-setup.md`.
+(This used to say the opposite, back when it was a single-user app.) The new-user
+trigger seeds the settings row and a 14-day trial — see `docs/billing-setup.md`.
+It **no longer seeds domains**: migration 42 removed the Work / Church / Trading /
+Family seed, which was one operator's life handed to every account. A new account
+names its own via the first-run picker (D-026 in
+[`docs/product/decisions.md`](docs/product/decisions.md)).
 
 ### 2. Edge function secrets
 

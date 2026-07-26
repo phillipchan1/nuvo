@@ -1,0 +1,231 @@
+// First run — the domain picker.
+//
+// Signup no longer seeds domains (migration 42), so a brand-new account arrives
+// here with nothing. This is the one natural moment to teach what a domain *is*,
+// so we teach by asking rather than by asserting: the account picks the kinds it
+// carries and names them itself.
+//
+// Kinds come from docs/product/personas.md §1 — the five shapes a standing
+// domain takes. The names vary per operator; the kinds don't. Nothing here is
+// prescriptive: every row is optional, every name is an editable plain <input>
+// (so iOS dictation works), and "add your own" is always available.
+import { useState } from "react";
+import { useVertical } from "../hooks/useVertical";
+
+type Kind = {
+  key: string;
+  kind: string;
+  blurb: string;
+  examples: string;
+  suggested: string;
+  color: string;
+};
+
+// Colors are data (a domain's identity tint), not theme tokens — same hexes the
+// domain swatch picker offers in DomainFloor.
+const KINDS: Kind[] = [
+  {
+    key: "work",
+    kind: "Work",
+    blurb: "The job, company, or practice that pays.",
+    examples: "Work · Company · Clients · Practice",
+    suggested: "Work",
+    color: "#2563EB",
+  },
+  {
+    key: "community",
+    kind: "Community",
+    blurb: "A team or cause that depends on you showing up.",
+    examples: "Church · Board · Coaching · Volunteering",
+    suggested: "Community",
+    color: "#7C3AED",
+  },
+  {
+    key: "discipline",
+    kind: "Discipline",
+    blurb: "A craft you keep sharp. It needs time, not tasks.",
+    examples: "Trading · Training · Writing · Study",
+    suggested: "Discipline",
+    color: "#0D9488",
+  },
+  {
+    key: "people",
+    kind: "People",
+    blurb: "The relationships that never file a ticket — and get starved quietly.",
+    examples: "Family · Marriage · Friends",
+    suggested: "Family",
+    color: "#DB2777",
+  },
+  {
+    key: "stewardship",
+    kind: "Stewardship",
+    blurb: "The things that cost you later if you neglect them now.",
+    examples: "Finances · Health · Home",
+    suggested: "Health",
+    color: "#059669",
+  },
+];
+
+const EXTRA_COLORS = ["#D97706", "#4F46E5", "#0891B2", "#65A30D", "#DC2626"];
+
+export default function FirstRun({ onSkip }: { onSkip: () => void }) {
+  const { seedDomains } = useVertical();
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const [extras, setExtras] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = (k: Kind) =>
+    setPicked((p) => {
+      const next = { ...p };
+      if (k.key in next) delete next[k.key];
+      else next[k.key] = k.suggested;
+      return next;
+    });
+
+  const chosen = [
+    ...KINDS.filter((k) => k.key in picked).map((k) => ({ name: picked[k.key].trim(), color: k.color })),
+    ...extras.map((name, i) => ({ name: name.trim(), color: EXTRA_COLORS[i % EXTRA_COLORS.length] })),
+  ].filter((d) => d.name.length > 0);
+
+  const create = async () => {
+    if (!chosen.length || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await seedDomains(chosen);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create those. Try again.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="atmosphere h-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-2xl px-5 pb-24 pt-safe sm:px-8">
+        <header className="pt-10 sm:pt-16">
+          <h1 className="masthead text-display text-ink">What are you carrying?</h1>
+          <p className="mt-4 max-w-lg text-body text-muted">
+            A <span className="text-ink">domain</span> is an area you're responsible for over the
+            long run — not a project and not a list. <span className="text-ink">Work</span> is a
+            domain; <span className="italic">shipping the new site</span> is a project inside it.
+          </p>
+          <p className="mt-3 max-w-lg text-caption text-muted">
+            Pick the ones you carry and name them the way you'd say them out loud. You can rename,
+            add, or remove any of this later.
+          </p>
+        </header>
+
+        <ul className="mt-8 border-t border-line">
+          {KINDS.map((k) => {
+            const on = k.key in picked;
+            return (
+              <li key={k.key} className="border-b border-line">
+                <div className="flex items-start gap-3 py-3">
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggle(k)}
+                    className="tap fast -ml-1 flex min-h-[44px] flex-1 items-start gap-3 rounded-md px-1 text-left"
+                  >
+                    <span
+                      aria-hidden
+                      className="mt-[3px] h-4 w-4 shrink-0 rounded-full border"
+                      style={{
+                        borderColor: on ? k.color : "var(--line-strong)",
+                        background: on ? k.color : "transparent",
+                      }}
+                    />
+                    <span className="min-w-0">
+                      <span className={`block text-body ${on ? "text-ink" : "text-ink"}`}>{k.kind}</span>
+                      <span className="mt-0.5 block text-caption text-muted">{k.blurb}</span>
+                      {!on && (
+                        <span className="mt-1 block text-meta text-muted">{k.examples}</span>
+                      )}
+                    </span>
+                  </button>
+                </div>
+
+                {on && (
+                  <div className="-mt-1 pb-3 pl-7">
+                    <label className="section-label block text-muted" htmlFor={`d-${k.key}`}>
+                      Call it
+                    </label>
+                    <input
+                      id={`d-${k.key}`}
+                      type="text"
+                      value={picked[k.key]}
+                      autoComplete="off"
+                      onChange={(e) => setPicked((p) => ({ ...p, [k.key]: e.target.value }))}
+                      placeholder={k.suggested}
+                      className="tap mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-body text-ink placeholder:text-muted"
+                    />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+
+          {extras.map((name, i) => (
+            <li key={`extra-${i}`} className="border-b border-line py-3">
+              <label className="section-label block text-muted" htmlFor={`x-${i}`}>
+                Your own
+              </label>
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  id={`x-${i}`}
+                  type="text"
+                  value={name}
+                  autoFocus
+                  autoComplete="off"
+                  onChange={(e) => setExtras((x) => x.map((v, j) => (j === i ? e.target.value : v)))}
+                  placeholder="Name it"
+                  className="tap w-full rounded-md border border-line bg-surface px-3 py-2 text-body text-ink placeholder:text-muted"
+                />
+                <button
+                  type="button"
+                  onClick={() => setExtras((x) => x.filter((_, j) => j !== i))}
+                  className="tap fast shrink-0 rounded-md px-3 py-2 text-caption text-muted hover:text-ink"
+                >
+                  Remove
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <button
+          type="button"
+          onClick={() => setExtras((x) => [...x, ""])}
+          className="tap fast mt-3 min-h-[44px] text-caption text-accent"
+        >
+          + Add one of your own
+        </button>
+
+        {error && <p className="mt-4 text-caption text-signal">{error}</p>}
+
+        <div className="mt-8 flex flex-wrap items-center gap-3 pb-safe">
+          <button
+            type="button"
+            disabled={!chosen.length || busy}
+            onClick={create}
+            className="tap fast min-h-[44px] rounded-md bg-accent px-4 py-2.5 text-body font-medium text-white disabled:opacity-40"
+          >
+            {busy
+              ? "Setting up…"
+              : chosen.length
+                ? `Create ${chosen.length} domain${chosen.length === 1 ? "" : "s"}`
+                : "Pick at least one"}
+          </button>
+          <button
+            type="button"
+            onClick={onSkip}
+            className="tap fast min-h-[44px] px-2 text-caption text-muted hover:text-ink"
+          >
+            Skip for now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -5,9 +5,29 @@ alwaysApply: true
 
 # Nuvo conventions
 
-Single-user daily planner. **One React SPA, two shells:** a Tauri macOS app *and* an
-installable iOS PWA from the same `dist/`. Full detail lives in `CLAUDE.md` — this is the
-enforced summary.
+Personal daily planner — **single-player** (one person's funnel, no shared objects),
+**multi-tenant** (many independent accounts). **One React SPA, two shells:** a Tauri macOS
+app *and* an installable iOS PWA from the same `dist/`. Full detail lives in `CLAUDE.md` —
+this is the enforced summary.
+
+## Product truth — before deciding *what* to build
+
+This file governs **how**. `docs/product/` governs **what** and **why**; `docs/README.md`
+is the map and `docs/CLAUDE.md` is the contract.
+
+- `docs/product/overview.md` — the canon: what Nuvo is, **what it is not**. Wins over any spec.
+- `docs/product/principles.md` — 16 rules, each with a *violated when*. The audit standard.
+- `docs/product/personas.md` — the **Question Ledger**: the questions in the operator's
+  head, scored by how honestly we answer them. Ideate from an unanswered row.
+- `docs/product/decisions.md` — including what we decided **not** to do.
+
+Before proposing a product change: name the ledger row it closes, the principle it strains,
+and check it wasn't already decided. Then the **four no's** — does it add a pool, add an
+overlapping name, only work with clean data, or only hold true in the builder's own
+account? Any yes → lead with the objection.
+
+Before calling it done: update the spec's status header, add any new user-facing name to
+`docs/product/glossary.md`, and log the decision.
 
 ## Golden rule: every UI change ships mobile-ready
 

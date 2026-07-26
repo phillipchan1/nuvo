@@ -1,8 +1,8 @@
-/** Domain chapel strip — areas of lasting faithfulness. */
+/** Domain strip — the areas you keep showing up in. */
 
 const DOMAINS = [
   { name: 'Work', color: '#2563EB', vow: 'Produce what you promised.' },
-  { name: 'Church', color: '#7C3AED', vow: 'Show up with presence.' },
+  { name: 'Community', color: '#7C3AED', vow: 'Show up with presence.' },
   { name: 'Family', color: '#DB2777', vow: 'Be home when it counts.' },
   { name: 'Craft', color: '#0D9488', vow: 'Keep the practice alive.' },
 ]

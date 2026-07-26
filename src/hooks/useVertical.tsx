@@ -43,6 +43,8 @@ export interface VerticalStore {
 
   // domains
   addDomain: () => Promise<Domain>;
+  /** First-run only: create several named domains in one write. */
+  seedDomains: (specs: { name: string; color: string }[]) => Promise<void>;
   updateDomain: (id: string, patch: Partial<Domain>) => void;
   deleteDomain: (id: string) => void;
 
@@ -526,6 +528,24 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           weeklyTargetHours: row.weekly_target_hours ?? 0,
           investedThisWeek: 0, meetingHoursThisWeek: 0, quarterHours: 0, lastTouchedDays: 99, weeks: new Array(13).fill(0), sort,
         };
+      },
+      // Signup seeds no domains (migration 42) — the first-run picker calls this
+      // with what the account named for itself. One write, then a single refetch.
+      seedDomains: async (specs) => {
+        if (!specs.length) return;
+        const uid = await userId();
+        const base = domainsQ.data?.length ?? 0;
+        const { error } = await supabase.from("domains").insert(
+          specs.map((s, i) => ({
+            user_id: uid,
+            name: s.name,
+            color: s.color,
+            icon: "◇",
+            sort_order: base + i + 1,
+          })),
+        );
+        if (error) throw error;
+        invalidate(["vertical"]);
       },
       updateDomain: (id, patch) => {
         const rowPatch: Record<string, unknown> = {};

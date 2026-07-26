@@ -10,6 +10,7 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useEventRouter } from "../hooks/useEventRouter";
 import MobileShell from "./mobile/MobileShell";
+import FirstRun from "./FirstRun";
 import Planner from "./Planner";
 import Spine from "./Spine";
 import FloorPane from "./FloorPane";
@@ -74,7 +75,18 @@ export default function AppShell() {
 // (VerticalProvider + the task hooks) and navigation context.
 function ResponsiveShell() {
   const isMobile = useIsMobile();
+  const { data, ready } = useVertical();
+  const [skippedFirstRun, setSkippedFirstRun] = useState(false);
   useEventRouter(); // quietly attribute events on unmapped calendars (Layer 3)
+
+  // Signup seeds no domains (migration 42), so zero domains means a brand-new
+  // account. One gate for both shells — the picker is single-column by design.
+  // Skipping is session-only on purpose: nothing is persisted, and the funnel
+  // genuinely can't do its job until the account has named what it carries.
+  if (ready && data.domains.length === 0 && !skippedFirstRun) {
+    return <FirstRun onSkip={() => setSkippedFirstRun(true)} />;
+  }
+
   return isMobile ? <MobileShell /> : <AppShellInner />;
 }
 
