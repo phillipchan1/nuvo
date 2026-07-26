@@ -333,6 +333,21 @@ capacity track carries the live read on every step. That last part is what pays 
 splitting the sources off the grid — you no longer need them side by side to see the
 consequence of keeping something.
 
+**Then cut the prose out of it.** A first pass named the steps well and then explained
+each one in two or three sentences — instructions you learn once and re-read fifty-one
+times a year. Removed: every "tap to drop anything…", "Nuvo can group like with like…",
+"it rolled forward with no time yet…" and the desktop's step-of-four eyebrows (the
+intake bar already says where you are). What replaced them, in order of preference:
+**nothing** (an empty day strip doesn't need the word "open"; a filled readiness dot
+doesn't need "ready to schedule"), then a **shape** (the phone's per-day strip draws the
+working window with immovable time in `--line-strong` and placed blocks in their domain
+color — the answer to "how full is Tuesday?" arrives before you read a time), then a
+**glyph** (`PullKind` on `PullSuggestion` + `workBadge` turn "slipped 10× — give it a new
+time" into `↻10`, with the sentence surviving as the row's `title`), then a **number**.
+The capacity track animates its segments, so keeping or dropping a task *shows* what it
+costs rather than saying so. The composer's per-block reasoning moved to `title` on the
+phone: you want it when something looks wrong, which is not most weeks.
+
 **Strains Principle 10** (don't add a name without paying for it): "Leftovers" is one
 new user-facing name, paid for by retiring five (*Slate*, *Pull*, *Shape*, *Slot the
 projects*, *Slot the work*) and by being a step rather than a pool.

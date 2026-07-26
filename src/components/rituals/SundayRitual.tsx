@@ -39,7 +39,7 @@ import { type PullSuggestion } from "../../lib/pull";
 import { MomentumChip } from "../floors/parts";
 import { BigRocks } from "../floors/bigRocks";
 import { weekPushes } from "../../lib/priorities";
-import { LANE_QUESTION } from "../../lib/intake";
+import { LANE_QUESTION, workBadge } from "../../lib/intake";
 import WeekIntakeBar, { type WeekStep } from "./WeekIntake";
 import type { WeekIntakeRead } from "../../lib/intake";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
@@ -222,11 +222,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       {step === "loose" && (
         <div className="mx-auto max-w-[1080px]">
           {/* ── 2 · leftovers — what you already owed, before anything new ─────── */}
-          <StepHeader
-            eyebrow="Step 2 of 4 · leftovers"
-            title={LANE_QUESTION.loose}
-            note="Work that rolled forward, dates that landed on this week, and the domains that have gone quiet. Everything here is already owed — uncheck what the week can't carry."
-          />
+          <StepHeader title={LANE_QUESTION.loose} />
           <Leftovers
             suggestions={byLane.loose}
             kept={kept}
@@ -242,11 +238,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       {step === "inbox" && (
         <div className="mx-auto max-w-[1080px]">
           {/* ── 3 · the inbox — the GTD tail: loose captures get a when ────────── */}
-          <StepHeader
-            eyebrow="Step 3 of 4 · inbox"
-            title={LANE_QUESTION.inbox}
-            note="Raw captures with no time yet. Nuvo finds what's like each other and groups them into named blocks; the composer drops each block into open time in the next step."
-          />
+          <StepHeader title={LANE_QUESTION.inbox} />
           <InboxGroups
             count={inboxCount}
             runs={runs}
@@ -276,7 +268,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
 
             {gridDays.length === 0 ? (
               <div className="rounded-md border border-dashed border-line p-10 text-center text-caption text-muted">
-                No working days set — open Boundaries to choose which days you work.
+                No working days set — choose them in Boundaries.
               </div>
             ) : (
               <>
@@ -295,12 +287,12 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                   onMove={movePlacement}
                   onResize={resizePlacement}
                 />
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-meta text-muted">
+                {/* the glyphs on the blocks (✦ ▸ ✓) are the legend; four swatches
+                    restating them was a key nobody needs twice */}
+                <div className="mt-2 flex items-center gap-3 text-meta text-muted">
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", borderLeft: "3px solid var(--accent)" }} /> ✦ placed for you</span>
-                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 26%, transparent)", borderLeft: "4px solid var(--accent)", boxShadow: "inset 3px 0 0 color-mix(in srgb, var(--accent) 45%, transparent)" }} /> ▸ project slot</span>
-                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 13%, transparent)", borderLeft: "3px solid var(--accent)" }} /> already set ✓</span>
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--ink) 5%, transparent)", borderLeft: "2px solid var(--line-strong)" }} /> immovable</span>
-                  <span className="mono ml-auto">hover a placed block to drop it</span>
+                  <span className="mono ml-auto">drag to move · hover to drop</span>
                 </div>
               </>
             )}
@@ -315,10 +307,6 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                 <div className="section-label mb-1">
                   Committed, no time yet <span className="mono normal-case tracking-normal text-muted">{result.unplaced.length}</span>
                 </div>
-                <p className="mb-2 text-caption text-muted">
-                  In the week either way — the days just filled up first. Go back a step to drop some, or widen your
-                  boundaries below.
-                </p>
                 {result.unplaced.map(({ task, reason }) => (
                   <div key={task.id} className="flex items-center gap-2 border-b border-line py-1 text-label text-muted">
                     <span className="min-w-0 flex-1 truncate">{task.title}</span>
@@ -436,14 +424,13 @@ function ForwardBar({
   );
 }
 
-/** Steps 2 and 3 are pages, not rails — they get the same opening beat as the
- *  phone: an eyebrow that says where you are, the question, then the evidence. */
-function StepHeader({ eyebrow, title, note }: { eyebrow: string; title: string; note: string }) {
+/** Steps 2 and 3 are pages, not rails — and a page opens with its question and
+ *  nothing else. The step number is in the intake bar two inches above; the
+ *  explanatory paragraph taught a mechanic you learn once and re-read weekly. */
+function StepHeader({ title }: { title: string }) {
   return (
     <header className="mb-6">
-      <div className="section-label">{eyebrow}</div>
-      <h1 className="mt-1.5 text-display masthead leading-[1.05]">{title}</h1>
-      <p className="mt-2 max-w-[62ch] text-body text-muted">{note}</p>
+      <h1 className="text-display masthead leading-[1.05]">{title}</h1>
     </header>
   );
 }
@@ -482,7 +469,7 @@ function BetsStrip() {
       {!open ? (
         <div className="flex flex-wrap gap-1.5">
           {leadInits.length === 0 && (
-            <span className="text-caption text-muted italic">No lead initiatives — the week runs on faithfulness and deadlines. Tap adjust to pick up to three.</span>
+            <span className="text-caption text-muted italic">No leads — up to three, via adjust.</span>
           )}
           {leadInits.map((i) => {
             const domain = domainById(data, i.domainId);
@@ -623,7 +610,7 @@ function InboxGroups({
   onTheme: () => void;
 }) {
   if (count === 0 && runs.length === 0) {
-    return <p className="text-body text-muted">The inbox is clear — nothing loose waiting for a time.</p>;
+    return <p className="text-body text-muted">Inbox clear.</p>;
   }
   return (
     <section>
@@ -657,7 +644,6 @@ function InboxGroups({
               </div>
             ))}
           </div>
-          <p className="mt-2 text-caption text-muted">Each block lands in open time on the next step.</p>
         </div>
       )}
     </section>
@@ -705,9 +691,7 @@ function ProjectWork({
     return (
       <section>
         <h2 className="text-head masthead">The work that moves them</h2>
-        <p className="mt-1 text-caption text-muted">
-          Nothing open under this week's projects. Bring a project in above, or shape one on its record.
-        </p>
+        <p className="mt-1 text-caption text-muted">Nothing open under this week's projects.</p>
       </section>
     );
   }
@@ -757,8 +741,8 @@ function ProjectWork({
                     title={r.task.title}
                     mins={r.task.durationMins}
                     onMins={(m) => updateTask(r.task.id, { durationMins: m })}
-                    reason=""
-                    carried={false}
+                    reason={r.reason}
+                    badge={workBadge(r.kind, r.task)}
                   />
                 ))}
               </div>
@@ -780,7 +764,7 @@ function ProjectWork({
               mins={r.task.durationMins}
               onMins={(m) => updateTask(r.task.id, { durationMins: m })}
               reason={r.reason}
-              carried={false}
+              badge={workBadge(r.kind, r.task)}
             />
           ))}
         </div>
@@ -836,7 +820,7 @@ function Leftovers({
       mins={s.task.durationMins}
       onMins={(m) => updateTask(s.task.id, { durationMins: m })}
       reason={s.reason}
-      carried={s.task.rollCount > 0}
+      badge={workBadge(s.kind, s.task)}
     />
   );
 
@@ -853,7 +837,7 @@ function Leftovers({
       </div>
 
       {suggestions.length === 0 && (
-        <p className="py-1 text-caption text-muted">Nothing owed and nothing due — last week closed clean.</p>
+        <p className="py-1 text-caption text-muted">Nothing owed, nothing due.</p>
       )}
 
       <div className="grid gap-x-10 md:grid-cols-2">
@@ -863,10 +847,6 @@ function Leftovers({
             <div className="section-label">
               Carried over <span className="mono normal-case tracking-normal text-signal">{carried.length} · {hrs(carriedMins)}h</span>
             </div>
-            <p className="mt-0.5 text-caption text-muted">
-              It rolled forward with no time yet — it's already in the week, so Nuvo finds it new slots. Uncheck
-              anything you'd rather let go.
-            </p>
             <button
               onClick={onBundleCarried}
               disabled={bundling}
@@ -904,7 +884,7 @@ function Leftovers({
               mins={t.durationMins}
               onMins={(m) => updateTask(t.id, { durationMins: m })}
               reason={t.inbox ? "from the inbox" : "from a backlog"}
-              carried={t.rollCount > 0}
+              badge={t.rollCount > 0 ? workBadge("carried", t) : null}
             />
           ))}
         </div>
@@ -921,7 +901,7 @@ function WorkRow({
   mins,
   onMins,
   reason,
-  carried,
+  badge,
 }: {
   on: boolean;
   onToggle: () => void;
@@ -929,12 +909,14 @@ function WorkRow({
   title: string;
   mins: number;
   onMins: (m: number) => void;
+  /** the long form — kept as the row's tooltip */
   reason: string;
-  carried: boolean;
+  badge: ReturnType<typeof workBadge>;
 }) {
   return (
     <button
       onClick={onToggle}
+      title={reason}
       className="tap fast flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left"
       style={{ background: on ? "var(--accent-soft)" : "transparent" }}
     >
@@ -952,8 +934,19 @@ function WorkRow({
       <span className="min-w-0 flex-1 truncate text-caption" style={{ opacity: on ? 1 : 0.62 }}>
         {title}
       </span>
-      {carried && <span className="mono shrink-0 text-micro text-signal" title="Carried over from a past week">↻ carried</span>}
-      <span className="mono shrink-0 text-micro text-muted">{reason}</span>
+      {/* two glyphs where a clause used to be — the clause survives as the title */}
+      {badge && (
+        <span
+          className="mono shrink-0 rounded-full px-1.5 text-micro"
+          style={
+            badge.urgent
+              ? { color: "var(--signal)", background: "var(--signal-soft)" }
+              : { color: "var(--muted)", border: "1px solid var(--line)" }
+          }
+        >
+          {badge.text}
+        </span>
+      )}
       <DurationSelect
         value={mins}
         onChange={onMins}

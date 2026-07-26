@@ -65,13 +65,13 @@ const PUSHES = [
 
 // the pull, already split the way `useWeekDraft.byLane` splits it
 const PROJECT_WORK: PullSuggestion[] = [
-  { task: TASKS[1], reason: "Clearstream custom domains moves this week", projectId: "p1" },
-  { task: TASKS[2], reason: "Fall retreat logistics moves this week", projectId: "p2" },
+  { task: TASKS[1], reason: "Clearstream custom domains moves this week", kind: "project", projectId: "p1" },
+  { task: TASKS[2], reason: "Fall retreat logistics moves this week", kind: "project", projectId: "p2" },
 ];
 const LEFTOVERS: PullSuggestion[] = [
-  { task: TASKS[0], reason: "slipped 10× — give it a new time", projectId: "p1" },
-  { task: TASKS[5], reason: "due in 2d", projectId: null },
-  { task: TASKS[4], reason: "Family has been quiet 9d", projectId: null },
+  { task: TASKS[0], reason: "slipped 10× — give it a new time", kind: "carried", projectId: "p1" },
+  { task: TASKS[5], reason: "due in 2d", kind: "due", projectId: null },
+  { task: TASKS[4], reason: "Family has been quiet 9d", kind: "quiet", projectId: null },
 ];
 
 const KEPT = new Set(["t1", "t2", "t3", "t6"]);
@@ -93,6 +93,13 @@ const SLOTS = new Map<string, Batch>([
 const RUNS = [
   { id: "run:1", name: "Errands & admin", taskIds: ["i1", "i2", "i3"], domainId: "d3", color: "#c6708f", durationMins: 45 } as unknown as Batch,
 ];
+
+const busyAt = (d: number, h: number, mins: number, title: string) => ({
+  title, kind: "event" as const,
+  start: new Date(`${dayISO(d)}T${String(h).padStart(2, "0")}:00:00`),
+  end: new Date(new Date(`${dayISO(d)}T${String(h).padStart(2, "0")}:00:00`).getTime() + mins * 60_000),
+});
+const BUSY = [busyAt(0, 11, 60, "Standup"), busyAt(1, 9, 90, "Board sync"), busyAt(3, 13, 120, "Offsite")];
 
 const GAIN = { doneCount: 11, doneMins: 540, topMove: { name: "Clearstream", from: 40, to: 62 }, quiet: ["Family"] };
 
@@ -184,6 +191,9 @@ export default function PlanWeekHarness() {
             slotNameById={SLOTS}
             unplaced={[{ task: TASKS[3], reason: "no room" } as never]}
             routedCount={2}
+            busy={BUSY}
+            workStart={8 * 60}
+            workEnd={17 * 60}
             onDrop={() => {}}
             goal=""
             setGoal={() => {}}

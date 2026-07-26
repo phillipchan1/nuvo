@@ -29,9 +29,10 @@ import { domainById, taskDomainColor, type Project, type VerticalData } from "..
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
 import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { sprintLabel } from "../../lib/sprint";
-import { LANE_QUESTION } from "../../lib/intake";
+import { LANE_QUESTION, workBadge } from "../../lib/intake";
 import type { Batch } from "../../lib/batch";
 import type { Placement } from "../../lib/compose";
+import { toBusyBlocks, type BusyBlock } from "../../lib/now";
 import WeekIntakeBar, { type WeekStep } from "../rituals/WeekIntake";
 import DurationSelect from "../DurationSelect";
 
@@ -71,6 +72,10 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
     routedCount,
     slotById,
     runs,
+    visibleEvents,
+    onCalBlocks,
+    workStart,
+    workEnd,
     result,
     placements,
     plannedMins,
@@ -101,6 +106,10 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
   const takeOff = (p: Project) => updateProject(p.id, takeOffWeekPatch());
   const setDuration = (taskId: string, mins: number) => updateTask(taskId, { durationMins: mins });
 
+  // the one "what counts as busy" rule (lib/now.ts) — the day strips draw what the
+  // week already owes, so an empty-looking day full of meetings can't read as free
+  const busy = useMemo(() => toBusyBlocks(visibleEvents, onCalBlocks), [visibleEvents, onCalBlocks]);
+
   const weekLabel = format(parseDateISO(weekStartISO), "MMMM d");
   const spanLabel = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
 
@@ -110,9 +119,9 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center">
           <div className="section-label">{sprintLabel(weekStartISO)}</div>
           <h1 className="mt-2 text-display masthead leading-tight">The week is set</h1>
-          <p className="mt-3 text-body text-muted">
-            {placements.length} block{placements.length === 1 ? "" : "s"} placed · {keptTasks.length} committed
-            {routedCount > 0 && ` · ${routedCount} in standing slots`}.
+          <p className="mono mt-3 text-body text-muted">
+            {placements.length} scheduled · {keptTasks.length} committed
+            {routedCount > 0 && ` · ${routedCount} standing`}
           </p>
           {goal.trim() && <p className="mt-2 text-body text-ink">“{goal.trim()}”</p>}
         </div>
@@ -197,6 +206,9 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
             slotNameById={slotById}
             unplaced={result.unplaced}
             routedCount={routedCount}
+            busy={busy}
+            workStart={workStart}
+            workEnd={workEnd}
             onDrop={dropBlock}
             goal={goal}
             setGoal={setGoal}
@@ -311,17 +323,37 @@ function PrimaryButton({
   );
 }
 
+function Chip({ children, tone }: { children: React.ReactNode; tone?: "accent" | "signal" }) {
+  return (
+    <span
+      className="mono rounded-full px-2 py-0.5 text-micro"
+      style={
+        tone === "accent"
+          ? { color: "var(--accent)", background: "var(--accent-soft)" }
+          : tone === "signal"
+            ? { color: "var(--signal)", background: "var(--signal-soft)" }
+            : { color: "var(--muted)", border: "1px solid var(--line)" }
+      }
+    >
+      {children}
+    </span>
+  );
+}
+
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="py-3 text-caption text-muted">{children}</p>;
 }
 
-/** Every step opens the same way: the question it answers, in the app's own
- *  reporting voice, then the evidence. One hero per surface. */
-function StepHead({ question, note }: { question: string; note?: React.ReactNode }) {
+/** Every step opens with the question it answers and nothing else. Instructions
+ *  ("tap to drop anything…", "Nuvo can group like with like…") were the first thing
+ *  cut: they teach a mechanic you learn once and then re-read fifty-one times a
+ *  year. What survives is state, and state gets a number or a shape, not a
+ *  sentence. */
+function StepHead({ question, count }: { question: string; count?: React.ReactNode }) {
   return (
-    <div className="mb-3">
-      <h2 className="masthead text-head text-ink">{question}</h2>
-      {note && <p className="mt-1 text-caption text-muted">{note}</p>}
+    <div className="mb-3 flex items-baseline gap-2">
+      <h2 className="masthead min-w-0 flex-1 text-head text-ink">{question}</h2>
+      {count && <span className="mono shrink-0 text-meta text-muted">{count}</span>}
     </div>
   );
 }
@@ -373,15 +405,17 @@ export function ProjectsStep({
 
   return (
     <div>
-      <p className="text-caption text-muted">
-        Last 7 days — <span className="text-ink">{gain.doneCount} done · {hrs(gain.doneMins)}h</span>.
+      {/* last week, as chips. It was a sentence with three clauses and two full
+          stops; nobody parses grammar to learn they did nine hours. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Chip>{gain.doneCount} done · {hrs(gain.doneMins)}h</Chip>
         {gain.topMove && (
-          <span style={{ color: "var(--accent)" }}> {gain.topMove.name} climbed {gain.topMove.from}→{gain.topMove.to}%.</span>
+          <Chip tone="accent">{gain.topMove.name} ↑{gain.topMove.to - gain.topMove.from}</Chip>
         )}
-        {gain.quiet.length > 0 && (
-          <span style={{ color: "var(--signal)" }}> {gain.quiet.join(" & ")} went quiet.</span>
-        )}
-      </p>
+        {gain.quiet.map((q) => (
+          <Chip key={q} tone="signal">{q} quiet</Chip>
+        ))}
+      </div>
 
       <h2 className="masthead mt-4 text-head text-ink">{LANE_QUESTION.projects}</h2>
 
@@ -402,16 +436,34 @@ export function ProjectsStep({
                     aria-hidden
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-body text-ink">{project.name}</div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="min-w-0 flex-1 truncate text-body text-ink">{project.name}</span>
+                      {/* how much of this project's work is in the week — a meter
+                          and a fraction, where a clause used to be */}
+                      {work.length > 0 && (
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          <span className="h-1 w-8 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+                            <span
+                              className="block h-full rounded-full transition-[width] duration-300"
+                              style={{ width: `${(on / work.length) * 100}%`, background: color }}
+                            />
+                          </span>
+                          <span className="mono text-micro text-muted">{on}/{work.length}</span>
+                        </span>
+                      )}
+                    </div>
                     {/* a missing outcome is already reported by the gap line below —
                         saying it twice made the row look broken */}
                     {project.outcome?.trim() && (
                       <div className="truncate text-caption text-muted">{project.outcome.trim()}</div>
                     )}
-                    <div className="mono mt-0.5 text-micro" style={{ color: ready ? color : "var(--muted)" }}>
-                      {shipped ? "shipped this week" : ready ? "ready to schedule" : gaps.map((g) => g.label).join(" · ")}
-                      {work.length > 0 && ` · ${on}/${work.length} of its work in`}
-                    </div>
+                    {/* "ready to schedule" said nothing the filled dot didn't. Only
+                        the gaps — the actionable half — still earn a line. */}
+                    {shipped ? (
+                      <div className="mono mt-0.5 text-micro" style={{ color }}>shipped</div>
+                    ) : !ready ? (
+                      <div className="mono mt-0.5 text-micro text-muted">{gaps.map((g) => g.label).join(" · ")}</div>
+                    ) : null}
                   </div>
                   <button
                     onClick={() => onTakeOff(project)}
@@ -441,7 +493,7 @@ export function ProjectsStep({
           })}
         </div>
       ) : (
-        <Empty>No projects on this week yet — bring one in below.</Empty>
+        <Empty>Nothing on this week yet.</Empty>
       )}
 
       {(byProject.get("loose")?.length ?? 0) > 0 && (
@@ -461,7 +513,7 @@ export function ProjectsStep({
           <div className="section-label mb-2 !p-0">Add a project</div>
           <div className="flex flex-wrap gap-2">
             {needsWeek.map((p) => (
-              <ProjectChip key={p.id} data={data} p={p} reason="no week yet" onTap={() => onBringIn(p)} />
+              <ProjectChip key={p.id} data={data} p={p} onTap={() => onBringIn(p)} />
             ))}
             {showElsewhere &&
               elsewhere.map((p) => (
@@ -502,7 +554,8 @@ function ProjectChip({
 }: {
   data: VerticalData;
   p: Project;
-  reason: string;
+  /** only when it says something the heading doesn't — e.g. it's parked elsewhere */
+  reason?: string;
   onTap: () => void;
 }) {
   const color = domainById(data, p.domainId)?.color ?? "var(--accent)";
@@ -513,7 +566,7 @@ function ProjectChip({
     >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
       <span className="text-ink">{p.name}</span>
-      <span className="mono text-micro text-muted">{reason}</span>
+      {reason && <span className="mono text-micro text-muted">{reason}</span>}
     </button>
   );
 }
@@ -547,25 +600,20 @@ export function LeftoversStep({
     <div>
       <StepHead
         question={LANE_QUESTION.loose}
-        note="Work you already owed, dates that landed, and the domains that have gone quiet. Tap to drop anything the week can't carry."
+        count={suggestions.length > 0 ? `${suggestions.length}` : undefined}
       />
 
-      {suggestions.length === 0 && (
-        <Empty>Nothing owed and nothing due — last week closed clean.</Empty>
-      )}
+      {suggestions.length === 0 && <Empty>Nothing owed, nothing due.</Empty>}
 
       {carried.length > 0 && (
         <section className="mt-1">
           <div className="section-label mb-1 !p-0">Carried over · {carried.length} · {hrs(carriedMins)}h</div>
-          <p className="text-caption text-muted">
-            It rolled forward with no time yet — it's already in the week, so Nuvo finds it new slots.
-          </p>
           {/* a full-width 44px target, not an inline text link: the same action on
               the Inbox step is a real button, and a 14px tap zone fails golden rule 2 */}
           <button
             onClick={onBundleCarried}
             disabled={bundling}
-            className="tap fast mb-2 mt-2 flex min-h-[44px] w-full items-center justify-center rounded-xl px-4 text-body text-accent active:opacity-80 disabled:opacity-50"
+            className="tap fast mb-2 flex min-h-[44px] w-full items-center justify-center rounded-xl px-4 text-body text-accent active:opacity-80 disabled:opacity-50"
             style={{ background: "var(--accent-soft)" }}
           >
             {bundling ? "Grouping…" : "✦ Group into focus blocks"}
@@ -622,14 +670,9 @@ export function InboxStep({
 }) {
   return (
     <div>
-      <StepHead
-        question={LANE_QUESTION.inbox}
-        note={
-          inboxCount === 0
-            ? "The inbox is clear — nothing loose waiting for a time."
-            : `${inboxCount} capture${inboxCount === 1 ? "" : "s"} with no time yet. Nuvo can group like with like into named blocks and drop each into open time.`
-        }
-      />
+      <StepHead question={LANE_QUESTION.inbox} count={inboxCount > 0 ? `${inboxCount}` : undefined} />
+
+      {inboxCount === 0 && runs.length === 0 && <Empty>Inbox clear.</Empty>}
 
       {inboxCount > 0 && (
         <>
@@ -656,11 +699,9 @@ export function InboxStep({
                   style={{ background: r.color ?? "var(--accent)" }}
                   aria-hidden
                 />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body text-ink">{r.name}</div>
-                  <div className="mono truncate text-micro text-muted">
-                    {r.taskIds.length} capture{r.taskIds.length === 1 ? "" : "s"} · {r.durationMins}m — scheduled in step 4
-                  </div>
+                <div className="min-w-0 flex-1 truncate text-body text-ink">{r.name}</div>
+                <div className="mono shrink-0 text-micro text-muted">
+                  {r.taskIds.length} · {r.durationMins}m
                 </div>
               </div>
             ))}
@@ -702,10 +743,12 @@ function WorkRow({
   hideReason?: boolean;
 }) {
   const color = domainById(data, s.task.domainId)?.color ?? "var(--accent)";
+  const badge = workBadge(s.kind, s.task);
   return (
     <button
       onClick={onToggle}
-      className="tap fast flex w-full items-start gap-3 border-b border-line py-3 text-left active:bg-surface-2"
+      title={s.reason}
+      className="tap fast flex w-full items-start gap-2.5 border-b border-line py-3 text-left active:bg-surface-2"
     >
       <span
         className="mt-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
@@ -717,8 +760,19 @@ function WorkRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className={`block truncate text-body ${on ? "text-ink" : "text-muted"}`}>{s.task.title}</span>
-        {!hideReason && <span className="mono block truncate text-micro text-muted">{s.reason}</span>}
       </span>
+      {!hideReason && badge && (
+        <span
+          className="mono shrink-0 self-center rounded-full px-1.5 py-0.5 text-micro"
+          style={
+            badge.urgent
+              ? { color: "var(--signal)", background: "var(--signal-soft)" }
+              : { color: "var(--muted)", border: "1px solid var(--line)" }
+          }
+        >
+          {badge.text}
+        </span>
+      )}
       <DurationSelect
         value={s.task.durationMins}
         onChange={(m) => onDuration(s.task.id, m)}
@@ -726,6 +780,74 @@ function WorkRow({
         title="Sitting length"
       />
     </button>
+  );
+}
+
+/**
+ * A day, as a shape. The working window drawn end to end, with what's already
+ * immovable in neutral and what Nuvo placed in its domain's color — so the answer
+ * to "how full is Tuesday, and where's the hole?" arrives before you read a single
+ * time. An empty day is an empty bar; it doesn't need the word "open".
+ */
+function DayStrip({
+  data,
+  list,
+  busy,
+  slotNameById,
+  startMin,
+  endMin,
+}: {
+  data: VerticalData;
+  list: Placement[];
+  busy: BusyBlock[];
+  slotNameById: ReturnType<typeof useWeekDraft>["slotById"];
+  startMin: number;
+  endMin: number;
+}) {
+  // stretch the window if anything sits outside working hours, so nothing clips
+  let lo = startMin;
+  let hi = endMin;
+  for (const p of list) {
+    lo = Math.min(lo, p.startMin);
+    hi = Math.max(hi, p.startMin + p.durationMin);
+  }
+  for (const b of busy) {
+    lo = Math.min(lo, b.start.getHours() * 60 + b.start.getMinutes());
+    hi = Math.max(hi, b.end.getHours() * 60 + b.end.getMinutes());
+  }
+  const span = Math.max(60, hi - lo);
+  const at = (m: number) => `${((m - lo) / span) * 100}%`;
+  const wide = (m: number) => `${Math.max(1.5, (m / span) * 100)}%`;
+
+  return (
+    <div className="relative h-2 w-full overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+      {busy.map((b, i) => {
+        const s = b.start.getHours() * 60 + b.start.getMinutes();
+        const e = b.end.getHours() * 60 + b.end.getMinutes();
+        return (
+          <div
+            key={`b${i}`}
+            className="absolute inset-y-0"
+            // a translucent ink wash vanished against the warm track — immovable time
+            // has to be unmistakable, or a day full of meetings reads as free
+            style={{ left: at(s), width: wide(e - s), background: "var(--line-strong)" }}
+            title={b.title}
+          />
+        );
+      })}
+      {list.map((p) => {
+        const slot = slotNameById.get(p.task.id);
+        const color = slot?.color ?? taskDomainColor(data, p.task) ?? "var(--accent)";
+        return (
+          <div
+            key={`${p.task.id}#${p.part ?? 1}`}
+            className="absolute inset-y-0 rounded-[2px]"
+            style={{ left: at(p.startMin), width: wide(p.durationMin), background: color }}
+            title={slot ? slot.name : p.task.title}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -738,6 +860,9 @@ export function WeekStep({
   slotNameById,
   unplaced,
   routedCount,
+  busy,
+  workStart,
+  workEnd,
   onDrop,
   goal,
   setGoal,
@@ -749,6 +874,11 @@ export function WeekStep({
   slotNameById: ReturnType<typeof useWeekDraft>["slotById"];
   unplaced: ReturnType<typeof useWeekDraft>["result"]["unplaced"];
   routedCount: number;
+  /** what the day already owes before this plan — the one "what counts as busy"
+   *  rule, from `toBusyBlocks` (lib/now.ts), never re-derived here */
+  busy: BusyBlock[];
+  workStart: number;
+  workEnd: number;
   onDrop: (taskId: string) => void;
   goal: string;
   setGoal: (g: string) => void;
@@ -757,21 +887,26 @@ export function WeekStep({
   const byDay = new Map<string, Placement[]>();
   for (const p of placements) byDay.set(p.dayISO, [...(byDay.get(p.dayISO) ?? []), p]);
   for (const list of byDay.values()) list.sort((a, b) => a.startMin - b.startMin);
+  const busyByDay = new Map<string, BusyBlock[]>();
+  for (const b of busy) {
+    const iso = format(b.start, "yyyy-MM-dd");
+    busyByDay.set(iso, [...(busyByDay.get(iso) ?? []), b]);
+  }
 
   return (
     <div>
       <StepHead
         question="Here's the week"
-        note={
+        count={
           <>
-            {placements.length} scheduled · {unplaced.length} committed with no time yet
-            {routedCount > 0 && ` · ${routedCount} in standing slots`}. Tap a block to take it out.
+            {placements.length} scheduled
+            {routedCount > 0 && ` · ${routedCount} standing`}
           </>
         }
       />
 
       {days.length === 0 && (
-        <Empty>No working days set — choose your working days in Settings, then plan.</Empty>
+        <Empty>No working days set — choose them in Settings.</Empty>
       )}
 
       {days.map(({ iso, past }) => {
@@ -779,10 +914,16 @@ export function WeekStep({
         return (
           <section key={iso} className={`mt-4 ${past ? "opacity-50" : ""}`}>
             <div className="section-label mb-1 !p-0">{format(parseDateISO(iso), "EEEE, MMM d")}</div>
-            {list.length === 0 ? (
-              <p className="border-t border-line py-2.5 text-caption text-muted">open</p>
-            ) : (
-              <div className="border-t border-line">
+            <DayStrip
+              data={data}
+              list={list}
+              busy={busyByDay.get(iso) ?? []}
+              slotNameById={slotNameById}
+              startMin={workStart}
+              endMin={workEnd}
+            />
+            {list.length > 0 && (
+              <div className="mt-1.5 border-t border-line">
                 {list.map((p) => {
                   const slot = slotNameById.get(p.task.id);
                   const color = slot?.color ?? taskDomainColor(data, p.task) ?? "var(--accent)";
@@ -798,10 +939,12 @@ export function WeekStep({
                             <span className="mono text-micro text-muted"> ({p.part}/{p.parts})</span>
                           )}
                         </div>
-                        <div className="mono truncate text-micro text-muted">
+                        {/* the reason Nuvo chose this time lives in the title, not
+                            on the row: you want it when something looks wrong, which
+                            is not most weeks */}
+                        <div className="mono truncate text-micro text-muted" title={p.reason}>
                           {p.durationMin}m
                           {slot && slot.taskIds.length > 1 && ` · ${slot.taskIds.length} steps`}
-                          {p.reason && ` · ${p.reason}`}
                         </div>
                       </div>
                       <button
@@ -822,7 +965,7 @@ export function WeekStep({
 
       {unplaced.length > 0 && (
         <section className="mt-5 border-t border-line pt-3">
-          <div className="section-label mb-1 !p-0">Committed, no time yet ({unplaced.length})</div>
+          <div className="section-label mb-1 !p-0">No time yet · {unplaced.length}</div>
           {unplaced.map(({ task, reason }) => (
             <div key={task.id} className="flex items-baseline gap-2 py-1">
               <span className="min-w-0 flex-1 truncate text-caption text-muted">{task.title}</span>

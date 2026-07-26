@@ -117,3 +117,33 @@ export function readIntake(
     trackMins: Math.max(budgetMins ?? 0, loadMins, 60),
   };
 }
+
+/**
+ * The compact badge a row wears instead of its reason sentence.
+ *
+ * The flow is read every week. "slipped 10× — give it a new time" is a useful
+ * sentence the first time and pure friction the fiftieth; `↻10` is the same fact
+ * in two glyphs, and the sentence survives as the row's `title` for anyone who
+ * wants it. Returns null when the reason is already implied by where the row sits
+ * (project work under its project's name).
+ */
+export function workBadge(
+  kind: "carried" | "project" | "lead" | "due" | "quiet",
+  task: { rollCount?: number | null; deadlineDaysAway?: number | null },
+): { text: string; urgent: boolean } | null {
+  switch (kind) {
+    case "carried":
+      return { text: `↻${task.rollCount ?? 1}`, urgent: (task.rollCount ?? 0) >= 3 };
+    case "due": {
+      const d = task.deadlineDaysAway;
+      if (d == null) return { text: "due", urgent: true };
+      return d <= 0 ? { text: "overdue", urgent: true } : { text: `${d}d`, urgent: d <= 2 };
+    }
+    case "quiet":
+      return { text: "quiet", urgent: false };
+    case "lead":
+      return { text: "★", urgent: false };
+    case "project":
+      return null;
+  }
+}

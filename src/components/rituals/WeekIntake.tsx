@@ -197,19 +197,27 @@ function CapacityTrack({ intake, dense }: { intake: WeekIntakeRead; dense?: bool
               left: pct(intake.loadMins),
               width: pct(roomMins),
               background: "color-mix(in srgb, var(--slot) 16%, transparent)",
+              transition: "left .32s var(--ease-out), width .32s var(--ease-out)",
             }}
           />
         )}
-        {placed.map((s) =>
-          s.mins <= 0 ? null : (
-            <div
-              key={s.key}
-              className="absolute inset-y-0"
-              style={{ left: pct(s.left), width: pct(s.mins), background: s.fill }}
-              title={`${s.label} · ${hrs(s.mins)}h`}
-            />
-          ),
-        )}
+        {/* Animated, and that's the point: keeping or dropping a task slides the
+            week's load in front of you. The consequence is *shown*, so no copy has
+            to say "this is what it costs". Widths are always rendered (0% when a
+            lane is empty) so the transition has something to move from. */}
+        {placed.map((s) => (
+          <div
+            key={s.key}
+            className="absolute inset-y-0"
+            style={{
+              left: pct(s.left),
+              width: pct(s.mins),
+              background: s.fill,
+              transition: "left .32s var(--ease-out), width .32s var(--ease-out)",
+            }}
+            title={`${s.label} · ${hrs(s.mins)}h`}
+          />
+        ))}
         {/* the pace line — where your proven week ends. Only drawn once you're past it. */}
         {budgetMins != null && overMins > 0 && (
           <div
