@@ -35,6 +35,7 @@ import { clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup }
 import { isStandingSlot, routeToStanding } from "../lib/standingSlots";
 import { supabase } from "../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../lib/calibration";
+import { laneOf, readIntake } from "../lib/intake";
 import { suggestPull } from "../lib/pull";
 import type { Task } from "../lib/types";
 
@@ -222,6 +223,28 @@ export function useWeekDraft() {
   );
 
   const gain = useMemo(() => computeGain(data), [data]);
+
+  // ── the intake — which of the three sources this week's weight comes from ──
+  // Both shells draw the same funnel off this, so "Projects · Leftovers · Inbox"
+  // can never mean two different things on two screens (lib/intake.ts).
+  const intakeTasks = useMemo(() => {
+    const seen = new Set(keptTasks.map((t) => t.id));
+    // captures swept into a themed run join the week without ever being "kept" —
+    // they're weight either way, so the funnel has to count them
+    return [...keptTasks, ...allTasks.filter((t) => runMemberIds.has(t.id) && !seen.has(t.id))];
+  }, [keptTasks, allTasks, runMemberIds]);
+  const intake = useMemo(
+    () => readIntake(intakeTasks, { blockedMins, budgetMins: budget ?? null }),
+    [intakeTasks, blockedMins, budget],
+  );
+  /** The pull, split into the three lanes the flow's steps edit. A suggestion's
+   *  lane is decided in exactly one place (`laneOf`), so the funnel's arithmetic
+   *  and the step you edit it on can never disagree. */
+  const byLane = useMemo(() => {
+    const out = { projects: [] as typeof suggestions, loose: [] as typeof suggestions, inbox: [] as typeof suggestions };
+    for (const s of suggestions) out[laneOf(s.task)].push(s);
+    return out;
+  }, [suggestions]);
 
   // Hand-edits on top of Nuvo's auto-placement: a move (day + start) or a resize
   // (duration) per BLOCK. These override the composed placement and ride into the
@@ -428,8 +451,10 @@ export function useWeekDraft() {
     dayContexts,
     workStart,
     workEnd,
-    // the pull
+    // the pull — whole, and split into the flow's three lanes
     suggestions,
+    byLane,
+    intake,
     kept,
     setKept,
     keptTasks,

@@ -11,7 +11,7 @@
 // intelligence does the deciding-where. You stay at altitude.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { differenceInCalendarDays, format, subDays } from "date-fns";
+import { addDays, differenceInCalendarDays, format, subDays } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useSettings } from "../../hooks/useSettings";
 import { placementKey, useWeekDraft } from "../../hooks/useWeekDraft";
@@ -35,9 +35,13 @@ import { CONTEXT_META, plannedMinutes, type DayContext, type Placement } from ".
 import { type Batch } from "../../lib/batch";
 import DurationSelect from "../DurationSelect";
 import { type calibrate, type confidence } from "../../lib/calibration";
-import { type suggestPull, type PullSuggestion } from "../../lib/pull";
+import { type PullSuggestion } from "../../lib/pull";
 import { MomentumChip } from "../floors/parts";
 import { BigRocks } from "../floors/bigRocks";
+import { weekPushes } from "../../lib/priorities";
+import { LANE_QUESTION, workBadge } from "../../lib/intake";
+import WeekIntakeBar, { type WeekStep } from "./WeekIntake";
+import type { WeekIntakeRead } from "../../lib/intake";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import { Btn } from "../ui";
 
@@ -51,7 +55,17 @@ const fmtMinShort = (m: number) => {
   return mm === 0 ? `${hh}${ap}` : `${hh}:${String(mm).padStart(2, "0")}${ap}`;
 };
 
-type Phase = "intent" | "shape";
+// Four steps, the same four the phone runs: **Projects · Leftovers · Inbox → The
+// week.** They are named after what they hold, not after invented verbs ("Slate",
+// "Pull", "Shape" appeared nowhere else in the product), and the header
+// (`WeekIntakeBar`) draws all four as one funnel with a live capacity read.
+//
+// **They are steps, not gates** — which is the distinction the old five-step wizard
+// got wrong. Every lane is one click away at any time (including backwards from the
+// grid), the week is fully composed the moment this opens, and the capacity track
+// gives the same live "can I carry this?" read on every step. That last part is what
+// pays for splitting the sources off the grid: you no longer need them side by side
+// to see the consequence of keeping something, because the track shows it.
 
 export default function SundayRitual({ onClose }: { onClose: () => void }) {
   // Everything the week IS — the pull, the standing-slot routing, the project
@@ -70,13 +84,15 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     workStart,
     workEnd,
     fromGate,
-    suggestions,
+    byLane,
+    intake,
     kept,
     setKept,
     keptCount,
     dropBlock,
     routedCount,
     slotById,
+    runs,
     visibleEvents,
     weekSlots,
     onCalBlocks,
@@ -102,11 +118,19 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     committed,
   } = draft;
 
-  // two acts — set the intent (act 1), then shape the composed week (act 2)
-  const [phase, setPhase] = useState<Phase>("intent");
+  // one piece of state for the step and the header's active lane — the lane IS the
+  // position, so the two can never disagree.
+  const [step, setStep] = useState<WeekStep>("projects");
+  const [visited, setVisited] = useState<Set<WeekStep>>(new Set(["projects"]));
   const [showBoundaries, setShowBoundaries] = useState(false);
+  const go = (s: WeekStep) => {
+    setStep(s);
+    setVisited((v) => new Set([...v, s]));
+  };
 
   const placedCount = placements.length;
+  const weekSpan = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
+  const weekProjectCount = weekPushes(data, weekStartISO).length;
 
   // esc closes; the draft resumes — nothing is committed until you say so
   useEffect(() => {
@@ -133,13 +157,18 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       weekLabel={format(parseDateISO(weekStartISO), "MMM d")}
       planningAhead={planningAhead}
-      steps={<StepNav phase={phase} setPhase={setPhase} />}
+      intake={
+        <WeekIntakeBar intake={intake} step={step} onStep={go} visited={visited} waitingInbox={inboxCount} />
+      }
       footer={
-        phase === "intent" ? (
-          <IntentBar
-            priorityCount={data.bigRocks.filter((r) => r.title.trim()).length}
+        step !== "week" ? (
+          <ForwardBar
+            step={step}
+            projectCount={weekProjectCount}
             leadCount={data.focusInitiativeIds.length}
-            onNext={() => setPhase("shape")}
+            intake={intake}
+            waitingInbox={inboxCount}
+            onNext={() => go(step === "projects" ? "loose" : step === "loose" ? "inbox" : "week")}
           />
         ) : (
           <CommitBar
@@ -156,12 +185,12 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
         )
       }
     >
-      {phase === "intent" ? (
+      {step === "projects" && (
         <div className="mx-auto max-w-[1080px]">
-          {/* ── ACT 1 · set the week — open with the look-back, then the intent ── */}
+          {/* ── 1 · the projects — open with the look-back, then what moves ────── */}
           {/* hero: ceremony + the gain folded in as the supporting read, not a stray line */}
           <header className="mb-8">
-            <div className="section-label"><span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · Slot the projects · {planningAhead ? "the week ahead" : "this week"}</div>
+            <div className="section-label"><span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · {weekSpan} · {planningAhead ? "the week ahead" : "this week"}</div>
             <h1 className="mt-1.5 text-display masthead leading-[1.05]">
               Week of {format(parseDateISO(weekStartISO), "MMMM d")}
             </h1>
@@ -179,21 +208,59 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
           {/* the initiatives — the strategic backdrop; a quiet check above the week's intent */}
           <BetsStrip />
 
-          {/* priorities — the heart: name what would make this week a win */}
+          {/* the projects — the heart: name what would make this week a win */}
           <div className="mt-8"><BigRocks weekStartISO={weekStartISO} /></div>
+
+          {/* …and the work that moves them. Naming a project has to bring its work
+              with it, or step 4 has nothing to place. */}
+          <div className="mt-8">
+            <ProjectWork suggestions={byLane.projects} kept={kept} setKept={setKept} data={data} />
+          </div>
         </div>
-      ) : (
-        // ── ACT 2 · shape it — the composed week wide, pull + boundaries railed ──
+      )}
+
+      {step === "loose" && (
+        <div className="mx-auto max-w-[1080px]">
+          {/* ── 2 · leftovers — what you already owed, before anything new ─────── */}
+          <StepHeader title={LANE_QUESTION.loose} />
+          <Leftovers
+            suggestions={byLane.loose}
+            kept={kept}
+            setKept={setKept}
+            data={data}
+            onBundleCarried={() => void themeCarried()}
+            bundling={themingCarried}
+            bundleErr={carriedErr}
+          />
+        </div>
+      )}
+
+      {step === "inbox" && (
+        <div className="mx-auto max-w-[1080px]">
+          {/* ── 3 · the inbox — the GTD tail: loose captures get a when ────────── */}
+          <StepHeader title={LANE_QUESTION.inbox} />
+          <InboxGroups
+            count={inboxCount}
+            runs={runs}
+            theming={theming}
+            error={themeErr}
+            onTheme={() => void themeInbox()}
+          />
+        </div>
+      )}
+
+      {step === "week" && (
+        // ── 4 · the week — the composed board wide, boundaries + pool railed ───
         <div className="flex flex-col gap-6 lg:flex-row">
           <section className="min-w-0 flex-1">
             <div className="mb-2 flex items-baseline justify-between gap-3">
               {/* no "batch into focus blocks" button: the board already composes
-                  project slots and themed runs. A second batcher over the
+                  project slots and grouped runs. A second batcher over the
                   already-committed week was a different answer to the same
                   question, shown in a modal you couldn't edit. */}
-              <h2 className="text-head masthead">The week</h2>
+              <h2 className="text-head masthead">Here's the week</h2>
               <span className="mono shrink-0 text-meta text-muted">
-                {placedCount} placed · {result.unplaced.length} in the pool
+                {placedCount} scheduled · {result.unplaced.length} with no time yet
                 {routedCount > 0 && ` · ${routedCount} in standing slots`}
                 {eventCount > 0 && ` · ${eventCount} immovable`}
               </span>
@@ -201,7 +268,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
 
             {gridDays.length === 0 ? (
               <div className="rounded-md border border-dashed border-line p-10 text-center text-caption text-muted">
-                No working days set — open Boundaries to choose which days you work.
+                No working days set — choose them in Boundaries.
               </div>
             ) : (
               <>
@@ -220,52 +287,34 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                   onMove={movePlacement}
                   onResize={resizePlacement}
                 />
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-meta text-muted">
+                {/* the glyphs on the blocks (✦ ▸ ✓) are the legend; four swatches
+                    restating them was a key nobody needs twice */}
+                <div className="mt-2 flex items-center gap-3 text-meta text-muted">
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", borderLeft: "3px solid var(--accent)" }} /> ✦ placed for you</span>
-                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 26%, transparent)", borderLeft: "4px solid var(--accent)", boxShadow: "inset 3px 0 0 color-mix(in srgb, var(--accent) 45%, transparent)" }} /> ▸ project slot</span>
-                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 13%, transparent)", borderLeft: "3px solid var(--accent)" }} /> already set ✓</span>
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--ink) 5%, transparent)", borderLeft: "2px solid var(--line-strong)" }} /> immovable</span>
-                  <span className="mono ml-auto">hover a placed block to drop it</span>
+                  <span className="mono ml-auto">drag to move · hover to drop</span>
                 </div>
               </>
             )}
+          </section>
 
+          {/* right rail — what didn't find a time, and the boundaries that decided
+              where things could go. The sources themselves live in steps 1–3; the
+              header's capacity track keeps their weight in view from here. */}
+          <aside className="shrink-0 space-y-5 lg:w-[320px]">
             {result.unplaced.length > 0 && (
-              <div className="mt-3 border-t border-line pt-2.5">
-                <div className="section-label mb-1">In the pool — committed, no time yet ({result.unplaced.length})</div>
+              <section>
+                <div className="section-label mb-1">
+                  Committed, no time yet <span className="mono normal-case tracking-normal text-muted">{result.unplaced.length}</span>
+                </div>
                 {result.unplaced.map(({ task, reason }) => (
-                  <div key={task.id} className="flex items-center gap-2 text-label text-muted">
-                    <span className="min-w-0 truncate">{task.title}</span>
+                  <div key={task.id} className="flex items-center gap-2 border-b border-line py-1 text-label text-muted">
+                    <span className="min-w-0 flex-1 truncate">{task.title}</span>
                     <span className="mono shrink-0 text-micro">{reason}</span>
                   </div>
                 ))}
-              </div>
+              </section>
             )}
-          </section>
-
-          {/* right rail — carry forward → the week's projects → loose inbox.
-              That's the order the week is actually owed: debt you already carry,
-              then the intent you named, then whatever's discretionary. */}
-          <aside className="shrink-0 space-y-5 lg:w-[360px]">
-            {/* the candidates — carrying forward, then the projects' work */}
-            <Candidates
-              suggestions={suggestions}
-              kept={kept}
-              setKept={setKept}
-              data={data}
-              onThemeCarried={() => void themeCarried()}
-              themingCarried={themingCarried}
-              carriedErr={carriedErr}
-            />
-
-            {/* clear the inbox — the GTD tail: loose captures get a when. AI finds
-                what's like each other, the composer drops each run into open time. */}
-            <InboxRun
-              count={inboxCount}
-              theming={theming}
-              error={themeErr}
-              onTheme={() => void themeInbox()}
-            />
 
             {/* boundaries — settings, tucked away; here when you need them */}
             <Boundaries
@@ -288,14 +337,15 @@ function Shell({
   onClose,
   weekLabel,
   planningAhead,
-  steps,
+  intake,
   footer,
   children,
 }: {
   onClose: () => void;
   weekLabel: string;
   planningAhead: boolean;
-  steps?: React.ReactNode;
+  /** The funnel — always visible, on both acts. */
+  intake?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -314,72 +364,74 @@ function Shell({
             </span>
           </div>
         </div>
-        {steps && <div className="hidden md:block">{steps}</div>}
         <div className="flex-1" />
         <button onClick={onClose} className="keycap shrink-0">esc — resumes later</button>
       </header>
+      {/* the funnel — the three sources and the one week they pour into, held in
+          view for the whole flow so the arithmetic is never a surprise at commit */}
+      {intake && (
+        <div className="shrink-0 border-b border-line px-8 py-2">
+          <div className="mx-auto max-w-[1080px]">{intake}</div>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">{children}</div>
       {footer}
     </div>
   );
 }
 
-// the two acts — set the intent, then shape the week. NOT a gated wizard: the
-// week is still pre-composed; this just splits a long page into two calm beats,
-// and the dots jump freely between them.
-function StepNav({ phase, setPhase }: { phase: Phase; setPhase: (p: Phase) => void }) {
-  const steps: { id: Phase; n: number; label: string }[] = [
-    // The flow is the app's two verbs, twice: slot the projects into the week,
-    // then slot their work into days. It used to invent "Set" / "Shape" for these
-    // — verbs that appear nowhere else — because we hadn't noticed it was doing
-    // the same act at two altitudes.
-    { id: "intent", n: 1, label: "Slot the projects" },
-    { id: "shape", n: 2, label: "Slot the work" },
-  ];
-  return (
-    <div className="flex items-center gap-1">
-      {steps.map((s, i) => {
-        const active = s.id === phase;
-        const done = phase === "shape" && s.id === "intent";
-        return (
-          <div key={s.id} className="flex items-center gap-1">
-            {i > 0 && <span className="mono text-meta text-line">→</span>}
-            <button
-              onClick={() => setPhase(s.id)}
-              className="fast mono flex items-center gap-1.5 rounded-full px-2 py-0.5 text-label"
-              style={{ background: active ? "var(--accent-soft)" : "transparent", color: active ? "var(--accent)" : "var(--muted)" }}
-            >
-              <span
-                className="flex h-4 w-4 items-center justify-center rounded-full text-micro"
-                style={{
-                  background: active ? "var(--accent)" : done ? "var(--accent-soft)" : "var(--line)",
-                  color: active ? "#fff" : done ? "var(--accent)" : "var(--muted)",
-                }}
-              >
-                {done ? "✓" : s.n}
-              </span>
-              {s.label}
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// The forward beat out of steps 1–3. Plain words for the thing you're going to,
+// and a mono read of what the step you're leaving actually put in the week.
+function ForwardBar({
+  step,
+  projectCount,
+  leadCount,
+  intake,
+  waitingInbox,
+  onNext,
+}: {
+  step: WeekStep;
+  projectCount: number;
+  leadCount: number;
+  intake: WeekIntakeRead;
+  waitingInbox: number;
+  onNext: () => void;
+}) {
+  const read =
+    step === "projects"
+      ? `${projectCount > 0 ? `${projectCount} project${projectCount === 1 ? "" : "s"} this week` : "no projects on this week yet"}` +
+        `${leadCount > 0 ? ` · ★ ${leadCount} lead${leadCount === 1 ? "" : "s"}` : ""}` +
+        `${intake.projects.count > 0 ? ` · ${intake.projects.count} piece${intake.projects.count === 1 ? "" : "s"} of their work in` : ""}`
+      : step === "loose"
+        ? intake.loose.count > 0
+          ? `${intake.loose.count} leftover${intake.loose.count === 1 ? "" : "s"} kept · ${hrs(intake.loose.mins)}h`
+          : "nothing owed and nothing due"
+        : intake.inbox.count > 0
+          ? `${intake.inbox.count} capture${intake.inbox.count === 1 ? "" : "s"} joining the week` +
+            (waitingInbox > 0 ? ` · ${waitingInbox} left in the inbox` : "")
+          : waitingInbox > 0
+            ? `${waitingInbox} still in the inbox — they'll keep`
+            : "the inbox is clear";
+  const label = step === "projects" ? "Leftovers →" : step === "loose" ? "Inbox →" : "The week →";
 
-// Act 1's footer — the forward beat into shaping the week.
-function IntentBar({ priorityCount, leadCount, onNext }: { priorityCount: number; leadCount: number; onNext: () => void }) {
   return (
     <footer className="shrink-0 border-t border-line px-8 py-3">
       <div className="mx-auto flex max-w-[1080px] items-center gap-4">
-        <div className="mono min-w-0 flex-1 text-meta text-muted">
-          {priorityCount > 0 ? `${priorityCount} priorit${priorityCount === 1 ? "y" : "ies"}` : "no priorities yet"}
-          {leadCount > 0 ? ` · ★ ${leadCount} lead${leadCount === 1 ? "" : "s"}` : ""}
-          {" — set the intent, then shape the week around it"}
-        </div>
-        <Btn kind="primary" onClick={onNext} className="shrink-0 px-4 py-2">Slot the work →</Btn>
+        <div className="mono min-w-0 flex-1 text-meta text-muted">{read}</div>
+        <Btn kind="primary" onClick={onNext} className="shrink-0 px-4 py-2">{label}</Btn>
       </div>
     </footer>
+  );
+}
+
+/** Steps 2 and 3 are pages, not rails — and a page opens with its question and
+ *  nothing else. The step number is in the intake bar two inches above; the
+ *  explanatory paragraph taught a mechanic you learn once and re-read weekly. */
+function StepHeader({ title }: { title: string }) {
+  return (
+    <header className="mb-6">
+      <h1 className="text-display masthead leading-[1.05]">{title}</h1>
+    </header>
   );
 }
 
@@ -417,7 +469,7 @@ function BetsStrip() {
       {!open ? (
         <div className="flex flex-wrap gap-1.5">
           {leadInits.length === 0 && (
-            <span className="text-caption text-muted italic">No lead initiatives — the week runs on faithfulness and deadlines. Tap adjust to pick up to three.</span>
+            <span className="text-caption text-muted italic">No leads — up to three, via adjust.</span>
           )}
           {leadInits.map((i) => {
             const domain = domainById(data, i.domainId);
@@ -541,214 +593,178 @@ function BetRow({
   );
 }
 
-// ── the candidates — the merged pull, plus everything else on tap ────────────
-function InboxRun({
+// ── the three sources, as the desktop lays them out ─────────────────────────
+// Same three lanes as the phone, same order, same words — one act, two shells.
+
+function InboxGroups({
   count,
+  runs,
   theming,
   error,
   onTheme,
 }: {
   count: number;
+  runs: Batch[];
   theming: boolean;
   error: string | null;
   onTheme: () => void;
 }) {
+  if (count === 0 && runs.length === 0) {
+    return <p className="text-body text-muted">Inbox clear.</p>;
+  }
   return (
     <section>
-      <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-head masthead">
-          Clear the inbox{" "}
-          <span className="mono text-meta font-normal text-muted">{count} waiting</span>
-        </h2>
-      </div>
-
-      {count === 0 ? (
-        <p className="text-caption text-muted">Inbox is clear — nothing loose to place.</p>
-      ) : (
+      {count > 0 && (
         <>
-          <p className="text-caption text-muted">
-            {count} loose capture{count === 1 ? "" : "s"} with no time yet. Unlike a Push, these
-            don't move a project — group like with like into <span className="text-ink">runs</span> and
-            drop each into open time.
-          </p>
           <button
             onClick={onTheme}
             disabled={theming}
-            className="tap fast mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
+            className="tap fast flex items-center justify-center gap-1.5 rounded-md px-4 py-2.5 text-body text-accent hover:brightness-105 disabled:opacity-50"
             style={{ background: "var(--accent-soft)" }}
           >
-            {theming ? "Grouping into runs…" : `✦ Group ${count} into runs`}
+            {theming ? "Grouping…" : `✦ Group ${count} into blocks`}
           </button>
           {error && <p className="mt-1.5 text-meta text-signal">{error}</p>}
         </>
+      )}
+
+      {runs.length > 0 && (
+        <div className="mt-5">
+          <div className="section-label mb-1">
+            Grouped <span className="mono normal-case tracking-normal text-muted">{runs.length}</span>
+          </div>
+          <div className="grid gap-x-8 md:grid-cols-2">
+            {runs.map((r) => (
+              <div key={r.id} className="flex items-baseline gap-2.5 border-b border-line py-2">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color ?? "var(--accent)" }} aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-body">{r.name}</span>
+                <span className="mono shrink-0 text-micro text-muted">
+                  {r.taskIds.length} capture{r.taskIds.length === 1 ? "" : "s"} · {r.durationMins}m
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );
 }
 
-function Candidates({
-  suggestions,
-  kept,
-  setKept,
-  data,
-  onThemeCarried,
-  themingCarried,
-  carriedErr,
-}: {
-  suggestions: ReturnType<typeof suggestPull>;
-  kept: Set<string>;
-  setKept: (next: Set<string>) => void;
-  data: VerticalData;
-  onThemeCarried: () => void;
-  themingCarried: boolean;
-  carriedErr: string | null;
-}) {
-  const { updateTask } = useVertical();
-  const [showMore, setShowMore] = useState(false);
-  const toggle = (id: string) => {
+/** Toggle one candidate on or off the week. */
+function useToggle(kept: Set<string>, setKept: (next: Set<string>) => void) {
+  return (id: string) => {
     const next = new Set(kept);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setKept(next);
   };
+}
 
-  const suggestedIds = new Set(suggestions.map((s) => s.task.id));
-  // everything else you could pull in, by hand — inbox first (loose captures),
-  // then processed backlog; skip what's already suggested
-  const more = useMemo(() => {
-    const extra = [...inboxTasks(data), ...backlogTasks(data)].filter((t) => !suggestedIds.has(t.id));
-    const seen = new Set<string>();
-    return extra.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
+/** Act 1 · the work belonging to the projects you named, under their names — so
+ *  you SEE that bringing a project in brought its work with it. */
+function ProjectWork({
+  suggestions,
+  kept,
+  setKept,
+  data,
+}: {
+  suggestions: PullSuggestion[];
+  kept: Set<string>;
+  setKept: (next: Set<string>) => void;
+  data: VerticalData;
+}) {
+  const { updateTask } = useVertical();
+  const toggle = useToggle(kept, setKept);
 
-  // Slipped commitments get their own bundle, ABOVE the fresh pull — so the flow
-  // asks about carry-forward work plainly instead of folding it into the pull.
-  const slipped = suggestions.filter((s) => s.task.rollCount > 0);
-  const fresh = suggestions.filter((s) => s.task.rollCount === 0);
-  const slippedMins = slipped.reduce((m, s) => m + s.task.durationMins, 0);
-  const keptFresh = fresh.filter((s) => kept.has(s.task.id)).length;
-
-  // The fresh pull, split: work belonging to the week's projects (grouped under
-  // the project, so you SEE the projects you named) vs everything else.
   const byProject = new Map<string, PullSuggestion[]>();
-  const looseFresh: PullSuggestion[] = [];
-  for (const s of fresh) {
+  const unassigned: PullSuggestion[] = [];
+  for (const s of suggestions) {
     const pid = s.projectId;
     if (pid && projectById(data, pid)) {
       if (!byProject.has(pid)) byProject.set(pid, []);
       byProject.get(pid)!.push(s);
-    } else looseFresh.push(s);
+    } else unassigned.push(s);
   }
+  const on = suggestions.filter((s) => kept.has(s.task.id)).length;
 
-  // `grouped` rows sit under a heading that already names the project, so the
-  // per-row reason ("<project> moves this week") is pure repetition — and long
-  // enough to squeeze the task's own title out of the row.
-  const renderRow = (s: PullSuggestion, grouped = false) => (
-    <CandidateRow
-      key={s.task.id}
-      on={kept.has(s.task.id)}
-      onToggle={() => toggle(s.task.id)}
-      color={domainById(data, s.task.domainId)?.color}
-      title={s.task.title}
-      mins={s.task.durationMins}
-      onMins={(m) => updateTask(s.task.id, { durationMins: m })}
-      reason={grouped ? "" : s.reason}
-      carried={s.task.rollCount > 0}
-    />
-  );
+  if (suggestions.length === 0) {
+    return (
+      <section>
+        <h2 className="text-head masthead">The work that moves them</h2>
+        <p className="mt-1 text-caption text-muted">Nothing open under this week's projects.</p>
+      </section>
+    );
+  }
 
   return (
     <section>
-      {slipped.length > 0 && (
-        <div className="mb-5">
-          <div className="mb-2">
-            <h2 className="text-head masthead">
-              Carrying forward <span className="mono text-meta font-normal text-signal">{slipped.length} slipped · {hrs(slippedMins)}h</span>
-            </h2>
-            <p className="mt-0.5 text-caption text-muted">
-              Work that rolled forward with no time yet. It's already in the week — Nuvo finds it new slots. Uncheck anything you'd rather let go.
-            </p>
-            <button
-              onClick={onThemeCarried}
-              disabled={themingCarried}
-              title="Group the kept slipped work into a few named focus blocks, each sized to its tasks"
-              className="tap fast mt-2 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
-              style={{ background: "var(--accent-soft)" }}
-            >
-              {themingCarried ? "Bundling into focus blocks…" : "✦ Bundle into focus blocks"}
-            </button>
-            {carriedErr && <p className="mt-1 text-meta text-signal">{carriedErr}</p>}
-          </div>
-          <div className="space-y-1">{slipped.map((s) => renderRow(s))}</div>
-        </div>
-      )}
-
       <div className="mb-2 flex items-baseline justify-between">
         <h2 className="text-head masthead">
-          The projects <span className="mono text-meta font-normal text-muted">{keptFresh}/{fresh.length} in the week</span>
+          The work that moves them{" "}
+          <span className="mono text-meta font-normal text-muted">{on}/{suggestions.length} in the week</span>
         </h2>
-        <button onClick={() => setShowMore((s) => !s)} className="fast mono text-meta text-muted hover:text-ink">
-          {showMore ? "hide" : "＋ add more"}
-        </button>
       </div>
 
-      {byProject.size === 0 && looseFresh.length === 0 && slipped.length === 0 && (
-        <p className="py-1 text-caption text-muted">
-          No projects on deck for this week, and nothing urgent to pull. Slot a project in the step before this.
-        </p>
-      )}
-
-      {/* the week's projects, each with its own open work — the point of the week */}
-      {[...byProject.entries()].map(([pid, rows]) => {
-        const proj = projectById(data, pid)!;
-        const color = domainById(data, proj.domainId)?.color ?? "var(--accent)";
-        const on = rows.filter((r) => kept.has(r.task.id)).length;
-        const mins = rows
-          .filter((r) => kept.has(r.task.id))
-          .reduce((m, r) => m + plannedMinutes(r.task.durationMins, true), 0);
-        const allOn = on === rows.length;
-        return (
-          <div key={pid} className="mb-3">
-            <div className="mb-1 flex items-baseline gap-2">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
-              <span className="min-w-0 flex-1 truncate text-body">{proj.name}</span>
-              <button
-                onClick={() => {
-                  const next = new Set(kept);
-                  rows.forEach((r) => (allOn ? next.delete(r.task.id) : next.add(r.task.id)));
-                  setKept(next);
-                }}
-                className="fast mono shrink-0 text-micro text-muted hover:text-accent"
-              >
-                {allOn ? "none" : "all"}
-              </button>
-              <span className="mono shrink-0 text-micro text-muted">{on}/{rows.length} · {hrs(mins)}h</span>
+      <div className="grid gap-x-8 gap-y-3 md:grid-cols-2">
+        {[...byProject.entries()].map(([pid, rows]) => {
+          const proj = projectById(data, pid)!;
+          const color = domainById(data, proj.domainId)?.color ?? "var(--accent)";
+          const kn = rows.filter((r) => kept.has(r.task.id)).length;
+          const mins = rows
+            .filter((r) => kept.has(r.task.id))
+            .reduce((m, r) => m + plannedMinutes(r.task.durationMins, true), 0);
+          const allOn = kn === rows.length;
+          return (
+            <div key={pid}>
+              <div className="mb-1 flex items-baseline gap-2 border-b border-line pb-1">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-body">{proj.name}</span>
+                <button
+                  onClick={() => {
+                    const next = new Set(kept);
+                    rows.forEach((r) => (allOn ? next.delete(r.task.id) : next.add(r.task.id)));
+                    setKept(next);
+                  }}
+                  className="fast mono shrink-0 text-micro text-muted hover:text-accent"
+                >
+                  {allOn ? "none" : "all"}
+                </button>
+                <span className="mono shrink-0 text-micro text-muted">{kn}/{rows.length} · {hrs(mins)}h</span>
+              </div>
+              <div className="space-y-1">
+                {rows.map((r) => (
+                  <WorkRow
+                    key={r.task.id}
+                    on={kept.has(r.task.id)}
+                    onToggle={() => toggle(r.task.id)}
+                    color={domainById(data, r.task.domainId)?.color}
+                    title={r.task.title}
+                    mins={r.task.durationMins}
+                    onMins={(m) => updateTask(r.task.id, { durationMins: m })}
+                    reason={r.reason}
+                    badge={workBadge(r.kind, r.task)}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="space-y-1">{rows.map((r) => renderRow(r, true))}</div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
 
-      {looseFresh.length > 0 && (
-        <div className="space-y-1">{looseFresh.map((s) => renderRow(s))}</div>
-      )}
-
-      {showMore && (
-        <div className="mt-2 max-h-[34vh] overflow-y-auto border-t border-line pt-2">
-          <div className="section-label mb-1">Inbox &amp; backlog ({more.length})</div>
-          {more.length === 0 && <div className="px-2 py-3 text-center text-label text-muted">Nothing else waiting.</div>}
-          {more.map((t) => (
-            <CandidateRow
-              key={t.id}
-              on={kept.has(t.id)}
-              onToggle={() => toggle(t.id)}
-              color={domainById(data, t.domainId)?.color}
-              title={t.title || "untitled"}
-              mins={t.durationMins}
-              onMins={(m) => updateTask(t.id, { durationMins: m })}
-              reason={t.inbox ? "from the inbox" : "from a backlog"}
-              carried={t.rollCount > 0}
+      {unassigned.length > 0 && (
+        <div className="mt-3 space-y-1 border-t border-line pt-2">
+          <div className="section-label mb-1">Project work with no week set</div>
+          {unassigned.map((r) => (
+            <WorkRow
+              key={r.task.id}
+              on={kept.has(r.task.id)}
+              onToggle={() => toggle(r.task.id)}
+              color={domainById(data, r.task.domainId)?.color}
+              title={r.task.title}
+              mins={r.task.durationMins}
+              onMins={(m) => updateTask(r.task.id, { durationMins: m })}
+              reason={r.reason}
+              badge={workBadge(r.kind, r.task)}
             />
           ))}
         </div>
@@ -757,7 +773,127 @@ function Candidates({
   );
 }
 
-function CandidateRow({
+/** Step 2 · everything that isn't a project push and isn't raw capture: what
+ *  rolled forward, what's due, and the domains going quiet. */
+function Leftovers({
+  suggestions,
+  kept,
+  setKept,
+  data,
+  onBundleCarried,
+  bundling,
+  bundleErr,
+}: {
+  suggestions: PullSuggestion[];
+  kept: Set<string>;
+  setKept: (next: Set<string>) => void;
+  data: VerticalData;
+  onBundleCarried: () => void;
+  bundling: boolean;
+  bundleErr: string | null;
+}) {
+  const { updateTask } = useVertical();
+  const [showMore, setShowMore] = useState(false);
+  const toggle = useToggle(kept, setKept);
+
+  const suggestedIds = new Set(suggestions.map((s) => s.task.id));
+  // everything else you could bring in, by hand — inbox first (loose captures),
+  // then processed backlog; skip what's already here
+  const more = useMemo(() => {
+    const extra = [...inboxTasks(data), ...backlogTasks(data)].filter((t) => !suggestedIds.has(t.id));
+    const seen = new Set<string>();
+    return extra.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const carried = suggestions.filter((s) => s.task.rollCount > 0);
+  const rest = suggestions.filter((s) => s.task.rollCount === 0);
+  const carriedMins = carried.reduce((m, s) => m + s.task.durationMins, 0);
+
+  const row = (s: PullSuggestion) => (
+    <WorkRow
+      key={s.task.id}
+      on={kept.has(s.task.id)}
+      onToggle={() => toggle(s.task.id)}
+      color={domainById(data, s.task.domainId)?.color}
+      title={s.task.title}
+      mins={s.task.durationMins}
+      onMins={(m) => updateTask(s.task.id, { durationMins: m })}
+      reason={s.reason}
+      badge={workBadge(s.kind, s.task)}
+    />
+  );
+
+  return (
+    <section>
+      <div className="mb-2 flex items-baseline justify-between">
+        <h2 className="text-head masthead">
+          Carried over, due, and quiet{" "}
+          <span className="mono text-meta font-normal text-muted">{suggestions.length}</span>
+        </h2>
+        <button onClick={() => setShowMore((m) => !m)} className="fast mono text-meta text-muted hover:text-ink">
+          {showMore ? "hide" : "＋ add more"}
+        </button>
+      </div>
+
+      {suggestions.length === 0 && (
+        <p className="py-1 text-caption text-muted">Nothing owed, nothing due.</p>
+      )}
+
+      <div className="grid gap-x-10 md:grid-cols-2">
+      {carried.length > 0 && (
+        <div className="mb-5">
+          <div className="mb-2">
+            <div className="section-label">
+              Carried over <span className="mono normal-case tracking-normal text-signal">{carried.length} · {hrs(carriedMins)}h</span>
+            </div>
+            <button
+              onClick={onBundleCarried}
+              disabled={bundling}
+              title="Group the kept carried work into a few named focus blocks, each sized to its tasks"
+              className="tap fast mt-2 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
+              style={{ background: "var(--accent-soft)" }}
+            >
+              {bundling ? "Grouping into blocks…" : "✦ Group into focus blocks"}
+            </button>
+            {bundleErr && <p className="mt-1 text-meta text-signal">{bundleErr}</p>}
+          </div>
+          <div className="space-y-1">{carried.map(row)}</div>
+        </div>
+      )}
+
+      {rest.length > 0 && (
+        <div>
+          <div className="section-label mb-1">Due, or going quiet <span className="mono normal-case tracking-normal text-muted">{rest.length}</span></div>
+          <div className="space-y-1">{rest.map(row)}</div>
+        </div>
+      )}
+      </div>
+
+      {showMore && (
+        <div className="mt-2 max-h-[34vh] overflow-y-auto border-t border-line pt-2">
+          <div className="section-label mb-1">Inbox &amp; backlog ({more.length})</div>
+          {more.length === 0 && <div className="px-2 py-3 text-center text-label text-muted">Nothing else waiting.</div>}
+          {more.map((t) => (
+            <WorkRow
+              key={t.id}
+              on={kept.has(t.id)}
+              onToggle={() => toggle(t.id)}
+              color={domainById(data, t.domainId)?.color}
+              title={t.title || "untitled"}
+              mins={t.durationMins}
+              onMins={(m) => updateTask(t.id, { durationMins: m })}
+              reason={t.inbox ? "from the inbox" : "from a backlog"}
+              badge={t.rollCount > 0 ? workBadge("carried", t) : null}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WorkRow({
   on,
   onToggle,
   color,
@@ -765,7 +901,7 @@ function CandidateRow({
   mins,
   onMins,
   reason,
-  carried,
+  badge,
 }: {
   on: boolean;
   onToggle: () => void;
@@ -773,12 +909,14 @@ function CandidateRow({
   title: string;
   mins: number;
   onMins: (m: number) => void;
+  /** the long form — kept as the row's tooltip */
   reason: string;
-  carried: boolean;
+  badge: ReturnType<typeof workBadge>;
 }) {
   return (
     <button
       onClick={onToggle}
+      title={reason}
       className="tap fast flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left"
       style={{ background: on ? "var(--accent-soft)" : "transparent" }}
     >
@@ -796,8 +934,19 @@ function CandidateRow({
       <span className="min-w-0 flex-1 truncate text-caption" style={{ opacity: on ? 1 : 0.62 }}>
         {title}
       </span>
-      {carried && <span className="mono shrink-0 text-micro text-signal" title="Carried over from a past week">↻ carried</span>}
-      <span className="mono shrink-0 text-micro text-muted">{reason}</span>
+      {/* two glyphs where a clause used to be — the clause survives as the title */}
+      {badge && (
+        <span
+          className="mono shrink-0 rounded-full px-1.5 text-micro"
+          style={
+            badge.urgent
+              ? { color: "var(--signal)", background: "var(--signal-soft)" }
+              : { color: "var(--muted)", border: "1px solid var(--line)" }
+          }
+        >
+          {badge.text}
+        </span>
+      )}
       <DurationSelect
         value={mins}
         onChange={onMins}

@@ -20,9 +20,16 @@ import {
   type VTask,
 } from "./vertical";
 
+/** Why a piece of work is being suggested. Typed, not inferred from the reason
+ *  string, so a surface can render a two-glyph badge (`↻10`, `2d`) instead of a
+ *  sentence — the flow is read weekly, and prose you've read fifty times is noise. */
+export type PullKind = "carried" | "project" | "lead" | "due" | "quiet";
+
 export interface PullSuggestion {
   task: VTask;
+  /** the long form, kept for tooltips and for the surfaces that have room */
   reason: string;
+  kind: PullKind;
   /** the on-deck project whose work this is — the rail groups by it */
   projectId?: string | null;
 }
@@ -41,10 +48,10 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
   const onDeck = weekStartISO ? new Set(projectsOnDeck(d, weekStartISO).map((p) => p.id)) : null;
   const elsewhere = (task: VTask) => onDeck != null && task.projectId != null && !onDeck.has(task.projectId);
 
-  const add = (task: VTask | null, reason: string, projectId?: string | null) => {
+  const add = (task: VTask | null, reason: string, kind: PullKind, projectId?: string | null) => {
     if (!task || task.sprint || task.status === "done" || picked.has(task.id)) return;
     if (elsewhere(task)) return; // its project isn't on deck this week
-    picked.set(task.id, { task, reason, projectId: projectId ?? task.projectId ?? null });
+    picked.set(task.id, { task, reason, kind, projectId: projectId ?? task.projectId ?? null });
   };
 
   // 1 · SLIPPED — already-owed commitments, re-timed first. (The carry-forward
@@ -52,7 +59,7 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
   const slipped = d.tasks
     .filter((t) => t.rollCount > 0 && t.status === "ready" && !t.inbox)
     .sort((a, b) => b.rollCount - a.rollCount);
-  for (const t of slipped) add(t, `slipped ${t.rollCount}× — give it a new time`);
+  for (const t of slipped) add(t, `slipped ${t.rollCount}× — give it a new time`, "carried");
 
   // 2 · THE WEEK'S PROJECTS — the pushes you named on Set the week (derived from
   //     On Deck). Their open work IS the point of the week, so it comes before
@@ -62,7 +69,7 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
     for (const p of projectsOnDeck(d, weekStartISO)) {
       for (const t of tasksOf(d, p.id)) {
         if (t.status === "done" || t.inbox) continue;
-        add(t, `${p.name} moves this week`, p.id);
+        add(t, `${p.name} moves this week`, "project", p.id);
       }
     }
   }
@@ -73,14 +80,14 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
     const init = initiativeById(d, initId);
     if (!init || !isProjectInFlight(init.status)) continue;
     for (const p of d.projects.filter((p) => p.initiativeId === initId && !isProjectComplete(p.status))) {
-      add(nextUpTask(d, p.id), `next up in ${p.name} (★ lead)`);
+      add(nextUpTask(d, p.id), `next up in ${p.name} (★ lead)`, "lead");
     }
   }
 
   // 4 · deadlines that land inside this week.
   for (const t of [...backlogTasks(d), ...inboxTasks(d)]) {
     if (t.deadlineDaysAway != null && t.deadlineDaysAway <= 7) {
-      add(t, t.deadlineDaysAway <= 0 ? "deadline passed" : `due in ${t.deadlineDaysAway}d`);
+      add(t, t.deadlineDaysAway <= 0 ? "deadline passed" : `due in ${t.deadlineDaysAway}d`, "due");
     }
   }
 
@@ -90,7 +97,7 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
     const candidates = d.tasks
       .filter((t) => t.domainId === domain.id && t.status !== "done" && !t.sprint && !picked.has(t.id))
       .sort((a, b) => a.durationMins - b.durationMins);
-    add(candidates[0] ?? null, `${domain.name} has been quiet ${domain.lastTouchedDays}d`);
+    add(candidates[0] ?? null, `${domain.name} has been quiet ${domain.lastTouchedDays}d`, "quiet");
   }
 
   // cap the proposal at ~60% of weekly capacity — a starting pull, not a full
