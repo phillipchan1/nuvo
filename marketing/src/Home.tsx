@@ -1,7 +1,9 @@
 import CalendarsVisual from './components/CalendarsVisual'
 import CapacityVisual from './components/CapacityVisual'
 import CaptureVisual from './components/CaptureVisual'
+import CoverageVisual from './components/CoverageVisual'
 import DomainVisual from './components/DomainVisual'
+import DriftVisual from './components/DriftVisual'
 import FunnelVisual from './components/FunnelVisual'
 import OperatorVisual from './components/OperatorVisual'
 import ScheduleVisual from './components/ScheduleVisual'
@@ -121,14 +123,6 @@ const PROMISES = [
   'Every feature, no tiers, nothing held back',
   'Your account is yours alone — nobody else is ever in it',
   'We’ll tell you the truth, including “you can’t carry this week”',
-] as const
-
-// Why three systems still lose things — one line each, because the reader who
-// needs this is skimming. Each is a real category, not a named competitor.
-const GAPS = [
-  { tool: 'Task apps', good: 'Great at today.', blind: 'Blind to the quarter.' },
-  { tool: 'Project tools', good: 'Great at the quarter.', blind: 'Never told you what Tuesday looks like.' },
-  { tool: 'Calendars', good: 'Great at meetings.', blind: 'The actual work is invisible.' },
 ] as const
 
 // The after-state, not the mechanism — the brandscript's success beats, which
@@ -258,6 +252,9 @@ export default function Home() {
           <a href="#pricing" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
             Pricing
           </a>
+          <a href="/support" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
+            Support
+          </a>
           <a href={APP_URL} className="btn-ghost tap hidden text-[13px] sm:inline-flex" rel="noopener noreferrer">
             Open app
           </a>
@@ -300,29 +297,28 @@ export default function Home() {
             </p>
           </div>
 
-          {/* The indictment, scannable in three glances. This used to be a
-              paragraph; the persona skims, so it's a triptych now. */}
-          <ul className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-3">
-            {GAPS.map((g) => (
-              <li key={g.tool} className="border-t border-[var(--line)] pt-4">
-                <p className="section-label text-[var(--text)]">{g.tool}</p>
-                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted)]">
-                  <span className="text-[var(--text)]">{g.good}</span> {g.blind}
-                </p>
-              </li>
-            ))}
-          </ul>
+          {/* The indictment as coverage, not prose — each tool's reach drawn
+              against the range you actually live across, so the hole is a
+              thing you see rather than a claim you read. */}
+          <div className="mt-12">
+            <CoverageVisual />
+          </div>
 
-          {/* Name the villain. It's singular, blameless, and not the reader —
-              which is what makes it usable as an enemy. */}
-          <div className="mt-12 max-w-xl">
-            <p className="text-body text-[var(--text)]">It has a name: drift.</p>
-            <p className="mt-3 text-body text-[var(--muted)]">
-              The slow, blameless gap between what you said mattered and what your calendar
-              actually spends you on. Nothing goes wrong on any given day. Then it’s March, the
-              thing you cared about in January hasn’t moved, and you can’t point to the week you
-              decided to let it go.
-            </p>
+          {/* Name the villain — singular, blameless, and not the reader, which
+              is what makes it usable as an enemy. The chart is the definition,
+              so the prose stops at one line. */}
+          <div className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-16">
+            <div>
+              <p className="section-label text-[var(--muted)]">It has a name</p>
+              <h3 className="masthead mt-3 text-[1.75rem] leading-tight text-[var(--text)]">
+                Drift.
+              </h3>
+              <p className="mt-4 text-body text-[var(--muted)]">
+                Nothing goes wrong on any given day. Then it’s March, and you can’t point to the
+                week you decided to let it go.
+              </p>
+            </div>
+            <DriftVisual />
           </div>
         </section>
 
@@ -708,6 +704,9 @@ export default function Home() {
       <footer className="mx-auto flex max-w-6xl flex-col gap-4 border-t border-[var(--line)] px-5 py-8 text-[13px] text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <span className="wordmark text-[var(--text)]">Nuvo</span>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <a href="/support" className="hover:text-[var(--text)]">
+            Support
+          </a>
           <a href="/privacy" className="hover:text-[var(--text)]">
             Privacy
           </a>
