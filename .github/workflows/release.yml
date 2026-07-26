@@ -27,10 +27,6 @@ on:
     - cron: "0 9 * * *"
   workflow_dispatch:
 
-concurrency:
-  group: release
-  cancel-in-progress: true
-
 permissions:
   contents: write
 
@@ -71,6 +67,13 @@ jobs:
   release:
     needs: gate
     if: needs.gate.outputs.go == 'true'
+    # Concurrency lives on the BUILD job only — the cheap gate job is not in this
+    # group, so a plain push (gate runs, then skips) can never cancel an
+    # in-flight build. Real builds still collapse: a newer one supersedes an
+    # older one.
+    concurrency:
+      group: release-build
+      cancel-in-progress: true
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
