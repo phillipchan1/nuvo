@@ -9,6 +9,7 @@ import type { CalendarAccount, UserSettings } from "../lib/types";
 import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
+import { Field, TextInput, Select, Toggle, Stepper, Segmented } from "./form";
 import { GitHubConnect } from "./GitHubConnect";
 import { BillingPane } from "./billing/BillingPane";
 import type { SettingsSection } from "../lib/appNav";
@@ -118,53 +119,15 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
 ];
 
 // ── Shared layout atoms ───────────────────────────────────────────────────
+// `Row` is the settings field unit — Field from the form primitives (label-left
+// / control-right, stacking full-width on a phone).
+const Row = Field;
+
 function PaneHeader({ title, sub }: { title: string; sub: string }) {
   return (
-    <div className="mb-4">
-      <h2 className="text-head font-semibold text-ink">{title}</h2>
-      <p className="mt-0.5 text-caption leading-snug text-muted">{sub}</p>
-    </div>
-  );
-}
-
-function Row({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
-  return (
-    // Stacks on a phone so the controls get full width and never collide with the
-    // label; sm+ restores the desktop label-left / control-right row.
-    <div className="flex flex-col items-start gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <div className="min-w-0">
-        <div className="text-body font-medium text-ink">{title}</div>
-        {desc && <div className="mt-0.5 text-caption leading-snug text-muted">{desc}</div>}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
-
-function Segmented({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <div className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          onClick={() => onChange(o.value)}
-          className={`fast rounded-md px-3 py-1 text-caption font-medium ${
-            value === o.value
-              ? "bg-surface text-ink shadow-sm"
-              : "text-muted hover:text-ink"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
+    <div className="mb-6">
+      <h2 className="text-lead font-semibold text-ink">{title}</h2>
+      <p className="mt-1 text-caption leading-snug text-muted">{sub}</p>
     </div>
   );
 }
@@ -389,7 +352,7 @@ function AppearancePane({
   const forced = schemeModes(skin, scheme) === "both" ? null : schemeModes(skin, scheme);
 
   return (
-    <div>
+    <div className="max-w-4xl">
       <PaneHeader title="Appearance" sub="How Nuvo looks. System follows your device's light or dark mode." />
       <div className="grid grid-cols-3 gap-2.5">
         {(["system", "light", "dark"] as const).map((t) => (
@@ -477,11 +440,11 @@ function TimeZonePicker() {
   }, []);
 
   return (
-    <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
-      <select
+    <div className="flex flex-col items-stretch gap-2">
+      <Select
         value={homeTz}
         onChange={(e) => setHomeTz(e.target.value)}
-        className="mono max-w-[15rem] truncate rounded-md border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent"
+        className="mono w-full sm:w-[20rem]"
       >
         {/* Keep the current value selectable even if the runtime omits it. */}
         {!supportedTimeZones().includes(homeTz) && <option value={homeTz}>{tzCity(homeTz)}</option>}
@@ -494,7 +457,7 @@ function TimeZonePicker() {
             ))}
           </optgroup>
         ))}
-      </select>
+      </Select>
       {s.traveling ? (
         <div className="flex items-center gap-2 text-meta text-muted">
           <span>
@@ -539,8 +502,6 @@ function SchedulePane({
     setRevealState(next);
     writeRevealConfig(next);
   };
-  const selCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent";
-  const timeCls = "mono rounded-md border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent";
 
   const dayStart = settings?.day_start_hour ?? 6;
   const dayEnd = settings?.day_end_hour ?? 24;
@@ -553,88 +514,82 @@ function SchedulePane({
   return (
     <div>
       <PaneHeader title="Schedule" sub="The shape of your day — what the calendar shows and when Nuvo plans for you." />
-      <div className="divide-y divide-line">
+      {/* A form grid: stacked cells (label over control) tile into two columns on
+          a wide modal and fall back to one column on a phone. */}
+      <div className="grid grid-cols-1 gap-x-12 gap-y-7 lg:grid-cols-2">
         <Row
+          layout="stack"
           title="Time zone"
           desc="Your home zone. Nuvo shows schedule times wherever you are now, and flags on the schedule when that differs from home."
         >
           <TimeZonePicker />
         </Row>
 
-        <Row title="Day view window" desc="The span of hours shown in your calendar.">
-          <div className="flex items-center gap-2">
-            <select
+        <Row layout="stack" title="Day view window" desc="The span of hours shown in your calendar.">
+          <div className="flex items-center gap-2.5">
+            <Select
               value={settings?.day_start_hour ?? 6}
               onChange={(e) => updateSettings({ day_start_hour: Number(e.target.value) })}
-              className={selCls}
+              className="mono w-full sm:w-32"
             >
               {Array.from({ length: 12 }, (_, h) => (
                 <option key={h} value={h}>
                   {formatHourLabel(h)}
                 </option>
               ))}
-            </select>
+            </Select>
             <span className="text-caption text-muted">to</span>
-            <select
+            <Select
               value={settings?.day_end_hour ?? 24}
               onChange={(e) => updateSettings({ day_end_hour: Number(e.target.value) })}
-              className={selCls}
+              className="mono w-full sm:w-32"
             >
               {Array.from({ length: 12 }, (_, i) => i + 13).map((h) => (
                 <option key={h} value={h}>
                   {formatHourLabel(h)}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </Row>
 
-        <Row title="Working hours" desc="The window Nuvo proposes focus blocks inside.">
-          <div className="flex items-center gap-2">
-            <input
+        <Row layout="stack" title="Working hours" desc="The window Nuvo proposes focus blocks inside.">
+          <div className="flex items-center gap-2.5">
+            <TextInput
               type="time"
               step={900}
               value={toMinLabel(settings?.work_start_minutes ?? 480)}
               onChange={setWork("work_start_minutes")}
-              className={timeCls}
+              className="mono w-full sm:w-36"
             />
             <span className="text-caption text-muted">to</span>
-            <input
+            <TextInput
               type="time"
               step={900}
               value={toMinLabel(settings?.work_end_minutes ?? 990)}
               onChange={setWork("work_end_minutes")}
-              className={timeCls}
+              className="mono w-full sm:w-36"
             />
           </div>
         </Row>
 
         <Row
+          layout="stack"
           title="Hours on screen"
           desc="How many hours of your day view fill the screen. More hours = less scrolling; fewer = taller rows."
         >
-          <div className="flex items-center overflow-hidden rounded-md border border-line">
-            <button
-              onClick={() => updateSettings({ calendar_fit_hours: Math.max(6, fitClamped - 1) })}
-              disabled={fitClamped <= 6}
-              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
-              title="Fewer hours (taller rows)"
-            >
-              −
-            </button>
-            <span className="mono w-9 select-none text-center text-caption tabular-nums text-text">{fitClamped}h</span>
-            <button
-              onClick={() => updateSettings({ calendar_fit_hours: Math.min(windowHours, fitClamped + 1) })}
-              disabled={fitClamped >= windowHours}
-              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
-              title="More hours (less scrolling)"
-            >
-              +
-            </button>
-          </div>
+          <Stepper
+            value={fitClamped}
+            min={6}
+            max={windowHours}
+            onChange={(v) => updateSettings({ calendar_fit_hours: v })}
+            format={(v) => `${v}h`}
+            decHint="Fewer hours (taller rows)"
+            incHint="More hours (less scrolling)"
+          />
         </Row>
 
-        <Row title="Week starts on" desc="The first column of the week and month views.">
+        <Row layout="stack" title="Week starts on" desc="The first column of the week and month views.">
           <Segmented
             value={String(settings?.week_start ?? 1)}
             onChange={(v) => updateSettings({ week_start: Number(v) })}
@@ -645,75 +600,31 @@ function SchedulePane({
           />
         </Row>
 
-        <Row title="Projects per week" desc="How many projects you'll commit to a single week before On Deck flags it as overloaded. Fewer = more focus.">
-          <div className="flex items-center overflow-hidden rounded-md border border-line">
-            <button
-              onClick={() => setMaxPerWeekPref(Math.max(1, maxPerWeek - 1))}
-              disabled={maxPerWeek <= 1}
-              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
-              title="Fewer per week"
-            >
-              −
-            </button>
-            <span className="mono w-9 select-none text-center text-caption tabular-nums text-text">{maxPerWeek}</span>
-            <button
-              onClick={() => setMaxPerWeekPref(Math.min(6, maxPerWeek + 1))}
-              disabled={maxPerWeek >= 6}
-              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
-              title="More per week"
-            >
-              +
-            </button>
-          </div>
+        <Row layout="stack" title="Projects per week" desc="How many projects you'll commit to a single week before On Deck flags it as overloaded. Fewer = more focus.">
+          <Stepper value={maxPerWeek} min={1} max={6} onChange={setMaxPerWeekPref} decHint="Fewer per week" incHint="More per week" />
         </Row>
 
-        <Row title="Initiatives per quarter" desc="How many initiatives you'll commit to a single quarter before On Deck flags it as overloaded. Fewer = more focus.">
-          <div className="flex items-center overflow-hidden rounded-md border border-line">
-            <button
-              onClick={() => setMaxPerQuarterPref(Math.max(1, maxPerQuarter - 1))}
-              disabled={maxPerQuarter <= 1}
-              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
-              title="Fewer per quarter"
-            >
-              −
-            </button>
-            <span className="mono w-9 select-none text-center text-caption tabular-nums text-text">{maxPerQuarter}</span>
-            <button
-              onClick={() => setMaxPerQuarterPref(Math.min(6, maxPerQuarter + 1))}
-              disabled={maxPerQuarter >= 6}
-              className="fast px-2 py-1 text-caption leading-none text-muted hover:bg-bg hover:text-ink disabled:opacity-30"
-              title="More per quarter"
-            >
-              +
-            </button>
-          </div>
+        <Row layout="stack" title="Initiatives per quarter" desc="How many initiatives you'll commit to a single quarter before On Deck flags it as overloaded. Fewer = more focus.">
+          <Stepper value={maxPerQuarter} min={1} max={6} onChange={setMaxPerQuarterPref} decHint="Fewer per quarter" incHint="More per quarter" />
         </Row>
 
-        <Row title="Weekly Review reveal" desc="When the week's Review quietly lights up as ready — an invitation, never forced.">
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-caption text-muted">
-              <input
-                type="checkbox"
-                checked={reveal.enabled}
-                onChange={(e) => patchReveal({ enabled: e.target.checked })}
-                className="accent-[var(--accent)]"
-              />
-              on
-            </label>
-            <select
+        <Row layout="stack" title="Weekly Review reveal" desc="When the week's Review quietly lights up as ready — an invitation, never forced.">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Toggle checked={reveal.enabled} onChange={(v) => patchReveal({ enabled: v })} label="Weekly Review reveal" />
+            <Select
               value={reveal.dow}
               onChange={(e) => patchReveal({ dow: Number(e.target.value) })}
               disabled={!reveal.enabled}
-              className={`${selCls} disabled:opacity-40`}
+              className="w-36"
             >
               {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((d, i) => (
                 <option key={i} value={i}>
                   {d}
                 </option>
               ))}
-            </select>
+            </Select>
             <span className="text-caption text-muted">at</span>
-            <input
+            <TextInput
               type="time"
               step={900}
               value={toMinLabel(reveal.minutes)}
@@ -723,21 +634,17 @@ function SchedulePane({
                 patchReveal({ minutes: h * 60 + mm });
               }}
               disabled={!reveal.enabled}
-              className={`${timeCls} disabled:opacity-40`}
+              className="mono w-32"
             />
           </div>
         </Row>
 
-        <Row title="Weather" desc="Show a weather icon and high temperature next to each day in the calendar. Requires location access.">
-          <label className="flex items-center gap-1.5 text-caption text-muted">
-            <input
-              type="checkbox"
-              checked={settings?.show_weather ?? false}
-              onChange={(e) => updateSettings({ show_weather: e.target.checked })}
-              className="accent-[var(--accent)]"
-            />
-            on
-          </label>
+        <Row layout="stack" title="Weather" desc="Show a weather icon and high temperature next to each day in the calendar. Requires location access.">
+          <Toggle
+            checked={settings?.show_weather ?? false}
+            onChange={(v) => updateSettings({ show_weather: v })}
+            label="Weather"
+          />
         </Row>
       </div>
     </div>
@@ -862,165 +769,161 @@ function ConnectionsPane({
     updateSettings({ calendar_domain_map: next });
   };
 
+  // Which accounts have their "hidden calendars" drawer expanded. Turned-off
+  // calendars collapse away by default so a busy account (a dozen shared
+  // calendars) reads as just the few you actually watch.
+  const [showHiddenCals, setShowHiddenCals] = useState<Set<string>>(new Set());
+  const toggleHiddenDrawer = (accountId: string) =>
+    setShowHiddenCals((prev) => {
+      const next = new Set(prev);
+      next.has(accountId) ? next.delete(accountId) : next.add(accountId);
+      return next;
+    });
+
+  // One calendar's row — color dot + name, its domain attribution, and the on/off
+  // switch. Hidden calendars render the same row, just dimmed and without the
+  // domain picker (nothing to attribute while it's off the board).
+  const calRow = (a: CalendarAccount, c: NonNullable<CalendarAccount["calendars"]>[number], on: boolean) => (
+    <div
+      key={c.id}
+      className="fast flex w-full items-center gap-3 rounded-[var(--radius)] px-2.5 py-2 hover:bg-surface-2"
+    >
+      <button onClick={() => toggleCalendar(c.id)} className="tap flex min-w-0 flex-1 items-center gap-2.5 text-left">
+        <span
+          className="h-3 w-3 shrink-0 rounded-[4px]"
+          style={{
+            background: on ? (c.color ?? "var(--muted)") : "transparent",
+            boxShadow: on ? "none" : "inset 0 0 0 1.5px var(--line-strong)",
+          }}
+        />
+        <span className={`min-w-0 flex-1 truncate text-body ${on ? "text-ink" : "text-muted"}`}>{c.summary}</span>
+      </button>
+      {on && (
+        <Select
+          value={calMap[calKey(a.id, c.id)] ?? ""}
+          onChange={(e) => setCalDomain(calKey(a.id, c.id), e.target.value)}
+          title="Attribute this calendar's meetings to a domain"
+          className="w-36 shrink-0 text-caption text-muted"
+        >
+          <option value="">Auto · domain</option>
+          {domains.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </Select>
+      )}
+      <Toggle checked={on} onChange={() => toggleCalendar(c.id)} label={`Show ${c.summary}`} />
+    </div>
+  );
+
   return (
     <div>
       <PaneHeader title="Calendars" sub="Calendars Nuvo reads from and writes to. Toggle which appear on your board, and set the domain each one's meetings count toward." />
-      <div className="space-y-3">
-        {accounts.map((a) => (
-          <div key={a.id} className="overflow-hidden rounded-lg border border-line">
-            <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
-              <span
-                className="flex h-6 w-6 items-center justify-center rounded-md text-label font-semibold text-white"
-                style={{ background: providerMeta(a.provider).color }}
-              >
-                {providerMeta(a.provider).letter}
-              </span>
-              <div className="min-w-0">
-                <div className="text-body font-medium leading-tight">
-                  {providerMeta(a.provider).name}
-                </div>
-                <div className="mono truncate text-label text-muted">{a.email}</div>
-              </div>
-              <span
-                className={`mono ml-1 rounded-full px-1.5 py-0.5 text-meta ${
-                  a.sync_direction === "two_way"
-                    ? "bg-accent-soft text-accent"
-                    : "border border-line text-muted"
-                }`}
-              >
-                {a.sync_direction === "two_way" ? "two-way" : "read-only"}
-              </span>
-              <div className="flex-1" />
-              {a.provider === "google" && a.sync_direction === "two_way" && (
-                settings?.default_calendar_account_id === a.id ? (
-                  <span className="mono rounded-full bg-accent-soft px-2 py-0.5 text-meta text-accent">
-                    default
-                  </span>
-                ) : (
-                  <Btn onClick={() => updateSettings({ default_calendar_account_id: a.id })}>
-                    Set as default
-                  </Btn>
-                )
-              )}
-              {a.needs_reconnect && a.provider !== "ics" && (
-                <Btn kind="signal" onClick={() => connect(a.provider as "google" | "m365")}>
-                  Reconnect
-                </Btn>
-              )}
-              {a.needs_reconnect && a.provider === "ics" && (
-                <Btn
-                  kind="signal"
-                  onClick={() => {
-                    setIcsLabel(a.email);
-                    setShowIcs(true);
-                  }}
-                >
-                  Update link
-                </Btn>
-              )}
-              {a.needs_reconnect && a.provider === "icloud" && (
-                <Btn
-                  kind="signal"
-                  onClick={() => {
-                    setAppleId(a.email);
-                    setShowIcloud(true);
-                  }}
-                >
-                  Reconnect
-                </Btn>
-              )}
-              <Btn onClick={() => disconnect(a.id)}>Disconnect</Btn>
-            </div>
-            <div className="space-y-0.5 p-1.5">
-              {(a.calendars ?? []).map((c) => {
-                const on = !hidden.has(c.id);
-                return (
-                  <div
-                    key={c.id}
-                    className="fast flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-caption hover:bg-surface-2"
+      <div className="space-y-5">
+        {/* Account cards flow into two columns on a wide modal — a busy calendar
+            setup (several accounts) fills the space instead of a long scroll. */}
+        <div className="columns-1 gap-5 xl:columns-2 [&>*]:mb-5 [&>*]:break-inside-avoid">
+          {accounts.map((a) => {
+            const cals = a.calendars ?? [];
+            const shown = cals.filter((c) => !hidden.has(c.id));
+            const hiddenCals = cals.filter((c) => hidden.has(c.id));
+            const drawerOpen = showHiddenCals.has(a.id);
+            return (
+              <div key={a.id} className="overflow-hidden rounded-lg border border-line bg-surface">
+                <div className="flex items-center gap-2.5 border-b border-line bg-surface-2 px-4 py-3">
+                  <span
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-label font-semibold text-white"
+                    style={{ background: providerMeta(a.provider).color }}
                   >
-                    <button
-                      onClick={() => toggleCalendar(c.id)}
-                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                    >
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-                        style={{ background: on ? (c.color ?? "var(--muted)") : "transparent", boxShadow: on ? "none" : "inset 0 0 0 1.5px var(--line-strong)" }}
-                      />
-                      <span className={`min-w-0 flex-1 truncate ${on ? "text-ink" : "text-muted line-through decoration-line-strong"}`}>
-                        {c.summary}
-                      </span>
-                    </button>
-                    <select
-                      value={calMap[calKey(a.id, c.id)] ?? ""}
-                      onChange={(e) => setCalDomain(calKey(a.id, c.id), e.target.value)}
-                      title="Attribute this calendar's meetings to a domain"
-                      className="fast max-w-[8rem] shrink-0 truncate rounded-md border border-line bg-surface px-1.5 py-1 text-meta text-muted hover:text-ink"
-                    >
-                      <option value="">Auto · domain</option>
-                      {domains.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => toggleCalendar(c.id)}
-                      className={`fast relative h-4 w-7 shrink-0 rounded-full ${on ? "bg-accent" : "bg-line-strong"}`}
-                      title={on ? "Shown on your board" : "Hidden"}
-                    >
-                      <span
-                        className="fast absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm"
-                        style={{ left: on ? "14px" : "2px" }}
-                      />
-                    </button>
+                    {providerMeta(a.provider).letter}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-body font-medium leading-tight">{providerMeta(a.provider).name}</div>
+                    <div className="mono truncate text-label text-muted">{a.email}</div>
                   </div>
-                );
-              })}
-              {(a.calendars ?? []).length === 0 && (
-                <div className="px-2 py-1.5 text-caption text-muted">No calendars synced yet.</div>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {/* Individually hidden events — the cross-shell place to bring one back
-            (the desktop calendar also has an inline eye toggle). */}
-        {(settings?.hidden_events ?? []).length > 0 && (
-          <div className="overflow-hidden rounded-lg border border-line">
-            <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
-              <span className="text-body font-medium leading-tight">Hidden events</span>
-              <span className="mono ml-auto rounded-full border border-line px-1.5 py-0.5 text-meta text-muted">
-                {(settings?.hidden_events ?? []).length}
-              </span>
-            </div>
-            <div className="space-y-0.5 p-1.5">
-              {(settings?.hidden_events ?? []).map((h) => (
-                <div
-                  key={h.key}
-                  className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-caption hover:bg-surface-2"
-                >
-                  <span className="min-w-0 flex-1 truncate text-muted line-through decoration-line-strong">
-                    {h.title || "Untitled event"}
-                  </span>
-                  {h.key.includes(":series:") && (
-                    <span className="mono shrink-0 rounded-full border border-line px-1.5 py-0.5 text-meta text-muted">series</span>
-                  )}
-                  <Btn
-                    onClick={() =>
-                      updateSettings({ hidden_events: (settings?.hidden_events ?? []).filter((x) => x.key !== h.key) })
-                    }
+                  <span
+                    className={`mono ml-1 rounded-full px-2 py-0.5 text-meta ${
+                      a.sync_direction === "two_way" ? "bg-accent-soft text-accent" : "border border-line text-muted"
+                    }`}
                   >
-                    Show
-                  </Btn>
+                    {a.sync_direction === "two_way" ? "two-way" : "read-only"}
+                  </span>
+                  <div className="flex-1" />
+                  {a.provider === "google" && a.sync_direction === "two_way" && (
+                    settings?.default_calendar_account_id === a.id ? (
+                      <span className="mono rounded-full bg-accent-soft px-2 py-0.5 text-meta text-accent">default</span>
+                    ) : (
+                      <Btn onClick={() => updateSettings({ default_calendar_account_id: a.id })}>Set as default</Btn>
+                    )
+                  )}
+                  {a.needs_reconnect && a.provider !== "ics" && a.provider !== "icloud" && (
+                    <Btn kind="signal" onClick={() => connect(a.provider as "google" | "m365")}>
+                      Reconnect
+                    </Btn>
+                  )}
+                  {a.needs_reconnect && a.provider === "ics" && (
+                    <Btn
+                      kind="signal"
+                      onClick={() => {
+                        setIcsLabel(a.email);
+                        setShowIcs(true);
+                      }}
+                    >
+                      Update link
+                    </Btn>
+                  )}
+                  {a.needs_reconnect && a.provider === "icloud" && (
+                    <Btn
+                      kind="signal"
+                      onClick={() => {
+                        setAppleId(a.email);
+                        setShowIcloud(true);
+                      }}
+                    >
+                      Reconnect
+                    </Btn>
+                  )}
+                  <Btn onClick={() => disconnect(a.id)}>Disconnect</Btn>
                 </div>
-              ))}
-            </div>
-            <p className="px-3 pb-2.5 pt-0.5 text-label text-muted">
-              Hidden events stay on the server — they're just kept off your board and out of time-blocking.
-            </p>
-          </div>
-        )}
+                <div className="space-y-0.5 p-2">
+                  {shown.map((c) => calRow(a, c, true))}
+                  {shown.length === 0 && hiddenCals.length === 0 && (
+                    <div className="px-2.5 py-2 text-caption text-muted">No calendars synced yet.</div>
+                  )}
+                  {shown.length === 0 && hiddenCals.length > 0 && (
+                    <div className="px-2.5 py-2 text-caption text-muted">Every calendar here is hidden.</div>
+                  )}
+
+                  {hiddenCals.length > 0 && (
+                    <div className="pt-0.5">
+                      <button
+                        onClick={() => toggleHiddenDrawer(a.id)}
+                        className="fast tap flex w-full items-center gap-2 rounded-[var(--radius)] px-2.5 py-2 text-left text-caption text-muted hover:bg-surface-2 hover:text-ink"
+                      >
+                        <svg
+                          viewBox="0 0 16 16"
+                          className={`h-3.5 w-3.5 shrink-0 transition-transform ${drawerOpen ? "rotate-90" : ""}`}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M6 4l4 4-4 4" />
+                        </svg>
+                        <span>
+                          {hiddenCals.length} hidden calendar{hiddenCals.length > 1 ? "s" : ""}
+                        </span>
+                      </button>
+                      {drawerOpen && <div className="mt-0.5 space-y-0.5 opacity-70">{hiddenCals.map((c) => calRow(a, c, false))}</div>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
         <div className="flex flex-wrap gap-2">
           <Btn kind="primary" onClick={() => connect("google")}>
@@ -1038,7 +941,7 @@ function ConnectionsPane({
         </div>
 
         {showIcloud && (
-          <div className="space-y-2 rounded-lg border border-line bg-surface-2 p-3">
+          <div className="max-w-2xl space-y-3 rounded-lg border border-line bg-surface-2 p-4">
             <div className="text-caption font-medium">Connect Apple Calendar (iCloud)</div>
             <p className="text-label text-muted">
               Apple has no “Sign in” button for calendars — instead you generate a one-off{" "}
@@ -1062,21 +965,20 @@ function ConnectionsPane({
               <li>Select <span className="font-medium">＋ Generate an app-specific password</span>, name it “Nuvo”, and confirm.</li>
               <li>Copy the password Apple shows (format <span className="mono">abcd-efgh-ijkl-mnop</span>) and paste it below.</li>
             </ol>
-            <input
+            <TextInput
               value={appleId}
               onChange={(e) => setAppleId(e.target.value)}
               placeholder="Apple ID email — e.g. you@icloud.com"
               autoComplete="username"
-              className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-label outline-none focus:border-accent"
               autoFocus
             />
-            <input
+            <TextInput
               value={applePw}
               onChange={(e) => setApplePw(e.target.value)}
               placeholder="App-specific password — abcd-efgh-ijkl-mnop"
               type="password"
               autoComplete="off"
-              className="mono w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-label outline-none focus:border-accent"
+              className="mono"
               onKeyDown={(e) => e.key === "Enter" && connectIcloud()}
             />
             {icloudError && <div className="text-label text-signal">{icloudError}</div>}
@@ -1098,25 +1000,24 @@ function ConnectionsPane({
         )}
 
         {showIcs && (
-          <div className="space-y-2 rounded-lg border border-line bg-surface-2 p-3">
+          <div className="max-w-2xl space-y-3 rounded-lg border border-line bg-surface-2 p-4">
             <div className="text-caption font-medium">Subscribe via calendar link</div>
             <p className="text-label text-muted">
               Paste a published <span className="mono">.ics</span> URL (e.g. Outlook → Settings → Calendar →
               Shared calendars → Publish). Read-only, refreshes every ~15 min. The link grants full read
               access to that calendar, so treat it like a password — it's stored encrypted.
             </p>
-            <input
+            <TextInput
               value={icsUrl}
               onChange={(e) => setIcsUrl(e.target.value)}
               placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics"
-              className="mono w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-label outline-none focus:border-accent"
+              className="mono"
               autoFocus
             />
-            <input
+            <TextInput
               value={icsLabel}
               onChange={(e) => setIcsLabel(e.target.value)}
               placeholder="Label (optional) — e.g. Work calendar"
-              className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-label outline-none focus:border-accent"
               onKeyDown={(e) => e.key === "Enter" && subscribeIcs()}
             />
             {icsError && <div className="text-label text-signal">{icsError}</div>}
@@ -1143,7 +1044,7 @@ function ConnectionsPane({
 
 function IntegrationsPane() {
   return (
-    <div>
+    <div className="max-w-2xl">
       <PaneHeader
         title="Integrations"
         sub="Feeds of completed work that flow into your projects as actuals — what you shipped, not what's scheduled."
@@ -1279,41 +1180,40 @@ function LabelsPane() {
   const [newColor, setNewColor] = useState("#2563EB");
 
   return (
-    <div>
+    <div className="max-w-2xl">
       <PaneHeader title="Labels" sub="Color-coded tags you can attach to any task across the board." />
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         {labels.map((l) => (
-          <div key={l.id} className="group flex items-center gap-2 rounded-md border border-transparent px-1 py-0.5 hover:border-line hover:bg-surface-2">
+          <div key={l.id} className="group flex items-center gap-2.5 rounded-[var(--radius)] border border-transparent px-1.5 py-1 hover:border-line hover:bg-surface-2">
             <input
               type="color"
               value={l.color}
               onChange={(e) => updateLabel({ id: l.id, color: e.target.value })}
-              className="h-7 w-8 cursor-pointer rounded-md border border-line bg-surface"
+              className="h-9 w-10 shrink-0 cursor-pointer rounded-[var(--radius)] border border-line bg-surface"
             />
-            <input
+            <TextInput
               defaultValue={l.name}
               onBlur={(e) =>
                 e.target.value.trim() &&
                 e.target.value !== l.name &&
                 updateLabel({ id: l.id, name: e.target.value.trim() })
               }
-              className="flex-1 rounded-md border border-line bg-bg px-2 py-1 text-body outline-none focus:border-accent"
             />
             <button
               onClick={() => deleteLabel(l.id)}
               title="Delete label"
-              className="fast flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 hover:bg-signal-soft hover:text-signal group-hover:opacity-100"
+              className="fast tap flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] text-muted hover:bg-signal-soft hover:text-signal sm:opacity-0 sm:group-hover:opacity-100"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
                 <path d="M3 4h8M5.5 4V3h3v1M4 4l.5 7h5L10 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           </div>
         ))}
-        {labels.length === 0 && <div className="px-1 py-2 text-caption text-muted">No labels yet — add one below.</div>}
+        {labels.length === 0 && <div className="px-1.5 py-2 text-caption text-muted">No labels yet — add one below.</div>}
 
         <form
-          className="mt-2 flex items-center gap-2 border-t border-line pt-3"
+          className="mt-3 flex items-center gap-2.5 border-t border-line pt-4"
           onSubmit={async (e) => {
             e.preventDefault();
             if (!newLabel.trim()) return;
@@ -1325,13 +1225,12 @@ function LabelsPane() {
             type="color"
             value={newColor}
             onChange={(e) => setNewColor(e.target.value)}
-            className="h-7 w-8 cursor-pointer rounded-md border border-line bg-surface"
+            className="h-9 w-10 shrink-0 cursor-pointer rounded-[var(--radius)] border border-line bg-surface"
           />
-          <input
+          <TextInput
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="New label…"
-            className="flex-1 rounded-md border border-line bg-bg px-2 py-1 text-body outline-none focus:border-accent"
           />
           <Btn kind="primary">Add</Btn>
         </form>
@@ -1373,7 +1272,7 @@ function AccountPane() {
   };
 
   return (
-    <div>
+    <div className="max-w-2xl">
       <PaneHeader title="Account" sub="You're signed in to Nuvo." />
       <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2 p-3">
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-soft text-head font-semibold uppercase text-accent">
@@ -1417,7 +1316,7 @@ function AboutPane({ onClose }: { onClose: () => void }) {
   const { open: openOrientation } = useOrientation();
   const desktop = isDesktopTauri();
   return (
-    <div>
+    <div className="max-w-2xl">
       <PaneHeader title="About" sub="Your version, what's new, and how to get reacquainted." />
 
       <div className="mb-2 flex flex-col items-center gap-1 rounded-xl border border-line bg-surface-2/40 px-4 py-7 text-center">
@@ -1500,7 +1399,11 @@ export default function SettingsModal({
       {active === "integrations" && <IntegrationsPane />}
       {active === "labels" && <LabelsPane />}
       {active === "account" && <AccountPane />}
-      {active === "billing" && <BillingPane />}
+      {active === "billing" && (
+        <div className="max-w-2xl">
+          <BillingPane />
+        </div>
+      )}
       {active === "about" && <AboutPane onClose={onClose} />}
     </>
   );
@@ -1534,18 +1437,18 @@ export default function SettingsModal({
           </div>
 
           {drilled ? (
-            <div key={active} className="floor-enter flex-1 overflow-y-auto px-4 pb-safe pt-4">
+            <div key={active} className="floor-enter flex-1 overflow-y-auto px-5 pb-safe pt-5">
               {pane}
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto p-2 pb-safe">
+            <div className="flex-1 space-y-0.5 overflow-y-auto p-3 pb-safe">
               {SECTIONS.map((s) => (
                 <button
                   key={s.id}
                   onClick={() => select(s.id)}
-                  className="tap fast flex w-full items-center gap-3 rounded-lg px-3 text-left text-body font-medium text-ink hover:bg-surface-2"
+                  className="tap fast flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-left text-body font-medium text-ink hover:bg-surface-2"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-2 text-muted">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-2 text-muted">
                     {s.icon}
                   </span>
                   <span className="flex-1">{s.label}</span>
@@ -1561,24 +1464,30 @@ export default function SettingsModal({
     );
   }
 
-  // ── Desktop: side-by-side nav + pane (unchanged) ──
+  // ── Desktop: side-by-side nav + pane ──
+  // A generous canvas — near-full-height, wide enough for the multi-column panes
+  // (Schedule's form grid, the Calendars account columns) to breathe. Capped at
+  // ~6xl because past that a two-column layout just goes sparse. Centered so a
+  // tall sheet keeps even margins and never spills off the bottom.
   return (
-    <Modal onClose={onClose} width="max-w-4xl">
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+    <Modal onClose={onClose} width="max-w-6xl" align="center">
+      <div className="flex items-center justify-between border-b border-line px-6 py-3.5">
         <div className="text-head font-semibold">Settings</div>
         <button onClick={onClose} className="keycap">
           esc
         </button>
       </div>
 
-      <div className="flex h-[min(84vh,680px)]">
+      {/* Header (~52px) + this body must fit inside the modal's 92vh cap, so the
+          body tops out a touch below full height — no bottom clip. */}
+      <div className="flex h-[min(82vh,820px)]">
         {/* Section nav */}
-        <nav className="w-[188px] shrink-0 space-y-0.5 overflow-y-auto border-r border-line bg-surface-2/40 p-2.5">
+        <nav className="w-[204px] shrink-0 space-y-1 overflow-y-auto border-r border-line bg-surface-2/40 p-3">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
               onClick={() => select(s.id)}
-              className={`fast flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-body font-medium ${
+              className={`fast flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-body font-medium ${
                 active === s.id
                   ? "bg-accent-soft text-accent"
                   : "text-muted hover:bg-surface-2 hover:text-ink"
@@ -1591,7 +1500,7 @@ export default function SettingsModal({
         </nav>
 
         {/* Active pane */}
-        <div key={active} className="floor-enter flex-1 overflow-y-auto p-5">
+        <div key={active} className="floor-enter flex-1 overflow-y-auto px-8 py-7">
           {pane}
         </div>
       </div>
