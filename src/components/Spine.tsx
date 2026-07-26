@@ -3,6 +3,7 @@ import { LADDER, type Rung } from "./AppShell";
 import { useVertical } from "../hooks/useVertical";
 import { readSpine, type SpineState } from "../lib/readiness";
 import { READY, toneColor } from "./floors/ReadinessBanner";
+import GettingStarted from "./orientation/GettingStarted";
 
 // Top-to-bottom: Schedule (immediate) → Domain (widest). ⌘1 at top, ⌘4 at bottom.
 const RUNGS: { id: Rung; label: string }[] = [
@@ -212,6 +213,10 @@ export default function Spine({
       </nav>
 
       <div className="mt-auto px-2 pb-3">
+        {/* First-run reward spine — derived 5-milestone tracker. Present on every
+            elevation (the Spine is the one persistent chrome), retires itself for
+            established users, and is always dismissible. */}
+        <GettingStarted />
         <button
           onClick={openSettings}
           title="Settings (⌘,)"

@@ -11,6 +11,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { supabase } from "../../lib/supabase";
+import { FloorGuide } from "../orientation/FloorGuide";
+import { WelcomeVisual } from "../orientation/Visuals";
 import {
   faithfulness,
   initiativesOf,
@@ -241,6 +243,21 @@ export default function DomainFloor({
     );
   }
 
+  // First visit: no domains yet → teach the top of the funnel, then hand over the
+  // first-create. Self-cleans once a domain exists.
+  if (domains.length === 0) {
+    return (
+      <FloorGuide
+        eyebrow="Domains · ⌘4"
+        title="Name the areas of your life."
+        teach="Domains are your standing commitments — Family, Work, Faith, Health. Everything you plan hangs off one of them."
+        Visual={WelcomeVisual}
+        actionLabel="Add your first domain"
+        onAction={() => void addDomain().then((d) => { setFreshDomain(d); enter(d.id); })}
+      />
+    );
+  }
+
   return (
     <div className="mx-auto max-w-[1180px]">
       <FloorHeader
@@ -263,20 +280,12 @@ export default function DomainFloor({
         </p>
       </FloorHeader>
 
-      {domains.length === 0 ? (
-        <div className="serif mt-16 text-center text-head italic text-muted">
-          No domains yet. Name the few areas you mean to keep for years.
-        </div>
-      ) : (
-        <>
-          {totalWeek > 0 && <BalanceStrip domains={domains} total={totalWeek} />}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {domains.map((d) => (
-              <Niche key={d.id} domain={d} focused={d.id === focus.domainId} onEnter={() => enter(d.id)} />
-            ))}
-          </div>
-        </>
-      )}
+      {totalWeek > 0 && <BalanceStrip domains={domains} total={totalWeek} />}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {domains.map((d) => (
+          <Niche key={d.id} domain={d} focused={d.id === focus.domainId} onEnter={() => enter(d.id)} />
+        ))}
+      </div>
     </div>
   );
 }

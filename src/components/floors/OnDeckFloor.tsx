@@ -6,7 +6,29 @@
 // projects".
 
 import OnDeckPlanner from "../ondeck/OnDeckPlanner";
+import { useVertical } from "../../hooks/useVertical";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
+import { FloorGuide } from "../orientation/FloorGuide";
+import { OnDeckVisual } from "../orientation/Visuals";
 
 export default function OnDeckFloor() {
+  const { data } = useVertical();
+  const { openFloorModal } = useAppNavigation();
+
+  // First visit: no projects at all → teach what this surface is for, then hand
+  // over the first-create. Self-cleans once a project exists.
+  if (data.projects.length === 0) {
+    return (
+      <FloorGuide
+        eyebrow="On Deck · Projects · ⌘2"
+        title="Plan projects into your weeks."
+        teach="A project is a finishable piece of work. Add one, then drag it onto the week you'll actually tackle it — that's a sprint."
+        Visual={OnDeckVisual}
+        actionLabel="Add your first project"
+        onAction={() => openFloorModal("new-project")}
+      />
+    );
+  }
+
   return <OnDeckPlanner />;
 }
