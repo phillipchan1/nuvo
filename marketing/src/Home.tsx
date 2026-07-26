@@ -41,6 +41,14 @@ const CAPABILITIES = [
   },
 ] as const
 
+// Why three systems still lose things — one line each, because the reader who
+// needs this is skimming. Each is a real category, not a named competitor.
+const GAPS = [
+  { tool: 'Task apps', good: 'Great at today.', blind: 'Blind to the quarter.' },
+  { tool: 'Project tools', good: 'Great at the quarter.', blind: 'Never told you what Tuesday looks like.' },
+  { tool: 'Calendars', good: 'Great at meetings.', blind: 'The actual work is invisible.' },
+] as const
+
 // Keep in step with the app's src/components/billing/plans.ts and the Stripe
 // Prices behind STRIPE_PRICE_* — the saving is the number that actually sells
 // the annual plan, and "$228 billed yearly" alone hides it.
@@ -64,7 +72,7 @@ const PLANS = [
 const INCLUDED = [
   'Every calendar — Google, Microsoft, iCloud, ICS',
   'Nuvo, your planning copilot',
-  'Domains, initiatives, projects, blocks',
+  'Every altitude — yearly bets down to the hour',
   'Sunday planning and Friday review',
   'The native Mac app and ⌥Space capture',
   'Installable on your iPhone',
@@ -193,55 +201,45 @@ export default function Home() {
             <h2 className="masthead mt-3 text-lead text-[var(--text)]">
               A to-do list can’t hold what you’re carrying.
             </h2>
-            <div className="mt-6 space-y-5 text-body text-[var(--muted)]">
-              <p>
-                Work has three teams and a roadmap. There’s a season starting somewhere else you’re
-                responsible for. Family has a calendar that doesn’t care about your sprint. And
-                somewhere there’s a project that mattered in January and hasn’t been touched since
-                March.
-              </p>
-              <p>
-                So you keep three systems. Task apps keep checklists and are blind to the quarter.
-                Project tools keep boards and have never once told you what Tuesday looks like.
-                Calendars keep meetings, so the actual work is invisible.
-              </p>
-              <p className="text-[var(--text)]">
-                You became the integration layer between them. Every re-typed task is a chance to
-                drop something — and you can’t answer the only question that matters: is the thing
-                I said mattered actually getting hours?
-              </p>
-            </div>
+            <p className="mt-5 text-body text-[var(--muted)]">
+              So you keep three systems — and you became the integration layer between them.
+            </p>
           </div>
+
+          {/* The indictment, scannable in three glances. This used to be a
+              paragraph; the persona skims, so it's a triptych now. */}
+          <ul className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-3">
+            {GAPS.map((g) => (
+              <li key={g.tool} className="border-t border-[var(--line)] pt-4">
+                <p className="section-label text-[var(--text)]">{g.tool}</p>
+                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted)]">
+                  <span className="text-[var(--text)]">{g.good}</span> {g.blind}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-10 max-w-xl text-body text-[var(--text)]">
+            So you still can’t answer the only question that matters: is the thing I said mattered
+            actually getting hours?
+          </p>
         </section>
 
         {/* The wedge — the altitude model is the differentiator, so it gets its own
             beat and the visual demonstrates the descent instead of listing nouns. */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-16 lg:items-start">
-            <div>
-              <p className="section-label text-[var(--muted)]">How it actually works</p>
-              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Most tools are good at one altitude. Nuvo works at all of them.
-              </h2>
-              <div className="mt-6 space-y-5 text-body text-[var(--muted)]">
-                <p>
-                  Nuvo is one continuous system from <span className="text-[var(--text)]">“this
-                  matters this year”</span> down to <span className="text-[var(--text)]">“this is
-                  happening at 9am.”</span> Something you commit to at the top becomes real hours
-                  at the bottom — and the hours roll back up as proof it moved.
-                </p>
-                <p>
-                  The initiative you named in January is a project in March, three tasks this week,
-                  and 9am Tuesday. One object, all the way down. No re-entry, no translating
-                  between apps, no project quietly dying in a board while your week fills up with
-                  something else.
-                </p>
-                <p className="text-[var(--text)]">
-                  That round trip is the whole thing. It’s why a full week in Nuvo means the work
-                  you chose is the work that happened.
-                </p>
-              </div>
-            </div>
+          <div className="max-w-2xl">
+            <p className="section-label text-[var(--muted)]">How it actually works</p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+              Most tools are good at one altitude. Nuvo works at all of them.
+            </h2>
+            <p className="mt-5 text-body text-[var(--muted)]">
+              The initiative you named in January is a project in March, three tasks this week, and
+              9am Tuesday. Same object, the whole way down.
+            </p>
+          </div>
+          {/* The visual carries the argument here — it earns the full width. */}
+          <div className="mt-10">
             <FunnelVisual />
           </div>
         </section>
