@@ -64,9 +64,19 @@ export function useSubscriptionLiveSync() {
       .subscribe();
     // The cache key isn't user-scoped, so drop it whenever the signed-in
     // identity changes — otherwise signing in as a second account could show
-    // the previous user's billing state until the refetch lands.
-    const { data: auth } = supabase.auth.onAuthStateChange((e) => {
-      if (e === "SIGNED_OUT" || e === "SIGNED_IN") qc.removeQueries({ queryKey: KEY });
+    // the previous user's billing state until the refetch lands. Supabase
+    // re-fires SIGNED_IN for the SAME user whenever the window/tab regains
+    // visibility (its session-recovery check on focus) — e.g. every time the
+    // Tauri window is hidden (⌘W) and reopened. Track the last known user id
+    // so that refocus refire doesn't wipe a perfectly good cache and flash
+    // the loading splash for no reason.
+    let lastUserId: string | null = null;
+    const { data: auth } = supabase.auth.onAuthStateChange((e, session) => {
+      const userId = session?.user.id ?? null;
+      if (e === "SIGNED_OUT" || (e === "SIGNED_IN" && userId !== lastUserId)) {
+        qc.removeQueries({ queryKey: KEY });
+      }
+      lastUserId = userId;
     });
     return () => {
       supabase.removeChannel(channel);
