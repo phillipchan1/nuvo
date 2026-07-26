@@ -263,6 +263,42 @@ body {
   word-break: break-all;
 }
 
+/* Support disclosures — native <details>, so they work without JS and Cmd-F
+   still finds closed content in most browsers. Strip the platform triangle and
+   rotate our own + into a −. */
+.disclose > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclose > summary::marker {
+  content: '';
+}
+
+.disclose > summary:hover {
+  color: var(--accent);
+}
+
+.disclose > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* + when closed, − when open. A rotated + reads as "dismiss", which is the
+   wrong promise for a disclosure. */
+.disclose-mark {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.disclose-mark::before {
+  content: '+';
+}
+
+.disclose[open] .disclose-mark::before {
+  content: '−';
+}
+
 @media (max-width: 639px) {
   .schedule-visual {
     grid-template-columns: 1fr;

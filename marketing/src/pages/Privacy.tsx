@@ -193,7 +193,15 @@ export default function Privacy() {
 
       <footer className="mx-auto flex max-w-3xl flex-col gap-3 border-t border-[var(--line)] px-5 py-8 text-[13px] text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <span className="wordmark text-[var(--text)]">Nuvo</span>
-        <p>© {new Date().getFullYear()}</p>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <a href="/support" className="hover:text-[var(--text)]">
+            Support
+          </a>
+          <a href="/" className="hover:text-[var(--text)]">
+            Home
+          </a>
+          <p>© {new Date().getFullYear()}</p>
+        </div>
       </footer>
     </div>
   )

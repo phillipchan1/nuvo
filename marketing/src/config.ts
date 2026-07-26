@@ -4,6 +4,15 @@ export const ACCESS_EMAIL =
   (import.meta.env.VITE_ACCESS_EMAIL as string | undefined) || 'hello@nuvo.day'
 export const ACCESS_MAILTO = `mailto:${ACCESS_EMAIL}?subject=${encodeURIComponent('Nuvo access')}`
 
+/** Support goes to the same inbox — one address is more honest than a fake
+ *  support@ that routes to the same person. The subject is pre-filled so the
+ *  inbox sorts itself. */
+export const SUPPORT_EMAIL = ACCESS_EMAIL
+export const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Nuvo support')}`
+/** The reply window we publish. Only ever set this to something we can honor —
+ *  a stated time we miss costs more trust than no stated time at all. */
+export const SUPPORT_RESPONSE = 'Usually within one business day.'
+
 /** Same contact for privacy / legal (Google OAuth verification). */
 export const PRIVACY_URL = 'https://nuvo.day/privacy'
 
