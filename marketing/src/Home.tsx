@@ -5,41 +5,122 @@ import DomainVisual from './components/DomainVisual'
 import FunnelVisual from './components/FunnelVisual'
 import OperatorVisual from './components/OperatorVisual'
 import ScheduleVisual from './components/ScheduleVisual'
-import ThemesVisual from './components/ThemesVisual'
 import { useCallback, useState } from 'react'
 import { ACCESS_MAILTO, APP_URL, DOWNLOAD_MAC_URL, RELEASES_REPO } from './config'
 
-const CAPABILITIES = [
+// Everything you get, grouped so it reads as a system rather than a wall.
+// Written as outcomes, not features — a capability list is app-impressive by
+// default, and only earns its place if every line is what *you* can do.
+//
+// AUDITED against master (2026-07-25). Deliberately absent because they don't
+// ship on master yet: forward-email-to-inbox and the inbound capture API (no
+// edge function, no migration — they live on other branches). Don't list them
+// until they deploy; a depth signal that doesn't survive contact is worse than
+// a shorter list.
+const INVENTORY = [
   {
-    label: 'One system',
-    title: 'Nothing gets lost',
-    body: 'A yearly bet becomes projects, becomes tasks, becomes Tuesday at 9 — without ever leaving Nuvo or being re-typed. Finish the hour and the bet above it moves.',
+    group: 'Capture',
+    items: [
+      '⌥Space from anywhere on Mac',
+      '⌘K inside the app',
+      'Type it like a text message',
+      'Voice dictation',
+      'An inbox that holds everything',
+    ],
   },
   {
-    label: 'Capture',
-    title: 'Every loose thought lands',
-    body: '⌥Space on Mac. ⌘K in the app. Type freely — dates, durations, labels. Inbox holds it until you route it.',
+    group: 'Your calendars',
+    items: [
+      'Google, Microsoft 365, iCloud, ICS',
+      'Two-way sync with Google',
+      'Meetings and your work, one grid',
+      'Hide what you don’t plan around',
+      'Recurring events, guests, locations',
+    ],
   },
   {
-    label: 'Schedule',
-    title: 'Granular where it counts',
-    body: 'A scheduled task is the block. Drag work onto Tuesday. Project tools stop at the board — Nuvo lands on the hour.',
+    group: 'Planning the week',
+    items: [
+      'Sunday composes your week',
+      'Demand against your real hours',
+      'Calibrated to your proven pace',
+      'Priorities tied to real projects',
+      'Standing time for recurring work',
+      'Drag work onto the hour',
+    ],
   },
   {
-    label: 'The Week',
-    title: 'Commit before you schedule',
-    body: 'Inbox stays raw. Backlog stays quiet. The Week is the gate — only what you commit reaches Today.',
+    group: 'The bigger picture',
+    items: [
+      'Every level in one system',
+      'See three weeks out',
+      'Know when a project is behind',
+      'Shape work before it’s scheduled',
+      'See what’s ready to work',
+    ],
   },
   {
-    label: 'Intelligence',
-    title: 'Help in the right places',
-    body: 'Scaffold a project. Compose a week. Prepare a block. Nuvo proposes — you promote toward the calendar.',
+    group: 'Your day',
+    items: [
+      'One honest call on today',
+      'A morning brief',
+      'An evening close',
+      'Unfinished work rolls forward',
+      'Weather and daylight',
+    ],
   },
   {
-    label: 'Standing',
-    title: 'Protect the hours that matter',
-    body: 'Standing slots claim recurring affinity time. Sunday routes matching work into them.',
+    group: 'Looking back',
+    items: [
+      'A Friday review, with evidence',
+      'What moved, in every world',
+      'Where your hours actually went',
+      'Meetings count as time spent',
+      'GitHub work counts itself',
+    ],
   },
+  {
+    group: 'Ask Nuvo',
+    items: [
+      'Ask in plain language',
+      'It drafts, you decide',
+      'Scaffold a project or a week',
+      'One tap to undo anything',
+    ],
+  },
+  {
+    group: 'Where it runs',
+    items: [
+      'Native Mac app, auto-updating',
+      'Any browser',
+      'Installable on iPhone',
+      'Five looks, light and dark',
+      'Keyboard-first throughout',
+      'Live sync across devices',
+    ],
+  },
+] as const
+
+// The refusals, straight from overview.md §2. A capability list attracts
+// exactly the buyers the canon names as anti-personas; this disqualifies them
+// in the same breath, and reads as confidence rather than apology.
+const REFUSALS = [
+  ['No assignees, no shared boards.', 'It’s your system, not a team’s.'],
+  ['No streaks, no shame.', 'The app reports. It never nags.'],
+  ['No AI running your day.', 'Nuvo proposes. You decide.'],
+  ['No wiki, no blank canvas.', 'It has opinions on purpose.'],
+  ['Nobody watching your calendar.', 'No manager’s dashboard. Ever.'],
+] as const
+
+// The agreement plan (brandscript §4) — what we promise, at the moment of
+// paying. "Your account is yours alone" is a real differentiator the site has
+// never once stated (Question Ledger O4).
+const PROMISES = [
+  'Fourteen days free, no card',
+  'Cancel anytime, in two clicks',
+  'Every feature, no tiers, nothing held back',
+  'Your account is yours alone — nobody else is ever in it',
+  'We’ll tell you the truth, including “you can’t carry this week”',
 ] as const
 
 // Why three systems still lose things — one line each, because the reader who
@@ -68,6 +149,7 @@ const PLANS = [
     perMonth: '19',
     billed: '$228 billed yearly',
     badge: 'Save $120',
+    note: 'Two months free. For the way you already think about a year.',
     featured: true,
   },
   {
@@ -75,33 +157,32 @@ const PLANS = [
     perMonth: '29',
     billed: 'Billed monthly',
     badge: null,
+    note: 'Month to month. Leave whenever, and take your calendars with you.',
     featured: false,
   },
 ] as const
 
-const INCLUDED = [
-  'Every calendar — Google, Microsoft, iCloud, ICS',
-  'Nuvo, your planning copilot',
-  'Every altitude — yearly bets down to the hour',
-  'Sunday planning and Friday review',
-  'The native Mac app and ⌥Space capture',
-  'Installable on your iPhone',
-] as const
-
-function CheckMark() {
+/** `quiet` is for the long inventory — 41 accent ticks would shout; the promises
+ *  next to the price are few enough to earn the accent. */
+function CheckMark({ quiet = false }: { quiet?: boolean }) {
+  const px = quiet ? 12 : 15
   return (
     <svg
-      width="15"
-      height="15"
+      width={px}
+      height={px}
       viewBox="0 0 16 16"
       fill="none"
       aria-hidden
-      className="mt-[0.3rem] shrink-0 text-[var(--accent)]"
+      className={
+        quiet
+          ? 'mt-[0.32rem] shrink-0 text-[var(--line-strong)]'
+          : 'mt-[0.3rem] shrink-0 text-[var(--accent)]'
+      }
     >
       <path
         d="M3.5 8.5l3 3 6-7"
         stroke="currentColor"
-        strokeWidth="1.6"
+        strokeWidth={quiet ? 2 : 1.6}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -338,26 +419,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Capabilities */}
-        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
-          <p className="section-label text-[var(--muted)]">The rest of it</p>
-          <h2 className="masthead mt-3 max-w-2xl text-lead text-[var(--text)]">
-            What else it does for you.
-          </h2>
-
-          <ul className="mt-12 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-            {CAPABILITIES.map((c) => (
-              <li key={c.label} className="border-t border-[var(--line)] pt-5">
-                <p className="section-label text-[var(--accent)]">{c.label}</p>
-                <h3 className="mt-2 text-[1.0625rem] font-medium leading-snug text-[var(--text)]">
-                  {c.title}
-                </h3>
-                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted)]">{c.body}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-
         {/* Calendars */}
         <section
           id="calendars"
@@ -412,25 +473,6 @@ export default function Home() {
               </ul>
             </div>
             <OperatorVisual />
-          </div>
-        </section>
-
-        {/* Themes */}
-        <section
-          id="themes"
-          className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24"
-        >
-          <p className="section-label text-[var(--muted)]">Appearance</p>
-          <h2 className="masthead mt-3 max-w-2xl text-lead text-[var(--text)]">
-            You’ll be in here every day. It should suit you.
-          </h2>
-          <p className="mt-5 max-w-2xl text-body text-[var(--muted)]">
-            Five materials — Aurora glass, Flat, Terminal (Dracula, Nord, Tokyo Night…),
-            Blueprint, E-Ink — each with its own moods and schemes, light and dark. Quiet enough
-            to sit open all day next to your editor.
-          </p>
-          <div className="mt-10">
-            <ThemesVisual />
           </div>
         </section>
 
@@ -522,6 +564,63 @@ export default function Home() {
           </div>
         </section>
 
+        {/* The depth signal — grouped so it reads as a system, and placed right
+            before pricing where abundance justifies a decision instead of
+            interrupting the argument. */}
+        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
+          <div className="max-w-2xl">
+            <p className="section-label text-[var(--muted)]">Everything included</p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+              One price. All of it.
+            </h2>
+            <p className="mt-5 text-body text-[var(--muted)]">
+              No tiers, no add-ons, nothing saved back for a “pro” plan. This is the whole
+              product.
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+            {INVENTORY.map((g) => (
+              <div key={g.group} className="border-t border-[var(--line)] pt-4">
+                <p className="section-label text-[var(--accent)]">{g.group}</p>
+                <ul className="mt-3 space-y-2">
+                  {g.items.map((item) => (
+                    <li
+                      key={item}
+                      className="flex items-start gap-2 text-[0.875rem] leading-snug text-[var(--muted)]"
+                    >
+                      <CheckMark quiet />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* The refusals. Unusual next to a feature list, which is the point. */}
+        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
+          <div className="max-w-2xl">
+            <p className="section-label text-[var(--muted)]">And on purpose</p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+              What Nuvo refuses to do.
+            </h2>
+            <p className="mt-5 text-body text-[var(--muted)]">
+              These aren’t missing. Most of what makes the product coherent is what it
+              declines to be.
+            </p>
+          </div>
+          <ul className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+            {REFUSALS.map(([no, why]) => (
+              <li key={no} className="border-t border-[var(--line)] pt-4">
+                <p className="text-[0.9375rem] font-medium leading-snug text-[var(--text)]">{no}</p>
+                <p className="mt-1.5 text-[0.9375rem] leading-relaxed text-[var(--muted)]">{why}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+
         {/* Pricing — lands after the value is made, before the closing CTA */}
         <section
           id="pricing"
@@ -530,54 +629,58 @@ export default function Home() {
           <div className="max-w-2xl">
             <p className="section-label text-[var(--muted)]">Pricing</p>
             <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              One subscription. Everything you run.
+              Less than the three tools it replaces.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Fourteen days free — no card. After that, one plan covers all of it: every calendar,
-              every part of your life, the Mac app, and your phone. No seats, no tiers, nothing
-              held back for a higher plan.
+              You’re likely paying for a task app, a project tool, and a planner that don’t talk
+              to each other. This is one system, one price, and one week that finally adds up.
             </p>
           </div>
 
-          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:max-w-3xl">
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:max-w-3xl">
             {PLANS.map((p) => (
               <div
                 key={p.name}
-                className={`glass-card rounded-2xl border p-6 sm:p-7 ${
+                className={`glass-card relative rounded-2xl border p-6 sm:p-8 ${
                   p.featured
-                    ? 'border-[var(--accent)] shadow-[var(--shadow-2)]'
+                    ? 'border-[var(--accent)] shadow-[var(--shadow-2)] sm:-mt-3 sm:pb-11'
                     : 'border-[var(--line)]'
                 }`}
               >
-                <div className="flex items-baseline gap-3">
-                  <p className="section-label text-[var(--text)]">{p.name}</p>
-                  {p.badge && (
-                    <span className="section-label ml-auto text-[var(--accent)]">{p.badge}</span>
-                  )}
-                </div>
+                {p.badge && (
+                  <span
+                    className="section-label absolute -top-2.5 left-6 rounded-full px-2.5 py-1 text-[var(--bg)]"
+                    style={{ background: 'var(--accent)' }}
+                  >
+                    {p.badge}
+                  </span>
+                )}
+                <p className="section-label text-[var(--muted)]">{p.name}</p>
                 {/* Prices are numerics — tabular sans, never the Fraunces masthead. */}
-                <p className="mt-5 flex items-baseline gap-1.5">
-                  <span className="mono text-[2.75rem] font-semibold leading-none tracking-tight text-[var(--text)]">
+                <p className="mt-4 flex items-baseline gap-1.5">
+                  <span className="mono text-[3.25rem] font-semibold leading-none tracking-tight text-[var(--text)]">
                     ${p.perMonth}
                   </span>
                   <span className="text-[0.9375rem] text-[var(--muted)]">/month</span>
                 </p>
-                <p className="mt-2.5 text-[0.9375rem] text-[var(--muted)]">{p.billed}</p>
+                <p className="mt-3 text-[0.9375rem] text-[var(--muted)]">{p.billed}</p>
+                <p className="mt-5 border-t border-[var(--line)] pt-4 text-[0.875rem] leading-relaxed text-[var(--muted)]">
+                  {p.note}
+                </p>
               </div>
             ))}
           </div>
 
-          <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-3">
             <a href={APP_URL} className="btn-primary tap" rel="noopener noreferrer">
-              Start 14 days free
+              Start free — plan your week in ten minutes
             </a>
-            <p className="text-[0.9375rem] text-[var(--muted)]">
-              No credit card · Cancel anytime
-            </p>
           </div>
 
-          <ul className="mt-14 grid max-w-3xl gap-x-10 gap-y-3.5 sm:grid-cols-2">
-            {INCLUDED.map((line) => (
+          {/* The agreement plan. Risk reversal is what actually closes this
+              buyer; the objection isn't the money, it's abandoning another app. */}
+          <ul className="mt-12 grid max-w-3xl gap-x-10 gap-y-3.5 sm:grid-cols-2">
+            {PROMISES.map((line) => (
               <li key={line} className="flex items-start gap-2.5 text-[0.9375rem] text-[var(--muted)]">
                 <CheckMark />
                 <span className="leading-relaxed">{line}</span>
