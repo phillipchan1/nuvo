@@ -2,13 +2,16 @@ name: Release
 
 # Builds, signs, notarizes, and publishes the macOS desktop app.
 #
-# Triggers (the repo is public, so Actions minutes are free — build on push):
-#   • push to master              → releases <major>.<minor>.<run> (every commit ships)
-#   • push a version tag `vX.Y.Z`  → releases that exact version
-#   • manual dispatch (Actions tab → Run workflow) → releases <major>.<minor>.<run>
+# The repo is public (Actions are free), but releases are THROTTLED so pushing
+# code doesn't ship on every commit. A release fires when:
+#   • a commit message contains [release]   → push freely; ship intentionally
+#   • a version tag vX.Y.Z is pushed          → that exact version
+#   • the daily cron finds master changed     → batches a day into one release
+#   • you run it on demand                     → Actions "Run workflow", or a
+#     Claude session running `gh workflow run release.yml` when you say "cut a
+#     release" / "rebuild this"
 #
-# `concurrency: cancel-in-progress` below collapses rapid back-to-back pushes to
-# just the latest, so a burst of commits produces one release, not a pile-up.
+# Plain pushes without [release] do NOT build. On-demand + tags always build.
 #
 # Publishes a UNIVERSAL (Apple Silicon + Intel) DMG + the updater artifacts
 # (.app.tar.gz + .sig) + latest.json to the PUBLIC releases repo
@@ -20,6 +23,8 @@ on:
   push:
     branches: [master]
     tags: ["v*"]
+  schedule:
+    - cron: "0 9 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -33,7 +38,39 @@ env:
   RELEASES_REPO: phillipchan1/nuvo-releases
 
 jobs:
+  # Cheap gate on the expensive macOS build. A branch push only builds when its
+  # HEAD commit message contains [release]; the daily cron only builds when
+  # master changed since the last release (last-built-sha.txt in the releases
+  # repo); tags and manual dispatch always build.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.decide.outputs.go }}
+    steps:
+      - name: Decide whether to build
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          EVENT="${{ github.event_name }}"
+          REF_TYPE="${{ github.ref_type }}"
+          GO=false
+          if [ "$EVENT" = "workflow_dispatch" ] || [ "$REF_TYPE" = "tag" ]; then
+            GO=true
+          elif [ "$EVENT" = "push" ]; then
+            case "$MSG" in *"[release]"*) GO=true ;; esac
+          elif [ "$EVENT" = "schedule" ]; then
+            LAST_SHA=$(gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
+              --jq '.content' 2>/dev/null | base64 -d | tr -d '[:space:]' || echo "")
+            [ "$LAST_SHA" != "${{ github.sha }}" ] && GO=true
+          fi
+          echo "go=$GO" >> "$GITHUB_OUTPUT"
+          echo "event=$EVENT ref_type=$REF_TYPE → build=$GO"
+
   release:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -200,3 +237,20 @@ jobs:
             --notes-file RELEASE_NOTES.md \
             --latest \
             "$DMG" "$STABLE_DMG" "$APPTAR" latest.json
+
+      - name: Record built SHA
+        # Lets the daily cron skip when master hasn't changed since this release.
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          set -euo pipefail
+          CONTENT=$(printf '%s' '${{ github.sha }}' | base64)
+          FILE_SHA=$(gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
+            --jq '.sha' 2>/dev/null || echo "")
+          EXTRA_ARGS=()
+          [ -n "$FILE_SHA" ] && EXTRA_ARGS+=(--field "sha=$FILE_SHA")
+          gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
+            --method PUT \
+            --field "message=Record built SHA ${{ github.sha }}" \
+            --field "content=$CONTENT" \
+            "${EXTRA_ARGS[@]}"
