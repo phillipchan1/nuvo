@@ -1,4 +1,5 @@
 import CalendarsVisual from './components/CalendarsVisual'
+import CapacityVisual from './components/CapacityVisual'
 import CaptureVisual from './components/CaptureVisual'
 import DomainVisual from './components/DomainVisual'
 import FunnelVisual from './components/FunnelVisual'
@@ -47,6 +48,15 @@ const GAPS = [
   { tool: 'Task apps', good: 'Great at today.', blind: 'Blind to the quarter.' },
   { tool: 'Project tools', good: 'Great at the quarter.', blind: 'Never told you what Tuesday looks like.' },
   { tool: 'Calendars', good: 'Great at meetings.', blind: 'The actual work is invisible.' },
+] as const
+
+// The after-state, not the mechanism — the brandscript's success beats, which
+// the page otherwise never states.
+const PAYOFF = [
+  { when: 'Sunday', body: 'The week is decided, and the arithmetic says you can carry it.' },
+  { when: 'Tuesday', body: 'The work is on the hour, and what you needed for it is already there.' },
+  { when: 'Friday', body: 'You can show what moved — from evidence, not memory.' },
+  { when: 'Every week', body: 'Nothing goes dark for a quarter without you choosing it.' },
 ] as const
 
 // Keep in step with the app's src/components/billing/plans.ts and the Stripe
@@ -180,10 +190,13 @@ export default function Home() {
             <h1 className="masthead reveal text-display text-[var(--text)]">
               You run more than one life. One system should keep up.
             </h1>
+            {/* Two beats, one per element: the headline holds the worlds, the
+                support holds the arithmetic. Ends on the question the rest of
+                the page answers. */}
             <p className="reveal reveal-delay-1 mt-5 max-w-xl text-pretty hero-support text-[var(--muted)]">
-              Work, the side thing, the family calendar, the thing you volunteer for. Nuvo is one
-              continuous system from the year you’re planning down to the hour you’re working — so
-              what matters actually gets time.
+              Work, the side thing, the family calendar, the thing you volunteer for. Nuvo holds
+              all of it in one place — then answers the question no other tool will: can you
+              actually carry this week?
             </p>
             <CtaGroup className="reveal reveal-delay-2 mt-8" />
           </div>
@@ -219,10 +232,17 @@ export default function Home() {
             ))}
           </ul>
 
-          <p className="mt-10 max-w-xl text-body text-[var(--text)]">
-            So you still can’t answer the only question that matters: is the thing I said mattered
-            actually getting hours?
-          </p>
+          {/* Name the villain. It's singular, blameless, and not the reader —
+              which is what makes it usable as an enemy. */}
+          <div className="mt-12 max-w-xl">
+            <p className="text-body text-[var(--text)]">It has a name: drift.</p>
+            <p className="mt-3 text-body text-[var(--muted)]">
+              The slow, blameless gap between what you said mattered and what your calendar
+              actually spends you on. Nothing goes wrong on any given day. Then it’s March, the
+              thing you cared about in January hasn’t moved, and you can’t point to the week you
+              decided to let it go.
+            </p>
+          </div>
         </section>
 
         {/* The wedge — the altitude model is the differentiator, so it gets its own
@@ -244,7 +264,25 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Domains */}
+        {/* The flagship answer. Altitude wins attention; this wins trust. */}
+        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
+          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-16">
+            <div>
+              <p className="section-label text-[var(--muted)]">Before you commit</p>
+              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+                Can you actually carry this week?
+              </h2>
+              <p className="mt-5 text-body text-[var(--muted)]">
+                Nuvo adds up everything you just committed to and measures it against the hours you
+                actually have — calibrated against the pace you’ve actually proven, not the pace
+                you wish you had. It will tell you when the answer is no.
+              </p>
+            </div>
+            <CapacityVisual />
+          </div>
+        </section>
+
+        {/* Domains — named in plain language only; the vocabulary lives in the app. */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
           <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-end lg:gap-16">
             <div>
@@ -253,10 +291,10 @@ export default function Home() {
                 Every world you’re responsible for, side by side.
               </h2>
               <p className="mt-5 max-w-md text-body text-[var(--muted)]">
-                A domain isn’t a folder or a tag you’ll forget you made. It’s an area you’re
+                Not folders, and not tags you’ll forget you made. These are the areas you’re
                 permanently responsible for — work, family, the thing you serve, your own health.
-                Initiatives and projects grow underneath them, and the week decides what lands on
-                the day across all of them, not just the one that pays you.
+                The work grows underneath them, and the week decides what lands on the day across
+                all of them, not just the one that pays you.
               </p>
             </div>
             <DomainVisual />
@@ -272,7 +310,7 @@ export default function Home() {
             <div>
               <p className="section-label text-[var(--muted)]">Capture anything</p>
               <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Every loose task has a home.
+                Get it out of your head in one keystroke.
               </h2>
               <p className="mt-5 text-body text-[var(--muted)]">
                 On Mac, hit <span className="text-[var(--text)] mono">⌥Space</span> from anywhere —
@@ -302,9 +340,9 @@ export default function Home() {
 
         {/* Capabilities */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
-          <p className="section-label text-[var(--muted)]">How it holds</p>
+          <p className="section-label text-[var(--muted)]">The rest of it</p>
           <h2 className="masthead mt-3 max-w-2xl text-lead text-[var(--text)]">
-            Every altitude — down to the hour.
+            What else it does for you.
           </h2>
 
           <ul className="mt-12 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
@@ -333,7 +371,8 @@ export default function Home() {
               </h2>
               <p className="mt-5 text-body text-[var(--muted)]">
                 Work on Google. Family on Apple. Corp on Microsoft. The youth group ICS feed.
-                One grid — meetings and your blocks side by side, tinted by domain.
+                One grid — meetings and your own work side by side, tinted by which world
+                they belong to.
               </p>
               <p className="mt-4 text-body text-[var(--muted)]">
                 Scheduled Nuvo work can mirror to a dedicated Google “Nuvo” calendar, so the
@@ -353,7 +392,7 @@ export default function Home() {
                 Built for the load you actually carry.
               </h2>
               <p className="mt-5 text-body text-[var(--muted)]">
-                When you’re mid-meeting and three domains are pinging, you need speed and an
+                When you’re mid-meeting and three of your worlds are pinging, you need speed and an
                 honest week — not another board to maintain. Capture fast. See commitment before
                 you overfill. Let unfinished work roll cleanly.
               </p>
@@ -400,7 +439,7 @@ export default function Home() {
           <div className="max-w-2xl">
             <p className="section-label text-[var(--muted)]">Cadence</p>
             <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              Short rituals. Clear end states.
+              You enter, you decide, you leave.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
               Sunday composes the week. A morning brief claims the day. An evening shutdown closes
@@ -426,6 +465,27 @@ export default function Home() {
               </li>
             </ul>
           </div>
+        </section>
+
+        {/* The payoff — the after-state, straight from the brandscript's success
+            beats. Every other section is mechanism; this one is what changes. */}
+        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
+          <div className="max-w-2xl">
+            <p className="section-label text-[var(--muted)]">What changes</p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+              Sunday you know. Friday you can prove it.
+            </h2>
+          </div>
+          <ul className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+            {PAYOFF.map((p) => (
+              <li key={p.when} className="border-t border-[var(--line)] pt-4">
+                <p className="section-label text-[var(--accent)]">{p.when}</p>
+                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted)]">
+                  {p.body}
+                </p>
+              </li>
+            ))}
+          </ul>
         </section>
 
         {/* Where it runs */}
