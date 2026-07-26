@@ -251,6 +251,33 @@ write `big_rocks` more cleverly (it would still be writing to a surface nobody r
 *Status: standing — typechecks, builds, and driven at 375px in a render harness
 (`?planweek`); **not yet driven in a real account**, so W1/W2 stay scored as they were.*
 
+**D-032 · 2026-07-26 · Planning rules have exactly one implementation, and a test that fails
+when a second appears.** The app and the agent run in different runtimes over the same data,
+and every rule we wrote twice drifted: the agent read `big_rocks` while the UI derived the
+slate from spans (D-031), and `planningWeekStart` shifted Saturday to next Monday in the app
+but to *this* Monday on the server — so on Saturdays the two planned **different weeks**. None
+of it failed a typecheck, a build, or a review; both surfaces just answered confidently and
+differently. → The week's rules now live in a dependency-free kernel
+(`supabase/functions/_shared/planningRules.ts`) imported by both; writes share the **act** as a
+returned *patch* (`bringIntoWeekPatch` / `takeOffWeekPatch`) that each runtime applies with its
+own client, so a tap and a chat message place a project identically;
+`tests/planning-kernel.test.ts` holds it three ways — agreement (client derivation vs the
+agent's, over one fixture set in both shapes), behavior (the weekend rule, shipped-inside-the-week,
+the Sunday-boundary leak), and a **drift guard** that scans the tree and fails if any file
+outside the kernel defines a rule it owns. CI runs it on every push
+(`.github/workflows/checks.yml` — the first non-release workflow; ~1 min, releases stay manual).
+→ The kernel lives under `supabase/functions/_shared/` because the edge bundler only guarantees
+that path, not because it is server code. → Rejected: *Postgres RPCs as the one implementation*
+(genuinely single-sourced, but it moves planning logic into migrations and away from the pure
+functions the UI needs synchronously — revisit if a third client appears) and *generating the
+server copy from the client* (a copy with a checksum is still a copy). → **Known gap, named
+rather than hidden:** `_shared/nlp.ts` is still a reduced re-implementation of `src/lib/nlp.ts`,
+so the same capture parses differently in the two paths; and the composer (`composeWeek`, the
+pull, calibration) is client-only, so the agent can propose a week's shape but never computes
+the same one. Both are listed in [`planning-kernel.md`](../planning-kernel.md) §5.
+*Status: standing — 25 conformance tests green; each guard verified by deliberately
+reintroducing the drift and watching it fail.*
+
 ---
 
 ## 2 · Things we decided **not** to do

@@ -1,4 +1,5 @@
 import { addDays, format, startOfWeek } from "date-fns";
+import { planningWeekStart } from "../../supabase/functions/_shared/planningRules.ts";
 
 export const APP_TZ = "America/Los_Angeles";
 
@@ -34,10 +35,9 @@ export function nextWeekISO(): string {
  * about to start, so the Plan flow opens on it and the rail's funnel follows.
  */
 export function planningWeekStartISO(now: Date = new Date()): string {
-  const laToday = parseDateISO(todayISO(now));
-  const dow = laToday.getDay(); // 0 = Sun, 6 = Sat
-  const shift = dow === 0 ? 1 : dow === 6 ? 2 : 0; // weekend → next Monday
-  return toDateISO(startOfWeek(addDays(laToday, shift), { weekStartsOn: 1 }));
+  // The rule itself lives in the planning kernel — the agent plans from the same
+  // one. (It used to be written twice, and the two disagreed about Saturday.)
+  return planningWeekStart(todayISO(now));
 }
 
 /** Hours from minutes, max one decimal: 90 → "1.5", 120 → "2". */

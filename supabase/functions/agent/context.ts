@@ -1,4 +1,16 @@
 import { admin } from "../_shared/admin.ts";
+// The week's rules — derived here from the same kernel the app derives them
+// from, so "what is on this week" cannot mean two things. Never re-implement
+// one of these locally; tests/planning-kernel.test.ts fails if you do.
+import {
+  fromProjectRow,
+  isCompleteStatus,
+  isOnSlate,
+  isOpenProjectStatus,
+  needsASprint,
+  planningWeekStart,
+  spansWeek,
+} from "../_shared/planningRules.ts";
 
 /** Fallback when the client didn't say where it is — the app's established home. */
 const FALLBACK_TZ = "America/Los_Angeles";
@@ -109,49 +121,6 @@ export interface AgentContext {
     initiatives: unknown[];
     projects: unknown[];
   };
-}
-
-/** Monday of the planning week (LA calendar; Sundays plan the week ahead). */
-function planningWeekStart(todayIso: string): string {
-  const [y, m, d] = todayIso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  if (dt.getUTCDay() === 0) dt.setUTCDate(dt.getUTCDate() + 1);
-  const sinceMonday = (dt.getUTCDay() + 6) % 7;
-  dt.setUTCDate(dt.getUTCDate() - sinceMonday);
-  return dt.toISOString().slice(0, 10);
-}
-
-const DAY_MS = 86_400_000;
-
-/** Does a project's committed On Deck span cover any of this week's WORKING days
- *  (Mon–Fri)? The ONE definition of "on deck for this week" — kept byte-for-byte
- *  in step with the client's `spansWeek` (src/lib/priorities.ts), because two
- *  answers to "is this project this week's" is exactly the drift that made Nuvo
- *  tell the user their week was empty while the deck held three projects.
- *  Weekdays, not all 7: a span anchored to a Sunday-start week would otherwise
- *  leak into the prior Monday-based sprint week through that shared Sunday. */
-function spansWeek(p: { start_date: string | null; target_date: string | null }, weekStartISO: string): boolean {
-  const monday = new Date(weekStartISO + "T00:00:00Z").getTime();
-  const saturday = monday + 5 * DAY_MS; // exclusive — Mon 00:00 → Sat 00:00
-  if (!p.target_date) return false; // no finish line = still needs a sprint
-  const end = new Date(p.target_date + "T23:59:59Z").getTime();
-  const start = p.start_date ? new Date(p.start_date + "T00:00:00Z").getTime() : end;
-  if (Number.isNaN(end) || Number.isNaN(start)) return false;
-  return start < saturday && end >= monday;
-}
-
-/** The project-status vocabulary, matching src/lib/vertical.ts. */
-const isCompleteStatus = (s: string) => s === "complete" || s === "done";
-const isDroppedStatus = (s: string) => s === "cancelled" || s === "dropped";
-
-/** Did the project ship inside the given week? (`shipped_at`, not target_date —
- *  target is when it was DUE.) */
-function shippedInWeek(p: { status: string; shipped_at: string | null }, weekStartISO: string): boolean {
-  if (!isCompleteStatus(p.status) || !p.shipped_at) return false;
-  const monday = new Date(weekStartISO + "T00:00:00Z").getTime();
-  const at = new Date(p.shipped_at).getTime();
-  if (Number.isNaN(at)) return false;
-  return at >= monday && at < monday + 7 * DAY_MS;
 }
 
 function localDateISO(iso: string, tz: string): string {
@@ -466,21 +435,15 @@ export async function buildContext(
     shipped_at: string | null;
   };
   const projectRows = (projectsRes.data ?? []) as ProjRow[];
-  const isOpen = (s: string) => !isCompleteStatus(s) && !isDroppedStatus(s);
-  const nextWeekStart = new Date(new Date(weekStart + "T00:00:00Z").getTime() + 7 * DAY_MS)
+  const nextWeekStart = new Date(new Date(weekStart + "T00:00:00Z").getTime() + 7 * 86_400_000)
     .toISOString()
     .slice(0, 10);
 
-  const slateRows = projectRows.filter(
-    (p) =>
-      !isDroppedStatus(p.status) &&
-      spansWeek(p, weekStart) &&
-      // a project that shipped INSIDE this week stays on the slate as the win it
-      // is; one that shipped in an earlier week is correctly gone
-      (isCompleteStatus(p.status) ? shippedInWeek(p, weekStart) : true),
+  const slateRows = projectRows.filter((p) => isOnSlate(fromProjectRow(p), weekStart));
+  const needsRows = projectRows.filter((p) => needsASprint(fromProjectRow(p)));
+  const nextRows = projectRows.filter(
+    (p) => isOpenProjectStatus(p.status) && spansWeek(fromProjectRow(p), nextWeekStart),
   );
-  const needsRows = projectRows.filter((p) => isOpen(p.status) && !p.target_date);
-  const nextRows = projectRows.filter((p) => isOpen(p.status) && spansWeek(p, nextWeekStart));
 
   // the open work filed under the slate (and the candidates) — what "pull the
   // work for this week" actually pulls from

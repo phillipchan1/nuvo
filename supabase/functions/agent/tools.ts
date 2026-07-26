@@ -1,6 +1,16 @@
 import { admin } from "../_shared/admin.ts";
 import { parseCapture } from "../_shared/nlp.ts";
 import { executeVerticalTool, isVerticalTool, VERTICAL_TOOL_DEFINITIONS } from "./verticalTools.ts";
+// The week's rules and the two placement ACTS — shared with the app, so the
+// agent's "bring it into the week" is byte-for-byte the UI's.
+import {
+  bringIntoWeekPatch,
+  fromProjectRow,
+  planningWeekStart,
+  spansWeek,
+  takeOffWeekPatch,
+  toRowPatch,
+} from "../_shared/planningRules.ts";
 
 const DEFAULT_DURATION = 30;
 const MIRROR_FIELDS = new Set(["start_time", "duration_minutes", "title", "status", "do_date"]);
@@ -57,15 +67,6 @@ function todayIn(tz: string): string {
   }).format(new Date());
 }
 
-function planningWeekStart(todayIso: string): string {
-  const [y, m, d] = todayIso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  if (dt.getUTCDay() === 0) dt.setUTCDate(dt.getUTCDate() + 1);
-  const sinceMonday = (dt.getUTCDay() + 6) % 7;
-  dt.setUTCDate(dt.getUTCDate() - sinceMonday);
-  return dt.toISOString().slice(0, 10);
-}
-
 interface BigRock {
   id: string;
   title: string;
@@ -99,32 +100,12 @@ async function getSprintRocks(userId: string, tz: string): Promise<{ sprintId: s
 // writes its span for this week, taking one off clears it — exactly what dragging
 // its card onto (or off) this week's column does.
 
-const PROJECT_DAY_MS = 86_400_000;
-
-/** Mon → Fri of the planning week — the span a brought-in project takes. */
-function weekSpan(weekStart: string): { start_date: string; target_date: string } {
-  const monday = new Date(weekStart + "T00:00:00Z").getTime();
-  return { start_date: weekStart, target_date: new Date(monday + 4 * PROJECT_DAY_MS).toISOString().slice(0, 10) };
-}
-
 interface ProjectSpanRow {
   id: string;
   name: string;
   status: string;
   start_date: string | null;
   target_date: string | null;
-}
-
-/** Does the project's committed span cover this week's working days? Mirrors
- *  `spansWeek` in src/lib/priorities.ts and agent/context.ts — one definition. */
-function projectSpansWeek(p: Pick<ProjectSpanRow, "start_date" | "target_date">, weekStart: string): boolean {
-  const monday = new Date(weekStart + "T00:00:00Z").getTime();
-  const saturday = monday + 5 * PROJECT_DAY_MS;
-  if (!p.target_date) return false;
-  const end = new Date(p.target_date + "T23:59:59Z").getTime();
-  const start = p.start_date ? new Date(p.start_date + "T00:00:00Z").getTime() : end;
-  if (Number.isNaN(end) || Number.isNaN(start)) return false;
-  return start < saturday && end >= monday;
 }
 
 /** The project a priority tool is aimed at: by id, else by name (fuzzy), else by
@@ -147,17 +128,18 @@ async function findProjectForPriority(
   const byName = rows.filter((p) => p.name.toLowerCase().includes(q) || q.includes(p.name.toLowerCase()));
   if (byName.length === 1) return byName[0];
   // ambiguous by name — prefer one already committed to this week
-  const onSlate = byName.filter((p) => projectSpansWeek(p, weekStart));
+  const onSlate = byName.filter((p) => spansWeek(fromProjectRow(p), weekStart));
   return onSlate.length === 1 ? onSlate[0] : null;
 }
 
-/** Commit a project to the planning week (the "bring it in" write). Returns the
- *  project's name when it actually moved, so the reply can say so. */
+/** Commit a project to the planning week (the "bring it in" write). The patch is
+ *  the kernel's — the same object the Priorities editor and the phone's slate
+ *  apply — so this tool cannot place a project differently than a tap does.
+ *  Returns the project's name when it actually moved, so the reply can say so. */
 async function bringProjectIntoWeek(userId: string, weekStart: string, p: ProjectSpanRow): Promise<string | null> {
-  if (projectSpansWeek(p, weekStart)) return null;
-  const patch: Record<string, unknown> = { ...weekSpan(weekStart) };
-  if (p.status === "backlog") patch.status = "in_progress";
-  const { error } = await admin.from("projects").update(patch).eq("user_id", userId).eq("id", p.id);
+  const patch = bringIntoWeekPatch(fromProjectRow(p), weekStart);
+  if (!patch) return null; // already this week's
+  const { error } = await admin.from("projects").update(toRowPatch(patch)).eq("user_id", userId).eq("id", p.id);
   if (error) throw new Error(error.message);
   return p.name;
 }
@@ -165,10 +147,10 @@ async function bringProjectIntoWeek(userId: string, weekStart: string, p: Projec
 /** Take a project off this week — back to "needs a sprint", same as dragging its
  *  card off the board. Only touches a project actually committed to this week. */
 async function pushProjectOutOfWeek(userId: string, weekStart: string, p: ProjectSpanRow): Promise<string | null> {
-  if (!projectSpansWeek(p, weekStart)) return null;
+  if (!spansWeek(fromProjectRow(p), weekStart)) return null;
   const { error } = await admin
     .from("projects")
-    .update({ start_date: null, target_date: null })
+    .update(toRowPatch(takeOffWeekPatch()))
     .eq("user_id", userId)
     .eq("id", p.id);
   if (error) throw new Error(error.message);
@@ -1621,7 +1603,7 @@ export async function executeTool(
       );
       if (!known) {
         const project = await findProjectForPriority(userId, weekStart, args as { project_id?: string; priority_title?: string });
-        if (project && projectSpansWeek(project, weekStart)) {
+        if (project && spansWeek(fromProjectRow(project), weekStart)) {
           const landed: BigRock = {
             id: crypto.randomUUID(),
             title: project.name,

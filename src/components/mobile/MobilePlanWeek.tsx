@@ -17,13 +17,14 @@
 // every move has a tap path (mobile golden rule #4), 44px targets, safe areas.
 
 import { useMemo, useState } from "react";
-import { addDays, format } from "date-fns";
+import { format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useWeekDraft } from "../../hooks/useWeekDraft";
 import { projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { lensGaps } from "../../lib/lenses";
 import { domainById, taskDomainColor, type Project, type VerticalData } from "../../lib/vertical";
-import { fmtHours as hrs, parseDateISO, planningWeekStartISO, toDateISO } from "../../lib/dates";
+import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
+import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { sprintLabel } from "../../lib/sprint";
 import type { Placement } from "../../lib/compose";
 
@@ -80,13 +81,11 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
   // The week's slate — derived from the On Deck spans, never stored. Bringing a
   // project in / taking it off IS the placement write, same as the deck's drop.
   const pushes = useMemo(() => weekPushes(data, weekStartISO), [data, weekStartISO]);
-  const bringIn = (p: Project) =>
-    updateProject(p.id, {
-      startDate: weekStartISO,
-      targetDate: toDateISO(addDays(parseDateISO(weekStartISO), 4)),
-      status: p.status === "backlog" ? "in_progress" : p.status,
-    });
-  const takeOff = (p: Project) => updateProject(p.id, { startDate: null, targetDate: null });
+  const bringIn = (p: Project) => {
+    const patch = bringIntoWeekPatch(p, weekStartISO);
+    if (patch) updateProject(p.id, patch);
+  };
+  const takeOff = (p: Project) => updateProject(p.id, takeOffWeekPatch());
 
   const weekLabel = format(parseDateISO(weekStartISO), "MMMM d");
 

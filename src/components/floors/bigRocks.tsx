@@ -16,13 +16,14 @@
 //   BigRocksReckoning — the look-back in the Gain (Standback)
 
 import { useEffect, useMemo, useState } from "react";
-import { addDays, format } from "date-fns";
+import { format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { domainById, initiativeById, projectById, type Project, type VerticalData } from "../../lib/vertical";
 import { priorityWork, projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { lensGaps } from "../../lib/lenses";
-import { parseDateISO, planningWeekStartISO, toDateISO } from "../../lib/dates";
+import { parseDateISO, planningWeekStartISO } from "../../lib/dates";
+import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import type { BigRock } from "../../lib/types";
 
 /** The color a rock inherits from the initiative/project it's anchored to. */
@@ -47,16 +48,16 @@ export function BigRocks({ weekStartISO }: { weekStartISO?: string } = {}) {
   const pushes = useMemo(() => weekPushes(data, weekISO), [data, weekISO]);
 
   // Bringing a project in IS placing it on this week — the same act as dragging
-  // it onto this week's column in On Deck. Mon → Fri, matching the board.
-  const bringIn = (p: Project) =>
-    updateProject(p.id, {
-      startDate: weekISO,
-      targetDate: toDateISO(addDays(parseDateISO(weekISO), 4)),
-    });
+  // it onto this week's column in On Deck, and the same act as the agent's
+  // create_priority. All three apply the kernel's patch, so they cannot diverge.
+  const bringIn = (p: Project) => {
+    const patch = bringIntoWeekPatch(p, weekISO);
+    if (patch) updateProject(p.id, patch);
+  };
 
   // …and taking it off un-commits it back to "needs a week", same as dragging it
   // off the board onto the inbox rail.
-  const takeOff = (p: Project) => updateProject(p.id, { startDate: null, targetDate: null });
+  const takeOff = (p: Project) => updateProject(p.id, takeOffWeekPatch());
 
   return (
     <section>

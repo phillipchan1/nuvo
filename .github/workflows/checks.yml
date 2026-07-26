@@ -1,0 +1,36 @@
+# The cheap gate: typecheck, the conformance suite, and a parse of the edge
+# functions (which `tsc` can't see — they're Deno, with remote imports).
+#
+# Deliberately small. Releases stay manual (release.yml) so routine commits don't
+# spend runner minutes; this one runs in about a minute and is what keeps the
+# app and the agent from drifting apart — see docs/planning-kernel.md.
+name: checks
+
+on:
+  push:
+    branches-ignore: []
+  pull_request:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Typecheck (SPA)
+        run: npm run typecheck
+      - name: Conformance suite (app ↔ agent must agree)
+        run: npm test
+      - name: Parse the edge functions
+        run: |
+          set -e
+          find supabase/functions -name '*.ts' -print0 \
+            | xargs -0 -n1 npx esbuild --bundle=false --outfile=/dev/null

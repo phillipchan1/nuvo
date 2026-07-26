@@ -128,6 +128,26 @@ it needs to work on a phone.
   the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** (agenda + availability)
   instead of FullCalendar.
 
+## One rule, two runtimes — the app and the agent must never disagree
+
+Nuvo answers "what is my week" in the SPA (`src/lib/*`) **and** in the agent (Deno,
+`supabase/functions/*`). A planning rule written in both places has drifted every time we've
+tried it — the agent once reported "no priorities set" over a full deck, and the two
+disagreed about which week Saturday plans. So:
+
+- **Planning rules live in the kernel** — `supabase/functions/_shared/planningRules.ts` —
+  imported by both runtimes. Zero imports, pure, UTC date math. Full map + the acts registry
+  in [`docs/planning-kernel.md`](docs/planning-kernel.md).
+- **Never re-implement one.** Need a week rule somewhere new? Import it. Doesn't exist? Add
+  it to the kernel, then call it from both ends. `npm test` fails on a second definition.
+- **Writes share the *act*, not the client.** The kernel returns a **patch**
+  (`bringIntoWeekPatch` / `takeOffWeekPatch`); the browser applies it via `useVertical`, the
+  agent via the service role. So a tap and a chat message place a project identically.
+- **A new agent tool that writes planning state needs its UI twin in the registry** — or a
+  logged decision saying why it doesn't have one.
+- `npm test` (vitest) runs the conformance suite; CI (`.github/workflows/checks.yml`) runs
+  typecheck + tests + an edge-function parse on every push.
+
 ## Reuse the logic layer — don't duplicate
 
 - Day shape & availability: `readDay`, `toBusyBlocks`, `fmtMins`, `Gap`, `BusyBlock` in

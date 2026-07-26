@@ -5,6 +5,7 @@
 
 import { initiativeById, isProjectInFlight, projectById, tasksOf, type Project, type VerticalData, type VTask } from "./vertical";
 import { portfolioDemand, type ProjectPace } from "./pace";
+import { isCompleteStatus, isOnDeckThisWeek, isOnSlate } from "../../supabase/functions/_shared/planningRules.ts";
 import { isTended } from "./tending";
 import type { BigRock } from "./types";
 
@@ -48,49 +49,17 @@ export function priorityWork(data: VerticalData, rock: BigRock): RockWork {
 // snapshot is the historical record and must NOT be re-derived (that would
 // rewrite what you actually committed to back then).
 
-const DAY_MS = 86_400_000;
-
-/** Does the project's committed On Deck span cover any of this week's WORKING
- *  days (Mon–Fri)?
- *
- *  Weekdays, not the whole 7, on purpose: the board anchors a span to its own
- *  column's week start, which the user's `week_start` setting can put on a
- *  Sunday — while the sprint week here is always Monday-based. Testing the full
- *  7 days makes those two grids share a boundary day, so a project committed to
- *  *next* week (e.g. Sun Jul 19 → Thu Jul 23) leaks into the Mon Jul 13–19 week
- *  through that single overlapping Sunday. A span always covers its own week's
- *  weekdays and never the prior week's, so this reads the same under either
- *  convention. */
-function spansWeek(p: Project, weekStartISO: string): boolean {
-  const monday = new Date(weekStartISO + "T00:00:00").getTime();
-  const saturday = monday + 5 * DAY_MS; // exclusive — Mon 00:00 → Sat 00:00
-  if (!p.targetDate) return false; // no finish line = still needs a week
-  const end = new Date(p.targetDate + "T23:59:59").getTime();
-  const start = p.startDate ? new Date(p.startDate + "T00:00:00").getTime() : end;
-  if (Number.isNaN(end) || Number.isNaN(start)) return false;
-  return start < saturday && end >= monday;
-}
-
-/** Did this project ship *inside* the given week? (Its shipped_at stamp, set at
- *  the updateProject choke point, is the only honest answer — target_date is
- *  when it was DUE.) */
-function shippedInWeek(p: Project, weekStartISO: string): boolean {
-  if (p.status !== "complete" || !p.shippedAt) return false;
-  const monday = new Date(weekStartISO + "T00:00:00").getTime();
-  const at = new Date(p.shippedAt).getTime();
-  if (Number.isNaN(at)) return false;
-  return at >= monday && at < monday + 7 * DAY_MS;
-}
+// The membership rules themselves live in the planning kernel
+// (supabase/functions/_shared/planningRules.ts) — the agent derives the week
+// from the same file, so the chat and the UI cannot disagree about what is on
+// this week. Everything below is the client's *shape* over those rules.
 
 /** The projects you can still WORK on this week — open, committed to this week.
  *  This is the planning/pull question ("what should I pull from?"), so shipped
  *  and dropped projects are correctly gone. For the week's SCOREBOARD, which
  *  must keep what you shipped, use `weekPushes`. */
 export function projectsOnDeck(d: VerticalData, weekStartISO: string): Project[] {
-  return d.projects.filter((p) => {
-    if (p.status === "complete" || p.status === "cancelled") return false;
-    return spansWeek(p, weekStartISO);
-  });
+  return d.projects.filter((p) => isOnDeckThisWeek(p, weekStartISO));
 }
 
 /** A push: a project committed to this week, plus its stored verdict. */
@@ -113,14 +82,10 @@ export interface WeekPush {
  *  correctly gone. */
 export function weekPushes(d: VerticalData, weekStartISO: string): WeekPush[] {
   return d.projects
-    .filter((p) => {
-      if (p.status === "cancelled") return false;
-      if (!spansWeek(p, weekStartISO)) return false;
-      return p.status === "complete" ? shippedInWeek(p, weekStartISO) : true;
-    })
+    .filter((p) => isOnSlate(p, weekStartISO))
     .map((project) => {
       const rock = d.bigRocks.find((r) => r.project_id === project.id) ?? null;
-      const shipped = project.status === "complete";
+      const shipped = isCompleteStatus(project.status);
       // Shipping the project inside the week says the week moved it, louder than
       // the checkbox does — so it READS landed. Display only: shipping never
       // writes the verdict, so un-shipping simply reveals the verdict again.

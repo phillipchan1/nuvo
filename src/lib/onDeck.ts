@@ -16,6 +16,7 @@ import {
 import { lensGaps, projectReadinessAxes, type LensGap, type ReadinessAxes } from "./lenses";
 import { demandByWeekDetailed, projectPace, type ProjectPace } from "./pace";
 import { weekForecast, type WeekCapacity } from "./capacity";
+import { spanWidthWeeks, weekSpanFor } from "../../supabase/functions/_shared/planningRules.ts";
 
 /** How many near weeks the timeline shows before it's just noise (knob). */
 export const HORIZON_WEEKS = 3;
@@ -34,11 +35,7 @@ const toISO = (d: Date) =>
 
 /** How many whole sprints (weeks) a project currently occupies — 1 when it has no
  *  explicit start. The width a placement preserves when you move it. */
-export function sprintSpanWeeks(p: Pick<Project, "startDate" | "targetDate">): number {
-  if (!p.startDate || !p.targetDate) return 1;
-  const d = new Date(p.targetDate + "T00:00:00").getTime() - new Date(p.startDate + "T00:00:00").getTime();
-  return Math.max(1, Math.floor(d / WEEK_MS) + 1);
-}
+export const sprintSpanWeeks = spanWidthWeeks;
 
 /** The dates for a project placed so it STARTS in the week beginning `ws`, keeping
  *  its current width. The one placement rule — the desktop deck's drag-to-week and
@@ -49,8 +46,9 @@ export function sprintSpanFor(
   ws: Date,
   widthWeeks: number = sprintSpanWeeks(p),
 ): { startDate: string; targetDate: string } {
-  const w = Math.max(1, widthWeeks);
-  return { startDate: toISO(ws), targetDate: toISO(addDays(ws, (w - 1) * 7 + 4)) };
+  // One placement formula for every surface — the kernel's, which the agent's
+  // create_priority also writes through.
+  return weekSpanFor(toISO(ws), widthWeeks);
 }
 
 /** Which horizon week a date falls in (clamped into range; 0 when undated). */
