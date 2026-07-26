@@ -1,6 +1,6 @@
 // First run — the domain picker.
 //
-// Signup no longer seeds domains (migration 38), so a brand-new account arrives
+// Signup no longer seeds domains (migration 42), so a brand-new account arrives
 // here with nothing. This is the one natural moment to teach what a domain *is*,
 // so we teach by asking rather than by asserting: the account picks the kinds it
 // carries and names them itself.

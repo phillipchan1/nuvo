@@ -10,17 +10,26 @@ import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
 import { GitHubConnect } from "./GitHubConnect";
+import { BillingPane } from "./billing/BillingPane";
 import type { SettingsSection } from "../lib/appNav";
 import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { useOrientation } from "../hooks/useOrientation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useSkin, useScheme, SKIN_LABELS, SCHEMES, SCHEME_GROUP, schemeModes, type Skin, type Scheme, type SchemeModes } from "../hooks/useSkin";
 import { useUiScale, UI_SCALE_MIN, UI_SCALE_MAX } from "../hooks/useUiScale";
 import { useHomeTimezone } from "../hooks/useHomeTimezone";
 import { detectDeviceTz, supportedTimeZones, tzAbbrev, tzCity, tzStatus } from "../lib/timezone";
+import { useUpdater } from "../hooks/useUpdater";
+import { isDesktopTauri } from "../lib/platform";
+import { loadChangelog, isMinor, type ChangelogEntry } from "../lib/changelog";
+
+/** Stable-named universal DMG on the public releases repo. */
+const DOWNLOAD_MAC_URL =
+  "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account";
+type SectionId = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "desktop" | "account" | "billing" | "about";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   {
@@ -75,12 +84,44 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
     ),
   },
   {
+    id: "desktop",
+    label: "Desktop app",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <rect x="2" y="3" width="12" height="8" rx="1.3" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M6 13.5h4M8 11v2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     id: "account",
     label: "Account",
     icon: (
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
         <circle cx="8" cy="5.5" r="2.6" stroke="currentColor" strokeWidth="1.3" />
         <path d="M3.2 13.4c0-2.5 2.1-4.1 4.8-4.1s4.8 1.6 4.8 4.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    id: "billing",
+    label: "Billing",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <rect x="1.8" y="3.8" width="12.4" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M1.8 6.6h12.4" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M4 10h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    id: "about",
+    label: "About",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M8 7.2v3.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        <circle cx="8" cy="5.2" r="0.9" fill="currentColor" />
       </svg>
     ),
   },
@@ -1122,6 +1163,169 @@ function IntegrationsPane() {
   );
 }
 
+// ── Desktop app: version, auto-update controls, and "What's new" history ──
+// One responsive pane for both shells. The updater controls only render inside
+// the native Mac app (isDesktopTauri); on the web / iOS the pane shows a
+// "Download for Mac" link instead. The version + history show everywhere.
+function DesktopPane() {
+  const desktop = isDesktopTauri();
+  return (
+    <div>
+      <PaneHeader
+        title="Desktop app"
+        sub={
+          desktop
+            ? "The native Mac app updates itself quietly in the background. Here's your version and what's changed."
+            : "Nuvo runs great in the browser — and there's a native Mac app that updates itself in the background."
+        }
+      />
+      <div className="divide-y divide-line">
+        <Row
+          title="Version"
+          desc={desktop ? "You're running the native Mac app." : "The version you're on right now."}
+        >
+          <span className="mono text-caption text-muted">Nuvo {__APP_VERSION__}</span>
+        </Row>
+
+        {desktop ? (
+          <UpdateControls />
+        ) : (
+          <Row title="Download for Mac" desc="Universal build — Apple Silicon & Intel, updates itself.">
+            <a
+              href={DOWNLOAD_MAC_URL}
+              className="fast inline-block rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
+            >
+              Download
+            </a>
+          </Row>
+        )}
+      </div>
+
+      <ReleaseHistory />
+    </div>
+  );
+}
+
+// Desktop-only: manually check for an update and, when one is staged, restart
+// into it. Shares state with the bottom-right toast via the update store, so the
+// two never disagree.
+function UpdateControls() {
+  const { state, check, restart } = useUpdater();
+  const busy = state.status === "checking" || state.status === "downloading";
+
+  const message = {
+    idle: "Checked automatically in the background.",
+    checking: "Checking…",
+    "up-to-date": "You're on the latest version.",
+    downloading: `Downloading v${state.version ?? ""}… ${state.progress}%`,
+    ready: `Version ${state.version ?? ""} is ready.`,
+    // A failed check is harmless — the current build keeps working — so keep it
+    // gentle and never surface the raw request error / URL to the user.
+    error: "Couldn't check for updates right now. Try again later.",
+  }[state.status];
+
+  return (
+    <div className="py-3.5">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <div className="text-body font-medium text-ink">Updates</div>
+          <div className="mt-0.5 text-caption leading-snug text-muted" data-status={state.status}>
+            {message}
+          </div>
+        </div>
+        <div className="shrink-0">
+          {state.status === "ready" ? (
+            <button
+              onClick={restart}
+              className="fast rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
+            >
+              Restart to update
+            </button>
+          ) : (
+            <Btn onClick={check} disabled={busy}>
+              {busy ? "Checking…" : "Check for updates"}
+            </Btn>
+          )}
+        </div>
+      </div>
+      {state.status === "ready" && state.notes && (
+        <details className="mt-2 text-caption text-muted">
+          <summary className="cursor-pointer select-none hover:text-ink fast">
+            What's new in v{state.version}
+          </summary>
+          <p className="mt-1 whitespace-pre-line leading-snug">{state.notes}</p>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// The cumulative version history bundled into the app by CI (falls back to the
+// public GitHub Releases API on web/dev). Lets someone who's been away catch up
+// on everything that changed, not just the last hop they auto-updated through.
+// Notable releases are listed individually; runs of minor/internal builds fold
+// into a count. Hides itself when there's no history to show.
+function ReleaseHistory() {
+  const [entries, setEntries] = useState<ChangelogEntry[] | null>(null);
+  useEffect(() => {
+    void loadChangelog().then(setEntries);
+  }, []);
+
+  if (!entries || entries.length === 0) return null;
+
+  type RowKind = { kind: "release"; entry: ChangelogEntry } | { kind: "minor"; count: number };
+  const rows: RowKind[] = [];
+  let minorRun = 0;
+  for (const entry of entries) {
+    if (isMinor(entry.notes)) {
+      minorRun += 1;
+      continue;
+    }
+    if (minorRun) {
+      rows.push({ kind: "minor", count: minorRun });
+      minorRun = 0;
+    }
+    rows.push({ kind: "release", entry });
+  }
+  if (minorRun) rows.push({ kind: "minor", count: minorRun });
+
+  return (
+    <div className="mt-6 border-t border-line pt-4">
+      <div className="section-label mb-2">What's new</div>
+      <ul className="space-y-3">
+        {rows.map((row, i) =>
+          row.kind === "release" ? (
+            <li key={row.entry.version}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-body font-medium text-ink">
+                  v{row.entry.version}
+                  {row.entry.version === __APP_VERSION__ && (
+                    <span className="ml-1 text-caption font-normal text-accent">· current</span>
+                  )}
+                </span>
+                <span className="text-meta text-muted">{formatReleaseDate(row.entry.date)}</span>
+              </div>
+              <p className="mt-0.5 whitespace-pre-line text-caption leading-snug text-muted">
+                {row.entry.notes}
+              </p>
+            </li>
+          ) : (
+            <li key={`minor-${i}`} className="text-caption text-muted">
+              + {row.count} smaller update{row.count > 1 ? "s" : ""}
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function formatReleaseDate(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 function LabelsPane() {
   const { labels, createLabel, updateLabel, deleteLabel } = useLabels();
   const [newLabel, setNewLabel] = useState("");
@@ -1261,6 +1465,35 @@ function AccountPane() {
   );
 }
 
+// ── About: what Nuvo is + replay the welcome tour ─────────────────────────
+function AboutPane({ onClose }: { onClose: () => void }) {
+  const { open: openOrientation } = useOrientation();
+  return (
+    <div>
+      <PaneHeader title="About" sub="What Nuvo is, and how to get reacquainted." />
+
+      <div className="mb-6 flex flex-col items-center gap-1 rounded-xl border border-line bg-surface-2/40 px-4 py-7 text-center">
+        <div className="wordmark text-lead text-ink">Nuvo</div>
+        <p className="max-w-xs text-caption leading-snug text-muted">
+          Your whole life — work, family, faith, health — held in one calm place.
+        </p>
+        <span className="mono mt-1 text-micro text-muted">v{__APP_VERSION__}</span>
+      </div>
+
+      <div className="section-label mb-2">Getting started</div>
+      <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2/40 px-3.5 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-body text-ink">Welcome tour</div>
+          <p className="text-caption text-muted">
+            A quick walkthrough of calendars, domains, projects, capture, timeblocking, and Nuvo.
+          </p>
+        </div>
+        <Btn kind="primary" onClick={() => { onClose(); openOrientation(); }}>Replay</Btn>
+      </div>
+    </div>
+  );
+}
+
 // ── Shell ─────────────────────────────────────────────────────────────────
 export default function SettingsModal({
   settings,
@@ -1302,7 +1535,10 @@ export default function SettingsModal({
       )}
       {active === "integrations" && <IntegrationsPane />}
       {active === "labels" && <LabelsPane />}
+      {active === "desktop" && <DesktopPane />}
       {active === "account" && <AccountPane />}
+      {active === "billing" && <BillingPane />}
+      {active === "about" && <AboutPane onClose={onClose} />}
     </>
   );
 

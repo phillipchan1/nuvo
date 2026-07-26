@@ -1,8 +1,11 @@
 # Nuvo
 
-A personal daily planning app: GTD inbox + task list + Google/M365 calendars on one
+A subscription daily planning app: GTD inbox + task list + Google/M365 calendars on one
 planning surface with drag-and-drop time blocking. Phase 1 of LifeOS — the daily driver
 that replaces Akiflow.
+
+Paid, per-account: $29/mo or $19/mo billed annually, after a 14-day no-card trial.
+Billing setup and the gating model live in `docs/billing-setup.md`.
 
 **Single-player, multi-tenant.** One person's funnel per account, no shared objects — and
 many independent accounts on one deployment. The two are different claims; see
@@ -78,11 +81,14 @@ select vault.create_secret('https://YOUR_REF.supabase.co', 'project_url');
 select vault.create_secret('YOUR_SERVICE_ROLE_KEY', 'service_role_key');
 ```
 
-Auth → Google only (disable the Email provider). For a **personal deployment**, optionally
-disable signups after your account exists; leave them open for the multi-tenant product.
-New-user trigger seeds four domains (Work / Church / Trading / Family) and the settings row
-— note that those four are one operator's instance, and making them a named-by-the-account
-template is open question Q-06 in [`docs/product/decisions.md`](docs/product/decisions.md).
+Auth → Google only (disable the Email provider). **Signups must stay enabled** —
+Nuvo sells subscriptions, so anyone who can't sign up can't become a customer.
+(This used to say the opposite, back when it was a single-user app.) The new-user
+trigger seeds the settings row and a 14-day trial — see `docs/billing-setup.md`.
+It **no longer seeds domains**: migration 42 removed the Work / Church / Trading /
+Family seed, which was one operator's life handed to every account. A new account
+names its own via the first-run picker (D-026 in
+[`docs/product/decisions.md`](docs/product/decisions.md)).
 
 ### 2. Edge function secrets
 

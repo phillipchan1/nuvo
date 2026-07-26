@@ -4,8 +4,6 @@
 // single record's detail.
 
 import { useEffect } from "react";
-import { useVertical } from "../hooks/useVertical";
-import { domainById } from "../lib/vertical";
 import type { Focus, Rung } from "./AppShell";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { Keycap } from "./ui";
@@ -49,11 +47,8 @@ export default function FloorPane({
   initiativeView: DetailView;
   setInitiativeView: (v: DetailView) => void;
 }) {
-  const { data } = useVertical();
   const { openRecord, toggleAgent, nav } = useAppNavigation();
   const { agentOpen } = nav;
-  const domain = domainById(data, focus.domainId);
-  const accent = domain?.color ?? "var(--accent)";
 
   // Clicking a project / initiative anywhere opens its Record modal (the
   // beautiful, fully-editable command center). Neither rung has a full page — the
@@ -73,6 +68,12 @@ export default function FloorPane({
   const backToInitiatives = () => setInitiativeView("ondeck");
 
   const viewKey = rung === "project" ? projectView : rung === "initiative" ? initiativeView : "";
+  // The planner faces (On Deck at either altitude) are full-height workspaces —
+  // the pool rail + the time grid own their own scrolling, so the floor shell must
+  // not wrap them in padding or a scroll container of its own.
+  const workspace =
+    (rung === "project" && projectView === "ondeck") ||
+    (rung === "initiative" && initiativeView === "ondeck");
 
   // Plain 1 · 2 · 3 · 4 switch the Build faces (On Deck · Groom · Table · Shipped)
   // — like the Schedule view's number keys. Scoped to the project & initiative
@@ -100,12 +101,17 @@ export default function FloorPane({
     // one continuous warm-paper canvas. Painting an opaque bg here covered it and
     // made each floor read as a flat panel instead of the same paper as Schedule.
     <div className="flex h-full flex-col">
+      {/* The band's LEFT is deliberately empty — it's the window-drag zone, and the
+          rail's crown below it already names what you're looking at (the Schedule
+          works the same way: no chrome header, drag on the toolbar's empty spacer).
+          The face switcher rides the RIGHT cluster in the calendar toolbar's own
+          idiom, so "which shape of this altitude" reads identically everywhere. */}
       <div
         data-tauri-drag-region
         className="app-topbar flex h-11 shrink-0 items-center gap-1.5 border-b border-line px-5"
       >
-
         {rung === "domain" && <span className="mono text-label font-medium text-ink">Domains</span>}
+        <div className="flex-1" />
         {rung === "project" && (
           <RungTabs
             tabs={[
@@ -116,8 +122,6 @@ export default function FloorPane({
             ]}
             active={projectView}
             detailName={null}
-            accent={accent}
-            big
           />
         )}
         {rung === "initiative" && (
@@ -130,11 +134,8 @@ export default function FloorPane({
             ]}
             active={initiativeView}
             detailName={null}
-            accent={accent}
-            big
           />
         )}
-        <div className="flex-1" />
         <button
           onClick={toggleAgent}
           className={`fast flex items-center gap-1 rounded-md px-2 py-1 text-label ${agentOpen ? "text-accent" : "text-muted hover:text-ink"}`}
@@ -145,18 +146,23 @@ export default function FloorPane({
         <button onClick={() => goRung("day")} className="mono text-label text-muted hover:text-ink">Schedule ↓</button>
       </div>
 
-      <div key={`${rung}-${viewKey}`} className="floor-enter min-h-0 flex-1 overflow-y-auto px-8 py-7">
-        {rung === "project" && projectView !== "shipped" && (
-          <ProjectReadinessStrip onGroom={projectView === "groom" ? undefined : () => setProjectView("groom")} />
-        )}
+      {/* The On Deck faces are PLANNER surfaces, not documents: rail + grid filling
+          the pane, scrolling inside themselves, exactly like the Schedule. Every
+          other face stays a padded, scrolling floor. */}
+      <div
+        key={`${rung}-${viewKey}`}
+        className={`floor-enter min-h-0 flex-1 ${workspace ? "overflow-hidden" : "overflow-y-auto px-8 py-7"}`}
+      >
+        {/* Readiness has ONE home per surface. On a planner surface it's the rail's
+            crown, so the strip would be a second scoreboard — it only rides the
+            document faces (Groom · Table). */}
+        {rung === "project" && projectView === "groom" && <ProjectReadinessStrip />}
         {rung === "project" && projectView === "ondeck" && <OnDeckFloor />}
         {rung === "project" && projectView === "groom" && <GroomFloor />}
         {rung === "project" && projectView === "all" && <PortfolioFloor onOpen={openProjectRecord} />}
         {rung === "project" && projectView === "shipped" && <ShippedWall rung="project" />}
 
-        {rung === "initiative" && initiativeView !== "shipped" && (
-          <InitiativeReadinessStrip onGroom={initiativeView === "groom" ? undefined : () => setInitiativeView("groom")} />
-        )}
+        {rung === "initiative" && initiativeView === "groom" && <InitiativeReadinessStrip />}
         {rung === "initiative" && initiativeView === "ondeck" && <InitiativeOnDeckFloor />}
         {rung === "initiative" && initiativeView === "groom" && <InitiativeGroomFloor />}
         {rung === "initiative" && initiativeView === "all" && (
@@ -172,69 +178,50 @@ export default function FloorPane({
   );
 }
 
+// The face switcher — "which shape of this altitude am I looking at". It wears the
+// Schedule's view-switcher idiom verbatim (CalendarPane's Spread · Day · Week ·
+// Month pill: rounded-full, --surface-2 trough, the active face lifted onto
+// --surface in the accent) and sits in the same place, the toolbar's right
+// cluster. One control, one precedent — the number keys stay in the tooltip
+// rather than printed in the pill, exactly like the calendar's.
 function RungTabs({
   tabs,
   active,
   detailName,
-  accent,
-  big = false,
 }: {
   tabs: { id: string; label: string; on: () => void }[];
   active: string;
   detailName: string | null;
-  accent: string;
-  /** the project rung's primary destinations — larger, segmented, higher-contrast. */
-  big?: boolean;
 }) {
-  if (big) {
-    return (
-      <span className="flex items-center gap-2.5">
-        <span className="flex items-center gap-1 rounded-xl border border-line bg-surface-2 p-1">
-          {tabs.map((t, i) => {
-            const on = active === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={t.on}
-                className="fast flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-body font-medium tracking-tight"
-                style={
-                  on
-                    ? { background: "var(--surface)", color: accent, boxShadow: "0 1px 2px rgba(0,0,0,.07)" }
-                    : { color: "var(--muted)" }
-                }
-                title={`${t.label}  ·  ${i + 1}`}
-              >
-                <span className="mono text-micro font-normal tabular-nums" style={{ opacity: on ? 0.55 : 0.4 }}>{i + 1}</span>
-                {t.label}
-              </button>
-            );
-          })}
-        </span>
-        {detailName && (
-          <>
-            <span className="text-muted">›</span>
-            <span className="mono max-w-[220px] truncate text-label font-medium" style={{ color: accent }}>{detailName}</span>
-          </>
-        )}
-      </span>
-    );
-  }
   return (
-    <span className="flex items-center gap-3">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          onClick={t.on}
-          className="fast mono text-label hover:text-ink"
-          style={{ color: active === t.id ? accent : "var(--muted)", fontWeight: active === t.id ? 600 : 400 }}
-        >
-          {t.label}
-        </button>
-      ))}
+    <span className="flex shrink-0 items-center gap-2.5">
+      <span className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
+        {tabs.map((t, i) => {
+          const on = active === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={t.on}
+              className="fast rounded-full px-2 py-0.5 text-label leading-none"
+              style={{
+                background: on ? "var(--surface)" : "transparent",
+                color: on ? "var(--accent)" : "var(--muted)",
+                fontWeight: on ? 600 : 500,
+                boxShadow: on ? "var(--shadow-1)" : "none",
+              }}
+              title={`${t.label}  ·  ${i + 1}`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </span>
       {detailName && (
         <>
           <span className="text-muted">›</span>
-          <span className="mono max-w-[220px] truncate text-label font-medium" style={{ color: accent }}>{detailName}</span>
+          <span className="mono max-w-[220px] truncate text-label font-medium" style={{ color: "var(--accent)" }}>
+            {detailName}
+          </span>
         </>
       )}
     </span>

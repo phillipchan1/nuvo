@@ -5,13 +5,14 @@ import FunnelVisual from './components/FunnelVisual'
 import OperatorVisual from './components/OperatorVisual'
 import ScheduleVisual from './components/ScheduleVisual'
 import ThemesVisual from './components/ThemesVisual'
-import { ACCESS_MAILTO, APP_URL } from './config'
+import { useCallback, useState } from 'react'
+import { ACCESS_MAILTO, APP_URL, DOWNLOAD_MAC_URL, RELEASES_REPO } from './config'
 
 const CAPABILITIES = [
   {
-    label: 'One funnel',
+    label: 'One system',
     title: 'Nothing gets lost',
-    body: 'Domains, initiatives, projects, tasks, and blocks are one system. A project can’t die in a board while your Tuesday lives in a calendar.',
+    body: 'A yearly bet becomes projects, becomes tasks, becomes Tuesday at 9 — without ever leaving Nuvo or being re-typed. Finish the hour and the bet above it moves.',
   },
   {
     label: 'Capture',
@@ -40,14 +41,102 @@ const CAPABILITIES = [
   },
 ] as const
 
+// Keep in step with the app's src/components/billing/plans.ts and the Stripe
+// Prices behind STRIPE_PRICE_* — the saving is the number that actually sells
+// the annual plan, and "$228 billed yearly" alone hides it.
+const PLANS = [
+  {
+    name: 'Annual',
+    perMonth: '19',
+    billed: '$228 billed yearly',
+    badge: 'Save $120',
+    featured: true,
+  },
+  {
+    name: 'Monthly',
+    perMonth: '29',
+    billed: 'Billed monthly',
+    badge: null,
+    featured: false,
+  },
+] as const
+
+const INCLUDED = [
+  'Every calendar — Google, Microsoft, iCloud, ICS',
+  'Nuvo, your planning copilot',
+  'Domains, initiatives, projects, blocks',
+  'Sunday planning and Friday review',
+  'The native Mac app and ⌥Space capture',
+  'Installable on your iPhone',
+] as const
+
+function CheckMark() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden
+      className="mt-[0.3rem] shrink-0 text-[var(--accent)]"
+    >
+      <path
+        d="M3.5 8.5l3 3 6-7"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// "Download for Mac" resolves to the exact latest DMG on hover/focus (the GitHub
+// Releases API is CORS-enabled), rewriting href to the asset's direct URL for an
+// instant download. The static releases/latest/download/Nuvo.dmg link is the
+// safety net when JS is off or the API is unreachable.
+function DownloadMacButton({ className = '' }: { className?: string }) {
+  const [href, setHref] = useState(DOWNLOAD_MAC_URL)
+  const [resolved, setResolved] = useState(false)
+
+  const resolve = useCallback(() => {
+    if (resolved) return
+    setResolved(true)
+    fetch(`https://api.github.com/repos/${RELEASES_REPO}/releases/latest`, {
+      headers: { accept: 'application/vnd.github+json' },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const assets: { name?: string; browser_download_url?: string }[] = data?.assets ?? []
+        const dmg = assets.find((a) => /\.dmg$/i.test(a.name ?? ''))
+        if (dmg?.browser_download_url) setHref(dmg.browser_download_url)
+      })
+      .catch(() => {
+        /* keep the static href */
+      })
+  }, [resolved])
+
+  return (
+    <a
+      href={href}
+      onPointerEnter={resolve}
+      onFocus={resolve}
+      className={`btn-primary tap inline-flex items-center gap-2 ${className}`}
+    >
+      <svg width="15" height="15" viewBox="0 0 384 512" fill="currentColor" aria-hidden="true">
+        <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z" />
+      </svg>
+      Download for Mac
+    </a>
+  )
+}
+
 function CtaGroup({ className = '' }: { className?: string }) {
   return (
     <div className={`flex flex-wrap items-center gap-3 ${className}`}>
-      <a href={ACCESS_MAILTO} className="btn-primary tap">
-        Request access
-      </a>
+      <DownloadMacButton />
       <a href={APP_URL} className="btn-ghost tap" rel="noopener noreferrer">
-        Open app
+        Open in browser
       </a>
     </div>
   )
@@ -67,8 +156,11 @@ export default function Home() {
           <a href="#calendars" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
             Calendars
           </a>
-          <a href={ACCESS_MAILTO} className="btn-ghost tap hidden text-[13px] sm:inline-flex">
-            Request access
+          <a href="#pricing" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
+            Pricing
+          </a>
+          <a href={APP_URL} className="btn-ghost tap hidden text-[13px] sm:inline-flex" rel="noopener noreferrer">
+            Open app
           </a>
         </nav>
       </header>
@@ -78,11 +170,12 @@ export default function Home() {
         <section className="mx-auto max-w-6xl px-5 pb-16 pt-10 sm:px-8 sm:pb-24 sm:pt-14">
           <div className="max-w-2xl">
             <h1 className="masthead reveal text-display text-[var(--text)]">
-              One funnel for every domain you run.
+              You run more than one life. One system should keep up.
             </h1>
             <p className="reveal reveal-delay-1 mt-5 max-w-xl text-pretty hero-support text-[var(--muted)]">
-              Multiple teams. Multiple projects. Multiple initiatives. Nuvo holds the entire
-              vertical — so nothing gets lost between the commitment and the calendar.
+              Work, the side thing, the family calendar, the thing you volunteer for. Nuvo is one
+              continuous system from the year you’re planning down to the hour you’re working — so
+              what matters actually gets time.
             </p>
             <CtaGroup className="reveal reveal-delay-2 mt-8" />
           </div>
@@ -92,29 +185,60 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Emotion / who it's for */}
+        {/* Emotion / who it's for — the problem, stated without a solution in sight.
+            The answer gets its own section immediately after. */}
+        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
+          <div className="max-w-2xl">
+            <p className="section-label text-[var(--muted)]">If this is you</p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+              A to-do list can’t hold what you’re carrying.
+            </h2>
+            <div className="mt-6 space-y-5 text-body text-[var(--muted)]">
+              <p>
+                Work has three teams and a roadmap. There’s a season starting somewhere else you’re
+                responsible for. Family has a calendar that doesn’t care about your sprint. And
+                somewhere there’s a project that mattered in January and hasn’t been touched since
+                March.
+              </p>
+              <p>
+                So you keep three systems. Task apps keep checklists and are blind to the quarter.
+                Project tools keep boards and have never once told you what Tuesday looks like.
+                Calendars keep meetings, so the actual work is invisible.
+              </p>
+              <p className="text-[var(--text)]">
+                You became the integration layer between them. Every re-typed task is a chance to
+                drop something — and you can’t answer the only question that matters: is the thing
+                I said mattered actually getting hours?
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* The wedge — the altitude model is the differentiator, so it gets its own
+            beat and the visual demonstrates the descent instead of listing nouns. */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-16 lg:items-start">
             <div>
-              <p className="section-label text-[var(--muted)]">If this is you</p>
+              <p className="section-label text-[var(--muted)]">How it actually works</p>
               <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                You’re carrying more than one world — and the tools don’t talk.
+                Most tools are good at one altitude. Nuvo works at all of them.
               </h2>
               <div className="mt-6 space-y-5 text-body text-[var(--muted)]">
                 <p>
-                  Work has three teams and a roadmap. The thing you volunteer for has a season.
-                  Family has a calendar
-                  that doesn’t care about your sprint. Somewhere there’s a project that mattered
-                  in January and hasn’t been touched since March.
+                  Nuvo is one continuous system from <span className="text-[var(--text)]">“this
+                  matters this year”</span> down to <span className="text-[var(--text)]">“this is
+                  happening at 9am.”</span> Something you commit to at the top becomes real hours
+                  at the bottom — and the hours roll back up as proof it moved.
                 </p>
                 <p>
-                  Task apps keep checklists. Project apps keep boards. Calendars keep meetings.
-                  The loose ends — the “don’t forget,” the half-shaped initiative, the thing a
-                  teammate mentioned in Slack — fall between them.
+                  The initiative you named in January is a project in March, three tasks this week,
+                  and 9am Tuesday. One object, all the way down. No re-entry, no translating
+                  between apps, no project quietly dying in a board while your week fills up with
+                  something else.
                 </p>
                 <p className="text-[var(--text)]">
-                  Nuvo is the one funnel. Capture anything. Hold the whole vertical. Get it to
-                  the week, then the day, without switching systems or losing the thread.
+                  That round trip is the whole thing. It’s why a full week in Nuvo means the work
+                  you chose is the work that happened.
                 </p>
               </div>
             </div>
@@ -126,15 +250,15 @@ export default function Home() {
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
           <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-end lg:gap-16">
             <div>
-              <p className="section-label text-[var(--muted)]">Domains</p>
+              <p className="section-label text-[var(--muted)]">The parts of your life</p>
               <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Where you've committed to show up.
+                Every world you’re responsible for, side by side.
               </h2>
               <p className="mt-5 max-w-md text-body text-[var(--muted)]">
-                Domains aren’t folders or tags. They are the areas of life you’ve taken lasting
-                responsibility for — the ones you keep showing up in and producing from.
-                Initiatives and projects grow under them.
-                The week decides what lands on the day — across every domain, not just work.
+                A domain isn’t a folder or a tag you’ll forget you made. It’s an area you’re
+                permanently responsible for — work, family, the thing you serve, your own health.
+                Initiatives and projects grow underneath them, and the week decides what lands on
+                the day across all of them, not just the one that pays you.
               </p>
             </div>
             <DomainVisual />
@@ -182,7 +306,7 @@ export default function Home() {
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
           <p className="section-label text-[var(--muted)]">How it holds</p>
           <h2 className="masthead mt-3 max-w-2xl text-lead text-[var(--text)]">
-            The entire vertical — down to the block.
+            Every altitude — down to the hour.
           </h2>
 
           <ul className="mt-12 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
@@ -261,12 +385,12 @@ export default function Home() {
         >
           <p className="section-label text-[var(--muted)]">Appearance</p>
           <h2 className="masthead mt-3 max-w-2xl text-lead text-[var(--text)]">
-            Skins for how you work — not just light and dark.
+            You’ll be in here every day. It should suit you.
           </h2>
           <p className="mt-5 max-w-2xl text-body text-[var(--muted)]">
-            Five materials: Aurora glass, Flat, Terminal (Dracula, Nord, Tokyo Night…),
-            Blueprint, E-Ink. Moods and schemes inside each. Light and dark where they make
-            sense.
+            Five materials — Aurora glass, Flat, Terminal (Dracula, Nord, Tokyo Night…),
+            Blueprint, E-Ink — each with its own moods and schemes, light and dark. Quiet enough
+            to sit open all day next to your editor.
           </p>
           <div className="mt-10">
             <ThemesVisual />
@@ -281,9 +405,9 @@ export default function Home() {
               Short rituals. Clear end states.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Sunday composes the week. Morning brief claims the day. Evening shutdown closes
-              it. Summit turns the quarter. You enter, decide, leave — so the funnel keeps
-              moving without becoming a second job.
+              Sunday composes the week. A morning brief claims the day. An evening shutdown closes
+              it. Once a quarter you reset the bets. Each one is minutes, not an afternoon — you
+              enter, decide, and leave. The system keeps moving without becoming a second job.
             </p>
             <ul className="mt-8 space-y-3 text-[0.9375rem] text-[var(--text)]">
               <li className="flex gap-3 border-t border-[var(--line)] pt-3">
@@ -299,35 +423,109 @@ export default function Home() {
                 <span className="text-[var(--muted)]">Record the gain. Send leftovers back.</span>
               </li>
               <li className="flex gap-3 border-t border-[var(--line)] pt-3">
-                <span className="section-label w-24 shrink-0 text-[var(--accent)]">Summit</span>
-                <span className="text-[var(--muted)]">Set the quarter’s bets — then Blueprint.</span>
+                <span className="section-label w-24 shrink-0 text-[var(--accent)]">Quarterly</span>
+                <span className="text-[var(--muted)]">Name the few bets that get real hours.</span>
               </li>
             </ul>
           </div>
         </section>
 
-        {/* Coming soon */}
+        {/* Where it runs */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
           <div className="glass-card rounded-2xl border border-[var(--line)] px-6 py-8 sm:px-10 sm:py-10">
-            <p className="section-label text-[var(--accent)]">Coming soon</p>
+            <p className="section-label text-[var(--accent)]">Where it runs</p>
             <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              Native iOS &amp; Apple Watch.
+              Mac, web, and iPhone.
             </h2>
             <p className="mt-4 max-w-xl text-body text-[var(--muted)]">
-              Today: Mac capture with ⌥Space, desktop app, installable iOS PWA. Next: native
-              iPhone and Watch — dictate a loose task from the wrist into the same funnel.
+              One account, every surface. The native Mac app updates itself quietly in the
+              background, the web app opens anywhere, and iPhone is next.
             </p>
-            <div className="mt-8 flex flex-wrap gap-6">
+            <div className="mt-8 grid gap-6 sm:grid-cols-3">
               <div>
-                <p className="section-label text-[var(--muted)]">Now</p>
-                <p className="mt-1 text-[15px] text-[var(--text)]">macOS · ⌥Space · iOS PWA</p>
+                <p className="section-label text-[var(--text)]">Mac</p>
+                <p className="mt-1 text-[15px] text-[var(--muted)]">
+                  Native app — download above. ⌥Space capture, background auto-updates.
+                </p>
               </div>
               <div>
-                <p className="section-label text-[var(--muted)]">Next</p>
-                <p className="mt-1 text-[15px] text-[var(--text)]">iOS native · Apple Watch</p>
+                <p className="section-label text-[var(--text)]">Web</p>
+                <p className="mt-1 text-[15px] text-[var(--muted)]">
+                  Open in any browser — nothing to install.
+                </p>
+              </div>
+              <div>
+                <p className="section-label text-[var(--muted)]">iPhone · Coming soon</p>
+                <p className="mt-1 text-[15px] text-[var(--muted)]">
+                  Add to Home Screen today; a native app is on the way.
+                </p>
               </div>
             </div>
           </div>
+        </section>
+
+        {/* Pricing — lands after the value is made, before the closing CTA */}
+        <section
+          id="pricing"
+          className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24"
+        >
+          <div className="max-w-2xl">
+            <p className="section-label text-[var(--muted)]">Pricing</p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+              One subscription. Everything you run.
+            </h2>
+            <p className="mt-5 text-body text-[var(--muted)]">
+              Fourteen days free — no card. After that, one plan covers all of it: every calendar,
+              every part of your life, the Mac app, and your phone. No seats, no tiers, nothing
+              held back for a higher plan.
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:max-w-3xl">
+            {PLANS.map((p) => (
+              <div
+                key={p.name}
+                className={`glass-card rounded-2xl border p-6 sm:p-7 ${
+                  p.featured
+                    ? 'border-[var(--accent)] shadow-[var(--shadow-2)]'
+                    : 'border-[var(--line)]'
+                }`}
+              >
+                <div className="flex items-baseline gap-3">
+                  <p className="section-label text-[var(--text)]">{p.name}</p>
+                  {p.badge && (
+                    <span className="section-label ml-auto text-[var(--accent)]">{p.badge}</span>
+                  )}
+                </div>
+                {/* Prices are numerics — tabular sans, never the Fraunces masthead. */}
+                <p className="mt-5 flex items-baseline gap-1.5">
+                  <span className="mono text-[2.75rem] font-semibold leading-none tracking-tight text-[var(--text)]">
+                    ${p.perMonth}
+                  </span>
+                  <span className="text-[0.9375rem] text-[var(--muted)]">/month</span>
+                </p>
+                <p className="mt-2.5 text-[0.9375rem] text-[var(--muted)]">{p.billed}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
+            <a href={APP_URL} className="btn-primary tap" rel="noopener noreferrer">
+              Start 14 days free
+            </a>
+            <p className="text-[0.9375rem] text-[var(--muted)]">
+              No credit card · Cancel anytime
+            </p>
+          </div>
+
+          <ul className="mt-14 grid max-w-3xl gap-x-10 gap-y-3.5 sm:grid-cols-2">
+            {INCLUDED.map((line) => (
+              <li key={line} className="flex items-start gap-2.5 text-[0.9375rem] text-[var(--muted)]">
+                <CheckMark />
+                <span className="leading-relaxed">{line}</span>
+              </li>
+            ))}
+          </ul>
         </section>
 
         {/* Closing */}
@@ -335,11 +533,11 @@ export default function Home() {
           <div className="mx-auto max-w-xl text-center">
             <p className="section-label text-[var(--muted)]">Nothing lost</p>
             <h2 className="masthead mt-4 text-lead text-[var(--text)]">
-              The funnel for a full life.
+              Built for the person everything runs through.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Capture the loose end. Hold the initiative. Land the block. One person, every
-              domain — finally in one place.
+              Catch the loose end. Hold the bet. Land the hour. Every world you’re responsible
+              for — finally in one place, finally on the calendar.
             </p>
             <CtaGroup className="mt-10 justify-center" />
           </div>
@@ -355,7 +553,7 @@ export default function Home() {
           <a href={ACCESS_MAILTO} className="hover:text-[var(--text)]">
             Contact
           </a>
-          <p>© {new Date().getFullYear()} · Built for a multi-domain life</p>
+          <p>© {new Date().getFullYear()} · Built for people who run a lot at once</p>
         </div>
       </footer>
     </div>

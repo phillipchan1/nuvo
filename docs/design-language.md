@@ -162,6 +162,59 @@ Reference: the **Schedule rail** (`WeekPanel` crown → one `--line-strong` zone
 flat Today list → floating capture) and the **Projects/Initiatives floors** (`FloorHeader`
 hero → `FloorStanding` gauges + quiet synthesis → the Collection). They obey the same law.
 
+## Planner surfaces — one grammar, three registers
+
+The Schedule, the project deck (On Deck) and the initiative deck are **the same act
+at three clock speeds**: a pool of unclaimed things on the left, a grid of time on
+the right, and you drag from one into the other. Only the unit of time changes.
+
+| Altitude | The pool | The grid | The act | The mode you're in |
+|---|---|---|---|---|
+| Day | Inbox / Today (`LeftRail`) | hours, vertical | block a task | **Operator** — "what now" |
+| Project | "Needs a week" (`OnDeckPlanner`) | weeks, ruled columns | time-box a project | **Foreman** — "can next week hold this" |
+| Initiative | "Needs a quarter" (`InitiativeDeck`) | quarters, ruled columns | commit a bet | **Strategist** — "are these the right bets" |
+
+The law, so a new planner surface can't drift:
+
+1. **Position is fixed.** Pool **left**, full height, **transparent**, one `border-r`
+   hairline; grid **right**, single plane, filling the pane. The pool is *structure*,
+   never a floating panel — the things that float are the things you pick up, and if
+   the container floats too, nothing reads as graspable. (`PlannerRail` is the one
+   implementation; it wears the width `LeftRail` persists, so the edge doesn't jump
+   between rungs.) The floor shell drops its padding + scroll for these faces
+   (`FloorPane`'s `workspace`); the surface owns its own scrolling.
+2. **The crown IS the readiness, and it is the surface's only hero.** Execution voice,
+   never a serif scoreboard: tracked-caps eyebrow · one mono count · one thin meter ·
+   one gap line that names the first debt and vanishes when clean. It reads "how ready
+   is this altitude for the floor below" — "0 of 2 landed" / "5 of 9 ready" / "2 of 4
+   on track". No page hero above it, no second strip, no gauge row. (This is why the
+   decks lost their `masthead` + pip legend and why `ProjectReadinessStrip` /
+   `InitiativeReadinessStrip` now ride only the *document* faces — Groom keeps the
+   strip, Table has `FloorStanding`.)
+3. **Gesture is fixed** — press-hold → `.glass-grab` ghost following the pointer, and
+   the destination always shown (column wash / drop bar / vacated slot).
+   **"Which shape am I looking at" has one control and one home:** the calendar's
+   view pill idiom (`rounded-full`, `--surface-2` trough, the active face lifted onto
+   `--surface` in the accent), right-aligned in the toolbar over the grid. The floor's
+   faces (On Deck · Groom · Table · Shipped) wear it too — number keys in the tooltip,
+   not printed in the pill. Don't invent a second switcher shape; the band's left is
+   the window-drag zone, and the crown below already names the surface.
+4. **Now is `--signal`; intent is `--accent`; open time is `--slot`.** The current
+   week / quarter band matches the calendar's now-line. An empty, claimable cell —
+   an unbooked column, an uncovered domain cell, the pool you drop into to *release*
+   time — wears `--slot` (`.slot-open` / `.slot-col`). Never accent for "now".
+5. **Altitude reads through weight and voice, never chrome.** Same glass, same
+   domain-color edge; what changes is mass and register:
+
+   | | Card | Time relation | Voice |
+   |---|---|---|---|
+   | Task | one row + time | fills a slot | system |
+   | Project | title + Defined·Planned·Fits meter | **spans** weeks (resize handles) | system |
+   | Initiative | title + Defined·Measured meter | **belongs to** a quarter (no resize) | `serif` — a bet is a *name* |
+
+   Resize handles only where duration is real is the honest tell that a project isn't
+   an initiative. Don't reach for a different frame to say "this is a bigger thing."
+
 ## Typography
 
 | Use | Class | Notes |
@@ -277,9 +330,17 @@ horizontal scroll of larger chips you drag onto the grid.
 
 Applied: foundation seam fix · portfolios (calm ledger) · floor heroes → masthead · Nuvo
 rail · Record modal · Timeline & Calendar (single-plane fill-height) · `Btn` sizing ·
-glass focal system (board, calendar, table, timeline) · Today hero cards → glass.
+glass focal system (board, calendar, table, timeline) · Today hero cards → glass ·
+**planner surfaces unified** (shared `PlannerRail` + crown on both decks, ruled quarter
+columns, now → `--signal`, open time → `--slot`, deck cards → glass).
 
 Not yet done / open questions:
+- The **rails aren't resizable on the decks** — they read the width the Schedule
+  persisted, but you can't drag their edge yet. Lift `LeftRail`'s resize handle into
+  `PlannerRail` when it starts to itch.
+- **Mobile has no planner rail.** The decks are desktop-only; `MobileProjects` /
+  `MobileInitiatives` read the same libs but render their own list. If the pool→grid
+  gesture ever ships on the phone, the pool should be a bottom `Sheet`, not a rail.
 - **Mobile pass** for the whole language (375px) — untouched.
 - Carry glass to the **Today day-spine blocks** (left column), the **Record modal inner
   cards**, and the **Step-back / Gain** face.

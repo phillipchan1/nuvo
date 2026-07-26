@@ -142,6 +142,16 @@ Consequences we're accepting:
 *Status: standing — the direction. Implementation is unbuilt; see
 [`roadmap.md`](./roadmap.md).*
 
+**D-029 · 2026-07-26 · Nuvo is a paid subscription** — 14-day no-card trial, then $29/mo
+or $19/mo annual, per account (`supabase/functions/stripe-*`, migration 41,
+`docs/billing-setup.md`). Everyone goes through the same trial/paywall, including the
+builder — no founder override. → Multi-tenancy stops being a direction and becomes the
+business model; **each account is a paying customer, so every Principle 16 default is now
+a revenue-affecting bug, not a tidiness issue.** Signups must stay open (this reverses the
+old personal-deployment guidance). Aggregate signals in [`overview.md`](./overview.md) §6
+gain a real use: activation and second-week are now trial-conversion inputs.
+*Status: standing — decided on master, recorded here after the fact.*
+
 **D-025 · 2026-07-25 · Persona zero is evidence, not the definition.** The builder is a
 verified instance of P1, cited as ⓞ; the archetype is what we design against.
 → Instance-level details are examples, never defaults (Principle 16). Claims marked ⓞ are
@@ -212,4 +222,5 @@ capture→calendar path that no competitor's vertical reaches.
 | **Q-03** | Does non-calendar work become visible via activity sources beyond GitHub? | W8 ("where did my time go") is ◐ while shipped-but-unblocked work is invisible | The GitHub instance proving the pattern |
 | **Q-04** | Should `TendingFlow` be retired now the Refine run has proven out? | Two grooming paths is a Principle 11 violation waiting to happen | Refine run confidence on real data |
 | **Q-05** | What is the transitional CTA on the marketing site? | Currently direct CTA only — the biggest funnel gap (brandscript §5) | Picking one and writing it |
+| **Q-10** | Two first-run surfaces now exist — the **Orientation** tour (8 steps, teaches the app) and the **domain picker** (collects what you carry). Do they compose, merge, or does one go? | Principle 8 (one surface, one question) and Principle 11. They're currently sequenced picker → tour, which is defensible — *collect, then teach* — but nobody has watched a stranger go through both back to back | Driving the pair in a fresh account |
 | **Q-07** | Where do timezone and working hours come from for a new account? | Rollover is LA-anchored and hours default to 480/990. Both are silent wrongness for anyone else — and capacity math depends on them | Reading how the rollover cron and `user_settings` actually resolve per user |

@@ -17,9 +17,11 @@ stale or the canon needs an explicit change (log it in [`decisions.md`](./decisi
    account** (see §2.1).
 2. A **vertical**: Domain → Initiative → Project → Week → Day. The thing nobody else joins.
 3. **Phase 1 of LifeOS.** The daily driver that replaces Akiflow.
-4. **One React SPA, two shells** — a Tauri macOS app and an installable iOS PWA from the
+4. **A paid subscription** — 14-day no-card trial, then $29/mo or $19/mo annual, per
+   account. Nuvo is sold, not shared: the business model *is* single-player.
+5. **One React SPA, two shells** — a Tauri macOS app and an installable iOS PWA from the
    same `dist/`.
-5. **An assistant that proposes, never promotes.** Nuvo drafts into quiet pools; only the
+6. **An assistant that proposes, never promotes.** Nuvo drafts into quiet pools; only the
    human moves work toward the calendar.
 
 ## 2 · What Nuvo is not (the non-goals)
@@ -43,7 +45,7 @@ product. Keep them apart:
 
 | | Meaning | Our position |
 |---|---|---|
-| **Multi-tenant** | Many independent accounts on one deployment, each isolated | **Yes.** A deployment fact, not a product opinion. Every account is one person's funnel; RLS is the boundary. |
+| **Multi-tenant** | Many independent accounts on one deployment, each isolated | **Yes** — and now commercially load-bearing: each account is a paying customer. Every account is one person's funnel; RLS is the boundary. |
 | **Multi-player** | Several people inside one funnel — assignees, shared projects, permissions, statuses others update | **No.** This is the refusal. It's what would blunt the altitudes. |
 
 The refusal that carries the product's coherence is **single-player**, not "one user in the
@@ -126,23 +128,25 @@ mirror) / M365 (read) / iCloud (two-way CalDAV) / ICS · rollover · domains, in
 projects on live rows · the Week gate · Sunday compose + calibration · Sunrise / Sundown ·
 the Nuvo assistant (scaffold / blueprint / prepare / narrate) · Marquee · recurrence ·
 slots · the **Review** with evidence + the Find · the **Refine run** (phone-first) ·
-**On Deck**.
+**On Deck** · **Stripe subscriptions** (trial → paywall → upgrade) · **Orientation** (the
+8-step first-run tour) · native Mac download + auto-update.
 
 **Spec, not fully built:** grooming lenses (What / How / In the way) · loose weeks ·
 project slots · standing slots (partially landed) · activity sources (GitHub) · Apple Watch
 capture.
 
-**Tenancy state — honest read.** The architecture is already multi-tenant (Supabase Auth +
-RLS per user; nothing in the data model assumes one account). The *product* is not yet:
-the deployment is configured for one operator, and several defaults encode the builder's
-life rather than a stranger's. Known gaps, all onboarding-shaped:
+**Tenancy state — honest read (updated 2026-07-26).** The architecture was always
+multi-tenant (Supabase Auth + RLS per user). The product now is too: **billing, a 14-day
+trial, a paywall, and an 8-step orientation tour shipped on master.** What's left is the
+long tail of defaults that still encode the builder's life. Known gaps:
 
 - ~~New-user seeding creates **four fixed domains**~~ — **fixed (D-026).** Signup seeds
   none; a first-run picker offers the five domain kinds and the account names its own.
 - Working hours default to 480/990; timezone logic is anchored to America/Los_Angeles in
   rollover scheduling.
-- Signup is expected to be closed after the first account exists (see root `readme.md`) —
-  that guidance now describes a *personal deployment*, not the product.
+- ~~Signup is expected to be closed after the first account exists~~ — **resolved.** Signups
+  must stay open; Nuvo sells subscriptions, so anyone who can't sign up can't become a
+  customer.
 - Beyond the domain picker there is still no cold-start path: the first *week* in a
   brand-new account is unproven, which collides head-on with Principle 7. The first-value
   moment is now named (D-028) but nothing is built against it.

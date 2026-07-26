@@ -1,7 +1,9 @@
 # Nuvo — working conventions
 
 Personal daily planner — **single-player** (one person's funnel, no shared objects),
-**multi-tenant** (many independent accounts; see `docs/product/overview.md` §2.1).
+**multi-tenant** (many independent paid accounts; see `docs/product/overview.md` §2.1).
+Subscription: per-account, 14-day trial → $29/mo or $19/mo annual; gating in
+`src/components/billing/`, setup in `docs/billing-setup.md`.
 **One React SPA, two shells:** a Tauri macOS desktop app
 *and* an installable iOS PWA, served from the same `dist/`. Read `readme.md` for the
 product model and backend; this file is how we build so the app stays consistent and
@@ -70,6 +72,12 @@ The rules that prevent regressions:
   Today cards). Progress tracks use `--line`, never `bg-bg`.
 - **Color is semantic and low-saturation** — always a token (`--accent` = intent,
   `--signal` = now, domain color = identity, `--slot` = open/unclaimed). Never a raw hex.
+- **Planner surfaces share one grammar.** The Schedule, the project deck and the
+  initiative deck are the same act at three clock speeds (pool left → grid of time
+  right). Pool = `PlannerRail` (transparent, full-height, crown carries readiness in
+  the execution voice, ＋ pill at the foot); grid fills the pane. `--signal` = now,
+  `--accent` = intent, `--slot` = open/claimable. Altitude reads through card weight
+  and voice, never a different frame. Full law in `docs/design-language.md`.
 - **Focus lifts, it doesn't outline.** Floating things rest as glass (`.glass-card` —
   translucent + frost), and the focal element (selected/active/dragged/open) *lifts* from
   it with `--shadow-lift` + a small rise, **no flat ring**: `.glass-lift` (cards/chips),
@@ -160,6 +168,15 @@ not the front door.** Use plain text `<input>`s so iOS dictation works out of th
 - `npm run typecheck` — must be clean before shipping.
 - `npm run tauri:dev` / `npm run app:install` — desktop. The Tauri build sets
   `TAURI_BUILD=1`, so **no `sw.js` / manifest ships inside the desktop app**.
+- **Public releases + auto-update:** cut a release by pushing a version tag
+  (`git tag v0.2.0 && git push origin v0.2.0`) or the Actions → **Run workflow**
+  button — `.github/workflows/release.yml` builds a **notarized universal** DMG and
+  publishes it + `latest.json` to the public `phillipchan1/nuvo-releases` repo
+  (single stable channel). Releases are deliberate (not per-push), so routine
+  commits don't spend runner minutes. Installed apps background-update via `src/lib/appUpdate.ts`;
+  Settings → **Desktop app** surfaces version + manual check + "What's new". Full
+  setup (secrets, signing keys, the two-signing-systems note) is in
+  `docs/desktop-releases.md`. **Never commit the updater private key** (`~/.tauri`).
 - **PWA install (iOS) requires HTTPS** → deploy `dist/` to Vercel. Frontend is static; the
   Supabase anon key (`VITE_SUPABASE_*`) is baked at build time and is safe to embed.
   `start_url` / `scope` = "/". Icons live in `public/`.

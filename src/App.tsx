@@ -1,15 +1,56 @@
+import { useEffect, useState } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 import { useAuth } from "./hooks/useAuth";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
+import { useSubscription, useSubscriptionLiveSync } from "./hooks/useSubscription";
 import { useSkin, useScheme } from "./hooks/useSkin";
 import Login from "./components/Login";
 import AppShell from "./components/AppShell";
+import LockedScreen from "./components/billing/LockedScreen";
 import SpotlightWindow from "./components/SpotlightWindow";
 import UpdateToast from "./components/UpdateToast";
 import { AppNavigationProvider } from "./hooks/useAppNavigation";
 import { AgentProvider } from "./hooks/useAgentContext";
 import { VerticalProvider } from "./hooks/useVertical";
+
+/** Right after redirect-back from Stripe Checkout, the webhook usually lands
+ *  in well under 2s (the realtime hook in useSubscription flips `entitled`
+ *  the moment it does) — but there's a brief window where it hasn't yet.
+ *  Rather than flash LockedScreen at someone who just paid, show a "setting
+ *  up" loader for that window instead, then strip the query param. */
+function useCheckoutReturn(entitled: boolean | undefined) {
+  const [outcome] = useState(() => new URLSearchParams(globalThis.location?.search).get("checkout"));
+  const [pending, setPending] = useState(() => outcome === "success");
+
+  const clearParam = () => {
+    const url = new URL(globalThis.location.href);
+    url.searchParams.delete("checkout");
+    window.history.replaceState({}, "", url);
+  };
+
+  useEffect(() => {
+    if (pending && entitled) {
+      clearParam();
+      setPending(false);
+      // Someone just paid real money — acknowledge it. Silence here reads as
+      // "did that work?", which is the worst feeling to leave a new
+      // subscriber with.
+      toast.success("You're all set — welcome to Nuvo.");
+    }
+  }, [pending, entitled]);
+
+  useEffect(() => {
+    // Backing out of Stripe used to land here with a dead ?checkout=cancelled
+    // and no acknowledgement at all. Say plainly that nothing was charged.
+    if (outcome === "cancelled") {
+      clearParam();
+      toast("Checkout cancelled — you haven't been charged.");
+    }
+  }, [outcome]);
+
+  return pending;
+}
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : "Something went wrong";
@@ -89,6 +130,9 @@ const queryClient = new QueryClient({
 function Shell() {
   const { session, loading } = useAuth();
   const { settings } = useSettings();
+  const { subscription, isPending: subPending, isError: subError, refetch: refetchSubscription } = useSubscription();
+  useSubscriptionLiveSync();
+  const checkoutPending = useCheckoutReturn(subscription?.entitled);
   useApplyTheme(settings?.theme);
   useSkin(); // keep <html data-skin> applied (the material axis)
   useScheme(); // keep <html data-palette> applied (the material's colour scheme)
@@ -117,17 +161,66 @@ function Shell() {
       </div>
     );
   }
+
+  if (!session) {
+    return (
+      <>
+        <Login />
+        <UpdateToast />
+        <Toaster position="bottom-right" richColors closeButton />
+      </>
+    );
+  }
+
+  // First subscription fetch (isPending covers a network-paused fetch too,
+  // not just an in-flight one — see useSubscription), or the brief window
+  // right after Checkout where the webhook hasn't landed yet.
+  if (subPending || (checkoutPending && !subscription?.entitled)) {
+    return (
+      <div className="atmosphere flex h-full items-center justify-center">
+        <span className="wordmark shimmer text-head">nuvo</span>
+      </div>
+    );
+  }
+
+  // A fetch error (network blip, transient outage) is NOT the same as
+  // "not entitled" — never read a failed check as a cancelled subscription.
+  // Only render LockedScreen once we've actually heard back "not entitled".
+  if (subError) {
+    return (
+      <div className="atmosphere flex h-full items-center justify-center px-4">
+        <div className="moment elev-3 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-7 text-center">
+          <div className="mb-2 text-body text-ink">Couldn't verify your subscription.</div>
+          <div className="mb-4 text-caption text-muted">This is usually a connection blip.</div>
+          <button
+            type="button"
+            onClick={() => refetchSubscription()}
+            className="tap fast rounded-md border border-line bg-surface-2 px-4 py-2 text-body font-medium text-ink hover:bg-surface"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!subscription?.entitled) {
+    return (
+      <>
+        <LockedScreen subscription={subscription} />
+        <UpdateToast />
+        <Toaster position="bottom-right" richColors closeButton />
+      </>
+    );
+  }
+
   return (
     <>
-      {session ? (
-        <AppNavigationProvider>
-          <AgentProvider>
-            <AppShell />
-          </AgentProvider>
-        </AppNavigationProvider>
-      ) : (
-        <Login />
-      )}
+      <AppNavigationProvider>
+        <AgentProvider>
+          <AppShell />
+        </AgentProvider>
+      </AppNavigationProvider>
       <UpdateToast />
       <Toaster position="bottom-right" richColors closeButton />
     </>

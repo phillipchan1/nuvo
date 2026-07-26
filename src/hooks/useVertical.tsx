@@ -529,7 +529,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           investedThisWeek: 0, meetingHoursThisWeek: 0, quarterHours: 0, lastTouchedDays: 99, weeks: new Array(13).fill(0), sort,
         };
       },
-      // Signup seeds no domains (migration 38) — the first-run picker calls this
+      // Signup seeds no domains (migration 42) — the first-run picker calls this
       // with what the account named for itself. One write, then a single refetch.
       seedDomains: async (specs) => {
         if (!specs.length) return;

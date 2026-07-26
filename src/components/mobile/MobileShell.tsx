@@ -20,6 +20,8 @@ import type { Floor } from "../../lib/readiness";
 import type { AgentHintContext } from "../../lib/agentHints";
 import type { Task } from "../../lib/types";
 import SettingsModal from "../SettingsModal";
+import { TrialBanner } from "../billing/TrialBanner";
+import Orientation from "../orientation/Orientation";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
 import MobileProjects from "./MobileProjects";
@@ -295,6 +297,8 @@ export default function MobileShell() {
         </button>
       </header>
 
+      <TrialBanner />
+
       {/* Content */}
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         {tab === "calendar" ? (
@@ -427,6 +431,10 @@ export default function MobileShell() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      {/* First-run welcome — the Calendars CTA opens Settings (tap through to
+          Connections). */}
+      <Orientation onAction={() => setSettingsOpen(true)} />
     </div>
   );
 }

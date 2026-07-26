@@ -9,7 +9,9 @@
 
 import type { Domain } from "../../lib/vertical";
 
-const NOW_BAND = "color-mix(in srgb, var(--accent) 8%, transparent)";
+// NOW is `--signal` at every altitude (the deck columns and the calendar's
+// now-line agree), so the leading column's band matches the grid beneath it.
+const NOW_BAND = "color-mix(in srgb, var(--signal) 7%, transparent)";
 const PIP_W = 22; // each unit of work is one fixed-size block
 const MAX_PIPS = 8; // clamp (a domain rarely carries this many in one column)
 
@@ -55,7 +57,16 @@ export default function DomainCoverage({
         const covered = r.cells.some((n) => n > 0);
         return (
           <div key={d.id} className="grid items-center" style={{ gridTemplateColumns: gridTemplate, columnGap }}>
-            <div className="sticky left-0 z-10 flex min-w-0 items-center gap-2 py-[3px] pl-0.5 pr-2" style={{ background: "var(--bg)" }}>
+            {/* The label gutter has to occlude the scrolling cells, but an opaque
+                fill would cover the atmosphere — so it's frosted glass instead. */}
+            <div
+              className="sticky left-0 z-10 flex min-w-0 items-center gap-2 py-[3px] pl-0.5 pr-2"
+              style={{
+                background: "color-mix(in srgb, var(--bg) 82%, transparent)",
+                backdropFilter: "blur(6px)",
+                WebkitBackdropFilter: "blur(6px)",
+              }}
+            >
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
                 style={covered ? { background: d.color } : { background: "var(--surface)", border: "1.5px solid var(--line-strong)" }}
@@ -84,7 +95,11 @@ export default function DomainCoverage({
                   className={`group/cell fast ${rule} px-1 py-[3px]`}
                   style={i === 0 ? { background: NOW_BAND } : undefined}
                 >
-                  <div className="h-2 rounded-full border border-dashed opacity-40 transition-opacity group-hover/cell:opacity-100" style={{ borderColor: "var(--line-strong)" }} />
+                  {/* an uncovered cell is open time for that domain — `--slot` */}
+                  <div
+                    className="h-2 rounded-full border border-dashed opacity-40 transition-opacity group-hover/cell:opacity-100"
+                    style={{ borderColor: "color-mix(in srgb, var(--slot) 55%, var(--line-strong))" }}
+                  />
                 </button>
               ),
             )}

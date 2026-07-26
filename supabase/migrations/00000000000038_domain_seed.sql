@@ -1,4 +1,14 @@
 -- ---------------------------------------------------------------------------
+-- SUPERSEDED by 00000000000042_domain_seed_after_billing.sql.
+--
+-- Migration 41 (billing) re-created handle_new_user() from the pre-38 body to
+-- add the trial insert, which silently restored the domain seed this migration
+-- removed. Kept (rather than deleted) because it may already have been applied;
+-- 42 carries the merged intent. Harmless to run — 41 overwrites it, then 42
+-- sets the final body.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
 -- New-user bootstrap, revisited for multi-tenancy.
 --
 -- The original handle_new_user() seeded four domains on every signup —
