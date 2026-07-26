@@ -10,7 +10,14 @@
 
 import { differenceInCalendarDays, startOfWeek, subDays } from "date-fns";
 import type { Energy } from "./energy";
-import type { BigRock, ExternalEvent, Sprint, Task } from "./types";
+import {
+  DEFAULT_DURATION_MINUTES,
+  DEFAULT_PROJECT_DURATION_MINUTES,
+  type BigRock,
+  type ExternalEvent,
+  type Sprint,
+  type Task,
+} from "./types";
 import { parseDateISO, todayISO } from "./dates";
 import { eventCountsAsActual, eventDomainId, eventMins } from "./eventActuals";
 
@@ -316,7 +323,9 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
     bigRockId: t.big_rock_id ?? null,
     title: t.title,
     energy: t.energy,
-    durationMins: t.duration_minutes ?? 30,
+    durationMins:
+      t.duration_minutes ??
+      (t.project_id ? DEFAULT_PROJECT_DURATION_MINUTES : DEFAULT_DURATION_MINUTES),
     deadlineDaysAway: t.deadline
       ? differenceInCalendarDays(parseDateISO(t.deadline), parseDateISO(today))
       : null,

@@ -33,6 +33,7 @@ import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO } from "../../lib
 import { sprintLabel } from "../../lib/sprint";
 import { CONTEXT_META, plannedMinutes, type DayContext, type Placement } from "../../lib/compose";
 import { type Batch } from "../../lib/batch";
+import DurationSelect from "../DurationSelect";
 import { type calibrate, type confidence } from "../../lib/calibration";
 import { type suggestPull, type PullSuggestion } from "../../lib/pull";
 import { MomentumChip } from "../floors/parts";
@@ -602,6 +603,7 @@ function Candidates({
   themingCarried: boolean;
   carriedErr: string | null;
 }) {
+  const { updateTask } = useVertical();
   const [showMore, setShowMore] = useState(false);
   const toggle = (id: string) => {
     const next = new Set(kept);
@@ -649,7 +651,8 @@ function Candidates({
       onToggle={() => toggle(s.task.id)}
       color={domainById(data, s.task.domainId)?.color}
       title={s.task.title}
-      mins={plannedMinutes(s.task.durationMins, !!s.task.projectId)}
+      mins={s.task.durationMins}
+      onMins={(m) => updateTask(s.task.id, { durationMins: m })}
       reason={grouped ? "" : s.reason}
       carried={s.task.rollCount > 0}
     />
@@ -742,7 +745,8 @@ function Candidates({
               onToggle={() => toggle(t.id)}
               color={domainById(data, t.domainId)?.color}
               title={t.title || "untitled"}
-              mins={plannedMinutes(t.durationMins, !!t.projectId)}
+              mins={t.durationMins}
+              onMins={(m) => updateTask(t.id, { durationMins: m })}
               reason={t.inbox ? "from the inbox" : "from a backlog"}
               carried={t.rollCount > 0}
             />
@@ -759,6 +763,7 @@ function CandidateRow({
   color,
   title,
   mins,
+  onMins,
   reason,
   carried,
 }: {
@@ -767,6 +772,7 @@ function CandidateRow({
   color?: string | null;
   title: string;
   mins: number;
+  onMins: (m: number) => void;
   reason: string;
   carried: boolean;
 }) {
@@ -792,7 +798,12 @@ function CandidateRow({
       </span>
       {carried && <span className="mono shrink-0 text-micro text-signal" title="Carried over from a past week">↻ carried</span>}
       <span className="mono shrink-0 text-micro text-muted">{reason}</span>
-      <span className="mono shrink-0 text-meta text-muted">{hrs(mins)}h</span>
+      <DurationSelect
+        value={mins}
+        onChange={onMins}
+        className="shrink-0 rounded px-1 py-0.5 hover:bg-surface-2"
+        title="Sitting length"
+      />
     </button>
   );
 }

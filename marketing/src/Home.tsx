@@ -710,6 +710,9 @@ export default function Home() {
           <a href="/privacy" className="hover:text-[var(--text)]">
             Privacy
           </a>
+          <a href="/terms" className="hover:text-[var(--text)]">
+            Terms
+          </a>
           <a href={ACCESS_MAILTO} className="hover:text-[var(--text)]">
             Contact
           </a>

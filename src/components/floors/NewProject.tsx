@@ -13,6 +13,7 @@ import { ENERGY_META, type Energy } from "../../lib/energy";
 import { isOpenStatus } from "../../lib/vertical";
 import { fmtDate } from "./parts";
 import { Modal } from "../ui";
+import DurationSelect from "../DurationSelect";
 
 interface DraftTask {
   title: string;
@@ -342,7 +343,14 @@ export default function NewProject({
                     <span className={`min-w-0 flex-1 truncate text-caption ${d.included ? "text-ink" : "text-muted line-through"}`}>
                       {d.title}
                     </span>
-                    <span className="mono shrink-0 text-meta text-muted">{d.durationMins}m</span>
+                    <DurationSelect
+                      value={d.durationMins}
+                      onChange={(m) =>
+                        setProposal((p) => p!.map((x, j) => (j === i ? { ...x, durationMins: m } : x)))
+                      }
+                      className="shrink-0 rounded px-1 py-0.5 hover:bg-surface-2"
+                      title="Sitting length — AI proposed; tap to change"
+                    />
                   </div>
                 ))}
               </div>

@@ -13,8 +13,10 @@ import { toast } from "sonner";
 import { useVertical, type TaskParent } from "../../hooks/useVertical";
 import type { KeyResult, VTask } from "../../lib/vertical";
 import { parseCapture } from "../../lib/nlp";
-import { InlineNumber, InlineText, KrPicker } from "./parts";
+import { DEFAULT_PROJECT_DURATION_MINUTES } from "../../lib/types";
+import { InlineText, KrPicker } from "./parts";
 import TaskRefine from "./TaskRefine";
+import DurationSelect from "../DurationSelect";
 
 export type { TaskParent };
 
@@ -49,7 +51,7 @@ export default function TaskList({
     return {
       title: parsed.title || line,
       energy: "quick" as VTask["energy"],
-      durationMins: parsed.durationMinutes ?? 20,
+      durationMins: parsed.durationMinutes ?? DEFAULT_PROJECT_DURATION_MINUTES,
     };
   };
 
@@ -116,7 +118,12 @@ export default function TaskList({
           />
 
           <span className="mono shrink-0 text-meta text-muted">
-            <InlineNumber value={t.durationMins} onChange={(v) => updateTask(t.id, { durationMins: v })} suffix="m" />
+            <DurationSelect
+              value={t.durationMins}
+              onChange={(m) => updateTask(t.id, { durationMins: m })}
+              className="shrink-0 rounded px-1 py-0.5 hover:bg-surface-2"
+              title="Sitting length"
+            />
           </span>
 
           {keyResults && keyResults.length > 0 && (

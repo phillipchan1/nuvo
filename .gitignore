@@ -9,6 +9,7 @@ supabase/.temp
 # Marketing site installs its own deps (separate package.json)
 marketing/node_modules
 marketing/dist
+marketing/dist-ssr
 
 # Tauri
 src-tauri/target

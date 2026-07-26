@@ -8,11 +8,10 @@ import { useSkin, useScheme } from "./hooks/useSkin";
 import Login from "./components/Login";
 import AppShell from "./components/AppShell";
 import LockedScreen from "./components/billing/LockedScreen";
-import SpotlightWindow from "./components/SpotlightWindow";
+import { SpotlightHost } from "./components/SpotlightWindow";
 import UpdateToast from "./components/UpdateToast";
 import { AppNavigationProvider } from "./hooks/useAppNavigation";
 import { AgentProvider } from "./hooks/useAgentContext";
-import { VerticalProvider } from "./hooks/useVertical";
 
 /** Right after redirect-back from Stripe Checkout, the webhook usually lands
  *  in well under 2s (the realtime hook in useSubscription flips `entitled`
@@ -138,17 +137,12 @@ function Shell() {
   useScheme(); // keep <html data-palette> applied (the material's colour scheme)
 
   // The floating ⌥Space window: just the panel (no app chrome, no updater).
-  // Stays blank until authed — the window is hidden until summoned anyway.
+  // SpotlightHost owns the signed-out state too — a summon that renders nothing
+  // is indistinguishable from a broken app.
   if (IS_SPOTLIGHT) {
     return (
       <>
-        {session && !loading && (
-          <AgentProvider>
-            <VerticalProvider>
-              <SpotlightWindow />
-            </VerticalProvider>
-          </AgentProvider>
-        )}
+        <SpotlightHost signedIn={Boolean(session) && !loading} loading={loading} />
         <Toaster position="bottom-right" richColors closeButton />
       </>
     );

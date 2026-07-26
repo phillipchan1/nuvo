@@ -27,6 +27,7 @@ import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/d
 import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { sprintLabel } from "../../lib/sprint";
 import type { Placement } from "../../lib/compose";
+import DurationSelect from "../DurationSelect";
 
 type Step = "slate" | "pull" | "shape";
 
@@ -571,6 +572,7 @@ function PullRow({
   on: boolean;
   onToggle: () => void;
 }) {
+  const { updateTask } = useVertical();
   const color = domainById(data, s.task.domainId)?.color ?? "var(--accent)";
   return (
     <button
@@ -589,7 +591,12 @@ function PullRow({
         <span className={`block truncate text-body ${on ? "text-ink" : "text-muted"}`}>{s.task.title}</span>
         <span className="mono block truncate text-micro text-muted">{s.reason}</span>
       </span>
-      <span className="mono shrink-0 pt-0.5 text-micro text-muted">{s.task.durationMins}m</span>
+      <DurationSelect
+        value={s.task.durationMins}
+        onChange={(m) => updateTask(s.task.id, { durationMins: m })}
+        className="tap shrink-0 rounded px-1.5 py-1 pt-0.5 hover:bg-surface-2"
+        title="Sitting length"
+      />
     </button>
   );
 }

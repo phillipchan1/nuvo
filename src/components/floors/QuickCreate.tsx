@@ -11,12 +11,15 @@ import { isOpenStatus } from "../../lib/vertical";
 import { fmtDate } from "./parts";
 import { MomentHeader, Pill } from "./createParts";
 import { Modal } from "../ui";
+import DurationSelect from "../DurationSelect";
+import { DEFAULT_PROJECT_DURATION_MINUTES } from "../../lib/types";
 
 type Kind = "project" | "initiative";
 
 interface Line {
   id: number;
   text: string;
+  durationMins: number;
 }
 
 export default function QuickCreate({
@@ -46,7 +49,9 @@ export default function QuickCreate({
   const [target, setTarget] = useState<string | null>(
     kind === "initiative" ? format(endOfQuarter(new Date()), "yyyy-MM-dd") : null,
   );
-  const [lines, setLines] = useState<Line[]>([{ id: 0, text: "" }]);
+  const [lines, setLines] = useState<Line[]>([
+    { id: 0, text: "", durationMins: DEFAULT_PROJECT_DURATION_MINUTES },
+  ]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,7 +96,11 @@ export default function QuickCreate({
     requestAnimationFrame(() => lineRefs.current.get(id)?.focus());
 
   const addLineAfter = (id: number) => {
-    const fresh = { id: nextId.current++, text: "" };
+    const fresh = {
+      id: nextId.current++,
+      text: "",
+      durationMins: DEFAULT_PROJECT_DURATION_MINUTES,
+    };
     setLines((ls) => {
       const i = ls.findIndex((l) => l.id === id);
       const next = [...ls];
@@ -112,6 +121,9 @@ export default function QuickCreate({
 
   const setLineText = (id: number, text: string) =>
     setLines((ls) => ls.map((l) => (l.id === id ? { ...l, text } : l)));
+
+  const setLineMins = (id: number, durationMins: number) =>
+    setLines((ls) => ls.map((l) => (l.id === id ? { ...l, durationMins } : l)));
 
   const pickDomain = (id: string) => {
     setDomainId(id);
@@ -134,7 +146,11 @@ export default function QuickCreate({
         if (filledLines.length) {
           await addTasks(
             { projectId: p.id, initiativeId, domainId },
-            filledLines.map((l) => ({ title: l.text.trim(), energy: null, durationMins: 20 })),
+            filledLines.map((l) => ({
+              title: l.text.trim(),
+              energy: null,
+              durationMins: l.durationMins,
+            })),
           );
         }
       } else {
@@ -147,7 +163,11 @@ export default function QuickCreate({
         if (filledLines.length) {
           await addTasks(
             { initiativeId: init.id, domainId },
-            filledLines.map((l) => ({ title: l.text.trim(), energy: null, durationMins: 20 })),
+            filledLines.map((l) => ({
+              title: l.text.trim(),
+              energy: null,
+              durationMins: l.durationMins,
+            })),
           );
         }
       }
@@ -303,6 +323,14 @@ export default function QuickCreate({
                 placeholder={idx === 0 ? "Add a task…  ⏎ for the next" : "Add a task…"}
                 className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted/45"
               />
+              {line.text.trim() !== "" && (
+                <DurationSelect
+                  value={line.durationMins}
+                  onChange={(m) => setLineMins(line.id, m)}
+                  className="shrink-0 rounded px-1 py-0.5 hover:bg-surface-2"
+                  title="Sitting length"
+                />
+              )}
               {lines.length > 1 && (
                 <button
                   onClick={() => removeLine(line.id)}

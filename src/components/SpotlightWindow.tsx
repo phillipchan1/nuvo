@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { useLabels } from "../hooks/useCalendar";
 import { useTaskMutations } from "../hooks/useTasks";
-import { useVertical } from "../hooks/useVertical";
-import { useAgentContext } from "../hooks/useAgentContext";
+import { useVertical, VerticalProvider } from "../hooks/useVertical";
+import { useAgentContext, AgentProvider } from "../hooks/useAgentContext";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import {
   buildSearchHits,
@@ -18,6 +18,111 @@ import { NuvoSpotlightPanel, type Command, type Mode, type SearchHit } from "./N
 // Tauri-only wiring (NSPanel hide, window events) is skipped in the browser, so
 // the DEV `?spotlight` preview harness can render the panel against live data.
 const IS_TAURI = "__TAURI_INTERNALS__" in globalThis;
+
+/** Dismiss the panel. The window is an NSPanel, so a JS
+ *  `getCurrentWebviewWindow().hide()` doesn't reliably order it out (and desyncs
+ *  the ⌥Space toggle's visibility check) — everything routes through Rust. See
+ *  lib.rs. No-op in the browser (the DEV preview harness). */
+function hidePanel() {
+  if (IS_TAURI) void invoke("hide_spotlight");
+}
+
+/** The window's own chrome, applied for as long as the spotlight is mounted —
+ *  signed in or not. It lives out here, not in the panel, because a summon that
+ *  finds no session used to render nothing at all: no `.spotlight-window` class,
+ *  so the window kept the opaque `--surface` page background and the summon read
+ *  as a dead warm-paper rectangle floating over the desktop. */
+function useSpotlightChrome() {
+  useEffect(() => {
+    // This window is transparent (just the floating card shows); drop the desktop
+    // titlebar inset that main.tsx reserves for the main window's traffic lights.
+    const html = document.documentElement;
+    html.classList.add("spotlight-window");
+    html.classList.remove("tauri-macos");
+    return () => html.classList.remove("spotlight-window");
+  }, []);
+
+  // Esc — and ⌘W, which reads as "close this window" — dismiss the panel (the
+  // bare panel doesn't own these the way the Modal does). Owned here so a summon
+  // still dismisses from the keyboard even when there's no session to capture into.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w")) {
+        e.preventDefault();
+        hidePanel();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+}
+
+/** What the ⌥Space window mounts — the panel once there's a session, an honest
+ *  card before then. Never nothing: an empty summon is indistinguishable from a
+ *  broken app, and the window is already floating over whatever you were doing. */
+export function SpotlightHost({ signedIn, loading }: { signedIn: boolean; loading: boolean }) {
+  useSpotlightChrome();
+
+  if (signedIn) {
+    return (
+      <AgentProvider>
+        <VerticalProvider>
+          <SpotlightWindow />
+        </VerticalProvider>
+      </AgentProvider>
+    );
+  }
+
+  return (
+    <SpotlightFrame>
+      {loading ? (
+        <div className="flex items-center justify-center px-5 py-8">
+          <span className="wordmark shimmer text-head">nuvo</span>
+        </div>
+      ) : (
+        <div className="px-5 py-6">
+          <div className="masthead text-display leading-tight text-ink">Not signed in</div>
+          <div className="mt-1.5 text-caption leading-relaxed text-muted">
+            Quick capture needs your account. Open {ASSISTANT_NAME} and sign in — the next ⌥Space
+            lands straight in the inbox.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (IS_TAURI) void invoke("surface_main");
+            }}
+            className="tap fast mt-4 w-full rounded-md border border-line bg-surface-2 px-3 py-2.5 text-body font-medium text-ink hover:bg-surface active:translate-y-px"
+          >
+            Open {ASSISTANT_NAME}
+          </button>
+        </div>
+      )}
+    </SpotlightFrame>
+  );
+}
+
+/** The floating card the panel sits in — shared by the live panel and the
+ *  signed-out card so both dismiss on backdrop click and wear the same glass. */
+function SpotlightFrame({ children, className = "max-w-xl" }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      // h-screen + overflow-hidden, not min-h-screen: a card taller than the
+      // window clips instead of spawning a stray document scrollbar while the
+      // native window catches up to the deck's height.
+      className="flex h-screen items-start justify-center overflow-hidden bg-transparent p-3"
+      onMouseDown={(e) => {
+        // Click the transparent backdrop (not the card) to dismiss.
+        if (e.target === e.currentTarget) hidePanel();
+      }}
+    >
+      <div
+        className={`moment w-full overflow-hidden rounded-2xl border border-line/50 glass-card transition-[max-width] duration-200 [box-shadow:var(--shadow-lift)] ${className}`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
 
 // The standalone floating panel rendered in the dedicated "spotlight" Tauri
 // window — summoned by the global ⌥Space hotkey. Same NuvoSpotlightPanel the
@@ -58,22 +163,8 @@ export default function SpotlightWindow() {
     );
   }, [wide]);
 
-  // Dismiss via the Rust `hide_spotlight` command — the window is an NSPanel, so
-  // a JS `getCurrentWebviewWindow().hide()` doesn't reliably order it out (and
-  // desyncs the ⌥Space toggle's visibility check). See lib.rs. In the browser
-  // (the DEV preview harness, no Tauri) this is a no-op.
-  const hide = useCallback(() => {
-    if (IS_TAURI) void invoke("hide_spotlight");
-  }, []);
-
-  // This window is transparent (just the floating card shows); drop the desktop
-  // titlebar inset that main.tsx reserves for the main window's traffic lights.
-  useEffect(() => {
-    const html = document.documentElement;
-    html.classList.add("spotlight-window");
-    html.classList.remove("tauri-macos");
-    return () => html.classList.remove("spotlight-window");
-  }, []);
+  // Dismissal is owned by SpotlightHost (which also holds it while signed out).
+  const hide = useCallback(hidePanel, []);
 
   // Each summon → remount the panel fresh (empty capture field); React's mount
   // effect focuses the input. Click-away dismiss is owned by the native NSPanel
@@ -96,19 +187,6 @@ export default function SpotlightWindow() {
     }).then((u) => (unlistenShow = u));
     return () => unlistenShow?.();
   }, []);
-
-  // Esc — and ⌘W, which reads as "close this window" — dismiss the panel (the
-  // bare panel doesn't own these the way the Modal does).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w")) {
-        e.preventDefault();
-        hide();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [hide]);
 
   // Hand off to the main window — shared by "Open Nuvo" and pulling up a record.
   // Routes through the Rust `surface_main` command (AppKit activate), NOT a JS
@@ -139,34 +217,19 @@ export default function SpotlightWindow() {
   );
 
   return (
-    <div
-      // h-screen + overflow-hidden, not min-h-screen: a card taller than the
-      // window clips instead of spawning a stray document scrollbar while the
-      // native window catches up to the deck's height.
-      className="flex h-screen items-start justify-center overflow-hidden bg-transparent p-3"
-      onMouseDown={(e) => {
-        // Click the transparent backdrop (not the card) to dismiss.
-        if (e.target === e.currentTarget) hide();
-      }}
-    >
-      <div
-        className={`moment w-full overflow-hidden rounded-2xl border border-line/50 glass-card transition-[max-width] duration-200 [box-shadow:var(--shadow-lift)] ${
-          mode === "ask" ? "max-w-2xl" : wide ? "max-w-4xl" : "max-w-xl"
-        }`}
-      >
-        <NuvoSpotlightPanel
-          key={showKey}
-          labels={labels}
-          commands={commands}
-          searchHits={searchHits}
-          onCreate={mutations.create}
-          agent={agent}
-          onClose={hide}
-          onModeChange={setMode}
-          onLayoutChange={onLayoutChange}
-          contextLabel={contextLabel}
-        />
-      </div>
-    </div>
+    <SpotlightFrame className={mode === "ask" ? "max-w-2xl" : wide ? "max-w-4xl" : "max-w-xl"}>
+      <NuvoSpotlightPanel
+        key={showKey}
+        labels={labels}
+        commands={commands}
+        searchHits={searchHits}
+        onCreate={mutations.create}
+        agent={agent}
+        onClose={hide}
+        onModeChange={setMode}
+        onLayoutChange={onLayoutChange}
+        contextLabel={contextLabel}
+      />
+    </SpotlightFrame>
   );
 }

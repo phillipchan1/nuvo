@@ -278,6 +278,19 @@ the same one. Both are listed in [`planning-kernel.md`](../planning-kernel.md) �
 *Status: standing — 25 conformance tests green; each guard verified by deliberately
 reintroducing the drift and watching it fail.*
 
+**D-033 · 2026-07-26 · Task duration is a preset sitting, never a free-text 20m stamp.**
+Getting projects in (GroomWall, QuickCreate, `addTask`) was defaulting every step to
+**20 minutes** — fiction that wrecks W1 (can I carry this week?). Duration now uses one
+shared preset list (`DURATION_PRESETS`: 15 · 30 · 45 · 60 · 90 · 120 · 180 · 240) as a
+dropdown chip wherever a sitting is sized; project-backed steps default to **45**
+(matches `MIN_PROJECT_BLOCK`); loose/quick stays **30**. AI still *proposes* durations
+on scaffold / New Project / plan-week tools (Principle 3 — human promotes); the human
+edits via the same presets on the proposal and on Plan-the-week Pull (desktop + phone).
+→ Closes the "duration accuracy is a grooming property" gap named in
+[`priorities-and-projects.md`](../priorities-and-projects.md). → Rejected: free-text
+minute fields (thumb-hostile, invites nonsense) and gating the week until every task is
+groomed (Principle 7 — useful on day one). *Status: standing.*
+
 ---
 
 ## 2 · Things we decided **not** to do

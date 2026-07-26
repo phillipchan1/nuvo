@@ -12,7 +12,15 @@ import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { planningWeekStartISO } from "../lib/dates";
-import { restingStatus, type BigRock, type Sprint, type Task, type TaskStatus } from "../lib/types";
+import {
+  DEFAULT_DURATION_MINUTES,
+  DEFAULT_PROJECT_DURATION_MINUTES,
+  restingStatus,
+  type BigRock,
+  type Sprint,
+  type Task,
+  type TaskStatus,
+} from "../lib/types";
 import {
   buildVertical,
   normalizeInitiativeStatus,
@@ -245,7 +253,7 @@ function optimisticTask(input: {
     status: input.status,
     do_date: null,
     start_time: null,
-    duration_minutes: input.durationMins ?? 20,
+    duration_minutes: input.durationMins ?? DEFAULT_DURATION_MINUTES,
     deadline: input.deadline ?? null,
     priority: "none",
     roll_count: 0,
@@ -784,7 +792,9 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         const parented = Boolean(parent.projectId || parent.initiativeId || parent.domainId);
         const status: TaskStatus = parented ? "backlog" : "inbox";
         const title = patch?.title ?? "";
-        const durationMins = patch?.durationMins ?? 20;
+        const durationMins =
+          patch?.durationMins ??
+          (parented ? DEFAULT_PROJECT_DURATION_MINUTES : DEFAULT_DURATION_MINUTES);
         const optimistic = optimisticTask({
           id: tempId,
           title,

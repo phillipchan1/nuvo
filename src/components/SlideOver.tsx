@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Draggable } from "@fullcalendar/interaction";
 import { format } from "date-fns";
 import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleAttendee, Label, Recurrence, Slot, Task } from "../lib/types";
-import { ruleOf } from "../lib/types";
+import { DEFAULT_DURATION_MINUTES, DURATION_PRESETS, ruleOf } from "../lib/types";
 import { providerLabel, writableCalendarTargets, type MoveTargetGroup } from "../lib/calendarWrite";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
@@ -470,11 +470,11 @@ export function TaskPopover({
               <path d="M1 3l3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
             </svg>
             <select
-              value={task.duration_minutes ?? 30}
+              value={task.duration_minutes ?? DEFAULT_DURATION_MINUTES}
               onChange={(e) => mutations.patchTask(task.id, { duration_minutes: Number(e.target.value) })}
               className="absolute inset-0 w-full cursor-pointer opacity-0"
             >
-              {[15, 30, 45, 60, 90, 120, 180, 240].map((m) => (
+              {DURATION_PRESETS.map((m) => (
                 <option key={m} value={m}>{fmtDuration(m)}</option>
               ))}
             </select>

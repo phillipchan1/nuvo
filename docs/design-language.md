@@ -287,6 +287,28 @@ first-class (`data-theme` on `<html>`); never write a raw hex that won't flip.
 - **Progress track**: `--line` (never `bg-bg`, which vanishes against the paper).
 - **Buttons** (`Btn` in `ui.tsx`): comfortable tap targets — `px-4 py-2`.
 
+## Forms & inputs — one field surface
+
+Every text box, select, time input, switch, and stepper comes from the primitives in
+`src/components/form.tsx` — **never hand-roll `border border-line px-2 py-1`.** The old
+per-input recipe (cramped 4px padding, `text-caption`, inconsistent `bg-bg`/`bg-surface`)
+is retired.
+
+- **The `.field` class** (in `index.css`) owns the input surface: `--field-h` tall (40px
+  desktop, **44px on a phone** for tap), `--surface` fill, `--line` hairline, `--text-body`,
+  and the soft `--accent-soft` focus ring + `--accent` border. It's all tokens, so every
+  material/skin inherits it. Sizing/width lives on the element (`w-full sm:w-28`).
+- **The components**: `Field` (label-left / control-right row, or `layout="stack"` for a
+  form grid cell), `FieldGroup` (hairline-divided stack), `TextInput`, `Select` (native
+  select + our own chevron — pass width via `className` on the *wrapper*), `Toggle` (a 44px
+  hit area around a 28px pill — the app's on/off switch), `Checkbox`, `Stepper` (−/value/+
+  for bounded numbers), `Segmented` (2–4 exclusive choices). Settings is the reference.
+- **A tall settings modal** centers (`<Modal align="center">`) and goes multi-column where
+  content tiles (Schedule's stacked form grid, the Calendars account columns); list-style
+  panes cap at a readable width.
+- Long lists collapse their off/hidden items behind a small disclosure (see the Calendars
+  pane's "N hidden calendars" drawer) — a wall of controls is clutter, not information.
+
 ---
 
 ## Collection views — same entity, four shapes

@@ -10,7 +10,7 @@ export type StepLine = { id: number; text: string };
 
 export function StepComposer({ lines, setLines, accent, placeholder, meta }: {
   lines: StepLine[]; setLines: React.Dispatch<React.SetStateAction<StepLine[]>>; accent: string; placeholder: string;
-  /** optional per-line trailing control (e.g. the Path lens's duration cycler). */
+  /** optional per-line trailing control (e.g. DurationSelect for sitting length). */
   meta?: (line: StepLine, idx: number) => React.ReactNode;
 }) {
   const nextId = useRef(1000);

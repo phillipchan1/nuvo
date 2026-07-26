@@ -2,32 +2,12 @@ import { useEffect, useState } from 'react'
 import Home from './Home'
 import Privacy from './pages/Privacy'
 import Support from './pages/Support'
+import Terms from './pages/Terms'
+import { HOME_CANONICAL, HOME_DESC, HOME_TITLE, ROUTES } from './routes'
 
 function pathOf() {
   return window.location.pathname.replace(/\/+$/, '') || '/'
 }
-
-const HOME_TITLE = 'Nuvo — One system for everything you run'
-const HOME_DESC =
-  'For people running more than one life at once. Nuvo is one continuous system from the year you’re planning down to the hour you’re working — capture anything with ⌥Space on Mac, and land it on a real day.'
-
-/** Per-route head. `canonical` matters: index.html hardcodes the homepage URL,
- *  so without this every route would tell search engines it *is* the homepage —
- *  which would keep the support page out of results entirely. */
-const ROUTES: Record<string, { title: string; desc: string; canonical: string }> = {
-  '/privacy': {
-    title: 'Privacy Policy — Nuvo',
-    desc: 'What Nuvo collects, why, and how your calendar data is handled.',
-    canonical: 'https://nuvo.day/privacy',
-  },
-  '/support': {
-    title: 'Support — Nuvo',
-    desc: 'Guides, keyboard shortcuts, troubleshooting, billing, and how to reach a human. Everything you need to run Nuvo.',
-    canonical: 'https://nuvo.day/support',
-  },
-}
-// /help is the address people guess; serve the same page, canonical to /support.
-ROUTES['/help'] = { ...ROUTES['/support'] }
 
 function setMeta(selector: string, attr: 'content' | 'href', value: string) {
   document.querySelector(selector)?.setAttribute(attr, value)
@@ -46,7 +26,7 @@ export default function App() {
     const route = ROUTES[path]
     document.title = route?.title ?? HOME_TITLE
     setMeta('meta[name="description"]', 'content', route?.desc ?? HOME_DESC)
-    setMeta('link[rel="canonical"]', 'href', route?.canonical ?? 'https://nuvo.day/')
+    setMeta('link[rel="canonical"]', 'href', route?.canonical ?? HOME_CANONICAL)
     // The browser resolves a hash before React has rendered the target, so a
     // deep link like /support#shortcuts would silently land at the top. Honor it
     // ourselves after paint; with no hash, reset to the top as usual.
@@ -79,6 +59,7 @@ export default function App() {
   }, [path])
 
   if (path === '/privacy') return <Privacy />
+  if (path === '/terms') return <Terms />
   if (path === '/support' || path === '/help') return <Support />
   return <Home />
 }

@@ -20,9 +20,10 @@ import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
 import { StepComposer, type StepLine } from "../grooming/StepComposer";
 import { ProjectShipAssess } from "../record/ShipAssess";
+import DurationSelect from "../DurationSelect";
+import { DEFAULT_PROJECT_DURATION_MINUTES } from "../../lib/types";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
-const MINS_CYCLE = [20, 45, 90];
 
 const TIER_COLOR: Record<ReadyTier, string> = {
   ready: READY,
@@ -122,7 +123,11 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
     try {
       const picks = lines
         .filter((l) => l.text.trim())
-        .map((l) => ({ title: l.text.trim(), energy: null, durationMins: mins[l.id] ?? 20 }));
+        .map((l) => ({
+          title: l.text.trim(),
+          energy: null,
+          durationMins: mins[l.id] ?? DEFAULT_PROJECT_DURATION_MINUTES,
+        }));
       await store.addTasks({ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }, picks);
       setLines([{ id: 0, text: "" }]);
       setMins({});
@@ -133,14 +138,7 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
     }
   };
 
-  const cycleMins = (id: number) =>
-    setMins((m) => {
-      const cur = m[id] ?? 20;
-      return { ...m, [id]: MINS_CYCLE[(MINS_CYCLE.indexOf(cur) + 1) % MINS_CYCLE.length] };
-    });
-
-  // ── existing steps are editable in place: retitle (blur), resize (tap), delete
-  const nextDur = (cur: number) => MINS_CYCLE[(MINS_CYCLE.indexOf(cur) + 1) % MINS_CYCLE.length];
+  // ── existing steps are editable in place: retitle (blur), resize (select), delete
   const saveStep = (id: string, prev: string, next: string) => {
     const v = next.trim();
     if (v && v !== prev) store.updateTask(id, { title: v });
@@ -367,14 +365,12 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
                 className="fast -mx-1 min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 text-body text-ink outline-none transition-colors hover:bg-surface-2/60 focus:bg-surface-2"
               />
-              <button
-                onClick={() => store.updateTask(t.id, { durationMins: nextDur(t.durationMins) })}
-                tabIndex={-1}
-                className="mono fast shrink-0 rounded px-1 py-0.5 text-micro text-muted hover:text-ink"
-                title="Tap to resize — 20m · 45m · 90m"
-              >
-                {t.durationMins}m
-              </button>
+              <DurationSelect
+                value={t.durationMins}
+                onChange={(m) => store.updateTask(t.id, { durationMins: m })}
+                className="shrink-0 rounded px-1 py-0.5 hover:bg-surface-2"
+                title="Sitting length"
+              />
               <button
                 onClick={() => delStep(t.id)}
                 tabIndex={-1}
@@ -396,14 +392,12 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
           accent={color === "var(--line-strong)" ? "var(--accent)" : color}
           placeholder={existing.length ? "Add a step…  ⏎ for the next" : "What's the first move?  ⏎ for the next"}
           meta={(line) => (
-            <button
-              onClick={() => cycleMins(line.id)}
-              tabIndex={-1}
-              className="mono fast shrink-0 rounded px-1.5 py-0.5 text-micro text-muted hover:text-ink"
-              title="Tap to resize — 20m · 45m · 90m"
-            >
-              {mins[line.id] ?? 20}m
-            </button>
+            <DurationSelect
+              value={mins[line.id] ?? DEFAULT_PROJECT_DURATION_MINUTES}
+              onChange={(m) => setMins((prev) => ({ ...prev, [line.id]: m }))}
+              className="shrink-0 rounded px-1.5 py-0.5 hover:bg-surface-2"
+              title="Sitting length"
+            />
           )}
         />
       </div>

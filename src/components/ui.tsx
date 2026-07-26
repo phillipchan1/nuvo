@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 export function Keycap({ children }: { children: ReactNode }) {
   return <kbd className="keycap">{children}</kbd>;
@@ -54,10 +55,15 @@ export function Modal({
   onClose,
   children,
   width = "max-w-lg",
+  align = "top",
 }: {
   onClose: () => void;
   children: ReactNode;
   width?: string;
+  // "top" (default): the small-dialog look — pinned 12vh down. "center": for a
+  // tall modal — vertically centered and bounded to the viewport, so a near-
+  // full-height sheet keeps even margins and never spills off the bottom.
+  align?: "top" | "center";
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -70,20 +76,31 @@ export function Modal({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
-  return (
+  const scrimPos =
+    align === "center" ? "sm:items-center sm:p-4" : "sm:items-start sm:p-0 sm:pt-[12vh]";
+  // A centered modal must stay inside the viewport; a top-anchored one lets its
+  // children own the height (unchanged).
+  const heightCap = align === "center" ? "sm:max-h-[92vh]" : "sm:max-h-none";
+
+  // Portal to <body> + sit above full-screen flows. Settings / Shortcuts mount
+  // inside Planner or under MobileShell; Plan the week (z-50/60) and Sunday
+  // ritual (z-50) are later siblings, so an in-tree z-50 Modal painted *under*
+  // them — ⌘, looked like a no-op. z-[70] clears Orientation / PlanWeek (60).
+  return createPortal(
     <div
       // Mobile-first: centered with a margin and scrollable so it can't overflow
-      // a phone. sm+ restores the desktop look exactly (top-anchored, no inner
-      // scroll — children own their scroll).
-      className="scrim fixed inset-0 z-[50] flex items-center justify-center bg-black/30 p-3 backdrop-blur-[2px] sm:items-start sm:p-0 sm:pt-[12vh]"
+      // a phone. sm+ restores the desktop look (top-anchored, or centered for a
+      // tall sheet — children own their scroll).
+      className={`scrim fixed inset-0 z-[70] flex items-center justify-center bg-black/30 p-3 backdrop-blur-[2px] ${scrimPos}`}
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className={`moment glass elev-3 w-full ${width} max-h-[90vh] overflow-y-auto rounded-lg border border-line sm:max-h-none sm:overflow-hidden`}
+        className={`moment glass elev-3 w-full ${width} max-h-[90vh] overflow-y-auto rounded-lg border border-line ${heightCap} sm:overflow-hidden`}
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

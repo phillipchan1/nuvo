@@ -15,6 +15,11 @@ export const SUPPORT_RESPONSE = 'Usually within one business day.'
 
 /** Same contact for privacy / legal (Google OAuth verification). */
 export const PRIVACY_URL = 'https://nuvo.day/privacy'
+export const TERMS_URL = 'https://nuvo.day/terms'
+
+/** Jurisdiction named in the Terms of Service. CHANGE THIS to where the
+ *  business is actually established before the terms are relied on. */
+export const GOVERNING_LAW = 'the State of California, United States'
 
 /** Public releases repo that hosts the signed, notarized Mac builds + latest.json. */
 export const RELEASES_REPO = 'phillipchan1/nuvo-releases'
