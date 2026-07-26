@@ -41,6 +41,56 @@ const CAPABILITIES = [
   },
 ] as const
 
+// Keep in step with the app's src/components/billing/plans.ts and the Stripe
+// Prices behind STRIPE_PRICE_* — the saving is the number that actually sells
+// the annual plan, and "$228 billed yearly" alone hides it.
+const PLANS = [
+  {
+    name: 'Annual',
+    perMonth: '19',
+    billed: '$228 billed yearly',
+    badge: 'Save $120',
+    featured: true,
+  },
+  {
+    name: 'Monthly',
+    perMonth: '29',
+    billed: 'Billed monthly',
+    badge: null,
+    featured: false,
+  },
+] as const
+
+const INCLUDED = [
+  'Every calendar — Google, Microsoft, iCloud, ICS',
+  'Nuvo, your planning copilot',
+  'Domains, initiatives, projects, blocks',
+  'Sunday planning and Friday review',
+  'The native Mac app and ⌥Space capture',
+  'Installable on your iPhone',
+] as const
+
+function CheckMark() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden
+      className="mt-[0.3rem] shrink-0 text-[var(--accent)]"
+    >
+      <path
+        d="M3.5 8.5l3 3 6-7"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 // "Download for Mac" resolves to the exact latest DMG on hover/focus (the GitHub
 // Releases API is CORS-enabled), rewriting href to the asset's direct URL for an
 // instant download. The static releases/latest/download/Nuvo.dmg link is the
@@ -67,7 +117,15 @@ function DownloadMacButton({ className = '' }: { className?: string }) {
   }, [resolved])
 
   return (
-    <a href={href} onPointerEnter={resolve} onFocus={resolve} className={`btn-primary tap ${className}`}>
+    <a
+      href={href}
+      onPointerEnter={resolve}
+      onFocus={resolve}
+      className={`btn-primary tap inline-flex items-center gap-2 ${className}`}
+    >
+      <svg width="15" height="15" viewBox="0 0 384 512" fill="currentColor" aria-hidden="true">
+        <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z" />
+      </svg>
       Download for Mac
     </a>
   )
@@ -77,11 +135,8 @@ function CtaGroup({ className = '' }: { className?: string }) {
   return (
     <div className={`flex flex-wrap items-center gap-3 ${className}`}>
       <DownloadMacButton />
-      <a href={ACCESS_MAILTO} className="btn-ghost tap">
-        Request access
-      </a>
       <a href={APP_URL} className="btn-ghost tap" rel="noopener noreferrer">
-        Open app
+        Open in browser
       </a>
     </div>
   )
@@ -101,8 +156,11 @@ export default function Home() {
           <a href="#calendars" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
             Calendars
           </a>
-          <a href={ACCESS_MAILTO} className="btn-ghost tap hidden text-[13px] sm:inline-flex">
-            Request access
+          <a href="#pricing" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
+            Pricing
+          </a>
+          <a href={APP_URL} className="btn-ghost tap hidden text-[13px] sm:inline-flex" rel="noopener noreferrer">
+            Open app
           </a>
         </nav>
       </header>
@@ -112,11 +170,12 @@ export default function Home() {
         <section className="mx-auto max-w-6xl px-5 pb-16 pt-10 sm:px-8 sm:pb-24 sm:pt-14">
           <div className="max-w-2xl">
             <h1 className="masthead reveal text-display text-[var(--text)]">
-              One funnel for every domain you run.
+              You run more than one life. One system should keep up.
             </h1>
             <p className="reveal reveal-delay-1 mt-5 max-w-xl text-pretty hero-support text-[var(--muted)]">
-              Multiple teams. Multiple projects. Multiple initiatives. Nuvo holds the entire
-              vertical — so nothing gets lost between the calling and the calendar.
+              Work, the side thing, the family calendar, the thing you volunteer for. Nuvo is one
+              continuous system from the year you’re planning down to the hour you’re working — so
+              what matters actually gets time.
             </p>
             <CtaGroup className="reveal reveal-delay-2 mt-8" />
           </div>
@@ -338,29 +397,102 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Coming soon */}
+        {/* Where it runs */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
           <div className="glass-card rounded-2xl border border-[var(--line)] px-6 py-8 sm:px-10 sm:py-10">
-            <p className="section-label text-[var(--accent)]">Coming soon</p>
+            <p className="section-label text-[var(--accent)]">Where it runs</p>
             <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              Native iOS &amp; Apple Watch.
+              Mac, web, and iPhone.
             </h2>
             <p className="mt-4 max-w-xl text-body text-[var(--muted)]">
-              Today: the native Mac app (download above), Mac capture with ⌥Space, and an
-              installable iOS PWA. The Mac app updates itself quietly in the background. Next:
-              native iPhone and Watch — dictate a loose task from the wrist into the same funnel.
+              One account, every surface. The native Mac app updates itself quietly in the
+              background, the web app opens anywhere, and iPhone is next.
             </p>
-            <div className="mt-8 flex flex-wrap gap-6">
+            <div className="mt-8 grid gap-6 sm:grid-cols-3">
               <div>
-                <p className="section-label text-[var(--muted)]">Now</p>
-                <p className="mt-1 text-[15px] text-[var(--text)]">Mac app · ⌥Space · iOS PWA</p>
+                <p className="section-label text-[var(--text)]">Mac</p>
+                <p className="mt-1 text-[15px] text-[var(--muted)]">
+                  Native app — download above. ⌥Space capture, background auto-updates.
+                </p>
               </div>
               <div>
-                <p className="section-label text-[var(--muted)]">Next</p>
-                <p className="mt-1 text-[15px] text-[var(--text)]">iOS native · Apple Watch</p>
+                <p className="section-label text-[var(--text)]">Web</p>
+                <p className="mt-1 text-[15px] text-[var(--muted)]">
+                  Open in any browser — nothing to install.
+                </p>
+              </div>
+              <div>
+                <p className="section-label text-[var(--muted)]">iPhone · Coming soon</p>
+                <p className="mt-1 text-[15px] text-[var(--muted)]">
+                  Add to Home Screen today; a native app is on the way.
+                </p>
               </div>
             </div>
           </div>
+        </section>
+
+        {/* Pricing — lands after the value is made, before the closing CTA */}
+        <section
+          id="pricing"
+          className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24"
+        >
+          <div className="max-w-2xl">
+            <p className="section-label text-[var(--muted)]">Pricing</p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+              One subscription. Every domain you carry.
+            </h2>
+            <p className="mt-5 text-body text-[var(--muted)]">
+              Fourteen days free — no card. After that one plan covers the whole funnel: every
+              calendar, every domain, the Mac app, and your phone. No seats, no tiers, nothing
+              held back.
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:max-w-3xl">
+            {PLANS.map((p) => (
+              <div
+                key={p.name}
+                className={`glass-card rounded-2xl border p-6 sm:p-7 ${
+                  p.featured
+                    ? 'border-[var(--accent)] shadow-[var(--shadow-2)]'
+                    : 'border-[var(--line)]'
+                }`}
+              >
+                <div className="flex items-baseline gap-3">
+                  <p className="section-label text-[var(--text)]">{p.name}</p>
+                  {p.badge && (
+                    <span className="section-label ml-auto text-[var(--accent)]">{p.badge}</span>
+                  )}
+                </div>
+                {/* Prices are numerics — tabular sans, never the Fraunces masthead. */}
+                <p className="mt-5 flex items-baseline gap-1.5">
+                  <span className="mono text-[2.75rem] font-semibold leading-none tracking-tight text-[var(--text)]">
+                    ${p.perMonth}
+                  </span>
+                  <span className="text-[0.9375rem] text-[var(--muted)]">/month</span>
+                </p>
+                <p className="mt-2.5 text-[0.9375rem] text-[var(--muted)]">{p.billed}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
+            <a href={APP_URL} className="btn-primary tap" rel="noopener noreferrer">
+              Start 14 days free
+            </a>
+            <p className="text-[0.9375rem] text-[var(--muted)]">
+              No credit card · Cancel anytime
+            </p>
+          </div>
+
+          <ul className="mt-14 grid max-w-3xl gap-x-10 gap-y-3.5 sm:grid-cols-2">
+            {INCLUDED.map((line) => (
+              <li key={line} className="flex items-start gap-2.5 text-[0.9375rem] text-[var(--muted)]">
+                <CheckMark />
+                <span className="leading-relaxed">{line}</span>
+              </li>
+            ))}
+          </ul>
         </section>
 
         {/* Closing */}
