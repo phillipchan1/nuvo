@@ -14,6 +14,13 @@
       "runtimeArgs": ["run", "preview", "--prefix", "marketing", "--", "--port", "4183"],
       "port": 4183,
       "autoPort": true
+    },
+    {
+      "name": "marketing-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "marketing", "--", "--port", "5174"],
+      "port": 5174,
+      "autoPort": true
     }
   ]
 }

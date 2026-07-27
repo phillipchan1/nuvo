@@ -360,7 +360,7 @@ export default function InitiativeDeck() {
                     {lanes.length === 0 && composeCol !== q.idx ? (
                       <div
                         onClick={() => composeInCol(q.idx)}
-                        className="slot-open fast flex flex-1 cursor-pointer items-center justify-center rounded-lg border border-dashed px-2 py-6 text-center text-micro text-muted transition-colors"
+                        className="slot-open fast flex flex-1 cursor-pointer items-center justify-center rounded-lg border px-2 py-6 text-center text-micro text-muted transition-colors"
                         title="New initiative in this quarter"
                       >
                         Drop an initiative here, or tap to add
@@ -402,13 +402,13 @@ export default function InitiativeDeck() {
                     )}
                   </div>
 
-                  {/* pinned "+ initiative" affordance — hidden while composing here */}
+                  {/* pinned "+ initiative" — text cue, no dashed box. Hidden while composing. */}
                   {composeCol !== q.idx && (
                     <button
                       data-card-control
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => { e.stopPropagation(); composeInCol(q.idx); }}
-                      className="slot-open tap fast mt-2 w-full rounded-lg border border-dashed px-2 py-2 text-center text-micro font-medium text-muted transition-colors"
+                      className="slot-hint tap fast mt-2 w-full py-2 text-center text-micro font-medium transition-colors hover:text-[color:var(--slot)]"
                       title="New initiative in this quarter"
                     >
                       + initiative

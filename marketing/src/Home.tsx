@@ -6,6 +6,7 @@ import DomainVisual from './components/DomainVisual'
 import DriftVisual from './components/DriftVisual'
 import FunnelVisual from './components/FunnelVisual'
 import OperatorVisual from './components/OperatorVisual'
+import PlanWeekVisual from './components/PlanWeekVisual'
 import ScheduleVisual from './components/ScheduleVisual'
 import { useCallback, useState } from 'react'
 import { ACCESS_MAILTO, APP_URL, DOWNLOAD_MAC_URL, RELEASES_REPO } from './config'
@@ -41,14 +42,15 @@ const INVENTORY = [
     ],
   },
   {
-    group: 'Planning the week',
+    group: 'Plan the week',
     items: [
-      'Sunday composes your week',
-      'Demand against your real hours',
-      'Calibrated to your proven pace',
-      'Priorities tied to real projects',
+      'Four questions, one planned week',
+      'Your real open hours, first',
+      'Work placed onto the hour for you',
+      'Projects split across sittings',
       'Standing time for recurring work',
-      'Drag work onto the hour',
+      'A remedy when it doesn’t fit',
+      'Drag, resize, overrule anything',
     ],
   },
   {
@@ -101,6 +103,16 @@ const INVENTORY = [
       'Live sync across devices',
     ],
   },
+] as const
+
+// The whole ritual, in four lines. Verbatim from the product
+// (`src/lib/intake.ts` — STEP_QUESTION): the questions are the argument, and
+// anything written *about* them is weaker than the questions themselves.
+const PLAN_QUESTIONS = [
+  'What room does this week actually have?',
+  'What are you moving this week?',
+  'What didn’t get done, and what’s due?',
+  'What came in that you haven’t sorted?',
 ] as const
 
 // The refusals, straight from overview.md §2. A capability list attracts
@@ -243,8 +255,8 @@ export default function Home() {
           Nuvo
         </a>
         <nav className="flex items-center gap-2 sm:gap-3">
-          <a href="#capture" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
-            Capture
+          <a href="#plan" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
+            Plan the week
           </a>
           <a href="#calendars" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
             Calendars
@@ -269,12 +281,13 @@ export default function Home() {
               You run more than one life. One system should keep up.
             </h1>
             {/* Two beats, one per element: the headline holds the worlds, the
-                support holds the arithmetic. Ends on the question the rest of
-                the page answers. */}
+                support holds the act. It names time-blocking outright — that's
+                the thing the reader already believes in and already can't keep
+                up by hand, and it's what the page's flagship section delivers. */}
             <p className="reveal reveal-delay-1 mt-5 max-w-xl text-pretty hero-support text-[var(--muted)]">
               Work, the side thing, the family calendar, the thing you volunteer for. Nuvo holds
-              all of it in one place — then answers the question no other tool will: can you
-              actually carry this week?
+              all of it in one place — then blocks out your week with you in ten minutes, and tells
+              you the truth about whether you can carry it.
             </p>
             <CtaGroup className="reveal reveal-delay-2 mt-8" />
           </div>
@@ -320,6 +333,49 @@ export default function Home() {
             </div>
             <DriftVisual />
           </div>
+        </section>
+
+        {/* ── The flagship ────────────────────────────────────────────────────
+            The act the whole product exists to perform, and the one thing no
+            other planner does: it takes the *manual labor* out of time-blocking
+            without taking the judgment. Placed here, immediately after Drift,
+            because it is the answer to it — before the altitude model, which
+            exists to explain why a project is what shows up on step 2.
+
+            Every question, button label and block designation below is the
+            product's own text (src/lib/intake.ts · SundayRitual.tsx), driven in
+            the running app rather than written from the docs. */}
+        <section
+          id="plan"
+          className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24"
+        >
+          <div className="max-w-2xl">
+            <p className="section-label text-[var(--muted)]">Plan the week</p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+              Ten minutes on Sunday. A week already on the hour.
+            </h2>
+            <p className="mt-5 text-body text-[var(--muted)]">
+              Nuvo does the blocking. You keep every call that matters.
+            </p>
+          </div>
+
+          <div className="mt-10">
+            <PlanWeekVisual />
+          </div>
+
+          {/* The whole ritual, in four lines it asks you. */}
+          <ol className="mt-12 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+            {PLAN_QUESTIONS.map((q, i) => (
+              <li key={q} className="border-t border-[var(--line)] pt-4">
+                <p className="section-label mono text-[var(--accent)]">{i + 1}</p>
+                <p className="masthead mt-2 text-[1.0625rem] leading-snug text-[var(--text)]">{q}</p>
+              </li>
+            ))}
+          </ol>
+
+          <p className="mt-10 text-body text-[var(--muted)]">
+            Drag anything. Overrule the pace. Give a project another week.
+          </p>
         </section>
 
         {/* The wedge — the altitude model is the differentiator, so it gets its own

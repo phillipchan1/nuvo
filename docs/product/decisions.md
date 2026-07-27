@@ -698,6 +698,34 @@ and 34px showed neither the eyebrow nor the inline label — the designation
 vanished at exactly the size most 45-minute sittings land on.
 *Status: standing — typechecked, 29 tests green, built, driven in a real account.*
 
+**D-042 · 2026-07-27 · Lanes are arithmetic; steps are the walk. Leftovers and
+Inbox become one step, "Carried", and are slotted as one pool.**
+*(Supersedes the four-step shape in D-034/D-037 and the name "Leftovers".)*
+
+The two steps were one decision wearing two hats. **A carried task *was* an inbox
+capture once** — the difference is provenance, not kind — and at slotting time
+they're identical: small loose things that need a home. Because each step themed
+its *own* pool, a "Frontier" leftover and a "Frontier" capture came back as **two
+different slots**: the AI never saw them together and had no way to know they
+belonged in one sitting.
+
+→ One step (**Carried** — *"What else are you carrying?"*), one pool, **one**
+slotting pass (`slotLooseWork`). Provenance still shows, as sections *inside* the
+decision — *Carried over · Due, or going quiet · New captures* — rather than as
+two stops on the walk. The plan is now three steps: **Open time · Projects ·
+Carried.**
+
+**The lane/step split is the load-bearing idea.** They used to be the same list,
+which is what forced the false separation. The capacity meter keeps three lanes
+(projects · carried · new) because *where the week's weight came from* is worth
+seeing; the walk has one step for two of them. `STEP_LANES` maps between them.
+
+**"Leftovers" is retired** (operator's call — it was only ever true of the first
+of the four things in the bucket). "Carrying" is honest for all four: you carry
+what slipped, what's due, what's gone quiet, *and* what came in.
+*Status: standing — typechecked, 32 tests green, built, and driven in a real
+account: 9 slots from one pass, Clearstream no longer split across two.*
+
 ---
 
 ## 2 · Things we decided **not** to do

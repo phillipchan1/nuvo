@@ -399,7 +399,7 @@ export default function OnDeckPlanner() {
                   key={p.id}
                   data-project-drag={p.id}
                   onContextMenu={onContextMenu("project", p.id)}
-                  className="glass-card fast relative cursor-grab select-none rounded-lg border border-line py-2.5 pl-4 pr-3 hover:border-line-strong active:cursor-grabbing"
+                  className="glass-card lift-anim fast relative cursor-grab select-none rounded-lg border border-line py-2.5 pl-4 pr-3 hover:border-line-strong active:cursor-grabbing"
                 >
                   {/* domain rail — the same identity edge the placed cards wear */}
                   <span className="pointer-events-none absolute inset-y-2.5 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
@@ -419,8 +419,8 @@ export default function OnDeckPlanner() {
           No hero here: the crown is this surface's one anchor (execution voice),
           and the floor's top bar already names On Deck — the same reason the
           Schedule has no header over its calendar. */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-6 py-4">
-        {/* coverage controls — collapse + window length + domain filter (fixed, outside the scroll) */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-5 py-3">
+        {/* coverage controls — collapse + domain filter. One quiet toolbar over the grid. */}
         <CoverageControls
           collapsed={coverageCollapsed}
           setCollapsed={setCoverageCollapsed}
@@ -433,7 +433,7 @@ export default function OnDeckPlanner() {
           setOpen={setFilterOpen}
         />
 
-        <div className="mt-2 overflow-x-auto pb-3">
+        <div className="mt-1 overflow-x-auto pb-3">
           <div className="relative" style={{ minWidth: gridMinW }}>
             {/* domain coverage — a NAMED read aligned OVER the sprint columns (shares
                 the grid template), so a lit cell points straight down at its sprint.
@@ -441,7 +441,13 @@ export default function OnDeckPlanner() {
             {!coverageCollapsed && <DomainCoverage rows={coverageRows} gridTemplate={cols} onAdd={addForDomain} />}
             {/* week headers — label · date, with the week's committed load folded in
                 (amber past the max). Faint column rules only — no frame, no gauge row. */}
-            <div className="grid" style={{ gridTemplateColumns: cols }}>
+            <div
+              className="grid"
+              style={{
+                gridTemplateColumns: cols,
+                borderTop: coverageCollapsed ? undefined : "1px solid var(--line)",
+              }}
+            >
               <div aria-hidden />
               {board.weeks.map((w) => {
                 const n = weekLoad[w.idx];
@@ -450,7 +456,7 @@ export default function OnDeckPlanner() {
                   <div
                     key={w.idx}
                     data-week={w.idx}
-                    className="fast border-l border-line first:border-l-0 px-4 pb-2.5 pt-1"
+                    className="fast border-l border-line first:border-l-0 px-4 pb-2.5 pt-2"
                     style={{ background: cellBg(w.idx), borderTop: w.idx === 0 ? "2px solid var(--signal)" : undefined }}
                   >
                     <div className="flex items-baseline justify-between gap-2">
@@ -496,14 +502,12 @@ export default function OnDeckPlanner() {
                         card flow above, right under this week's last card. Hidden while
                         this week is the one being composed. */}
                     {composeWeek !== w.idx && (
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 px-1.5 pb-1.5">
-                        {/* open, unclaimed time reads `--slot` at every altitude —
-                            the same teal the calendar's open slots wear. */}
-                        <div
-                          className="slot-open fast w-full rounded-lg border border-dashed px-2 py-1.5 text-center text-micro font-medium text-muted transition-colors"
-                        >
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2.5">
+                        {/* text-only open-time cue — no dashed box. Blooms to
+                            `--slot` when the column is hovered. */}
+                        <span className="slot-hint fast text-micro font-medium transition-colors">
                           + project
-                        </div>
+                        </span>
                       </div>
                     )}
                   </div>
@@ -545,11 +549,11 @@ export default function OnDeckPlanner() {
                           key={l.project.id}
                           data-project-drag={l.project.id}
                           onContextMenu={onContextMenu("project", l.project.id)}
-                          className="group/bar glass-card pointer-events-auto fast relative mx-1 flex min-h-[62px] cursor-grab flex-col gap-2 rounded-xl border py-3 pl-4 pr-3.5 active:cursor-grabbing"
+                          className="group/bar glass-card lift-anim pointer-events-auto fast relative mx-1 flex min-h-[62px] cursor-grab flex-col gap-2 rounded-lg border border-line py-3 pl-4 pr-3.5 active:cursor-grabbing"
                           style={{
                             gridColumn: `${start + 2} / ${end + 3}`,
                             gridRow: 1,
-                            borderColor: dragging ? dot : "var(--line)",
+                            borderColor: dragging ? dot : undefined,
                             boxShadow: dragging ? "var(--shadow-lift)" : beyond ? `5px 0 0 -1px ${dot}` : undefined,
                             transform: dragging ? "translateY(-3px)" : undefined,
                             opacity: l.readyTier === "parked" ? 0.6 : 1,

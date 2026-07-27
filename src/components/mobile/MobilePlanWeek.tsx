@@ -32,7 +32,7 @@ import { domainById, taskDomainColor, type Project, type VerticalData } from "..
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
 import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { sprintLabel } from "../../lib/sprint";
-import { LANE_QUESTION, REVEALED_BY_LANE, workBadge } from "../../lib/intake";
+import { LANE_QUESTION, REVEALED_BY_LANE, STEP_QUESTION, workBadge } from "../../lib/intake";
 import type { Batch } from "../../lib/batch";
 import type { Placement } from "../../lib/compose";
 import { toBusyBlocks, type BusyBlock } from "../../lib/now";
@@ -43,9 +43,9 @@ import DurationSelect from "../DurationSelect";
  *  said where you'd land and nothing about what pressing it does; each press
  *  pours one more source into the week. */
 const NEXT: Partial<Record<WeekStep, { to: WeekStep; label: string }>> = {
-  projects: { to: "loose", label: "Add what's left over →" },
-  loose: { to: "inbox", label: "Add the inbox →" },
-  inbox: { to: "week", label: "See the week →" },
+  open: { to: "projects", label: "Add your projects →" },
+  projects: { to: "carried", label: "Add what you're carrying →" },
+  carried: { to: "week", label: "See the week →" },
 };
 
 const fmtMinShort = (m: number) => {
@@ -56,7 +56,7 @@ const fmtMinShort = (m: number) => {
 export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
   const draft = useWeekDraft();
   const { updateProject, updateTask } = useVertical();
-  const [step, setStep] = useState<WeekStep>("projects");
+  const [step, setStep] = useState<WeekStep>("open");
 
   const {
     data,
@@ -80,12 +80,9 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
     placements,
     gain,
     inboxCount,
-    themeInbox,
+    slotLooseWork,
     theming,
     themeErr,
-    themeCarried,
-    themingCarried,
-    carriedErr,
     goal,
     commit,
     applying,
@@ -188,30 +185,25 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
             onTakeOff={takeOff}
           />
         )}
-        {step === "loose" && (
-          <LeftoversStep
-            data={data}
-            suggestions={byLane.loose}
-            kept={kept}
-            setKept={setKept}
-            onDuration={setDuration}
-            onBundleCarried={() => void themeCarried()}
-            bundling={themingCarried}
-            bundleErr={carriedErr}
-          />
+        {step === "open" && (
+          <p className="text-body text-muted">
+            The week as it already stands — {hrs(intake.blockedMins)}h already committed. The desktop lets
+            you set a meeting aside here; on a phone, take it as read.
+          </p>
         )}
-        {step === "inbox" && (
-          <InboxStep
+        {step === "carried" && (
+          <CarriedStep
             data={data}
-            suggestions={byLane.inbox}
+            carried={byLane.loose}
+            captures={byLane.inbox}
             runs={runs}
             kept={kept}
             setKept={setKept}
             onDuration={setDuration}
             inboxCount={inboxCount}
-            onGroup={() => void themeInbox()}
-            grouping={theming}
-            groupErr={themeErr}
+            onSlot={() => void slotLooseWork()}
+            slotting={theming}
+            slotErr={themeErr}
           />
         )}
         {step === "week" && (
@@ -590,158 +582,105 @@ function ProjectChip({
 
 // ── 2 · leftovers — carried over, due, or going quiet ────────────────────────
 
-export function LeftoversStep({
+/**
+ * Step 3 · everything the week carries that isn't a project — one pool.
+ *
+ * Was two steps, *Leftovers* then *Inbox*, each slotting its own pool. A carried
+ * task **was** a capture once; the difference is provenance, not kind. Slotting
+ * them separately is why a "Frontier" leftover and a "Frontier" capture came back
+ * as two slots the AI had no way to see belonged together.
+ */
+export function CarriedStep({
   data,
-  suggestions,
-  kept,
-  setKept,
-  onDuration,
-  onBundleCarried,
-  bundling,
-  bundleErr,
-}: {
-  data: VerticalData;
-  suggestions: Suggestion[];
-  kept: Set<string>;
-  setKept: (next: Set<string>) => void;
-  onDuration: (taskId: string, mins: number) => void;
-  onBundleCarried: () => void;
-  bundling: boolean;
-  bundleErr: string | null;
-}) {
-  const carried = suggestions.filter((s) => s.task.rollCount > 0);
-  const rest = suggestions.filter((s) => s.task.rollCount === 0);
-  const carriedMins = carried.reduce((m, s) => m + s.task.durationMins, 0);
-
-  return (
-    <div>
-      <StepHead
-        question={LANE_QUESTION.loose}
-        count={suggestions.length > 0 ? `${suggestions.length}` : undefined}
-      />
-
-      {suggestions.length === 0 && <Empty>Nothing owed, nothing due.</Empty>}
-
-      {carried.length > 0 && (
-        <section className="mt-1">
-          <div className="section-label mb-1 !p-0">Carried over · {carried.length} · {hrs(carriedMins)}h</div>
-          {/* a full-width 44px target, not an inline text link: the same action on
-              the Inbox step is a real button, and a 14px tap zone fails golden rule 2 */}
-          <button
-            onClick={onBundleCarried}
-            disabled={bundling}
-            className="tap fast mb-2 flex min-h-[44px] w-full items-center justify-center rounded-xl px-4 text-body text-accent active:opacity-80 disabled:opacity-50"
-            style={{ background: "var(--accent-soft)" }}
-          >
-            {bundling ? "Grouping…" : "✦ Group into focus blocks"}
-          </button>
-          {bundleErr && <p className="mb-1 text-meta text-signal">{bundleErr}</p>}
-          <div className="border-t border-line">
-            {carried.map((s) => (
-              <WorkRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(kept, setKept, s.task.id)}
-                        onDuration={onDuration} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {rest.length > 0 && (
-        <section className="mt-5">
-          <div className="section-label mb-1 !p-0">Due, or going quiet · {rest.length}</div>
-          <div className="border-t border-line">
-            {rest.map((s) => (
-              <WorkRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(kept, setKept, s.task.id)}
-                        onDuration={onDuration} />
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
-  );
-}
-
-// ── 3 · inbox — raw captures, grouped into named runs ────────────────────────
-
-export function InboxStep({
-  data,
-  suggestions,
+  carried,
+  captures,
   runs,
   kept,
   setKept,
   onDuration,
   inboxCount,
-  onGroup,
-  grouping,
-  groupErr,
+  onSlot,
+  slotting,
+  slotErr,
 }: {
   data: VerticalData;
-  suggestions: Suggestion[];
+  carried: Suggestion[];
+  captures: Suggestion[];
   runs: Batch[];
   kept: Set<string>;
   setKept: (next: Set<string>) => void;
   onDuration: (taskId: string, mins: number) => void;
   inboxCount: number;
-  onGroup: () => void;
-  grouping: boolean;
-  groupErr: string | null;
+  onSlot: () => void;
+  slotting: boolean;
+  slotErr: string | null;
 }) {
+  const rolled = carried.filter((s) => s.task.rollCount > 0);
+  const rest = carried.filter((s) => s.task.rollCount === 0);
+
+  const group = (label: string, rows: Suggestion[]) =>
+    rows.length === 0 ? null : (
+      <section className="mt-4">
+        <div className="section-label mb-1 !p-0">
+          {label} · {rows.length}
+        </div>
+        <div className="border-t border-line">
+          {rows.map((s) => (
+            <WorkRow
+              key={s.task.id}
+              data={data}
+              s={s}
+              on={kept.has(s.task.id)}
+              onToggle={() => toggle(kept, setKept, s.task.id)}
+              onDuration={onDuration}
+            />
+          ))}
+        </div>
+      </section>
+    );
+
   return (
     <div>
-      <StepHead question={LANE_QUESTION.inbox} count={inboxCount > 0 ? `${inboxCount}` : undefined} />
+      <StepHead question={STEP_QUESTION.carried} />
 
-      {inboxCount === 0 && runs.length === 0 && <Empty>Inbox clear.</Empty>}
-
-      {inboxCount > 0 && (
-        <>
-          <button
-            onClick={onGroup}
-            disabled={grouping}
-            className="tap fast flex min-h-[44px] w-full items-center justify-center rounded-xl px-4 text-body text-accent active:opacity-80 disabled:opacity-50"
-            style={{ background: "var(--accent-soft)" }}
-          >
-            {grouping ? "Grouping…" : `✦ Group ${inboxCount} into blocks`}
-          </button>
-          {groupErr && <p className="mt-1 text-meta text-signal">{groupErr}</p>}
-        </>
-      )}
-
-      {runs.length > 0 && (
-        <section className="mt-5">
-          <div className="section-label mb-1 !p-0">Grouped · {runs.length}</div>
+      {/* the slots first — they're the proposal you're here to agree with */}
+      {slotting && runs.length === 0 ? (
+        <p className="text-caption text-muted">Slotting…</p>
+      ) : runs.length > 0 ? (
+        <section>
+          <div className="section-label mb-1 !p-0">Slots · {runs.length}</div>
           <div className="border-t border-line">
             {runs.map((r) => (
-              <div key={r.id} className="flex items-start gap-3 border-b border-line py-3">
-                <span
-                  className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                  style={{ background: r.color ?? "var(--accent)" }}
-                  aria-hidden
-                />
-                <div className="min-w-0 flex-1 truncate text-body text-ink">{r.name}</div>
-                <div className="mono shrink-0 text-micro text-muted">
-                  {r.taskIds.length} · {r.durationMins}m
-                </div>
+              <div key={r.id} className="flex items-baseline gap-2 border-b border-line py-2">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color ?? "var(--accent)" }} aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-body">{r.name}</span>
+                <span className="mono shrink-0 text-meta text-muted">{r.taskIds.length} · {r.durationMins}m</span>
               </div>
             ))}
           </div>
+          <button
+            onClick={onSlot}
+            disabled={slotting}
+            className="tap fast mt-2 min-h-[44px] text-meta text-muted disabled:opacity-50"
+          >
+            ↻ slot again
+          </button>
         </section>
-      )}
+      ) : null}
+      {slotErr && <p className="mt-1 text-meta text-signal">{slotErr}</p>}
 
-      {suggestions.length > 0 && (
-        <section className="mt-5">
-          <div className="section-label mb-1 !p-0">Pulled in on their own · {suggestions.length}</div>
-          <div className="border-t border-line">
-            {suggestions.map((s) => (
-              <WorkRow key={s.task.id} data={data} s={s} on={kept.has(s.task.id)} onToggle={() => toggle(kept, setKept, s.task.id)}
-                        onDuration={onDuration} />
-            ))}
-          </div>
-        </section>
+      {group("Carried over", rolled)}
+      {group("Due, or going quiet", rest)}
+      {group("New captures", captures)}
+
+      {carried.length === 0 && captures.length === 0 && (
+        <Empty>
+          {inboxCount > 0 ? `${inboxCount} in the inbox — none of it needs this week.` : "Nothing owed, nothing new."}
+        </Empty>
       )}
     </div>
   );
 }
-
-// ── a piece of work, on or off the week ──────────────────────────────────────
 
 function WorkRow({
   data,

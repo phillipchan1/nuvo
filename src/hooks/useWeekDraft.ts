@@ -285,7 +285,7 @@ export function useWeekDraft() {
    *
    * A slot or a themed run takes the lane of the work it holds (its members are
    * all one source by construction: `clusterWeek` groups a project's tasks,
-   * `themeCarried` groups carried work, `themeInbox` groups captures).
+   * `clusterWeek` groups a project's tasks, `slotLooseWork` groups everything else).
    */
   const placementLane = useCallback(
     (p: Placement): WeekLane => {
@@ -358,124 +358,65 @@ export function useWeekDraft() {
     });
   };
 
-  // ── theme & slot the inbox: AI groups loose captures into named runs, the
-  //    composer drops each run into open time (GTD's "give it a when") ────────
+  // ── slot the loose work: ONE pass over everything that isn't project work ──
+  //
+  // Carried leftovers and raw captures used to be themed in two separate calls,
+  // so a "Frontier" leftover and a "Frontier" capture came back in two different
+  // slots — the AI never saw them together and had no way to know they belonged
+  // in one sitting. They are the same kind of thing (a carried task *was* a
+  // capture once; the difference is provenance, not kind), so they're slotted as
+  // one pool. Slotting is not a decision either — the decision is whether you
+  // agree with the slots — so it runs on arrival, like the pull and the compose.
   const inbox = useMemo(() => inboxTasks(data), [data]);
   const [theming, setTheming] = useState(false);
   const [themeErr, setThemeErr] = useState<string | null>(null);
-  const themeInbox = useCallback(async () => {
-    if (theming || inbox.length === 0) return;
+
+  /** Every loose piece the week is carrying — captures and leftovers alike. */
+  const loosePool = useMemo(
+    () =>
+      allTasks.filter(
+        (t) =>
+          !t.project_id &&
+          !t.start_time &&
+          !t.slot_id &&
+          t.status !== "done" &&
+          t.status !== "trashed" &&
+          (t.status === "inbox" || kept.has(t.id)),
+      ),
+    [allTasks, kept],
+  );
+
+  const slotLooseWork = useCallback(async () => {
+    if (theming || loosePool.length === 0) return;
     setTheming(true);
     setThemeErr(null);
     try {
       const { data: res, error } = await supabase.functions.invoke("agent", {
-        body: { clusterInbox: { today } },
+        body: { clusterInbox: { today, taskIds: loosePool.map((t) => t.id) } },
       });
       if (error) throw error;
       const groups = (res?.groups ?? []) as InboxGroup[];
-      const inboxRows = allTasks.filter((t) => t.status === "inbox");
-      if (!groups.length || !inboxRows.length) {
-        setThemeErr("Nothing to theme — the inbox came back empty.");
+      if (!groups.length) {
+        setThemeErr("Nothing came back to slot — try again.");
         return;
       }
-      // The runs join the DRAFT — they land on the board as proposals you can
-      // drag, exactly like a project slot. (They used to be placed behind their
-      // own back and shown in a modal: a second scheduler, with its own answer,
-      // that you couldn't touch.)
-      setRuns((prev) => [...prev, ...clusterInboxRuns(groups, inboxRows, data)]);
+      // The runs join the DRAFT — proposals on the board you can drag or take
+      // apart, never a second scheduler with its own answer.
+      setRuns(clusterInboxRuns(groups, loosePool, data));
     } catch (e) {
-      setThemeErr(e instanceof Error ? e.message : "Theming failed");
+      setThemeErr(e instanceof Error ? e.message : "Slotting failed");
     } finally {
       setTheming(false);
     }
-  }, [theming, inbox.length, today, allTasks, data]);
+  }, [theming, loosePool, today, data]);
 
-  // ── re-bundle the carried/slipped work into themed focus blocks ────────────
-  // The same AI theming the inbox uses, pointed at this week's slipped tasks: so
-  // carry-forward becomes a few named focus blocks (each sized to its members),
-  // not a scatter of loose tasks. Lands in the draft, on the board, like the rest.
-  // Group the inbox the moment there's an inbox to group. Pressing a button to
-  // get a proposal was busywork: the pull, the standing-slot routing and the
-  // compose all run on open without being asked, and grouping is the same kind of
-  // act — a draft you can edit, not a write. (Principle 3 is untouched: these are
-  // proposals sitting in a quiet pool; nothing reaches the calendar until Commit.)
-  const autoGrouped = useRef(false);
+  const autoSlotted = useRef(false);
   useEffect(() => {
-    if (autoGrouped.current || theming || inbox.length === 0) return;
-    autoGrouped.current = true;
-    void themeInbox();
-  }, [inbox.length, theming, themeInbox]);
+    if (autoSlotted.current || theming || loosePool.length === 0) return;
+    autoSlotted.current = true;
+    void slotLooseWork();
+  }, [loosePool.length, theming, slotLooseWork]);
 
-  const [themingCarried, setThemingCarried] = useState(false);
-  const autoBundled = useRef(false);
-  const [carriedErr, setCarriedErr] = useState<string | null>(null);
-  const themeCarried = useCallback(async () => {
-    if (themingCarried) return;
-    // Loose carried work only. Project-attached carried work now belongs to the
-    // Projects lane (`laneOf`), and it is already clustered into its project's
-    // sitting — sweeping it into a themed run would pull it back out of the
-    // project it moves and scatter it under a generic name.
-    const carried = allTasks.filter(
-      (t) => (t.roll_count ?? 0) > 0 && !t.project_id && t.status !== "done" && t.status !== "trashed" &&
-        t.status !== "inbox" && !t.start_time && !t.slot_id && kept.has(t.id),
-    );
-    if (!carried.length) return;
-    setThemingCarried(true);
-    setCarriedErr(null);
-    try {
-      const { data: res, error } = await supabase.functions.invoke("agent", {
-        body: { clusterInbox: { today, taskIds: carried.map((t) => t.id) } },
-      });
-      if (error) throw error;
-      const groups = (res?.groups ?? []) as InboxGroup[];
-      if (!groups.length) { setCarriedErr("Couldn't bundle the carried work — try again."); return; }
-      setRuns((prev) => [...prev, ...clusterInboxRuns(groups, carried, data)]);
-    } catch (e) {
-      setCarriedErr(e instanceof Error ? e.message : "Bundling failed");
-    } finally {
-      setThemingCarried(false);
-    }
-  }, [themingCarried, allTasks, kept, today, data]);
-
-  // ── reclaiming time — an event you aren't going to attend isn't capacity ────
-  // The week's honest open time depends on which meetings are real. Nuvo already
-  // knows how to ignore one (`hidden_events` + `isEventHidden`, used by every
-  // availability read); planning day is simply when you'd want to say so, because
-  // it's the moment the answer changes what you commit to. Toggling here writes
-  // the same setting the rest of the app reads — one rule, not a plan-only fiction.
-  const hiddenEvent = useCallback(
-    (e: ExternalEvent) => isEventHidden(e, hiddenEventKeys),
-    [hiddenEventKeys],
-  );
-  const toggleEventHidden = useCallback(
-    (e: ExternalEvent) => {
-      const key = eventInstanceKey(e);
-      const current = settings?.hidden_events ?? [];
-      const on = isEventHidden(e, hiddenEventKeys);
-      // Hiding uses the instance key; un-hiding has to clear a series key too, or
-      // a series-hidden occurrence could never be brought back from here.
-      const seriesKey = eventSeriesKey(e);
-      const next = on
-        ? current.filter((h) => h.key !== key && (seriesKey == null || h.key !== seriesKey))
-        : [...current, { key, title: e.title || "busy" }];
-      void updateSettings({ hidden_events: next });
-    },
-    [settings, hiddenEventKeys, updateSettings],
-  );
-
-  // Grouping the carried work is not a decision either — the decision is whether
-  // you AGREE with the blocks. So it runs on arrival, like the inbox's, and what
-  // you're shown is the result you can argue with.
-  useEffect(() => {
-    if (autoBundled.current || themingCarried) return;
-    const hasLooseCarried = allTasks.some(
-      (t) => (t.roll_count ?? 0) > 0 && !t.project_id && t.status !== "done" && t.status !== "trashed" &&
-        t.status !== "inbox" && !t.start_time && !t.slot_id && kept.has(t.id),
-    );
-    if (!hasLooseCarried) return;
-    autoBundled.current = true;
-    void themeCarried();
-  }, [allTasks, kept, themingCarried, themeCarried]);
 
   /**
    * Take a task out of the block it was grouped into. AI grouping is a proposal,
@@ -496,6 +437,30 @@ export function useWeekDraft() {
         .filter((r) => r.taskIds.length > 0),
     );
   }, [allTasks]);
+
+  // ── reclaiming time — an event you won't attend isn't capacity ────────────
+  // Nuvo already knows how to ignore one (`hidden_events` + `isEventHidden`, read
+  // by every availability path); planning day is simply when you'd want to say
+  // so, because it's the moment the answer changes what you commit to.
+  const hiddenEvent = useCallback(
+    (e: ExternalEvent) => isEventHidden(e, hiddenEventKeys),
+    [hiddenEventKeys],
+  );
+  const toggleEventHidden = useCallback(
+    (e: ExternalEvent) => {
+      const key = eventInstanceKey(e);
+      const current = settings?.hidden_events ?? [];
+      const on = isEventHidden(e, hiddenEventKeys);
+      // Hiding uses the instance key; un-hiding has to clear a series key too, or
+      // a series-hidden occurrence could never be brought back from here.
+      const seriesKey = eventSeriesKey(e);
+      const next = on
+        ? current.filter((h) => h.key !== key && (seriesKey == null || h.key !== seriesKey))
+        : [...current, { key, title: e.title || "busy" }];
+      void updateSettings({ hidden_events: next });
+    },
+    [settings, hiddenEventKeys, updateSettings],
+  );
 
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => format(addDays(parseDateISO(weekStartISO), i), "yyyy-MM-dd")),
@@ -634,12 +599,10 @@ export function useWeekDraft() {
     gain,
     // AI theming
     inboxCount: inbox.length,
-    themeInbox,
+    loosePool,
+    slotLooseWork,
     theming,
     themeErr,
-    themeCarried,
-    themingCarried,
-    carriedErr,
     // the commit
     goal,
     setGoal,

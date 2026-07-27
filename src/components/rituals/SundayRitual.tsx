@@ -99,7 +99,6 @@ export default function SundayRitual({
     byLane,
     intake,
     placementLane,
-    runLane,
     kept,
     setKept,
     dropBlock,
@@ -117,12 +116,9 @@ export default function SundayRitual({
     movePlacement,
     resizePlacement,
     inboxCount,
-    themeInbox,
+    slotLooseWork,
     theming,
     themeErr,
-    themeCarried,
-    themingCarried,
-    carriedErr,
     commit,
     applying,
     committed,
@@ -191,7 +187,6 @@ export default function SundayRitual({
     return m;
   }, [placements, result.unplaced, slotById]);
 
-  const laneRuns = useMemo(() => (lane === "open" ? [] : runs.filter((r) => runLane(r) === lane)), [runs, runLane, lane]);
 
   // ── the week as it stands — the room you actually have, before anything ─────
   // The one "what counts as busy" rule (`toBusyBlocks`) and the one "where are the
@@ -298,28 +293,19 @@ export default function SundayRitual({
                 fit={projectFit}
               />
             )}
-            {lane === "loose" && (
-              <Leftovers
-                suggestions={byLane.loose}
+            {lane === "carried" && (
+              <CarriedLane
+                carried={byLane.loose}
+                captures={byLane.inbox}
+                inboxCount={inboxCount}
                 kept={kept}
                 setKept={setKept}
                 data={data}
-                runs={laneRuns}
+                runs={runs}
                 onRemoveFromRun={removeFromRun}
-                onBundleCarried={() => void themeCarried()}
-                bundling={themingCarried}
-                bundleErr={carriedErr}
-              />
-            )}
-            {lane === "inbox" && (
-              <InboxGroups
-                count={inboxCount}
-                runs={laneRuns}
-                theming={theming}
-                error={themeErr}
-                onTheme={() => void themeInbox()}
-                data={data}
-                onRemoveFromRun={removeFromRun}
+                onSlot={() => void slotLooseWork()}
+                slotting={theming}
+                slotErr={themeErr}
               />
             )}
           </div>
@@ -666,7 +652,7 @@ function GroupButton({
   label: string;
   busy: boolean;
   error: string | null;
-  /** Already produced blocks — the button demotes to a redo. */
+  /** Already produced slots — the button demotes to a redo. */
   grouped?: boolean;
   onGroup: () => void;
 }) {
@@ -687,50 +673,6 @@ function GroupButton({
       </button>
       {error && <p className="mt-1.5 text-meta text-signal">{error}</p>}
     </>
-  );
-}
-
-function InboxGroups({
-  count,
-  runs,
-  theming,
-  error,
-  onTheme,
-  data,
-  onRemoveFromRun,
-}: {
-  count: number;
-  runs: Batch[];
-  theming: boolean;
-  error: string | null;
-  onTheme: () => void;
-  data: VerticalData;
-  onRemoveFromRun: (runId: string, taskId: string) => void;
-}) {
-  if (count === 0 && runs.length === 0) {
-    return <p className="text-caption text-muted">Inbox clear.</p>;
-  }
-  // Grouping already ran on open — captures arrive here as named blocks, not as a
-  // button you have to find and press. What's left is the result, and a way to
-  // ask for a different read of it.
-  if (theming && runs.length === 0) {
-    return <p className="text-caption text-muted">Slotting {count} captures…</p>;
-  }
-  return (
-    <section>
-      <GroupedRuns runs={runs} unit="capture" first data={data} onRemove={onRemoveFromRun} />
-      {count > 0 && (
-        <div className={runs.length > 0 ? "mt-2" : ""}>
-          <GroupButton
-            label={`✦ Slot ${count} captures`}
-            busy={theming}
-            error={error}
-            grouped={runs.length > 0}
-            onGroup={onTheme}
-          />
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -1058,37 +1000,48 @@ function OnDeckChips({
   );
 }
 
-/** Step 2 · everything that isn't a project push and isn't raw capture: what
- *  rolled forward, what's due, and the domains going quiet. */
-function Leftovers({
-  suggestions,
+/**
+ * Step 3 · everything the week carries that isn't a project.
+ *
+ * This was two steps — *Leftovers* then *Inbox* — and they were one decision
+ * wearing two hats. A carried task **was** a capture once; the difference is
+ * provenance, not kind. Worse, each step slotted its own pool, so a "Frontier"
+ * leftover and a "Frontier" capture came back as two different slots because the
+ * AI never saw them together. One step, one pool, one slotting pass.
+ *
+ * Provenance still shows — you read *carried over* differently from *new* — but
+ * as sections inside one decision rather than as two stops on the walk.
+ */
+function CarriedLane({
+  carried,
+  captures,
+  inboxCount,
   kept,
   setKept,
   data,
   runs,
   onRemoveFromRun,
-  onBundleCarried,
-  bundling,
-  bundleErr,
+  onSlot,
+  slotting,
+  slotErr,
 }: {
-  suggestions: PullSuggestion[];
+  carried: PullSuggestion[];
+  captures: PullSuggestion[];
+  inboxCount: number;
   kept: Set<string>;
   setKept: (next: Set<string>) => void;
   data: VerticalData;
-  /** Carried work already re-grouped into blocks this session. */
   runs: Batch[];
   onRemoveFromRun: (runId: string, taskId: string) => void;
-  onBundleCarried: () => void;
-  bundling: boolean;
-  bundleErr: string | null;
+  onSlot: () => void;
+  slotting: boolean;
+  slotErr: string | null;
 }) {
   const { updateTask } = useVertical();
   const [showMore, setShowMore] = useState(false);
   const toggle = useToggle(kept, setKept);
 
-  const suggestedIds = new Set(suggestions.map((s) => s.task.id));
-  // everything else you could bring in, by hand — inbox first (loose captures),
-  // then processed backlog; skip what's already here
+  const suggestedIds = new Set([...carried, ...captures].map((s) => s.task.id));
   const more = useMemo(() => {
     const extra = [...inboxTasks(data), ...backlogTasks(data)].filter((t) => !suggestedIds.has(t.id));
     const seen = new Set<string>();
@@ -1096,11 +1049,8 @@ function Leftovers({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  const carried = suggestions.filter((s) => s.task.rollCount > 0);
-  const rest = suggestions.filter((s) => s.task.rollCount === 0);
-  const carriedMins = carried.reduce((m, s) => m + s.task.durationMins, 0);
-  // grouping acts on what you KEPT — say so on the button, not after the fact
-  const carriedKept = carried.filter((s) => kept.has(s.task.id)).length;
+  const rolled = carried.filter((s) => s.task.rollCount > 0);
+  const rest = carried.filter((s) => s.task.rollCount === 0);
 
   const row = (s: PullSuggestion) => (
     <WorkRow
@@ -1116,38 +1066,43 @@ function Leftovers({
     />
   );
 
+  const group = (label: string, rows: PullSuggestion[], tone?: string) =>
+    rows.length === 0 ? null : (
+      <div className="mb-4">
+        <div className="section-label mb-1">
+          {label}{" "}
+          <span className="mono normal-case tracking-normal" style={{ color: tone ?? "var(--muted)" }}>
+            {rows.length}
+          </span>
+        </div>
+        <div className="space-y-0.5">{rows.map(row)}</div>
+      </div>
+    );
+
   return (
     <section>
-      {suggestions.length === 0 && (
-        <p className="py-1 text-caption text-muted">Nothing owed, nothing due.</p>
+      {/* The slots come first: they're the proposal you're here to agree with. */}
+      {slotting && runs.length === 0 ? (
+        <p className="text-caption text-muted">Slotting…</p>
+      ) : (
+        <GroupedRuns runs={runs} unit="piece" first data={data} onRemove={onRemoveFromRun} />
       )}
-
-      {carried.length > 0 && (
-        <div className="mb-4">
-          <div className="section-label mb-1">
-            Carried over <span className="mono normal-case tracking-normal text-signal">{carried.length} · {hrs(carriedMins)}h</span>
-          </div>
-          <div className="space-y-0.5">{carried.map(row)}</div>
-          <div className="mt-1.5">
-            <GroupButton
-              label={`✦ Slot ${carriedKept} leftovers`}
-              busy={bundling}
-              error={bundleErr}
-              grouped={runs.length > 0}
-              onGroup={onBundleCarried}
-            />
-          </div>
+      {runs.length > 0 && (
+        <div className="mt-2">
+          <GroupButton label="✦ Slot them" busy={slotting} error={slotErr} grouped onGroup={onSlot} />
         </div>
       )}
 
-      {rest.length > 0 && (
-        <div>
-          <div className="section-label mb-1">Due, or going quiet <span className="mono normal-case tracking-normal text-muted">{rest.length}</span></div>
-          <div className="space-y-0.5">{rest.map(row)}</div>
-        </div>
-      )}
-
-      <GroupedRuns runs={runs} unit="piece" data={data} onRemove={onRemoveFromRun} />
+      <div className={runs.length > 0 ? "mt-5 border-t border-line pt-4" : ""}>
+        {group("Carried over", rolled, "var(--signal)")}
+        {group("Due, or going quiet", rest)}
+        {group("New captures", captures)}
+        {carried.length === 0 && captures.length === 0 && (
+          <p className="py-1 text-caption text-muted">
+            {inboxCount > 0 ? `${inboxCount} in the inbox — none of it needs this week.` : "Nothing owed, nothing new."}
+          </p>
+        )}
+      </div>
 
       <button
         onClick={() => setShowMore((m) => !m)}
@@ -1392,9 +1347,8 @@ function WalkAction({
   const last = step === stepCount - 1;
   const NEXT_ACT: Record<WeekPlanStep, string> = {
     open: "Add your projects",
-    projects: "Add what's left over",
-    loose: "Add the inbox",
-    inbox: "",
+    projects: "Add what you're carrying",
+    carried: "",
   };
 
   // One control, no commentary. This foot used to carry a per-step tally AND the

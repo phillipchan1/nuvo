@@ -30,7 +30,7 @@ export default function CoverageControls({
   const shown = domains.length - domains.filter((d) => hidden.has(d.id)).length;
 
   return (
-    <div className="mt-4 flex items-center justify-between gap-3">
+    <div className="flex items-center justify-between gap-3">
       {/* collapse toggle — the deck is the primary surface; fold coverage away */}
       <button
         onClick={() => setCollapsed(!collapsed)}
@@ -49,7 +49,7 @@ export default function CoverageControls({
       <div className="relative">
         <button
           onClick={() => setOpen(!open)}
-          className="fast tap flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-caption text-muted hover:border-line-strong hover:text-ink"
+          className="fast tap flex items-center gap-1.5 px-1 py-1 text-caption text-muted hover:text-ink"
           title="Choose which domains coverage tracks"
         >
           Domains

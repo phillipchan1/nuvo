@@ -604,17 +604,37 @@ body.odp-dragging [data-resize] {
    calendar's unclaimed slots use — instead of a neutral hairline. Hovering a
    column washes it the same way, so "you could claim this" reads identically at
    every altitude. (Inline styles carry the now-band / live drop target, which
-   deliberately win over this hover.) */
+   deliberately win over this hover.)
+   Solid hairlines + a whisper of wash — never dashed. A lattice of dashed
+   outlines across empty cells reads as noise, not as open time. */
 .slot-open {
-  border-color: color-mix(in srgb, var(--slot) 40%, var(--line));
+  border-color: color-mix(in srgb, var(--slot) 28%, var(--line));
+  background: color-mix(in srgb, var(--slot) 4%, transparent);
 }
 .group\/col:hover .slot-open,
 .slot-open:hover {
-  border-color: color-mix(in srgb, var(--slot) 75%, transparent);
+  border-color: color-mix(in srgb, var(--slot) 55%, transparent);
   color: var(--slot);
+  background: color-mix(in srgb, var(--slot) 9%, transparent);
 }
 .slot-col:hover {
   background: color-mix(in srgb, var(--slot) 7%, transparent);
+}
+/* Text-only open-time cue (column footers) — dissolves at rest, blooms to
+   `--slot` when the column is receptive. No box, no dash. */
+.slot-hint {
+  color: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+.group\/col:hover .slot-hint {
+  color: var(--slot);
+}
+/* Coverage gap — a soft solid recess matching a pip's geometry. Empty cells
+   used to be dashed pills; that lattice was the "sloppy dotted lines." */
+.coverage-gap {
+  background: color-mix(in srgb, var(--line-strong) 22%, transparent);
+}
+.group\/cell:hover .coverage-gap {
+  background: color-mix(in srgb, var(--slot) 38%, transparent);
 }
 /* Spring the lift in and out, so focus feels deliberate, not snapped. */
 .lift-anim {

@@ -51,7 +51,7 @@ export default function DomainCoverage({
   // No ruler — the deck's sprint headers directly below label the (aligned) columns,
   // so coverage stays a compact band that doesn't crowd the deck.
   return (
-    <div className="pb-1.5 pt-0.5">
+    <div className="pb-2 pt-0.5">
       {rows.map((r) => {
         const { domain: d } = r;
         const covered = r.cells.some((n) => n > 0);
@@ -60,7 +60,7 @@ export default function DomainCoverage({
             {/* The label gutter has to occlude the scrolling cells, but an opaque
                 fill would cover the atmosphere — so it's frosted glass instead. */}
             <div
-              className="sticky left-0 z-10 flex min-w-0 items-center gap-2 py-[3px] pl-0.5 pr-2"
+              className="sticky left-0 z-10 flex min-w-0 items-center gap-2 py-1 pl-0.5 pr-2"
               style={{
                 background: "color-mix(in srgb, var(--bg) 82%, transparent)",
                 backdropFilter: "blur(6px)",
@@ -68,8 +68,8 @@ export default function DomainCoverage({
               }}
             >
               <span
-                className="h-2 w-2 shrink-0 rounded-full"
-                style={covered ? { background: d.color } : { background: "var(--surface)", border: "1.5px solid var(--line-strong)" }}
+                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={covered ? { background: d.color } : { background: "transparent", boxShadow: "inset 0 0 0 1px var(--line-strong)" }}
               />
               <span className="truncate text-caption leading-none" style={{ color: covered ? "var(--ink)" : "var(--muted)" }} title={d.name}>
                 {d.name}
@@ -95,11 +95,10 @@ export default function DomainCoverage({
                   className={`group/cell fast ${rule} px-1 py-[3px]`}
                   style={i === 0 ? { background: NOW_BAND } : undefined}
                 >
-                  {/* an uncovered cell is open time for that domain — `--slot` */}
-                  <div
-                    className="h-2 rounded-full border border-dashed opacity-40 transition-opacity group-hover/cell:opacity-100"
-                    style={{ borderColor: "color-mix(in srgb, var(--slot) 55%, var(--line-strong))" }}
-                  />
+                  {/* open time for this domain — a soft full-width recess at pip
+                      height. Solid, not dashed — empty cells dissolve into the
+                      paper until hover blooms them to `--slot`. */}
+                  <div className="coverage-gap h-2 w-full rounded-[2px] transition-colors" />
                 </button>
               ),
             )}

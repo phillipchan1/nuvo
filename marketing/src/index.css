@@ -258,6 +258,68 @@ body {
   -webkit-backdrop-filter: blur(8px);
 }
 
+/* Plan the week — pool left, the week right. Same grammar as the Schedule
+   visual (and as the real planner surfaces: pool left → grid of time right). */
+.planweek {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.planweek-rail {
+  min-width: 0;
+}
+
+/* Keeps the four steps the same height, so advancing doesn't resize the card
+   under the reader's cursor. */
+.planweek-pool {
+  min-height: 190px;
+}
+
+.planweek-week {
+  min-width: 0;
+  padding-bottom: 0.25rem;
+}
+
+.planweek-scroll {
+  min-width: 0;
+}
+
+.planweek-block {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: rise-in 0.5s var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .planweek-block {
+    animation: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .planweek {
+    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  }
+  .planweek-pool {
+    min-height: 210px;
+  }
+}
+
+/* Phone: the pool stacks above, and the week keeps its five days by scrolling
+   inside its own container — the page itself never scrolls sideways. */
+@media (max-width: 767px) {
+  .planweek-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .planweek-grid {
+    min-width: 460px;
+  }
+}
+
 .privacy-prose code {
   font-size: 0.8em;
   word-break: break-all;

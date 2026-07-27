@@ -3,7 +3,7 @@
 // overflow / tap targets) without a real account. Reached at ?planweek, mounted
 // in main.tsx. Not part of any real surface. Precedent: EmblemHarness (?emblem).
 
-import { ProjectsStep, LeftoversStep, InboxStep, WeekStep } from "./MobilePlanWeek";
+import { ProjectsStep, CarriedStep, WeekStep } from "./MobilePlanWeek";
 import SourceSwitch, { CapacityMeter, WEEK_STEPS, type WeekStep as Step } from "../rituals/WeekIntake";
 import { readIntake } from "../../lib/intake";
 import type { Placement } from "../../lib/compose";
@@ -136,7 +136,7 @@ export default function PlanWeekHarness() {
       <div className="mb-6 flex max-w-[1080px] gap-8 border-b border-line pb-3">
         <div className="w-[320px] shrink-0">
           <div className="section-label mb-1">The source switch · rail density</div>
-          <SourceSwitch step="loose" onStep={() => {}} />
+          <SourceSwitch step="carried" onStep={() => {}} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="section-label mb-1">The capacity meter · over the week</div>
@@ -159,30 +159,19 @@ export default function PlanWeekHarness() {
             onTakeOff={() => {}}
           />
         </Frame>
-        <Frame label="2 · Leftovers" step="loose">
-          <LeftoversStep
+        <Frame label="3 · Carried" step="carried">
+          <CarriedStep
             data={DATA}
-            suggestions={LEFTOVERS}
-            kept={KEPT}
-            setKept={() => {}}
-            onDuration={() => {}}
-            onBundleCarried={() => {}}
-            bundling={false}
-            bundleErr={null}
-          />
-        </Frame>
-        <Frame label="3 · Inbox" step="inbox">
-          <InboxStep
-            data={DATA}
-            suggestions={[]}
+            carried={LEFTOVERS}
+            captures={[]}
             runs={RUNS}
             kept={KEPT}
             setKept={() => {}}
             onDuration={() => {}}
             inboxCount={7}
-            onGroup={() => {}}
-            grouping={false}
-            groupErr={null}
+            onSlot={() => {}}
+            slotting={false}
+            slotErr={null}
           />
         </Frame>
         <Frame label="4 · The week" step="week">

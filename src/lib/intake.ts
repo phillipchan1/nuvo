@@ -17,9 +17,9 @@
 export type WeekLane = "projects" | "loose" | "inbox";
 
 export const LANE_LABEL: Record<WeekLane, string> = {
-  projects: "Projects",
-  loose: "Leftovers",
-  inbox: "Inbox",
+  projects: "projects",
+  loose: "carried",
+  inbox: "new",
 };
 
 /** The one-line question each lane answers, in the app's reporting voice. */
@@ -42,13 +42,40 @@ export const LANES: WeekLane[] = ["projects", "loose", "inbox"];
  * have any frame to read it against. Now you see the empty week first, and every
  * later step is a visible *change* to a picture you've already understood.
  */
-export type WeekPlanStep = "open" | WeekLane;
-export const PLAN_STEPS: WeekPlanStep[] = ["open", ...LANES];
+/**
+ * **Lanes are arithmetic; steps are the walk.** They were the same list, and that
+ * forced a false split: *Leftovers* and *Inbox* are one decision wearing two
+ * hats. A carried task **was** an inbox capture once — the difference between
+ * them is provenance, not kind — and at slotting time they are identical: small
+ * loose things that need a home. Grouping them in two passes is why one Frontier
+ * task and one Frontier capture landed in two different slots instead of one.
+ *
+ * So the meter keeps three lanes (projects · carried · inbox, because *where the
+ * week's weight came from* is still worth seeing), and the walk has one step for
+ * both, which slots them together.
+ */
+export type WeekPlanStep = "open" | "projects" | "carried";
+export const PLAN_STEPS: WeekPlanStep[] = ["open", "projects", "carried"];
 
-export const STEP_LABEL: Record<WeekPlanStep, string> = { open: "Open time", ...LANE_LABEL };
+/** Which lanes a step is responsible for. */
+export const STEP_LANES: Record<WeekPlanStep, WeekLane[]> = {
+  open: [],
+  projects: ["projects"],
+  carried: ["loose", "inbox"],
+};
+
+export const STEP_LABEL: Record<WeekPlanStep, string> = {
+  open: "Open time",
+  projects: "Projects",
+  carried: "Carried",
+};
 export const STEP_QUESTION: Record<WeekPlanStep, string> = {
   open: "What room does this week actually have?",
-  ...LANE_QUESTION,
+  projects: "What are you moving this week?",
+  // Everything the week bears that isn't a project: what slipped, what's due,
+  // what's gone quiet, and what came in. "Carrying" is the honest verb for all
+  // four — "Leftovers" was only ever true of the first.
+  carried: "What else are you carrying?",
 };
 
 /**
@@ -64,8 +91,7 @@ export const STEP_QUESTION: Record<WeekPlanStep, string> = {
 export const REVEALED_BY_LANE: Record<WeekPlanStep, WeekLane[]> = {
   open: [],
   projects: ["projects"],
-  loose: ["projects", "loose"],
-  inbox: LANES,
+  carried: LANES,
 };
 
 /** Enough of a task row to place it in a lane — works for `Task` and `VTask`. */

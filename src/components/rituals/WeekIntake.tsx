@@ -18,12 +18,12 @@
 // (design-language: "planner surfaces share one grammar").
 
 import { Fragment } from "react";
-import { LANES, STEP_LABEL, type WeekIntakeRead, type WeekLane, type WeekPlanStep } from "../../lib/intake";
+import { PLAN_STEPS, STEP_LABEL, type WeekIntakeRead, type WeekLane, type WeekPlanStep } from "../../lib/intake";
 import { fmtHours as hrs } from "../../lib/dates";
 
-/** The phone adds a fourth step — the day-by-day read of where it all landed. */
+/** The phone adds one more step — the day-by-day read of where it all landed. */
 export type WeekStep = WeekPlanStep | "week";
-export const WEEK_STEPS: WeekStep[] = [...LANES, "week"];
+export const WEEK_STEPS: WeekStep[] = [...PLAN_STEPS, "week"];
 
 /**
  * The walk, drawn as a walk.
@@ -45,7 +45,7 @@ export const WEEK_STEPS: WeekStep[] = [...LANES, "week"];
 export default function SourceSwitch({
   step,
   onStep,
-  steps = LANES,
+  steps = PLAN_STEPS,
   dense,
 }: {
   step: WeekStep;
