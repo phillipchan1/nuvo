@@ -227,16 +227,34 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
 
   const setCalView = useCallback((v: CalView) => navigate({ calView: v }), [navigate]);
 
+  /** The stack index the current flow was opened from, so closing can return
+   *  there no matter how its steps were navigated. */
+  const flowOpenedAtRef = useRef<number | null>(null);
+
   const openFlow = useCallback(
     (f: FlowName, focus?: FlowFocus) =>
-      navigate({ flow: f, flowStep: 0, flowFocus: focus ?? null, overlay: "none", overlayId: null, floorModal: null }),
+      {
+        flowOpenedAtRef.current = indexRef.current;
+        navigate({ flow: f, flowStep: 0, flowFocus: focus ?? null, overlay: "none", overlayId: null, floorModal: null });
+      },
     [navigate],
   );
 
+  /**
+   * Close the flow and unwind whatever history it pushed.
+   *
+   * This used to assume `flowStep` counted the entries the flow had pushed —
+   * true for a gated wizard you walk one step at a time, false the moment a flow
+   * lets you *jump* between steps: clicking step 3 from step 1 is one push but
+   * sets `flowStep` to 2, so closing tried to go back three entries, sailed past
+   * the app, and left the flow open with no way out. Remember where the flow
+   * actually started instead; the step index isn't a count of anything.
+   */
   const closeFlow = useCallback(() => {
-    const { flow, flowStep } = navRef.current;
-    if (flow && flowStep >= 0) {
-      history.go(-(flowStep + 1));
+    const openedAt = flowOpenedAtRef.current;
+    flowOpenedAtRef.current = null;
+    if (navRef.current.flow && openedAt != null && openedAt < indexRef.current) {
+      history.go(openedAt - indexRef.current);
       return;
     }
     navigate({ flow: null, flowStep: 0 }, "replace");

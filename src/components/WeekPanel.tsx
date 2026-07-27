@@ -2,9 +2,9 @@
 // week (glance, don't re-open the Review), each row tracking its OWN work, so a
 // priority reads honest even when you never tap it: progress derives from the
 // linked project's tasks, and a fully-worked priority *invites* the seal instead
-// of sitting at a silent 0. The readiness checklist folds in below as a single
-// quiet "Loose ends" line that vanishes once the week is groomed. Replaces the
-// buried WeekReadiness footer — intent on top, status demoted to a line.
+// of sitting at a silent 0. Replaces the buried WeekReadiness footer — intent
+// on top; the crown's "Plan the week" door is the only CTA (no second "loose
+// ends" strip that restates the same invite).
 //
 // The header IS the week door (the toolbar's copy is gone — it sat in the
 // calendar's control cluster, which acts on the *canvas*, while the door acts on
@@ -19,7 +19,6 @@ import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { priorityWork, weekPushes } from "../lib/priorities";
 import { planningWeekStartISO } from "../lib/dates";
-import { weekReadiness, type WeekReadinessKey } from "../lib/readiness";
 import { domainById, initiativeById, projectById, type VerticalData } from "../lib/vertical";
 import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
 import { ProjectShipAssess } from "./record/ShipAssess";
@@ -48,8 +47,7 @@ function rockColor(data: VerticalData, rock: BigRock): string | null {
 
 export default function WeekPanel({ door }: { door?: WeekDoor }) {
   const { data, togglePushLanded } = useVertical();
-  const { openFlow, setTab, setCalView, setRung, openRecord } = useAppNavigation();
-  const [looseOpen, setLooseOpen] = useState(false);
+  const { openFlow, openRecord } = useAppNavigation();
   const [shipId, setShipId] = useState<string | null>(null);
   if (!data) return null;
 
@@ -95,7 +93,9 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
     });
   const mode = door?.mode ?? (composed ? "view" : "plan");
   // The verb the door is offering, right-aligned: identity left, action right.
-  const action = mode === "review" ? "Review" : mode === "plan" ? "Plan" : "open ▸";
+  // "Plan the week" is the product name for the ritual — keep it spelled out so
+  // the crown CTA reads as the major act it is, not a quiet chip.
+  const action = mode === "review" ? "Review" : mode === "plan" ? "Plan the week" : "open ▸";
 
   // Open a priority where its work lives: a project-bound one → its Record
   // (manage/close its tasks, complete the project); an aim → the Week's Plan.
@@ -116,23 +116,6 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
     if (shippedIds.has(rock.project_id)) return;
     if (rock.done_at) return togglePushLanded(rock.project_id);
     setShipId(rock.project_id);
-  };
-
-  const loose = weekReadiness(data).filter((i) => !i.done);
-  const jump = (key: WeekReadinessKey) => {
-    switch (key) {
-      case "planned":
-      case "priorities":
-        openFlow("sunday"); // the compose ritual — goal + priorities live here
-        break;
-      case "inbox":
-        setTab("inbox");
-        break;
-      case "placed":
-        setRung("day");
-        setCalView("board"); // the Spread view, where the "Needs a day" tray sits
-        break;
-    }
   };
 
   return (
@@ -174,7 +157,7 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
           <span className="mt-0.5 shrink-0 text-micro text-muted transition-colors group-hover:text-accent">{action}</span>
         ) : (
           <span
-            className="mono mt-0.5 flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-micro font-medium"
+            className="mt-0.5 flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium"
             style={
               mode === "review"
                 ? { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
@@ -209,37 +192,6 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
         >
           ＋ Name this week's priorities
         </button>
-      )}
-
-      {/* loose ends — the readiness checklist, folded to one quiet line that
-          names the first gap and vanishes once the week is groomed. */}
-      {loose.length > 0 && (
-        <div className="mt-2.5 border-t border-line pt-2.5">
-          <button onClick={() => setLooseOpen((v) => !v)} className="fast tap flex w-full items-center gap-2 text-left">
-            <span className="shrink-0 text-caption text-muted">
-              {loose.length} loose end{loose.length > 1 ? "s" : ""}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-caption" style={{ color: "var(--accent)" }}>
-              {looseOpen ? "" : `— ${loose[0].detail ?? loose[0].label}`}
-            </span>
-            <span className="ml-auto shrink-0 text-micro text-muted">{looseOpen ? "▾" : "▸"}</span>
-          </button>
-          {looseOpen && (
-            <div className="mt-1 flex flex-col">
-              {loose.map((it) => (
-                <button
-                  key={it.key}
-                  onClick={() => jump(it.key)}
-                  className="fast tap flex items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-surface-2"
-                >
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ border: "1.5px solid var(--accent)" }} aria-hidden />
-                  <span className="flex-1 text-caption text-ink">{it.label}</span>
-                  {it.detail && <span className="mono shrink-0 text-micro text-muted">{it.detail}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       )}
 
       {shipId && <ProjectShipAssess id={shipId} onClose={() => setShipId(null)} />}

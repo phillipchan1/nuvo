@@ -362,9 +362,8 @@ export default function LeftRail({
         onPointerDown={startResize}
         className={`absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35 ${collapsed ? "hidden" : ""}`}
       />
-      {/* The week's plan — priorities held in view all week + the readiness
-          "loose ends" line, crowning the rail. Intent on top; status a line.
-          Its header is the week door. */}
+      {/* The week's plan — priorities held in view all week, crowning the rail.
+          Its header is the week door ("Plan the week"). */}
       <WeekPanel door={weekDoor} />
       {/* Tabs — Today first (the day is where the rail's lower zone lives);
           Inbox second. This zone is "work the day," under the week crown. */}
