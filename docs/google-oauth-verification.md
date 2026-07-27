@@ -1,10 +1,13 @@
 # Google OAuth verification — runbook
 
-**Status:** not submitted. App is in **Testing** publishing status.
-**Owner:** Phil · **Last updated:** July 26, 2026
+**Status:** published to Production, **unverified** (100-user cap, unverified-app
+warning). 7-day refresh-token expiry is resolved. Verification itself not yet
+submitted.
+**Owner:** Phil · **Last updated:** July 27, 2026
 
-Getting Google Calendar out of test mode. Testing status is what forces the
-7-day refresh-token expiry — that's the symptom. This is the path off it.
+Getting Google Calendar out of test mode. Testing status is what forced the
+7-day refresh-token expiry — that symptom is gone now that the app is
+published. This is the path to full verification (no user cap, no warning).
 
 ---
 
@@ -51,17 +54,18 @@ read-only option; iCloud two-way sync is unaffected.
 
 ---
 
-## 2. Do this now (unblocks the 7-day expiry today)
+## 2. ✅ Done — Production, unverified
 
-Publish to **Production without verification**.
+Published via Cloud Console → OAuth consent screen → **Publish app**.
 
-- Cloud Console → OAuth consent screen → **Publish app**.
 - Cost: users see a "Google hasn't verified this app" interstitial, and you're
   capped at **100 users**.
-- Benefit: **refresh tokens stop expiring after 7 days.** That is the actual pain.
+- Benefit: **refresh tokens stop expiring after 7 days.** That was the actual pain,
+  and it's resolved.
 
-This is a legitimate holding position, not a hack. It buys runway to decide
-read-only vs. CASA without blocking billing work.
+This was a legitimate holding position, not a hack. It buys runway to decide
+read-only vs. CASA without blocking billing work. Sections 3+ below take you
+from here to full verification (removes the cap and the warning).
 
 ---
 
@@ -83,16 +87,20 @@ read-only vs. CASA without blocking billing work.
       `/privacy`, `/terms` and `/support` ship as real HTML with per-route
       title/description/canonical, and React hydrates over it.
 - [x] **120×120 console logo** — square, derived from `public/pwa-512x512.png`.
+- [x] **Governing law** set in `config.ts` — `GOVERNING_LAW = 'the State of
+      California, United States'`. Not a placeholder anymore.
+- [x] **Domain verification** — `nuvo.day` verified in Google Search Console
+      (TXT record, added via Namecheap Advanced DNS) as of July 27, 2026.
 
 ### Remaining
 
-- [ ] **Governing law** set in `config.ts` (above).
-- [ ] **Domain verification** — `nuvo.day` in Google Search Console, under *the
-      same Google account that owns the Cloud project*. Common failure point.
+- [ ] **Branding page submitted for verification** — see §4. Quick, automated.
 - [ ] **Redirect URI on a domain you own** — see §5. Do this before submitting.
 - [ ] **Self-serve account deletion** — the policy currently says "email us."
       Google increasingly expects an in-app route. Not built; see §6.
 - [ ] **Demo video** — script in §7.
+- [ ] **DECIDE: read-only Google vs. commit to CASA** — see §1. Gates the video
+      script and the redirect-URI demo beats.
 
 ---
 

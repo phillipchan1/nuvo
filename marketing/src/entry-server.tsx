@@ -3,11 +3,13 @@
  *  window.location during render — there is no window here. */
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ComponentType } from 'react'
+import Home from './Home'
 import Privacy from './pages/Privacy'
 import Support from './pages/Support'
 import Terms from './pages/Terms'
 
 const PAGES: Record<string, ComponentType> = {
+  '/': Home,
   '/privacy': Privacy,
   '/terms': Terms,
   '/support': Support,

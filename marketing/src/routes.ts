@@ -17,6 +17,11 @@ export type RouteHead = { title: string; desc: string; canonical: string }
  *  every route would tell search engines it *is* the homepage — which would keep
  *  the support page out of results entirely. */
 export const ROUTES: Record<string, RouteHead> = {
+  '/': {
+    title: HOME_TITLE,
+    desc: HOME_DESC,
+    canonical: HOME_CANONICAL,
+  },
   '/privacy': {
     title: 'Privacy Policy — Nuvo',
     desc: 'What Nuvo collects, why, and how your calendar data is handled.',
@@ -39,5 +44,8 @@ ROUTES['/help'] = { ...ROUTES['/support'] }
 
 /** Routes emitted as static HTML at build time. /help is deliberately absent —
  *  it's an alias, and prerendering it would publish a second copy of the same
- *  page; the SPA rewrite still serves it. */
-export const PRERENDER_PATHS = ['/privacy', '/terms', '/support']
+ *  page; the SPA rewrite still serves it. The home page is included: Google's
+ *  OAuth branding reviewer fetches "/" without running JS, and an un-prerendered
+ *  SPA shell there reads as "the home page does not explain the app's purpose"
+ *  and "the app name doesn't match" — there is no name or copy to find. */
+export const PRERENDER_PATHS = ['/', '/privacy', '/terms', '/support']
