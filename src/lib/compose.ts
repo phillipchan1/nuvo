@@ -102,7 +102,17 @@ export interface ComposeInput {
   atomicIds?: string[];
 }
 
-const EVENT_BUFFER = 10; // minutes around immovable events
+/**
+ * Breathing room either side of a meeting — a **preference, not a wall**.
+ *
+ * It used to be subtracted from busy time, which made it a hard boundary, and on
+ * a calendar of back-to-back meetings that quietly deleted the week: a clean
+ * 8–10 gap between two meetings measures 120 minutes and became 110, so a two-
+ * hour sitting fit *nowhere*, five days running. The plan then reported "the week
+ * is full" over a calendar with twenty-eight open hours in it. So the padding is
+ * applied first and given up before any work is refused (`tight` below).
+ */
+const EVENT_BUFFER = 10;
 const BREAK_AFTER_DEEP = 15; // breather after a long deep block
 const SNAP = 15;
 
@@ -119,7 +129,14 @@ export function plannedMinutes(durationMins: number | null | undefined, projectB
   return projectBacked ? Math.max(base, MIN_PROJECT_BLOCK) : base;
 }
 
-interface Slot { start: number; end: number }
+interface Slot {
+  start: number;
+  end: number;
+  /** This edge butts against a meeting (rather than the day's own boundary or
+   *  one of your own blocks) — the side that wants breathing room. */
+  padStart?: boolean;
+  padEnd?: boolean;
+}
 
 const snapUp = (m: number) => Math.ceil(m / SNAP) * SNAP;
 const fmtMin = (m: number) => {
@@ -154,10 +171,10 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     const end = new Date(e.end_at);
     const endDay = format(end, "yyyy-MM-dd");
     if (s.day === endDay) {
-      addBusy(s.day, s.start - EVENT_BUFFER, end.getHours() * 60 + end.getMinutes() + EVENT_BUFFER);
+      addBusy(s.day, s.start, end.getHours() * 60 + end.getMinutes());
     } else {
-      addBusy(s.day, s.start - EVENT_BUFFER, 24 * 60);
-      addBusy(endDay, 0, end.getHours() * 60 + end.getMinutes() + EVENT_BUFFER);
+      addBusy(s.day, s.start, 24 * 60);
+      addBusy(endDay, 0, end.getHours() * 60 + end.getMinutes());
     }
   }
   for (const b of input.blocks) {
@@ -185,13 +202,16 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     const busy = (busyByDay.get(iso) ?? []).sort((a, b) => a.start - b.start);
     const slots: Slot[] = [];
     let cursor = windowStart;
+    let afterEvent = false;
     for (const b of busy) {
       if (b.end <= cursor) continue;
-      if (b.start > cursor) slots.push({ start: cursor, end: Math.min(b.start, workEndMin) });
+      if (b.start > cursor)
+        slots.push({ start: cursor, end: Math.min(b.start, workEndMin), padStart: afterEvent, padEnd: true });
       cursor = Math.max(cursor, b.end);
+      afterEvent = true;
       if (cursor >= workEndMin) break;
     }
-    if (cursor < workEndMin) slots.push({ start: cursor, end: workEndMin });
+    if (cursor < workEndMin) slots.push({ start: cursor, end: workEndMin, padStart: afterEvent });
     const free = slots.reduce((s, x) => s + Math.max(0, x.end - x.start), 0);
     if (free >= SNAP)
       days.push({ iso, slots, free, placed: 0, deepCount: 0, context, rules: CONTEXT_RULES[context] });
@@ -280,7 +300,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
    */
   const projectAfter = new Map<string, { dayISO: string; endMin: number }>();
 
-  const tryPlace = (t: Task, relaxed: boolean): boolean => {
+  const tryPlace = (t: Task, relaxed: boolean, tight = false): boolean => {
     const dur = plannedMinutes(t.duration_minutes, !!t.project_id);
     const win = windowFor(t.energy);
     const dueBefore = t.deadline ?? null;
@@ -307,14 +327,21 @@ export function composeWeek(input: ComposeInput): ComposeResult {
       // same day as the previous piece? then it starts after it, not beside it
       if (after && day.iso === after.dayISO) from = Math.max(from, after.endMin);
       for (const slot of day.slots) {
-        const start = snapUp(Math.max(slot.start, from));
-        if (start + dur > Math.min(slot.end, to)) continue;
+        // the breathing room either side of a meeting — kept while there's room
+        // for it, given up in the `tight` pass rather than refusing the work
+        const pad = tight ? 0 : EVENT_BUFFER;
+        const usableStart = slot.start + (slot.padStart ? pad : 0);
+        const usableEnd = slot.end - (slot.padEnd ? pad : 0);
+        const start = snapUp(Math.max(usableStart, from));
+        if (start + dur > Math.min(usableEnd, to)) continue;
         // place it
         const breather = t.energy === "deep" && dur >= 60 ? BREAK_AFTER_DEEP : 0;
         const consumedEnd = Math.min(slot.end, start + dur + breather);
-        // split the slot around the block
-        const after: Slot = { start: consumedEnd, end: slot.end };
-        const before: Slot = { start: slot.start, end: start };
+        // Split the slot around the block. Your own work may sit flush against
+        // your own work — only a meeting earns padding — so the new edges either
+        // side of it are unpadded.
+        const after: Slot = { start: consumedEnd, end: slot.end, padEnd: slot.padEnd };
+        const before: Slot = { start: slot.start, end: start, padStart: slot.padStart };
         day.slots.splice(day.slots.indexOf(slot), 1, ...[before, after].filter((s) => s.end - s.start >= SNAP));
         day.placed += dur;
         if (t.energy === "deep") day.deepCount += 1;
@@ -393,20 +420,53 @@ export function composeWeek(input: ComposeInput): ComposeResult {
   const atomic = new Set(input.atomicIds ?? []);
   const budget = input.weeklyBudgetMins ?? null;
   let placedTotal = 0;
-  for (const t of queue) {
+
+  /** The longest unbroken stretch still open anywhere in the week — the number
+   *  that decides whether "no room" is about volume or about shape. */
+  const longestGap = () => Math.max(0, ...days.flatMap((d) => d.slots.map((s) => s.end - s.start)));
+  /** Every open minute still left, so a refusal can never claim the week is full
+   *  while hours of it sit there. */
+  const openLeft = () => days.reduce((n, d) => n + d.slots.reduce((m, s) => m + (s.end - s.start), 0), 0);
+  const asHours = (m: number) => (m >= 60 ? `${Math.round((m / 60) * 10) / 10}h` : `${m}m`);
+
+  /**
+   * How hard we're willing to look. `natural` is the full ladder — the energy's
+   * own window, then anywhere in the day, then flush against a meeting.
+   * `anywhere` and `flush` skip straight down it, and exist for the second
+   * seating of a project that got stranded: the ladder is *per piece*, so a
+   * project's part 1 will keep winning the same comfortable late slot on every
+   * retry and stranding part 2 behind it. Starting lower down moves it.
+   */
+  type Reach = "natural" | "anywhere" | "flush";
+
+  /**
+   * One piece, through the ladder — and (for overdue work) carved across
+   * sittings as a last resort.
+   *
+   * It **returns** the refusal instead of pushing it, because a project is placed
+   * as a set: a group that loses a piece is rolled back and re-seated, and a
+   * refusal recorded on the way would survive the rollback as a ghost.
+   */
+  const placeTask = (t: Task, reach: Reach): UnplacedTask | null => {
     const dur = plannedMinutes(t.duration_minutes, !!t.project_id);
     // the proven-pace boundary: don't plan past what history says gets done
     if (budget != null && placedTotal + dur > budget) {
-      unplaced.push({
+      return {
         task: t,
         kind: "pace",
         reason: `past the ~${Math.round(budget / 60)}h/wk you've actually been finishing`,
-      });
-      continue;
+      };
     }
-    if (tryPlace(t, false) || tryPlace(t, true)) {
+    // Padded first, anywhere in the week — and only then flush against a meeting.
+    // Breathing room is worth reordering the week for; it is not worth dropping
+    // work over, which is what a hard buffer had been quietly doing.
+    const found =
+      (reach === "natural" && tryPlace(t, false)) ||
+      (reach !== "flush" && tryPlace(t, true)) ||
+      tryPlace(t, true, true);
+    if (found) {
       placedTotal += dur;
-      continue;
+      return null;
     }
     const isOverdue = t.deadline != null && t.deadline < todayISO;
     // last resort for overdue work: carve it across sittings so it still lands
@@ -415,12 +475,22 @@ export function composeWeek(input: ComposeInput): ComposeResult {
       if (pieces) {
         placements.push(...pieces);
         placedTotal += dur;
-        continue;
+        return null;
       }
     }
     const deepBlocked =
       t.energy === "deep" && days.every((d) => d.rules.maxDeep === 0 || d.deepCount >= d.rules.maxDeep);
-    unplaced.push({
+    // A project's later piece may only start after its earlier one — so when it
+    // fails, the honest answer names that piece, not the week.
+    const after = t.project_id ? projectAfter.get(t.project_id) : undefined;
+    const chained =
+      after != null &&
+      days.every(
+        (d) =>
+          d.iso < after.dayISO ||
+          d.slots.every((s) => Math.max(s.start, d.iso === after.dayISO ? after.endMin : 0) + dur > s.end),
+      );
+    return {
       task: t,
       kind: "full",
       reason: isOverdue
@@ -429,8 +499,83 @@ export function composeWeek(input: ComposeInput): ComposeResult {
           ? "deadline already behind the remaining week"
           : deepBlocked
             ? "no deep-capable day left (contexts/limits)"
-            : "the week is full — slack protected",
-    });
+            : chained
+              ? `nothing left after its earlier part (${format(parseDateISO(after!.dayISO), "EEE")} ${fmtMin(after!.endMin)})`
+              : // "the week is full" was a flat lie whenever the room was there but
+                // in the wrong shape — the complaint every time was "look how much
+                // free space is on the calendar". Say which of the two it is.
+                `needs ${asHours(dur)} unbroken — longest gap left is ${asHours(longestGap())} (${asHours(openLeft())} open in total)`,
+    };
+  };
+
+  // ── 4 · a project is seated as a set, not a piece at a time ────────────────
+  //
+  // Its pieces run in order (`projectAfter`), and placement is greedy, so part 1
+  // would take the last afternoon of the week and put every later part off the
+  // end — reported as "the week is full" with twenty morning hours untouched.
+  // So a project that loses a piece gives the whole thing back and is seated
+  // again from the top of the week, where its parts can run consecutively.
+  const projectRuns: Task[][] = [];
+  for (const t of queue) {
+    const last = projectRuns[projectRuns.length - 1];
+    if (last && t.project_id && last[0].project_id === t.project_id) last.push(t);
+    else projectRuns.push([t]);
+  }
+
+  type Snapshot = ReturnType<typeof snapshot>;
+  const snapshot = () => ({
+    days: days.map((d) => ({ d, slots: d.slots.map((s) => ({ ...s })), placed: d.placed, deepCount: d.deepCount })),
+    placements: placements.length,
+    lastProjectOn: new Map(lastProjectOn),
+    projectAfter: new Map(projectAfter),
+    placedTotal,
+  });
+  const restore = (s: Snapshot) => {
+    for (const e of s.days) {
+      e.d.slots = e.slots.map((x) => ({ ...x }));
+      e.d.placed = e.placed;
+      e.d.deepCount = e.deepCount;
+    }
+    placements.length = s.placements;
+    lastProjectOn.clear();
+    for (const [k, v] of s.lastProjectOn) lastProjectOn.set(k, v);
+    projectAfter.clear();
+    for (const [k, v] of s.projectAfter) projectAfter.set(k, v);
+    placedTotal = s.placedTotal;
+  };
+
+  for (const group of projectRuns) {
+    const attempt = (reach: Reach) => {
+      const misses: UnplacedTask[] = [];
+      for (const t of group) {
+        const miss = placeTask(t, reach);
+        if (miss) misses.push(miss);
+      }
+      return misses;
+    };
+    const before = snapshot();
+    let misses = attempt("natural");
+    // Only a multi-part project can be stranded by its own chain, and only a
+    // "full" refusal is worth re-seating — a pace refusal would repeat.
+    if (misses.length > 0 && group.length > 1 && group[0].project_id && misses.every((m) => m.kind === "full")) {
+      let best: Snapshot | null = null;
+      for (const reach of ["anywhere", "flush"] as const) {
+        restore(before);
+        const retry = attempt(reach);
+        if (retry.length < misses.length) {
+          misses = retry;
+          best = snapshot();
+          if (retry.length === 0) break;
+        }
+      }
+      // nothing did better — put the first seating back, exactly as it was
+      if (best) restore(best);
+      else {
+        restore(before);
+        misses = attempt("natural");
+      }
+    }
+    unplaced.push(...misses);
   }
 
   placements.sort((a, b) => a.dayISO.localeCompare(b.dayISO) || a.startMin - b.startMin);

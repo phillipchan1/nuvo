@@ -81,6 +81,20 @@ export const STEP_QUESTION: Record<WeekPlanStep, string> = {
 };
 
 /**
+ * What the step is asking you to *do* — one line, under the question.
+ *
+ * The question alone says what the step is about, not what your part in it is,
+ * and the report was "I don't know what is being asked of me and why". Each of
+ * these names the act and what happens when you do it, because every one of
+ * these steps changes the grid on the right the moment you touch it.
+ */
+export const STEP_ASK: Record<WeekPlanStep, string> = {
+  open: "Its time opens up on the week.",
+  projects: "Keep what should move. Nuvo gives each piece a time on the week — the marks say what landed.",
+  rest: "Keep what still matters. What's left fills in around the projects.",
+};
+
+/**
  * What the week shows while you're on a given step. The plan reveals itself one
  * source at a time — the empty week, then the projects landing in it, then the
  * leftovers filling in around them, then the inbox — and it **accumulates**, never

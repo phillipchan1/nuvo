@@ -37,7 +37,7 @@ import {
 } from "../../lib/vertical";
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO } from "../../lib/dates";
 import { sprintLabel } from "../../lib/sprint";
-import { CONTEXT_META, plannedMinutes, type DayContext, type Placement, type UnplacedTask } from "../../lib/compose";
+import { CONTEXT_META, type DayContext, type Placement, type UnplacedTask } from "../../lib/compose";
 import { readDay, toBusyBlocks, type Gap } from "../../lib/now";
 import { type Batch } from "../../lib/batch";
 import DurationSelect from "../DurationSelect";
@@ -45,7 +45,7 @@ import { type PullSuggestion } from "../../lib/pull";
 import { lensGaps } from "../../lib/lenses";
 import { projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { bringIntoWeekPatch, pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
-import { PLAN_STEPS, STEP_LABEL, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekPlanStep } from "../../lib/intake";
+import { PLAN_STEPS, STEP_ASK, STEP_LABEL, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekPlanStep } from "../../lib/intake";
 import SourceSwitch, { CapacityMeter } from "./WeekIntake";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import { Btn } from "../ui";
@@ -182,11 +182,14 @@ export default function SundayRitual({
    * hold five tasks, and "3 of 7 fit" is the number a person can act on.
    */
   const projectFit = useMemo(() => {
-    const m = new Map<string, { placed: number; unplaced: number }>();
-    const bump = (pid: string | null | undefined, key: "placed" | "unplaced", n: number) => {
+    const m = new Map<string, { placed: number; unplaced: number; reason?: string }>();
+    const bump = (pid: string | null | undefined, key: "placed" | "unplaced", n: number, reason?: string) => {
       if (!pid) return;
       const cur = m.get(pid) ?? { placed: 0, unplaced: 0 };
       cur[key] += n;
+      // the composer's own words for why — "no room" without the reason is the
+      // thing that reads as a lie next to an open calendar
+      if (reason && !cur.reason) cur.reason = reason;
       m.set(pid, cur);
     };
     for (const pl of placements) {
@@ -195,10 +198,24 @@ export default function SundayRitual({
     }
     for (const u of result.unplaced) {
       const batch = slotById.get(u.task.id);
-      bump(batch?.projectId ?? u.task.project_id, "unplaced", batch ? batch.taskIds.length : 1);
+      bump(batch?.projectId ?? u.task.project_id, "unplaced", batch ? batch.taskIds.length : 1, u.reason);
     }
     return m;
   }, [placements, result.unplaced, slotById]);
+
+  /** Every task that ended up with a time on the week — including the ones riding
+   *  inside a project slot, since a slot is placed as one block but *means* all
+   *  the tasks it holds. Lets each project row mark its own pieces landed or not
+   *  instead of leaving "did this fit?" to be inferred from the grid. */
+  const placedTaskIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const pl of placements) {
+      const batch = slotById.get(pl.task.id);
+      if (batch) batch.taskIds.forEach((id) => s.add(id));
+      else s.add(pl.task.id);
+    }
+    return s;
+  }, [placements, slotById]);
 
 
   // ── the week as it stands — the room you actually have, before anything ─────
@@ -286,6 +303,9 @@ export default function SundayRitual({
               Step {PLAN_STEPS.indexOf(lane) + 1} of {PLAN_STEPS.length}
             </div>
             <h2 className="mt-1 text-lead masthead leading-snug text-ink">{STEP_QUESTION[lane]}</h2>
+            {/* …and what your part in it is. Naming the act belongs beside the
+                question, not buried in whichever lane happens to render below. */}
+            {lane !== "open" && <p className="mt-1.5 text-caption text-muted">{STEP_ASK[lane]}</p>}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3">
@@ -300,6 +320,7 @@ export default function SundayRitual({
                 kept={kept}
                 setKept={setKept}
                 fit={projectFit}
+                placedIds={placedTaskIds}
               />
             )}
             {lane === "rest" && (
@@ -530,7 +551,7 @@ function OpenTimeLane({
         </div>
       </div>
       <p className="mt-2.5 text-body text-ink">Click anything you're not going to.</p>
-      <p className="text-caption text-muted">Its time opens up on the week.</p>
+      <p className="text-caption text-muted">{STEP_ASK.open}</p>
 
       {/* ── the week's shape, drawn ───────────────────────────────────────────
           Support, not headline: the same two materials as the grid, stacked per
@@ -756,14 +777,17 @@ function ProjectsLane({
   kept,
   setKept,
   fit,
+  placedIds,
 }: {
   data: VerticalData;
   weekStartISO: string;
   suggestions: PullSuggestion[];
   kept: Set<string>;
   setKept: (next: Set<string>) => void;
-  /** How many of each project's pieces the week could take. */
-  fit: Map<string, { placed: number; unplaced: number }>;
+  /** How many of each project's pieces the week could take, and why not. */
+  fit: Map<string, { placed: number; unplaced: number; reason?: string }>;
+  /** Task ids that ended up with a time on the week. */
+  placedIds: Set<string>;
 }) {
   const { updateProject } = useVertical();
   const { openRecord } = useAppNavigation();
@@ -813,6 +837,7 @@ function ProjectsLane({
             onOpenRecord={() => openRecord("project", project.id)}
             onRemove={() => takeOff(project)}
             fit={fit.get(project.id)}
+            placedIds={placedIds}
             onSpan={() => spanIt(project)}
             onPushOut={() => pushOut(project)}
           />
@@ -831,6 +856,66 @@ function ProjectsLane({
   );
 }
 
+/**
+ * A project's pieces, as marks — landed, kept-but-homeless, or dropped.
+ *
+ * This is the answer to "it says these don't fit; what fits then?" The row used
+ * to carry `4/4 · 3.5h`, which is an inventory of what you *kept*: it can read
+ * 4/4 while the week took none of it. Three states, three weights, no reading —
+ * filled in the project's own colour = it has a time on the week, hollow
+ * `--signal` = you kept it and the week had nowhere to put it, faint = you took
+ * it off.
+ */
+function FitStrip({
+  rows,
+  kept,
+  placedIds,
+  color,
+}: {
+  rows: PullSuggestion[];
+  kept: Set<string>;
+  placedIds: Set<string>;
+  color: string;
+}) {
+  const marks = rows.map((r) => {
+    const on = kept.has(r.task.id);
+    return {
+      id: r.task.id,
+      title: r.task.title,
+      state: !on ? ("off" as const) : placedIds.has(r.task.id) ? ("placed" as const) : ("homeless" as const),
+    };
+  });
+  const landed = marks.filter((m) => m.state === "placed").length;
+  const homeless = marks.filter((m) => m.state === "homeless").length;
+  return (
+    <span
+      className="flex shrink-0 items-center gap-[3px]"
+      title={
+        homeless > 0
+          ? `${landed} on the week · ${homeless} with nowhere to go`
+          : landed > 0
+            ? `${landed} on the week`
+            : "nothing kept"
+      }
+    >
+      {marks.map((m) => (
+        <span
+          key={m.id}
+          title={`${m.title} — ${m.state === "placed" ? "on the week" : m.state === "homeless" ? "no room found" : "off this week"}`}
+          className="h-[14px] w-[5px] rounded-[1.5px]"
+          style={
+            m.state === "placed"
+              ? { background: color }
+              : m.state === "homeless"
+                ? { border: "1px solid var(--signal)", background: "var(--signal-soft)" }
+                : { background: "var(--line)" }
+          }
+        />
+      ))}
+    </span>
+  );
+}
+
 /** One project on the week. Collapsed it says the four things you decide on:
  *  whose world it's in (the dot), what it is, what it's asking of the week, and —
  *  only when there IS one — what's missing. "Ready to slot" on every row was five
@@ -846,6 +931,7 @@ function ProjectRow({
   onOpenRecord,
   onRemove,
   fit,
+  placedIds,
   onSpan,
   onPushOut,
 }: {
@@ -858,7 +944,8 @@ function ProjectRow({
   onToggleOpen: () => void;
   onOpenRecord: () => void;
   onRemove: () => void;
-  fit?: { placed: number; unplaced: number };
+  fit?: { placed: number; unplaced: number; reason?: string };
+  placedIds: Set<string>;
   onSpan: () => void;
   onPushOut: () => void;
 }) {
@@ -866,7 +953,6 @@ function ProjectRow({
   const gaps = lensGaps(data, "project", project, new Date());
   const ready = gaps.length === 0;
   const on = rows.filter((r) => kept.has(r.task.id));
-  const mins = on.reduce((m, r) => m + plannedMinutes(r.task.durationMins, true), 0);
   const allOn = rows.length > 0 && on.length === rows.length;
 
   return (
@@ -887,13 +973,19 @@ function ProjectRow({
           <span className="min-w-0 flex-1 truncate text-body text-ink">{project.name}</span>
         </button>
 
-        {/* what it's asking of the week — or what's in the way of asking */}
-        <span
-          className="mono shrink-0 text-meta"
-          style={{ color: ready ? "var(--muted)" : "var(--signal)" }}
-        >
-          {!ready ? gaps.map((g) => g.label).join(" · ") : rows.length === 0 ? "no open work" : `${on.length}/${rows.length} · ${hrs(mins)}h`}
-        </span>
+        {/* What happened to it — one mark per piece, so "did this land?" is
+            answered on the row instead of being hunted for on the grid. It used
+            to read "4/4 · 3.5h", which counts what you *kept* and says nothing
+            about what the week could actually take. */}
+        {!ready ? (
+          <span className="mono shrink-0 text-meta" style={{ color: "var(--signal)" }}>
+            {gaps.map((g) => g.label).join(" · ")}
+          </span>
+        ) : rows.length === 0 ? (
+          <span className="mono shrink-0 text-meta text-muted">no open work</span>
+        ) : (
+          <FitStrip rows={rows} kept={kept} placedIds={placedIds} color={color} />
+        )}
 
         <button
           onClick={onOpenRecord}
@@ -922,6 +1014,10 @@ function ProjectRow({
               ? `Only ${fit.placed} of ${fit.placed + fit.unplaced} pieces fit this week.`
               : `None of its ${fit.unplaced} pieces fit this week.`}
           </div>
+          {/* …and WHY, in the composer's own words. "No room" beside a calendar
+              with ten open hours reads as a lie unless it says what the room was
+              missing — length, order, or a deadline. */}
+          {fit.reason && <div className="mt-0.5 text-meta text-muted">{fit.reason}</div>}
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {fit.placed > 0 && (
               <button
