@@ -152,11 +152,9 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
         </div>
         <div className="mt-2.5">
           <SourceSwitch
-            intake={intake}
             step={step}
             onStep={setStep}
             steps={WEEK_STEPS}
-            waitingInbox={inboxCount}
             dense
           />
         </div>

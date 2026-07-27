@@ -19,7 +19,7 @@ migrations)* should be confirmed against `supabase/migrations/` before being rel
 | **Priority** | **`big_rocks`**, `tasks.big_rock_id` | ⚠️ **The main naming drift.** The week's priorities. A real node that can own tasks — it slides along a crystallization line from pure intention → proto-object → bound to a project. See [`priorities-and-projects.md`](../priorities-and-projects.md). |
 | **Week** | **`sprints`**, `tasks.sprint_id` | ⚠️ Drift. The commitment gate. One row per week; tasks point at it. |
 | **Block** | *no separate entity* | A `tasks` row with `do_date` **and** `start_time`. **A scheduled task IS a time block.** |
-| **Slot** | `slots` | A container of time on the grid. Can hold child tasks. Title auto-derives when unnamed. |
+| **Slot** | `slots` | A container of time on the grid. Can hold child tasks. Title auto-derives when unnamed. **Plan the week uses this word for the blocks it groups leftovers and captures into** — it briefly said "grouped into blocks", a fourth vocabulary for a thing that already had a name (D-041). Calendar blocks wear their kind as an eyebrow: `PROJECT · 3 TASKS`, `SLOT · 2 CAPTURES`, `TASK`. |
 | **Standing slot** | `slots` + affinity (`project_id` / `domain_id`) | Protected *recurring* time with an affinity that acts as a magnet during Sunday compose. [`standing-slots.md`](../standing-slots.md) |
 | **Project slot** | *(spec)* | A block typed as protected project time, so capacity is measured in real project hours. [`project-slots.md`](../project-slots.md) |
 | **Record** | `src/components/record/` | The full detail screen for a project/initiative/task. Desktop-only. |

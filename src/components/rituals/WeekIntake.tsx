@@ -25,20 +25,6 @@ import { fmtHours as hrs } from "../../lib/dates";
 export type WeekStep = WeekPlanStep | "week";
 export const WEEK_STEPS: WeekStep[] = [...LANES, "week"];
 
-/** The count under each step — the honest read, or an honest silence. */
-function laneRead(step: WeekStep, intake: WeekIntakeRead, waitingInbox: number, openMins?: number): string {
-  if (step === "week") return `${hrs(intake.loadMins)}h`;
-  // the before: what the week has room for, with nothing of yours on it yet
-  if (step === "open") return openMins == null ? "the week as it stands" : `${hrs(openMins)}h free`;
-  const { count, mins } = intake[step];
-  // An untouched inbox has taken nothing into the week yet — but it isn't "none",
-  // and calling it that is how a full inbox stays invisible on planning day.
-  if (count === 0 && step === "inbox") return waitingInbox > 0 ? `${waitingInbox} waiting` : "clear";
-  if (count === 0) return "none";
-  const suffix = step === "inbox" && waitingInbox > 0 ? ` · ${waitingInbox} left` : "";
-  return `${count} · ${hrs(mins)}h${suffix}`;
-}
-
 /**
  * The walk, drawn as a walk.
  *
@@ -50,23 +36,22 @@ function laneRead(step: WeekStep, intake: WeekIntakeRead, waitingInbox: number, 
  * A connected stepper says the true thing instead: there is an order, you are
  * *here*, there are N left. Every station is still one click away — a walk, not a
  * wizard — but jumping is now clearly the exception rather than the invitation.
+ *
+ * It carries **no counts.** It used to print the step's own tally underneath
+ * ("step 2 of 4 · 16 · 8.9h") while the rail's foot printed the same hours again
+ * and the step number a third time. Where you are is the stepper's whole job; the
+ * measuring belongs to the meter, and most of it belongs under the hood.
  */
 export default function SourceSwitch({
-  intake,
   step,
   onStep,
   steps = LANES,
   dense,
-  waitingInbox = 0,
-  openMins,
 }: {
-  intake: WeekIntakeRead;
   step: WeekStep;
   onStep: (s: WeekStep) => void;
   steps?: WeekStep[];
   dense?: boolean;
-  waitingInbox?: number;
-  openMins?: number;
 }) {
   const here = steps.indexOf(step);
   return (
@@ -112,11 +97,6 @@ export default function SourceSwitch({
             </Fragment>
           );
         })}
-      </div>
-      {/* the current station's own count, once — not one under every station,
-          which is what made the row read as four competing tabs */}
-      <div className="mono mt-2 text-center text-meta text-muted">
-        step {here + 1} of {steps.length} · {laneRead(step, intake, waitingInbox, openMins)}
       </div>
     </div>
   );

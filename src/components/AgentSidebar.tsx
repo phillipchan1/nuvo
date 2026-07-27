@@ -114,9 +114,13 @@ export default function AgentSidebar({
         <button
           onClick={onToggle}
           title={`Open ${ASSISTANT_NAME} (⌘J)`}
-          className="agent-rail-toggle fast group flex h-full w-full flex-col items-center gap-2 py-4 text-muted hover:text-accent"
+          aria-label={`Open ${ASSISTANT_NAME}`}
+          className="agent-rail-toggle fast group flex h-full w-full flex-col items-center gap-2.5 py-4 text-muted hover:text-accent"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg text-head transition-colors group-hover:bg-accent-soft group-hover:text-accent">
+          <span
+            aria-hidden
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-[18px] leading-none text-accent transition-colors group-hover:bg-accent/15"
+          >
             ✦
           </span>
           <span className="text-meta font-semibold tracking-tight [writing-mode:vertical-rl] rotate-180">

@@ -45,7 +45,7 @@ import { type PullSuggestion } from "../../lib/pull";
 import { lensGaps } from "../../lib/lenses";
 import { projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { bringIntoWeekPatch, pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
-import { PLAN_STEPS, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekIntakeRead, type WeekPlanStep } from "../../lib/intake";
+import { PLAN_STEPS, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekPlanStep } from "../../lib/intake";
 import SourceSwitch, { CapacityMeter } from "./WeekIntake";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import { Btn } from "../ui";
@@ -102,11 +102,11 @@ export default function SundayRitual({
     runLane,
     kept,
     setKept,
-    keptCount,
     dropBlock,
     routedCount,
     slotById,
     runs,
+    removeFromRun,
     visibleEvents,
     allWeekEvents,
     hiddenEvent,
@@ -135,6 +135,21 @@ export default function SundayRitual({
   const lane = PLAN_STEPS[Math.min(Math.max(stepIndex, 0), PLAN_STEPS.length - 1)];
   const setLane = (s: WeekPlanStep) => setStep(PLAN_STEPS.indexOf(s));
   const [showBoundaries, setShowBoundaries] = useState(false);
+
+  /**
+   * Step 1 runs in two beats, because it's answering two questions in order:
+   * *what is already on my week?* and only then *what room is left?* Showing the
+   * commitments and the open spans in the same instant made them compete — and
+   * the room you have is a conclusion drawn FROM the commitments, so it should
+   * arrive after them. It also gives you the moment to set aside what you're not
+   * going to before the measurement is taken.
+   */
+  const [roomFound, setRoomFound] = useState(false);
+  useEffect(() => {
+    if (lane !== "open") { setRoomFound(false); return; }
+    const t = setTimeout(() => setRoomFound(true), 520);
+    return () => clearTimeout(t);
+  }, [lane]);
 
   // The week fills in one source at a time. On Projects you see the projects
   // land in an otherwise empty week — nothing else competing for the good hours
@@ -267,21 +282,21 @@ export default function SundayRitual({
               Week of {format(parseDateISO(weekStartISO), "MMMM d")}
             </h1>
             <div className="mt-3">
-              <SourceSwitch
-                intake={intake}
-                step={lane}
-                onStep={(s) => setLane(s as WeekPlanStep)}
-                steps={PLAN_STEPS}
-                openMins={openMins}
-                waitingInbox={inboxCount}
-              />
+              <SourceSwitch step={lane} onStep={(s) => setLane(s as WeekPlanStep)} steps={PLAN_STEPS} />
             </div>
-            <h2 className="mt-4 text-lead masthead leading-snug text-ink">{STEP_QUESTION[lane]}</h2>
+            {/* Where you are, said ONCE, right above what you're deciding — the
+                step number used to appear here in the stepper's read AND again at
+                the rail's foot ("then step 3 of 4"), which is two anchors fighting
+                to be the one you trust. */}
+            <div className="mt-5 section-label" style={{ color: "var(--accent)" }}>
+              Step {PLAN_STEPS.indexOf(lane) + 1} of {PLAN_STEPS.length}
+            </div>
+            <h2 className="mt-1 text-lead masthead leading-snug text-ink">{STEP_QUESTION[lane]}</h2>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3">
             {lane === "open" && (
-              <OpenTimeLane openMins={openMins} reclaimedMins={reclaimedMins} />
+              <OpenTimeLane openMins={openMins} reclaimedMins={reclaimedMins} roomFound={roomFound} />
             )}
             {lane === "projects" && (
               <ProjectsLane
@@ -300,6 +315,7 @@ export default function SundayRitual({
                 setKept={setKept}
                 data={data}
                 runs={laneRuns}
+                onRemoveFromRun={removeFromRun}
                 onBundleCarried={() => void themeCarried()}
                 bundling={themingCarried}
                 bundleErr={carriedErr}
@@ -312,6 +328,8 @@ export default function SundayRitual({
                 theming={theming}
                 error={themeErr}
                 onTheme={() => void themeInbox()}
+                data={data}
+                onRemoveFromRun={removeFromRun}
               />
             )}
           </div>
@@ -323,11 +341,6 @@ export default function SundayRitual({
             <WalkAction
               lane={lane}
               stepCount={PLAN_STEPS.length}
-              intake={intake}
-              projectCount={weekPushes(data, weekStartISO).length}
-              waitingInbox={inboxCount}
-              keptCount={keptCount}
-              openMins={openMins}
               applying={applying}
               onNext={setLane}
               onCommit={() => void commit()}
@@ -358,7 +371,8 @@ export default function SundayRitual({
                   workStartMin={workStart}
                   workEndMin={workEnd}
                   dayContexts={dayContexts}
-                  gaps={lane === "open" ? gapsByDay : null}
+                  settled={lane === "inbox"}
+                  gaps={lane === "open" && roomFound ? gapsByDay : null}
                   onDrop={dropBlock}
                   onMove={movePlacement}
                   onResize={resizePlacement}
@@ -515,13 +529,29 @@ function UnplacedReport({
  * time under your cursor. (`hidden_events` — the same setting every availability
  * path in Nuvo already reads, never a plan-only fiction.)
  */
-function OpenTimeLane({ openMins, reclaimedMins }: { openMins: number; reclaimedMins: number }) {
+function OpenTimeLane({
+  openMins,
+  reclaimedMins,
+  roomFound,
+}: {
+  openMins: number;
+  reclaimedMins: number;
+  /** The second beat — the room has been measured and lit on the grid. */
+  roomFound: boolean;
+}) {
   return (
     <section>
+      {/* beat one: the week you actually have. beat two: what's left of it. */}
       <p className="text-body text-muted">
-        <span className="text-ink">{hrs(openMins)}h</span> open inside your working hours.
-        {reclaimedMins > 0 && (
-          <span style={{ color: "var(--accent)" }}> {hrs(reclaimedMins)}h of it you took back.</span>
+        {roomFound ? (
+          <>
+            <span className="text-ink">{hrs(openMins)}h</span> open inside your working hours.
+            {reclaimedMins > 0 && (
+              <span style={{ color: "var(--accent)" }}> {hrs(reclaimedMins)}h of it you took back.</span>
+            )}
+          </>
+        ) : (
+          <>Here's what's already on your week.</>
         )}
       </p>
       <p className="mt-4 text-caption text-muted">
@@ -532,7 +562,7 @@ function OpenTimeLane({ openMins, reclaimedMins }: { openMins: number; reclaimed
   );
 }
 
-/** Grouping, once — the same act and the same read in both lanes that have it.
+/** Slotting, once — the same act and the same read in both lanes that have it.
  *
  *  Carried work and raw captures are the same shape of problem (a scatter of
  *  small things with no home), and carried work was *already* grouped in the week
@@ -540,30 +570,81 @@ function OpenTimeLane({ openMins, reclaimedMins }: { openMins: number; reclaimed
  *  Both lanes therefore get one button and one confirmation list. Leftovers used
  *  to group silently: you pressed it, blocks appeared somewhere on the grid, and
  *  the lane never said what it had done. */
-function GroupedRuns({ runs, unit, first }: { runs: Batch[]; unit: string; first?: boolean }) {
+function GroupedRuns({
+  runs,
+  unit,
+  first,
+  data,
+  onRemove,
+}: {
+  runs: Batch[];
+  unit: string;
+  first?: boolean;
+  data: VerticalData;
+  /** Pull a task back out of a block it doesn't belong in. */
+  onRemove?: (runId: string, taskId: string) => void;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
   if (runs.length === 0) return null;
   return (
     <div className={first ? "" : "mt-4"}>
       <div className="section-label mb-1">
-        Grouped into blocks <span className="mono normal-case tracking-normal text-muted">{runs.length}</span>
+        Slots <span className="mono normal-case tracking-normal text-muted">{runs.length}</span>
       </div>
       <div className="border-t border-line">
-        {runs.map((r) => (
-          <div key={r.id} className="flex items-baseline gap-2 border-b border-line py-1.5">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color ?? "var(--accent)" }} aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-body">{r.name}</span>
-            <span className="mono shrink-0 text-meta text-muted">
-              {r.taskIds.length} {unit}
-              {r.taskIds.length === 1 ? "" : "s"} · {r.durationMins}m
-            </span>
-          </div>
-        ))}
+        {runs.map((r) => {
+          const isOpen = open === r.id;
+          const members = r.taskIds
+            .map((id) => data.tasks.find((t) => t.id === id))
+            .filter((t): t is NonNullable<typeof t> => !!t);
+          return (
+            <div key={r.id} className="border-b border-line">
+              {/* The grouping is a proposal. Open it and you can see what the AI
+                  decided belongs together — which is the only way to catch a
+                  capture themed "Frontier" that's actually SCE before it rides
+                  onto the calendar under the wrong name. */}
+              <button
+                onClick={() => setOpen((cur) => (cur === r.id ? null : r.id))}
+                className="fast flex w-full items-baseline gap-2 py-1.5 text-left"
+                title="See what's in this block"
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color ?? "var(--accent)" }} aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-body">{r.name}</span>
+                <span className="mono shrink-0 text-meta text-muted">
+                  {r.taskIds.length} {unit}
+                  {r.taskIds.length === 1 ? "" : "s"} {isOpen ? "▾" : "▸"}
+                </span>
+              </button>
+              {isOpen && (
+                <div className="pb-2 pl-4">
+                  {members.map((t) => (
+                    <div key={t.id} className="group flex items-baseline gap-2 py-1">
+                      <span className="min-w-0 flex-1 truncate text-caption text-muted" title={t.title}>
+                        {t.title}
+                      </span>
+                      <span className="mono shrink-0 text-meta text-muted">{t.durationMins}m</span>
+                      {onRemove && (
+                        <button
+                          onClick={() => onRemove(r.id, t.id)}
+                          title="Doesn't belong here — take it out of this block and place it on its own"
+                          className="fast shrink-0 text-caption text-muted opacity-0 hover:text-signal group-hover:opacity-100"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/** The grouping button — identical in both lanes, so it reads as one act.
+/** The slotting button — identical in both lanes, so it reads as one act.
  *
  *  Once it HAS grouped, it stops shouting: a filled call-to-action offering to
  *  "Group 10 into blocks" above six blocks it already made is the screen arguing
@@ -587,7 +668,7 @@ function GroupButton({
       <button
         onClick={onGroup}
         disabled={busy}
-        title={grouped ? "Group them again — a fresh read of what belongs together" : undefined}
+        title={grouped ? "Slot them again — a fresh read of what belongs together" : undefined}
         className={
           grouped
             ? "fast mono text-meta text-muted hover:text-accent disabled:opacity-50"
@@ -595,7 +676,7 @@ function GroupButton({
         }
         style={grouped ? undefined : { background: "var(--accent-soft)" }}
       >
-        {busy ? "Grouping…" : grouped ? "↻ group again" : label}
+        {busy ? "Slotting…" : grouped ? "↻ slot again" : label}
       </button>
       {error && <p className="mt-1.5 text-meta text-signal">{error}</p>}
     </>
@@ -608,12 +689,16 @@ function InboxGroups({
   theming,
   error,
   onTheme,
+  data,
+  onRemoveFromRun,
 }: {
   count: number;
   runs: Batch[];
   theming: boolean;
   error: string | null;
   onTheme: () => void;
+  data: VerticalData;
+  onRemoveFromRun: (runId: string, taskId: string) => void;
 }) {
   if (count === 0 && runs.length === 0) {
     return <p className="text-caption text-muted">Inbox clear.</p>;
@@ -622,15 +707,15 @@ function InboxGroups({
   // button you have to find and press. What's left is the result, and a way to
   // ask for a different read of it.
   if (theming && runs.length === 0) {
-    return <p className="text-caption text-muted">Grouping {count} captures into blocks…</p>;
+    return <p className="text-caption text-muted">Slotting {count} captures…</p>;
   }
   return (
     <section>
-      <GroupedRuns runs={runs} unit="capture" first />
+      <GroupedRuns runs={runs} unit="capture" first data={data} onRemove={onRemoveFromRun} />
       {count > 0 && (
         <div className={runs.length > 0 ? "mt-2" : ""}>
           <GroupButton
-            label={`✦ Group ${count} into blocks`}
+            label={`✦ Slot ${count} captures`}
             busy={theming}
             error={error}
             grouped={runs.length > 0}
@@ -944,22 +1029,24 @@ function OnDeckChips({
     </button>
   );
 
+  // Adding a project is the exception, not the task — most weeks you're deciding
+  // about what's already on the slate. So it's a single quiet line until you want
+  // it, instead of a wall of chips competing with the projects you're reading.
+  const total = needsWeek.length + elsewhere.length;
   return (
     <div className="mt-5">
-      {/* the ＋ pill at the foot of the pool — the planner rail's standing shape */}
-      <div className="section-label mb-1.5">Bring one in</div>
-      <div className="flex flex-wrap gap-1.5">
-        {needsWeek.map((p) => chip(p, "needs a week"))}
-        {showAll && elsewhere.map((p) => chip(p, `sits on the week of ${format(parseDateISO(p.targetDate!), "MMM d")}`))}
-        {elsewhere.length > 0 && (
-          <button
-            onClick={() => setShowAll((s) => !s)}
-            className="tap fast rounded-full px-2 py-1 text-label text-muted hover:text-accent"
-          >
-            {showAll ? "less" : `＋ ${elsewhere.length} on other weeks`}
-          </button>
-        )}
-      </div>
+      <button
+        onClick={() => setShowAll((v) => !v)}
+        className="fast mono text-meta text-muted hover:text-accent"
+      >
+        {showAll ? "− bring one in" : `＋ bring one in (${total})`}
+      </button>
+      {showAll && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {needsWeek.map((p) => chip(p, "needs a week"))}
+          {elsewhere.map((p) => chip(p, `sits on the week of ${format(parseDateISO(p.targetDate!), "MMM d")}`))}
+        </div>
+      )}
     </div>
   );
 }
@@ -972,6 +1059,7 @@ function Leftovers({
   setKept,
   data,
   runs,
+  onRemoveFromRun,
   onBundleCarried,
   bundling,
   bundleErr,
@@ -982,6 +1070,7 @@ function Leftovers({
   data: VerticalData;
   /** Carried work already re-grouped into blocks this session. */
   runs: Batch[];
+  onRemoveFromRun: (runId: string, taskId: string) => void;
   onBundleCarried: () => void;
   bundling: boolean;
   bundleErr: string | null;
@@ -1034,7 +1123,7 @@ function Leftovers({
           <div className="space-y-0.5">{carried.map(row)}</div>
           <div className="mt-1.5">
             <GroupButton
-              label={`✦ Group ${carriedKept} into blocks`}
+              label={`✦ Slot ${carriedKept} leftovers`}
               busy={bundling}
               error={bundleErr}
               grouped={runs.length > 0}
@@ -1051,7 +1140,7 @@ function Leftovers({
         </div>
       )}
 
-      <GroupedRuns runs={runs} unit="piece" />
+      <GroupedRuns runs={runs} unit="piece" data={data} onRemove={onRemoveFromRun} />
 
       <button
         onClick={() => setShowMore((m) => !m)}
@@ -1278,22 +1367,12 @@ function Boundaries({
 function WalkAction({
   lane,
   stepCount,
-  intake,
-  projectCount,
-  waitingInbox,
-  keptCount,
-  openMins,
   applying,
   onNext,
   onCommit,
 }: {
   lane: WeekPlanStep;
   stepCount: number;
-  intake: WeekIntakeRead;
-  projectCount: number;
-  waitingInbox: number;
-  keptCount: number;
-  openMins: number;
   applying: boolean;
   onNext: (next: WeekPlanStep) => void;
   onCommit: () => void;
@@ -1307,48 +1386,19 @@ function WalkAction({
     inbox: "",
   };
 
-  // What this step put into the week — the beat you're on, in its own terms.
-  // Never a scolding count of what you left behind (Principle 4).
-  const read =
-    lane === "open"
-      ? openMins > 0
-        ? `${hrs(openMins)}h of room across the week`
-        : "no open time left in your working hours"
-      : lane === "projects"
-        ? projectCount === 0
-          ? "no projects on this week yet"
-          : `${projectCount} project${projectCount === 1 ? "" : "s"} · ${intake.projects.count} piece${intake.projects.count === 1 ? "" : "s"} · ${hrs(intake.projects.mins)}h`
-        : lane === "loose"
-          ? intake.loose.count > 0
-            ? `${intake.loose.count} leftover${intake.loose.count === 1 ? "" : "s"} · ${hrs(intake.loose.mins)}h`
-            : "nothing owed and nothing due"
-          : intake.inbox.count > 0
-            ? `${intake.inbox.count} capture${intake.inbox.count === 1 ? "" : "s"} in` +
-              (waitingInbox > 0 ? ` · ${waitingInbox} keeping for later` : "")
-            : waitingInbox > 0
-              ? `${waitingInbox} waiting — they'll keep`
-              : "clear";
-
+  // One control, no commentary. This foot used to carry a per-step tally AND the
+  // kept count AND the next step's number — the same hours the stepper was already
+  // printing two inches above, and a second step anchor competing with it. The
+  // step lives once, over the question; the measuring lives once, under the grid.
   return (
-    <div>
-      <div className="mono mb-2 flex items-baseline justify-between gap-2 text-meta text-muted">
-        <span className="min-w-0 truncate">{read}</span>
-        <span className="shrink-0">{keptCount} in the week</span>
-      </div>
-      <Btn
-        kind="primary"
-        onClick={last ? onCommit : () => onNext(PLAN_STEPS[step + 1])}
-        disabled={applying}
-        className="w-full justify-center px-4 py-2.5"
-      >
-        {last ? (applying ? "committing…" : "Commit the week →") : `${NEXT_ACT[lane]} →`}
-      </Btn>
-      {!last && (
-        <div className="mono mt-1.5 text-center text-meta text-muted">
-          then step {step + 2} of {stepCount}
-        </div>
-      )}
-    </div>
+    <Btn
+      kind="primary"
+      onClick={last ? onCommit : () => onNext(PLAN_STEPS[step + 1])}
+      disabled={applying}
+      className="w-full justify-center px-4 py-2.5"
+    >
+      {last ? (applying ? "committing…" : "Commit the week →") : `${NEXT_ACT[lane]} →`}
+    </Btn>
   );
 }
 
@@ -1392,6 +1442,7 @@ function WeekGrid({
   workStartMin,
   workEndMin,
   dayContexts,
+  settled,
   gaps,
   onDrop,
   onMove,
@@ -1411,6 +1462,9 @@ function WeekGrid({
   workStartMin: number;
   workEndMin: number;
   dayContexts: Record<string, DayContext>;
+  /** The final step: you're committing the whole week, calendar included, so the
+   *  immovable stops reading as backdrop and joins the plan at full strength. */
+  settled?: boolean;
   /** Open spans per day, drawn as claimable time. Set on the "before" step, where
    *  the question is how much room there is; null once your work is on the grid. */
   gaps?: Map<string, Gap[]> | null;
@@ -1666,23 +1720,31 @@ function WeekGrid({
               )}
               {/* open time, drawn — `--slot` is open/claimable everywhere in the
                   app, so the week's room reads the same here as on any planner */}
-              {(gaps?.get(d.iso) ?? []).map((g) => {
+              {(gaps?.get(d.iso) ?? []).map((g, gi) => {
                 const gs = g.start.getHours() * 60 + g.start.getMinutes();
                 const ge = g.end.getHours() * 60 + g.end.getMinutes();
                 const h = Math.max(MIN_BLOCK_PX, yOf(ge) - yOf(gs));
                 return (
                   <div
                     key={`gap-${gs}`}
-                    className="block-in absolute inset-x-1 rounded-[5px]"
+                    className="gap-in absolute inset-x-1"
                     style={{
                       top: yOf(gs), height: h,
-                      background: "color-mix(in srgb, var(--slot) 14%, transparent)",
-                      border: "1px dashed color-mix(in srgb, var(--slot) 45%, transparent)",
+                      // Open time is the ABSENCE of a commitment, so it can't be
+                      // drawn as an object. A dashed border and a fill made these
+                      // read as calendar events — and louder ones than the real
+                      // events beside them. What's left is a breath of --slot and
+                      // a measurement: the emptiness IS the message.
+                      background: "color-mix(in srgb, var(--slot) 9%, transparent)",
+                      animationDelay: `${Math.min(320, gi * 40)}ms`,
                     }}
                     title={`${fmtMinShort(gs)}–${fmtMinShort(ge)} open`}
                   >
                     {h > 26 && (
-                      <div className="mono px-1.5 pt-0.5 text-right text-meta" style={{ color: "color-mix(in srgb, var(--slot) 85%, var(--ink))" }}>
+                      <div
+                        className="mono px-1 pt-0.5 text-right text-meta"
+                        style={{ color: "color-mix(in srgb, var(--slot) 78%, var(--ink))" }}
+                      >
                         {hrs(g.mins)}h open
                       </div>
                     )}
@@ -1707,8 +1769,15 @@ function WeekGrid({
                       className={`absolute overflow-hidden rounded-[5px] py-0.5 ${aside ? "left-1 max-w-[62%] pl-0.5" : "inset-x-1 px-1.5"} ${canToggle ? "fast cursor-pointer" : ""}`}
                       style={{
                         top, height,
-                        background: aside ? "transparent" : "color-mix(in srgb, var(--ink) 5%, transparent)",
-                        borderLeft: aside ? "none" : "2px solid var(--line-strong)",
+                        // These are the immovable facts you arrived with — they
+                        // have to be readable BEFORE anything of yours is on the
+                        // week, or step 1 shows you a calendar you can't read.
+                        background: aside
+                          ? "transparent"
+                          : `color-mix(in srgb, var(--ink) ${settled ? 14 : 9}%, transparent)`,
+                        borderLeft: aside
+                          ? "none"
+                          : `${settled ? 3 : 2}px solid var(--line-strong)`,
                         opacity: aside ? 0.5 : 1,
                         backdropFilter: aside ? undefined : "blur(4px)",
                         WebkitBackdropFilter: aside ? undefined : "blur(4px)",
@@ -1722,8 +1791,12 @@ function WeekGrid({
                       }
                     >
                       <div
-                        className="mono truncate text-meta leading-tight text-muted"
-                        style={aside ? { textDecoration: "line-through" } : undefined}
+                        className="mono truncate text-meta leading-tight"
+                        style={
+                          aside
+                            ? { textDecoration: "line-through", color: "var(--muted)" }
+                            : { color: "var(--ink)", opacity: settled ? 0.92 : 0.72 }
+                        }
                       >
                         {it.title}
                       </div>
@@ -1755,10 +1828,14 @@ function WeekGrid({
                   holds > 0
                     ? it.slotPart
                       ? `Project · part ${it.slotPart.part} of ${it.slotPart.parts}`
-                      : `${isProject ? "Project" : "Grouped"} · ${holds} ${isProject ? "task" : "capture"}${holds === 1 ? "" : "s"}`
+                      : `${isProject ? "Project" : "Slot"} · ${holds} ${isProject ? "task" : "capture"}${holds === 1 ? "" : "s"}`
                     : isProject
                       ? it.project
-                      : null;
+                      : // a single loose piece of work — say so, so every block Nuvo
+                        // placed names its kind and the week reads as one vocabulary
+                        isNew
+                        ? "Task"
+                        : null;
                 // 44px = one hour. A 45-minute sitting is 33px: room for a
                 // designation and a title, not for a time it can read off the axis.
                 const showEyebrow = blkHeight >= 30 && !!kindLabel;
@@ -1795,31 +1872,26 @@ function WeekGrid({
                             : "already on the calendar — locked"
                     }
                   >
-                    {/* What KIND of block this is, said in words.
-                        A "▸" and a "· 3 tasks" asked you to learn a glyph before
-                        you could tell a project's sitting apart from a grouped run
-                        or an ordinary task. The eyebrow names it in the block's own
-                        domain colour: PROJECT · 3 tasks, GROUPED · 3 captures, or —
-                        for a single ordinary task under a project — the project's
-                        name, which is the useful thing there. */}
-                    {isNew && blkHeight > 34 && (holds > 0 || isProject) && (
+                    {/* What KIND of block this is, said in words — PROJECT · 3
+                        TASKS, SLOT · 3 CAPTURES, TASK — at every size a block can
+                        be. A "▸" asked you to learn a glyph first. A block sheds
+                        the least recoverable thing last: the designation outlives
+                        the title, and the time goes first, because the grid axis
+                        already says when. */}
+                    {isNew && showEyebrow && kindLabel && (
                       <div
-                        className="section-label truncate leading-none"
+                        className="truncate text-micro font-semibold uppercase leading-none"
                         style={{ color: hue, letterSpacing: "0.06em" }}
                         title={it.project ?? undefined}
                       >
-                        {holds > 0
-                          ? it.slotPart
-                            ? `Project · part ${it.slotPart.part} of ${it.slotPart.parts}`
-                            : `${isProject ? "Project" : "Grouped"} · ${holds} ${isProject ? "task" : "capture"}${holds === 1 ? "" : "s"}`
-                          : it.project}
+                        {kindLabel}
                       </div>
                     )}
                     <div className="flex items-start gap-1">
                       <div className="min-w-0 flex-1 truncate text-caption font-semibold leading-tight">
                         {inlineKind && (
                           <span className="text-micro uppercase" style={{ color: hue, letterSpacing: "0.06em" }}>
-                            {isProject ? "Project" : "Grouped"}{" · "}
+                            {isProject ? "Project" : holds > 0 ? "Slot" : "Task"}{" · "}
                           </span>
                         )}
                         {isSlot ? `⛶ ${it.title}` : isProject ? `▸ ${it.title}` : isNew ? `✦ ${it.title}` : it.title}

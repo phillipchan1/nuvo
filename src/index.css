@@ -869,8 +869,18 @@ body.nuvo-selecting * {
   100% { opacity: 1; transform: translateY(0) scaleY(1); }
 }
 .block-in { animation: block-in var(--d-base) var(--ease-out) both; transform-origin: top center; }
+
+/* Open time being FOUND — the second beat of Plan the week's first step. You see
+   the calendar you actually have first, settle what you're not going to, and only
+   then does the room between it get measured and lit. It fades and grows from the
+   top so it reads as space opening up, never as another block arriving. */
+@keyframes gap-in {
+  0% { opacity: 0; transform: scaleY(0.6); }
+  100% { opacity: 1; transform: scaleY(1); }
+}
+.gap-in { animation: gap-in var(--d-slow) var(--ease-out) both; transform-origin: top center; }
 @media (prefers-reduced-motion: reduce) {
-  .block-in { animation-duration: 1ms; animation-delay: 0ms !important; }
+  .block-in, .gap-in { animation-duration: 1ms; animation-delay: 0ms !important; }
 }
 
 /* A panel sliding in from the right edge — slide-overs, detail rails. */

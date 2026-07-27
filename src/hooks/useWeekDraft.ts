@@ -407,6 +407,7 @@ export function useWeekDraft() {
   }, [inbox.length, theming, themeInbox]);
 
   const [themingCarried, setThemingCarried] = useState(false);
+  const autoBundled = useRef(false);
   const [carriedErr, setCarriedErr] = useState<string | null>(null);
   const themeCarried = useCallback(async () => {
     if (themingCarried) return;
@@ -461,6 +462,40 @@ export function useWeekDraft() {
     },
     [settings, hiddenEventKeys, updateSettings],
   );
+
+  // Grouping the carried work is not a decision either — the decision is whether
+  // you AGREE with the blocks. So it runs on arrival, like the inbox's, and what
+  // you're shown is the result you can argue with.
+  useEffect(() => {
+    if (autoBundled.current || themingCarried) return;
+    const hasLooseCarried = allTasks.some(
+      (t) => (t.roll_count ?? 0) > 0 && !t.project_id && t.status !== "done" && t.status !== "trashed" &&
+        t.status !== "inbox" && !t.start_time && !t.slot_id && kept.has(t.id),
+    );
+    if (!hasLooseCarried) return;
+    autoBundled.current = true;
+    void themeCarried();
+  }, [allTasks, kept, themingCarried, themeCarried]);
+
+  /**
+   * Take a task out of the block it was grouped into. AI grouping is a proposal,
+   * and a proposal you can't correct is a decision made for you (Principle 3) —
+   * a capture themed "Frontier" that's really SCE has to be rescuable before it
+   * rides onto the calendar under the wrong name. The freed task simply places on
+   * its own; the block shrinks by its duration, or disappears if it was the last.
+   */
+  const removeFromRun = useCallback((runId: string, taskId: string) => {
+    setRuns((prev) =>
+      prev
+        .map((r) => {
+          if (r.id !== runId) return r;
+          const taskIds = r.taskIds.filter((id) => id !== taskId);
+          const mins = allTasks.find((t) => t.id === taskId)?.duration_minutes ?? 30;
+          return { ...r, taskIds, durationMins: Math.max(15, r.durationMins - mins) };
+        })
+        .filter((r) => r.taskIds.length > 0),
+    );
+  }, [allTasks]);
 
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => format(addDays(parseDateISO(weekStartISO), i), "yyyy-MM-dd")),
@@ -577,6 +612,7 @@ export function useWeekDraft() {
     routedCount,
     slotById,
     runs,
+    removeFromRun,
     // the calendar the week lands in
     visibleEvents,
     /** The week's events with individually-set-aside ones still IN, so a step can

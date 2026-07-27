@@ -113,7 +113,7 @@ function Frame({ label, step, children }: { label: string; step: Step; children:
         data-frame={label}
       >
         <div className="border-b border-line px-4 pb-2 pt-2">
-          <SourceSwitch intake={INTAKE} step={step} onStep={() => {}} steps={WEEK_STEPS} waitingInbox={7} dense />
+          <SourceSwitch step={step} onStep={() => {}} steps={WEEK_STEPS} dense />
           <div className="mt-2.5">
             <CapacityMeter intake={INTAKE} fit={{ placed: 6, unplaced: 2 }} dense />
           </div>
@@ -136,7 +136,7 @@ export default function PlanWeekHarness() {
       <div className="mb-6 flex max-w-[1080px] gap-8 border-b border-line pb-3">
         <div className="w-[320px] shrink-0">
           <div className="section-label mb-1">The source switch · rail density</div>
-          <SourceSwitch intake={INTAKE} step="loose" onStep={() => {}} waitingInbox={7} />
+          <SourceSwitch step="loose" onStep={() => {}} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="section-label mb-1">The capacity meter · over the week</div>
