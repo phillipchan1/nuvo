@@ -54,6 +54,19 @@ const CONTEXT_CYCLE: DayContext[] = ["normal", "light", "travel", "off"];
 const DAY_GLYPH = ["S", "M", "T", "W", "T", "F", "S"]; // Sun…Sat, for working-day chips
 const HOUR_PX = 44;
 const MIN_BLOCK_PX = 18;
+/**
+ * The week has exactly two materials, and they must never be told apart by
+ * reading a label. A commitment is neutral ink — heavy, solid, a fact you
+ * arrived with. Open time is `--slot` — the same teal that means open/claimable
+ * on every planner in the app. They differ by *hue*, not by a few percent of the
+ * same grey, which is why the earlier "no fill, one hairline bracket" open time
+ * disappeared next to a wall of meetings. Defined once, used by the grid, the
+ * rail's day bars, and the legend, so all three read as one key.
+ */
+const BUSY_FILL = "color-mix(in srgb, var(--ink) 30%, transparent)";
+const OPEN_FILL = "color-mix(in srgb, var(--slot) 20%, transparent)";
+const OPEN_EDGE = "color-mix(in srgb, var(--slot) 40%, transparent)";
+const OPEN_EDGE_STRONG = "color-mix(in srgb, var(--slot) 72%, transparent)";
 const toMinLabel = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const fmtMinShort = (m: number) => {
   const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "p" : "a", hh = ((h + 11) % 12) + 1;
@@ -215,10 +228,6 @@ export default function SundayRitual({
       }),
     [gridDays, gapsByDay, workStart, workEnd],
   );
-  const openMins = useMemo(
-    () => [...gapsByDay.values()].reduce((s, gs) => s + gs.reduce((n, g) => n + g.mins, 0), 0),
-    [gapsByDay],
-  );
   /** Every event in the planning week's working days — including the ones you've
    *  already set aside, so the grid can draw them struck through and hand them back. */
   const weekEvents = useMemo(() => {
@@ -281,7 +290,7 @@ export default function SundayRitual({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3">
             {lane === "open" && (
-              <OpenTimeLane shape={weekShape} openMins={openMins} roomFound={roomFound} />
+              <OpenTimeLane shape={weekShape} roomFound={roomFound} />
             )}
             {lane === "projects" && (
               <ProjectsLane
@@ -358,14 +367,21 @@ export default function SundayRitual({
                 {/* …and the reference sits under it at its own size, so a long
                     "no room" list can never squeeze the week it's describing. */}
                 <div className="shrink-0">
-                  <div className="mt-3 border-t border-line pt-3">
-                    <CapacityMeter
-                      intake={intake}
-                      fit={{ placed: shownPlacements.length, unplaced: shownUnplaced.length }}
-                      revealed={revealed}
-                      compact
-                    />
-                  </div>
+                  {/* Step 1 has put nothing on the week yet, so a load meter here
+                      measures the calendar you're already looking at — hours to
+                      read, in answer to a question nobody asked yet. It appears
+                      the moment your own work starts landing, which is when
+                      "how full is this getting" becomes a live question. */}
+                  {lane !== "open" && (
+                    <div className="mt-3 border-t border-line pt-3">
+                      <CapacityMeter
+                        intake={intake}
+                        fit={{ placed: shownPlacements.length, unplaced: shownUnplaced.length }}
+                        revealed={revealed}
+                        compact
+                      />
+                    </div>
+                  )}
 
                   {shownUnplaced.length > 0 && (
                     <div className="max-h-[22vh] overflow-y-auto">
@@ -411,7 +427,7 @@ function Shell({
       <header className="flex shrink-0 items-center gap-4 border-b border-line px-5 py-2.5">
         {/* The week is named ONCE, by the rail's hero. This bar said it a second
             time and the rail's eyebrow a third — three labels for one date. */}
-        <div className="wordmark text-head">Plan</div>
+        <div className="wordmark text-head">Plan the week</div>
         <div className="flex-1" />
         <button onClick={onClose} className="keycap shrink-0">esc — resumes later</button>
       </header>
@@ -489,52 +505,62 @@ function UnplacedReport({
  */
 function OpenTimeLane({
   shape,
-  openMins,
   roomFound,
 }: {
   /** Per working day: how much of the window is committed vs open. */
   shape: { iso: string; busyMins: number; freeMins: number }[];
-  openMins: number;
   roomFound: boolean;
 }) {
   const windowMins = Math.max(1, ...shape.map((d) => d.busyMins + d.freeMins));
   return (
     <section>
-      {/* The week's shape, drawn. This was two sentences of prose and a
-          three-line instruction — reading, to answer a question that is entirely
-          visual ("here's your free time; does that look right?"). One bar per
-          day: what's committed, and what's left. */}
-      {/* items-stretch, not items-end: the columns must fill the 96px for their
+      {/* ── the act, first and largest ────────────────────────────────────────
+          Setting a meeting aside is the ONLY thing you can do on this step, and
+          it lived here as a 12px grey footnote under a big hour count — the
+          number you can't act on outranking the gesture that changes the week.
+          So the gesture is now shown rather than described: the two states of a
+          block, side by side, as they appear on the grid, and one short line. */}
+      <div className="flex items-center gap-2.5">
+        <div className="min-w-0 flex-1">
+          <SampleBlock kind="committed" />
+        </div>
+        <span aria-hidden className="shrink-0 text-caption text-muted">→</span>
+        <div className="min-w-0 flex-1">
+          <SampleBlock kind="open" />
+        </div>
+      </div>
+      <p className="mt-2.5 text-body text-ink">Click anything you're not going to.</p>
+      <p className="text-caption text-muted">Its time opens up on the week.</p>
+
+      {/* ── the week's shape, drawn ───────────────────────────────────────────
+          Support, not headline: the same two materials as the grid, stacked per
+          day, so "which days have room" is answered by looking. No hours — the
+          question is a proportion, and a proportion is a picture. */}
+      {/* items-stretch, not items-end: the columns must fill the height for their
           children's percentage heights to resolve against anything. */}
-      <div className="flex items-stretch gap-1.5" style={{ height: 96 }}>
+      <div className="mt-6 flex items-stretch gap-1.5" style={{ height: 108 }}>
         {shape.map((d) => {
           const total = d.busyMins + d.freeMins;
           const busyPct = total > 0 ? (d.busyMins / windowMins) * 100 : 0;
           const freePct = total > 0 ? (d.freeMins / windowMins) * 100 : 0;
           return (
             <div key={d.iso} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-              <div
-                className="flex w-full flex-1 flex-col justify-end overflow-hidden rounded-[4px]"
-                style={{ background: "color-mix(in srgb, var(--line) 55%, transparent)" }}
-              >
+              <div className="flex w-full flex-1 flex-col justify-end overflow-hidden rounded-[5px]">
                 {roomFound && (
                   <div
                     className="gap-in w-full"
-                    style={{
-                      height: `${freePct}%`,
-                      background: "color-mix(in srgb, var(--slot) 30%, transparent)",
-                    }}
-                    title={`${hrs(d.freeMins)}h open`}
+                    style={{ height: `${freePct}%`, background: OPEN_FILL }}
+                    title="open"
                   />
                 )}
                 <div
                   className="w-full"
                   style={{
                     height: `${busyPct}%`,
-                    background: "color-mix(in srgb, var(--ink) 22%, transparent)",
+                    background: BUSY_FILL,
                     transition: "height .32s var(--ease-out)",
                   }}
-                  title={`${hrs(d.busyMins)}h committed`}
+                  title="committed"
                 />
               </div>
               <span className="mono text-micro text-muted">{format(parseDateISO(d.iso), "EEEEE")}</span>
@@ -542,18 +568,42 @@ function OpenTimeLane({
           );
         })}
       </div>
-
-      <div className="mt-4 flex items-baseline gap-2">
-        <span className="mono text-lead text-ink">{roomFound ? `${hrs(openMins)}h` : "—"}</span>
-        <span className="text-caption text-muted">open</span>
-      </div>
-
-      {/* one line, with the gesture's own glyph instead of a sentence about it */}
-      <p className="mt-4 flex items-baseline gap-1.5 text-caption text-muted">
-        <span aria-hidden style={{ color: "var(--slot)" }}>⊘</span>
-        <span>Not going? Click it on the week.</span>
-      </p>
     </section>
+  );
+}
+
+/** The two materials of step 1, at the size of a legend — drawn with the exact
+ *  fills the grid uses, so the rail is a key to the week rather than a picture
+ *  of its own. */
+function SampleBlock({ kind }: { kind: "committed" | "open" }) {
+  const committed = kind === "committed";
+  return (
+    <div
+      className="flex h-[34px] items-center gap-1.5 overflow-hidden rounded-[5px] px-1.5"
+      style={
+        committed
+          ? { background: BUSY_FILL, borderLeft: "3px solid var(--line-strong)" }
+          : { background: OPEN_FILL, border: `1px solid ${OPEN_EDGE}`, borderLeft: `2px solid ${OPEN_EDGE_STRONG}` }
+      }
+    >
+      <span
+        aria-hidden
+        className="mono flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] text-micro leading-none"
+        style={
+          committed
+            ? { background: "var(--line-strong)", color: "var(--surface)" }
+            : { border: "1px dashed var(--slot)", color: "var(--slot)" }
+        }
+      >
+        {committed ? "✓" : ""}
+      </span>
+      <span
+        className="mono min-w-0 flex-1 truncate text-micro"
+        style={committed ? { color: "var(--ink)" } : { color: "var(--slot)" }}
+      >
+        {committed ? "Meeting" : "open"}
+      </span>
+    </div>
   );
 }
 
@@ -1732,29 +1782,24 @@ function WeekGrid({
                 return (
                   <div
                     key={`gap-${gs}`}
-                    className="gap-in pointer-events-none absolute inset-x-1"
+                    className="gap-in pointer-events-none absolute inset-x-1 rounded-[5px]"
                     style={{
                       top: yOf(gs), height: h,
-                      // Open time is the ABSENCE of a commitment. Any fill makes it
-                      // compete with the meetings beside it, and a fill of similar
-                      // weight makes the week unreadable — which is exactly what a
-                      // 9% slot wash next to a 9% ink event did. So: no fill at
-                      // all, one bracket on the edge, and its size. The emptiness
-                      // is the message; the bracket only says how far it runs.
-                      borderLeft: "2px solid color-mix(in srgb, var(--slot) 55%, transparent)",
+                      // Open time carries its own material now. Drawing it as pure
+                      // absence — one hairline bracket on an empty column — meant
+                      // the eye had to *find* the room by looking for where the
+                      // grey stopped. It reads as a colour block against neutral
+                      // meetings instead, so scanning the week for teal answers
+                      // "where is my room" without reading anything.
+                      background: OPEN_FILL,
+                      border: `1px solid ${OPEN_EDGE}`,
+                      borderLeft: `2px solid ${OPEN_EDGE_STRONG}`,
                       animationDelay: `${Math.min(320, gi * 40)}ms`,
                     }}
-                    title={`${fmtMinShort(gs)}–${fmtMinShort(ge)} open`}
-                  >
-                    {h > 26 && (
-                      <div
-                        className="mono px-1 pt-0.5 text-right text-meta"
-                        style={{ color: "color-mix(in srgb, var(--slot) 70%, var(--ink))" }}
-                      >
-                        {hrs(g.mins)}h open
-                      </div>
-                    )}
-                  </div>
+                    // the hours survive on hover — they were never worth the ink
+                    // they took on the face of the week
+                    title={`${fmtMinShort(gs)}–${fmtMinShort(ge)} open · ${hrs(g.mins)}h`}
+                  />
                 );
               })}
               {items.map((it, idx) => {
@@ -1782,13 +1827,16 @@ function WeekGrid({
                         // one: solid, with a real edge. It used to sit at 5–9% ink
                         // — the same weight as the open time beside it — which is
                         // why the week was hard to read before anything was on it.
+                        // A set-aside meeting is standing ON open time — the gap
+                        // beneath it is already painted, so it adds no fill of its
+                        // own; it's the struck name left on the room it gave back.
                         background: aside
                           ? "transparent"
-                          : `color-mix(in srgb, var(--ink) ${canToggle ? 26 : 8}%, transparent)`,
-                        borderLeft: aside
-                          ? "2px dashed color-mix(in srgb, var(--slot) 55%, transparent)"
-                          : "3px solid var(--line-strong)",
-                        opacity: aside ? 0.5 : 1,
+                          : canToggle
+                            ? BUSY_FILL
+                            : "color-mix(in srgb, var(--ink) 8%, transparent)",
+                        borderLeft: aside ? undefined : "3px solid var(--line-strong)",
+                        opacity: aside ? 0.85 : 1,
                         backdropFilter: aside ? undefined : "blur(4px)",
                         WebkitBackdropFilter: aside ? undefined : "blur(4px)",
                       }}
@@ -1827,11 +1875,6 @@ function WeekGrid({
                         >
                           {it.title}
                         </span>
-                        {canToggle && aside && height > 20 && (
-                          <span className="mono shrink-0 text-micro" style={{ color: "var(--slot)" }}>
-                            open
-                          </span>
-                        )}
                       </div>
                     </div>
                   );
