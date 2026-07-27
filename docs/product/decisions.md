@@ -666,6 +666,38 @@ above it in a dense column, and breaks under drag.)
 *Status: standing — typechecked, 29 tests green, built, and driven in a real
 account.*
 
+**D-041 · 2026-07-27 · Show it; don't narrate it. Plan the week prefers a picture,
+a glyph, and one name per thing.**
+
+Held against a real week, the flow was still asking to be *read*. Four cuts, one
+rule: **if the answer is visual, draw it.**
+
+- **Step 1's rail is a picture.** Two sentences of prose plus a three-line
+  instruction, to answer a question that is entirely visual — *here's your free
+  time, does that look right?* Replaced with five bars, one per working day,
+  committed against open, plus the hours and a single glyph line for the gesture.
+- **Meetings are solid; open time is empty.** They sat at 5–9% ink with a 9%
+  `--slot` wash beside them — the same weight, so the week was unreadable *before
+  anything of yours was on it*. A meeting is a fact you arrived with, so it's drawn
+  like one (16% ink, a real edge). Open time is the **absence** of one, so it has
+  **no fill at all** — one `--slot` bracket and its size. Any fill makes absence
+  compete with presence.
+- **The week is named once.** "Week of Jul 27" appeared in the header, the rail's
+  eyebrow *and* the rail's hero — three labels for one date. The hero keeps it.
+- **Glyphs over instructions.** Boundaries said "click to adjust"; it now shows a
+  `▾`. The grid's legend row ("✦ placed for you · immovable · drag to move · hover
+  to drop") is gone entirely — every block now names its own kind, so the key was
+  restating what the blocks already say.
+
+**And one name per thing:** "Grouped" was a fourth vocabulary for a **Slot** (the
+glossary's word for a container of time on the grid that holds child tasks).
+Renamed throughout; loose work says `TASK`, so `PROJECT · 3 TASKS`, `SLOT · 2
+CAPTURES` and `TASK` read as one language.
+→ Fixed on the way: two eyebrow renderers had drifted apart, so blocks between 30
+and 34px showed neither the eyebrow nor the inline label — the designation
+vanished at exactly the size most 45-minute sittings land on.
+*Status: standing — typechecked, 29 tests green, built, driven in a real account.*
+
 ---
 
 ## 2 · Things we decided **not** to do

@@ -19,7 +19,7 @@
 // intelligence does the deciding-where. You stay at altitude.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { addDays, format } from "date-fns";
+import { format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useSettings } from "../../hooks/useSettings";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
@@ -103,7 +103,6 @@ export default function SundayRitual({
     kept,
     setKept,
     dropBlock,
-    routedCount,
     slotById,
     runs,
     removeFromRun,
@@ -212,6 +211,15 @@ export default function SundayRitual({
     }
     return m;
   }, [gridDays, visibleEvents, onCalBlocks, workStart, workEnd]);
+  /** The week's shape, per working day — committed vs open, for the rail's bars. */
+  const weekShape = useMemo(
+    () =>
+      gridDays.map(({ iso }) => {
+        const free = (gapsByDay.get(iso) ?? []).reduce((n, g) => n + g.mins, 0);
+        return { iso, busyMins: Math.max(0, workEnd - workStart - free), freeMins: free };
+      }),
+    [gridDays, gapsByDay, workStart, workEnd],
+  );
   const openMins = useMemo(
     () => [...gapsByDay.values()].reduce((s, gs) => s + gs.reduce((n, g) => n + g.mins, 0), 0),
     [gapsByDay],
@@ -228,20 +236,7 @@ export default function SundayRitual({
    *  your working window. Summing whole events made "X h of that you took back"
    *  exceed the total open hours it claimed to be a share of — a 6am meeting you
    *  set aside gives back nothing you were ever going to plan into. */
-  const reclaimedMins = useMemo(
-    () =>
-      weekEvents.filter(hiddenEvent).reduce((total, e) => {
-        const st = new Date(e.start_at);
-        const en = new Date(e.end_at);
-        const mins = st.getHours() * 60 + st.getMinutes();
-        const endMins = en.getHours() * 60 + en.getMinutes();
-        const overlap = Math.min(endMins, workEnd) - Math.max(mins, workStart);
-        return total + Math.max(0, overlap);
-      }, 0),
-    [weekEvents, hiddenEvent, workStart, workEnd],
-  );
 
-  const weekSpan = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
 
   // esc closes; the draft resumes — nothing is committed until you say so
   useEffect(() => {
@@ -255,20 +250,14 @@ export default function SundayRitual({
   }, [onClose]);
   if (committed) {
     return (
-      <Shell onClose={onClose} weekLabel={format(parseDateISO(weekStartISO), "MMM d")} planningAhead={planningAhead}>
+      <Shell onClose={onClose}>
         <DoneState onClose={onClose} />
       </Shell>
     );
   }
 
-  const eventCount = visibleEvents.filter((e) => e.busy && !e.all_day).length;
-
   return (
-    <Shell
-      onClose={onClose}
-      weekLabel={format(parseDateISO(weekStartISO), "MMM d")}
-      planningAhead={planningAhead}
-    >
+    <Shell onClose={onClose}>
       {/* ── the pool, left · the week, right — one screen, the whole ritual ───── */}
       <div className="flex min-h-0 flex-1">
         {/* The planner rail: transparent over the atmosphere, hairline separator,
@@ -276,7 +265,8 @@ export default function SundayRitual({
         <aside className="flex w-[360px] shrink-0 flex-col border-r border-line">
           <div className="shrink-0 px-5 pt-5">
             <div className="section-label !p-0">
-              <span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · {weekSpan}
+              <span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> ·{" "}
+              {planningAhead ? "the week ahead" : "this week"}
             </div>
             <h1 className="mt-1 text-head masthead leading-tight">
               Week of {format(parseDateISO(weekStartISO), "MMMM d")}
@@ -296,7 +286,7 @@ export default function SundayRitual({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3">
             {lane === "open" && (
-              <OpenTimeLane openMins={openMins} reclaimedMins={reclaimedMins} roomFound={roomFound} />
+              <OpenTimeLane shape={weekShape} openMins={openMins} roomFound={roomFound} />
             )}
             {lane === "projects" && (
               <ProjectsLane
@@ -371,21 +361,11 @@ export default function SundayRitual({
                   workStartMin={workStart}
                   workEndMin={workEnd}
                   dayContexts={dayContexts}
-                  settled={lane === "inbox"}
                   gaps={lane === "open" && roomFound ? gapsByDay : null}
                   onDrop={dropBlock}
                   onMove={movePlacement}
                   onResize={resizePlacement}
                 />
-                {/* the glyphs on the blocks (✦ ▸ ✓) are the legend; four swatches
-                    restating them was a key nobody needs twice */}
-                <div className="mt-2 flex items-center gap-3 text-caption text-muted">
-                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", borderLeft: "3px solid var(--accent)" }} /> ✦ placed for you</span>
-                  <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--ink) 5%, transparent)", borderLeft: "2px solid var(--line-strong)" }} /> immovable</span>
-                  {routedCount > 0 && <span>{routedCount} in standing slots</span>}
-                  {eventCount > 0 && <span>{eventCount} immovable</span>}
-                  <span className="mono ml-auto">drag to move · hover to drop</span>
-                </div>
 
                 {/* Can I carry this? A reference you glance at, sitting with the
                     thing it measures — not the loudest band on the screen, which
@@ -428,14 +408,10 @@ export default function SundayRitual({
 // ── the overlay chrome ───────────────────────────────────────────────────────
 function Shell({
   onClose,
-  weekLabel,
-  planningAhead,
   footer,
   children,
 }: {
   onClose: () => void;
-  weekLabel: string;
-  planningAhead: boolean;
   footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -445,15 +421,9 @@ function Shell({
           so the one warm-paper canvas reads from the very top (no frost seam) */}
       <div data-tauri-drag-region className="h-8 w-full shrink-0" />
       <header className="flex shrink-0 items-center gap-4 border-b border-line px-5 py-2.5">
-        <div className="flex items-baseline gap-3">
-          <div className="wordmark text-head">Plan</div>
-          <div className="mono text-label text-muted">
-            week of {weekLabel}
-            <span className="ml-1.5 rounded-full border border-line px-1.5 py-0.5 text-micro">
-              {planningAhead ? "the week ahead" : "this week"}
-            </span>
-          </div>
-        </div>
+        {/* The week is named ONCE, by the rail's hero. This bar said it a second
+            time and the rail's eyebrow a third — three labels for one date. */}
+        <div className="wordmark text-head">Plan</div>
         <div className="flex-1" />
         <button onClick={onClose} className="keycap shrink-0">esc — resumes later</button>
       </header>
@@ -530,33 +500,70 @@ function UnplacedReport({
  * path in Nuvo already reads, never a plan-only fiction.)
  */
 function OpenTimeLane({
+  shape,
   openMins,
-  reclaimedMins,
   roomFound,
 }: {
+  /** Per working day: how much of the window is committed vs open. */
+  shape: { iso: string; busyMins: number; freeMins: number }[];
   openMins: number;
-  reclaimedMins: number;
-  /** The second beat — the room has been measured and lit on the grid. */
   roomFound: boolean;
 }) {
+  const windowMins = Math.max(1, ...shape.map((d) => d.busyMins + d.freeMins));
   return (
     <section>
-      {/* beat one: the week you actually have. beat two: what's left of it. */}
-      <p className="text-body text-muted">
-        {roomFound ? (
-          <>
-            <span className="text-ink">{hrs(openMins)}h</span> open inside your working hours.
-            {reclaimedMins > 0 && (
-              <span style={{ color: "var(--accent)" }}> {hrs(reclaimedMins)}h of it you took back.</span>
-            )}
-          </>
-        ) : (
-          <>Here's what's already on your week.</>
-        )}
-      </p>
-      <p className="mt-4 text-caption text-muted">
-        Not going to something? Click it on the week — its time counts as open, here and everywhere else
-        in Nuvo. Click it again to put it back.
+      {/* The week's shape, drawn. This was two sentences of prose and a
+          three-line instruction — reading, to answer a question that is entirely
+          visual ("here's your free time; does that look right?"). One bar per
+          day: what's committed, and what's left. */}
+      {/* items-stretch, not items-end: the columns must fill the 96px for their
+          children's percentage heights to resolve against anything. */}
+      <div className="flex items-stretch gap-1.5" style={{ height: 96 }}>
+        {shape.map((d) => {
+          const total = d.busyMins + d.freeMins;
+          const busyPct = total > 0 ? (d.busyMins / windowMins) * 100 : 0;
+          const freePct = total > 0 ? (d.freeMins / windowMins) * 100 : 0;
+          return (
+            <div key={d.iso} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+              <div
+                className="flex w-full flex-1 flex-col justify-end overflow-hidden rounded-[4px]"
+                style={{ background: "color-mix(in srgb, var(--line) 55%, transparent)" }}
+              >
+                {roomFound && (
+                  <div
+                    className="gap-in w-full"
+                    style={{
+                      height: `${freePct}%`,
+                      background: "color-mix(in srgb, var(--slot) 30%, transparent)",
+                    }}
+                    title={`${hrs(d.freeMins)}h open`}
+                  />
+                )}
+                <div
+                  className="w-full"
+                  style={{
+                    height: `${busyPct}%`,
+                    background: "color-mix(in srgb, var(--ink) 22%, transparent)",
+                    transition: "height .32s var(--ease-out)",
+                  }}
+                  title={`${hrs(d.busyMins)}h committed`}
+                />
+              </div>
+              <span className="mono text-micro text-muted">{format(parseDateISO(d.iso), "EEEEE")}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex items-baseline gap-2">
+        <span className="mono text-lead text-ink">{roomFound ? `${hrs(openMins)}h` : "—"}</span>
+        <span className="text-caption text-muted">open</span>
+      </div>
+
+      {/* one line, with the gesture's own glyph instead of a sentence about it */}
+      <p className="mt-4 flex items-baseline gap-1.5 text-caption text-muted">
+        <span aria-hidden style={{ color: "var(--slot)" }}>⊘</span>
+        <span>Not going? Click it on the week.</span>
       </p>
     </section>
   );
@@ -1281,8 +1288,12 @@ function Boundaries({
     <section className="border-t border-line pt-3">
       <button onClick={onToggle} className="fast flex w-full items-center justify-between text-left">
         <span className="section-label">Boundaries</span>
-        <span className="mono text-caption text-muted">
-          {workingLabel} · {toMinLabel(workStart)}–{toMinLabel(workEnd)} · click to {open ? "hide" : "adjust"}
+        <span className="mono flex items-center gap-1.5 text-caption text-muted">
+          {workingLabel} · {toMinLabel(workStart)}–{toMinLabel(workEnd)}
+          {/* the affordance is the glyph, not a sentence telling you to click */}
+          <span aria-hidden className="fast text-meta" style={{ transform: open ? "rotate(180deg)" : undefined }}>
+            ▾
+          </span>
         </span>
       </button>
       {open && (
@@ -1442,7 +1453,6 @@ function WeekGrid({
   workStartMin,
   workEndMin,
   dayContexts,
-  settled,
   gaps,
   onDrop,
   onMove,
@@ -1462,9 +1472,6 @@ function WeekGrid({
   workStartMin: number;
   workEndMin: number;
   dayContexts: Record<string, DayContext>;
-  /** The final step: you're committing the whole week, calendar included, so the
-   *  immovable stops reading as backdrop and joins the plan at full strength. */
-  settled?: boolean;
   /** Open spans per day, drawn as claimable time. Set on the "before" step, where
    *  the question is how much room there is; null once your work is on the grid. */
   gaps?: Map<string, Gap[]> | null;
@@ -1730,12 +1737,13 @@ function WeekGrid({
                     className="gap-in absolute inset-x-1"
                     style={{
                       top: yOf(gs), height: h,
-                      // Open time is the ABSENCE of a commitment, so it can't be
-                      // drawn as an object. A dashed border and a fill made these
-                      // read as calendar events — and louder ones than the real
-                      // events beside them. What's left is a breath of --slot and
-                      // a measurement: the emptiness IS the message.
-                      background: "color-mix(in srgb, var(--slot) 9%, transparent)",
+                      // Open time is the ABSENCE of a commitment. Any fill makes it
+                      // compete with the meetings beside it, and a fill of similar
+                      // weight makes the week unreadable — which is exactly what a
+                      // 9% slot wash next to a 9% ink event did. So: no fill at
+                      // all, one bracket on the edge, and its size. The emptiness
+                      // is the message; the bracket only says how far it runs.
+                      borderLeft: "2px solid color-mix(in srgb, var(--slot) 55%, transparent)",
                       animationDelay: `${Math.min(320, gi * 40)}ms`,
                     }}
                     title={`${fmtMinShort(gs)}–${fmtMinShort(ge)} open`}
@@ -1743,7 +1751,7 @@ function WeekGrid({
                     {h > 26 && (
                       <div
                         className="mono px-1 pt-0.5 text-right text-meta"
-                        style={{ color: "color-mix(in srgb, var(--slot) 78%, var(--ink))" }}
+                        style={{ color: "color-mix(in srgb, var(--slot) 70%, var(--ink))" }}
                       >
                         {hrs(g.mins)}h open
                       </div>
@@ -1772,12 +1780,14 @@ function WeekGrid({
                         // These are the immovable facts you arrived with — they
                         // have to be readable BEFORE anything of yours is on the
                         // week, or step 1 shows you a calendar you can't read.
+                        // A meeting is a FACT you arrived with, so it is drawn like
+                        // one: solid, with a real edge. It used to sit at 5–9% ink
+                        // — the same weight as the open time beside it — which is
+                        // why the week was hard to read before anything was on it.
                         background: aside
                           ? "transparent"
-                          : `color-mix(in srgb, var(--ink) ${settled ? 14 : 9}%, transparent)`,
-                        borderLeft: aside
-                          ? "none"
-                          : `${settled ? 3 : 2}px solid var(--line-strong)`,
+                          : "color-mix(in srgb, var(--ink) 16%, transparent)",
+                        borderLeft: aside ? "none" : "3px solid var(--line-strong)",
                         opacity: aside ? 0.5 : 1,
                         backdropFilter: aside ? undefined : "blur(4px)",
                         WebkitBackdropFilter: aside ? undefined : "blur(4px)",
@@ -1795,7 +1805,7 @@ function WeekGrid({
                         style={
                           aside
                             ? { textDecoration: "line-through", color: "var(--muted)" }
-                            : { color: "var(--ink)", opacity: settled ? 0.92 : 0.72 }
+                            : { color: "var(--ink)", opacity: 0.9 }
                         }
                       >
                         {it.title}
