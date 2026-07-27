@@ -326,65 +326,67 @@ export default function SundayRitual({
 
         {/* The week — never a step. It fills as you keep things in the rail, so
             "the week is full" arrives while you can still do something about it. */}
-        <section className="flex min-w-0 flex-1 flex-col px-6 pt-5">
-          <div className="min-h-0 flex-1 overflow-y-auto">
+        <section className="flex min-w-0 flex-1 flex-col px-6 pb-3 pt-5">
             {gridDays.length === 0 ? (
               <div className="rounded-md border border-dashed border-line p-10 text-center text-caption text-muted">
                 No working days set — choose them in Boundaries.
               </div>
             ) : (
               <>
-                <WeekGrid
-                  days={gridDays}
-                  events={lane === "open" ? weekEvents : visibleEvents}
-                  isEventAside={lane === "open" ? hiddenEvent : undefined}
-                  onToggleEvent={lane === "open" ? toggleEventHidden : undefined}
-                  slots={weekSlots}
-                  locked={onCalBlocks}
-                  placements={shownPlacements}
-                  slotById={slotById}
-                  data={data}
-                  workStartMin={workStart}
-                  workEndMin={workEnd}
-                  dayContexts={dayContexts}
-                  gaps={lane === "open" && roomFound ? gapsByDay : null}
-                  onDrop={dropBlock}
-                  onMove={movePlacement}
-                  onResize={resizePlacement}
-                />
-
-                {/* Can I carry this? A reference you glance at, sitting with the
-                    thing it measures — not the loudest band on the screen, which
-                    is what it became when it sat above the grid at full width. */}
-                <div className="mt-3 border-t border-line pt-3">
-                  <CapacityMeter
-                    intake={intake}
-                    fit={{ placed: shownPlacements.length, unplaced: shownUnplaced.length }}
-                    revealed={revealed}
-                    compact
+                {/* the week takes the height — it's the thing you're reading */}
+                <div className="min-h-0 flex-1">
+                  <WeekGrid
+                    days={gridDays}
+                    events={lane === "open" ? weekEvents : visibleEvents}
+                    isEventAside={lane === "open" ? hiddenEvent : undefined}
+                    onToggleEvent={lane === "open" ? toggleEventHidden : undefined}
+                    slots={weekSlots}
+                    locked={onCalBlocks}
+                    placements={shownPlacements}
+                    slotById={slotById}
+                    data={data}
+                    workStartMin={workStart}
+                    workEndMin={workEnd}
+                    dayContexts={dayContexts}
+                    gaps={lane === "open" && roomFound ? gapsByDay : null}
+                    onDrop={dropBlock}
+                    onMove={movePlacement}
+                    onResize={resizePlacement}
                   />
                 </div>
 
-                {/* Work you kept that the week had no room for. It used to appear
-                    only on the final step, after every decision was made. */}
-                {shownUnplaced.length > 0 && (
-                  <UnplacedReport unplaced={shownUnplaced} onShowProjects={() => setLane("projects")} />
-                )}
+                {/* …and the reference sits under it at its own size, so a long
+                    "no room" list can never squeeze the week it's describing. */}
+                <div className="shrink-0">
+                  <div className="mt-3 border-t border-line pt-3">
+                    <CapacityMeter
+                      intake={intake}
+                      fit={{ placed: shownPlacements.length, unplaced: shownUnplaced.length }}
+                      revealed={revealed}
+                      compact
+                    />
+                  </div>
 
-                {/* boundaries — settings, tucked away; here when you need them */}
-                <div className="mt-4 pb-4">
-                  <Boundaries
-                    open={showBoundaries}
-                    onToggle={() => setShowBoundaries((s) => !s)}
-                    weekDays={weekDays}
-                    fromGate={fromGate}
-                    workingDays={workingDays}
-                    setWorkingDays={setWorkingDays}
-                  />
+                  {shownUnplaced.length > 0 && (
+                    <div className="max-h-[22vh] overflow-y-auto">
+                      <UnplacedReport unplaced={shownUnplaced} onShowProjects={() => setLane("projects")} />
+                    </div>
+                  )}
+
+                  {/* boundaries — settings, tucked away; here when you need them */}
+                  <div className="mt-3">
+                    <Boundaries
+                      open={showBoundaries}
+                      onToggle={() => setShowBoundaries((s) => !s)}
+                      weekDays={weekDays}
+                      fromGate={fromGate}
+                      workingDays={workingDays}
+                      setWorkingDays={setWorkingDays}
+                    />
+                  </div>
                 </div>
               </>
             )}
-          </div>
         </section>
       </div>
     </Shell>
@@ -1532,8 +1534,33 @@ function WeekGrid({
   hi = Math.min(24 * 60, Math.ceil(hi / 60) * 60);
   const hours: number[] = [];
   for (let h = lo; h < hi; h += 60) hours.push(h);
-  const totalH = ((hi - lo) / 60) * HOUR_PX;
-  const yOf = (m: number) => ((m - lo) / 60) * HOUR_PX;
+
+  /**
+   * An hour is at least `HOUR_PX` tall, and taller when the pane can afford it.
+   *
+   * A fixed 44px meant a tall window showed the same cramped week as a short one
+   * — hours ended two-thirds down the pane with dead space beneath, and a
+   * 15-minute commitment stayed an 11px sliver you couldn't read or aim at.
+   * Stretching to fit is what makes the extra height *worth* anything: bigger
+   * blocks, legible titles, real click targets.
+   */
+  const [paneH, setPaneH] = useState(0);
+  const paneRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = paneRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setPaneH(el.clientHeight));
+    ro.observe(el);
+    setPaneH(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+  const HEADER_H = 46; // the sticky day headers live inside the same scroller
+  const hourPx =
+    hours.length > 0 && paneH > 0
+      ? Math.max(HOUR_PX, Math.floor((paneH - HEADER_H) / hours.length))
+      : HOUR_PX;
+  const totalH = ((hi - lo) / 60) * hourPx;
+  const yOf = (m: number) => ((m - lo) / 60) * hourPx;
 
   // ── hand-editing — drag a placed block to move it, drag its edge to resize ──
   // Pointer events (Tauri swallows HTML5 DnD). The held block lifts into glass and
@@ -1645,7 +1672,11 @@ function WeekGrid({
   };
 
   return (
-    <div className="overflow-auto rounded-lg border border-line" style={{ maxHeight: "62vh" }}>
+    // Fills whatever height the pane gives it. This used to be capped at 62vh —
+    // a number that ignored the actual window, so on a tall screen the week
+    // stopped two-thirds of the way down with empty pane beneath it, and you
+    // scrolled a small box instead of seeing your days.
+    <div ref={paneRef} className="h-full overflow-auto rounded-lg border border-line">
       {/* day headers — sticky frosted glass so they stay legible over the scroll,
           without painting an opaque seam over the warm-paper canvas */}
       <div
@@ -1672,7 +1703,7 @@ function WeekGrid({
       <div className="flex" style={{ height: totalH }}>
         <div className="w-[52px] shrink-0">
           {hours.map((h) => (
-            <div key={h} className="relative" style={{ height: HOUR_PX }}>
+            <div key={h} className="relative" style={{ height: hourPx }}>
               <span className="mono absolute -top-1.5 right-1.5 text-meta text-muted">{formatHourLabel(Math.floor(h / 60))}</span>
             </div>
           ))}

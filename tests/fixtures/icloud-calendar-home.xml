@@ -1,0 +1,604 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<multistatus xmlns="DAV:">
+
+    
+    
+    <response xmlns="DAV:">
+        <href>/9000000000/calendars/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Phil Chan</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/><comp name='VTODO' xmlns='urn:ietf:params:xml:ns:caldav'/><comp name='VFREEBUSY' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+                    <propstat>
+                        <prop>
+                            
+                                
+                            
+                                
+                            
+                                
+                            
+                                
+                                    <calendar-color xmlns="http://apple.com/ns/ical/"/>
+                                
+                            
+                        </prop>
+                        <status>HTTP/1.1 404 Not Found</status>
+                    </propstat>
+                
+            
+    </response>
+    
+    
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/12AE06F1-0EB5-408F-8483-BFCFD57B7FD9/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Work</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#FF2968FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/199A2815-F8B2-4C37-BE33-3E5C42EA562F/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">philtheauthor</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#63DA38FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/1b9ac5b569b3e6a161b5a432155fed4a8732033e/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Whole Church Events</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><subscribed xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#B90E28FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/1f84b4af-c9e3-4c5c-979c-e10374b5ef5d/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Reminders ⚠️</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VTODO' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#9F2DBCFF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/5b71ee9eabac0e23c1c862d0c039d0aa5255b314/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Meals</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><subscribed xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#0E61B9FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/70DF1BF4-7418-4794-A6A0-980F5F109AC7/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Target / Walmart ⚠️</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/><shared-owner xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VTODO' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#FB0055FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/86A6A600-FB55-42EF-BD10-2048AE1E5C81/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Bible Reading Plan</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/><shared-owner xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#CC73E1FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/9468b92ce005cdc250816a3e84f013299c45f6b3/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Calendar</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><subscribed xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#4B4B4BFF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/96A7715E-9D2E-4346-919F-5DF39D5B8523/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Asian store ⚠️</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/><shared-owner xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VTODO' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#55D62BFF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/A453148A-6541-4C16-B5BC-81DEC3C60FDD/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">US Holidays</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><subscribed xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#000000FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/FCAC77F1-D7F0-45F0-892A-857ABFCC8B7A/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Money</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/><shared-owner xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#000000FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/b429a4d3-7da0-409e-9da6-0f3523347e29/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Grocery ⚠️</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/><shared-owner xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VTODO' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#FDC209FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/ecb0ee6e-6b03-4406-bfb2-0d9ad9a06d7e/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Family</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/><shared-owner xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#E6C800FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/home/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                                <displayname xmlns="DAV:">Me</displayname>
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                                <calendar-color xmlns="http://apple.com/ns/ical/">#0E61B9FF</calendar-color>
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/inbox/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><schedule-inbox xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+                    <propstat>
+                        <prop>
+                            
+                                
+                                    <displayname xmlns="DAV:"/>
+                                
+                            
+                                
+                            
+                                
+                            
+                                
+                                    <calendar-color xmlns="http://apple.com/ns/ical/"/>
+                                
+                            
+                        </prop>
+                        <status>HTTP/1.1 404 Not Found</status>
+                    </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/notification/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><notification xmlns="http://calendarserver.org/ns/"/></resourcetype>
+                            
+                        
+                            
+                            
+                        
+                            
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+                    <propstat>
+                        <prop>
+                            
+                                
+                                    <displayname xmlns="DAV:"/>
+                                
+                            
+                                
+                            
+                                
+                                    <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"/>
+                                
+                            
+                                
+                                    <calendar-color xmlns="http://apple.com/ns/ical/"/>
+                                
+                            
+                        </prop>
+                        <status>HTTP/1.1 404 Not Found</status>
+                    </propstat>
+                
+            
+        </response>
+        
+        <response xmlns="DAV:">
+            <href>/9000000000/calendars/outbox/</href>
+            
+                <propstat>
+                    <prop>
+                        
+                            
+                            
+                        
+                            
+                                <resourcetype xmlns="DAV:"><collection/><schedule-outbox xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype>
+                            
+                        
+                            
+                                <supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name='VEVENT' xmlns='urn:ietf:params:xml:ns:caldav'/><comp name='VTODO' xmlns='urn:ietf:params:xml:ns:caldav'/></supported-calendar-component-set>
+                            
+                        
+                            
+                            
+                        
+                    </prop>
+                    <status>HTTP/1.1 200 OK</status>
+                </propstat>
+                
+                    <propstat>
+                        <prop>
+                            
+                                
+                                    <displayname xmlns="DAV:"/>
+                                
+                            
+                                
+                            
+                                
+                            
+                                
+                                    <calendar-color xmlns="http://apple.com/ns/ical/"/>
+                                
+                            
+                        </prop>
+                        <status>HTTP/1.1 404 Not Found</status>
+                    </propstat>
+                
+            
+        </response>
+        
+    
+    
+    
+    
+
+
+</multistatus>

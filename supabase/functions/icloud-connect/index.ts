@@ -26,16 +26,15 @@ Deno.serve(async (req) => {
     // dashes are display-only — accept them pasted either way.
     const password = appPassword.trim().replace(/\s+/g, "");
 
-    // Verify credentials by listing calendars (throws 401 message on bad creds).
+    // Verify credentials by listing calendars. Discovery throws on bad creds
+    // *and* on an empty result, so there is no "connected successfully to
+    // nothing" path — the message says which failure it was.
     let calendars;
     try {
       calendars = await discoverCalendars(username, password);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return json({ error: msg }, 400);
-    }
-    if (!calendars.length) {
-      return json({ error: "No calendars found for this Apple ID" }, 400);
     }
 
     const secretId = await storeSecret(`icloud_pw_${user.id}_${username}`, password);

@@ -20,6 +20,7 @@
 // delete the entire calendar. The reconcile read already tells us exactly which
 // stored rows the provider stopped sending, so we delete precisely those.
 import { admin } from "./admin.ts";
+import { isSuspectWipe } from "./sweepSafety.ts";
 
 /** The columns a sync writes. `content_hash` is filled in by reconcileEvents. */
 export interface EventRow {
@@ -104,6 +105,32 @@ function put<T>(m: ByCalendar<T>, cal: string, id: string, v: T): void {
   inner.set(id, v);
 }
 
+function total<T>(m: ByCalendar<T>): number {
+  let n = 0;
+  for (const inner of m.values()) n += inner.size;
+  return n;
+}
+
+/** Refuse a sweep that `sweepSafety` judges to be a wipe rather than a set of
+ *  real cancellations. Throwing rather than silently skipping is the point:
+ *  the caller logs an error and backs the account off, instead of adding
+ *  another green run to a thousand green runs that did nothing. */
+function assertNotAWipe(
+  scope: ReconcileScope,
+  incoming: ByCalendar<EventRow>,
+  stored: ByCalendar<string | null>,
+  sweep: boolean,
+): void {
+  if (!sweep) return;
+  const storedCount = total(stored);
+  if (!isSuspectWipe(total(incoming), storedCount)) return;
+  const where = scope.calendarId ? `calendar ${scope.calendarId}` : `account ${scope.accountId}`;
+  throw new Error(
+    `refusing to sweep ${storedCount} stored events for ${where}: the provider returned no events at all, ` +
+      `which is a provider failure rather than an empty calendar`,
+  );
+}
+
 /** Read what's stored, write only what changed, delete only what's gone.
  *
  *  `rows` must be every event the provider reported for this scope in this
@@ -183,6 +210,8 @@ export async function reconcileEvents(
       if (page.length < PAGE) break;
     }
   }
+
+  assertNotAWipe(scope, incoming, stored, opts.sweep);
 
   const changed: EventRow[] = [];
   let unchanged = 0;
