@@ -212,6 +212,49 @@ export function useWeekDraft() {
     [onCalBlocks],
   );
 
+  // ── what you moved by hand is a boundary, not a decoration ────────────────
+  //
+  // A move (day + start) or a resize (duration), per BLOCK. Keyed per placement,
+  // not per task: a split overdue task puts two blocks on the board sharing one
+  // task id, so keying by task made them move as one.
+  //
+  // **They are fed back into the canvas.** They used to be applied *after* the
+  // compose, as a cosmetic patch over its answer — so the composer went on
+  // believing your project still sat where it had put it, and the next step
+  // dropped tasks straight on top of where you had actually dragged it. A block
+  // you placed yourself is now as immovable as a meeting, and everything after
+  // it is composed around it. Every step recomposes, so a change on one step is
+  // visible on the next.
+  const [overrides, setOverrides] = useState<Record<string, { dayISO: string; startMin: number; durationMin: number }>>({});
+  const pinned = useMemo(() => {
+    const byId = new Map(composeTasks.map((t) => [t.id, t]));
+    const out: { task: Task; dayISO: string; startMin: number; durationMin: number }[] = [];
+    for (const [key, o] of Object.entries(overrides)) {
+      // a dragged *part* of a split task can't be pinned without stranding its
+      // siblings — those keep the old cosmetic behaviour
+      if (key.includes("#")) continue;
+      const task = byId.get(key);
+      if (task) out.push({ task, ...o });
+    }
+    return out;
+  }, [overrides, composeTasks]);
+  const pinnedIds = useMemo(() => new Set(pinned.map((p) => p.task.id)), [pinned]);
+  /** Your blocks, in the shape the composer reads immovable time in. */
+  const pinnedBlocks = useMemo<Task[]>(
+    () =>
+      pinned.map(
+        (p) =>
+          ({
+            id: p.task.id,
+            title: p.task.title,
+            duration_minutes: p.durationMin,
+            start_time: `${p.dayISO}T${String(Math.floor(p.startMin / 60)).padStart(2, "0")}:${String(p.startMin % 60).padStart(2, "0")}:00`,
+            status: "backlog",
+          }) as unknown as Task,
+      ),
+    [pinned],
+  );
+
   // ── compose-on-open: the schedule recomputes from the draft, live ──────────
   const result = useMemo(
     () =>
@@ -219,9 +262,9 @@ export function useWeekDraft() {
         weekStartISO,
         todayISO: today,
         now: new Date(),
-        tasks: composeTasks,
+        tasks: composeTasks.filter((t) => !pinnedIds.has(t.id)),
         events: visibleEvents,
-        blocks: onCalBlocks,
+        blocks: [...onCalBlocks, ...pinnedBlocks],
         workStartMin: workStart,
         workEndMin: workEnd,
         focusInitiativeIds: data.focusInitiativeIds,
@@ -248,7 +291,7 @@ export function useWeekDraft() {
         // a slot holds real tasks — it can't be carved in half
         atomicIds: draftBlocks.map((b) => b.id),
       }),
-    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, onCalBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays],
+    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, onCalBlocks, pinnedIds, pinnedBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays],
   );
 
   const gain = useMemo(() => computeGain(data), [data]);
@@ -310,30 +353,29 @@ export function useWeekDraft() {
     return out;
   }, [suggestions]);
 
-  // Hand-edits on top of Nuvo's auto-placement: a move (day + start) or a resize
-  // (duration) per BLOCK. These override the composed placement and ride into the
-  // commit, so you build off the suggestion instead of accepting it whole.
-  //
-  // Keyed per placement, not per task: a split overdue task puts two blocks on the
-  // board sharing one task id, so keying by task made them move as one — which is
-  // why they were locked. The key is the block; the task id rides along for drop.
-  const [overrides, setOverrides] = useState<Record<string, { dayISO: string; startMin: number; durationMin: number }>>({});
-  const placements = useMemo(
-    () => result.placements.map((p) => {
-      const o = overrides[placementKey(p)];
-      return o ? { ...p, dayISO: o.dayISO, startMin: o.startMin, durationMin: o.durationMin } : p;
-    }),
-    [result.placements, overrides],
+  const placements = useMemo<Placement[]>(
+    () => [
+      ...result.placements,
+      // your own blocks, re-materialized at the position you put them in
+      ...pinned.map((p) => ({
+        task: p.task,
+        dayISO: p.dayISO,
+        startMin: p.startMin,
+        durationMin: p.durationMin,
+        reason: "you placed this",
+      })),
+    ],
+    [result.placements, pinned],
   );
   const movePlacement = (key: string, dayISO: string, startMin: number) =>
     setOverrides((prev) => {
-      const base = result.placements.find((p) => placementKey(p) === key);
+      const base = placements.find((p) => placementKey(p) === key);
       const durationMin = prev[key]?.durationMin ?? base?.durationMin ?? 30;
       return { ...prev, [key]: { dayISO, startMin, durationMin } };
     });
   const resizePlacement = (key: string, durationMin: number) =>
     setOverrides((prev) => {
-      const base = result.placements.find((p) => placementKey(p) === key);
+      const base = placements.find((p) => placementKey(p) === key);
       const dayISO = prev[key]?.dayISO ?? base?.dayISO ?? "";
       const startMin = prev[key]?.startMin ?? base?.startMin ?? 0;
       return { ...prev, [key]: { dayISO, startMin, durationMin } };

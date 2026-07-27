@@ -525,7 +525,12 @@ export function composeWeek(input: ComposeInput): ComposeResult {
   type Snapshot = ReturnType<typeof snapshot>;
   const snapshot = () => ({
     days: days.map((d) => ({ d, slots: d.slots.map((s) => ({ ...s })), placed: d.placed, deepCount: d.deepCount })),
-    placements: placements.length,
+    // The *contents*, not the length. Keeping a length was enough for a single
+    // undo, but the re-seat now tries more than one reach: the second attempt
+    // overwrites the first's entries in place, and truncating back to the old
+    // length then left the loser's blocks standing — which is how a project's
+    // part 2 ended up on the board ahead of its part 1.
+    placements: [...placements],
     lastProjectOn: new Map(lastProjectOn),
     projectAfter: new Map(projectAfter),
     placedTotal,
@@ -536,7 +541,8 @@ export function composeWeek(input: ComposeInput): ComposeResult {
       e.d.placed = e.placed;
       e.d.deepCount = e.deepCount;
     }
-    placements.length = s.placements;
+    placements.length = 0;
+    placements.push(...s.placements);
     lastProjectOn.clear();
     for (const [k, v] of s.lastProjectOn) lastProjectOn.set(k, v);
     projectAfter.clear();

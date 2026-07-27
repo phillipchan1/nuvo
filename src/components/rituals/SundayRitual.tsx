@@ -1529,6 +1529,55 @@ function WalkAction({
 }
 
 // ── the week grid — a familiar week planner; OUR placements rendered strong ──
+/**
+ * Overlapping blocks share the column instead of stacking on top of each other.
+ *
+ * Without this the week is a pile: drag one block over another to swap them and
+ * the thing you were aiming at vanishes underneath the thing you're holding, so
+ * the one gesture that needs both visible is the one that hides one of them.
+ * Standard calendar column packing — a run of mutually overlapping blocks is a
+ * cluster, every block takes the first column free at its start, and the whole
+ * cluster splits the width evenly.
+ */
+function assignLanes(items: { id: string; startMin: number; endMin: number }[]) {
+  const out = new Map<string, { col: number; cols: number }>();
+  const sorted = [...items].sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
+  let cluster: typeof sorted = [];
+  let clusterEnd = -Infinity;
+  const flush = () => {
+    if (cluster.length === 0) return;
+    const colEnds: number[] = [];
+    const assigned: { id: string; col: number }[] = [];
+    for (const it of cluster) {
+      let col = colEnds.findIndex((e) => e <= it.startMin);
+      if (col === -1) {
+        col = colEnds.length;
+        colEnds.push(it.endMin);
+      } else colEnds[col] = it.endMin;
+      assigned.push({ id: it.id, col });
+    }
+    for (const a of assigned) out.set(a.id, { col: a.col, cols: colEnds.length });
+    cluster = [];
+    clusterEnd = -Infinity;
+  };
+  for (const it of sorted) {
+    if (cluster.length > 0 && it.startMin >= clusterEnd) flush();
+    cluster.push(it);
+    clusterEnd = Math.max(clusterEnd, it.endMin);
+  }
+  flush();
+  return out;
+}
+
+/** Where a block sits across its column, once its neighbours have had their say. */
+const laneStyle = (lane: { col: number; cols: number } | undefined) => {
+  const { col, cols } = lane ?? { col: 0, cols: 1 };
+  return {
+    left: `calc(${(col / cols) * 100}% + 4px)`,
+    width: `calc(${100 / cols}% - 8px)`,
+  };
+};
+
 interface GridItem {
   id: string;
   kind: "event" | "locked" | "new" | "slot";
@@ -1856,6 +1905,14 @@ function WeekGrid({
         </div>
         {days.map((d) => {
           const items = (byDay.get(d.iso) ?? []).sort((a, b) => a.startMin - b.startMin);
+          // The block under your cursor is laid out with everything else, so it
+          // takes a column *beside* what it's landing on rather than covering it —
+          // which is the whole point of dragging one onto another.
+          const ghost =
+            drag?.mode === "move" && drag.dayISO === d.iso
+              ? { id: "__ghost", startMin: drag.startMin, endMin: drag.startMin + drag.durationMin }
+              : null;
+          const lanes = assignLanes([...items, ...(ghost ? [ghost] : [])]);
           return (
             <div
               key={d.iso}
@@ -1888,7 +1945,11 @@ function WeekGrid({
                       // meetings instead, so scanning the week for teal answers
                       // "where is my room" without reading anything.
                       background: OPEN_FILL,
-                      border: `1px solid ${OPEN_EDGE}`,
+                      // longhand on every side — mixing `border` with `borderLeft`
+                      // makes React drop one of them on a re-render
+                      borderTop: `1px solid ${OPEN_EDGE}`,
+                      borderRight: `1px solid ${OPEN_EDGE}`,
+                      borderBottom: `1px solid ${OPEN_EDGE}`,
                       borderLeft: `2px solid ${OPEN_EDGE_STRONG}`,
                       animationDelay: `${Math.min(320, gi * 40)}ms`,
                     }}
@@ -1913,9 +1974,9 @@ function WeekGrid({
                       data-block
                       onPointerDown={canToggle ? (e) => e.stopPropagation() : undefined}
                       onClick={canToggle ? () => onToggleEvent!(it.event!) : undefined}
-                      className={`group/ev absolute inset-x-1 overflow-hidden rounded-[5px] py-0.5 ${aside ? "pl-1" : "px-1.5"} ${canToggle ? "fast cursor-pointer" : ""}`}
+                      className={`group/ev absolute overflow-hidden rounded-[5px] py-0.5 ${aside ? "pl-1" : "px-1.5"} ${canToggle ? "fast cursor-pointer" : ""}`}
                       style={{
-                        top, height,
+                        top, height, ...laneStyle(lanes.get(it.id)),
                         // These are the immovable facts you arrived with — they
                         // have to be readable BEFORE anything of yours is on the
                         // week, or step 1 shows you a calendar you can't read.
@@ -2018,9 +2079,9 @@ function WeekGrid({
                     key={`${it.kind}-${it.id}`}
                     data-block
                     onPointerDown={draggable ? (e) => startDrag(e, it, d.iso, "move") : undefined}
-                    className={`group lift-anim absolute inset-x-1 overflow-hidden rounded-[6px] px-1.5 py-1 ${draggable ? "cursor-grab" : ""} ${isNew ? "block-in" : ""}`}
+                    className={`group lift-anim absolute overflow-hidden rounded-[6px] px-1.5 py-1 ${draggable ? "cursor-grab" : ""} ${isNew ? "block-in" : ""}`}
                     style={{
-                      top: blkTop, height: blkHeight,
+                      top: blkTop, height: blkHeight, ...laneStyle(lanes.get(it.id)),
                       color: "var(--ink)",
                       background: `color-mix(in srgb, ${hue} ${isProject ? 26 : isNew ? 22 : isSlot ? 18 : 13}%, transparent)`,
                       borderLeft: `${isProject ? 4 : 3}px solid ${hue}`,
@@ -2144,8 +2205,9 @@ function WeekGrid({
               })}
               {drag?.mode === "move" && drag.dayISO === d.iso && (
                 <div
-                  className="glass-grab pointer-events-none absolute inset-x-1 overflow-hidden rounded-[6px] px-1.5 py-1"
+                  className="glass-grab pointer-events-none absolute overflow-hidden rounded-[6px] px-1.5 py-1"
                   style={{
+                    ...laneStyle(lanes.get("__ghost")),
                     top: yOf(drag.startMin),
                     height: Math.max(MIN_BLOCK_PX, yOf(drag.startMin + drag.durationMin) - yOf(drag.startMin)),
                     color: "var(--ink)",
