@@ -45,7 +45,7 @@ import { type PullSuggestion } from "../../lib/pull";
 import { lensGaps } from "../../lib/lenses";
 import { projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { bringIntoWeekPatch, pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
-import { PLAN_STEPS, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekPlanStep } from "../../lib/intake";
+import { PLAN_STEPS, STEP_LABEL, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekPlanStep } from "../../lib/intake";
 import SourceSwitch, { CapacityMeter } from "./WeekIntake";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import { Btn } from "../ui";
@@ -1345,25 +1345,38 @@ function WalkAction({
 }) {
   const step = PLAN_STEPS.indexOf(lane);
   const last = step === stepCount - 1;
-  const NEXT_ACT: Record<WeekPlanStep, string> = {
-    open: "Add your projects",
-    projects: "Add the rest",
+  /**
+   * The button **completes the step you're on**, in your own voice — it doesn't
+   * describe the next one.
+   *
+   * It used to say "Add your projects" on the open-time step, which named what
+   * the *next* screen does. But standing on step 1 you aren't adding projects,
+   * you're agreeing that this is the room the week really has; a button that
+   * narrates somewhere else gives you nothing to decide against. Where you'll
+   * land is a quiet line beneath — a name, not a step number, because the
+   * stepper already owns the counting.
+   */
+  const DONE_ACT: Record<WeekPlanStep, string> = {
+    open: "That's my open time",
+    projects: "That's what I'm moving",
     rest: "",
   };
-
-  // One control, no commentary. This foot used to carry a per-step tally AND the
-  // kept count AND the next step's number — the same hours the stepper was already
-  // printing two inches above, and a second step anchor competing with it. The
-  // step lives once, over the question; the measuring lives once, under the grid.
   return (
-    <Btn
-      kind="primary"
-      onClick={last ? onCommit : () => onNext(PLAN_STEPS[step + 1])}
-      disabled={applying}
-      className="w-full justify-center px-4 py-2.5"
-    >
-      {last ? (applying ? "committing…" : "Commit the week →") : `${NEXT_ACT[lane]} →`}
-    </Btn>
+    <div>
+      <Btn
+        kind="primary"
+        onClick={last ? onCommit : () => onNext(PLAN_STEPS[step + 1])}
+        disabled={applying}
+        className="w-full justify-center px-4 py-2.5"
+      >
+        {last ? (applying ? "committing…" : "Commit the week →") : `${DONE_ACT[lane]} →`}
+      </Btn>
+      {!last && (
+        <div className="mono mt-1.5 text-center text-meta text-muted">
+          next · {STEP_LABEL[PLAN_STEPS[step + 1]]}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1757,26 +1770,35 @@ function WeekGrid({
                       }
                     >
                       <div className="flex items-baseline gap-1">
+                        {/* The toggle state, said with a mark rather than left to
+                            be inferred from a strikethrough: ✓ counts against your
+                            week, ○ has been set aside and its time is open. */}
+                        {canToggle && height >= 16 && (
+                          <span
+                            aria-hidden
+                            className="mono flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] text-micro leading-none"
+                            style={
+                              aside
+                                ? { border: "1px dashed var(--slot)", color: "var(--slot)" }
+                                : { background: "var(--line-strong)", color: "var(--surface)" }
+                            }
+                          >
+                            {aside ? "" : "✓"}
+                          </span>
+                        )}
                         <span
                           className="mono min-w-0 flex-1 truncate text-meta leading-tight"
                           style={
                             aside
                               ? { textDecoration: "line-through", color: "var(--muted)" }
-                              : { color: "var(--ink)", opacity: 0.9 }
+                              : { color: "var(--ink)", opacity: canToggle ? 1 : 0.62 }
                           }
                         >
                           {it.title}
                         </span>
-                        {/* the affordance, on hover — a commitment never looked
-                            pressable, so "click the ones you're not going to"
-                            was an instruction with nothing to aim at */}
-                        {canToggle && height > 20 && (
-                          <span
-                            aria-hidden
-                            className="mono shrink-0 text-micro opacity-0 transition-opacity group-hover/ev:opacity-100"
-                            style={{ color: aside ? "var(--slot)" : "var(--muted)" }}
-                          >
-                            {aside ? "↩" : "⊘"}
+                        {canToggle && aside && height > 20 && (
+                          <span className="mono shrink-0 text-micro" style={{ color: "var(--slot)" }}>
+                            open
                           </span>
                         )}
                       </div>

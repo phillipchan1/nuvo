@@ -2,12 +2,17 @@
  * Plan the week — the flagship visual.
  *
  * A faithful recreation of the real flow (`src/components/rituals/SundayRitual.tsx`
- * over `useWeekDraft`): the pool on the left walks four questions, the week on the
+ * over `useWeekDraft`): the pool on the left walks three questions, the week on the
  * right fills as you answer, and the meter under the grid measures the whole thing
  * the entire time. Driven against the running app on 2026-07-27 — the step
  * questions, the button labels, the block eyebrows (PROJECT · PART 1 OF 2), the
  * "no open time left" report and the "past your usual" phrasing are the product's
  * own words, not marketing paraphrase.
+ *
+ * Kept in step with `src/lib/intake.ts` — PLAN_STEPS / STEP_LABEL / STEP_QUESTION.
+ * When the walk changes shape there (Leftovers + Inbox became one step, "The
+ * rest", in 6968d50), this file changes with it or the site sells a screen that
+ * no longer exists.
  *
  * The steps are clickable, and advance on their own once while the visual is in
  * view — the argument of the section is that the week *fills as you decide*, and a
@@ -31,7 +36,7 @@ const WORK = '#2563EB'
 const FAITH = '#7C3AED'
 const HOME = '#0D9488'
 
-type Step = 0 | 1 | 2 | 3
+type Step = 0 | 1 | 2
 
 type Event = { day: number; start: number; end: number; title: string }
 
@@ -73,21 +78,21 @@ const BLOCKS: Block[] = [
   { step: 1, day: 0, start: 10, end: 11.5, title: 'Recommendation plan', eyebrow: 'PROJECT · 3 TASKS', color: WORK },
   { step: 1, day: 3, start: 13.5, end: 15, title: 'Coaching curriculum', eyebrow: 'PROJECT · PART 2 OF 2', color: FAITH },
   { step: 1, day: 4, start: 14, end: 15.5, title: 'Meridian launch', eyebrow: 'PROJECT · PART 2 OF 2', color: WORK },
-  // Step 3 — what slipped, what's due.
+  // Step 3 — everything the week is carrying that isn't a project: what slipped,
+  // what's due, and this morning's captures, slotted together in one pass.
   { step: 2, day: 0, start: 15, end: 16, title: 'Record the demo', eyebrow: 'TASK · ↻11', color: WORK },
   { step: 2, day: 2, start: 13, end: 14, title: 'Order the refill', eyebrow: 'TASK', color: HOME },
-  // Step 4 — raw captures, themed into slots and given a time.
-  { step: 3, day: 3, start: 9.5, end: 10.5, title: 'Church — media handoff', eyebrow: 'SLOT · 3 CAPTURES', color: FAITH },
-  { step: 3, day: 4, start: 8, end: 9, title: 'Admin — bills & forms', eyebrow: 'SLOT · 2 CAPTURES', color: HOME },
-  { step: 3, day: 1, start: 10, end: 11, title: 'Reply — Dana', eyebrow: 'SLOT · 1 CAPTURE', color: WORK },
+  { step: 2, day: 3, start: 9.5, end: 10.5, title: 'Church — media handoff', eyebrow: 'SLOT · 3 CAPTURES', color: FAITH },
+  { step: 2, day: 4, start: 8, end: 9, title: 'Admin — bills & forms', eyebrow: 'SLOT · 2 CAPTURES', color: HOME },
+  { step: 2, day: 1, start: 10, end: 11, title: 'Reply — Dana', eyebrow: 'SLOT · 1 CAPTURE', color: WORK },
 ]
 
-/** The four questions, verbatim from `src/lib/intake.ts`. */
+/** The three questions and the act on each button, verbatim from the product
+ *  (`STEP_LABEL` / `STEP_QUESTION` in src/lib/intake.ts, `NEXT_ACT` in the ritual). */
 const STEPS = [
   { tab: 'Open time', question: 'What room does this week actually have?', action: 'Add your projects' },
-  { tab: 'Projects', question: 'What are you moving this week?', action: 'Add what’s left over' },
-  { tab: 'Leftovers', question: 'What didn’t get done, and what’s due?', action: 'Add the inbox' },
-  { tab: 'Inbox', question: 'What came in that you haven’t sorted?', action: 'Commit the week' },
+  { tab: 'Projects', question: 'What are you moving this week?', action: 'Add the rest' },
+  { tab: 'The rest', question: 'What else is the week carrying?', action: 'Commit the week' },
 ] as const
 
 /** The meter's segments. Everything is measured from the first step — work you
@@ -95,8 +100,8 @@ const STEPS = [
 const SEGMENTS = [
   { step: 0, label: 'Already on the calendar', pct: 43, fill: 'var(--line-strong)' },
   { step: 1, label: 'Projects', pct: 32, fill: 'var(--accent)' },
-  { step: 2, label: 'Leftovers', pct: 11, fill: 'var(--accent-2)' },
-  { step: 3, label: 'Inbox', pct: 14, fill: 'color-mix(in srgb, var(--accent-2) 55%, var(--surface))' },
+  { step: 2, label: 'Carried', pct: 11, fill: 'var(--accent-2)' },
+  { step: 2, label: 'New', pct: 14, fill: 'color-mix(in srgb, var(--accent-2) 55%, var(--surface))' },
 ] as const
 
 const PROJECT_ROWS = [
@@ -106,16 +111,14 @@ const PROJECT_ROWS = [
   { name: 'Get Dayspring on the App Store', meta: '4/4 · 3.5h', color: HOME },
 ]
 
-const LEFTOVER_ROWS = [
-  { name: 'Record the demo', badge: '↻11', meta: '1h30' },
-  { name: 'Research — leadership test', badge: '↻5', meta: '1h' },
-]
-
-const INBOX_ROWS = [
-  { name: 'Church — media handoff', meta: '3 captures', color: FAITH },
-  { name: 'Admin — bills & forms', meta: '2 captures', color: HOME },
-  { name: 'Reply — Dana', meta: '1 capture', color: WORK },
-  { name: 'Cruise dates for Mom', meta: '1 capture', color: HOME },
+/** One pool: a task that slipped and a capture that arrived this morning are the
+ *  same kind of thing at slotting time, so the walk asks about them once. */
+const REST_ROWS = [
+  { name: 'Record the demo', badge: '↻11', meta: '1h30', color: WORK },
+  { name: 'Research — leadership test', badge: '↻5', meta: '1h', color: WORK },
+  { name: 'Order the refill', badge: 'quiet', meta: '30m', color: HOME },
+  { name: 'Church — media handoff', badge: null, meta: '3 captures', color: FAITH },
+  { name: 'Admin — bills & forms', badge: null, meta: '2 captures', color: HOME },
 ]
 
 function fmtHour(h: number) {
@@ -140,7 +143,7 @@ export default function PlanWeekVisual() {
     const el = ref.current
     if (!el || walked.current) return
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setStep(3)
+      setStep(2)
       walked.current = true
       return
     }
@@ -160,7 +163,7 @@ export default function PlanWeekVisual() {
 
   useEffect(() => {
     if (!walking) return
-    if (step >= 3) {
+    if (step >= STEPS.length - 1) {
       setWalking(false)
       return
     }
@@ -223,7 +226,9 @@ export default function PlanWeekVisual() {
             ))}
           </div>
 
-          <p className="section-label mt-5 text-[var(--accent)]">Step {step + 1} of 4</p>
+          <p className="section-label mt-5 text-[var(--accent)]">
+            Step {step + 1} of {STEPS.length}
+          </p>
           <p className="masthead mt-1 text-[1.0625rem] leading-snug text-[var(--text)]">
             {current.question}
           </p>
@@ -260,69 +265,33 @@ export default function PlanWeekVisual() {
           )}
 
           {step === 2 && (
-            <>
-              <p className="section-label text-[var(--muted)]">
-                Carried over <span className="mono normal-case tracking-normal">2 · 2.5h</span>
-              </p>
-              <ul className="mt-1.5">
-                {LEFTOVER_ROWS.map((r) => (
-                  <li
-                    key={r.name}
-                    className="flex items-center gap-2 border-b border-[var(--line)] py-2 text-[13px]"
-                  >
-                    <span
-                      className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] text-[9px] text-white"
-                      style={{ background: 'var(--accent)' }}
-                    >
-                      ✓
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[var(--text)]">{r.name}</span>
-                    <span className="mono shrink-0 text-[10px] text-[var(--signal)]">{r.badge}</span>
-                    <span className="mono shrink-0 text-[11px] text-[var(--muted)]">{r.meta}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="section-label mt-4 text-[var(--muted)]">
-                Due, or going quiet <span className="mono normal-case tracking-normal">1</span>
-              </p>
-              <div className="flex items-center gap-2 border-b border-[var(--line)] py-2 text-[13px]">
-                <span
-                  className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] text-[9px] text-white"
-                  style={{ background: 'var(--accent)' }}
+            <ul>
+              {REST_ROWS.map((r) => (
+                <li
+                  key={r.name}
+                  className="flex items-center gap-2 border-b border-[var(--line)] py-2 text-[13px]"
                 >
-                  ✓
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[var(--text)]">Order the refill</span>
-                <span className="mono shrink-0 text-[11px] text-[var(--muted)]">quiet · 30m</span>
-              </div>
-            </>
-          )}
-
-          {step === 3 && (
-            <>
-              <p className="section-label text-[var(--muted)]">
-                Slots <span className="mono normal-case tracking-normal">4</span>
-              </p>
-              <ul className="mt-1.5">
-                {INBOX_ROWS.map((r) => (
-                  <li
-                    key={r.name}
-                    className="flex items-center gap-2 border-b border-[var(--line)] py-2 text-[13px]"
+                  <span
+                    className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] text-[9px] text-white"
+                    style={{ background: 'var(--accent)' }}
                   >
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: r.color }} />
-                    <span className="min-w-0 flex-1 truncate text-[var(--text)]">{r.name}</span>
-                    <span className="mono shrink-0 text-[11px] text-[var(--muted)]">{r.meta}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
+                    ✓
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[var(--text)]">{r.name}</span>
+                  {r.badge && (
+                    <span className="mono shrink-0 text-[10px] text-[var(--signal)]">{r.badge}</span>
+                  )}
+                  <span className="mono shrink-0 text-[11px] text-[var(--muted)]">{r.meta}</span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
 
         <div className="border-t border-[var(--line)] p-3">
           <button
             type="button"
-            onClick={() => choose(Math.min(step + 1, 3) as Step)}
+            onClick={() => choose(Math.min(step + 1, STEPS.length - 1) as Step)}
             className="btn-primary w-full !py-2.5 !text-[13px]"
           >
             {current.action} →
@@ -376,7 +345,7 @@ export default function PlanWeekVisual() {
                         top: top(e.start),
                         height: height(e.start, e.end),
                         background: 'color-mix(in srgb, var(--text) 5%, transparent)',
-                        opacity: step === 3 ? 1 : 0.65,
+                        opacity: step === STEPS.length - 1 ? 1 : 0.65,
                       }}
                     >
                       <p className="truncate text-[9px] leading-[1.35] text-[var(--muted)]">{e.title}</p>

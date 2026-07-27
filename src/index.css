@@ -899,6 +899,13 @@ body.nuvo-selecting * {
   100% { opacity: 1; transform: scaleY(1); }
 }
 .gap-in { animation: gap-in var(--d-slow) var(--ease-out) both; transform-origin: top center; }
+
+/* A commitment you can still say no to — Plan the week's first step, where the
+   calendar is the SUBJECT rather than the backdrop. It reads as a thing you can
+   press, and lifts under the cursor. Everywhere after step one these fade back:
+   your work is the subject then, and the calendar is context. */
+.ev-toggle { transition: background var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out); }
+.ev-toggle:hover { box-shadow: var(--shadow-lift); }
 @media (prefers-reduced-motion: reduce) {
   .block-in, .gap-in { animation-duration: 1ms; animation-delay: 0ms !important; }
 }

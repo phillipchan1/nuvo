@@ -740,6 +740,27 @@ isn't a count of anything.
 account: 9 slots from one pass, Clearstream no longer split across two, and Esc
 verified to close from a jumped-to last step.*
 
+**D-043 · 2026-07-27 · The calendar leads on step 1 and recedes after — and a
+button completes the step you're on, not the next one.**
+
+**Emphasis follows the subject.** Meetings were drawn at one weight on every
+step, which is wrong at both ends: on step 1 the calendar *is* the subject — the
+whole act is saying which of these you're actually going to — and everywhere
+after, your work is the subject and the calendar is context. So step 1 draws them
+at full strength (24% ink, a real edge, ink text, a lift on hover, `.ev-toggle`)
+and every later step fades them to 7%. **And the toggle state is a mark, not an
+inference:** `✓` counts against your week, a dashed empty box + *open* means set
+aside. A strikethrough was asking you to read the *absence* of something.
+
+**The CTA completes the current step.** It said *"Add your projects"* on the
+open-time step — naming what the *next screen* does. Standing on step 1 you
+aren't adding projects; you're agreeing this is the room the week really has, and
+a button that narrates somewhere else gives you nothing to decide against. Now:
+*"That's my open time" · "That's what I'm moving" · "Commit the week"*, with the
+destination as a quiet line beneath (`next · Projects`) — a **name**, not a step
+number, because the stepper already owns the counting.
+*Status: standing — typechecked, 32 tests green, built, driven in a real account.*
+
 ---
 
 ## 2 · Things we decided **not** to do

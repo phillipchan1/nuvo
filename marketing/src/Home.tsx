@@ -1,13 +1,10 @@
 import CalendarsVisual from './components/CalendarsVisual'
-import CapacityVisual from './components/CapacityVisual'
-import CaptureVisual from './components/CaptureVisual'
-import CoverageVisual from './components/CoverageVisual'
-import DomainVisual from './components/DomainVisual'
-import DriftVisual from './components/DriftVisual'
-import FunnelVisual from './components/FunnelVisual'
-import OperatorVisual from './components/OperatorVisual'
+import ChapelVisual from './components/ChapelVisual'
+import OnDeckVisual from './components/OnDeckVisual'
 import PlanWeekVisual from './components/PlanWeekVisual'
-import ScheduleVisual from './components/ScheduleVisual'
+import ProjectRoomVisual from './components/ProjectRoomVisual'
+import SpineVisual from './components/SpineVisual'
+import WorldsVisual from './components/WorldsVisual'
 import { useCallback, useState } from 'react'
 import { ACCESS_MAILTO, APP_URL, DOWNLOAD_MAC_URL, RELEASES_REPO } from './config'
 
@@ -105,25 +102,67 @@ const INVENTORY = [
   },
 ] as const
 
-// The whole ritual, in four lines. Verbatim from the product
-// (`src/lib/intake.ts` — STEP_QUESTION): the questions are the argument, and
-// anything written *about* them is weaker than the questions themselves.
-const PLAN_QUESTIONS = [
-  'What room does this week actually have?',
-  'What are you moving this week?',
-  'What didn’t get done, and what’s due?',
-  'What came in that you haven’t sorted?',
+// What the week caught for you.
+//
+// This replaced the four step-questions, which were the flow's mechanics — true,
+// but an explanation of how it works, and nobody buys a planner because they
+// admire its steps. The feeling being sold is *relief*: the things you were
+// quietly afraid you'd drop came back on their own, with a time on them. So each
+// line is the worry in the operator's own voice, answered by an hour.
+//
+// All three are real behaviors, not a mood: a carried task keeps its ↻N and
+// returns under Leftovers; a domain that's gone quiet contributes one small
+// piece; an unsorted capture gets themed and slotted. (`src/lib/intake.ts`,
+// `useWeekDraft`.)
+const PLAN_CAUGHT = [
+  ['The thing that’s slipped three weeks running.', 'Monday, 3:00pm'],
+  ['The part of your life nobody’s asking about.', 'Wednesday, 30 minutes'],
+  ['That note you typed at a stoplight.', 'Thursday, 9:30am'],
 ] as const
 
-// The refusals, straight from overview.md §2. A capability list attracts
-// exactly the buyers the canon names as anti-personas; this disqualifies them
-// in the same breath, and reads as confidence rather than apology.
-const REFUSALS = [
-  ['No assignees, no shared boards.', 'It’s your system, not a team’s.'],
-  ['No streaks, no shame.', 'The app reports. It never nags.'],
-  ['No AI running your day.', 'Nuvo proposes. You decide.'],
-  ['No wiki, no blank canvas.', 'It has opinions on purpose.'],
-  ['Nobody watching your calendar.', 'No manager’s dashboard. Ever.'],
+// The field, as ceilings — never as a checkbox matrix.
+//
+// A feature grid invites the reader to score us on integrations, mobile depth
+// and onboarding, which are the three places landscape.md §4 says we're honestly
+// behind today. Ceilings do the opposite: naming what each tool is genuinely
+// great at earns the right to say where it stops, and the reader has already
+// paid for most of these — they don't need to be argued with, they need to be
+// recognized.
+//
+// Every "stops at" line is either in landscape.md §2 or corroborated outside our
+// own docs (2026-07-27): reviewers describe Todoist/Asana calendars as deadline
+// views with no external events and no availability awareness, and describe the
+// AI planners as executing scheduling grunt work — Motion "cannot decide what
+// matters — that is still on you."
+const LANDSCAPE = [
+  ['Akiflow · Sunsama', 'The best capture and time-blocking there is.', 'The week is the ceiling. A project can never be behind.'],
+  ['Motion · Reclaim', 'Genuinely good at placing work in open time.', 'Neither can tell you what matters. That was always yours.'],
+  ['Asana · Notion', 'Real project structure, dependencies, a portfolio.', 'Work goes in and never comes out onto a Tuesday.'],
+  ['Things · Todoist', 'Beautiful, fast lists. Deserved taste.', 'No calendar truth, no capacity, no pace.'],
+  ['Apple · Google Calendar', 'The truth about every meeting you have.', 'Nothing about intent. Your priorities aren’t on it.'],
+] as const
+
+// Naming our own ceilings right after naming everyone else's is what makes the
+// list above read as analysis instead of trash talk — and it disqualifies the
+// buyers we'd disappoint anyway (personas.md §4). Straight from landscape.md §4.
+const LIMITS = [
+  ['No team boards.', 'Single-player on purpose. Nobody else is ever in your funnel.'],
+  ['Fewer integrations than Akiflow.', 'Capture is fast, but it doesn’t reach into every app yet.'],
+  ['The phone is capture and your agenda.', 'Planning the week, projects and the review are desktop today.'],
+] as const
+
+// The three reasons a switcher bounces, answered before they're asked. Straight
+// from the JTBD anxieties in personas.md §6 — "migrating years of tasks",
+// "another system I'll abandon in three weeks", "it'll nag me" — plus O4, the
+// single-player promise the site has never once said out loud.
+//
+// This is what's left of the old "what Nuvo refuses to do" list. Framed as
+// refusals it read as a manifesto aimed at nobody; framed as the answer to a
+// worry, every line is doing work.
+const TRUST = [
+  ['Start empty.', 'It’s useful on day one. Nothing to migrate.'],
+  ['It never nags.', 'No streaks, no red badges, no debt ledger.'],
+  ['Yours alone.', 'No shared board, no manager’s dashboard, nobody else in your account.'],
 ] as const
 
 // The agreement plan (brandscript §4) — what we promise, at the moment of
@@ -135,15 +174,6 @@ const PROMISES = [
   'Every feature, no tiers, nothing held back',
   'Your account is yours alone — nobody else is ever in it',
   'We’ll tell you the truth, including “you can’t carry this week”',
-] as const
-
-// The after-state, not the mechanism — the brandscript's success beats, which
-// the page otherwise never states.
-const PAYOFF = [
-  { when: 'Sunday', body: 'The week is decided, and the arithmetic says you can carry it.' },
-  { when: 'Tuesday', body: 'The work is on the hour, and what you needed for it is already there.' },
-  { when: 'Friday', body: 'You can show what moved — from evidence, not memory.' },
-  { when: 'Every week', body: 'Nothing goes dark for a quarter without you choosing it.' },
 ] as const
 
 // Keep in step with the app's src/components/billing/plans.ts and the Stripe
@@ -273,205 +303,151 @@ export default function Home() {
         </nav>
       </header>
 
+      {/* ── The page is the questions in the operator's head, in order ────────
+          Not a feature tour and not an argument — six questions a real operator
+          actually asks, each answered by a screen instead of a paragraph. Every
+          visual below is a faithful recreation of a surface that exists, driven
+          in the running app at 1440×900 on 2026-07-27. Nothing on this page is a
+          UI we wish we had.
+
+            hero  the app, as it actually looks
+            1     "I need to time block my week — and I don't know if it fits"
+            2     "do I have space for the projects that matter?"
+            3     "how does a big thing become hours that get worked?"
+            4     "I can't see what's going on in each part of my life"
+            5     "I need fast execution AND long-term planning, in one tool"
+            then  calendars · trust · where it runs · everything · price
+
+          The word count above the buy zone is about ninety. That's deliberate:
+          people scroll and look. Anything that had to be *read* to land is a
+          section that hasn't earned its screen yet. */}
       <main>
-        {/* Hero */}
+        {/* Hero — the offer as a plane, not a screen.
+            The hero used to be the Schedule, which put a week grid at the top of
+            the page and another one in the very next section. It also sold only
+            one of the three things that actually matter here. The offer is
+            breadth × altitude × speed, and no single screen holds all three —
+            so the hero is a diagram, drawn so it can never be mistaken for UI. */}
         <section className="mx-auto max-w-6xl px-5 pb-16 pt-10 sm:px-8 sm:pb-24 sm:pt-14">
           <div className="max-w-2xl">
             <h1 className="masthead reveal text-display text-[var(--text)]">
-              You run more than one life. One system should keep up.
+              Multiple jobs. Multiple domains. Multiple projects. One tool to rule them all.
             </h1>
-            {/* Two beats, one per element: the headline holds the worlds, the
-                support holds the act. It names time-blocking outright — that's
-                the thing the reader already believes in and already can't keep
-                up by hand, and it's what the page's flagship section delivers. */}
             <p className="reveal reveal-delay-1 mt-5 max-w-xl text-pretty hero-support text-[var(--muted)]">
-              Work, the side thing, the family calendar, the thing you volunteer for. Nuvo holds
-              all of it in one place — then blocks out your week with you in ten minutes, and tells
-              you the truth about whether you can carry it.
+              From the promise you made in January to the hour it happens on Wednesday — every world
+              you run, at every speed.
             </p>
             <CtaGroup className="reveal reveal-delay-2 mt-8" />
           </div>
 
           <div className="reveal reveal-delay-3 mt-12 sm:mt-16">
-            <ScheduleVisual />
+            <WorldsVisual />
           </div>
         </section>
 
-        {/* Emotion / who it's for — the problem, stated without a solution in sight.
-            The answer gets its own section immediately after. */}
-        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">If this is you</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              A to-do list can’t hold what you’re carrying.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              So you keep three systems — and you became the integration layer between them.
-            </p>
-          </div>
-
-          {/* The indictment as coverage, not prose — each tool's reach drawn
-              against the range you actually live across, so the hole is a
-              thing you see rather than a claim you read. */}
-          <div className="mt-12">
-            <CoverageVisual />
-          </div>
-
-          {/* Name the villain — singular, blameless, and not the reader, which
-              is what makes it usable as an enemy. The chart is the definition,
-              so the prose stops at one line. */}
-          <div className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-16">
-            <div>
-              <p className="section-label text-[var(--muted)]">It has a name</p>
-              <h3 className="masthead mt-3 text-[1.75rem] leading-tight text-[var(--text)]">
-                Drift.
-              </h3>
-              <p className="mt-4 text-body text-[var(--muted)]">
-                Nothing goes wrong on any given day. Then it’s March, and you can’t point to the
-                week you decided to let it go.
-              </p>
-            </div>
-            <DriftVisual />
-          </div>
-        </section>
-
-        {/* ── The flagship ────────────────────────────────────────────────────
-            The act the whole product exists to perform, and the one thing no
-            other planner does: it takes the *manual labor* out of time-blocking
-            without taking the judgment. Placed here, immediately after Drift,
-            because it is the answer to it — before the altitude model, which
-            exists to explain why a project is what shows up on step 2.
-
-            Every question, button label and block designation below is the
-            product's own text (src/lib/intake.ts · SundayRitual.tsx), driven in
-            the running app rather than written from the docs. */}
+        {/* 1 · "I need to time block my week. I don't know if I have enough time
+               to do everything." Both halves answered by one screen: the labor
+               disappears, and the meter says whether it fits. */}
         <section
           id="plan"
           className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24"
         >
           <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">Plan the week</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              Ten minutes on Sunday. A week already on the hour.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              Nuvo does the blocking. You keep every call that matters.
+            <p className="section-label text-[var(--muted)]">
+              “I need to time block my week — and I don’t know if it all fits.”
             </p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">Ten minutes on Sunday.</h2>
           </div>
 
           <div className="mt-10">
             <PlanWeekVisual />
           </div>
 
-          {/* The whole ritual, in four lines it asks you. */}
-          <ol className="mt-12 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
-            {PLAN_QUESTIONS.map((q, i) => (
-              <li key={q} className="border-t border-[var(--line)] pt-4">
-                <p className="section-label mono text-[var(--accent)]">{i + 1}</p>
-                <p className="masthead mt-2 text-[1.0625rem] leading-snug text-[var(--text)]">{q}</p>
+          <p className="section-label mt-14 text-[var(--muted)]">Without being asked</p>
+          <ul className="mt-5 grid gap-x-10 gap-y-7 sm:grid-cols-3">
+            {PLAN_CAUGHT.map(([worry, landed]) => (
+              <li key={worry} className="border-t border-[var(--line)] pt-4">
+                <p className="serif text-[1.125rem] italic leading-snug text-[var(--text)]">
+                  {worry}
+                </p>
+                <p className="mono mt-2 text-[0.9375rem] text-[var(--accent)]">{landed}</p>
               </li>
             ))}
-          </ol>
-
-          <p className="mt-10 text-body text-[var(--muted)]">
-            Drag anything. Overrule the pace. Give a project another week.
-          </p>
+          </ul>
         </section>
 
-        {/* The wedge — the altitude model is the differentiator, so it gets its own
-            beat and the visual demonstrates the descent instead of listing nouns. */}
+        {/* 2 · "I need to know if I have space to do the important things — the
+               projects." The screen says no out loud, and then offers the two
+               acts that resolve it (D-039). The buttons are the copy. */}
+        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-center lg:gap-16">
+            <div>
+              <p className="section-label text-[var(--muted)]">
+                “Do I have room for the projects that matter?”
+              </p>
+              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+                And if you don’t, a choice — not a footnote.
+              </h2>
+            </div>
+            <ProjectRoomVisual />
+          </div>
+        </section>
+
+        {/* 3 · Two questions, one screen — which is a fact about the product, not
+               a saving of space. "How does a big thing get provisioned across
+               weeks" and "which world am I starving" are answered by the same
+               floor: projects time-boxed into sprints, above a coverage grid
+               where a world with nothing in it is an empty row.
+
+               This replaced three shrunken panels of three different screens.
+               They read as UI while being nobody's actual screen — the exact
+               overpromise the site now refuses. One screen, whole, instead. */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
           <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">How it actually works</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              Most tools are good at one altitude. Nuvo works at all of them.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              The initiative you named in January is a project in March, three tasks this week, and
-              9am Tuesday. Same object, the whole way down.
+            <p className="section-label text-[var(--muted)]">
+              “How does a big thing turn into hours — and what am I starving?”
             </p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+              Time-box the weeks. Watch the empty rows.
+            </h2>
           </div>
-          {/* The visual carries the argument here — it earns the full width. */}
           <div className="mt-10">
-            <FunnelVisual />
+            <OnDeckVisual />
           </div>
         </section>
 
-        {/* The flagship answer. Altitude wins attention; this wins trust. */}
+        {/* 4 · "I don't have visibility into the main areas of my life in terms of
+               what I'm working toward." The domain's own floor: the vow, then
+               thirteen weeks of whether you showed up, then what it cost you. */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
-          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-16">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-center lg:gap-16">
             <div>
-              <p className="section-label text-[var(--muted)]">Before you commit</p>
-              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Can you actually carry this week?
-              </h2>
-              <p className="mt-5 text-body text-[var(--muted)]">
-                Nuvo adds up everything you just committed to and measures it against the hours you
-                actually have — calibrated against the pace you’ve actually proven, not the pace
-                you wish you had. It will tell you when the answer is no.
+              <p className="section-label text-[var(--muted)]">
+                “What am I actually working toward here?”
               </p>
+              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
+                Each world, and whether you showed up.
+              </h2>
             </div>
-            <CapacityVisual />
+            <ChapelVisual />
           </div>
         </section>
 
-        {/* Domains — named in plain language only; the vocabulary lives in the app. */}
+        {/* 5 · "I need extremely fast execution day to day, but also long-term
+               planning — one tool." The proof is the app's own spine. */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
-          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-end lg:gap-16">
-            <div>
-              <p className="section-label text-[var(--muted)]">The parts of your life</p>
-              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Every world you’re responsible for, side by side.
-              </h2>
-              <p className="mt-5 max-w-md text-body text-[var(--muted)]">
-                Not folders, and not tags you’ll forget you made. These are the areas you’re
-                permanently responsible for — work, family, the thing you serve, your own health.
-                The work grows underneath them, and the week decides what lands on the day across
-                all of them, not just the one that pays you.
-              </p>
-            </div>
-            <DomainVisual />
+          <div className="max-w-2xl">
+            <p className="section-label text-[var(--muted)]">
+              “I need both — the year, and what I do in ten minutes.”
+            </p>
+            <h2 className="masthead mt-3 text-lead text-[var(--text)]">Both speeds, one system.</h2>
+          </div>
+          <div className="mt-10">
+            <SpineVisual />
           </div>
         </section>
 
-        {/* Capture */}
-        <section
-          id="capture"
-          className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24"
-        >
-          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center lg:gap-16">
-            <div>
-              <p className="section-label text-[var(--muted)]">Capture anything</p>
-              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Get it out of your head in one keystroke.
-              </h2>
-              <p className="mt-5 text-body text-[var(--muted)]">
-                On Mac, hit <span className="text-[var(--text)] mono">⌥Space</span> from anywhere —
-                Slack, a call, a browser tab. Type the way you’d text yourself. Nuvo parses it
-                into structure and parks it in the inbox.
-              </p>
-              <p className="mt-4 text-body text-[var(--muted)]">
-                No deciding the project yet. No opening the right board. Just get it out of your
-                head. Later you route it under an initiative, pull it into the Week, or drop it
-                on Tuesday. The front door stays open so nothing evaporates mid-thought.
-              </p>
-              <ul className="mt-8 space-y-3 text-[0.9375rem] text-[var(--muted)]">
-                <li className="border-t border-[var(--line)] pt-3">
-                  <span className="text-[var(--text)] mono">⌥Space</span> — global capture on Mac
-                </li>
-                <li className="border-t border-[var(--line)] pt-3">
-                  <span className="text-[var(--text)] mono">⌘K</span> — same capture inside the app
-                </li>
-                <li className="border-t border-[var(--line)] pt-3">
-                  <span className="text-[var(--text)]">Free text</span> — “tomorrow 9am 30m #work !high”
-                </li>
-              </ul>
-            </div>
-            <CaptureVisual />
-          </div>
-        </section>
-
-        {/* Calendars */}
+        {/* It fits the calendars you already keep. */}
         <section
           id="calendars"
           className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24"
@@ -483,100 +459,101 @@ export default function Home() {
                 Every calendar you already live in.
               </h2>
               <p className="mt-5 text-body text-[var(--muted)]">
-                Work on Google. Family on Apple. Corp on Microsoft. The youth group ICS feed.
-                One grid — meetings and your own work side by side, tinted by which world
-                they belong to.
-              </p>
-              <p className="mt-4 text-body text-[var(--muted)]">
-                Scheduled Nuvo work can mirror to a dedicated Google “Nuvo” calendar, so the
-                rest of your tools see what you committed — without becoming the source of truth.
+                Work on Google. Family on Apple. Corp on Microsoft. The youth group ICS feed. One
+                grid — so the hour you took for the gym is as real as the board call.
               </p>
             </div>
             <CalendarsVisual />
           </div>
         </section>
 
-        {/* Operator polish */}
-        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
-          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-16">
-            <div>
-              <p className="section-label text-[var(--muted)]">For operators</p>
-              <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Built for the load you actually carry.
-              </h2>
-              <p className="mt-5 text-body text-[var(--muted)]">
-                When you’re mid-meeting and three of your worlds are pinging, you need speed and an
-                honest week — not another board to maintain. Capture fast. See commitment before
-                you overfill. Let unfinished work roll cleanly.
-              </p>
-              <ul className="mt-8 space-y-3 text-[0.9375rem] text-[var(--muted)]">
-                <li className="border-t border-[var(--line)] pt-3">
-                  <span className="text-[var(--text)]">Weekly Review &amp; Find</span> — look back,
-                  seal the week, surface what next week needs.
-                </li>
-                <li className="border-t border-[var(--line)] pt-3">
-                  <span className="text-[var(--text)]">Groom / On Deck</span> — shape projects before
-                  they hit the calendar; cut what won’t fit.
-                </li>
-                <li className="border-t border-[var(--line)] pt-3">
-                  <span className="text-[var(--text)]">Commitment meter</span> — demand vs real
-                  capacity, before Tuesday finds out.
-                </li>
-              </ul>
-            </div>
-            <OperatorVisual />
-          </div>
-        </section>
-
-        {/* Cadence */}
+        {/* The field — as ceilings, and then the reason this exists at all.
+            Placed here, last before the price, because "I already have a tool
+            for this" is the final objection standing between the reader and a
+            card. Everything above earns the right to make it. */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
           <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">Cadence</p>
+            <p className="section-label text-[var(--muted)]">The field</p>
             <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              You enter, you decide, you leave.
+              You’ve already tried to solve this.
             </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              Sunday composes the week. A morning brief claims the day. An evening shutdown closes
-              it. Once a quarter you reset the bets. Each one is minutes, not an afternoon — you
-              enter, decide, and leave. The system keeps moving without becoming a second job.
+          </div>
+
+          <ul className="mt-10">
+            {LANDSCAPE.map(([tool, nails, stops]) => (
+              <li
+                key={tool}
+                className="grid gap-x-8 gap-y-1 border-t border-[var(--line)] py-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1.1fr)] sm:items-baseline"
+              >
+                <p className="masthead text-[1.0625rem] leading-snug text-[var(--text)]">{tool}</p>
+                <p className="text-[0.9375rem] leading-snug text-[var(--muted)]">{nails}</p>
+                <p className="text-[0.9375rem] leading-snug text-[var(--text)]">{stops}</p>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-10 max-w-2xl">
+            <p className="masthead text-[1.375rem] leading-snug text-[var(--text)]">
+              Every one of them owns an altitude. Nuvo owns the elevator.
             </p>
-            <ul className="mt-8 space-y-3 text-[0.9375rem] text-[var(--text)]">
-              <li className="flex gap-3 border-t border-[var(--line)] pt-3">
-                <span className="section-label w-24 shrink-0 text-[var(--accent)]">Sunday</span>
-                <span className="text-[var(--muted)]">Sweep, bet, pull, compose the week.</span>
-              </li>
-              <li className="flex gap-3 border-t border-[var(--line)] pt-3">
-                <span className="section-label w-24 shrink-0 text-[var(--accent)]">Morning</span>
-                <span className="text-[var(--muted)]">Pull from the Week. Name today.</span>
-              </li>
-              <li className="flex gap-3 border-t border-[var(--line)] pt-3">
-                <span className="section-label w-24 shrink-0 text-[var(--accent)]">Shutdown</span>
-                <span className="text-[var(--muted)]">Record the gain. Send leftovers back.</span>
-              </li>
-              <li className="flex gap-3 border-t border-[var(--line)] pt-3">
-                <span className="section-label w-24 shrink-0 text-[var(--accent)]">Quarterly</span>
-                <span className="text-[var(--muted)]">Name the few bets that get real hours.</span>
-              </li>
-            </ul>
+            {/* Verifiable, and stronger than any superlative: the multi-domain,
+                quarter-to-week practice is a thriving category of paper planners
+                and templates. Nobody has put it in software that also holds the
+                calendar. */}
+            <p className="mt-4 text-body text-[var(--muted)]">
+              The system you actually want, you’ve probably already bought on paper.
+            </p>
           </div>
         </section>
 
-        {/* The payoff — the after-state, straight from the brandscript's success
-            beats. Every other section is mechanism; this one is what changes. */}
+        {/* Why it exists. The guide needs empathy before authority (brandscript
+            §3), and this is the most first-hand thing on the page: it's not a
+            competitive claim, it's the reason someone sat down and built it.
+            Written in the first person precisely so nothing here is a claim
+            about another company's product — only about using one. */}
         <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
           <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">What changes</p>
+            <p className="section-label text-[var(--muted)]">Why this exists</p>
             <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              Sunday you know. Friday you can prove it.
+              I used Motion. It decided too much for me.
             </h2>
+            <p className="mt-6 serif text-[1.125rem] italic leading-relaxed text-[var(--text)]">
+              It built my day for me, and when it was wrong about the thing that mattered most,
+              there was nothing to argue with — no way to see why it chose that. The screen kept
+              getting more complicated and the week kept getting less mine.
+            </p>
+            <p className="mt-5 text-body text-[var(--muted)]">
+              So Nuvo does the labor and leaves the judgment. It composes a week and waits. Every
+              block drags. Every number tells you where it came from. When it says you can’t carry
+              the week, it still lets you.
+            </p>
+            <p className="mt-6 text-[0.9375rem] text-[var(--muted)]">
+              — Phil, who runs four worlds and built this for the Sunday night it kept ruining.
+            </p>
           </div>
-          <ul className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
-            {PAYOFF.map((p) => (
-              <li key={p.when} className="border-t border-[var(--line)] pt-4">
-                <p className="section-label text-[var(--accent)]">{p.when}</p>
-                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted)]">
-                  {p.body}
+
+          {/* Our own ceilings, named in the same breath. Without this the list
+              above is trash talk; with it, it's analysis. */}
+          <ul className="mt-14 grid gap-x-10 gap-y-8 sm:grid-cols-3">
+            {LIMITS.map(([title, body]) => (
+              <li key={title} className="border-t border-[var(--line)] pt-4">
+                <p className="text-[0.9375rem] font-medium leading-snug text-[var(--text)]">
+                  {title}
                 </p>
+                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted)]">{body}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {/* The three reasons a switcher bounces, answered before they're asked
+            (personas.md §6). This replaced the refusals manifesto. */}
+        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
+          <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-3">
+            {TRUST.map(([title, body]) => (
+              <li key={title} className="border-t border-[var(--line)] pt-4">
+                <p className="masthead text-[1.25rem] leading-snug text-[var(--text)]">{title}</p>
+                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--muted)]">{body}</p>
               </li>
             ))}
           </ul>
@@ -649,28 +626,6 @@ export default function Home() {
               </div>
             ))}
           </div>
-        </section>
-
-        {/* The refusals. Unusual next to a feature list, which is the point. */}
-        <section className="mx-auto max-w-6xl border-t border-[var(--line)] px-5 py-16 sm:px-8 sm:py-24">
-          <div className="max-w-2xl">
-            <p className="section-label text-[var(--muted)]">And on purpose</p>
-            <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-              What Nuvo refuses to do.
-            </h2>
-            <p className="mt-5 text-body text-[var(--muted)]">
-              These aren’t missing. Most of what makes the product coherent is what it
-              declines to be.
-            </p>
-          </div>
-          <ul className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
-            {REFUSALS.map(([no, why]) => (
-              <li key={no} className="border-t border-[var(--line)] pt-4">
-                <p className="text-[0.9375rem] font-medium leading-snug text-[var(--text)]">{no}</p>
-                <p className="mt-1.5 text-[0.9375rem] leading-relaxed text-[var(--muted)]">{why}</p>
-              </li>
-            ))}
-          </ul>
         </section>
 
         {/* Pricing — lands after the value is made, before the closing CTA */}
