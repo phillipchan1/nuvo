@@ -1,4 +1,5 @@
 import { admin, logSync, readSecret } from "./admin.ts";
+import { loadAccountsPaged } from "./syncSchedule.ts";
 
 export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const GOOGLE_API = "https://www.googleapis.com/calendar/v3";
@@ -97,11 +98,10 @@ export async function gFetch(
 }
 
 export async function loadGoogleAccounts(accountId?: string): Promise<GoogleAccount[]> {
-  let q = admin.from("calendar_accounts").select("*").eq("provider", "google");
-  if (accountId) q = q.eq("id", accountId);
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data ?? []) as GoogleAccount[];
+  // Paged: PostgREST truncates an unbounded select at max_rows (1000 here)
+  // without raising, which would silently drop every account past the first
+  // thousand out of sync entirely. See _shared/syncSchedule.ts.
+  return (await loadAccountsPaged("google", accountId)) as GoogleAccount[];
 }
 
 /** Map a Google event resource to an external_events row (null = skip/cancelled). */

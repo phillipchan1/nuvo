@@ -6,10 +6,11 @@
 import { admin, handleOptions, json, logSync, readSecret } from "../_shared/admin.ts";
 import { type ExternalEventRow, parseIcs } from "../_shared/ics.ts";
 import { discoverCalendars, fetchEvents } from "../_shared/caldav.ts";
+import { reconcileEvents } from "../_shared/eventSync.ts";
+import { loadAccountsPaged, markSyncResult } from "../_shared/syncSchedule.ts";
 
 const WINDOW_PAST_DAYS = 30;
 const WINDOW_FUTURE_DAYS = 120;
-const CHUNK = 500;
 
 interface IcloudAccount {
   id: string;
@@ -51,9 +52,13 @@ async function syncAccount(account: IcloudAccount): Promise<void> {
     await admin.from("calendar_accounts").update({ calendars: nextCals }).eq("id", account.id);
   }
 
+  // Collect every calendar's events before reconciling: the sweep is
+  // account-wide, so it can only run once the whole account has been fetched —
+  // reconciling per calendar would let a calendar that failed mid-pass look
+  // empty and take its events with it.
+  const rows: ExternalEventRow[] = [];
   for (const cal of calendars) {
     const events = await fetchEvents(cal.url, username, password, windowStart, windowEnd);
-    const rows: ExternalEventRow[] = [];
     for (const ev of events) {
       const { rows: parsed } = parseIcs(ev.ics, {
         userId: account.user_id,
@@ -68,25 +73,27 @@ async function syncAccount(account: IcloudAccount): Promise<void> {
         rows.push(row);
       }
     }
-
-    // Dedupe on the upsert key — a repeated UID across resources would otherwise
-    // make a single upsert batch touch a row twice and fail the run.
-    const deduped = [...new Map(rows.map((r) => [r.provider_event_id, r])).values()];
-
-    for (let i = 0; i < deduped.length; i += CHUNK) {
-      const { error } = await admin
-        .from("external_events")
-        .upsert(deduped.slice(i, i + CHUNK), { onConflict: "account_id,calendar_id,provider_event_id" });
-      if (error) throw error;
-    }
   }
 
-  // Sweep anything not refreshed this run (removed/cancelled upstream).
-  await admin
-    .from("external_events")
-    .delete()
-    .eq("account_id", account.id)
-    .lt("last_synced_at", runStamp);
+  // Write only genuinely-changed rows; delete only what CalDAV stopped
+  // returning. CalDAV has no delta, so this pass sees the whole window every 15
+  // minutes — without the content check that was a full table rewrite per poll.
+  // The caldav_etag rides in `raw` and is part of the hash, so an event edited
+  // upstream still refreshes even if its title and times are unchanged.
+  const { written, deleted, unchanged } = await reconcileEvents(
+    { accountId: account.id },
+    rows,
+    { sweep: true },
+  );
+  if (written || deleted) {
+    await logSync(
+      "icloud",
+      "reconcile",
+      "ok",
+      `${written} written, ${deleted} deleted, ${unchanged} unchanged`,
+      account.user_id,
+    );
+  }
 
   if (account.needs_reconnect) {
     await admin.from("calendar_accounts").update({ needs_reconnect: false }).eq("id", account.id);
@@ -100,16 +107,18 @@ Deno.serve(async (req) => {
   const { accountId } = await req.json().catch(() => ({}));
 
   try {
-    let q = admin.from("calendar_accounts").select("*").eq("provider", "icloud");
-    if (accountId) q = q.eq("id", accountId);
-    const { data: accounts, error } = await q;
-    if (error) throw error;
+    // Normal path: the dispatcher hands us exactly one accountId. The
+    // no-argument form is the manual "sync everything" fallback and pages
+    // rather than trusting an unbounded select.
+    const accounts = (await loadAccountsPaged("icloud", accountId)) as IcloudAccount[];
 
-    for (const account of (accounts ?? []) as IcloudAccount[]) {
+    for (const account of accounts) {
       try {
         await syncAccount(account);
+        await markSyncResult(account.id, true);
         await logSync("icloud", "sync", "ok", undefined, account.user_id);
       } catch (e) {
+        await markSyncResult(account.id, false);
         await logSync("icloud", "sync", "error", e instanceof Error ? e.message : String(e), account.user_id);
       }
     }

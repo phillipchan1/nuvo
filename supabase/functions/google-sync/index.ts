@@ -10,6 +10,8 @@ import {
   loadGoogleAccounts,
   mapGoogleEvent,
 } from "../_shared/google.ts";
+import { type EventRow, reconcileEvents } from "../_shared/eventSync.ts";
+import { markSyncResult } from "../_shared/syncSchedule.ts";
 
 const WINDOW_PAST_DAYS = 30;
 const WINDOW_FUTURE_DAYS = 120;
@@ -47,14 +49,17 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
   let syncToken = cal.sync_token ?? null;
   let usingToken = Boolean(syncToken);
 
-  // Watermark for reconciling a full window import. Captured before any upsert
-  // so every row we (re)write lands at/after it; rows we leave untouched were
-  // deleted upstream and get swept after the pass. A full import only ever
-  // *adds* events, so without this a window import never removes deletions —
-  // and once the sync token advances past a missed cancellation, incremental
-  // pulls never see it either, leaving the row permanently stuck.
-  const passStartedAt = new Date().toISOString();
+  // A full window import only ever *adds* events, so it needs an explicit
+  // reconcile to remove deletions — and once the sync token advances past a
+  // missed cancellation, incremental pulls never see it either, leaving the row
+  // permanently stuck. The reconcile is set-based: whatever the pass didn't see
+  // is gone. (It used to be a `last_synced_at` watermark, which stopped working
+  // the moment unchanged rows were no longer rewritten — see eventSync.ts.)
   let reconcileWindow = !usingToken;
+  // Every event this pass saw, accumulated across pages. A full import can span
+  // many pages and the sweep can only run once all of them are in — reconciling
+  // page by page would make page 1's rows look like the whole calendar.
+  let seen: EventRow[] = [];
 
   do {
     const params = usingToken
@@ -66,17 +71,20 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
       `/calendars/${encodeURIComponent(cal.id)}/events?${params}`,
     );
     if (res.status === 410 && usingToken) {
-      // sync token expired — restart with a full window and reconcile at the end
+      // sync token expired — restart with a full window and reconcile at the
+      // end. Drop anything the token pass already collected: the full import
+      // re-reads the whole window, and keeping partial delta rows would make
+      // the sweep's "everything I saw" set wrong.
       usingToken = false;
       syncToken = null;
       pageToken = null;
       reconcileWindow = true;
+      seen = [];
       continue;
     }
     if (!res.ok) throw new Error(`events list ${cal.id}: ${res.status} ${await res.text()}`);
     const body = await res.json();
 
-    const upserts = [];
     const deletes: string[] = [];
     for (const e of body.items ?? []) {
       if (e.status === "cancelled") {
@@ -84,14 +92,10 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
         continue;
       }
       const row = mapGoogleEvent(account, cal.id, e);
-      if (row) upserts.push(row);
+      if (row) seen.push(row);
     }
-    if (upserts.length) {
-      const { error } = await admin
-        .from("external_events")
-        .upsert(upserts, { onConflict: "account_id,calendar_id,provider_event_id" });
-      if (error) throw error;
-    }
+    // Cancellations are explicit tombstones in both modes — apply them as they
+    // arrive rather than waiting on the sweep, which only runs for full imports.
     if (deletes.length) {
       const { error: delErr } = await admin
         .from("external_events")
@@ -106,21 +110,28 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
     if (!pageToken && body.nextSyncToken) cal.sync_token = body.nextSyncToken;
   } while (pageToken);
 
-  // Full import: any in-window row we didn't just touch is gone upstream.
-  // Bounded to the import window so out-of-window rows (which we never fetched)
-  // survive, and only runs when the whole pass succeeded — a mid-pass throw
-  // skips this, so a partial import never deletes real events.
-  if (reconcileWindow) {
-    const { error } = await admin
-      .from("external_events")
-      .delete()
-      .eq("account_id", account.id)
-      .eq("calendar_id", cal.id)
-      .gte("start_at", windowStartISO)
-      .lt("start_at", windowEndISO)
-      .lt("last_synced_at", passStartedAt);
-    if (error) throw error;
-  }
+  // Write only genuinely-changed rows. An incremental pull usually returns an
+  // empty delta and writes nothing; even a full re-import after a 410 now
+  // rewrites only events that actually differ, instead of the whole window.
+  //
+  // The sweep runs only for a full import, where "everything upstream still
+  // has" is known — an incremental delta says nothing about events it didn't
+  // mention, so sweeping there would delete the entire calendar. It stays
+  // bounded to the import window so out-of-window rows (never fetched) survive,
+  // and a mid-pass throw skips it entirely, so a partial import never deletes
+  // real events.
+  await reconcileEvents(
+    reconcileWindow
+      ? {
+          accountId: account.id,
+          calendarId: cal.id,
+          sweepFrom: windowStartISO,
+          sweepTo: windowEndISO,
+        }
+      : { accountId: account.id, calendarId: cal.id },
+    seen,
+    { sweep: reconcileWindow },
+  );
 
   cal.last_synced_at = new Date().toISOString();
 }
@@ -173,47 +184,67 @@ Deno.serve(async (req) => {
       if (account.needs_reconnect && mode !== "full") continue;
       const visible = account.calendars.filter((c) => c.visible);
 
-      if (mode === "full") {
-        for (const cal of visible) {
-          cal.sync_token = null;
-          await syncCalendar(account, cal);
-          await watchCalendar(account, cal);
-        }
-        await saveCalendars(account);
-        await logSync("google", "full-sync", "ok", undefined, account.user_id);
-      } else if (mode === "incremental") {
-        for (const cal of visible) {
-          if (calendarId && cal.id !== calendarId) continue;
-          await syncCalendar(account, cal);
-        }
-        await saveCalendars(account);
-        await logSync("google", "incremental-sync", "ok", undefined, account.user_id);
-      } else if (mode === "poll") {
-        // Safety net for calendars the webhook didn't refresh. A registered,
-        // unexpired channel is NOT proof Google is still delivering — channels
-        // go silent and sync then freezes with no error. So poll by freshness,
-        // not by channel state: catch up anything not synced this interval.
-        // Webhook-fresh calendars are skipped; the rest get a cheap incremental
-        // pull (sync token → usually an empty delta).
-        const stale = visible.filter((c) => {
-          const last = c.last_synced_at ? new Date(c.last_synced_at).getTime() : 0;
-          return Date.now() - last > POLL_STALE_MS;
-        });
-        if (stale.length === 0) continue;
-        for (const cal of stale) await syncCalendar(account, cal);
-        await saveCalendars(account);
-        await logSync("google", "poll-sync", "ok", undefined, account.user_id);
-      } else if (mode === "renew-channels") {
-        let touched = false;
-        for (const cal of visible) {
-          const exp = cal.channel_expires_at ? new Date(cal.channel_expires_at).getTime() : 0;
-          if (exp < Date.now() + CHANNEL_RENEW_AHEAD_MS) {
+      // Per-account isolation. This loop runs over EVERY account in the system
+      // on a cron tick, so an unhandled throw here (one expired token, one
+      // calendar Google 500s on) used to abort the whole invocation and every
+      // account after it in the list silently stopped syncing. Contain the
+      // failure to the account that caused it — m365-sync and ics-sync already
+      // do this; google-sync was the outlier.
+      try {
+        if (mode === "full") {
+          for (const cal of visible) {
+            cal.sync_token = null;
+            await syncCalendar(account, cal);
             await watchCalendar(account, cal);
-            touched = true;
           }
+          await saveCalendars(account);
+          await logSync("google", "full-sync", "ok", undefined, account.user_id);
+        } else if (mode === "incremental") {
+          for (const cal of visible) {
+            if (calendarId && cal.id !== calendarId) continue;
+            await syncCalendar(account, cal);
+          }
+          await saveCalendars(account);
+          await logSync("google", "incremental-sync", "ok", undefined, account.user_id);
+        } else if (mode === "poll") {
+          // Safety net for calendars the webhook didn't refresh. A registered,
+          // unexpired channel is NOT proof Google is still delivering — channels
+          // go silent and sync then freezes with no error. So poll by freshness,
+          // not by channel state: catch up anything not synced this interval.
+          // Webhook-fresh calendars are skipped; the rest get a cheap incremental
+          // pull (sync token → usually an empty delta).
+          const stale = visible.filter((c) => {
+            const last = c.last_synced_at ? new Date(c.last_synced_at).getTime() : 0;
+            return Date.now() - last > POLL_STALE_MS;
+          });
+          if (stale.length === 0) continue;
+          for (const cal of stale) await syncCalendar(account, cal);
+          await saveCalendars(account);
+          await logSync("google", "poll-sync", "ok", undefined, account.user_id);
+        } else if (mode === "renew-channels") {
+          let touched = false;
+          for (const cal of visible) {
+            const exp = cal.channel_expires_at ? new Date(cal.channel_expires_at).getTime() : 0;
+            if (exp < Date.now() + CHANNEL_RENEW_AHEAD_MS) {
+              await watchCalendar(account, cal);
+              touched = true;
+            }
+          }
+          if (touched) await saveCalendars(account);
+          await logSync("google", "renew-channels", "ok", undefined, account.user_id);
         }
-        if (touched) await saveCalendars(account);
-        await logSync("google", "renew-channels", "ok", undefined, account.user_id);
+        // Channel renewal is its own daily job and says nothing about whether
+        // event sync is healthy — don't let it reset this account's backoff.
+        if (mode !== "renew-channels") await markSyncResult(account.id, true);
+      } catch (e) {
+        if (mode !== "renew-channels") await markSyncResult(account.id, false);
+        await logSync(
+          "google",
+          `sync-${mode}`,
+          "error",
+          e instanceof Error ? e.message : String(e),
+          account.user_id,
+        );
       }
     }
     return json({ ok: true });

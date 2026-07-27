@@ -26,10 +26,25 @@ export function useSubscription() {
     queryKey: KEY,
     enabled: hasSession === true,
     queryFn: async (): Promise<Subscription | null> => {
-      const { data, error } = await supabase.from("subscriptions").select("*, entitled").maybeSingle();
+      // Bound the request. App.tsx renders the splash for as long as this is
+      // pending, and a saturated database makes PostgREST accept the connection
+      // and then never answer — supabase-js has no default timeout, so the
+      // promise simply never settles and the app sits on a shimmering wordmark
+      // forever with nothing in the console. Failing after 8s routes into the
+      // "Couldn't verify your subscription" card with its Try again button,
+      // which is recoverable; an infinite splash is not.
+      const { data, error } = await supabase
+        .from("subscriptions")
+        .select("*, entitled")
+        .abortSignal(AbortSignal.timeout(8_000))
+        .maybeSingle();
       if (error) throw error;
       return data as Subscription | null;
     },
+    // Three bounded attempts (~7s of backoff) before showing the error card, so
+    // an ordinary blip still self-heals without the user seeing anything.
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 4_000),
   });
 
   // isPending (not isLoading) is the right "we don't know yet" signal here:

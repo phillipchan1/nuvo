@@ -2,6 +2,8 @@
 // Runs every 5 minutes from pg_cron; also kicked once right after connect.
 import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
 import { GRAPH, type MsAccount, getMsAccessToken } from "../_shared/ms.ts";
+import { type EventRow, reconcileEvents } from "../_shared/eventSync.ts";
+import { loadAccountsPaged, markSyncResult } from "../_shared/syncSchedule.ts";
 
 const WINDOW_PAST_DAYS = 30;
 const WINDOW_FUTURE_DAYS = 120;
@@ -49,7 +51,7 @@ async function syncAccount(account: MsAccount): Promise<void> {
     if (!res.ok) throw new Error(`calendarView delta: ${res.status} ${await res.text()}`);
     const body = await res.json();
 
-    const upserts = [];
+    const upserts: EventRow[] = [];
     const deletes: string[] = [];
     for (const e of body.value ?? []) {
       if (e["@removed"]) {
@@ -59,11 +61,15 @@ async function syncAccount(account: MsAccount): Promise<void> {
       const row = mapGraphEvent(account, e);
       if (row) upserts.push(row);
     }
+    // Graph delta already tells us what changed, but it re-sends an event for
+    // any touch — including ones that leave every field we store identical.
+    // Reconciling turns those back into no writes, so a quiet mailbox produces
+    // no WAL and no Realtime fan-out. No sweep: removals arrive as @removed
+    // tombstones, and absence from a delta page means "unchanged", not "gone".
     if (upserts.length) {
-      const { error } = await admin
-        .from("external_events")
-        .upsert(upserts, { onConflict: "account_id,calendar_id,provider_event_id" });
-      if (error) throw error;
+      await reconcileEvents({ accountId: account.id, calendarId: "primary" }, upserts, {
+        sweep: false,
+      });
     }
     if (deletes.length) {
       await admin
@@ -89,17 +95,19 @@ Deno.serve(async (req) => {
   const { accountId } = await req.json().catch(() => ({}));
 
   try {
-    let q = admin.from("calendar_accounts").select("*").eq("provider", "m365");
-    if (accountId) q = q.eq("id", accountId);
-    const { data: accounts, error } = await q;
-    if (error) throw error;
+    // Normal path: the dispatcher hands us exactly one accountId. The
+    // no-argument form is the manual "sync everything" fallback and pages
+    // rather than trusting an unbounded select.
+    const accounts = (await loadAccountsPaged("m365", accountId)) as MsAccount[];
 
-    for (const account of (accounts ?? []) as MsAccount[]) {
+    for (const account of accounts) {
       if (account.needs_reconnect && !accountId) continue;
       try {
         await syncAccount(account);
+        await markSyncResult(account.id, true);
         await logSync("m365", "delta-sync", "ok", undefined, account.user_id);
       } catch (e) {
+        await markSyncResult(account.id, false);
         await logSync(
           "m365",
           "delta-sync",
