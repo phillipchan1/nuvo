@@ -420,6 +420,62 @@ worth revisiting if the phone step gets long.
 switching lanes, and dropping one leftover moved the week 19.2h → 17.7h and
 "5 couldn't fit" → 4, live. Verified at 375px (no horizontal overflow) and at 1440px.*
 
+**D-036 · 2026-07-26 · Plan the week is a walk: one primary button that steps you
+through the sources, and a week that reveals itself one source at a time.**
+*(Extends D-035, same day, after driving it.)*
+
+D-035 put the week beside the decision. Driving it showed the next thing: with the
+whole week drawn from the first screen, the Projects step was *still* asking you to
+judge your projects against a grid already crowded with leftovers and captures. So
+the grid now reveals by source — projects land in an otherwise empty week, then
+leftovers fill in around them, then the inbox — and **it accumulates, never resets**
+(`REVEALED_BY_LANE`, `src/lib/intake.ts`, shared by both shells). The composer still
+solves the *whole* week, so a block never jumps once you've seen it; only what's
+drawn changes.
+
+**Revealing is not hiding.** Sources you haven't reached ghost on the capacity meter
+at their real width, and the hours read at the top ("19.2h of your ~26.7h pace")
+stays honest from the first screen. You can always see what's still coming
+(Principle 6). Arriving blocks animate down out of their start time, staggered
+(`.block-in`), because "where did that go?" is a question motion answers better than
+copy — information, not decoration (Principle 9).
+
+**One primary button, and it moves you forward:** *Leftovers → · Inbox → · Commit
+the week →*. A permanent "Commit the week" invited you to commit a week you'd seen a
+third of, and left the forward move as a grey text link in the rail — the least
+important-looking control doing the most important job. The source switch still
+jumps anywhere at any time: **a walk, not a wizard.** A step-progress hairline sits
+on the footer's top edge, which it can now do *precisely because* capacity moved
+over the grid under its own heading — two bars, two meanings, neither able to be
+mistaken for the other. That confusion is what made the old header read as broken
+(D-035).
+
+**A sitting opens.** A block that says "· 5 tasks" and nothing else is the one
+moment you most want to look inside, so a click (a press that didn't move — drag is
+untouched) opens what's in it. **And grouping is one act in both lanes** — carried
+work was already grouped in the week it slipped out of, so re-grouping it is the
+natural move, not a special case. Leftovers used to group *silently*: you pressed
+it, blocks appeared somewhere, and the lane never said what it had done. Both lanes
+now share `GroupButton` + `GroupedRuns`.
+
+**Cut: the week's one-line goal.** A text box asking for a summary of decisions the
+whole screen already shows, at the moment you'd finished making them. The sprint's
+existing goal rides through `commit()` untouched, so nothing is lost — it just isn't
+asked for. The ceremony moved to where there's actually a moment: the arrival, whose
+domain bands now grow into place.
+
+→ **Bug found and fixed on the way (pre-existing, user-visible):** the draft seeded
+`kept` **once**, latching on the first non-empty pull. `useVertical` streams, so a
+slow load seeded from a *partial* pull (two loose ends), latched, and never took in
+the twelve pieces of project work that arrived a render later — you'd open Plan the
+week to a slate with nothing kept and an empty week. Seeding is now **additive** over
+an `offered` set, which is immune to arrival order; a piece you dropped is in
+`offered` and never comes back on its own.
+*Status: standing — typechecked, `npm test` green, driven in a real account: the
+three-step walk verified end to end (33% → 67% → 100%, button `Leftovers →` →
+`Inbox →` → `Commit the week →`), reveal accumulating 5 → 9 blocks, a project slot's
+5 subtasks opening on click while drag still moves the block, and 375px clean.*
+
 ---
 
 ## 2 · Things we decided **not** to do

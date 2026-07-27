@@ -858,6 +858,21 @@ body.nuvo-selecting * {
 }
 .pop-in { animation: pop-in var(--d-fast) var(--ease-out) both; }
 
+/* A block landing on the week — Plan the week reveals the plan one source at a
+   time (projects, then leftovers, then the inbox), and each arriving block grows
+   down out of its start time so you SEE where that source went. Staggered by the
+   caller with an inline animation-delay, so a source lands as a cascade rather
+   than a flash. Information, not decoration (Principle 9): the motion is the
+   answer to "where did that go?" */
+@keyframes block-in {
+  0% { opacity: 0; transform: translateY(-4px) scaleY(0.9); }
+  100% { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+.block-in { animation: block-in var(--d-base) var(--ease-out) both; transform-origin: top center; }
+@media (prefers-reduced-motion: reduce) {
+  .block-in { animation-duration: 1ms; animation-delay: 0ms !important; }
+}
+
 /* A panel sliding in from the right edge — slide-overs, detail rails. */
 @keyframes slide-in-right {
   from { opacity: 0; transform: translateX(16px); }

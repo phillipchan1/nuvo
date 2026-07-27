@@ -32,7 +32,7 @@ import { domainById, taskDomainColor, type Project, type VerticalData } from "..
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
 import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { sprintLabel } from "../../lib/sprint";
-import { LANE_QUESTION, workBadge } from "../../lib/intake";
+import { LANE_QUESTION, REVEALED_BY_LANE, workBadge } from "../../lib/intake";
 import type { Batch } from "../../lib/batch";
 import type { Placement } from "../../lib/compose";
 import { toBusyBlocks, type BusyBlock } from "../../lib/now";
@@ -85,7 +85,6 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
     themingCarried,
     carriedErr,
     goal,
-    setGoal,
     commit,
     applying,
     committed,
@@ -160,11 +159,14 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
           />
         </div>
         {/* the week's one honest read, on every step — the phone's stand-in for
-            the desktop's always-visible grid */}
+            the desktop's always-visible grid. It reveals by source the same way
+            the desktop grid does: sources you haven't reached yet ghost, so the
+            meter fills in as you go without ever misstating the total. */}
         <div className="mt-2.5">
           <CapacityMeter
             intake={intake}
             fit={{ placed: placements.length, unplaced: result.unplaced.length }}
+            revealed={step === "week" ? undefined : REVEALED_BY_LANE[step]}
             dense
           />
         </div>
@@ -223,19 +225,16 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
             workStart={workStart}
             workEnd={workEnd}
             onDrop={dropBlock}
-            goal={goal}
-            setGoal={setGoal}
-            lastGoal={data.sprintGoal ?? ""}
           />
         )}
       </div>
 
-      <Footer>
+      <Footer progress={(WEEK_STEPS.indexOf(step) + 1) / WEEK_STEPS.length}>
         <div className="flex items-center gap-3">
           {/* The capacity read lives once, in the header meter — a second one down
               here quoted different arithmetic for the same week. */}
           <div className="mono min-w-0 flex-1 text-meta text-muted">
-            {keptTasks.length} committed
+            {keptTasks.length} in the week
           </div>
           {next ? (
             <PrimaryButton onClick={() => setStep(next.to)} compact>{next.label}</PrimaryButton>
@@ -298,8 +297,22 @@ function Overlay({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Footer({ children }: { children: React.ReactNode }) {
-  return <footer className="shrink-0 border-t border-line px-4 py-3 pb-safe">{children}</footer>;
+function Footer({ children, progress }: { children: React.ReactNode; progress?: number }) {
+  return (
+    <footer className="relative shrink-0 border-t border-line px-4 py-3 pb-safe">
+      {/* the walk, drawn — same hairline the desktop wears over its stepper, so
+          "how far through am I" reads the same on both shells */}
+      {progress != null && (
+        <div className="absolute inset-x-0 top-0 h-[2px] overflow-hidden" aria-hidden>
+          <div
+            className="h-full"
+            style={{ width: `${progress * 100}%`, background: "var(--accent)", transition: "width .42s var(--ease-out)" }}
+          />
+        </div>
+      )}
+      {children}
+    </footer>
+  );
 }
 
 function PrimaryButton({
@@ -867,9 +880,6 @@ export function WeekStep({
   workStart,
   workEnd,
   onDrop,
-  goal,
-  setGoal,
-  lastGoal,
 }: {
   data: VerticalData;
   days: { iso: string; past: boolean }[];
@@ -883,9 +893,6 @@ export function WeekStep({
   workStart: number;
   workEnd: number;
   onDrop: (taskId: string) => void;
-  goal: string;
-  setGoal: (g: string) => void;
-  lastGoal: string;
 }) {
   const byDay = new Map<string, Placement[]>();
   for (const p of placements) byDay.set(p.dayISO, [...(byDay.get(p.dayISO) ?? []), p]);
@@ -978,16 +985,6 @@ export function WeekStep({
         </section>
       )}
 
-      <section className="mt-5 border-t border-line pt-4">
-        <div className="section-label mb-1 !p-0">The week in one line</div>
-        {/* plain text input — iOS dictation works out of the box (low-data-entry) */}
-        <input
-          value={goal}
-          onChange={(e) => setGoal(e.target.value)}
-          placeholder={lastGoal ? `Last week: “${lastGoal}”` : "What does a good week look like?"}
-          className="min-h-[44px] w-full bg-transparent text-body text-ink outline-none placeholder:text-muted/60"
-        />
-      </section>
     </div>
   );
 }

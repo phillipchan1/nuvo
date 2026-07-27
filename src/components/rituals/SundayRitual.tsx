@@ -44,7 +44,7 @@ import { type PullSuggestion } from "../../lib/pull";
 import { lensGaps } from "../../lib/lenses";
 import { projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
-import { LANE_QUESTION, workBadge, type WeekLane } from "../../lib/intake";
+import { LANES, LANE_LABEL, LANE_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekIntakeRead, type WeekLane } from "../../lib/intake";
 import SourceSwitch, { CapacityMeter } from "./WeekIntake";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import { Btn } from "../ui";
@@ -88,6 +88,8 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     fromGate,
     byLane,
     intake,
+    placementLane,
+    runLane,
     kept,
     setKept,
     keptCount,
@@ -109,8 +111,6 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     themeCarried,
     themingCarried,
     carriedErr,
-    goal,
-    setGoal,
     commit,
     applying,
     committed,
@@ -121,7 +121,22 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
   const [lane, setLane] = useState<WeekLane>("projects");
   const [showBoundaries, setShowBoundaries] = useState(false);
 
-  const placedCount = placements.length;
+  // The week fills in one source at a time. On Projects you see the projects
+  // land in an otherwise empty week — nothing else competing for the good hours
+  // — and each later source animates in on top. The composer still solves the
+  // WHOLE week (so a block never jumps once you've seen it); this only governs
+  // what's drawn, and the meter keeps the honest total in view throughout.
+  const revealed = REVEALED_BY_LANE[lane];
+  const shownPlacements = useMemo(
+    () => placements.filter((p) => revealed.includes(placementLane(p))),
+    [placements, revealed, placementLane],
+  );
+  const shownUnplaced = useMemo(
+    () => result.unplaced.filter((u) => revealed.includes(laneOf(u.task))),
+    [result.unplaced, revealed],
+  );
+  const laneRuns = useMemo(() => runs.filter((r) => runLane(r) === lane), [runs, runLane, lane]);
+
   const weekSpan = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
 
   // esc closes; the draft resumes — nothing is committed until you say so
@@ -150,12 +165,14 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       weekLabel={format(parseDateISO(weekStartISO), "MMM d")}
       planningAhead={planningAhead}
       footer={
-        <CommitBar
-          goal={goal}
-          setGoal={setGoal}
-          lastGoal={data.sprintGoal ?? ""}
+        <WalkBar
+          lane={lane}
+          intake={intake}
+          projectCount={weekPushes(data, weekStartISO).length}
+          waitingInbox={inboxCount}
           keptCount={keptCount}
           applying={applying}
+          onNext={setLane}
           onCommit={() => void commit()}
         />
       }
@@ -194,6 +211,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                 kept={kept}
                 setKept={setKept}
                 data={data}
+                runs={laneRuns}
                 onBundleCarried={() => void themeCarried()}
                 bundling={themingCarried}
                 bundleErr={carriedErr}
@@ -202,7 +220,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
             {lane === "inbox" && (
               <InboxGroups
                 count={inboxCount}
-                runs={runs}
+                runs={laneRuns}
                 theming={theming}
                 error={themeErr}
                 onTheme={() => void themeInbox()}
@@ -210,16 +228,6 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          {lane !== "inbox" && (
-            <div className="shrink-0 border-t border-line px-5 py-2.5">
-              <button
-                onClick={() => setLane(lane === "projects" ? "loose" : "inbox")}
-                className="fast mono w-full rounded-md py-1.5 text-left text-label text-muted hover:text-accent"
-              >
-                {lane === "projects" ? "Leftovers" : "Inbox"} →
-              </button>
-            </div>
-          )}
         </aside>
 
         {/* The week — never a step. It fills as you keep things in the rail, so
@@ -228,7 +236,8 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
           <div className="shrink-0">
             <CapacityMeter
               intake={intake}
-              fit={{ placed: placedCount, unplaced: result.unplaced.length }}
+              fit={{ placed: shownPlacements.length, unplaced: shownUnplaced.length }}
+              revealed={revealed}
             />
           </div>
 
@@ -244,7 +253,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                   events={visibleEvents}
                   slots={weekSlots}
                   locked={onCalBlocks}
-                  placements={placements}
+                  placements={shownPlacements}
                   slotById={slotById}
                   data={data}
                   workStartMin={workStart}
@@ -266,14 +275,14 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
 
                 {/* Work you kept that the week had no room for. It used to appear
                     only on the final step, after every decision was made. */}
-                {result.unplaced.length > 0 && (
+                {shownUnplaced.length > 0 && (
                   <section className="mt-4 border-t border-line pt-2.5">
                     <div className="section-label mb-1" style={{ color: "var(--signal)" }}>
                       No room this week{" "}
-                      <span className="mono normal-case tracking-normal text-muted">{result.unplaced.length}</span>
+                      <span className="mono normal-case tracking-normal text-muted">{shownUnplaced.length}</span>
                     </div>
                     <div className="grid gap-x-8 md:grid-cols-2">
-                      {result.unplaced.map(({ task, reason }) => (
+                      {shownUnplaced.map(({ task, reason }) => (
                         <div key={task.id} className="flex items-center gap-2 border-b border-line py-1 text-label text-muted">
                           <span className="min-w-0 flex-1 truncate">{task.title}</span>
                           <span className="mono shrink-0 text-micro">{reason}</span>
@@ -346,6 +355,64 @@ function Shell({
 // ── the three sources, as the desktop lays them out ─────────────────────────
 // Same three lanes as the phone, same order, same words — one act, two shells.
 
+/** Grouping, once — the same act and the same read in both lanes that have it.
+ *
+ *  Carried work and raw captures are the same shape of problem (a scatter of
+ *  small things with no home), and carried work was *already* grouped in the week
+ *  it slipped out of — so re-grouping it is the natural move, not a special case.
+ *  Both lanes therefore get one button and one confirmation list. Leftovers used
+ *  to group silently: you pressed it, blocks appeared somewhere on the grid, and
+ *  the lane never said what it had done. */
+function GroupedRuns({ runs, unit }: { runs: Batch[]; unit: string }) {
+  if (runs.length === 0) return null;
+  return (
+    <div className="mt-4">
+      <div className="section-label mb-1">
+        Grouped into blocks <span className="mono normal-case tracking-normal text-muted">{runs.length}</span>
+      </div>
+      <div className="border-t border-line">
+        {runs.map((r) => (
+          <div key={r.id} className="flex items-baseline gap-2 border-b border-line py-1.5">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color ?? "var(--accent)" }} aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-caption">{r.name}</span>
+            <span className="mono shrink-0 text-micro text-muted">
+              {r.taskIds.length} {unit}
+              {r.taskIds.length === 1 ? "" : "s"} · {r.durationMins}m
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The grouping button — identical in both lanes, so it reads as one act. */
+function GroupButton({
+  label,
+  busy,
+  error,
+  onGroup,
+}: {
+  label: string;
+  busy: boolean;
+  error: string | null;
+  onGroup: () => void;
+}) {
+  return (
+    <>
+      <button
+        onClick={onGroup}
+        disabled={busy}
+        className="tap fast flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-caption text-accent hover:brightness-105 disabled:opacity-50"
+        style={{ background: "var(--accent-soft)" }}
+      >
+        {busy ? "Grouping…" : label}
+      </button>
+      {error && <p className="mt-1.5 text-meta text-signal">{error}</p>}
+    </>
+  );
+}
+
 function InboxGroups({
   count,
   runs,
@@ -360,42 +427,14 @@ function InboxGroups({
   onTheme: () => void;
 }) {
   if (count === 0 && runs.length === 0) {
-    return <p className="text-body text-muted">Inbox clear.</p>;
+    return <p className="text-caption text-muted">Inbox clear.</p>;
   }
   return (
     <section>
       {count > 0 && (
-        <>
-          <button
-            onClick={onTheme}
-            disabled={theming}
-            className="tap fast flex items-center justify-center gap-1.5 rounded-md px-4 py-2.5 text-body text-accent hover:brightness-105 disabled:opacity-50"
-            style={{ background: "var(--accent-soft)" }}
-          >
-            {theming ? "Grouping…" : `✦ Group ${count} into blocks`}
-          </button>
-          {error && <p className="mt-1.5 text-meta text-signal">{error}</p>}
-        </>
+        <GroupButton label={`✦ Group ${count} into blocks`} busy={theming} error={error} onGroup={onTheme} />
       )}
-
-      {runs.length > 0 && (
-        <div className="mt-5">
-          <div className="section-label mb-1">
-            Grouped <span className="mono normal-case tracking-normal text-muted">{runs.length}</span>
-          </div>
-          <div className="grid gap-x-8 md:grid-cols-2">
-            {runs.map((r) => (
-              <div key={r.id} className="flex items-baseline gap-2.5 border-b border-line py-2">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color ?? "var(--accent)" }} aria-hidden />
-                <span className="min-w-0 flex-1 truncate text-body">{r.name}</span>
-                <span className="mono shrink-0 text-micro text-muted">
-                  {r.taskIds.length} capture{r.taskIds.length === 1 ? "" : "s"} · {r.durationMins}m
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <GroupedRuns runs={runs} unit="capture" />
     </section>
   );
 }
@@ -680,6 +719,7 @@ function Leftovers({
   kept,
   setKept,
   data,
+  runs,
   onBundleCarried,
   bundling,
   bundleErr,
@@ -688,6 +728,8 @@ function Leftovers({
   kept: Set<string>;
   setKept: (next: Set<string>) => void;
   data: VerticalData;
+  /** Carried work already re-grouped into blocks this session. */
+  runs: Batch[];
   onBundleCarried: () => void;
   bundling: boolean;
   bundleErr: string | null;
@@ -709,6 +751,8 @@ function Leftovers({
   const carried = suggestions.filter((s) => s.task.rollCount > 0);
   const rest = suggestions.filter((s) => s.task.rollCount === 0);
   const carriedMins = carried.reduce((m, s) => m + s.task.durationMins, 0);
+  // grouping acts on what you KEPT — say so on the button, not after the fact
+  const carriedKept = carried.filter((s) => kept.has(s.task.id)).length;
 
   const row = (s: PullSuggestion) => (
     <WorkRow
@@ -736,16 +780,14 @@ function Leftovers({
             Carried over <span className="mono normal-case tracking-normal text-signal">{carried.length} · {hrs(carriedMins)}h</span>
           </div>
           <div className="space-y-0.5">{carried.map(row)}</div>
-          <button
-            onClick={onBundleCarried}
-            disabled={bundling}
-            title="Group the kept carried work into a few named focus blocks, each sized to its tasks"
-            className="tap fast mt-1.5 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-label text-accent hover:brightness-105 disabled:opacity-50"
-            style={{ background: "var(--accent-soft)" }}
-          >
-            {bundling ? "Grouping into blocks…" : "✦ Group into focus blocks"}
-          </button>
-          {bundleErr && <p className="mt-1 text-meta text-signal">{bundleErr}</p>}
+          <div className="mt-1.5">
+            <GroupButton
+              label={`✦ Group ${carriedKept} into blocks`}
+              busy={bundling}
+              error={bundleErr}
+              onGroup={onBundleCarried}
+            />
+          </div>
         </div>
       )}
 
@@ -755,6 +797,8 @@ function Leftovers({
           <div className="space-y-0.5">{rest.map(row)}</div>
         </div>
       )}
+
+      <GroupedRuns runs={runs} unit="piece" />
 
       <button
         onClick={() => setShowMore((m) => !m)}
@@ -967,41 +1011,93 @@ function Boundaries({
   );
 }
 
-// ── the commit bar — the week in a line, and the one required click ──────────
+// ── the walk bar — one primary action, and it moves you forward ──────────────
 //
-// It used to carry its own capacity read ("11.8h planned vs your ~23.3h/wk
+// There is exactly **one** primary button in the flow and it is always the next
+// beat: *Leftovers → · Inbox → · Commit the week →*. A permanent "Commit the
+// week" invited you to skip the walk and commit a week you'd only seen a third
+// of, and left the forward move as a grey text link in the rail — the least
+// important-looking control doing the most important job. Now the button walks
+// you through and the commit is the thing you arrive at, not a thing you can
+// take a shortcut to. (The source switch above still jumps anywhere at any time:
+// a walk, not a wizard.)
+//
+// The hairline across the top is **step** progress — and it can live here, next
+// to the stepper, precisely because capacity now lives over the grid under its
+// own heading. Two bars, two meanings, neither one able to be mistaken for the
+// other; that confusion is what made the old header read as broken.
+//
+// It also used to carry its own capacity read ("11.8h planned vs your ~23.3h/wk
 // pace") while the header carried a different one ("19.2h of ~26.7h") — two
-// arithmetics for one week, on one screen, disagreeing. The capacity read now
-// lives once, on `CapacityMeter`, over the grid it measures.
-function CommitBar({
-  goal,
-  setGoal,
-  lastGoal,
+// arithmetics for one week, on one screen, disagreeing. And the week's one-line
+// goal: a text box asking for a summary of decisions the whole screen already
+// shows. The sprint's existing goal rides through `commit()` untouched.
+function WalkBar({
+  lane,
+  intake,
+  projectCount,
+  waitingInbox,
   keptCount,
   applying,
+  onNext,
   onCommit,
 }: {
-  goal: string;
-  setGoal: (g: string) => void;
-  lastGoal: string;
+  lane: WeekLane;
+  intake: WeekIntakeRead;
+  projectCount: number;
+  waitingInbox: number;
   keptCount: number;
   applying: boolean;
+  onNext: (next: WeekLane) => void;
   onCommit: () => void;
 }) {
+  const step = LANES.indexOf(lane);
+  const last = step === LANES.length - 1;
+
+  // What this source just put into the week — the beat you're leaving, in its
+  // own terms. Never a scolding count of what you left behind (Principle 4).
+  const read =
+    lane === "projects"
+      ? projectCount === 0
+        ? "no projects on this week yet"
+        : `${projectCount} project${projectCount === 1 ? "" : "s"} · ${intake.projects.count} piece${intake.projects.count === 1 ? "" : "s"} · ${hrs(intake.projects.mins)}h in`
+      : lane === "loose"
+        ? intake.loose.count > 0
+          ? `${intake.loose.count} leftover${intake.loose.count === 1 ? "" : "s"} · ${hrs(intake.loose.mins)}h in`
+          : "nothing owed and nothing due"
+        : intake.inbox.count > 0
+          ? `${intake.inbox.count} capture${intake.inbox.count === 1 ? "" : "s"} in` +
+            (waitingInbox > 0 ? ` · ${waitingInbox} keeping for later` : "")
+          : waitingInbox > 0
+            ? `${waitingInbox} waiting — they'll keep`
+            : "clear";
+
   return (
-    <footer className="shrink-0 border-t border-line px-6 py-3">
+    <footer className="relative shrink-0 border-t border-line px-6 py-3">
+      {/* the walk, drawn — three sources, filling as you go */}
+      <div className="absolute inset-x-0 top-0 h-[2px] overflow-hidden" aria-hidden>
+        <div
+          className="h-full"
+          style={{
+            width: `${((step + 1) / LANES.length) * 100}%`,
+            background: "var(--accent)",
+            transition: "width .42s var(--ease-out)",
+          }}
+        />
+      </div>
+
       <div className="flex items-center gap-4">
-        <div className="min-w-0 flex-1">
-          <input
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            placeholder={lastGoal ? `Last week: "${lastGoal}" — name this one` : "One line — what does a good week look like?"}
-            className="w-full bg-transparent text-head font-medium outline-none placeholder:text-muted/60"
-          />
+        <div className="mono min-w-0 flex-1 text-meta text-muted">
+          <span className="text-ink">{LANE_LABEL[lane]}</span> — {read}
         </div>
-        <span className="mono shrink-0 text-meta text-muted">{keptCount} committed</span>
-        <Btn kind="primary" onClick={onCommit} disabled={applying} className="shrink-0 px-4 py-2">
-          {applying ? "committing…" : "Commit the week →"}
+        <span className="mono shrink-0 text-meta text-muted">{keptCount} in the week</span>
+        <Btn
+          kind="primary"
+          onClick={last ? onCommit : () => onNext(LANES[step + 1])}
+          disabled={applying}
+          className="shrink-0 px-4 py-2"
+        >
+          {last ? (applying ? "committing…" : "Commit the week →") : `${LANE_LABEL[LANES[step + 1]]} →`}
         </Btn>
       </div>
     </footer>
@@ -1149,12 +1245,29 @@ function WeekGrid({
   // the destination column highlights — the drag-and-hold contract (design-language).
   const colRefs = useRef(new Map<string, HTMLDivElement>());
   const dragRef = useRef<
-    | { id: string; mode: "move" | "resize"; title: string; hue: string; dayISO: string; startMin: number; durationMin: number; grabOffsetMin: number }
+    | { id: string; mode: "move" | "resize"; title: string; hue: string; dayISO: string; startMin: number; durationMin: number; grabOffsetMin: number; moved: boolean }
     | null
   >(null);
   const [, force] = useState(0);
   const bump = () => force((n) => n + 1);
   const drag = dragRef.current;
+  // A block that holds several tasks says "· 3 tasks" and nothing else — which is
+  // the one moment in the flow you most want to look inside. Clicking it opens
+  // what's in the sitting. (A click is a press that didn't move; the same pointer
+  // gesture still drags, so nothing is taken away.)
+  const [inspect, setInspect] = useState<string | null>(null);
+  useEffect(() => {
+    if (!inspect) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // capture phase + stopImmediatePropagation, so Escape closes this popover
+      // instead of falling through and closing the whole flow
+      e.stopImmediatePropagation();
+      setInspect(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [inspect]);
 
   const snap = (m: number) => Math.round(m / 15) * 15;
   const minAt = (clientY: number, colTop: number) => lo + ((clientY - colTop) / HOUR_PX) * 60;
@@ -1175,11 +1288,13 @@ function WeekGrid({
         }
         let start = snap(minAt(e.clientY, colTopOf(targetISO)) - d.grabOffsetMin);
         start = Math.max(lo, Math.min(hi - d.durationMin, start));
+        if (targetISO !== d.dayISO || start !== d.startMin) d.moved = true;
         d.dayISO = targetISO;
         d.startMin = start;
       } else {
         let end = snap(minAt(e.clientY, colTopOf(d.dayISO)));
         end = Math.max(d.startMin + 15, Math.min(hi, end));
+        if (end - d.startMin !== d.durationMin) d.moved = true;
         d.durationMin = end - d.startMin;
       }
       bump();
@@ -1187,7 +1302,10 @@ function WeekGrid({
     const onPointerUp = () => {
       const d = dragRef.current;
       if (!d) return;
-      if (d.mode === "move") onMove(d.id, d.dayISO, d.startMin);
+      // a press that never moved is a click — open the sitting instead of
+      // committing a no-op placement override
+      if (!d.moved) setInspect((cur) => (cur === d.id ? null : d.id));
+      else if (d.mode === "move") onMove(d.id, d.dayISO, d.startMin);
       else onResize(d.id, d.durationMin);
       dragRef.current = null;
       bump();
@@ -1207,8 +1325,18 @@ function WeekGrid({
     dragRef.current = {
       id: it.id, mode, title: it.title, hue: it.color ?? "var(--accent)",
       dayISO, startMin: it.startMin, durationMin: it.endMin - it.startMin, grabOffsetMin,
+      moved: false,
     };
     bump();
+  };
+
+  /** What's inside a sitting — the tasks a project slot or a themed run holds. */
+  const heldTasks = (blockId: string) => {
+    const batch = slotById.get(blockId);
+    if (!batch) return [];
+    return batch.taskIds
+      .map((id) => data.tasks.find((t) => t.id === id))
+      .filter((t): t is NonNullable<typeof t> => !!t);
   };
 
   return (
@@ -1259,7 +1387,7 @@ function WeekGrid({
               {hours.map((h, i) =>
                 i === 0 ? null : <div key={h} className="absolute inset-x-0" style={{ top: yOf(h), borderTop: "1px solid var(--line)", opacity: 0.5 }} />,
               )}
-              {items.map((it) => {
+              {items.map((it, idx) => {
                 const top = yOf(it.startMin);
                 const height = Math.max(MIN_BLOCK_PX, yOf(it.endMin) - yOf(it.startMin));
                 if (it.kind === "event") {
@@ -1297,11 +1425,13 @@ function WeekGrid({
                 // Tinted glass: the domain hue read through, with its color as the
                 // left identity edge and ink text — never a solid white-on-color slab.
                 // Placed-for-you (new) reads as Nuvo's intent: a touch stronger + lift.
+                const holds = it.holds ?? 0;
+                const open = inspect === it.id;
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
                     onPointerDown={draggable ? (e) => startDrag(e, it, d.iso, "move") : undefined}
-                    className={`group lift-anim absolute inset-x-1 overflow-hidden rounded-[6px] px-1.5 py-1 ${draggable ? "cursor-grab" : ""}`}
+                    className={`group lift-anim absolute inset-x-1 overflow-hidden rounded-[6px] px-1.5 py-1 ${draggable ? "cursor-grab" : ""} ${isNew ? "block-in" : ""}`}
                     style={{
                       top: blkTop, height: blkHeight,
                       color: "var(--ink)",
@@ -1310,11 +1440,22 @@ function WeekGrid({
                       borderTop: moveSource ? "1px dashed var(--line-strong)" : undefined,
                       opacity: moveSource ? 0.3 : isNew || isSlot ? 1 : 0.85,
                       backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
-                      // a project slot lifts a touch more — a real push, not errand time
-                      boxShadow: !isNew || moveSource ? "none" : isProject ? `var(--shadow-lift), inset 3px 0 0 color-mix(in srgb, ${hue} 45%, transparent)` : "var(--shadow-lift)",
+                      // a project slot lifts a touch more — a real push, not errand
+                      // time; an opened sitting lifts further still
+                      boxShadow: !isNew || moveSource ? "none" : isProject ? `var(--shadow-lift), inset 3px 0 0 color-mix(in srgb, ${hue} ${open ? 70 : 45}%, transparent)` : "var(--shadow-lift)",
+                      zIndex: open ? 25 : undefined,
                       touchAction: draggable ? "none" : undefined,
+                      animationDelay: isNew ? `${Math.min(220, idx * 26)}ms` : undefined,
                     }}
-                    title={draggable ? `drag to move · drag the bottom edge to resize${isSplit ? " · one sitting of a split" : ""}` : isSlot ? "focus block — your batched work" : "already on the calendar — locked"}
+                    title={
+                      holds > 0
+                        ? `click to see the ${holds} task${holds === 1 ? "" : "s"} in this sitting · drag to move`
+                        : draggable
+                          ? `drag to move · drag the bottom edge to resize${isSplit ? " · one sitting of a split" : ""}`
+                          : isSlot
+                            ? "focus block — your batched work"
+                            : "already on the calendar — locked"
+                    }
                   >
                     {/* the eyebrow names the project — pointless on a project SLOT,
                         whose own title is already the project name */}
@@ -1347,7 +1488,11 @@ function WeekGrid({
                     {blkHeight > 30 && (
                       <div className="mono truncate text-micro leading-tight text-muted">
                         {fmtMinShort(it.startMin)}–{fmtMinShort(endMin)}
-                        {it.holds ? ` · ${it.holds} task${it.holds === 1 ? "" : "s"}` : ""}
+                        {holds > 0 && (
+                          <span style={{ color: open ? hue : undefined }}>
+                            {" · "}{holds} task{holds === 1 ? "" : "s"} {open ? "▾" : "▸"}
+                          </span>
+                        )}
                         {isSplit && <span className="text-signal"> · sitting {it.split!.part}/{it.split!.parts}</span>}
                       </div>
                     )}
@@ -1359,6 +1504,44 @@ function WeekGrid({
                         title="Drag to resize"
                       />
                     )}
+                  </div>
+                );
+              })}
+              {/* what's inside the sitting you clicked — the tasks a project slot
+                  or a themed run holds, which the block could only count */}
+              {items.map((it) => {
+                if (inspect !== it.id) return null;
+                const held = heldTasks(it.taskId ?? it.id);
+                if (held.length === 0) return null;
+                const hue = it.color ?? "var(--accent)";
+                const below = yOf(it.endMin) + 4;
+                const tall = held.length * 22 + 44;
+                const flip = below + tall > totalH;
+                return (
+                  <div
+                    key={`peek-${it.id}`}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="glass-card pop-in absolute inset-x-1 z-30 rounded-md border p-2"
+                    style={{ [flip ? "bottom" : "top"]: flip ? totalH - yOf(it.startMin) + 4 : below, borderColor: hue }}
+                  >
+                    <div className="mb-1 flex items-baseline gap-2">
+                      <span className="section-label min-w-0 flex-1 truncate" style={{ color: hue }}>
+                        {it.title}
+                      </span>
+                      <button
+                        onClick={() => setInspect(null)}
+                        className="fast shrink-0 text-caption leading-none text-muted hover:text-ink"
+                        title="Close"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {held.map((t) => (
+                      <div key={t.id} className="flex items-baseline gap-2 border-t border-line py-1">
+                        <span className="min-w-0 flex-1 truncate text-micro" title={t.title}>{t.title}</span>
+                        <span className="mono shrink-0 text-micro text-muted">{t.durationMins}m</span>
+                      </div>
+                    ))}
                   </div>
                 );
               })}
@@ -1393,25 +1576,45 @@ function DoneState({ onClose }: { onClose: () => void }) {
   const totalMins = committed.reduce((s, t) => s + t.durationMins, 0);
   const split = sprintMinsByDomain(data);
 
+  const totalSplit = Math.max(1, split.reduce((s, y) => s + y.mins, 0));
+
   return (
     <div className="flex min-h-[50vh] items-center justify-center">
-      <div className="max-w-[460px] text-center">
+      {/* the arrival — the one place in the flow that gets ceremony, because it's
+          the one moment that's actually a moment */}
+      <div className="moment max-w-[460px] text-center">
         <div className="mono mb-2 text-micro uppercase tracking-wide" style={{ color: "var(--accent)" }}>{sprintLabel()}</div>
         <div className="text-display masthead">Your week is set.</div>
         {data.sprintGoal && <div className="mt-2 text-head text-muted">“{data.sprintGoal}”</div>}
         <div className="mono mt-3 text-label text-muted">
-          {hrs(totalMins)}h committed · {committed.length} tasks · {split.length} domain{split.length === 1 ? "" : "s"} · ★ {data.focusInitiativeIds.length} lead initiative{data.focusInitiativeIds.length === 1 ? "" : "s"}
+          {hrs(totalMins)}h committed · {committed.length} tasks · {split.length} domain{split.length === 1 ? "" : "s"}
         </div>
         {split.length > 0 && (
-          <div className="mx-auto mt-4 flex h-2 max-w-[300px] overflow-hidden rounded-full bg-surface">
-            {split.map((x) => (
-              <div
-                key={x.domain.id}
-                title={`${x.domain.name} · ${hrs(x.mins)}h`}
-                style={{ width: `${(x.mins / Math.max(1, split.reduce((s, y) => s + y.mins, 0))) * 100}%`, background: x.domain.color }}
-              />
-            ))}
-          </div>
+          <>
+            {/* the week you just built, by world — each band grows into place */}
+            <div className="mx-auto mt-4 flex h-2 max-w-[300px] overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+              {split.map((x, i) => (
+                <div
+                  key={x.domain.id}
+                  title={`${x.domain.name} · ${hrs(x.mins)}h`}
+                  className="block-in"
+                  style={{
+                    width: `${(x.mins / totalSplit) * 100}%`,
+                    background: x.domain.color,
+                    animationDelay: `${120 + i * 90}ms`,
+                  }}
+                />
+              ))}
+            </div>
+            <div className="mono mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-micro text-muted">
+              {split.map((x) => (
+                <span key={x.domain.id} className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: x.domain.color }} aria-hidden />
+                  {x.domain.name} {hrs(x.mins)}h
+                </span>
+              ))}
+            </div>
+          </>
         )}
         <div className="mt-6">
           <Btn kind="primary" onClick={onClose}>Begin the week</Btn>

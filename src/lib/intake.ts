@@ -34,6 +34,22 @@ export const LANE_QUESTION: Record<WeekLane, string> = {
 
 export const LANES: WeekLane[] = ["projects", "loose", "inbox"];
 
+/**
+ * What the week shows while you're on a given source. The plan reveals itself one
+ * source at a time — you watch the projects land in an otherwise empty week, then
+ * the leftovers fill in around them, then the inbox — and it **accumulates**,
+ * never resets. Sources you haven't reached yet aren't hidden from the arithmetic:
+ * the capacity meter ghosts them at their real width, so the total never lies
+ * (Principle 6) while the grid still shows one decision at a time.
+ *
+ * One rule, both shells: the desktop reveals its grid, the phone ghosts its meter.
+ */
+export const REVEALED_BY_LANE: Record<WeekLane, WeekLane[]> = {
+  projects: ["projects"],
+  loose: ["projects", "loose"],
+  inbox: LANES,
+};
+
 /** Enough of a task row to place it in a lane — works for `Task` and `VTask`. */
 export interface LaneInput {
   project_id?: string | null;

@@ -35,7 +35,7 @@ import { clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup }
 import { isStandingSlot, routeToStanding } from "../lib/standingSlots";
 import { supabase } from "../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../lib/calibration";
-import { laneOf, readIntake } from "../lib/intake";
+import { laneOf, readIntake, type WeekLane } from "../lib/intake";
 import { suggestPull } from "../lib/pull";
 import type { Task } from "../lib/types";
 
@@ -104,17 +104,28 @@ export function useWeekDraft() {
   // read them off On Deck instead of guessing from deadlines
   const suggestions = useMemo(() => suggestPull(data, weekStartISO), [data, weekStartISO]);
   const [kept, setKept] = useState<Set<string>>(new Set());
-  const seeded = useRef(false);
-  // seed the draft once: the pull, PLUS anything already committed-but-unplaced
-  // (re-entry recomposes the existing week pool instead of dropping it)
+  /**
+   * Every id we've *offered* — not every id currently kept. The difference is the
+   * whole point: an id we've already offered and that isn't in `kept` was dropped
+   * by the person, and must never be re-added behind their back.
+   *
+   * This used to be a single `seeded` boolean that latched on the first non-empty
+   * pull. But `useVertical` streams — projects, tasks and the sprint arrive over
+   * several renders — so a slow load would seed from a *partial* pull (say, two
+   * loose ends), latch, and then never take in the twelve pieces of project work
+   * that arrived a moment later. You'd open Plan the week to a slate with nothing
+   * kept and a week with nothing on it. Seeding additively is immune to the
+   * arrival order, which is the only thing that was ever really being relied on.
+   */
+  const offered = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (seeded.current) return;
+    // the pull, PLUS anything already committed-but-unplaced (re-entry recomposes
+    // the existing week pool instead of dropping it)
     const pool = sprintTasks(data).filter((t) => t.status === "ready").map((t) => t.id);
-    const ids = [...suggestions.map((s) => s.task.id), ...pool];
-    if (ids.length) {
-      setKept(new Set(ids));
-      seeded.current = true;
-    }
+    const fresh = [...suggestions.map((s) => s.task.id), ...pool].filter((id) => !offered.current.has(id));
+    if (fresh.length === 0) return;
+    fresh.forEach((id) => offered.current.add(id));
+    setKept((prev) => new Set([...prev, ...fresh]));
   }, [suggestions, data]);
 
   // raw rows for the kept candidates — the composer needs the deadline ISO that
@@ -237,6 +248,41 @@ export function useWeekDraft() {
     () => readIntake(intakeTasks, { blockedMins, budgetMins: budget ?? null }),
     [intakeTasks, blockedMins, budget],
   );
+  /** Which lane any piece of work belongs to, by id — the one lane rule
+   *  (`laneOf`) applied to the raw rows, so a *composed block* can be traced back
+   *  to the source it came from. */
+  const laneByTaskId = useMemo(() => {
+    const m = new Map<string, WeekLane>();
+    for (const t of allTasks) m.set(t.id, laneOf(t));
+    return m;
+  }, [allTasks]);
+  const laneOfTaskId = useCallback(
+    (id: string): WeekLane => laneByTaskId.get(id) ?? "loose",
+    [laneByTaskId],
+  );
+  /**
+   * Which source a composed block came from. This is what lets the week reveal
+   * itself one source at a time — you see the projects land in an otherwise empty
+   * week, then the leftovers fill in around them, then the inbox.
+   *
+   * A slot or a themed run takes the lane of the work it holds (its members are
+   * all one source by construction: `clusterWeek` groups a project's tasks,
+   * `themeCarried` groups carried work, `themeInbox` groups captures).
+   */
+  const placementLane = useCallback(
+    (p: Placement): WeekLane => {
+      const block = slotById.get(p.task.id);
+      const id = block?.taskIds[0] ?? p.task.id;
+      return laneByTaskId.get(id) ?? laneOf(p.task);
+    },
+    [slotById, laneByTaskId],
+  );
+  /** The lane a themed run belongs to — carried work vs raw captures. */
+  const runLane = useCallback(
+    (b: Batch): WeekLane => laneOfTaskId(b.taskIds[0] ?? ""),
+    [laneOfTaskId],
+  );
+
   /** The pull, split into the three lanes the flow's steps edit. A suggestion's
    *  lane is decided in exactly one place (`laneOf`), so the funnel's arithmetic
    *  and the step you edit it on can never disagree. */
@@ -455,6 +501,9 @@ export function useWeekDraft() {
     suggestions,
     byLane,
     intake,
+    laneOfTaskId,
+    placementLane,
+    runLane,
     kept,
     setKept,
     keptTasks,

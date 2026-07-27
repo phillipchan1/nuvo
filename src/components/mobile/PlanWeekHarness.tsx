@@ -197,9 +197,6 @@ export default function PlanWeekHarness() {
             workStart={8 * 60}
             workEnd={17 * 60}
             onDrop={() => {}}
-            goal=""
-            setGoal={() => {}}
-            lastGoal="Ship the domains migration"
           />
         </Frame>
       </div>

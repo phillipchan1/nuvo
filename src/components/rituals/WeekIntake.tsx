@@ -120,10 +120,18 @@ export function CapacityMeter({
   intake,
   fit,
   dense,
+  revealed,
 }: {
   intake: WeekIntakeRead;
   fit?: FitRead;
   dense?: boolean;
+  /**
+   * Sources reached so far. Ones you haven't got to yet still occupy their real
+   * width — ghosted, not hidden. The week reveals itself a source at a time, but
+   * the *total* never lies: you can always see what's still coming, and the
+   * hours read at the top stay honest from the first screen (Principle 6).
+   */
+  revealed?: WeekLane[];
 }) {
   const { trackMins, budgetMins, overMins } = intake;
   const pct = (m: number) => `${Math.max(0, (m / trackMins) * 100)}%`;
@@ -155,7 +163,8 @@ export function CapacityMeter({
   const placed = segments.map((s) => {
     const left = offset;
     offset += s.mins;
-    return { ...s, left };
+    const ghost = !!revealed && s.key !== "blocked" && !revealed.includes(s.key);
+    return { ...s, left, ghost };
   });
   const roomMins = Math.max(0, (budgetMins ?? trackMins) - intake.loadMins);
 
@@ -205,9 +214,10 @@ export function CapacityMeter({
               left: pct(s.left),
               width: pct(s.mins),
               background: s.fill,
-              transition: "left .32s var(--ease-out), width .32s var(--ease-out)",
+              opacity: s.ghost ? 0.26 : 1,
+              transition: "left .32s var(--ease-out), width .32s var(--ease-out), opacity .32s var(--ease-out)",
             }}
-            title={`${s.label} · ${hrs(s.mins)}h`}
+            title={s.ghost ? `${s.label} · ${hrs(s.mins)}h — still to come` : `${s.label} · ${hrs(s.mins)}h`}
           />
         ))}
         {/* the pace mark — always drawn once there IS a pace, so the track has a
@@ -241,8 +251,12 @@ export function CapacityMeter({
         {placed
           .filter((s) => s.mins > 0)
           .map((s) => (
-            <span key={s.key} className="flex items-center gap-1.5">
-              <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: s.fill }} aria-hidden />
+            <span key={s.key} className="flex items-center gap-1.5" style={{ opacity: s.ghost ? 0.45 : 1 }}>
+              <span
+                className="h-2 w-2 shrink-0 rounded-[2px]"
+                style={{ background: s.fill, opacity: s.ghost ? 0.4 : 1 }}
+                aria-hidden
+              />
               {s.label} {hrs(s.mins)}h
             </span>
           ))}
