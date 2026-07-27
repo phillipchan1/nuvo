@@ -71,6 +71,16 @@ export function useWeekDraft() {
   const { settings, update: updateSettings } = useSettings();
   const { data: allTasks = [] } = useAllTasks();
 
+  /**
+   * The proven-pace ceiling is a **report, not a rule** (Principle 4). Left on, the
+   * composer stops at what history says you finish — which is the honest default
+   * and the thing calibration exists for. But an operator looking at a wide-open
+   * Thursday and being told "no room" is being told something false about their
+   * calendar, so the ceiling has to be lift-able, with the cost still on screen:
+   * the meter keeps showing how far past pace the week runs, in `--signal`.
+   */
+  const [ignorePace, setIgnorePace] = useState(false);
+
   const [committed, setCommitted] = useState(false);
   const [applying, setApplying] = useState(false);
   const [goal, setGoal] = useState(data.sprintGoal ?? "");
@@ -227,11 +237,11 @@ export function useWeekDraft() {
         focusInitiativeIds: data.focusInitiativeIds,
         dayContexts,
         workingDays,
-        weeklyBudgetMins: budget != null ? Math.max(0, budget - blockedMins) : null,
+        weeklyBudgetMins: ignorePace || budget == null ? null : Math.max(0, budget - blockedMins),
         // a slot holds real tasks — it can't be carved in half
         atomicIds: draftBlocks.map((b) => b.id),
       }),
-    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, onCalBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays, budget, blockedMins],
+    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, onCalBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays, budget, blockedMins, ignorePace],
   );
 
   const gain = useMemo(() => computeGain(data), [data]);
@@ -568,6 +578,8 @@ export function useWeekDraft() {
     blockedMins,
     // the composed shape
     result,
+    ignorePace,
+    setIgnorePace,
     placements,
     movePlacement,
     resizePlacement,

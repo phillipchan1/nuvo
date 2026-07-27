@@ -545,6 +545,47 @@ account: the four-step walk verified end to end with the stepper checking off
 behind you, back/forward walking steps 4→3→2→3, blur-dismiss on the sitting
 popover, and 375px clean.*
 
+**D-038 · 2026-07-27 · "No room this week" was two different problems under one
+false heading — and the proven-pace ceiling is a report, not a rule.**
+
+Driven with a real week: the plan said **8 things couldn't fit** while Thursday
+morning sat visibly, completely open. Both statements were true and the screen was
+still lying, because `composeWeek` has two entirely different reasons to leave work
+unplaced and was reporting them under one heading:
+
+| cause | what it means | when it fires |
+|---|---|---|
+| **pace** | the week fits your calendar fine; it's past what your history says you finish | *before* a slot is even looked for |
+| **full** | there is genuinely nowhere to put it | after every day is tried |
+
+Nearly everything in that list was `pace`. So `ComposeResult.unplaced` now carries
+a **`kind`**, and the report is split: *"Held back to protect your pace"* (with the
+plain sentence — the week has open time, this is past what you've been finishing)
+and *"No open time left"*. Only the second one is `--signal`.
+
+**And the ceiling lifted.** Nuvo reports; you decide (Principle 4). Silently
+refusing to plan a week the operator can see is possible is the app overruling the
+human, which is exactly what the doctrine forbids — so the pace group carries
+**"there's room — place them anyway →"**, which recomposes with no budget. The cost
+stays on screen the whole time: the meter keeps drawing how far past pace the week
+runs, in `--signal`. (Verified: 9 scheduled · 8 held back → 17 scheduled, 5.4h past
+pace, still shown.) *Calibration still owns the default — this is an override you
+take deliberately, not a setting that quietly stays off.*
+
+**Blocks say what kind of thing they are.** A "▸" and a "· 3 tasks" asked you to
+learn a glyph before you could tell a project's sitting from a grouped run or an
+ordinary task. Each placed container now wears its kind as an eyebrow in its own
+domain colour — **PROJECT · 3 TASKS**, **GROUPED · 2 CAPTURES** — and a single task
+under a project still gets the project's name, which is the useful thing there.
+Blocks under ~34px stay quiet rather than truncating a label.
+
+→ Also fixed: "X h of that you took back" summed whole set-aside events, so it
+could exceed the total open hours it claimed to be a share of. A 6am meeting you
+set aside gives back nothing you were ever going to plan into — it now counts only
+the overlap with your working window, the same way open time does.
+*Status: standing — typechecked, `npm test` green, built, and driven in a real
+account.*
+
 ---
 
 ## 2 · Things we decided **not** to do

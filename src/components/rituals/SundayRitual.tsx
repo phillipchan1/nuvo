@@ -37,7 +37,7 @@ import {
 } from "../../lib/vertical";
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO } from "../../lib/dates";
 import { sprintLabel } from "../../lib/sprint";
-import { CONTEXT_META, plannedMinutes, type DayContext, type Placement } from "../../lib/compose";
+import { CONTEXT_META, plannedMinutes, type DayContext, type Placement, type UnplacedTask } from "../../lib/compose";
 import { readDay, toBusyBlocks, type Gap } from "../../lib/now";
 import { type Batch } from "../../lib/batch";
 import DurationSelect from "../DurationSelect";
@@ -114,6 +114,8 @@ export default function SundayRitual({
     weekSlots,
     onCalBlocks,
     result,
+    ignorePace,
+    setIgnorePace,
     placements,
     movePlacement,
     resizePlacement,
@@ -182,12 +184,21 @@ export default function SundayRitual({
       (e) => e.busy && !e.all_day && days.has(format(new Date(e.start_at), "yyyy-MM-dd")),
     );
   }, [allWeekEvents, gridDays]);
+  /** Time you took back, counted the same way open time is: only the part inside
+   *  your working window. Summing whole events made "X h of that you took back"
+   *  exceed the total open hours it claimed to be a share of — a 6am meeting you
+   *  set aside gives back nothing you were ever going to plan into. */
   const reclaimedMins = useMemo(
     () =>
-      weekEvents
-        .filter(hiddenEvent)
-        .reduce((s2, e) => s2 + Math.max(0, Math.round((new Date(e.end_at).getTime() - new Date(e.start_at).getTime()) / 60_000)), 0),
-    [weekEvents, hiddenEvent],
+      weekEvents.filter(hiddenEvent).reduce((total, e) => {
+        const st = new Date(e.start_at);
+        const en = new Date(e.end_at);
+        const mins = st.getHours() * 60 + st.getMinutes();
+        const endMins = en.getHours() * 60 + en.getMinutes();
+        const overlap = Math.min(endMins, workEnd) - Math.max(mins, workStart);
+        return total + Math.max(0, overlap);
+      }, 0),
+    [weekEvents, hiddenEvent, workStart, workEnd],
   );
 
   const weekSpan = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
@@ -351,20 +362,11 @@ export default function SundayRitual({
                 {/* Work you kept that the week had no room for. It used to appear
                     only on the final step, after every decision was made. */}
                 {shownUnplaced.length > 0 && (
-                  <section className="mt-4 border-t border-line pt-2.5">
-                    <div className="section-label mb-1" style={{ color: "var(--signal)" }}>
-                      No room this week{" "}
-                      <span className="mono normal-case tracking-normal text-muted">{shownUnplaced.length}</span>
-                    </div>
-                    <div className="grid gap-x-8 md:grid-cols-2">
-                      {shownUnplaced.map(({ task, reason }) => (
-                        <div key={task.id} className="flex items-center gap-2 border-b border-line py-1 text-label text-muted">
-                          <span className="min-w-0 flex-1 truncate">{task.title}</span>
-                          <span className="mono shrink-0 text-micro">{reason}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
+                  <UnplacedReport
+                    unplaced={shownUnplaced}
+                    ignorePace={ignorePace}
+                    onIgnorePace={() => setIgnorePace(true)}
+                  />
                 )}
 
                 {/* boundaries — settings, tucked away; here when you need them */}
@@ -431,6 +433,83 @@ function Shell({
 // Same three lanes as the phone, same order, same words — one act, two shells.
 
 /**
+ * What didn't get a time — reported by its actual cause.
+ *
+ * These were one list under one heading, "No room this week", and that heading
+ * was **false** for most of what was in it. Two different things were being
+ * conflated:
+ *
+ *   · **past your pace** — the week fits your calendar fine; it's past what your
+ *     own history says you finish. This gate fires *before* a slot is looked for,
+ *     which is why you could be told "no room" while Thursday morning sat wide
+ *     open. That contradiction is what made the whole screen feel untrustworthy.
+ *   · **no open time** — there is genuinely nowhere to put it.
+ *
+ *  So the pace group says what it means, shows the room you can see, and offers
+ *  the way out. Nuvo reports; you decide (Principle 4) — it does not get to
+ *  quietly refuse a week you can see is possible. The cost stays on screen: the
+ *  meter keeps drawing how far past pace you've gone, in `--signal`.
+ */
+function UnplacedReport({
+  unplaced,
+  ignorePace,
+  onIgnorePace,
+}: {
+  unplaced: UnplacedTask[];
+  ignorePace: boolean;
+  onIgnorePace: () => void;
+}) {
+  const pace = unplaced.filter((u) => u.kind === "pace");
+  const full = unplaced.filter((u) => u.kind !== "pace");
+
+  const list = (rows: UnplacedTask[]) => (
+    <div className="grid gap-x-8 md:grid-cols-2">
+      {rows.map(({ task, reason }) => (
+        <div key={task.id} className="flex items-center gap-2 border-b border-line py-1 text-label text-muted">
+          <span className="min-w-0 flex-1 truncate">{task.title}</span>
+          <span className="mono shrink-0 text-micro">{reason}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="mt-4 space-y-4 border-t border-line pt-2.5">
+      {pace.length > 0 && (
+        <section>
+          <div className="mb-1 flex items-baseline justify-between gap-3">
+            <div className="section-label">
+              Held back to protect your pace{" "}
+              <span className="mono normal-case tracking-normal text-muted">{pace.length}</span>
+            </div>
+            {!ignorePace && (
+              <button onClick={onIgnorePace} className="fast mono shrink-0 text-meta text-accent hover:brightness-110">
+                there's room — place them anyway →
+              </button>
+            )}
+          </div>
+          <p className="mb-1.5 text-caption text-muted">
+            The week has open time; this is past what you've actually been finishing. Nuvo stops here by
+            default so the plan stays one you'd believe.
+          </p>
+          {list(pace)}
+        </section>
+      )}
+
+      {full.length > 0 && (
+        <section>
+          <div className="section-label mb-1" style={{ color: "var(--signal)" }}>
+            No open time left{" "}
+            <span className="mono normal-case tracking-normal text-muted">{full.length}</span>
+          </div>
+          {list(full)}
+        </section>
+      )}
+    </div>
+  );
+}
+
+/**
  * Step 1 · the week as it already stands.
  *
  * The plan used to open with project blocks already scattered across the grid —
@@ -453,7 +532,7 @@ function OpenTimeLane({ openMins, reclaimedMins }: { openMins: number; reclaimed
       <p className="text-body text-muted">
         <span className="text-ink">{hrs(openMins)}h</span> open inside your working hours.
         {reclaimedMins > 0 && (
-          <span style={{ color: "var(--accent)" }}> {hrs(reclaimedMins)}h of that you took back.</span>
+          <span style={{ color: "var(--accent)" }}> {hrs(reclaimedMins)}h of it you took back.</span>
         )}
       </p>
       <p className="mt-4 text-caption text-muted">
@@ -1659,15 +1738,22 @@ function WeekGrid({
                             : "already on the calendar — locked"
                     }
                   >
-                    {/* the eyebrow names the project — pointless on a project SLOT,
-                        whose own title is already the project name */}
-                    {isProject && !it.holds && blkHeight > 34 && (
+                    {/* What KIND of block this is, said in words.
+                        A "▸" and a "· 3 tasks" asked you to learn a glyph before
+                        you could tell a project's sitting apart from a grouped run
+                        or an ordinary task. The eyebrow names it in the block's own
+                        domain colour: PROJECT · 3 tasks, GROUPED · 3 captures, or —
+                        for a single ordinary task under a project — the project's
+                        name, which is the useful thing there. */}
+                    {isNew && blkHeight > 34 && (holds > 0 || isProject) && (
                       <div
                         className="section-label truncate leading-none"
                         style={{ color: hue, letterSpacing: "0.06em" }}
                         title={it.project ?? undefined}
                       >
-                        {it.project}
+                        {holds > 0
+                          ? `${isProject ? "Project" : "Grouped"} · ${holds} ${isProject ? "task" : "capture"}${holds === 1 ? "" : "s"}`
+                          : it.project}
                       </div>
                     )}
                     <div className="flex items-start gap-1">
@@ -1691,9 +1777,7 @@ function WeekGrid({
                       <div className="mono truncate text-micro leading-tight text-muted">
                         {fmtMinShort(it.startMin)}–{fmtMinShort(endMin)}
                         {holds > 0 && (
-                          <span style={{ color: open ? hue : undefined }}>
-                            {" · "}{holds} task{holds === 1 ? "" : "s"} {open ? "▾" : "▸"}
-                          </span>
+                          <span style={{ color: open ? hue : undefined }}> {open ? "▾ hide" : "▸ what's in it"}</span>
                         )}
                         {isSplit && <span className="text-signal"> · sitting {it.split!.part}/{it.split!.parts}</span>}
                       </div>

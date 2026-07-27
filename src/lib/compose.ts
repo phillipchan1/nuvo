@@ -57,9 +57,25 @@ export interface ComposeDay {
   placedMins: number;
 }
 
+/**
+ * Work that didn't get a time, and **why** — as a kind, not just a sentence.
+ *
+ * The two causes are completely different problems and were being reported under
+ * one heading ("No room this week"), which read as a flat lie when the calendar
+ * plainly had open days: `pace` means the week is inside your calendar but past
+ * what history says you finish, and it fires *before* a slot is even looked for.
+ * `full` means there is genuinely nowhere to put it.
+ */
+export type UnplacedKind = "pace" | "full";
+export interface UnplacedTask {
+  task: Task;
+  kind: UnplacedKind;
+  reason: string;
+}
+
 export interface ComposeResult {
   placements: Placement[];
-  unplaced: { task: Task; reason: string }[];
+  unplaced: UnplacedTask[];
   days: ComposeDay[];
 }
 
@@ -211,7 +227,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
   };
 
   const placements: Placement[] = [];
-  const unplaced: { task: Task; reason: string }[] = [];
+  const unplaced: UnplacedTask[] = [];
   const lastProjectOn = new Map<string, string | null>(); // dayISO -> project of last placement
 
   const tryPlace = (t: Task, relaxed: boolean): boolean => {
@@ -325,7 +341,11 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     const dur = plannedMinutes(t.duration_minutes, !!t.project_id);
     // the proven-pace boundary: don't plan past what history says gets done
     if (budget != null && placedTotal + dur > budget) {
-      unplaced.push({ task: t, reason: `past your proven pace (~${Math.round(budget / 60)}h/wk) — protect the win rate` });
+      unplaced.push({
+        task: t,
+        kind: "pace",
+        reason: `past the ~${Math.round(budget / 60)}h/wk you've actually been finishing`,
+      });
       continue;
     }
     if (tryPlace(t, false) || tryPlace(t, true)) {
@@ -346,6 +366,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
       t.energy === "deep" && days.every((d) => d.rules.maxDeep === 0 || d.deepCount >= d.rules.maxDeep);
     unplaced.push({
       task: t,
+      kind: "full",
       reason: isOverdue
         ? "overdue — no open time left this week"
         : t.deadline && days.every((d) => d.iso > t.deadline!)
