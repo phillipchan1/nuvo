@@ -17,15 +17,19 @@
 // the same elements at two densities, so the act looks like one act
 // (design-language: "planner surfaces share one grammar").
 
-import { LANES, LANE_LABEL, type WeekIntakeRead, type WeekLane } from "../../lib/intake";
+import { Fragment } from "react";
+import { LANES, STEP_LABEL, type WeekIntakeRead, type WeekLane, type WeekPlanStep } from "../../lib/intake";
 import { fmtHours as hrs } from "../../lib/dates";
 
-export type WeekStep = WeekLane | "week";
+/** The phone adds a fourth step — the day-by-day read of where it all landed. */
+export type WeekStep = WeekPlanStep | "week";
 export const WEEK_STEPS: WeekStep[] = [...LANES, "week"];
 
-/** The count under each source — the honest read, or an honest silence. */
-function laneRead(step: WeekStep, intake: WeekIntakeRead, waitingInbox: number): string {
+/** The count under each step — the honest read, or an honest silence. */
+function laneRead(step: WeekStep, intake: WeekIntakeRead, waitingInbox: number, openMins?: number): string {
   if (step === "week") return `${hrs(intake.loadMins)}h`;
+  // the before: what the week has room for, with nothing of yours on it yet
+  if (step === "open") return openMins == null ? "the week as it stands" : `${hrs(openMins)}h free`;
   const { count, mins } = intake[step];
   // An untouched inbox has taken nothing into the week yet — but it isn't "none",
   // and calling it that is how a full inbox stays invisible on planning day.
@@ -36,10 +40,16 @@ function laneRead(step: WeekStep, intake: WeekIntakeRead, waitingInbox: number):
 }
 
 /**
- * The three sources, as a switch. **Not a wizard** — every source is one click
- * away at any time, and the week is fully composed from the moment the flow
- * opens. The number is the order you'd naturally take them in (what you committed
- * to, then what you already owed, then what's new), never a gate.
+ * The walk, drawn as a walk.
+ *
+ * This was a row of equal-weight boxes, and it read as **tabs** — parallel views
+ * you pick between, not stations you pass through. That misread was the whole
+ * problem with the screen: the thing that said where you are looked like a view
+ * switcher, and the thing that moved you forward was in the opposite corner.
+ *
+ * A connected stepper says the true thing instead: there is an order, you are
+ * *here*, there are N left. Every station is still one click away — a walk, not a
+ * wizard — but jumping is now clearly the exception rather than the invitation.
  */
 export default function SourceSwitch({
   intake,
@@ -48,53 +58,66 @@ export default function SourceSwitch({
   steps = LANES,
   dense,
   waitingInbox = 0,
+  openMins,
 }: {
   intake: WeekIntakeRead;
   step: WeekStep;
   onStep: (s: WeekStep) => void;
-  /** Which steps to show. The phone appends its own "The week" step. */
   steps?: WeekStep[];
-  /** Phone density: bigger tap targets, tighter type. */
   dense?: boolean;
-  /** Captures still sitting unsorted in the inbox. */
   waitingInbox?: number;
+  openMins?: number;
 }) {
+  const here = steps.indexOf(step);
   return (
-    <div className="flex items-stretch gap-0.5" role="tablist">
-      {steps.map((s, i) => {
-        const active = step === s;
-        return (
-          <button
-            key={s}
-            role="tab"
-            aria-selected={active}
-            onClick={() => onStep(s)}
-            className={`tap fast min-w-0 flex-1 rounded-md px-1.5 text-left ${dense ? "min-h-[44px] py-1.5" : "py-1"}`}
-            style={{ background: active ? "var(--accent-soft)" : "transparent" }}
-          >
-            <span className="flex items-baseline gap-1">
-              {/* No numbered chip: a filled circle is a frame, and four of them ate
-                  the room the labels needed at 375px. Dissolve, don't frame. */}
-              <span
-                className="mono shrink-0 text-micro"
-                style={{ color: active ? "var(--accent)" : "var(--muted)" }}
-                aria-hidden
+    <div>
+      <div className="flex items-start">
+        {steps.map((s, i) => {
+          const active = i === here;
+          const done = i < here;
+          const ink = active ? "var(--accent)" : done ? "var(--accent)" : "var(--muted)";
+          return (
+            <Fragment key={s}>
+              {/* the rule between stations — this is what makes it a path */}
+              {i > 0 && (
+                <span
+                  className="mt-[9px] h-px w-3 shrink-0"
+                  style={{ background: done || active ? "var(--accent)" : "var(--line)" }}
+                  aria-hidden
+                />
+              )}
+              <button
+                onClick={() => onStep(s)}
+                aria-current={active ? "step" : undefined}
+                title={`Step ${i + 1} of ${steps.length} — ${s === "week" ? "The week" : STEP_LABEL[s]}`}
+                className={`tap fast flex min-w-0 flex-1 flex-col items-center gap-1 px-0.5 ${dense ? "min-h-[44px]" : ""}`}
               >
-                {i + 1}
-              </span>
-              <span
-                className={`min-w-0 flex-1 truncate text-label ${active ? "font-medium" : ""}`}
-                style={{ color: active ? "var(--accent)" : "var(--ink)" }}
-              >
-                {s === "week" ? "The week" : LANE_LABEL[s]}
-              </span>
-            </span>
-            <span className="mono ml-[13px] block truncate text-micro text-muted">
-              {laneRead(s, intake, waitingInbox)}
-            </span>
-          </button>
-        );
-      })}
+                <span
+                  className="mono flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-micro"
+                  style={{
+                    background: active ? "var(--accent)" : "transparent",
+                    border: active ? "none" : `1px solid ${done ? "var(--accent)" : "var(--line-strong)"}`,
+                    color: active ? "#fff" : ink,
+                  }}
+                >
+                  {done ? "✓" : i + 1}
+                </span>
+                <span
+                  className={`w-full truncate text-center text-micro ${active ? "font-medium" : ""}`}
+                  style={{ color: active ? "var(--accent)" : "var(--muted)" }}
+                >
+                  {s === "week" ? "The week" : STEP_LABEL[s]}
+                </span>
+              </button>
+            </Fragment>
+          );
+        })}
+      </div>
+      {/* the current station's own count, once — not one under every station,
+          which is what made the row read as four competing tabs */}
+      <div className="mono mt-1.5 text-center text-micro text-muted">
+        step {here + 1} of {steps.length} · {laneRead(step, intake, waitingInbox, openMins)}
+      </div>
     </div>
   );
 }
@@ -121,10 +144,14 @@ export function CapacityMeter({
   fit,
   dense,
   revealed,
+  compact,
 }: {
   intake: WeekIntakeRead;
   fit?: FitRead;
   dense?: boolean;
+  /** Sits under the grid as a reference rather than over it as a headline: the
+   *  label and the numbers share one line, and the bar thins to a rule. */
+  compact?: boolean;
   /**
    * Sources reached so far. Ones you haven't got to yet still occupy their real
    * width — ghosted, not hidden. The week reveals itself a source at a time, but
@@ -170,8 +197,10 @@ export function CapacityMeter({
 
   return (
     <div>
-      <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        <span className="section-label">This week asks</span>
+      <div className={`flex items-baseline justify-between gap-3 ${compact ? "mb-1" : "mb-1.5"}`}>
+        <span className={compact ? "mono text-meta text-muted" : "section-label"}>
+          {compact ? "this week asks" : "This week asks"}
+        </span>
         <span className="mono shrink-0 text-meta">
           <span className="text-ink">{hrs(intake.loadMins)}h</span>
           <span className="text-muted">
@@ -186,7 +215,7 @@ export function CapacityMeter({
 
       <div
         className="relative w-full overflow-hidden rounded-full"
-        style={{ height: dense ? 6 : 7, background: "var(--line)" }}
+        style={{ height: dense ? 6 : compact ? 4 : 7, background: "var(--line)" }}
         role="img"
         aria-label={`${hrs(intake.loadMins)} hours of work against ${budgetMins != null ? `a ~${hrs(budgetMins)} hour proven pace` : "no proven pace yet"}`}
       >
@@ -247,7 +276,7 @@ export function CapacityMeter({
 
       {/* The legend carries the hours, so it's data rather than a restated key —
           and it's the only place the three sources are weighed against each other. */}
-      <div className="mono mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-muted">
+      <div className={`mono flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-muted ${compact ? "mt-1" : "mt-1.5"}`}>
         {placed
           .filter((s) => s.mins > 0)
           .map((s) => (

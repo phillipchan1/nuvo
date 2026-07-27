@@ -35,16 +35,34 @@ export const LANE_QUESTION: Record<WeekLane, string> = {
 export const LANES: WeekLane[] = ["projects", "loose", "inbox"];
 
 /**
- * What the week shows while you're on a given source. The plan reveals itself one
- * source at a time — you watch the projects land in an otherwise empty week, then
- * the leftovers fill in around them, then the inbox — and it **accumulates**,
- * never resets. Sources you haven't reached yet aren't hidden from the arithmetic:
- * the capacity meter ghosts them at their real width, so the total never lies
+ * The plan's steps. `open` is the **before**: the week as it already stands, with
+ * nothing of yours on it yet — the immovable calendar and the room left between.
+ * It exists because the plan's first screen used to open with project blocks
+ * already scattered across the grid, which is new information arriving before you
+ * have any frame to read it against. Now you see the empty week first, and every
+ * later step is a visible *change* to a picture you've already understood.
+ */
+export type WeekPlanStep = "open" | WeekLane;
+export const PLAN_STEPS: WeekPlanStep[] = ["open", ...LANES];
+
+export const STEP_LABEL: Record<WeekPlanStep, string> = { open: "Open time", ...LANE_LABEL };
+export const STEP_QUESTION: Record<WeekPlanStep, string> = {
+  open: "What room does this week actually have?",
+  ...LANE_QUESTION,
+};
+
+/**
+ * What the week shows while you're on a given step. The plan reveals itself one
+ * source at a time — the empty week, then the projects landing in it, then the
+ * leftovers filling in around them, then the inbox — and it **accumulates**, never
+ * resets. Sources you haven't reached yet aren't hidden from the arithmetic: the
+ * capacity meter ghosts them at their real width, so the total never lies
  * (Principle 6) while the grid still shows one decision at a time.
  *
  * One rule, both shells: the desktop reveals its grid, the phone ghosts its meter.
  */
-export const REVEALED_BY_LANE: Record<WeekLane, WeekLane[]> = {
+export const REVEALED_BY_LANE: Record<WeekPlanStep, WeekLane[]> = {
+  open: [],
   projects: ["projects"],
   loose: ["projects", "loose"],
   inbox: LANES,

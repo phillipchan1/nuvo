@@ -38,13 +38,14 @@ import {
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO } from "../../lib/dates";
 import { sprintLabel } from "../../lib/sprint";
 import { CONTEXT_META, plannedMinutes, type DayContext, type Placement } from "../../lib/compose";
+import { readDay, toBusyBlocks, type Gap } from "../../lib/now";
 import { type Batch } from "../../lib/batch";
 import DurationSelect from "../DurationSelect";
 import { type PullSuggestion } from "../../lib/pull";
 import { lensGaps } from "../../lib/lenses";
 import { projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
-import { LANES, LANE_LABEL, LANE_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekIntakeRead, type WeekLane } from "../../lib/intake";
+import { PLAN_STEPS, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekIntakeRead, type WeekPlanStep } from "../../lib/intake";
 import SourceSwitch, { CapacityMeter } from "./WeekIntake";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import { Btn } from "../ui";
@@ -69,7 +70,16 @@ const fmtMinShort = (m: number) => {
 // time, the week is fully composed the moment this opens, and every keep or drop
 // re-shapes the grid beside your cursor.
 
-export default function SundayRitual({ onClose }: { onClose: () => void }) {
+export default function SundayRitual({
+  step: stepIndex,
+  setStep,
+  onClose,
+}: {
+  /** The step, held in nav history — so back/forward walks the plan. */
+  step: number;
+  setStep: (i: number) => void;
+  onClose: () => void;
+}) {
   // Everything the week IS — the pull, the standing-slot routing, the project
   // slots, the composer and the commit — lives in useWeekDraft, shared with the
   // phone's Plan the week. This file is the desktop's *layout* of that draft.
@@ -98,6 +108,9 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     slotById,
     runs,
     visibleEvents,
+    allWeekEvents,
+    hiddenEvent,
+    toggleEventHidden,
     weekSlots,
     onCalBlocks,
     result,
@@ -116,9 +129,11 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     committed,
   } = draft;
 
-  // one piece of state — which source the rail is showing. The week is never a
-  // "step": it's the right half of the screen, always.
-  const [lane, setLane] = useState<WeekLane>("projects");
+  // The step lives in nav history, not local state — so the browser's (and the
+  // mouse's, and the trackpad's) back and forward walk the plan instead of
+  // dropping out of it. `closeFlow` already unwinds `flowStep + 1` entries.
+  const lane = PLAN_STEPS[Math.min(Math.max(stepIndex, 0), PLAN_STEPS.length - 1)];
+  const setLane = (s: WeekPlanStep) => setStep(PLAN_STEPS.indexOf(s));
   const [showBoundaries, setShowBoundaries] = useState(false);
 
   // The week fills in one source at a time. On Projects you see the projects
@@ -135,7 +150,38 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     () => result.unplaced.filter((u) => revealed.includes(laneOf(u.task))),
     [result.unplaced, revealed],
   );
-  const laneRuns = useMemo(() => runs.filter((r) => runLane(r) === lane), [runs, runLane, lane]);
+  const laneRuns = useMemo(() => (lane === "open" ? [] : runs.filter((r) => runLane(r) === lane)), [runs, runLane, lane]);
+
+  // ── the week as it stands — the room you actually have, before anything ─────
+  // The one "what counts as busy" rule (`toBusyBlocks`) and the one "where are the
+  // gaps" rule (`readDay`) — never re-derived here. `readDay` walks forward from
+  // its `now`, so each working day is read from its own start.
+  const gapsByDay = useMemo(() => {
+    const m = new Map<string, Gap[]>();
+    for (const { iso } of gridDays) {
+      const day = parseDateISO(iso);
+      const from = new Date(day); from.setHours(Math.floor(workStart / 60), workStart % 60, 0, 0);
+      const to = new Date(day); to.setHours(Math.floor(workEnd / 60), workEnd % 60, 0, 0);
+      const busy = toBusyBlocks(
+        visibleEvents.filter((e) => format(new Date(e.start_at), "yyyy-MM-dd") === iso),
+        onCalBlocks.filter((b) => b.start_time && format(new Date(b.start_time), "yyyy-MM-dd") === iso),
+      );
+      m.set(iso, readDay(from, busy, from, to).gaps);
+    }
+    return m;
+  }, [gridDays, visibleEvents, onCalBlocks, workStart, workEnd]);
+  const openMins = useMemo(
+    () => [...gapsByDay.values()].reduce((s, gs) => s + gs.reduce((n, g) => n + g.mins, 0), 0),
+    [gapsByDay],
+  );
+  /** Every event in the planning week's working days — including the ones you've
+   *  already set aside, so they can be brought back. */
+  const weekEvents = useMemo(() => {
+    const days = new Set(gridDays.map((d) => d.iso));
+    return allWeekEvents
+      .filter((e) => e.busy && !e.all_day && days.has(format(new Date(e.start_at), "yyyy-MM-dd")))
+      .sort((a, b) => a.start_at.localeCompare(b.start_at));
+  }, [allWeekEvents, gridDays]);
 
   const weekSpan = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
 
@@ -164,18 +210,6 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       weekLabel={format(parseDateISO(weekStartISO), "MMM d")}
       planningAhead={planningAhead}
-      footer={
-        <WalkBar
-          lane={lane}
-          intake={intake}
-          projectCount={weekPushes(data, weekStartISO).length}
-          waitingInbox={inboxCount}
-          keptCount={keptCount}
-          applying={applying}
-          onNext={setLane}
-          onCommit={() => void commit()}
-        />
-      }
     >
       {/* ── the pool, left · the week, right — one screen, the whole ritual ───── */}
       <div className="flex min-h-0 flex-1">
@@ -190,12 +224,28 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
               Week of {format(parseDateISO(weekStartISO), "MMMM d")}
             </h1>
             <div className="mt-3">
-              <SourceSwitch intake={intake} step={lane} onStep={(s) => setLane(s as WeekLane)} waitingInbox={inboxCount} />
+              <SourceSwitch
+                intake={intake}
+                step={lane}
+                onStep={(s) => setLane(s as WeekPlanStep)}
+                steps={PLAN_STEPS}
+                openMins={openMins}
+                waitingInbox={inboxCount}
+              />
             </div>
-            <h2 className="mt-4 text-lead masthead leading-snug text-ink">{LANE_QUESTION[lane]}</h2>
+            <h2 className="mt-4 text-lead masthead leading-snug text-ink">{STEP_QUESTION[lane]}</h2>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3">
+            {lane === "open" && (
+              <OpenTimeLane
+                events={weekEvents}
+                gridDays={gridDays}
+                isHidden={hiddenEvent}
+                onToggle={toggleEventHidden}
+                openMins={openMins}
+              />
+            )}
             {lane === "projects" && (
               <ProjectsLane
                 data={data}
@@ -228,20 +278,29 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
+          {/* The act — directly under the pool it acts on. It used to live in the
+              opposite corner from the thing that said where you were, so nothing
+              connected "here is the decision" to "here is how you move on". */}
+          <div className="shrink-0 border-t border-line px-5 py-3">
+            <WalkAction
+              lane={lane}
+              stepCount={PLAN_STEPS.length}
+              intake={intake}
+              projectCount={weekPushes(data, weekStartISO).length}
+              waitingInbox={inboxCount}
+              keptCount={keptCount}
+              openMins={openMins}
+              applying={applying}
+              onNext={setLane}
+              onCommit={() => void commit()}
+            />
+          </div>
         </aside>
 
         {/* The week — never a step. It fills as you keep things in the rail, so
             "the week is full" arrives while you can still do something about it. */}
         <section className="flex min-w-0 flex-1 flex-col px-6 pt-5">
-          <div className="shrink-0">
-            <CapacityMeter
-              intake={intake}
-              fit={{ placed: shownPlacements.length, unplaced: shownUnplaced.length }}
-              revealed={revealed}
-            />
-          </div>
-
-          <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {gridDays.length === 0 ? (
               <div className="rounded-md border border-dashed border-line p-10 text-center text-caption text-muted">
                 No working days set — choose them in Boundaries.
@@ -259,6 +318,7 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                   workStartMin={workStart}
                   workEndMin={workEnd}
                   dayContexts={dayContexts}
+                  gaps={lane === "open" ? gapsByDay : null}
                   onDrop={dropBlock}
                   onMove={movePlacement}
                   onResize={resizePlacement}
@@ -271,6 +331,18 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                   {routedCount > 0 && <span>{routedCount} in standing slots</span>}
                   {eventCount > 0 && <span>{eventCount} immovable</span>}
                   <span className="mono ml-auto">drag to move · hover to drop</span>
+                </div>
+
+                {/* Can I carry this? A reference you glance at, sitting with the
+                    thing it measures — not the loudest band on the screen, which
+                    is what it became when it sat above the grid at full width. */}
+                <div className="mt-3 border-t border-line pt-3">
+                  <CapacityMeter
+                    intake={intake}
+                    fit={{ placed: shownPlacements.length, unplaced: shownUnplaced.length }}
+                    revealed={revealed}
+                    compact
+                  />
                 </div>
 
                 {/* Work you kept that the week had no room for. It used to appear
@@ -355,6 +427,116 @@ function Shell({
 // ── the three sources, as the desktop lays them out ─────────────────────────
 // Same three lanes as the phone, same order, same words — one act, two shells.
 
+/**
+ * Step 1 · the week as it already stands.
+ *
+ * The plan used to open with project blocks already scattered across the grid —
+ * new information arriving before you had any frame to read it against. So the
+ * first thing you see now is the *empty* week: the immovable calendar, and the
+ * room between it drawn as open time. Everything after this is a visible change
+ * to a picture you've already understood.
+ *
+ * It also does the one thing that actually changes the answer: **a meeting you
+ * aren't going to attend isn't capacity.** Nuvo already knows how to ignore one
+ * (`hidden_events`, read by every availability path in the app); planning day is
+ * simply when you'd want to say so, because it's the moment it changes what you
+ * commit to. Setting one aside here is the same setting the rest of the app reads,
+ * and it's reversible in place — never a plan-only fiction.
+ */
+function OpenTimeLane({
+  events,
+  gridDays,
+  isHidden,
+  onToggle,
+  openMins,
+}: {
+  events: ExternalEvent[];
+  gridDays: { iso: string; past: boolean }[];
+  isHidden: (e: ExternalEvent) => boolean;
+  onToggle: (e: ExternalEvent) => void;
+  openMins: number;
+}) {
+  const mins = (e: ExternalEvent) =>
+    Math.max(0, Math.round((new Date(e.end_at).getTime() - new Date(e.start_at).getTime()) / 60_000));
+  const set = events.filter((e) => isHidden(e));
+  const reclaimed = set.reduce((s, e) => s + mins(e), 0);
+  const byDay = new Map<string, ExternalEvent[]>();
+  for (const e of events) {
+    const iso = format(new Date(e.start_at), "yyyy-MM-dd");
+    byDay.set(iso, [...(byDay.get(iso) ?? []), e]);
+  }
+
+  return (
+    <section>
+      <p className="mb-3 text-caption text-muted">
+        <span className="text-ink">{hrs(openMins)}h</span> open inside your working hours.
+        {reclaimed > 0 && (
+          <span style={{ color: "var(--accent)" }}> {hrs(reclaimed)}h of that you took back.</span>
+        )}
+      </p>
+
+      {events.length === 0 ? (
+        <p className="text-caption text-muted">Nothing on the calendar this week — the week is yours.</p>
+      ) : (
+        <>
+          <div className="section-label mb-1">
+            What's already on it{" "}
+            <span className="mono normal-case tracking-normal text-muted">{events.length}</span>
+          </div>
+          {gridDays.map(({ iso }) => {
+            const rows = byDay.get(iso) ?? [];
+            if (rows.length === 0) return null;
+            return (
+              <div key={iso} className="mb-2">
+                <div className="mono py-1 text-micro text-muted">{format(parseDateISO(iso), "EEEE")}</div>
+                <div className="border-t border-line">
+                  {rows.map((e) => {
+                    const off = isHidden(e);
+                    return (
+                      <button
+                        key={e.id}
+                        onClick={() => onToggle(e)}
+                        title={
+                          off
+                            ? "You set this aside — it counts as open time. Click to put it back."
+                            : "Not going? Set it aside and its time counts as open."
+                        }
+                        className="tap fast flex w-full items-center gap-2 border-b border-line py-1.5 text-left"
+                      >
+                        <span
+                          className="mono w-[52px] shrink-0 text-micro text-muted"
+                          style={off ? { textDecoration: "line-through" } : undefined}
+                        >
+                          {fmtMinShort(new Date(e.start_at).getHours() * 60 + new Date(e.start_at).getMinutes())}
+                        </span>
+                        <span
+                          className="min-w-0 flex-1 truncate text-caption"
+                          style={off ? { color: "var(--muted)", textDecoration: "line-through" } : undefined}
+                        >
+                          {e.title || "busy"}
+                        </span>
+                        <span
+                          className="mono shrink-0 text-micro"
+                          style={{ color: off ? "var(--accent)" : "var(--muted)" }}
+                        >
+                          {off ? `+${hrs(mins(e))}h` : `${mins(e)}m`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          <p className="mt-2 text-meta text-muted">
+            Click one you're not going to — its time counts as open, everywhere in Nuvo.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Grouping, once — the same act and the same read in both lanes that have it.
  *
  *  Carried work and raw captures are the same shape of problem (a scatter of
@@ -363,10 +545,10 @@ function Shell({
  *  Both lanes therefore get one button and one confirmation list. Leftovers used
  *  to group silently: you pressed it, blocks appeared somewhere on the grid, and
  *  the lane never said what it had done. */
-function GroupedRuns({ runs, unit }: { runs: Batch[]; unit: string }) {
+function GroupedRuns({ runs, unit, first }: { runs: Batch[]; unit: string; first?: boolean }) {
   if (runs.length === 0) return null;
   return (
-    <div className="mt-4">
+    <div className={first ? "" : "mt-4"}>
       <div className="section-label mb-1">
         Grouped into blocks <span className="mono normal-case tracking-normal text-muted">{runs.length}</span>
       </div>
@@ -386,16 +568,23 @@ function GroupedRuns({ runs, unit }: { runs: Batch[]; unit: string }) {
   );
 }
 
-/** The grouping button — identical in both lanes, so it reads as one act. */
+/** The grouping button — identical in both lanes, so it reads as one act.
+ *
+ *  Once it HAS grouped, it stops shouting: a filled call-to-action offering to
+ *  "Group 10 into blocks" above six blocks it already made is the screen arguing
+ *  with itself. It becomes a quiet re-run instead. */
 function GroupButton({
   label,
   busy,
   error,
+  grouped,
   onGroup,
 }: {
   label: string;
   busy: boolean;
   error: string | null;
+  /** Already produced blocks — the button demotes to a redo. */
+  grouped?: boolean;
   onGroup: () => void;
 }) {
   return (
@@ -403,10 +592,15 @@ function GroupButton({
       <button
         onClick={onGroup}
         disabled={busy}
-        className="tap fast flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-caption text-accent hover:brightness-105 disabled:opacity-50"
-        style={{ background: "var(--accent-soft)" }}
+        title={grouped ? "Group them again — a fresh read of what belongs together" : undefined}
+        className={
+          grouped
+            ? "fast mono text-meta text-muted hover:text-accent disabled:opacity-50"
+            : "tap fast flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-caption text-accent hover:brightness-105 disabled:opacity-50"
+        }
+        style={grouped ? undefined : { background: "var(--accent-soft)" }}
       >
-        {busy ? "Grouping…" : label}
+        {busy ? "Grouping…" : grouped ? "↻ group again" : label}
       </button>
       {error && <p className="mt-1.5 text-meta text-signal">{error}</p>}
     </>
@@ -429,12 +623,26 @@ function InboxGroups({
   if (count === 0 && runs.length === 0) {
     return <p className="text-caption text-muted">Inbox clear.</p>;
   }
+  // Grouping already ran on open — captures arrive here as named blocks, not as a
+  // button you have to find and press. What's left is the result, and a way to
+  // ask for a different read of it.
+  if (theming && runs.length === 0) {
+    return <p className="text-caption text-muted">Grouping {count} captures into blocks…</p>;
+  }
   return (
     <section>
+      <GroupedRuns runs={runs} unit="capture" first />
       {count > 0 && (
-        <GroupButton label={`✦ Group ${count} into blocks`} busy={theming} error={error} onGroup={onTheme} />
+        <div className={runs.length > 0 ? "mt-2" : ""}>
+          <GroupButton
+            label={`✦ Group ${count} into blocks`}
+            busy={theming}
+            error={error}
+            grouped={runs.length > 0}
+            onGroup={onTheme}
+          />
+        </div>
       )}
-      <GroupedRuns runs={runs} unit="capture" />
     </section>
   );
 }
@@ -785,6 +993,7 @@ function Leftovers({
               label={`✦ Group ${carriedKept} into blocks`}
               busy={bundling}
               error={bundleErr}
+              grouped={runs.length > 0}
               onGroup={onBundleCarried}
             />
           </div>
@@ -1011,96 +1220,91 @@ function Boundaries({
   );
 }
 
-// ── the walk bar — one primary action, and it moves you forward ──────────────
+// ── the act — the walk's one forward move, at the foot of the rail ──────────
 //
-// There is exactly **one** primary button in the flow and it is always the next
-// beat: *Leftovers → · Inbox → · Commit the week →*. A permanent "Commit the
-// week" invited you to skip the walk and commit a week you'd only seen a third
-// of, and left the forward move as a grey text link in the rail — the least
-// important-looking control doing the most important job. Now the button walks
-// you through and the commit is the thing you arrive at, not a thing you can
-// take a shortcut to. (The source switch above still jumps anywhere at any time:
-// a walk, not a wizard.)
+// One primary control, in one place, doing one thing: pour the next source into
+// the week. It sits under the pool because that is the column the decision lives
+// in — the old bottom bar put it diagonally opposite the step indicator, so the
+// screen had a "where am I" corner and a "how do I move on" corner and nothing
+// tying them together.
 //
-// The hairline across the top is **step** progress — and it can live here, next
-// to the stepper, precisely because capacity now lives over the grid under its
-// own heading. Two bars, two meanings, neither one able to be mistaken for the
-// other; that confusion is what made the old header read as broken.
-//
-// It also used to carry its own capacity read ("11.8h planned vs your ~23.3h/wk
-// pace") while the header carried a different one ("19.2h of ~26.7h") — two
-// arithmetics for one week, on one screen, disagreeing. And the week's one-line
-// goal: a text box asking for a summary of decisions the whole screen already
-// shows. The sprint's existing goal rides through `commit()` untouched.
-function WalkBar({
+// The label names the **act**, not the destination. "Projects →" told you where
+// you'd land and nothing about what pressing it does; each press actually adds a
+// source, and the grid animating is that sentence finishing.
+function WalkAction({
   lane,
+  stepCount,
   intake,
   projectCount,
   waitingInbox,
   keptCount,
+  openMins,
   applying,
   onNext,
   onCommit,
 }: {
-  lane: WeekLane;
+  lane: WeekPlanStep;
+  stepCount: number;
   intake: WeekIntakeRead;
   projectCount: number;
   waitingInbox: number;
   keptCount: number;
+  openMins: number;
   applying: boolean;
-  onNext: (next: WeekLane) => void;
+  onNext: (next: WeekPlanStep) => void;
   onCommit: () => void;
 }) {
-  const step = LANES.indexOf(lane);
-  const last = step === LANES.length - 1;
+  const step = PLAN_STEPS.indexOf(lane);
+  const last = step === stepCount - 1;
+  const NEXT_ACT: Record<WeekPlanStep, string> = {
+    open: "Add your projects",
+    projects: "Add what's left over",
+    loose: "Add the inbox",
+    inbox: "",
+  };
 
-  // What this source just put into the week — the beat you're leaving, in its
-  // own terms. Never a scolding count of what you left behind (Principle 4).
+  // What this step put into the week — the beat you're on, in its own terms.
+  // Never a scolding count of what you left behind (Principle 4).
   const read =
-    lane === "projects"
-      ? projectCount === 0
-        ? "no projects on this week yet"
-        : `${projectCount} project${projectCount === 1 ? "" : "s"} · ${intake.projects.count} piece${intake.projects.count === 1 ? "" : "s"} · ${hrs(intake.projects.mins)}h in`
-      : lane === "loose"
-        ? intake.loose.count > 0
-          ? `${intake.loose.count} leftover${intake.loose.count === 1 ? "" : "s"} · ${hrs(intake.loose.mins)}h in`
-          : "nothing owed and nothing due"
-        : intake.inbox.count > 0
-          ? `${intake.inbox.count} capture${intake.inbox.count === 1 ? "" : "s"} in` +
-            (waitingInbox > 0 ? ` · ${waitingInbox} keeping for later` : "")
-          : waitingInbox > 0
-            ? `${waitingInbox} waiting — they'll keep`
-            : "clear";
+    lane === "open"
+      ? openMins > 0
+        ? `${hrs(openMins)}h of room across the week`
+        : "no open time left in your working hours"
+      : lane === "projects"
+        ? projectCount === 0
+          ? "no projects on this week yet"
+          : `${projectCount} project${projectCount === 1 ? "" : "s"} · ${intake.projects.count} piece${intake.projects.count === 1 ? "" : "s"} · ${hrs(intake.projects.mins)}h`
+        : lane === "loose"
+          ? intake.loose.count > 0
+            ? `${intake.loose.count} leftover${intake.loose.count === 1 ? "" : "s"} · ${hrs(intake.loose.mins)}h`
+            : "nothing owed and nothing due"
+          : intake.inbox.count > 0
+            ? `${intake.inbox.count} capture${intake.inbox.count === 1 ? "" : "s"} in` +
+              (waitingInbox > 0 ? ` · ${waitingInbox} keeping for later` : "")
+            : waitingInbox > 0
+              ? `${waitingInbox} waiting — they'll keep`
+              : "clear";
 
   return (
-    <footer className="relative shrink-0 border-t border-line px-6 py-3">
-      {/* the walk, drawn — three sources, filling as you go */}
-      <div className="absolute inset-x-0 top-0 h-[2px] overflow-hidden" aria-hidden>
-        <div
-          className="h-full"
-          style={{
-            width: `${((step + 1) / LANES.length) * 100}%`,
-            background: "var(--accent)",
-            transition: "width .42s var(--ease-out)",
-          }}
-        />
+    <div>
+      <div className="mono mb-2 flex items-baseline justify-between gap-2 text-micro text-muted">
+        <span className="min-w-0 truncate">{read}</span>
+        <span className="shrink-0">{keptCount} in the week</span>
       </div>
-
-      <div className="flex items-center gap-4">
-        <div className="mono min-w-0 flex-1 text-meta text-muted">
-          <span className="text-ink">{LANE_LABEL[lane]}</span> — {read}
+      <Btn
+        kind="primary"
+        onClick={last ? onCommit : () => onNext(PLAN_STEPS[step + 1])}
+        disabled={applying}
+        className="w-full justify-center px-4 py-2.5"
+      >
+        {last ? (applying ? "committing…" : "Commit the week →") : `${NEXT_ACT[lane]} →`}
+      </Btn>
+      {!last && (
+        <div className="mono mt-1.5 text-center text-micro text-muted">
+          then step {step + 2} of {stepCount}
         </div>
-        <span className="mono shrink-0 text-meta text-muted">{keptCount} in the week</span>
-        <Btn
-          kind="primary"
-          onClick={last ? onCommit : () => onNext(LANES[step + 1])}
-          disabled={applying}
-          className="shrink-0 px-4 py-2"
-        >
-          {last ? (applying ? "committing…" : "Commit the week →") : `${LANE_LABEL[LANES[step + 1]]} →`}
-        </Btn>
-      </div>
-    </footer>
+      )}
+    </div>
   );
 }
 
@@ -1136,6 +1340,7 @@ function WeekGrid({
   workStartMin,
   workEndMin,
   dayContexts,
+  gaps,
   onDrop,
   onMove,
   onResize,
@@ -1151,6 +1356,9 @@ function WeekGrid({
   workStartMin: number;
   workEndMin: number;
   dayContexts: Record<string, DayContext>;
+  /** Open spans per day, drawn as claimable time. Set on the "before" step, where
+   *  the question is how much room there is; null once your work is on the grid. */
+  gaps?: Map<string, Gap[]> | null;
   onDrop: (taskId: string) => void;
   onMove: (taskId: string, dayISO: string, startMin: number) => void;
   onResize: (taskId: string, durationMin: number) => void;
@@ -1265,8 +1473,18 @@ function WeekGrid({
       e.stopImmediatePropagation();
       setInspect(null);
     };
+    // …and any press outside it closes it, the way every popover in the app does
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("[data-peek]") || el?.closest("[data-block]")) return;
+      setInspect(null);
+    };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    window.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("pointerdown", onDown);
+    };
   }, [inspect]);
 
   const snap = (m: number) => Math.round(m / 15) * 15;
@@ -1387,6 +1605,31 @@ function WeekGrid({
               {hours.map((h, i) =>
                 i === 0 ? null : <div key={h} className="absolute inset-x-0" style={{ top: yOf(h), borderTop: "1px solid var(--line)", opacity: 0.5 }} />,
               )}
+              {/* open time, drawn — `--slot` is open/claimable everywhere in the
+                  app, so the week's room reads the same here as on any planner */}
+              {(gaps?.get(d.iso) ?? []).map((g) => {
+                const gs = g.start.getHours() * 60 + g.start.getMinutes();
+                const ge = g.end.getHours() * 60 + g.end.getMinutes();
+                const h = Math.max(MIN_BLOCK_PX, yOf(ge) - yOf(gs));
+                return (
+                  <div
+                    key={`gap-${gs}`}
+                    className="block-in absolute inset-x-1 rounded-[5px]"
+                    style={{
+                      top: yOf(gs), height: h,
+                      background: "color-mix(in srgb, var(--slot) 14%, transparent)",
+                      border: "1px dashed color-mix(in srgb, var(--slot) 45%, transparent)",
+                    }}
+                    title={`${fmtMinShort(gs)}–${fmtMinShort(ge)} open`}
+                  >
+                    {h > 26 && (
+                      <div className="mono px-1.5 pt-0.5 text-micro" style={{ color: "color-mix(in srgb, var(--slot) 85%, var(--ink))" }}>
+                        {fmtMinShort(gs)} · {hrs(g.mins)}h open
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               {items.map((it, idx) => {
                 const top = yOf(it.startMin);
                 const height = Math.max(MIN_BLOCK_PX, yOf(it.endMin) - yOf(it.startMin));
@@ -1430,6 +1673,7 @@ function WeekGrid({
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
+                    data-block
                     onPointerDown={draggable ? (e) => startDrag(e, it, d.iso, "move") : undefined}
                     className={`group lift-anim absolute inset-x-1 overflow-hidden rounded-[6px] px-1.5 py-1 ${draggable ? "cursor-grab" : ""} ${isNew ? "block-in" : ""}`}
                     style={{
@@ -1520,6 +1764,7 @@ function WeekGrid({
                 return (
                   <div
                     key={`peek-${it.id}`}
+                    data-peek
                     onPointerDown={(e) => e.stopPropagation()}
                     className="glass-card pop-in absolute inset-x-1 z-30 rounded-md border p-2"
                     style={{ [flip ? "bottom" : "top"]: flip ? totalH - yOf(it.startMin) + 4 : below, borderColor: hue }}

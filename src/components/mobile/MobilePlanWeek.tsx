@@ -39,11 +39,13 @@ import { toBusyBlocks, type BusyBlock } from "../../lib/now";
 import SourceSwitch, { CapacityMeter, WEEK_STEPS, type WeekStep } from "../rituals/WeekIntake";
 import DurationSelect from "../DurationSelect";
 
-/** The forward beat out of each step — plain words for the thing you're going to. */
+/** The forward beat — named after the ACT, not the destination. "Leftovers →"
+ *  said where you'd land and nothing about what pressing it does; each press
+ *  pours one more source into the week. */
 const NEXT: Partial<Record<WeekStep, { to: WeekStep; label: string }>> = {
-  projects: { to: "loose", label: "Leftovers →" },
-  loose: { to: "inbox", label: "Inbox →" },
-  inbox: { to: "week", label: "The week →" },
+  projects: { to: "loose", label: "Add what's left over →" },
+  loose: { to: "inbox", label: "Add the inbox →" },
+  inbox: { to: "week", label: "See the week →" },
 };
 
 const fmtMinShort = (m: number) => {
@@ -167,6 +169,7 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
             intake={intake}
             fit={{ placed: placements.length, unplaced: result.unplaced.length }}
             revealed={step === "week" ? undefined : REVEALED_BY_LANE[step]}
+            compact
             dense
           />
         </div>

@@ -351,7 +351,11 @@ function AppShellInner() {
       </div>
       </div>
 
-      {flow === "sunday" && <SundayRitual onClose={closeFlow} />}
+      {/* the plan's step rides nav history, so browser/mouse back-forward walks
+          the sources instead of dropping out of the flow */}
+      {flow === "sunday" && (
+        <SundayRitual step={flowStep} setStep={(s) => navigate({ flowStep: s })} onClose={closeFlow} />
+      )}
       {flow === "summit" && (
         <SummitRitual
           step={flowStep}

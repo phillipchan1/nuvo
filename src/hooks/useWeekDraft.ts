@@ -30,14 +30,14 @@ import {
 } from "../lib/vertical";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import { composeWeek, type DayContext, type Placement } from "../lib/compose";
-import { isEventHidden } from "../lib/now";
+import { eventInstanceKey, eventSeriesKey, isEventHidden } from "../lib/now";
 import { clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup } from "../lib/batch";
 import { isStandingSlot, routeToStanding } from "../lib/standingSlots";
 import { supabase } from "../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../lib/calibration";
 import { laneOf, readIntake, type WeekLane } from "../lib/intake";
 import { suggestPull } from "../lib/pull";
-import type { Task } from "../lib/types";
+import type { ExternalEvent, Task } from "../lib/types";
 
 /** One board block's identity. A split overdue task yields several blocks that
  *  share a task id, so the BLOCK — not the task — is what you move and resize. */
@@ -68,7 +68,7 @@ export type WeekDraft = ReturnType<typeof useWeekDraft>;
 
 export function useWeekDraft() {
   const { data, planWeek, applySlots, assignToStanding } = useVertical();
-  const { settings } = useSettings();
+  const { settings, update: updateSettings } = useSettings();
   const { data: allTasks = [] } = useAllTasks();
 
   const [committed, setCommitted] = useState(false);
@@ -97,6 +97,7 @@ export function useWeekDraft() {
     () => events.filter((e) => !hiddenCals.has(e.calendar_id) && !isEventHidden(e, hiddenEventKeys)),
     [events, hiddenCals, hiddenEventKeys],
   );
+  const reviewableEvents = useMemo(() => events.filter((e) => !hiddenCals.has(e.calendar_id)), [events, hiddenCals]);
 
   // ── the two buckets, intelligence picks: projects (lead initiatives, next-up,
   //    deadlines) + inbox (deadlines, faithfulness top-ups). One ranked set. ──
@@ -376,6 +377,18 @@ export function useWeekDraft() {
   // The same AI theming the inbox uses, pointed at this week's slipped tasks: so
   // carry-forward becomes a few named focus blocks (each sized to its members),
   // not a scatter of loose tasks. Lands in the draft, on the board, like the rest.
+  // Group the inbox the moment there's an inbox to group. Pressing a button to
+  // get a proposal was busywork: the pull, the standing-slot routing and the
+  // compose all run on open without being asked, and grouping is the same kind of
+  // act — a draft you can edit, not a write. (Principle 3 is untouched: these are
+  // proposals sitting in a quiet pool; nothing reaches the calendar until Commit.)
+  const autoGrouped = useRef(false);
+  useEffect(() => {
+    if (autoGrouped.current || theming || inbox.length === 0) return;
+    autoGrouped.current = true;
+    void themeInbox();
+  }, [inbox.length, theming, themeInbox]);
+
   const [themingCarried, setThemingCarried] = useState(false);
   const [carriedErr, setCarriedErr] = useState<string | null>(null);
   const themeCarried = useCallback(async () => {
@@ -401,6 +414,32 @@ export function useWeekDraft() {
       setThemingCarried(false);
     }
   }, [themingCarried, allTasks, kept, today, data]);
+
+  // ── reclaiming time — an event you aren't going to attend isn't capacity ────
+  // The week's honest open time depends on which meetings are real. Nuvo already
+  // knows how to ignore one (`hidden_events` + `isEventHidden`, used by every
+  // availability read); planning day is simply when you'd want to say so, because
+  // it's the moment the answer changes what you commit to. Toggling here writes
+  // the same setting the rest of the app reads — one rule, not a plan-only fiction.
+  const hiddenEvent = useCallback(
+    (e: ExternalEvent) => isEventHidden(e, hiddenEventKeys),
+    [hiddenEventKeys],
+  );
+  const toggleEventHidden = useCallback(
+    (e: ExternalEvent) => {
+      const key = eventInstanceKey(e);
+      const current = settings?.hidden_events ?? [];
+      const on = isEventHidden(e, hiddenEventKeys);
+      // Hiding uses the instance key; un-hiding has to clear a series key too, or
+      // a series-hidden occurrence could never be brought back from here.
+      const seriesKey = eventSeriesKey(e);
+      const next = on
+        ? current.filter((h) => h.key !== key && (seriesKey == null || h.key !== seriesKey))
+        : [...current, { key, title: e.title || "busy" }];
+      void updateSettings({ hidden_events: next });
+    },
+    [settings, hiddenEventKeys, updateSettings],
+  );
 
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => format(addDays(parseDateISO(weekStartISO), i), "yyyy-MM-dd")),
@@ -497,6 +536,9 @@ export function useWeekDraft() {
     dayContexts,
     workStart,
     workEnd,
+    // reclaiming open time — an event you won't attend isn't capacity
+    hiddenEvent,
+    toggleEventHidden,
     // the pull — whole, and split into the flow's three lanes
     suggestions,
     byLane,
@@ -516,6 +558,11 @@ export function useWeekDraft() {
     runs,
     // the calendar the week lands in
     visibleEvents,
+    /** The week's events with individually-set-aside ones still IN, so a step can
+     *  offer them back — but calendars you've hidden in Settings stay out. Those
+     *  are hidden app-wide and permanently; re-litigating them every planning day
+     *  is how a 39-event week showed up as an 89-row list. */
+    allWeekEvents: reviewableEvents,
     weekSlots,
     onCalBlocks,
     blockedMins,

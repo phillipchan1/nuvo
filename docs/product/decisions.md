@@ -476,6 +476,65 @@ three-step walk verified end to end (33% → 67% → 100%, button `Leftovers →
 `Inbox →` → `Commit the week →`), reveal accumulating 5 → 9 blocks, a project slot's
 5 subtasks opening on click while drag still moves the block, and 375px clean.*
 
+**D-037 · 2026-07-26 · Plan the week has one column that owns the walk, and it
+starts from the empty week.** *(Extends D-035/D-036, same day, after driving them.)*
+
+Three separate pieces of chrome were all trying to orient you at once: a step
+switcher top-left, a capacity meter across the top at full width, and a walk bar
+along the bottom with its own progress line. The operator's read of it was exact —
+**the step row looked like tabs** (parallel, equal-weight, always-available: "pick
+a view", not "you are on a journey"), **the button was diagonally opposite the
+thing that said where you were**, and **the capacity bar, being the biggest element
+on screen, read as the primary cue** when it is a reference.
+
+The hierarchy was inverted. What the operator needs here, in order: *what am I
+deciding* → *what is it doing to my week* → *where am I and how do I move on* →
+*can I carry it* (a glance). So:
+
+- **The rail owns the walk, top to bottom:** stepper → question → pool → the one
+  primary button, in a single column. The act now sits directly under the pool it
+  acts on.
+- **The tab row became a connected stepper** — numbered stations joined by a rule,
+  past ones checked. Every station is still one click away (a walk, not a wizard),
+  but jumping now reads as the exception rather than the invitation.
+- **The capacity meter moved below the grid it measures**, in a `compact` variant.
+  It is a footnote to the week, not a headline over it.
+- **The bottom bar is gone.** One primary control, one place.
+- **The button names the act, not the destination:** *Add your projects · Add
+  what's left over · Add the inbox · Commit the week*. "Projects →" said where
+  you'd land and nothing about what pressing it does; each press pours one more
+  source into the week, and the grid animating is that sentence finishing.
+
+**Step 1 is now the week as it already stands** (`open`) — the immovable calendar
+and the room between it, drawn as `--slot` bands with their hours. The plan used to
+open with project blocks already scattered across the grid: new information
+arriving before you had any frame to read it against. Now you see the empty week
+first and every later step is a visible *change* to a picture you already
+understand. It also does the thing that actually changes the answer: **a meeting
+you aren't going to attend isn't capacity**, so you can set one aside in place. That
+writes the existing `hidden_events` setting every availability path in the app
+already reads — one rule, not a plan-only fiction.
+
+**Grouping is automatic.** Pressing a button to get a proposal was busywork; the
+pull, the standing-slot routing and the compose already run on open. Once it *has*
+grouped, the call-to-action demotes to a quiet "↻ group again" — a filled button
+offering to "Group 10 into blocks" above six blocks it just made is the screen
+arguing with itself. Principle 3 is untouched: these are proposals in a quiet pool,
+and nothing reaches the calendar until Commit.
+
+→ Also: **the step lives in nav history** (`flowStep`), so browser/mouse
+back-forward walks the plan instead of dropping out of it; the sitting popover
+closes on any press outside it; and calendars hidden in Settings no longer appear
+in the reclaim list (a 39-event week was listing 89 rows).
+→ **Left open — a real divergence:** the phone has no `open` step. Five stations
+don't fit a 375px stepper, and its "The week" step is its own after-view. The
+phone's meter and button voice now match; the before-state doesn't. Worth closing
+when the phone's step rail is next touched.
+*Status: standing — typechecked, `npm test` green, built, and driven in a real
+account: the four-step walk verified end to end with the stepper checking off
+behind you, back/forward walking steps 4→3→2→3, blur-dismiss on the sitting
+popover, and 375px clean.*
+
 ---
 
 ## 2 · Things we decided **not** to do
