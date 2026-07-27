@@ -175,13 +175,20 @@ export default function SundayRitual({
     [gapsByDay],
   );
   /** Every event in the planning week's working days — including the ones you've
-   *  already set aside, so they can be brought back. */
+   *  already set aside, so the grid can draw them struck through and hand them back. */
   const weekEvents = useMemo(() => {
     const days = new Set(gridDays.map((d) => d.iso));
-    return allWeekEvents
-      .filter((e) => e.busy && !e.all_day && days.has(format(new Date(e.start_at), "yyyy-MM-dd")))
-      .sort((a, b) => a.start_at.localeCompare(b.start_at));
+    return allWeekEvents.filter(
+      (e) => e.busy && !e.all_day && days.has(format(new Date(e.start_at), "yyyy-MM-dd")),
+    );
   }, [allWeekEvents, gridDays]);
+  const reclaimedMins = useMemo(
+    () =>
+      weekEvents
+        .filter(hiddenEvent)
+        .reduce((s2, e) => s2 + Math.max(0, Math.round((new Date(e.end_at).getTime() - new Date(e.start_at).getTime()) / 60_000)), 0),
+    [weekEvents, hiddenEvent],
+  );
 
   const weekSpan = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
 
@@ -238,13 +245,7 @@ export default function SundayRitual({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3">
             {lane === "open" && (
-              <OpenTimeLane
-                events={weekEvents}
-                gridDays={gridDays}
-                isHidden={hiddenEvent}
-                onToggle={toggleEventHidden}
-                openMins={openMins}
-              />
+              <OpenTimeLane openMins={openMins} reclaimedMins={reclaimedMins} />
             )}
             {lane === "projects" && (
               <ProjectsLane
@@ -309,7 +310,9 @@ export default function SundayRitual({
               <>
                 <WeekGrid
                   days={gridDays}
-                  events={visibleEvents}
+                  events={lane === "open" ? weekEvents : visibleEvents}
+                  isEventAside={lane === "open" ? hiddenEvent : undefined}
+                  onToggleEvent={lane === "open" ? toggleEventHidden : undefined}
                   slots={weekSlots}
                   locked={onCalBlocks}
                   placements={shownPlacements}
@@ -436,103 +439,27 @@ function Shell({
  * room between it drawn as open time. Everything after this is a visible change
  * to a picture you've already understood.
  *
- * It also does the one thing that actually changes the answer: **a meeting you
- * aren't going to attend isn't capacity.** Nuvo already knows how to ignore one
- * (`hidden_events`, read by every availability path in the app); planning day is
- * simply when you'd want to say so, because it's the moment it changes what you
- * commit to. Setting one aside here is the same setting the rest of the app reads,
- * and it's reversible in place — never a plan-only fiction.
+ * **The rail says almost nothing here, on purpose.** It briefly listed all 46 of
+ * the week's commitments, which is the calendar restated as a table — the same
+ * information, worse, and overwhelming enough to bury the one number that matters.
+ * The grid already shows every meeting in its own shape and place, so the act
+ * lives *there*: click a meeting you aren't going to and its time turns into open
+ * time under your cursor. (`hidden_events` — the same setting every availability
+ * path in Nuvo already reads, never a plan-only fiction.)
  */
-function OpenTimeLane({
-  events,
-  gridDays,
-  isHidden,
-  onToggle,
-  openMins,
-}: {
-  events: ExternalEvent[];
-  gridDays: { iso: string; past: boolean }[];
-  isHidden: (e: ExternalEvent) => boolean;
-  onToggle: (e: ExternalEvent) => void;
-  openMins: number;
-}) {
-  const mins = (e: ExternalEvent) =>
-    Math.max(0, Math.round((new Date(e.end_at).getTime() - new Date(e.start_at).getTime()) / 60_000));
-  const set = events.filter((e) => isHidden(e));
-  const reclaimed = set.reduce((s, e) => s + mins(e), 0);
-  const byDay = new Map<string, ExternalEvent[]>();
-  for (const e of events) {
-    const iso = format(new Date(e.start_at), "yyyy-MM-dd");
-    byDay.set(iso, [...(byDay.get(iso) ?? []), e]);
-  }
-
+function OpenTimeLane({ openMins, reclaimedMins }: { openMins: number; reclaimedMins: number }) {
   return (
     <section>
-      <p className="mb-3 text-caption text-muted">
+      <p className="text-body text-muted">
         <span className="text-ink">{hrs(openMins)}h</span> open inside your working hours.
-        {reclaimed > 0 && (
-          <span style={{ color: "var(--accent)" }}> {hrs(reclaimed)}h of that you took back.</span>
+        {reclaimedMins > 0 && (
+          <span style={{ color: "var(--accent)" }}> {hrs(reclaimedMins)}h of that you took back.</span>
         )}
       </p>
-
-      {events.length === 0 ? (
-        <p className="text-caption text-muted">Nothing on the calendar this week — the week is yours.</p>
-      ) : (
-        <>
-          <div className="section-label mb-1">
-            What's already on it{" "}
-            <span className="mono normal-case tracking-normal text-muted">{events.length}</span>
-          </div>
-          {gridDays.map(({ iso }) => {
-            const rows = byDay.get(iso) ?? [];
-            if (rows.length === 0) return null;
-            return (
-              <div key={iso} className="mb-2">
-                <div className="mono py-1 text-micro text-muted">{format(parseDateISO(iso), "EEEE")}</div>
-                <div className="border-t border-line">
-                  {rows.map((e) => {
-                    const off = isHidden(e);
-                    return (
-                      <button
-                        key={e.id}
-                        onClick={() => onToggle(e)}
-                        title={
-                          off
-                            ? "You set this aside — it counts as open time. Click to put it back."
-                            : "Not going? Set it aside and its time counts as open."
-                        }
-                        className="tap fast flex w-full items-center gap-2 border-b border-line py-1.5 text-left"
-                      >
-                        <span
-                          className="mono w-[52px] shrink-0 text-micro text-muted"
-                          style={off ? { textDecoration: "line-through" } : undefined}
-                        >
-                          {fmtMinShort(new Date(e.start_at).getHours() * 60 + new Date(e.start_at).getMinutes())}
-                        </span>
-                        <span
-                          className="min-w-0 flex-1 truncate text-caption"
-                          style={off ? { color: "var(--muted)", textDecoration: "line-through" } : undefined}
-                        >
-                          {e.title || "busy"}
-                        </span>
-                        <span
-                          className="mono shrink-0 text-micro"
-                          style={{ color: off ? "var(--accent)" : "var(--muted)" }}
-                        >
-                          {off ? `+${hrs(mins(e))}h` : `${mins(e)}m`}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-          <p className="mt-2 text-meta text-muted">
-            Click one you're not going to — its time counts as open, everywhere in Nuvo.
-          </p>
-        </>
-      )}
+      <p className="mt-4 text-caption text-muted">
+        Not going to something? Click it on the week — its time counts as open, here and everywhere else
+        in Nuvo. Click it again to put it back.
+      </p>
     </section>
   );
 }
@@ -1327,11 +1254,17 @@ interface GridItem {
   holds?: number;
   /** Set on an overdue task carved across sittings — this piece is 1 of N. */
   split?: { part: number; parts: number };
+  /** An external commitment you've set aside — its time reads as open. */
+  aside?: boolean;
+  /** The event behind an "event" item, when it can be set aside / brought back. */
+  event?: ExternalEvent;
 }
 
 function WeekGrid({
   days,
   events,
+  isEventAside,
+  onToggleEvent,
   slots,
   locked,
   placements,
@@ -1347,6 +1280,9 @@ function WeekGrid({
 }: {
   days: { iso: string; past: boolean }[];
   events: ExternalEvent[];
+  /** Step 1 only: is this commitment set aside? (present ⇒ events are clickable) */
+  isEventAside?: (e: ExternalEvent) => boolean;
+  onToggleEvent?: (e: ExternalEvent) => void;
   slots: Slot[];
   locked: Task[];
   placements: Placement[];
@@ -1384,6 +1320,8 @@ function WeekGrid({
       endMin: sameDay ? en.getHours() * 60 + en.getMinutes() : 24 * 60,
       title: e.title || "busy",
       color: null,
+      aside: isEventAside?.(e) ?? false,
+      event: onToggleEvent ? e : undefined,
     });
   }
   for (const b of locked) {
@@ -1623,8 +1561,8 @@ function WeekGrid({
                     title={`${fmtMinShort(gs)}–${fmtMinShort(ge)} open`}
                   >
                     {h > 26 && (
-                      <div className="mono px-1.5 pt-0.5 text-micro" style={{ color: "color-mix(in srgb, var(--slot) 85%, var(--ink))" }}>
-                        {fmtMinShort(gs)} · {hrs(g.mins)}h open
+                      <div className="mono px-1.5 pt-0.5 text-right text-micro" style={{ color: "color-mix(in srgb, var(--slot) 85%, var(--ink))" }}>
+                        {hrs(g.mins)}h open
                       </div>
                     )}
                   </div>
@@ -1634,20 +1572,40 @@ function WeekGrid({
                 const top = yOf(it.startMin);
                 const height = Math.max(MIN_BLOCK_PX, yOf(it.endMin) - yOf(it.startMin));
                 if (it.kind === "event") {
-                  // immovable external commitments — a quiet neutral frost, no identity
+                  // immovable external commitments — a quiet neutral frost, no
+                  // identity. On step 1 they're the one thing you CAN change: set
+                  // one aside and its time becomes open, right where you're looking.
+                  const canToggle = !!it.event && !!onToggleEvent;
+                  const aside = !!it.aside;
                   return (
                     <div
                       key={`ev-${it.id}`}
-                      className="absolute inset-x-1 overflow-hidden rounded-[5px] px-1.5 py-0.5"
+                      data-block
+                      onPointerDown={canToggle ? (e) => e.stopPropagation() : undefined}
+                      onClick={canToggle ? () => onToggleEvent!(it.event!) : undefined}
+                      className={`absolute overflow-hidden rounded-[5px] py-0.5 ${aside ? "left-1 max-w-[62%] pl-0.5" : "inset-x-1 px-1.5"} ${canToggle ? "fast cursor-pointer" : ""}`}
                       style={{
                         top, height,
-                        background: "color-mix(in srgb, var(--ink) 5%, transparent)",
-                        borderLeft: "2px solid var(--line-strong)",
-                        backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+                        background: aside ? "transparent" : "color-mix(in srgb, var(--ink) 5%, transparent)",
+                        borderLeft: aside ? "none" : "2px solid var(--line-strong)",
+                        opacity: aside ? 0.5 : 1,
+                        backdropFilter: aside ? undefined : "blur(4px)",
+                        WebkitBackdropFilter: aside ? undefined : "blur(4px)",
                       }}
-                      title={it.title}
+                      title={
+                        !canToggle
+                          ? it.title
+                          : aside
+                            ? `${it.title} — set aside, its time counts as open. Click to put it back.`
+                            : `${it.title} — not going? Click to set it aside and free the time.`
+                      }
                     >
-                      <div className="mono truncate text-micro leading-tight text-muted">{it.title}</div>
+                      <div
+                        className="mono truncate text-micro leading-tight text-muted"
+                        style={aside ? { textDecoration: "line-through" } : undefined}
+                      >
+                        {it.title}
+                      </div>
                     </div>
                   );
                 }

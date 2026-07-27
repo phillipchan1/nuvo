@@ -526,6 +526,16 @@ and nothing reaches the calendar until Commit.
 back-forward walks the plan instead of dropping out of it; the sitting popover
 closes on any press outside it; and calendars hidden in Settings no longer appear
 in the reclaim list (a 39-event week was listing 89 rows).
+
+→ **Then the list went too.** Step 1 briefly listed all 46 of the week's
+commitments in the rail so you could set one aside — the calendar restated as a
+table: the same information, worse, and overwhelming enough to bury the one number
+that matters. The grid already shows every meeting in its own shape and place, so
+the act moved *there*: click a meeting on the week and its time turns into open
+time under your cursor. A set-aside commitment stays on the grid as a faint
+struck-through ghost inside the span it just opened — which is both the undo and
+the explanation of why that span is free. The rail keeps two sentences: the hours
+open, and how to change them.
 → **Left open — a real divergence:** the phone has no `open` step. Five stations
 don't fit a 375px stepper, and its "The week" step is its own after-view. The
 phone's meter and button voice now match; the before-state doesn't. Worth closing
