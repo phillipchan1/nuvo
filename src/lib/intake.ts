@@ -82,17 +82,26 @@ export interface LaneInput {
 /**
  * Which lane a piece of work belongs to. Order matters and is deliberate:
  *
- *  1. **Carried beats everything.** A slipped task that belongs to a week's
- *     project is still, to the person looking at it, a leftover to re-time — not
- *     a fresh push. Burying it under its project is how carry-forward stopped
- *     being a decision and started being noise.
- *  2. **Unsorted captures are the inbox**, wherever they end up placed.
- *  3. Anything project-attached is the point of the week.
- *  4. Everything else (deadlines, quiet-domain top-ups) is a loose end.
+ *  1. **Unsorted captures are the inbox**, wherever they end up placed.
+ *  2. **Project attachment wins.** A project's work is decided *as the project*,
+ *     in one place, whether or not a given piece happened to slip last week.
+ *  3. Everything else — carried-over loose work, deadlines, quiet-domain top-ups
+ *     — is a leftover.
+ *
+ * **Carried used to beat project attachment** (D-034), on the reasoning that a
+ * slipped task is "a leftover to re-time, not a fresh push". Driving it showed
+ * that costs more than it buys: the composer clusters a project's sittings by
+ * `project_id` regardless of lane, so a carried piece of project work was already
+ * *placed on the calendar under its project* while still being listed under
+ * Leftovers as an undecided leftover — the same task asked about twice, once
+ * after it had visibly been settled. It also made the Projects step undercount
+ * ("3/3" when the project really had five pieces in the week).
+ *
+ * Carry-forward doesn't go quiet: the piece keeps its `↻N` badge, and now wears
+ * it *under the project it belongs to*, which is the altitude the decision is
+ * actually made at ("this has slipped twice — do I still want it this week?").
  */
 export function laneOf(t: LaneInput): WeekLane {
-  const rolled = t.roll_count ?? t.rollCount ?? 0;
-  if (rolled > 0) return "loose";
   if (t.status === "inbox" || t.inbox) return "inbox";
   if (t.project_id ?? t.projectId) return "projects";
   return "loose";

@@ -114,8 +114,6 @@ export default function SundayRitual({
     weekSlots,
     onCalBlocks,
     result,
-    ignorePace,
-    setIgnorePace,
     placements,
     movePlacement,
     resizePlacement,
@@ -390,12 +388,7 @@ export default function SundayRitual({
                 {/* Work you kept that the week had no room for. It used to appear
                     only on the final step, after every decision was made. */}
                 {shownUnplaced.length > 0 && (
-                  <UnplacedReport
-                    unplaced={shownUnplaced}
-                    ignorePace={ignorePace}
-                    onIgnorePace={() => setIgnorePace(true)}
-                    onShowProjects={() => setLane("projects")}
-                  />
+                  <UnplacedReport unplaced={shownUnplaced} onShowProjects={() => setLane("projects")} />
                 )}
 
                 {/* boundaries — settings, tucked away; here when you need them */}
@@ -462,90 +455,45 @@ function Shell({
 // Same three lanes as the phone, same order, same words — one act, two shells.
 
 /**
- * What didn't get a time — reported by its actual cause.
+ * What didn't get a time.
  *
- * These were one list under one heading, "No room this week", and that heading
- * was **false** for most of what was in it. Two different things were being
- * conflated:
- *
- *   · **past your pace** — the week fits your calendar fine; it's past what your
- *     own history says you finish. This gate fires *before* a slot is looked for,
- *     which is why you could be told "no room" while Thursday morning sat wide
- *     open. That contradiction is what made the whole screen feel untrustworthy.
- *   · **no open time** — there is genuinely nowhere to put it.
- *
- *  So the pace group says what it means, shows the room you can see, and offers
- *  the way out. Nuvo reports; you decide (Principle 4) — it does not get to
- *  quietly refuse a week you can see is possible. The cost stays on screen: the
- *  meter keeps drawing how far past pace you've gone, in `--signal`.
+ * There is exactly one reason left: **the week had nowhere to put it.** There
+ * used to be a second — work refused for running past a derived "proven pace"
+ * ceiling — and it was the majority of this list while the calendar sat visibly
+ * open. That gate is gone (the calendar is the constraint; see `useWeekDraft`),
+ * so this heading is now true whenever it appears.
  */
 function UnplacedReport({
   unplaced,
-  ignorePace,
-  onIgnorePace,
   onShowProjects,
 }: {
   unplaced: UnplacedTask[];
-  ignorePace: boolean;
-  onIgnorePace: () => void;
   onShowProjects: () => void;
 }) {
-  const pace = unplaced.filter((u) => u.kind === "pace");
-  const full = unplaced.filter((u) => u.kind !== "pace");
-
-  const list = (rows: UnplacedTask[]) => (
-    <div className="grid gap-x-8 md:grid-cols-2">
-      {rows.map(({ task, reason }) => (
-        <div key={task.id} className="flex items-center gap-3 border-b border-line py-1.5 text-caption text-muted">
-          <span className="min-w-0 flex-1 truncate text-ink">{task.title}</span>
-          <span className="mono shrink-0 text-meta">{reason}</span>
-        </div>
-      ))}
-    </div>
-  );
-
   return (
-    <div className="mt-4 space-y-4 border-t border-line pt-2.5">
-      {pace.length > 0 && (
-        <section>
-          <div className="mb-1 flex items-baseline justify-between gap-3">
-            <div className="section-label">
-              Held back to protect your pace{" "}
-              <span className="mono normal-case tracking-normal text-muted">{pace.length}</span>
-            </div>
-            {!ignorePace && (
-              <button onClick={onIgnorePace} className="fast mono shrink-0 text-meta text-accent hover:brightness-110">
-                there's room — place them anyway →
-              </button>
-            )}
-          </div>
-          <p className="mb-1.5 text-caption text-muted">
-            The week has open time; this is past what you've actually been finishing. Nuvo stops here by
-            default so the plan stays one you'd believe.
-          </p>
-          {list(pace)}
-        </section>
+    <div className="mt-4 border-t border-line pt-2.5">
+      <div className="section-label mb-1" style={{ color: "var(--signal)" }}>
+        No open time left{" "}
+        <span className="mono normal-case tracking-normal text-muted">{unplaced.length}</span>
+      </div>
+      {/* Project work that found no time is a decision, not a leftover — the acts
+          for it live on its row in the Projects step, one click away. */}
+      {unplaced.some((u) => u.task.project_id) && (
+        <p className="mb-1.5 text-caption text-muted">
+          Project work is in here.{" "}
+          <button onClick={onShowProjects} className="fast text-accent hover:brightness-110">
+            Sort it on the Projects step →
+          </button>
+        </p>
       )}
-
-      {full.length > 0 && (
-        <section>
-          <div className="section-label mb-1" style={{ color: "var(--signal)" }}>
-            No open time left{" "}
-            <span className="mono normal-case tracking-normal text-muted">{full.length}</span>
+      <div className="grid gap-x-8 md:grid-cols-2">
+        {unplaced.map(({ task, reason }) => (
+          <div key={task.id} className="flex items-center gap-3 border-b border-line py-1.5 text-caption text-muted">
+            <span className="min-w-0 flex-1 truncate text-ink">{task.title}</span>
+            <span className="mono shrink-0 text-meta">{reason}</span>
           </div>
-          {/* Project work that found no time is a decision, not a leftover — the
-              acts for it live on its row in the Projects step, one click away. */}
-          {full.some((u) => u.task.project_id) && (
-            <p className="mb-1.5 text-caption text-muted">
-              Project work is in here.{" "}
-              <button onClick={onShowProjects} className="fast text-accent hover:brightness-110">
-                Sort it on the Projects step →
-              </button>
-            </p>
-          )}
-          {list(full)}
-        </section>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
@@ -1801,6 +1749,21 @@ function WeekGrid({
                 // Placed-for-you (new) reads as Nuvo's intent: a touch stronger + lift.
                 const holds = it.holds ?? 0;
                 const open = inspect === it.id;
+                // what this block IS, in words — used as an eyebrow when there's
+                // a line for it, and inlined before the title when there isn't
+                const kindLabel =
+                  holds > 0
+                    ? it.slotPart
+                      ? `Project · part ${it.slotPart.part} of ${it.slotPart.parts}`
+                      : `${isProject ? "Project" : "Grouped"} · ${holds} ${isProject ? "task" : "capture"}${holds === 1 ? "" : "s"}`
+                    : isProject
+                      ? it.project
+                      : null;
+                // 44px = one hour. A 45-minute sitting is 33px: room for a
+                // designation and a title, not for a time it can read off the axis.
+                const showEyebrow = blkHeight >= 30 && !!kindLabel;
+                const showMeta = blkHeight >= 46;
+                const inlineKind = !showEyebrow && !!kindLabel;
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
@@ -1854,6 +1817,11 @@ function WeekGrid({
                     )}
                     <div className="flex items-start gap-1">
                       <div className="min-w-0 flex-1 truncate text-caption font-semibold leading-tight">
+                        {inlineKind && (
+                          <span className="text-micro uppercase" style={{ color: hue, letterSpacing: "0.06em" }}>
+                            {isProject ? "Project" : "Grouped"}{" · "}
+                          </span>
+                        )}
                         {isSlot ? `⛶ ${it.title}` : isProject ? `▸ ${it.title}` : isNew ? `✦ ${it.title}` : it.title}
                       </div>
                       {isNew ? (
@@ -1869,7 +1837,7 @@ function WeekGrid({
                         <span className="shrink-0 text-micro leading-none text-muted">✓</span>
                       )}
                     </div>
-                    {blkHeight > 30 && (
+                    {(showMeta || !isNew) && blkHeight > 30 && (
                       <div className="mono truncate text-meta leading-tight text-muted">
                         {fmtMinShort(it.startMin)}–{fmtMinShort(endMin)}
                         {holds > 0 && (

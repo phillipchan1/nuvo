@@ -71,16 +71,6 @@ export function useWeekDraft() {
   const { settings, update: updateSettings } = useSettings();
   const { data: allTasks = [] } = useAllTasks();
 
-  /**
-   * The proven-pace ceiling is a **report, not a rule** (Principle 4). Left on, the
-   * composer stops at what history says you finish — which is the honest default
-   * and the thing calibration exists for. But an operator looking at a wide-open
-   * Thursday and being told "no room" is being told something false about their
-   * calendar, so the ceiling has to be lift-able, with the cost still on screen:
-   * the meter keeps showing how far past pace the week runs, in `--signal`.
-   */
-  const [ignorePace, setIgnorePace] = useState(false);
-
   const [committed, setCommitted] = useState(false);
   const [applying, setApplying] = useState(false);
   const [goal, setGoal] = useState(data.sprintGoal ?? "");
@@ -237,11 +227,28 @@ export function useWeekDraft() {
         focusInitiativeIds: data.focusInitiativeIds,
         dayContexts,
         workingDays,
-        weeklyBudgetMins: ignorePace || budget == null ? null : Math.max(0, budget - blockedMins),
+        /**
+         * **The calendar is the constraint; the pace is commentary.**
+         *
+         * This used to pass `provenPace − alreadyBlocked` as a hard ceiling, so
+         * the composer refused work once the week passed a number the operator
+         * had never set, never seen derived, and could not see on any surface —
+         * it surfaced only as "past the ~12h/wk you've actually been finishing"
+         * next to a visibly empty Thursday. A silent refusal is the app deciding
+         * (Principle 4), and it was deciding with a hidden model against the
+         * plain evidence of the calendar.
+         *
+         * Calibration keeps its job — `CapacityMeter` still says how far past
+         * your usual week this plan runs, in `--signal`, while you decide, which
+         * is the honest answer to A4 ("am I lying to myself about this week?").
+         * It just doesn't get to enforce it. Work is placed into the open time
+         * that actually exists.
+         */
+        weeklyBudgetMins: null,
         // a slot holds real tasks — it can't be carved in half
         atomicIds: draftBlocks.map((b) => b.id),
       }),
-    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, onCalBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays, budget, blockedMins, ignorePace],
+    [weekStartISO, today, composeTasks, draftBlocks, visibleEvents, onCalBlocks, workStart, workEnd, data.focusInitiativeIds, dayContexts, workingDays],
   );
 
   const gain = useMemo(() => computeGain(data), [data]);
@@ -403,8 +410,12 @@ export function useWeekDraft() {
   const [carriedErr, setCarriedErr] = useState<string | null>(null);
   const themeCarried = useCallback(async () => {
     if (themingCarried) return;
+    // Loose carried work only. Project-attached carried work now belongs to the
+    // Projects lane (`laneOf`), and it is already clustered into its project's
+    // sitting — sweeping it into a themed run would pull it back out of the
+    // project it moves and scatter it under a generic name.
     const carried = allTasks.filter(
-      (t) => (t.roll_count ?? 0) > 0 && t.status !== "done" && t.status !== "trashed" &&
+      (t) => (t.roll_count ?? 0) > 0 && !t.project_id && t.status !== "done" && t.status !== "trashed" &&
         t.status !== "inbox" && !t.start_time && !t.slot_id && kept.has(t.id),
     );
     if (!carried.length) return;
@@ -578,8 +589,6 @@ export function useWeekDraft() {
     blockedMins,
     // the composed shape
     result,
-    ignorePace,
-    setIgnorePace,
     placements,
     movePlacement,
     resizePlacement,

@@ -202,19 +202,27 @@ export function CapacityMeter({
           every segment in 9.5px ("already set 8.8h · projects 5.6h · leftovers
           6.9h · inbox 4.5h") was four facts nobody needs in words when the bar
           already shows their proportions; they survive as tooltips. */}
-      <div className={`flex items-baseline justify-between gap-3 ${compact ? "mb-1.5" : "mb-1.5"}`}>
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
         <span className="section-label">the week</span>
-        <span className="shrink-0">
+        <span
+          className="shrink-0"
+          title={
+            budgetMins == null
+              ? "No history yet — a usual week appears after a week or two."
+              : `Your usual week: ~${hrs(budgetMins)}h. It's the average you've actually completed over the last four weeks — measured, never set. It's a read, not a limit: nothing is refused for exceeding it.`
+          }
+        >
           <span className="mono text-head text-ink">{hrs(intake.loadMins)}h</span>
-          <span className="mono text-meta text-muted">
-            {budgetMins == null
-              ? " · no proven pace yet"
-              : ` / ${hrs(budgetMins)}h`}
-          </span>
-          {overMins > 0 && (
+          {/* The one calibration sentence, in words, because it's now the ONLY
+              thing calibration does here — it used to also silently refuse work. */}
+          {budgetMins == null ? (
+            <span className="mono text-meta text-muted"> · no usual week yet</span>
+          ) : overMins > 0 ? (
             <span className="mono text-meta" style={{ color: "var(--signal)" }}>
-              {" "}+{hrs(overMins)}h
+              {" · "}{hrs(overMins)}h past your usual {hrs(budgetMins)}h
             </span>
+          ) : (
+            <span className="mono text-meta text-muted"> · of your usual {hrs(budgetMins)}h</span>
           )}
           {/* the one count worth words — how much of it found no time. The desktop
               also spells this out below the grid; the phone has only this. */}

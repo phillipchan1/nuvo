@@ -622,6 +622,50 @@ verified in isolation rather than by mutating a real account's project dates),
 built, and driven in a real account: "Only 1 of 5 pieces fit this week" with both
 acts on the row.*
 
+**D-040 · 2026-07-27 · The calendar is the constraint. The proven pace is
+commentary, and a project's work is decided in one place.** *(Removes the ceiling
+D-038 made lift-able; reverses the lane precedence in D-034.)*
+
+**The pace ceiling is gone as a gate.** `composeWeek` was given
+`provenPace − alreadyBlocked` as a hard budget, so it refused work once the week
+passed a number the operator had **never set, never seen derived, and could not
+find on any surface** — it appeared only as *"past the ~12h/wk you've actually
+been finishing"* beside a visibly empty Thursday. Asked where the figure came
+from, the honest answer was "a 4-week average of your completed tasks, times 1.15,
+minus what's already scheduled", and the honest follow-up was: *the calendar
+should be the indicator of how much time I have.* That's right. A silent refusal
+is the app deciding (Principle 4), and it was deciding with a hidden model against
+plain visible evidence. → Work is placed into the open time that actually exists.
+**Calibration keeps its real job:** `CapacityMeter` says *"25.9h · 5.6h past your
+usual 20.3h"* in `--signal` while you decide — A4 ("am I lying to myself about
+this week?") answered, in words, without enforcement. The number now carries a
+tooltip saying where it comes from and that nothing is refused for exceeding it.
+→ Consequence: "No open time left" is now true whenever it appears; on the account
+this was driven in, unplaced work went **9 → 1**, and the inbox finally found time.
+
+**Project attachment now beats carried.** D-034 put a slipped task in Leftovers
+even when it belonged to a project, reasoning it's "a leftover to re-time, not a
+fresh push". Driving it showed the cost: `clusterWeek` groups a project's sittings
+by `project_id` *regardless of lane*, so carried project work was already **placed
+on the calendar under its project** while still being listed under Leftovers as an
+undecided leftover — the same task asked about twice, the second time after it had
+visibly been settled. It also made the Projects step undercount (a project showing
+"3/3" that really had five pieces in the week). → `laneOf` is now inbox → project →
+loose. Carry-forward doesn't go quiet: the piece keeps its `↻N` badge and wears it
+under the project it belongs to, which is the altitude the decision is made at.
+`themeCarried` now skips project work, or grouping would pull it back out of the
+sitting it belongs to.
+
+**A block says what it is at every size.** The kind eyebrow was suppressed under
+34px, so every 45-minute sitting — most of them — lost its designation. A block
+now sheds the *least recoverable thing last*: the designation survives longest,
+the title next, and the time goes first, because the grid axis already says when.
+Under 30px the designation moves inline before the title. (A floating label
+outside the block was considered and rejected: it collides with whatever sits
+above it in a dense column, and breaks under drag.)
+*Status: standing — typechecked, 29 tests green, built, and driven in a real
+account.*
+
 ---
 
 ## 2 · Things we decided **not** to do
