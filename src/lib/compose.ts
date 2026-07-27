@@ -267,6 +267,18 @@ export function composeWeek(input: ComposeInput): ComposeResult {
   const placements: Placement[] = [];
   const unplaced: UnplacedTask[] = [];
   const lastProjectOn = new Map<string, string | null>(); // dayISO -> project of last placement
+  /**
+   * The earliest a project's *next* piece may start — `dayISO` plus the minute
+   * its previous piece ended.
+   *
+   * Ordering the queue isn't enough on its own. Placement is greedy per piece, so
+   * a project's part 1 (two tasks, a longer block) can fall through Mon–Thu
+   * looking for a contiguous slot and land Friday, while its smaller part 2 takes
+   * Monday — leaving the week asking for step 4 before step 1, which is an order
+   * you cannot work in. A project's own work is therefore a **chain**: each piece
+   * must start at or after the end of the piece before it.
+   */
+  const projectAfter = new Map<string, { dayISO: string; endMin: number }>();
 
   const tryPlace = (t: Task, relaxed: boolean): boolean => {
     const dur = plannedMinutes(t.duration_minutes, !!t.project_id);
@@ -278,7 +290,10 @@ export function composeWeek(input: ComposeInput): ComposeResult {
     // instead of stranding it in the pool forever.
     const overdue = dueBefore != null && dueBefore < todayISO;
     const shallow = t.energy === "quick" || t.energy === "delegate" || t.energy == null;
+    // a project's earlier pieces pin the floor for its later ones
+    const after = t.project_id ? projectAfter.get(t.project_id) : undefined;
     for (const day of days) {
+      if (after && day.iso < after.dayISO) continue; // its predecessor is later in the week
       if (dueBefore && !overdue && day.iso > dueBefore) break; // a live deadline is a hard boundary
       // context rules are boundaries — hard in both passes
       if (day.rules.shallowOnly && !shallow) continue;
@@ -287,8 +302,10 @@ export function composeWeek(input: ComposeInput): ComposeResult {
       // hard wherever a context deliberately keeps the day small
       const capHard = day.context !== "normal";
       if (day.placed + dur > day.free * day.rules.cap && (!relaxed || capHard)) continue;
-      const from = relaxed ? day.slots[0]?.start ?? win.from : win.from;
+      let from = relaxed ? day.slots[0]?.start ?? win.from : win.from;
       const to = relaxed ? workEndMin : win.to;
+      // same day as the previous piece? then it starts after it, not beside it
+      if (after && day.iso === after.dayISO) from = Math.max(from, after.endMin);
       for (const slot of day.slots) {
         const start = snapUp(Math.max(slot.start, from));
         if (start + dur > Math.min(slot.end, to)) continue;
@@ -304,6 +321,7 @@ export function composeWeek(input: ComposeInput): ComposeResult {
 
         const batched = lastProjectOn.get(day.iso) != null && lastProjectOn.get(day.iso) === t.project_id;
         lastProjectOn.set(day.iso, t.project_id);
+        if (t.project_id) projectAfter.set(t.project_id, { dayISO: day.iso, endMin: start + dur });
         const reasons = [
           overdue ? "overdue — scheduled first" : dueBefore ? `due ${dueBefore.slice(5)}` : null,
           focus.has(t.initiative_id ?? "") ? "★ lead bet" : null,

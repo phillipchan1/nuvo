@@ -1734,7 +1734,7 @@ function WeekGrid({
                 return (
                   <div
                     key={`gap-${gs}`}
-                    className="gap-in absolute inset-x-1"
+                    className="gap-in pointer-events-none absolute inset-x-1"
                     style={{
                       top: yOf(gs), height: h,
                       // Open time is the ABSENCE of a commitment. Any fill makes it
@@ -1774,7 +1774,7 @@ function WeekGrid({
                       data-block
                       onPointerDown={canToggle ? (e) => e.stopPropagation() : undefined}
                       onClick={canToggle ? () => onToggleEvent!(it.event!) : undefined}
-                      className={`absolute overflow-hidden rounded-[5px] py-0.5 ${aside ? "left-1 max-w-[62%] pl-0.5" : "inset-x-1 px-1.5"} ${canToggle ? "fast cursor-pointer" : ""}`}
+                      className={`group/ev absolute inset-x-1 overflow-hidden rounded-[5px] py-0.5 ${aside ? "pl-1" : "px-1.5"} ${canToggle ? "fast cursor-pointer" : ""}`}
                       style={{
                         top, height,
                         // These are the immovable facts you arrived with — they
@@ -1786,8 +1786,10 @@ function WeekGrid({
                         // why the week was hard to read before anything was on it.
                         background: aside
                           ? "transparent"
-                          : "color-mix(in srgb, var(--ink) 16%, transparent)",
-                        borderLeft: aside ? "none" : "3px solid var(--line-strong)",
+                          : `color-mix(in srgb, var(--ink) ${canToggle ? 20 : 16}%, transparent)`,
+                        borderLeft: aside
+                          ? "2px dashed color-mix(in srgb, var(--slot) 55%, transparent)"
+                          : "3px solid var(--line-strong)",
                         opacity: aside ? 0.5 : 1,
                         backdropFilter: aside ? undefined : "blur(4px)",
                         WebkitBackdropFilter: aside ? undefined : "blur(4px)",
@@ -1800,15 +1802,29 @@ function WeekGrid({
                             : `${it.title} — not going? Click to set it aside and free the time.`
                       }
                     >
-                      <div
-                        className="mono truncate text-meta leading-tight"
-                        style={
-                          aside
-                            ? { textDecoration: "line-through", color: "var(--muted)" }
-                            : { color: "var(--ink)", opacity: 0.9 }
-                        }
-                      >
-                        {it.title}
+                      <div className="flex items-baseline gap-1">
+                        <span
+                          className="mono min-w-0 flex-1 truncate text-meta leading-tight"
+                          style={
+                            aside
+                              ? { textDecoration: "line-through", color: "var(--muted)" }
+                              : { color: "var(--ink)", opacity: 0.9 }
+                          }
+                        >
+                          {it.title}
+                        </span>
+                        {/* the affordance, on hover — a commitment never looked
+                            pressable, so "click the ones you're not going to"
+                            was an instruction with nothing to aim at */}
+                        {canToggle && height > 20 && (
+                          <span
+                            aria-hidden
+                            className="mono shrink-0 text-micro opacity-0 transition-opacity group-hover/ev:opacity-100"
+                            style={{ color: aside ? "var(--slot)" : "var(--muted)" }}
+                          >
+                            {aside ? "↩" : "⊘"}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
