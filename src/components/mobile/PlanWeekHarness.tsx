@@ -136,7 +136,7 @@ export default function PlanWeekHarness() {
       <div className="mb-6 flex max-w-[1080px] gap-8 border-b border-line pb-3">
         <div className="w-[320px] shrink-0">
           <div className="section-label mb-1">The source switch · rail density</div>
-          <SourceSwitch step="carried" onStep={() => {}} />
+          <SourceSwitch step="rest" onStep={() => {}} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="section-label mb-1">The capacity meter · over the week</div>
@@ -159,7 +159,7 @@ export default function PlanWeekHarness() {
             onTakeOff={() => {}}
           />
         </Frame>
-        <Frame label="3 · Carried" step="carried">
+        <Frame label="3 · The rest" step="rest">
           <CarriedStep
             data={DATA}
             carried={LEFTOVERS}

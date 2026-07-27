@@ -44,8 +44,8 @@ import DurationSelect from "../DurationSelect";
  *  pours one more source into the week. */
 const NEXT: Partial<Record<WeekStep, { to: WeekStep; label: string }>> = {
   open: { to: "projects", label: "Add your projects →" },
-  projects: { to: "carried", label: "Add what you're carrying →" },
-  carried: { to: "week", label: "See the week →" },
+  projects: { to: "rest", label: "Add the rest →" },
+  rest: { to: "week", label: "See the week →" },
 };
 
 const fmtMinShort = (m: number) => {
@@ -191,7 +191,7 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
             you set a meeting aside here; on a phone, take it as read.
           </p>
         )}
-        {step === "carried" && (
+        {step === "rest" && (
           <CarriedStep
             data={data}
             carried={byLane.loose}
@@ -641,7 +641,7 @@ export function CarriedStep({
 
   return (
     <div>
-      <StepHead question={STEP_QUESTION.carried} />
+      <StepHead question={STEP_QUESTION.rest} />
 
       {/* the slots first — they're the proposal you're here to agree with */}
       {slotting && runs.length === 0 ? (

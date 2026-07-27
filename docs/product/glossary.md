@@ -48,7 +48,7 @@ been used to argue against things it doesn't forbid.
 | **Backlog** | Processed and **deliberately undated**. Project/initiative work lives here. Never on Today, never rolled. |
 | **The Week** | The gate. Committed work for this week (`sprint_id`). |
 | **The week's projects** | The projects committed to *this* week — the week's Priorities, derived from each project's On Deck span (`weekPushes`), never a stored list. Bringing a project in / taking it off IS the week's plan. Called *the slate* in code and specs (`weekSlate`); the UI says **Projects** (D-034). |
-| **Carried** | Step 3 of Plan the week — everything the week carries that isn't a project: work that **carried over** (`roll_count > 0`), work **due** inside the week, one small task from each **quiet** domain, and **new captures**. Was two steps ("Leftovers" then "Inbox") until D-042 — a carried task *was* a capture once, and slotting them separately produced two slots for one theme. A step, not a pool; lanes stay three for the meter's arithmetic (`laneOf`, `STEP_LANES` in `src/lib/intake.ts`). |
+| **The rest** | Step 3 of Plan the week — the week's work that isn't a project: work that **carried over** (`roll_count > 0`), work **due** inside the week, one small task from each **quiet** domain, and **new captures**. Was two steps ("Leftovers" then "Inbox") until D-042, and named for its members twice ("Leftovers", then "Carried") before being named by exclusion — a carried task *was* a capture once, and slotting them separately produced two slots for one theme. A step, not a pool; lanes stay three for the meter's arithmetic (`laneOf`, `STEP_LANES` in `src/lib/intake.ts`). |
 | **Today / the Day** | `do_date` set; optionally blocked. |
 
 ## The ceremonies (flows)

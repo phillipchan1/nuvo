@@ -54,28 +54,30 @@ export const LANES: WeekLane[] = ["projects", "loose", "inbox"];
  * week's weight came from* is still worth seeing), and the walk has one step for
  * both, which slots them together.
  */
-export type WeekPlanStep = "open" | "projects" | "carried";
-export const PLAN_STEPS: WeekPlanStep[] = ["open", "projects", "carried"];
+export type WeekPlanStep = "open" | "projects" | "rest";
+export const PLAN_STEPS: WeekPlanStep[] = ["open", "projects", "rest"];
 
 /** Which lanes a step is responsible for. */
 export const STEP_LANES: Record<WeekPlanStep, WeekLane[]> = {
   open: [],
   projects: ["projects"],
-  carried: ["loose", "inbox"],
+  rest: ["loose", "inbox"],
 };
 
 export const STEP_LABEL: Record<WeekPlanStep, string> = {
   open: "Open time",
   projects: "Projects",
-  carried: "Carried",
+  // Named by exclusion, because that is honestly what it is: the week's work
+  // that isn't a project. Every name we tried for it described only one of the
+  // four things inside — "Leftovers" and then "Carried" are both true of work
+  // that slipped and false of a capture that arrived this morning. A category
+  // named for its members will always be wrong about most of them.
+  rest: "The rest",
 };
 export const STEP_QUESTION: Record<WeekPlanStep, string> = {
   open: "What room does this week actually have?",
   projects: "What are you moving this week?",
-  // Everything the week bears that isn't a project: what slipped, what's due,
-  // what's gone quiet, and what came in. "Carrying" is the honest verb for all
-  // four — "Leftovers" was only ever true of the first.
-  carried: "What else are you carrying?",
+  rest: "What else is the week carrying?",
 };
 
 /**
@@ -91,7 +93,7 @@ export const STEP_QUESTION: Record<WeekPlanStep, string> = {
 export const REVEALED_BY_LANE: Record<WeekPlanStep, WeekLane[]> = {
   open: [],
   projects: ["projects"],
-  carried: LANES,
+  rest: LANES,
 };
 
 /** Enough of a task row to place it in a lane — works for `Task` and `VTask`. */

@@ -709,11 +709,17 @@ its *own* pool, a "Frontier" leftover and a "Frontier" capture came back as **tw
 different slots**: the AI never saw them together and had no way to know they
 belonged in one sitting.
 
-→ One step (**Carried** — *"What else are you carrying?"*), one pool, **one**
+→ One step (**The rest** — *"What else is the week carrying?"*), one pool, **one**
 slotting pass (`slotLooseWork`). Provenance still shows, as sections *inside* the
 decision — *Carried over · Due, or going quiet · New captures* — rather than as
-two stops on the walk. The plan is now three steps: **Open time · Projects ·
-Carried.**
+two stops on the walk. The plan is now three steps: **Open time · Projects · The
+rest.**
+
+**Named by exclusion, after two failures.** "Leftovers" and then "Carried" were
+both tried and both rejected for the same reason: each describes *one* of the four
+things in the bucket and is plainly false of the others — a capture that arrived
+this morning is neither left over nor carried. **A category named for its members
+will always be wrong about most of them**, so this one is named for what it isn't.
 
 **The lane/step split is the load-bearing idea.** They used to be the same list,
 which is what forced the false separation. The capacity meter keeps three lanes
@@ -723,8 +729,16 @@ seeing; the walk has one step for two of them. `STEP_LANES` maps between them.
 **"Leftovers" is retired** (operator's call — it was only ever true of the first
 of the four things in the bucket). "Carrying" is honest for all four: you carry
 what slipped, what's due, what's gone quiet, *and* what came in.
+→ **Fixed alongside: the flow could not be closed.** `closeFlow` assumed
+`flowStep` counted the history entries a flow had pushed — true for a gated wizard
+you walk one step at a time, false the moment a flow lets you *jump* between steps
+(clicking step 3 from step 1 is one push but sets `flowStep` to 2, so closing
+tried to unwind three entries, sailed past the app, and left the flow open with no
+way out). It now remembers the stack index the flow opened at; the step index
+isn't a count of anything.
 *Status: standing — typechecked, 32 tests green, built, and driven in a real
-account: 9 slots from one pass, Clearstream no longer split across two.*
+account: 9 slots from one pass, Clearstream no longer split across two, and Esc
+verified to close from a jumped-to last step.*
 
 ---
 

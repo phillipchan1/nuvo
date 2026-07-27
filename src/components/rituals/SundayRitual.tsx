@@ -293,7 +293,7 @@ export default function SundayRitual({
                 fit={projectFit}
               />
             )}
-            {lane === "carried" && (
+            {lane === "rest" && (
               <CarriedLane
                 carried={byLane.loose}
                 captures={byLane.inbox}
@@ -1347,8 +1347,8 @@ function WalkAction({
   const last = step === stepCount - 1;
   const NEXT_ACT: Record<WeekPlanStep, string> = {
     open: "Add your projects",
-    projects: "Add what you're carrying",
-    carried: "",
+    projects: "Add the rest",
+    rest: "",
   };
 
   // One control, no commentary. This foot used to carry a per-step tally AND the
