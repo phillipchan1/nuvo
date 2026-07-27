@@ -81,7 +81,7 @@ export default function SourceSwitch({
               {/* the rule between stations — this is what makes it a path */}
               {i > 0 && (
                 <span
-                  className="mt-[9px] h-px w-3 shrink-0"
+                  className="mt-[11px] h-px w-3 shrink-0"
                   style={{ background: done || active ? "var(--accent)" : "var(--line)" }}
                   aria-hidden
                 />
@@ -93,7 +93,7 @@ export default function SourceSwitch({
                 className={`tap fast flex min-w-0 flex-1 flex-col items-center gap-1 px-0.5 ${dense ? "min-h-[44px]" : ""}`}
               >
                 <span
-                  className="mono flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-micro"
+                  className="mono flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-meta"
                   style={{
                     background: active ? "var(--accent)" : "transparent",
                     border: active ? "none" : `1px solid ${done ? "var(--accent)" : "var(--line-strong)"}`,
@@ -103,7 +103,7 @@ export default function SourceSwitch({
                   {done ? "✓" : i + 1}
                 </span>
                 <span
-                  className={`w-full truncate text-center text-micro ${active ? "font-medium" : ""}`}
+                  className={`w-full truncate text-center text-label ${active ? "font-medium" : ""}`}
                   style={{ color: active ? "var(--accent)" : "var(--muted)" }}
                 >
                   {s === "week" ? "The week" : STEP_LABEL[s]}
@@ -115,7 +115,7 @@ export default function SourceSwitch({
       </div>
       {/* the current station's own count, once — not one under every station,
           which is what made the row read as four competing tabs */}
-      <div className="mono mt-1.5 text-center text-micro text-muted">
+      <div className="mono mt-2 text-center text-meta text-muted">
         step {here + 1} of {steps.length} · {laneRead(step, intake, waitingInbox, openMins)}
       </div>
     </div>
@@ -197,25 +197,38 @@ export function CapacityMeter({
 
   return (
     <div>
-      <div className={`flex items-baseline justify-between gap-3 ${compact ? "mb-1" : "mb-1.5"}`}>
-        <span className={compact ? "mono text-meta text-muted" : "section-label"}>
-          {compact ? "this week asks" : "This week asks"}
-        </span>
-        <span className="mono shrink-0 text-meta">
-          <span className="text-ink">{hrs(intake.loadMins)}h</span>
-          <span className="text-muted">
+      {/* Two numbers, one line, at a size you can actually read — the rest of
+          this is meant to be SEEN, not read. The legend that used to spell out
+          every segment in 9.5px ("already set 8.8h · projects 5.6h · leftovers
+          6.9h · inbox 4.5h") was four facts nobody needs in words when the bar
+          already shows their proportions; they survive as tooltips. */}
+      <div className={`flex items-baseline justify-between gap-3 ${compact ? "mb-1.5" : "mb-1.5"}`}>
+        <span className="section-label">the week</span>
+        <span className="shrink-0">
+          <span className="mono text-head text-ink">{hrs(intake.loadMins)}h</span>
+          <span className="mono text-meta text-muted">
             {budgetMins == null
               ? " · no proven pace yet"
-              : overMins > 0
-                ? ` · ${hrs(overMins)}h past your ~${hrs(budgetMins)}h pace`
-                : ` of your ~${hrs(budgetMins)}h pace`}
+              : ` / ${hrs(budgetMins)}h`}
           </span>
+          {overMins > 0 && (
+            <span className="mono text-meta" style={{ color: "var(--signal)" }}>
+              {" "}+{hrs(overMins)}h
+            </span>
+          )}
+          {/* the one count worth words — how much of it found no time. The desktop
+              also spells this out below the grid; the phone has only this. */}
+          {fit && fit.unplaced > 0 && (
+            <span className="mono text-meta" style={{ color: "var(--signal)" }}>
+              {" · "}{fit.unplaced} unplaced
+            </span>
+          )}
         </span>
       </div>
 
       <div
         className="relative w-full overflow-hidden rounded-full"
-        style={{ height: dense ? 6 : compact ? 4 : 7, background: "var(--line)" }}
+        style={{ height: dense ? 8 : compact ? 10 : 10, background: "var(--line)" }}
         role="img"
         aria-label={`${hrs(intake.loadMins)} hours of work against ${budgetMins != null ? `a ~${hrs(budgetMins)} hour proven pace` : "no proven pace yet"}`}
       >
@@ -274,44 +287,6 @@ export function CapacityMeter({
         )}
       </div>
 
-      {/* The legend carries the hours, so it's data rather than a restated key —
-          and it's the only place the three sources are weighed against each other. */}
-      <div className={`mono flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-muted ${compact ? "mt-1" : "mt-1.5"}`}>
-        {placed
-          .filter((s) => s.mins > 0)
-          .map((s) => (
-            <span key={s.key} className="flex items-center gap-1.5" style={{ opacity: s.ghost ? 0.45 : 1 }}>
-              <span
-                className="h-2 w-2 shrink-0 rounded-[2px]"
-                style={{ background: s.fill, opacity: s.ghost ? 0.4 : 1 }}
-                aria-hidden
-              />
-              {s.label} {hrs(s.mins)}h
-            </span>
-          ))}
-        {roomMins > 0 && (
-          <span className="flex items-center gap-1.5">
-            <span
-              className="h-2 w-2 shrink-0 rounded-[2px]"
-              style={{ background: "color-mix(in srgb, var(--slot) 40%, transparent)" }}
-              aria-hidden
-            />
-            {hrs(roomMins)}h room
-          </span>
-        )}
-        {/* The line that used to arrive only at the end, after every decision was
-            made: how much of what you kept the week actually had room for. On a
-            phone it takes its own line — four legend chips plus this one clipped
-            at 375px, and this is the half you can least afford to lose. */}
-        {fit && (fit.placed > 0 || fit.unplaced > 0) && (
-          <span className={dense ? "w-full" : "ml-auto shrink-0"}>
-            {fit.placed} scheduled
-            {fit.unplaced > 0 && (
-              <span style={{ color: "var(--signal)" }}> · {fit.unplaced} couldn't fit</span>
-            )}
-          </span>
-        )}
-      </div>
     </div>
   );
 }

@@ -27,6 +27,14 @@ export interface Batch {
   projectId: string | null;
   domainId: string | null;
   color: string | null;
+  /** The name without any "· Part n" suffix — what a surface shows when it's
+   *  already saying which part this is somewhere else. */
+  baseName?: string;
+  /** A project too big for one sitting earns several. These say which, so two
+   *  blocks with the same project name aren't a mystery: you're looking at one
+   *  project split, in order, not the same work twice. */
+  part?: number;
+  parts?: number;
 }
 
 export interface BatchPlacement {
@@ -138,7 +146,19 @@ export function clusterWeek(tasks: Task[], data: VerticalData): Batch[] {
       : members.some((t) => classOf(t.energy) === "decide")
         ? "decide"
         : "shallow";
-    for (const c of chunkByCap(members, CAP_PROJECT)) batches.push(makeBatch(c, cls, data, seq++, name));
+    // A project bigger than one sitting earns several — numbered, so the week
+    // reads as "part 1 then part 2" rather than the same title twice.
+    const chunks = chunkByCap(members, CAP_PROJECT);
+    chunks.forEach((c, i) => {
+      const b = makeBatch(c, cls, data, seq++, name);
+      b.baseName = b.name;
+      if (chunks.length > 1) {
+        b.part = i + 1;
+        b.parts = chunks.length;
+        b.name = `${b.name} · Part ${i + 1}`;
+      }
+      batches.push(b);
+    });
   }
 
   // 2 · everything else has no project to belong to, so energy decides its company.

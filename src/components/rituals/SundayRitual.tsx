@@ -339,7 +339,7 @@ export default function SundayRitual({
                 />
                 {/* the glyphs on the blocks (✦ ▸ ✓) are the legend; four swatches
                     restating them was a key nobody needs twice */}
-                <div className="mt-2 flex items-center gap-3 text-meta text-muted">
+                <div className="mt-2 flex items-center gap-3 text-caption text-muted">
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", borderLeft: "3px solid var(--accent)" }} /> ✦ placed for you</span>
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--ink) 5%, transparent)", borderLeft: "2px solid var(--line-strong)" }} /> immovable</span>
                   {routedCount > 0 && <span>{routedCount} in standing slots</span>}
@@ -465,9 +465,9 @@ function UnplacedReport({
   const list = (rows: UnplacedTask[]) => (
     <div className="grid gap-x-8 md:grid-cols-2">
       {rows.map(({ task, reason }) => (
-        <div key={task.id} className="flex items-center gap-2 border-b border-line py-1 text-label text-muted">
-          <span className="min-w-0 flex-1 truncate">{task.title}</span>
-          <span className="mono shrink-0 text-micro">{reason}</span>
+        <div key={task.id} className="flex items-center gap-3 border-b border-line py-1.5 text-caption text-muted">
+          <span className="min-w-0 flex-1 truncate text-ink">{task.title}</span>
+          <span className="mono shrink-0 text-meta">{reason}</span>
         </div>
       ))}
     </div>
@@ -562,8 +562,8 @@ function GroupedRuns({ runs, unit, first }: { runs: Batch[]; unit: string; first
         {runs.map((r) => (
           <div key={r.id} className="flex items-baseline gap-2 border-b border-line py-1.5">
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: r.color ?? "var(--accent)" }} aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-caption">{r.name}</span>
-            <span className="mono shrink-0 text-micro text-muted">
+            <span className="min-w-0 flex-1 truncate text-body">{r.name}</span>
+            <span className="mono shrink-0 text-meta text-muted">
               {r.taskIds.length} {unit}
               {r.taskIds.length === 1 ? "" : "s"} · {r.durationMins}m
             </span>
@@ -792,12 +792,12 @@ function ProjectRow({
             style={ready ? { background: color } : { border: "1.5px solid var(--line-strong)" }}
             aria-hidden
           />
-          <span className="min-w-0 flex-1 truncate text-caption text-ink">{project.name}</span>
+          <span className="min-w-0 flex-1 truncate text-body text-ink">{project.name}</span>
         </button>
 
         {/* what it's asking of the week — or what's in the way of asking */}
         <span
-          className="mono shrink-0 text-micro"
+          className="mono shrink-0 text-meta"
           style={{ color: ready ? "var(--muted)" : "var(--signal)" }}
         >
           {!ready ? gaps.map((g) => g.label).join(" · ") : rows.length === 0 ? "no open work" : `${on.length}/${rows.length} · ${hrs(mins)}h`}
@@ -1083,13 +1083,13 @@ function WorkRow({
         {on ? "✓" : ""}
       </span>
       <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color ?? "var(--line)" }} />
-      <span className="min-w-0 flex-1 truncate text-caption" style={{ opacity: on ? 1 : 0.62 }}>
+      <span className="min-w-0 flex-1 truncate text-body" style={{ opacity: on ? 1 : 0.62 }}>
         {title}
       </span>
       {/* two glyphs where a clause used to be — the clause survives as the title */}
       {badge && (
         <span
-          className="mono shrink-0 rounded-full px-1.5 text-micro"
+          className="mono shrink-0 rounded-full px-1.5 text-meta"
           style={
             badge.urgent
               ? { color: "var(--signal)", background: "var(--signal-soft)" }
@@ -1154,7 +1154,7 @@ function Boundaries({
     <section className="border-t border-line pt-3">
       <button onClick={onToggle} className="fast flex w-full items-center justify-between text-left">
         <span className="section-label">Boundaries</span>
-        <span className="mono text-meta text-muted">
+        <span className="mono text-caption text-muted">
           {workingLabel} · {toMinLabel(workStart)}–{toMinLabel(workEnd)} · click to {open ? "hide" : "adjust"}
         </span>
       </button>
@@ -1162,7 +1162,7 @@ function Boundaries({
         <div className="mt-3 space-y-3">
           {/* working days — the recurring boundary; weekends off by default */}
           <div className="flex items-center gap-1.5">
-            <span className="mono w-[78px] shrink-0 text-meta text-muted">working days</span>
+            <span className="mono w-[92px] shrink-0 text-caption text-muted">working days</span>
             {[1, 2, 3, 4, 5, 6, 0].map((dow) => {
               const on = workingDays.includes(dow);
               return (
@@ -1170,7 +1170,7 @@ function Boundaries({
                   key={dow}
                   onClick={() => toggleWorkingDay(dow)}
                   title={`${on ? "A working day" : "Off"} — click to toggle`}
-                  className="fast mono h-6 w-7 rounded-sm border text-meta"
+                  className="tap fast mono h-9 w-10 rounded-md border text-caption"
                   style={{
                     borderColor: on ? "var(--accent)" : "var(--line)",
                     color: on ? "var(--accent)" : "var(--muted)",
@@ -1181,21 +1181,21 @@ function Boundaries({
                 </button>
               );
             })}
-            <span className="mono ml-1 text-micro text-muted">— a setting, applies every week</span>
+            <span className="mono ml-1 text-meta text-muted">— a setting, applies every week</span>
           </div>
 
-          <label className="mono flex items-center gap-1.5 text-label text-muted">
-            <span className="w-[78px] shrink-0">working hours</span>
+          <label className="mono flex items-center gap-2 text-caption text-muted">
+            <span className="w-[92px] shrink-0">working hours</span>
             <input type="time" step={900} value={toMinLabel(workStart)} onChange={setWork("work_start_minutes")}
-              className="border border-line bg-bg px-1.5 py-0.5 text-label outline-none focus:border-accent" />
-            –
+              className="tap h-9 rounded-md border border-line bg-bg px-2.5 text-caption outline-none focus:border-accent" />
+            <span>–</span>
             <input type="time" step={900} value={toMinLabel(workEnd)} onChange={setWork("work_end_minutes")}
-              className="border border-line bg-bg px-1.5 py-0.5 text-label outline-none focus:border-accent" />
+              className="tap h-9 rounded-md border border-line bg-bg px-2.5 text-caption outline-none focus:border-accent" />
           </label>
 
           {workingISOs.length > 0 && (
             <div className="flex items-center gap-1.5">
-              <span className="mono w-[78px] shrink-0 text-meta text-muted">this week</span>
+              <span className="mono w-[92px] shrink-0 text-caption text-muted">this week</span>
               {workingISOs.map((iso) => {
                 const ctx = dayContexts[iso] ?? "normal";
                 const past = iso < fromGate;
@@ -1206,7 +1206,7 @@ function Boundaries({
                     disabled={past}
                     onClick={() => cycleContext(iso)}
                     title={`${format(parseDateISO(iso), "EEEE")} — ${meta.label} (click to change)`}
-                    className="fast mono flex-1 rounded-sm border px-1 py-1 text-meta disabled:opacity-25"
+                    className="tap fast mono h-9 flex-1 rounded-md border px-1 text-caption disabled:opacity-25"
                     style={{
                       borderColor: ctx === "normal" ? "var(--line)" : "var(--accent)",
                       color: ctx === "normal" ? "var(--muted)" : "var(--accent)",
@@ -1217,7 +1217,7 @@ function Boundaries({
                   </button>
                 );
               })}
-              <span className="mono hidden text-micro text-muted xl:inline">· normal ◐ light ✈ travel — off</span>
+              <span className="mono hidden text-meta text-muted xl:inline">· normal ◐ light ✈ travel — off</span>
             </div>
           )}
         </div>
@@ -1293,7 +1293,7 @@ function WalkAction({
 
   return (
     <div>
-      <div className="mono mb-2 flex items-baseline justify-between gap-2 text-micro text-muted">
+      <div className="mono mb-2 flex items-baseline justify-between gap-2 text-meta text-muted">
         <span className="min-w-0 truncate">{read}</span>
         <span className="shrink-0">{keptCount} in the week</span>
       </div>
@@ -1306,7 +1306,7 @@ function WalkAction({
         {last ? (applying ? "committing…" : "Commit the week →") : `${NEXT_ACT[lane]} →`}
       </Btn>
       {!last && (
-        <div className="mono mt-1.5 text-center text-micro text-muted">
+        <div className="mono mt-1.5 text-center text-meta text-muted">
           then step {step + 2} of {stepCount}
         </div>
       )}
@@ -1333,6 +1333,8 @@ interface GridItem {
   holds?: number;
   /** Set on an overdue task carved across sittings — this piece is 1 of N. */
   split?: { part: number; parts: number };
+  /** One sitting of a project too big for one — "part 2 of 3". */
+  slotPart?: { part: number; parts: number };
   /** An external commitment you've set aside — its time reads as open. */
   aside?: boolean;
   /** The event behind an "event" item, when it can be set aside / brought back. */
@@ -1428,11 +1430,13 @@ function WeekGrid({
       kind: "new",
       startMin: p.startMin,
       endMin: p.startMin + p.durationMin,
-      title: p.task.title,
+      // the base name — the eyebrow says which part, so the title needn't repeat it
+      title: slot?.baseName ?? p.task.title,
       color: taskDomainColor(data, p.task),
       reason: p.reason,
       project: p.task.project_id ? projectById(data, p.task.project_id)?.name ?? null : null,
       holds: slot ? slot.taskIds.length : undefined,
+      slotPart: slot?.part && slot.parts ? { part: slot.part, parts: slot.parts } : undefined,
       split,
     });
   }
@@ -1603,7 +1607,7 @@ function WeekGrid({
         <div className="w-[52px] shrink-0">
           {hours.map((h) => (
             <div key={h} className="relative" style={{ height: HOUR_PX }}>
-              <span className="mono absolute -top-1.5 right-1.5 text-micro text-muted">{formatHourLabel(Math.floor(h / 60))}</span>
+              <span className="mono absolute -top-1.5 right-1.5 text-meta text-muted">{formatHourLabel(Math.floor(h / 60))}</span>
             </div>
           ))}
         </div>
@@ -1640,7 +1644,7 @@ function WeekGrid({
                     title={`${fmtMinShort(gs)}–${fmtMinShort(ge)} open`}
                   >
                     {h > 26 && (
-                      <div className="mono px-1.5 pt-0.5 text-right text-micro" style={{ color: "color-mix(in srgb, var(--slot) 85%, var(--ink))" }}>
+                      <div className="mono px-1.5 pt-0.5 text-right text-meta" style={{ color: "color-mix(in srgb, var(--slot) 85%, var(--ink))" }}>
                         {hrs(g.mins)}h open
                       </div>
                     )}
@@ -1680,7 +1684,7 @@ function WeekGrid({
                       }
                     >
                       <div
-                        className="mono truncate text-micro leading-tight text-muted"
+                        className="mono truncate text-meta leading-tight text-muted"
                         style={aside ? { textDecoration: "line-through" } : undefined}
                       >
                         {it.title}
@@ -1752,12 +1756,14 @@ function WeekGrid({
                         title={it.project ?? undefined}
                       >
                         {holds > 0
-                          ? `${isProject ? "Project" : "Grouped"} · ${holds} ${isProject ? "task" : "capture"}${holds === 1 ? "" : "s"}`
+                          ? it.slotPart
+                            ? `Project · part ${it.slotPart.part} of ${it.slotPart.parts}`
+                            : `${isProject ? "Project" : "Grouped"} · ${holds} ${isProject ? "task" : "capture"}${holds === 1 ? "" : "s"}`
                           : it.project}
                       </div>
                     )}
                     <div className="flex items-start gap-1">
-                      <div className="min-w-0 flex-1 truncate text-meta font-semibold leading-tight">
+                      <div className="min-w-0 flex-1 truncate text-caption font-semibold leading-tight">
                         {isSlot ? `⛶ ${it.title}` : isProject ? `▸ ${it.title}` : isNew ? `✦ ${it.title}` : it.title}
                       </div>
                       {isNew ? (
@@ -1774,10 +1780,12 @@ function WeekGrid({
                       )}
                     </div>
                     {blkHeight > 30 && (
-                      <div className="mono truncate text-micro leading-tight text-muted">
+                      <div className="mono truncate text-meta leading-tight text-muted">
                         {fmtMinShort(it.startMin)}–{fmtMinShort(endMin)}
                         {holds > 0 && (
-                          <span style={{ color: open ? hue : undefined }}> {open ? "▾ hide" : "▸ what's in it"}</span>
+                          <span style={{ color: open ? hue : undefined }}>
+                            {" · "}{holds} task{holds === 1 ? "" : "s"}
+                          </span>
                         )}
                         {isSplit && <span className="text-signal"> · sitting {it.split!.part}/{it.split!.parts}</span>}
                       </div>
@@ -1825,8 +1833,8 @@ function WeekGrid({
                     </div>
                     {held.map((t) => (
                       <div key={t.id} className="flex items-baseline gap-2 border-t border-line py-1">
-                        <span className="min-w-0 flex-1 truncate text-micro" title={t.title}>{t.title}</span>
-                        <span className="mono shrink-0 text-micro text-muted">{t.durationMins}m</span>
+                        <span className="min-w-0 flex-1 truncate text-caption" title={t.title}>{t.title}</span>
+                        <span className="mono shrink-0 text-meta text-muted">{t.durationMins}m</span>
                       </div>
                     ))}
                   </div>

@@ -198,22 +198,60 @@ export function composeWeek(input: ComposeInput): ComposeResult {
   }
 
   // ── 2 · the order of consideration ─────────────────────────────────────────
+  //
+  // A project's work is ranked **as a project**, then run through in its own
+  // order. Ranking each piece independently let a project's second sitting
+  // outrank its first (they can carry different deadlines and energies once
+  // they're chunked), so the week would ask for step 4 on Monday and step 1 on
+  // Friday — an order you cannot actually work in. The group takes its most
+  // urgent member's standing, and its members keep `sort_order` inside it.
   const ENERGY_RANK: Record<string, number> = { deep: 0, decide: 1, quick: 2, delegate: 3 };
   const deadlinePressure = (t: Task) => (t.deadline ? t.deadline : "9999-12-31");
+  const rankOf = (t: Task) => ENERGY_RANK[t.energy ?? "quick"] ?? 2;
+  /** Loose work is its own group; project work shares one. */
+  const groupKey = (t: Task) => (t.project_id ? `p:${t.project_id}` : `t:${t.id}`);
+
+  const groups = new Map<string, { deadline: string; focus: boolean; rank: number; project: boolean }>();
+  for (const t of input.tasks) {
+    const k = groupKey(t);
+    const cur = groups.get(k);
+    const next = {
+      deadline: deadlinePressure(t),
+      focus: focus.has(t.initiative_id ?? ""),
+      rank: rankOf(t),
+      project: Boolean(t.project_id),
+    };
+    groups.set(
+      k,
+      cur
+        ? {
+            deadline: cur.deadline < next.deadline ? cur.deadline : next.deadline,
+            focus: cur.focus || next.focus,
+            rank: Math.min(cur.rank, next.rank),
+            project: cur.project || next.project,
+          }
+        : next,
+    );
+  }
+
   const queue = [...input.tasks].sort((a, b) => {
-    const d = deadlinePressure(a).localeCompare(deadlinePressure(b));
+    const ka = groupKey(a);
+    const kb = groupKey(b);
+    if (ka === kb) return a.sort_order - b.sort_order; // inside a project: its own order, always
+    const ga = groups.get(ka)!;
+    const gb = groups.get(kb)!;
+    const d = ga.deadline.localeCompare(gb.deadline);
     if (d !== 0) return d;
     // owed work first (deadlines, above), then the week's INTENT, then the rest:
     // project-backed work outranks loose captures for the open slots, so a week
     // can't fill up with errands while the projects you named go unplaced.
-    const p = Number(Boolean(b.project_id)) - Number(Boolean(a.project_id));
+    const p = Number(gb.project) - Number(ga.project);
     if (p !== 0) return p;
-    const f = Number(focus.has(b.initiative_id ?? "")) - Number(focus.has(a.initiative_id ?? ""));
+    const f = Number(gb.focus) - Number(ga.focus);
     if (f !== 0) return f;
-    const e = (ENERGY_RANK[a.energy ?? "quick"] ?? 2) - (ENERGY_RANK[b.energy ?? "quick"] ?? 2);
+    const e = ga.rank - gb.rank;
     if (e !== 0) return e;
-    // batching: keep one project's tasks adjacent in the queue
-    return (a.project_id ?? "").localeCompare(b.project_id ?? "") || a.sort_order - b.sort_order;
+    return ka.localeCompare(kb);
   });
 
   // ── 3 · greedy placement inside each energy's natural window ───────────────
