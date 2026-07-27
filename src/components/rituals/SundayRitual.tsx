@@ -44,7 +44,7 @@ import DurationSelect from "../DurationSelect";
 import { type PullSuggestion } from "../../lib/pull";
 import { lensGaps } from "../../lib/lenses";
 import { projectsOnDeck, weekPushes } from "../../lib/priorities";
-import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
+import { bringIntoWeekPatch, pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { PLAN_STEPS, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekIntakeRead, type WeekPlanStep } from "../../lib/intake";
 import SourceSwitch, { CapacityMeter } from "./WeekIntake";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
@@ -152,6 +152,33 @@ export default function SundayRitual({
     () => result.unplaced.filter((u) => revealed.includes(laneOf(u.task))),
     [result.unplaced, revealed],
   );
+  /**
+   * How much of each project's work the week could actually take.
+   *
+   * Projects and initiatives are the things that move the needle, so "it didn't
+   * fit" cannot be a footnote about them — it has to be a decision you're offered
+   * while you're still choosing. Counted in *pieces*, not blocks: one sitting can
+   * hold five tasks, and "3 of 7 fit" is the number a person can act on.
+   */
+  const projectFit = useMemo(() => {
+    const m = new Map<string, { placed: number; unplaced: number }>();
+    const bump = (pid: string | null | undefined, key: "placed" | "unplaced", n: number) => {
+      if (!pid) return;
+      const cur = m.get(pid) ?? { placed: 0, unplaced: 0 };
+      cur[key] += n;
+      m.set(pid, cur);
+    };
+    for (const pl of placements) {
+      const batch = slotById.get(pl.task.id);
+      bump(batch?.projectId ?? pl.task.project_id, "placed", batch ? batch.taskIds.length : 1);
+    }
+    for (const u of result.unplaced) {
+      const batch = slotById.get(u.task.id);
+      bump(batch?.projectId ?? u.task.project_id, "unplaced", batch ? batch.taskIds.length : 1);
+    }
+    return m;
+  }, [placements, result.unplaced, slotById]);
+
   const laneRuns = useMemo(() => (lane === "open" ? [] : runs.filter((r) => runLane(r) === lane)), [runs, runLane, lane]);
 
   // ── the week as it stands — the room you actually have, before anything ─────
@@ -265,6 +292,7 @@ export default function SundayRitual({
                 suggestions={byLane.projects}
                 kept={kept}
                 setKept={setKept}
+                fit={projectFit}
               />
             )}
             {lane === "loose" && (
@@ -366,6 +394,7 @@ export default function SundayRitual({
                     unplaced={shownUnplaced}
                     ignorePace={ignorePace}
                     onIgnorePace={() => setIgnorePace(true)}
+                    onShowProjects={() => setLane("projects")}
                   />
                 )}
 
@@ -454,10 +483,12 @@ function UnplacedReport({
   unplaced,
   ignorePace,
   onIgnorePace,
+  onShowProjects,
 }: {
   unplaced: UnplacedTask[];
   ignorePace: boolean;
   onIgnorePace: () => void;
+  onShowProjects: () => void;
 }) {
   const pace = unplaced.filter((u) => u.kind === "pace");
   const full = unplaced.filter((u) => u.kind !== "pace");
@@ -502,6 +533,16 @@ function UnplacedReport({
             No open time left{" "}
             <span className="mono normal-case tracking-normal text-muted">{full.length}</span>
           </div>
+          {/* Project work that found no time is a decision, not a leftover — the
+              acts for it live on its row in the Projects step, one click away. */}
+          {full.some((u) => u.task.project_id) && (
+            <p className="mb-1.5 text-caption text-muted">
+              Project work is in here.{" "}
+              <button onClick={onShowProjects} className="fast text-accent hover:brightness-110">
+                Sort it on the Projects step →
+              </button>
+            </p>
+          )}
           {list(full)}
         </section>
       )}
@@ -680,12 +721,15 @@ function ProjectsLane({
   suggestions,
   kept,
   setKept,
+  fit,
 }: {
   data: VerticalData;
   weekStartISO: string;
   suggestions: PullSuggestion[];
   kept: Set<string>;
   setKept: (next: Set<string>) => void;
+  /** How many of each project's pieces the week could take. */
+  fit: Map<string, { placed: number; unplaced: number }>;
 }) {
   const { updateProject } = useVertical();
   const { openRecord } = useAppNavigation();
@@ -699,6 +743,11 @@ function ProjectsLane({
     if (patch) updateProject(p.id, patch);
   };
   const takeOff = (p: Project) => updateProject(p.id, takeOffWeekPatch());
+  // Both remediations are span writes through the kernel — the same act as
+  // dragging the project's card on On Deck, so the deck and the plan can't
+  // disagree about where a project lives.
+  const spanIt = (p: Project) => updateProject(p.id, spanAnotherWeekPatch(p, weekStartISO));
+  const pushOut = (p: Project) => updateProject(p.id, pushToNextWeekPatch(p, weekStartISO));
 
   const byProject = new Map<string, PullSuggestion[]>();
   const unassigned: PullSuggestion[] = [];
@@ -729,6 +778,9 @@ function ProjectsLane({
             onToggleOpen={() => setOpen((cur) => (cur === project.id ? null : project.id))}
             onOpenRecord={() => openRecord("project", project.id)}
             onRemove={() => takeOff(project)}
+            fit={fit.get(project.id)}
+            onSpan={() => spanIt(project)}
+            onPushOut={() => pushOut(project)}
           />
         ))}
       </div>
@@ -759,6 +811,9 @@ function ProjectRow({
   onToggleOpen,
   onOpenRecord,
   onRemove,
+  fit,
+  onSpan,
+  onPushOut,
 }: {
   project: Project;
   data: VerticalData;
@@ -769,6 +824,9 @@ function ProjectRow({
   onToggleOpen: () => void;
   onOpenRecord: () => void;
   onRemove: () => void;
+  fit?: { placed: number; unplaced: number };
+  onSpan: () => void;
+  onPushOut: () => void;
 }) {
   const color = domainById(data, project.domainId)?.color ?? "var(--accent)";
   const gaps = lensGaps(data, "project", project, new Date());
@@ -818,6 +876,38 @@ function ProjectRow({
           ×
         </button>
       </div>
+
+      {/* The week couldn't take all of it — said here, while you're still
+          choosing, with the two acts that actually resolve it. A project is not a
+          line item you shrug at: it's the thing that moves the needle, so "no
+          room" without a remedy is the app leaving you stuck. */}
+      {fit && fit.unplaced > 0 && (
+        <div className="mb-2 rounded-md px-2.5 py-2" style={{ background: "var(--signal-soft)" }}>
+          <div className="text-caption" style={{ color: "var(--signal)" }}>
+            {fit.placed > 0
+              ? `Only ${fit.placed} of ${fit.placed + fit.unplaced} pieces fit this week.`
+              : `None of its ${fit.unplaced} pieces fit this week.`}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {fit.placed > 0 && (
+              <button
+                onClick={onSpan}
+                title="Give it another week — same project, longer run. This week takes what fits; the rest continues next week."
+                className="tap fast rounded-md border border-line px-2.5 py-1 text-caption text-ink hover:border-line-strong hover:bg-surface-2"
+              >
+                Give it another week
+              </button>
+            )}
+            <button
+              onClick={onPushOut}
+              title="Move the whole project to next week, keeping how long it runs."
+              className="tap fast rounded-md border border-line px-2.5 py-1 text-caption text-muted hover:border-line-strong hover:bg-surface-2"
+            >
+              Move it to next week
+            </button>
+          </div>
+        </div>
+      )}
 
       {open && rows.length > 0 && (
         <div className="pb-2 pl-4">

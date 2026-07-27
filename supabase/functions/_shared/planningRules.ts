@@ -220,6 +220,35 @@ export function takeOffWeekPatch(): { startDate: null; targetDate: null } {
   return { startDate: null, targetDate: null };
 }
 
+/**
+ * Give a project **another week** — keep it starting where it starts, push its
+ * finish out by one. The remediation when a week has room for some of a
+ * project's work but not all of it: the same project simply runs longer, which
+ * is what an On Deck span already means. One project, one outcome, one pace
+ * number — a second "Part 2" *project* would be a new object with a near-identical
+ * name and no outcome of its own, and would split the ship and pace math in two.
+ */
+export function spanAnotherWeekPatch(
+  p: Pick<SpanProject, "startDate" | "targetDate">,
+  weekStartISO: string,
+): { startDate: string; targetDate: string } {
+  const start = p.startDate ?? weekStartISO;
+  return weekSpanFor(start, spanWidthWeeks({ startDate: start, targetDate: p.targetDate }) + 1);
+}
+
+/**
+ * Move a project **out to the next week**, keeping how long it runs. The
+ * remediation when none of it fits: it isn't dropped and it isn't half-done, it's
+ * deliberately later — the honest answer to "this week can't carry it".
+ */
+export function pushToNextWeekPatch(
+  p: Pick<SpanProject, "startDate" | "targetDate">,
+  weekStartISO: string,
+): { startDate: string; targetDate: string } {
+  const nextMonday = isoOf(dayMs(weekStartISO) + 7 * DAY_MS);
+  return weekSpanFor(nextMonday, spanWidthWeeks(p));
+}
+
 /** The same two patches in row shape, for the runtime that speaks snake_case. */
 export function toRowPatch(patch: { startDate: string | null; targetDate: string | null; status?: string }): Record<string, unknown> {
   const out: Record<string, unknown> = { start_date: patch.startDate, target_date: patch.targetDate };

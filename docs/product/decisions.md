@@ -586,6 +586,42 @@ the overlap with your working window, the same way open time does.
 *Status: standing — typechecked, `npm test` green, built, and driven in a real
 account.*
 
+**D-039 · 2026-07-27 · A project that doesn't fit the week gets a remedy, not a
+footnote — and it spans, it doesn't fork.**
+
+Projects and initiatives are the things that move the needle, so *"Stampede v3 —
+the week is full"* sitting in a list under the grid is the app leaving you stuck
+on the one item that mattered most. Closes **W3** ("what should I drop, and what
+breaks if I do?" — previously ○). Two remedies, offered **on the Projects step
+while you're still choosing**, on the row itself:
+
+- **Give it another week** — when some of it fits. The project's On Deck span
+  widens by one week: this week takes what fits, the rest continues next week.
+- **Move it to next week** — when none of it fits. The whole span shifts out,
+  keeping how long it runs. Not dropped, not half-done: deliberately later.
+
+**Rejected: minting a "Part 2" project.** It was the proposal on the table and
+it's the wrong object. A second project with a near-identical name is an
+overlapping name (Principle 11) with no outcome of its own, and it splits the
+thing that makes projects worth having — one pace number, one ship, one line in
+the Review — across two rows forever. **On Deck already models a project running
+across weeks**; the honest answer is to use the span, and let the *sittings*
+carry the part numbers (`PROJECT · PART 1 OF 2`) since a sitting is exactly the
+thing there are two of.
+
+Both remedies are **kernel patches** — `spanAnotherWeekPatch` /
+`pushToNextWeekPatch` in `planningRules.ts` — so they're the same act as dragging
+the project's card on On Deck, and the deck and the plan cannot disagree about
+where a project lives. They're proposals with an explicit press (Principle 3);
+nothing moves on its own.
+
+→ The report under the grid no longer just names the problem: when project work
+is in "No open time left" it points at the step that can resolve it.
+*Status: standing — typechecked, 29 tests green (4 new for the span math, which is
+verified in isolation rather than by mutating a real account's project dates),
+built, and driven in a real account: "Only 1 of 5 pieces fit this week" with both
+acts on the row.*
+
 ---
 
 ## 2 · Things we decided **not** to do
