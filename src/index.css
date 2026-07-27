@@ -158,6 +158,24 @@
   --event-default: #8088a8;
 }
 
+/* `--ink` is the documented name for the foreground colour (root CLAUDE.md's
+   token list) and is used in inline styles across the app — but it was only ever
+   wired as the Tailwind *utility* source (`--color-ink`), never as a custom
+   property you could read. So every `color-mix(in srgb, var(--ink) 24%, …)` in a
+   style attribute was an INVALID colour and silently fell back to transparent:
+   the Plan grid's calendar events, its "already set" capacity segment and its
+   week-shape bars were all painting nothing at all, and raising the percentage
+   to fix them changed nothing because the whole expression was dead.
+
+   Aliased here on the same element the palettes set `--text` on, so it tracks
+   theme, palette and skin without another switch to maintain. */
+:root,
+[data-theme],
+[data-palette],
+[data-skin] {
+  --ink: var(--text);
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);

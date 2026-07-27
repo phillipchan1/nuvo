@@ -1784,7 +1784,7 @@ function WeekGrid({
                         // why the week was hard to read before anything was on it.
                         background: aside
                           ? "transparent"
-                          : `color-mix(in srgb, var(--ink) ${canToggle ? 20 : 16}%, transparent)`,
+                          : `color-mix(in srgb, var(--ink) ${canToggle ? 26 : 8}%, transparent)`,
                         borderLeft: aside
                           ? "2px dashed color-mix(in srgb, var(--slot) 55%, transparent)"
                           : "3px solid var(--line-strong)",
