@@ -4,7 +4,7 @@
 // in main.tsx. Not part of any real surface. Precedent: EmblemHarness (?emblem).
 
 import { ProjectsStep, LeftoversStep, InboxStep, WeekStep } from "./MobilePlanWeek";
-import WeekIntakeBar, { type WeekStep as Step } from "../rituals/WeekIntake";
+import SourceSwitch, { CapacityMeter, WEEK_STEPS, type WeekStep as Step } from "../rituals/WeekIntake";
 import { readIntake } from "../../lib/intake";
 import type { Placement } from "../../lib/compose";
 import type { Batch } from "../../lib/batch";
@@ -113,14 +113,10 @@ function Frame({ label, step, children }: { label: string; step: Step; children:
         data-frame={label}
       >
         <div className="border-b border-line px-4 pb-2 pt-2">
-          <WeekIntakeBar
-            intake={INTAKE}
-            step={step}
-            onStep={() => {}}
-            visited={new Set(["projects", "loose", "inbox", "week"] as Step[])}
-            waitingInbox={7}
-            dense
-          />
+          <SourceSwitch intake={INTAKE} step={step} onStep={() => {}} steps={WEEK_STEPS} waitingInbox={7} dense />
+          <div className="mt-2.5">
+            <CapacityMeter intake={INTAKE} fit={{ placed: 6, unplaced: 2 }} dense />
+          </div>
         </div>
         <div className="px-4 py-4">{children}</div>
       </div>
@@ -135,11 +131,17 @@ export default function PlanWeekHarness() {
       <h1 className="masthead mb-3 text-head">
         Plan the week — {format(new Date(weekISO + "T00:00:00"), "MMM d")} (fixtures)
       </h1>
-      {/* the shared funnel at desktop density — same component the desktop flow
-          pins under its header, so both densities are checked in one place */}
-      <div className="mb-6 max-w-[1080px] border-b border-line pb-3">
-        <div className="section-label mb-1">The intake bar · desktop density</div>
-        <WeekIntakeBar intake={INTAKE} step="loose" onStep={() => {}} visited={new Set(["projects"] as Step[])} waitingInbox={7} />
+      {/* the two shared pieces at desktop density — the switch rides the planner
+          rail, the meter rides the week grid, so both are checked in one place */}
+      <div className="mb-6 flex max-w-[1080px] gap-8 border-b border-line pb-3">
+        <div className="w-[320px] shrink-0">
+          <div className="section-label mb-1">The source switch · rail density</div>
+          <SourceSwitch intake={INTAKE} step="loose" onStep={() => {}} waitingInbox={7} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="section-label mb-1">The capacity meter · over the week</div>
+          <CapacityMeter intake={INTAKE} fit={{ placed: 6, unplaced: 2 }} />
+        </div>
       </div>
 
       <div className="flex gap-4 overflow-x-auto">

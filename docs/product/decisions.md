@@ -360,6 +360,66 @@ and the phone's "group carried work into blocks" action was a 14px tap target.
 `?planweek` harness; **not yet driven in a real account** (no credentials in the build
 environment), so W1/W2 stay scored as they were.*
 
+**D-035 · 2026-07-26 · Plan the week is one screen: the sources on the left, the week
+on the right, always.** *(Supersedes D-034's four **pages**; D-034's step **names**,
+its lane rule and its one-composer half all stand.)*
+
+D-034's four steps were the right nouns in the wrong shape. Driven in a real account
+for the first time, the flaw was structural, not cosmetic: you spent three pages
+keeping work and only learned on page four that the week had no room for it. The
+observed run — 5 projects on the slate, 12 pieces of their work kept — ended at
+`4 scheduled · 5 with no time yet · 52 immovable`, and every one of the five that
+couldn't be placed was a *project*, each reading "the week is full — slack protected."
+**A planner that reveals the cost of a decision one screen after you make it is asking
+you to decide blind.** → The three sources now take turns in a planner rail while the
+week grid holds the right half of the screen permanently. Every keep or drop re-shapes
+the grid beside your cursor. This is also the grammar the Schedule and both decks
+already use (pool left → grid of time right, `design-language.md`), which the four-page
+version had quietly broken.
+
+**The phone can't hold two panes, so it holds the same fact.** `CapacityMeter` rides
+under the step rail on every step and reports both what the week is being asked to
+carry *and* how much of it found no room — the "5 couldn't fit" arrives while you can
+still act on it. The phone keeps its fourth step (the day-by-day read); the desktop
+does not need one.
+
+**One arithmetic, one place.** The header said `19.2h of ~26.7h` while the commit bar
+said `11.8h planned vs your ~23.3h/wk pace` — two loads and two budgets for one week,
+on one screen. The header counted everything kept (the Week is the gate — Principle 2,
+so unplaced work is still weight); the footer counted only what found a slot, against
+the raw pace instead of the compose budget. The kept-work reading is the honest one and
+is now the only one: `CapacityMeter` owns it, over the grid it measures, and the commit
+bar carries the goal line and the click.
+
+**Why the old bar "didn't look right", precisely.** Three compounding misreads, all
+fixed: a capacity track mounted directly beneath four numbered steps reads as *step
+progress*; it spanned the full width while the steps spanned half, so it belonged to
+nothing; and its largest segment — time already on the calendar, at 20% ink — read as
+*unfilled*, so the meter looked half-broken. It now sits over its subject, is labelled
+("This week asks"), carries a legend that holds the hours rather than restating a key,
+draws the pace mark always instead of only when you're past it, and paints "already
+set" at 34% ink so a full week looks full.
+
+**And the projects step lost two thirds of itself.** It was answering three questions
+at three cadences: how did last week go (a **Review** question), which initiatives lead
+this quarter (a **Summit** question), and what moves this week. Both strangers are gone
+from the flow — nothing was moved to a new home, they already have one. What's left is
+one row per project (domain dot · name · what it's asking of the week) with its work
+folded underneath, opened only when you want to argue with what came along. Readiness
+is now a **silence**: "ready to slot" printed on all five rows was five identical words
+carrying no information, so only a *gap* speaks.
+
+**Strains Principle 8** — the screen now shows a pool and a calendar at once, which
+looks like two questions. It isn't: the question is "can I carry this week," and the
+grid is the answer half. The mitigation is that the grid is never editable *as* a
+source — you keep and drop in the rail, and the grid only reports.
+→ Left open: the desktop's project rows expand one at a time; the phone still expands
+every project's work inline (it has no hover and more vertical room). Fine for now,
+worth revisiting if the phone step gets long.
+*Status: standing — typechecked, `npm test` green, and **driven in a real account**:
+switching lanes, and dropping one leftover moved the week 19.2h → 17.7h and
+"5 couldn't fit" → 4, live. Verified at 375px (no horizontal overflow) and at 1440px.*
+
 ---
 
 ## 2 · Things we decided **not** to do

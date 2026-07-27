@@ -9,11 +9,14 @@
 //   3 · Inbox      — raw captures, grouped into named runs
 //   4 · The week   — where it all lands, day by day, and whether it fits. Commit.
 //
-// The steps used to be called **Slate → Pull → Shape** — three verbs that appear
-// nowhere else in the product and that told a first-time reader nothing about what
-// they were being asked. They're now named after the thing itself, and the header
-// (`WeekIntakeBar`) draws the three sources pouring into one measured week, so the
-// funnel is visible instead of implied.
+// The steps are named after the thing itself, never after a verb we invented.
+//
+// The desktop keeps its week grid on screen beside every source, so a keep or a
+// drop re-shapes the week under your cursor. A 375px phone has no room for that,
+// so it carries the same fact in the one line that matters: `CapacityMeter` sits
+// under the step rail on **every** step, and it reports both what the week is
+// being asked to carry and — the part that used to arrive too late — how much of
+// it found no room. You learn "the week is full" while you can still act on it.
 //
 // Everything that decides *what* the week is comes from `useWeekDraft` — the same
 // hook the desktop uses. This file only lays it out and offers taps: no drag,
@@ -33,7 +36,7 @@ import { LANE_QUESTION, workBadge } from "../../lib/intake";
 import type { Batch } from "../../lib/batch";
 import type { Placement } from "../../lib/compose";
 import { toBusyBlocks, type BusyBlock } from "../../lib/now";
-import WeekIntakeBar, { type WeekStep } from "../rituals/WeekIntake";
+import SourceSwitch, { CapacityMeter, WEEK_STEPS, type WeekStep } from "../rituals/WeekIntake";
 import DurationSelect from "../DurationSelect";
 
 /** The forward beat out of each step — plain words for the thing you're going to. */
@@ -52,11 +55,6 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
   const draft = useWeekDraft();
   const { updateProject, updateTask } = useVertical();
   const [step, setStep] = useState<WeekStep>("projects");
-  const [visited, setVisited] = useState<Set<WeekStep>>(new Set(["projects"]));
-  const go = (s: WeekStep) => {
-    setStep(s);
-    setVisited((v) => new Set([...v, s]));
-  };
 
   const {
     data,
@@ -78,9 +76,6 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
     workEnd,
     result,
     placements,
-    plannedMins,
-    cal,
-    conf,
     gain,
     inboxCount,
     themeInbox,
@@ -154,7 +149,25 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
             ✕
           </button>
         </div>
-        <WeekIntakeBar intake={intake} step={step} onStep={go} visited={visited} waitingInbox={inboxCount} dense />
+        <div className="mt-2.5">
+          <SourceSwitch
+            intake={intake}
+            step={step}
+            onStep={setStep}
+            steps={WEEK_STEPS}
+            waitingInbox={inboxCount}
+            dense
+          />
+        </div>
+        {/* the week's one honest read, on every step — the phone's stand-in for
+            the desktop's always-visible grid */}
+        <div className="mt-2.5">
+          <CapacityMeter
+            intake={intake}
+            fit={{ placed: placements.length, unplaced: result.unplaced.length }}
+            dense
+          />
+        </div>
       </header>
 
       <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
@@ -219,23 +232,13 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
 
       <Footer>
         <div className="flex items-center gap-3">
+          {/* The capacity read lives once, in the header meter — a second one down
+              here quoted different arithmetic for the same week. */}
           <div className="mono min-w-0 flex-1 text-meta text-muted">
-            {step === "week" && conf && cal ? (
-              <span style={{ color: conf.label === "stretch" ? "var(--signal)" : "var(--accent)" }}>
-                {conf.pct}% · {conf.label} — {hrs(plannedMins)}h vs your ~{hrs(cal.avgWeeklyDoneMins)}h/wk
-                {conf.deltaMins > 30 && ` · trim ~${hrs(conf.deltaMins)}h`}
-              </span>
-            ) : (
-              <span>
-                {intake.loadMins > 0 ? `${hrs(intake.loadMins)}h in the week` : "nothing in the week yet"}
-                {intake.overMins > 0 && (
-                  <span style={{ color: "var(--signal)" }}> · {hrs(intake.overMins)}h over pace</span>
-                )}
-              </span>
-            )}
+            {keptTasks.length} committed
           </div>
           {next ? (
-            <PrimaryButton onClick={() => go(next.to)} compact>{next.label}</PrimaryButton>
+            <PrimaryButton onClick={() => setStep(next.to)} compact>{next.label}</PrimaryButton>
           ) : (
             <PrimaryButton onClick={() => void commit()} disabled={applying} compact>
               {applying ? "committing…" : "Commit the week"}

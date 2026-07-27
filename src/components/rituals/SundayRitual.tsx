@@ -1,32 +1,38 @@
 // Plan the week — the weekly ritual, reduced to its one honest job: arrive to a
-// week that's already been pulled and time-blocked, then tune and commit. The
-// old five gated steps are gone. What you do is a draft, not a form:
+// week that's already been pulled and time-blocked, then tune and commit. What
+// you do is a draft, not a form:
 //
 //   · the pull + the compose run the moment it opens (no "compose" button)
 //   · every block still carries its reason — you keep the map, never lost
-//   · one gesture overrides anything — drop a block, add a candidate, flag an initiative
+//   · one gesture overrides anything — drop a block, keep a candidate, add a project
 //   · the only required click is Commit
+//
+// **One screen: the sources on the left, the week on the right, always.** The
+// three sources take turns in the rail (Projects · Leftovers · Inbox); the week
+// grid never leaves. That's the fix for the flow's real flaw — it used to ask you
+// to keep work across three pages and only told you at the end that five of your
+// projects had no room ("the week is full"). Deciding and its consequence now
+// share a screen, which is also the planner grammar every other surface already
+// uses (pool left → grid of time right; design-language.md).
 //
 // Defaults are pre-decided, settings live in Settings (working hours tuck away),
 // intelligence does the deciding-where. You stay at altitude.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { addDays, differenceInCalendarDays, format, subDays } from "date-fns";
+import { addDays, format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useSettings } from "../../hooks/useSettings";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { placementKey, useWeekDraft } from "../../hooks/useWeekDraft";
 import {
   backlogTasks,
   domainById,
   inboxTasks,
-  initiativeProgress,
-  initiativeProgressAt,
-  isOpenStatus,
   projectById,
   sprintMinsByDomain,
   sprintTasks,
   taskDomainColor,
-  type Initiative,
+  type Project,
   type VerticalData,
 } from "../../lib/vertical";
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO } from "../../lib/dates";
@@ -34,14 +40,12 @@ import { sprintLabel } from "../../lib/sprint";
 import { CONTEXT_META, plannedMinutes, type DayContext, type Placement } from "../../lib/compose";
 import { type Batch } from "../../lib/batch";
 import DurationSelect from "../DurationSelect";
-import { type calibrate, type confidence } from "../../lib/calibration";
 import { type PullSuggestion } from "../../lib/pull";
-import { MomentumChip } from "../floors/parts";
-import { BigRocks } from "../floors/bigRocks";
-import { weekPushes } from "../../lib/priorities";
-import { LANE_QUESTION, workBadge } from "../../lib/intake";
-import WeekIntakeBar, { type WeekStep } from "./WeekIntake";
-import type { WeekIntakeRead } from "../../lib/intake";
+import { lensGaps } from "../../lib/lenses";
+import { projectsOnDeck, weekPushes } from "../../lib/priorities";
+import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
+import { LANE_QUESTION, workBadge, type WeekLane } from "../../lib/intake";
+import SourceSwitch, { CapacityMeter } from "./WeekIntake";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import { Btn } from "../ui";
 
@@ -55,17 +59,15 @@ const fmtMinShort = (m: number) => {
   return mm === 0 ? `${hh}${ap}` : `${hh}:${String(mm).padStart(2, "0")}${ap}`;
 };
 
-// Four steps, the same four the phone runs: **Projects · Leftovers · Inbox → The
-// week.** They are named after what they hold, not after invented verbs ("Slate",
-// "Pull", "Shape" appeared nowhere else in the product), and the header
-// (`WeekIntakeBar`) draws all four as one funnel with a live capacity read.
+// Three sources, named after what they hold rather than after invented verbs
+// ("Slate", "Pull", "Shape" appeared nowhere else in the product): **Projects ·
+// Leftovers · Inbox.** They take turns in the rail; the week they pour into is on
+// the right the whole time.
 //
-// **They are steps, not gates** — which is the distinction the old five-step wizard
-// got wrong. Every lane is one click away at any time (including backwards from the
-// grid), the week is fully composed the moment this opens, and the capacity track
-// gives the same live "can I carry this?" read on every step. That last part is what
-// pays for splitting the sources off the grid: you no longer need them side by side
-// to see the consequence of keeping something, because the track shows it.
+// **They are a switch, not a wizard** — the distinction the old five-step wizard
+// got wrong and must not get wrong again. Every source is one click away at any
+// time, the week is fully composed the moment this opens, and every keep or drop
+// re-shapes the grid beside your cursor.
 
 export default function SundayRitual({ onClose }: { onClose: () => void }) {
   // Everything the week IS — the pull, the standing-slot routing, the project
@@ -100,10 +102,6 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     placements,
     movePlacement,
     resizePlacement,
-    plannedMins,
-    cal,
-    conf,
-    gain,
     inboxCount,
     themeInbox,
     theming,
@@ -118,19 +116,13 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
     committed,
   } = draft;
 
-  // one piece of state for the step and the header's active lane — the lane IS the
-  // position, so the two can never disagree.
-  const [step, setStep] = useState<WeekStep>("projects");
-  const [visited, setVisited] = useState<Set<WeekStep>>(new Set(["projects"]));
+  // one piece of state — which source the rail is showing. The week is never a
+  // "step": it's the right half of the screen, always.
+  const [lane, setLane] = useState<WeekLane>("projects");
   const [showBoundaries, setShowBoundaries] = useState(false);
-  const go = (s: WeekStep) => {
-    setStep(s);
-    setVisited((v) => new Set([...v, s]));
-  };
 
   const placedCount = placements.length;
   const weekSpan = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
-  const weekProjectCount = weekPushes(data, weekStartISO).length;
 
   // esc closes; the draft resumes — nothing is committed until you say so
   useEffect(() => {
@@ -157,115 +149,90 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       weekLabel={format(parseDateISO(weekStartISO), "MMM d")}
       planningAhead={planningAhead}
-      intake={
-        <WeekIntakeBar intake={intake} step={step} onStep={go} visited={visited} waitingInbox={inboxCount} />
-      }
       footer={
-        step !== "week" ? (
-          <ForwardBar
-            step={step}
-            projectCount={weekProjectCount}
-            leadCount={data.focusInitiativeIds.length}
-            intake={intake}
-            waitingInbox={inboxCount}
-            onNext={() => go(step === "projects" ? "loose" : step === "loose" ? "inbox" : "week")}
-          />
-        ) : (
-          <CommitBar
-            goal={goal}
-            setGoal={setGoal}
-            lastGoal={data.sprintGoal ?? ""}
-            conf={conf}
-            cal={cal}
-            plannedMins={plannedMins}
-            keptCount={keptCount}
-            applying={applying}
-            onCommit={() => void commit()}
-          />
-        )
+        <CommitBar
+          goal={goal}
+          setGoal={setGoal}
+          lastGoal={data.sprintGoal ?? ""}
+          keptCount={keptCount}
+          applying={applying}
+          onCommit={() => void commit()}
+        />
       }
     >
-      {step === "projects" && (
-        <div className="mx-auto max-w-[1080px]">
-          {/* ── 1 · the projects — open with the look-back, then what moves ────── */}
-          {/* hero: ceremony + the gain folded in as the supporting read, not a stray line */}
-          <header className="mb-8">
-            <div className="section-label"><span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · {weekSpan} · {planningAhead ? "the week ahead" : "this week"}</div>
-            <h1 className="mt-1.5 text-display masthead leading-[1.05]">
+      {/* ── the pool, left · the week, right — one screen, the whole ritual ───── */}
+      <div className="flex min-h-0 flex-1">
+        {/* The planner rail: transparent over the atmosphere, hairline separator,
+            full height. Crown → the sources → the pool → the forward beat. */}
+        <aside className="flex w-[360px] shrink-0 flex-col border-r border-line">
+          <div className="shrink-0 px-5 pt-5">
+            <div className="section-label !p-0">
+              <span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · {weekSpan}
+            </div>
+            <h1 className="mt-1 text-head masthead leading-tight">
               Week of {format(parseDateISO(weekStartISO), "MMMM d")}
             </h1>
-            <p className="mt-2.5 text-body text-muted">
-              Last 7 days — <span className="text-ink">{gain.doneCount} done · {hrs(gain.doneMins)}h</span>.
-              {gain.topMove && (
-                <span style={{ color: "var(--accent)" }}> {gain.topMove.name} climbed {gain.topMove.from}→{gain.topMove.to}%.</span>
-              )}
-              {gain.quiet.length > 0 && (
-                <span style={{ color: "var(--signal)" }}> {gain.quiet.join(" & ")} went quiet.</span>
-              )}
-            </p>
-          </header>
-
-          {/* the initiatives — the strategic backdrop; a quiet check above the week's intent */}
-          <BetsStrip />
-
-          {/* the projects — the heart: name what would make this week a win */}
-          <div className="mt-8"><BigRocks weekStartISO={weekStartISO} /></div>
-
-          {/* …and the work that moves them. Naming a project has to bring its work
-              with it, or step 4 has nothing to place. */}
-          <div className="mt-8">
-            <ProjectWork suggestions={byLane.projects} kept={kept} setKept={setKept} data={data} />
-          </div>
-        </div>
-      )}
-
-      {step === "loose" && (
-        <div className="mx-auto max-w-[1080px]">
-          {/* ── 2 · leftovers — what you already owed, before anything new ─────── */}
-          <StepHeader title={LANE_QUESTION.loose} />
-          <Leftovers
-            suggestions={byLane.loose}
-            kept={kept}
-            setKept={setKept}
-            data={data}
-            onBundleCarried={() => void themeCarried()}
-            bundling={themingCarried}
-            bundleErr={carriedErr}
-          />
-        </div>
-      )}
-
-      {step === "inbox" && (
-        <div className="mx-auto max-w-[1080px]">
-          {/* ── 3 · the inbox — the GTD tail: loose captures get a when ────────── */}
-          <StepHeader title={LANE_QUESTION.inbox} />
-          <InboxGroups
-            count={inboxCount}
-            runs={runs}
-            theming={theming}
-            error={themeErr}
-            onTheme={() => void themeInbox()}
-          />
-        </div>
-      )}
-
-      {step === "week" && (
-        // ── 4 · the week — the composed board wide, boundaries + pool railed ───
-        <div className="flex flex-col gap-6 lg:flex-row">
-          <section className="min-w-0 flex-1">
-            <div className="mb-2 flex items-baseline justify-between gap-3">
-              {/* no "batch into focus blocks" button: the board already composes
-                  project slots and grouped runs. A second batcher over the
-                  already-committed week was a different answer to the same
-                  question, shown in a modal you couldn't edit. */}
-              <h2 className="text-head masthead">Here's the week</h2>
-              <span className="mono shrink-0 text-meta text-muted">
-                {placedCount} scheduled · {result.unplaced.length} with no time yet
-                {routedCount > 0 && ` · ${routedCount} in standing slots`}
-                {eventCount > 0 && ` · ${eventCount} immovable`}
-              </span>
+            <div className="mt-3">
+              <SourceSwitch intake={intake} step={lane} onStep={(s) => setLane(s as WeekLane)} waitingInbox={inboxCount} />
             </div>
+            <h2 className="mt-4 text-lead masthead leading-snug text-ink">{LANE_QUESTION[lane]}</h2>
+          </div>
 
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3">
+            {lane === "projects" && (
+              <ProjectsLane
+                data={data}
+                weekStartISO={weekStartISO}
+                suggestions={byLane.projects}
+                kept={kept}
+                setKept={setKept}
+              />
+            )}
+            {lane === "loose" && (
+              <Leftovers
+                suggestions={byLane.loose}
+                kept={kept}
+                setKept={setKept}
+                data={data}
+                onBundleCarried={() => void themeCarried()}
+                bundling={themingCarried}
+                bundleErr={carriedErr}
+              />
+            )}
+            {lane === "inbox" && (
+              <InboxGroups
+                count={inboxCount}
+                runs={runs}
+                theming={theming}
+                error={themeErr}
+                onTheme={() => void themeInbox()}
+              />
+            )}
+          </div>
+
+          {lane !== "inbox" && (
+            <div className="shrink-0 border-t border-line px-5 py-2.5">
+              <button
+                onClick={() => setLane(lane === "projects" ? "loose" : "inbox")}
+                className="fast mono w-full rounded-md py-1.5 text-left text-label text-muted hover:text-accent"
+              >
+                {lane === "projects" ? "Leftovers" : "Inbox"} →
+              </button>
+            </div>
+          )}
+        </aside>
+
+        {/* The week — never a step. It fills as you keep things in the rail, so
+            "the week is full" arrives while you can still do something about it. */}
+        <section className="flex min-w-0 flex-1 flex-col px-6 pt-5">
+          <div className="shrink-0">
+            <CapacityMeter
+              intake={intake}
+              fit={{ placed: placedCount, unplaced: result.unplaced.length }}
+            />
+          </div>
+
+          <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
             {gridDays.length === 0 ? (
               <div className="rounded-md border border-dashed border-line p-10 text-center text-caption text-muted">
                 No working days set — choose them in Boundaries.
@@ -292,42 +259,46 @@ export default function SundayRitual({ onClose }: { onClose: () => void }) {
                 <div className="mt-2 flex items-center gap-3 text-meta text-muted">
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", borderLeft: "3px solid var(--accent)" }} /> ✦ placed for you</span>
                   <span className="flex items-center gap-1.5"><span className="h-3 w-2.5 rounded-[3px]" style={{ background: "color-mix(in srgb, var(--ink) 5%, transparent)", borderLeft: "2px solid var(--line-strong)" }} /> immovable</span>
+                  {routedCount > 0 && <span>{routedCount} in standing slots</span>}
+                  {eventCount > 0 && <span>{eventCount} immovable</span>}
                   <span className="mono ml-auto">drag to move · hover to drop</span>
+                </div>
+
+                {/* Work you kept that the week had no room for. It used to appear
+                    only on the final step, after every decision was made. */}
+                {result.unplaced.length > 0 && (
+                  <section className="mt-4 border-t border-line pt-2.5">
+                    <div className="section-label mb-1" style={{ color: "var(--signal)" }}>
+                      No room this week{" "}
+                      <span className="mono normal-case tracking-normal text-muted">{result.unplaced.length}</span>
+                    </div>
+                    <div className="grid gap-x-8 md:grid-cols-2">
+                      {result.unplaced.map(({ task, reason }) => (
+                        <div key={task.id} className="flex items-center gap-2 border-b border-line py-1 text-label text-muted">
+                          <span className="min-w-0 flex-1 truncate">{task.title}</span>
+                          <span className="mono shrink-0 text-micro">{reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* boundaries — settings, tucked away; here when you need them */}
+                <div className="mt-4 pb-4">
+                  <Boundaries
+                    open={showBoundaries}
+                    onToggle={() => setShowBoundaries((s) => !s)}
+                    weekDays={weekDays}
+                    fromGate={fromGate}
+                    workingDays={workingDays}
+                    setWorkingDays={setWorkingDays}
+                  />
                 </div>
               </>
             )}
-          </section>
-
-          {/* right rail — what didn't find a time, and the boundaries that decided
-              where things could go. The sources themselves live in steps 1–3; the
-              header's capacity track keeps their weight in view from here. */}
-          <aside className="shrink-0 space-y-5 lg:w-[320px]">
-            {result.unplaced.length > 0 && (
-              <section>
-                <div className="section-label mb-1">
-                  Committed, no time yet <span className="mono normal-case tracking-normal text-muted">{result.unplaced.length}</span>
-                </div>
-                {result.unplaced.map(({ task, reason }) => (
-                  <div key={task.id} className="flex items-center gap-2 border-b border-line py-1 text-label text-muted">
-                    <span className="min-w-0 flex-1 truncate">{task.title}</span>
-                    <span className="mono shrink-0 text-micro">{reason}</span>
-                  </div>
-                ))}
-              </section>
-            )}
-
-            {/* boundaries — settings, tucked away; here when you need them */}
-            <Boundaries
-              open={showBoundaries}
-              onToggle={() => setShowBoundaries((s) => !s)}
-              weekDays={weekDays}
-              fromGate={fromGate}
-              workingDays={workingDays}
-              setWorkingDays={setWorkingDays}
-            />
-          </aside>
-        </div>
-      )}
+          </div>
+        </section>
+      </div>
     </Shell>
   );
 }
@@ -337,15 +308,12 @@ function Shell({
   onClose,
   weekLabel,
   planningAhead,
-  intake,
   footer,
   children,
 }: {
   onClose: () => void;
   weekLabel: string;
   planningAhead: boolean;
-  /** The funnel — always visible, on both acts. */
-  intake?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -367,228 +335,10 @@ function Shell({
         <div className="flex-1" />
         <button onClick={onClose} className="keycap shrink-0">esc — resumes later</button>
       </header>
-      {/* the funnel — the three sources and the one week they pour into, held in
-          view for the whole flow so the arithmetic is never a surprise at commit */}
-      {intake && (
-        <div className="shrink-0 border-b border-line px-8 py-2">
-          <div className="mx-auto max-w-[1080px]">{intake}</div>
-        </div>
-      )}
-      <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">{children}</div>
+      {/* the two panes own their own scrolling — the rail and the week move
+          independently, so neither one drags the other past its heading */}
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       {footer}
-    </div>
-  );
-}
-
-// The forward beat out of steps 1–3. Plain words for the thing you're going to,
-// and a mono read of what the step you're leaving actually put in the week.
-function ForwardBar({
-  step,
-  projectCount,
-  leadCount,
-  intake,
-  waitingInbox,
-  onNext,
-}: {
-  step: WeekStep;
-  projectCount: number;
-  leadCount: number;
-  intake: WeekIntakeRead;
-  waitingInbox: number;
-  onNext: () => void;
-}) {
-  const read =
-    step === "projects"
-      ? `${projectCount > 0 ? `${projectCount} project${projectCount === 1 ? "" : "s"} this week` : "no projects on this week yet"}` +
-        `${leadCount > 0 ? ` · ★ ${leadCount} lead${leadCount === 1 ? "" : "s"}` : ""}` +
-        `${intake.projects.count > 0 ? ` · ${intake.projects.count} piece${intake.projects.count === 1 ? "" : "s"} of their work in` : ""}`
-      : step === "loose"
-        ? intake.loose.count > 0
-          ? `${intake.loose.count} leftover${intake.loose.count === 1 ? "" : "s"} kept · ${hrs(intake.loose.mins)}h`
-          : "nothing owed and nothing due"
-        : intake.inbox.count > 0
-          ? `${intake.inbox.count} capture${intake.inbox.count === 1 ? "" : "s"} joining the week` +
-            (waitingInbox > 0 ? ` · ${waitingInbox} left in the inbox` : "")
-          : waitingInbox > 0
-            ? `${waitingInbox} still in the inbox — they'll keep`
-            : "the inbox is clear";
-  const label = step === "projects" ? "Leftovers →" : step === "loose" ? "Inbox →" : "The week →";
-
-  return (
-    <footer className="shrink-0 border-t border-line px-8 py-3">
-      <div className="mx-auto flex max-w-[1080px] items-center gap-4">
-        <div className="mono min-w-0 flex-1 text-meta text-muted">{read}</div>
-        <Btn kind="primary" onClick={onNext} className="shrink-0 px-4 py-2">{label}</Btn>
-      </div>
-    </footer>
-  );
-}
-
-/** Steps 2 and 3 are pages, not rails — and a page opens with its question and
- *  nothing else. The step number is in the intake bar two inches above; the
- *  explanatory paragraph taught a mechanic you learn once and re-read weekly. */
-function StepHeader({ title }: { title: string }) {
-  return (
-    <header className="mb-6">
-      <h1 className="text-display masthead leading-[1.05]">{title}</h1>
-    </header>
-  );
-}
-
-// ── the initiatives — ≤3 leads, carried forward; verdicts on the stalled ────────────
-function BetsStrip() {
-  const { data, setFocusInitiatives, updateInitiative } = useVertical();
-  const leads = data.focusInitiativeIds;
-  const cutoff = useMemo(() => subDays(new Date(), 7), []);
-  const rows = data.initiatives.filter((i) => isOpenStatus(i.status));
-  const leadInits = rows.filter((i) => leads.includes(i.id));
-  const stalledLeads = leadInits.filter(
-    (i) => i.status !== "waiting" && initiativeProgress(data, i) === initiativeProgressAt(data, i, cutoff) && i.momentum !== "up",
-  );
-  const [manage, setManage] = useState(false);
-  const open = manage || stalledLeads.length > 0;
-
-  const toggleLead = (id: string) => {
-    if (leads.includes(id)) setFocusInitiatives(leads.filter((x) => x !== id));
-    else if (leads.length < 3) setFocusInitiatives([...leads, id]);
-  };
-
-  return (
-    <section>
-      <div className="mb-2 flex items-baseline justify-between">
-        <div className="section-label">
-          The initiatives <span className="mono normal-case tracking-normal text-muted">· ★ {leads.length}/3 leads</span>
-        </div>
-        {rows.length > 0 && (
-          <button onClick={() => setManage((m) => !m)} className="fast mono text-meta text-muted hover:text-ink">
-            {open ? "done" : "adjust"}
-          </button>
-        )}
-      </div>
-
-      {!open ? (
-        <div className="flex flex-wrap gap-1.5">
-          {leadInits.length === 0 && (
-            <span className="text-caption text-muted italic">No leads — up to three, via adjust.</span>
-          )}
-          {leadInits.map((i) => {
-            const domain = domainById(data, i.domainId);
-            return (
-              <span
-                key={i.id}
-                className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label"
-                style={{ borderColor: "var(--signal)", background: "var(--signal-soft)" }}
-              >
-                <span className="h-1.5 w-1.5 rounded-full" style={{ background: domain?.color }} />
-                {i.name}
-              </span>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          {rows.map((i) => (
-            <BetRow
-              key={i.id}
-              initiative={i}
-              data={data}
-              cutoff={cutoff}
-              lead={leads.includes(i.id)}
-              leadFull={leads.length >= 3}
-              onToggleLead={() => toggleLead(i.id)}
-              onUpdate={(patch) => updateInitiative(i.id, patch)}
-            />
-          ))}
-          {rows.length === 0 && (
-            <p className="py-2 text-caption text-muted">
-              No active initiatives. Start an initiative on the Initiative floor (⌘4).
-            </p>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function BetRow({
-  initiative,
-  data,
-  cutoff,
-  lead,
-  leadFull,
-  onToggleLead,
-  onUpdate,
-}: {
-  initiative: Initiative;
-  data: VerticalData;
-  cutoff: Date;
-  lead: boolean;
-  leadFull: boolean;
-  onToggleLead: () => void;
-  onUpdate: (patch: Partial<Initiative>) => void;
-}) {
-  const domain = domainById(data, initiative.domainId);
-  const paused = initiative.status === "waiting";
-  const from = initiativeProgressAt(data, initiative, cutoff);
-  const to = initiativeProgress(data, initiative);
-  const stalled = !paused && to === from && initiative.momentum !== "up";
-  const daysLeft = initiative.targetDate
-    ? differenceInCalendarDays(parseDateISO(initiative.targetDate), new Date())
-    : null;
-
-  return (
-    <div
-      className="glass-card flex items-center gap-3 rounded-md border px-3.5 py-2.5"
-      style={{ borderColor: lead ? "var(--signal)" : "var(--line)", opacity: paused ? 0.55 : 1 }}
-    >
-      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: domain?.color }} />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-body font-medium">{initiative.name}</div>
-        <div className="mono truncate text-micro text-muted">
-          {domain?.name}
-          {initiative.outcome && ` · ${initiative.outcome}`}
-        </div>
-      </div>
-
-      {stalled && (
-        <span className="mono shrink-0 rounded-full border border-signal px-2 py-0.5 text-micro text-signal">
-          stalled — commit, pause, or drop
-        </span>
-      )}
-
-      <span className="mono shrink-0 text-label" style={{ color: to > from ? "var(--accent)" : "var(--muted)" }}>
-        {to > from ? `${from}%→${to}%` : `${to}%`}
-      </span>
-
-      {daysLeft != null && (
-        <span className="mono shrink-0 text-meta" style={{ color: daysLeft < 14 ? "var(--signal)" : "var(--muted)" }}>
-          {daysLeft >= 0 ? `${daysLeft}d left` : `${-daysLeft}d over`}
-        </span>
-      )}
-
-      <MomentumChip value={initiative.momentum} onChange={(m) => onUpdate({ momentum: m })} />
-
-      {paused ? (
-        <Btn onClick={() => onUpdate({ status: "in_progress" })}>resume</Btn>
-      ) : (
-        <>
-          <button
-            onClick={onToggleLead}
-            disabled={!lead && leadFull}
-            title={lead ? "Remove lead" : leadFull ? "Three leads already" : "Make this a lead initiative"}
-            className="fast mono shrink-0 rounded-sm border px-2 py-1 text-meta disabled:opacity-30"
-            style={{
-              borderColor: lead ? "var(--signal)" : "var(--line)",
-              color: lead ? "var(--signal)" : "var(--muted)",
-              background: lead ? "var(--signal-soft)" : "transparent",
-            }}
-          >
-            ★ lead
-          </button>
-          <Btn onClick={() => onUpdate({ status: "waiting" })}>pause</Btn>
-          <Btn kind="signal" onClick={() => onUpdate({ status: "cancelled" })}>drop</Btn>
-        </>
-      )}
     </div>
   );
 }
@@ -660,21 +410,42 @@ function useToggle(kept: Set<string>, setKept: (next: Set<string>) => void) {
   };
 }
 
-/** Act 1 · the work belonging to the projects you named, under their names — so
- *  you SEE that bringing a project in brought its work with it. */
-function ProjectWork({
+/** The projects lane — the week's slate, at project altitude.
+ *
+ *  This used to be four stacked sections (a look-back paragraph, the initiative
+ *  leads, the project list, and every piece of their work as a checkbox grid) —
+ *  roughly fifty rows to answer one question. Two of those sections answered a
+ *  *different* question at a different cadence (the Review's "how did last week
+ *  go" and Summit's "which initiatives lead this quarter"), so they're gone from
+ *  here. What's left is one row per project, and the work folded underneath it:
+ *  you decide on projects first, and open one only when you want to argue with
+ *  what came along.
+ */
+function ProjectsLane({
+  data,
+  weekStartISO,
   suggestions,
   kept,
   setKept,
-  data,
 }: {
+  data: VerticalData;
+  weekStartISO: string;
   suggestions: PullSuggestion[];
   kept: Set<string>;
   setKept: (next: Set<string>) => void;
-  data: VerticalData;
 }) {
-  const { updateTask } = useVertical();
-  const toggle = useToggle(kept, setKept);
+  const { updateProject } = useVertical();
+  const { openRecord } = useAppNavigation();
+  const [open, setOpen] = useState<string | null>(null);
+
+  const pushes = useMemo(() => weekPushes(data, weekStartISO), [data, weekStartISO]);
+  // Bringing a project in IS placing it on this week — the same kernel patch the
+  // On Deck drop and the agent's create_priority apply, so they can't diverge.
+  const bringIn = (p: Project) => {
+    const patch = bringIntoWeekPatch(p, weekStartISO);
+    if (patch) updateProject(p.id, patch);
+  };
+  const takeOff = (p: Project) => updateProject(p.id, takeOffWeekPatch());
 
   const byProject = new Map<string, PullSuggestion[]>();
   const unassigned: PullSuggestion[] = [];
@@ -685,91 +456,220 @@ function ProjectWork({
       byProject.get(pid)!.push(s);
     } else unassigned.push(s);
   }
-  const on = suggestions.filter((s) => kept.has(s.task.id)).length;
-
-  if (suggestions.length === 0) {
-    return (
-      <section>
-        <h2 className="text-head masthead">The work that moves them</h2>
-        <p className="mt-1 text-caption text-muted">Nothing open under this week's projects.</p>
-      </section>
-    );
-  }
 
   return (
     <section>
-      <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-head masthead">
-          The work that moves them{" "}
-          <span className="mono text-meta font-normal text-muted">{on}/{suggestions.length} in the week</span>
-        </h2>
-      </div>
+      {pushes.length === 0 && (
+        <p className="pb-3 text-caption text-muted">Nothing on this week yet — bring a project in below.</p>
+      )}
 
-      <div className="grid gap-x-8 gap-y-3 md:grid-cols-2">
-        {[...byProject.entries()].map(([pid, rows]) => {
-          const proj = projectById(data, pid)!;
-          const color = domainById(data, proj.domainId)?.color ?? "var(--accent)";
-          const kn = rows.filter((r) => kept.has(r.task.id)).length;
-          const mins = rows
-            .filter((r) => kept.has(r.task.id))
-            .reduce((m, r) => m + plannedMinutes(r.task.durationMins, true), 0);
-          const allOn = kn === rows.length;
-          return (
-            <div key={pid}>
-              <div className="mb-1 flex items-baseline gap-2 border-b border-line pb-1">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
-                <span className="min-w-0 flex-1 truncate text-body">{proj.name}</span>
-                <button
-                  onClick={() => {
-                    const next = new Set(kept);
-                    rows.forEach((r) => (allOn ? next.delete(r.task.id) : next.add(r.task.id)));
-                    setKept(next);
-                  }}
-                  className="fast mono shrink-0 text-micro text-muted hover:text-accent"
-                >
-                  {allOn ? "none" : "all"}
-                </button>
-                <span className="mono shrink-0 text-micro text-muted">{kn}/{rows.length} · {hrs(mins)}h</span>
-              </div>
-              <div className="space-y-1">
-                {rows.map((r) => (
-                  <WorkRow
-                    key={r.task.id}
-                    on={kept.has(r.task.id)}
-                    onToggle={() => toggle(r.task.id)}
-                    color={domainById(data, r.task.domainId)?.color}
-                    title={r.task.title}
-                    mins={r.task.durationMins}
-                    onMins={(m) => updateTask(r.task.id, { durationMins: m })}
-                    reason={r.reason}
-                    badge={workBadge(r.kind, r.task)}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+      <div className="border-t border-line">
+        {pushes.map(({ project }) => (
+          <ProjectRow
+            key={project.id}
+            project={project}
+            data={data}
+            rows={byProject.get(project.id) ?? []}
+            kept={kept}
+            setKept={setKept}
+            open={open === project.id}
+            onToggleOpen={() => setOpen((cur) => (cur === project.id ? null : project.id))}
+            onOpenRecord={() => openRecord("project", project.id)}
+            onRemove={() => takeOff(project)}
+          />
+        ))}
       </div>
 
       {unassigned.length > 0 && (
-        <div className="mt-3 space-y-1 border-t border-line pt-2">
+        <div className="mt-4">
           <div className="section-label mb-1">Project work with no week set</div>
-          {unassigned.map((r) => (
-            <WorkRow
-              key={r.task.id}
-              on={kept.has(r.task.id)}
-              onToggle={() => toggle(r.task.id)}
-              color={domainById(data, r.task.domainId)?.color}
-              title={r.task.title}
-              mins={r.task.durationMins}
-              onMins={(m) => updateTask(r.task.id, { durationMins: m })}
-              reason={r.reason}
-              badge={workBadge(r.kind, r.task)}
-            />
-          ))}
+          <WorkList rows={unassigned} data={data} kept={kept} setKept={setKept} />
         </div>
       )}
+
+      <OnDeckChips data={data} weekStartISO={weekStartISO} onBringIn={bringIn} />
     </section>
+  );
+}
+
+/** One project on the week. Collapsed it says the four things you decide on:
+ *  whose world it's in (the dot), what it is, what it's asking of the week, and —
+ *  only when there IS one — what's missing. "Ready to slot" on every row was five
+ *  identical words carrying no information, so readiness is now a silence. */
+function ProjectRow({
+  project,
+  data,
+  rows,
+  kept,
+  setKept,
+  open,
+  onToggleOpen,
+  onOpenRecord,
+  onRemove,
+}: {
+  project: Project;
+  data: VerticalData;
+  rows: PullSuggestion[];
+  kept: Set<string>;
+  setKept: (next: Set<string>) => void;
+  open: boolean;
+  onToggleOpen: () => void;
+  onOpenRecord: () => void;
+  onRemove: () => void;
+}) {
+  const color = domainById(data, project.domainId)?.color ?? "var(--accent)";
+  const gaps = lensGaps(data, "project", project, new Date());
+  const ready = gaps.length === 0;
+  const on = rows.filter((r) => kept.has(r.task.id));
+  const mins = on.reduce((m, r) => m + plannedMinutes(r.task.durationMins, true), 0);
+  const allOn = rows.length > 0 && on.length === rows.length;
+
+  return (
+    <div className="group border-b border-line">
+      <div className="flex items-center gap-2.5 py-2">
+        <button
+          onClick={onToggleOpen}
+          disabled={rows.length === 0}
+          title={project.outcome?.trim() || "no outcome yet"}
+          aria-expanded={open}
+          className="fast flex min-w-0 flex-1 items-center gap-2.5 text-left disabled:cursor-default"
+        >
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={ready ? { background: color } : { border: "1.5px solid var(--line-strong)" }}
+            aria-hidden
+          />
+          <span className="min-w-0 flex-1 truncate text-caption text-ink">{project.name}</span>
+        </button>
+
+        {/* what it's asking of the week — or what's in the way of asking */}
+        <span
+          className="mono shrink-0 text-micro"
+          style={{ color: ready ? "var(--muted)" : "var(--signal)" }}
+        >
+          {!ready ? gaps.map((g) => g.label).join(" · ") : rows.length === 0 ? "no open work" : `${on.length}/${rows.length} · ${hrs(mins)}h`}
+        </span>
+
+        <button
+          onClick={onOpenRecord}
+          title={`Open ${project.name}`}
+          className="fast mono shrink-0 text-micro text-muted opacity-0 hover:text-accent group-hover:opacity-100"
+        >
+          open
+        </button>
+        <button
+          onClick={onRemove}
+          title="Take it off this week"
+          className="fast shrink-0 text-caption text-muted opacity-0 hover:text-signal group-hover:opacity-100"
+        >
+          ×
+        </button>
+      </div>
+
+      {open && rows.length > 0 && (
+        <div className="pb-2 pl-4">
+          <button
+            onClick={() => {
+              const next = new Set(kept);
+              rows.forEach((r) => (allOn ? next.delete(r.task.id) : next.add(r.task.id)));
+              setKept(next);
+            }}
+            className="fast mono mb-1 text-micro text-muted hover:text-accent"
+          >
+            {allOn ? "none" : "all"}
+          </button>
+          <WorkList rows={rows} data={data} kept={kept} setKept={setKept} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A pool of candidate work — the same row everywhere it appears. */
+function WorkList({
+  rows,
+  data,
+  kept,
+  setKept,
+}: {
+  rows: PullSuggestion[];
+  data: VerticalData;
+  kept: Set<string>;
+  setKept: (next: Set<string>) => void;
+}) {
+  const { updateTask } = useVertical();
+  const toggle = useToggle(kept, setKept);
+  return (
+    <div className="space-y-0.5">
+      {rows.map((r) => (
+        <WorkRow
+          key={r.task.id}
+          on={kept.has(r.task.id)}
+          onToggle={() => toggle(r.task.id)}
+          color={domainById(data, r.task.domainId)?.color}
+          title={r.task.title}
+          mins={r.task.durationMins}
+          onMins={(m) => updateTask(r.task.id, { durationMins: m })}
+          reason={r.reason}
+          badge={workBadge(r.kind, r.task)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** On deck — the candidates, one tap to bring in. Recognition, not recall. */
+function OnDeckChips({
+  data,
+  weekStartISO,
+  onBringIn,
+}: {
+  data: VerticalData;
+  weekStartISO: string;
+  onBringIn: (p: Project) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const onDeckIds = new Set(projectsOnDeck(data, weekStartISO).map((p) => p.id));
+  const openProjects = data.projects.filter(
+    (p) => p.status !== "complete" && p.status !== "cancelled" && !onDeckIds.has(p.id),
+  );
+  const needsWeek = openProjects.filter((p) => !p.targetDate);
+  const elsewhere = openProjects.filter((p) => p.targetDate);
+  if (needsWeek.length === 0 && elsewhere.length === 0) return null;
+
+  const chip = (p: Project, reason: string) => (
+    <button
+      key={p.id}
+      onClick={() => onBringIn(p)}
+      title={`Move "${p.name}" to this week — ${reason}`}
+      className="tap fast flex max-w-full items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-label hover:border-line-strong hover:bg-surface-2"
+    >
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ background: domainById(data, p.domainId)?.color ?? "var(--accent)" }}
+        aria-hidden
+      />
+      <span className="min-w-0 truncate text-ink">{p.name}</span>
+    </button>
+  );
+
+  return (
+    <div className="mt-5">
+      {/* the ＋ pill at the foot of the pool — the planner rail's standing shape */}
+      <div className="section-label mb-1.5">Bring one in</div>
+      <div className="flex flex-wrap gap-1.5">
+        {needsWeek.map((p) => chip(p, "needs a week"))}
+        {showAll && elsewhere.map((p) => chip(p, `sits on the week of ${format(parseDateISO(p.targetDate!), "MMM d")}`))}
+        {elsewhere.length > 0 && (
+          <button
+            onClick={() => setShowAll((s) => !s)}
+            className="tap fast rounded-full px-2 py-1 text-label text-muted hover:text-accent"
+          >
+            {showAll ? "less" : `＋ ${elsewhere.length} on other weeks`}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -826,52 +726,45 @@ function Leftovers({
 
   return (
     <section>
-      <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-head masthead">
-          Carried over, due, and quiet{" "}
-          <span className="mono text-meta font-normal text-muted">{suggestions.length}</span>
-        </h2>
-        <button onClick={() => setShowMore((m) => !m)} className="fast mono text-meta text-muted hover:text-ink">
-          {showMore ? "hide" : "＋ add more"}
-        </button>
-      </div>
-
       {suggestions.length === 0 && (
         <p className="py-1 text-caption text-muted">Nothing owed, nothing due.</p>
       )}
 
-      <div className="grid gap-x-10 md:grid-cols-2">
       {carried.length > 0 && (
-        <div className="mb-5">
-          <div className="mb-2">
-            <div className="section-label">
-              Carried over <span className="mono normal-case tracking-normal text-signal">{carried.length} · {hrs(carriedMins)}h</span>
-            </div>
-            <button
-              onClick={onBundleCarried}
-              disabled={bundling}
-              title="Group the kept carried work into a few named focus blocks, each sized to its tasks"
-              className="tap fast mt-2 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-caption text-accent hover:bg-accent-soft disabled:opacity-50"
-              style={{ background: "var(--accent-soft)" }}
-            >
-              {bundling ? "Grouping into blocks…" : "✦ Group into focus blocks"}
-            </button>
-            {bundleErr && <p className="mt-1 text-meta text-signal">{bundleErr}</p>}
+        <div className="mb-4">
+          <div className="section-label mb-1">
+            Carried over <span className="mono normal-case tracking-normal text-signal">{carried.length} · {hrs(carriedMins)}h</span>
           </div>
-          <div className="space-y-1">{carried.map(row)}</div>
+          <div className="space-y-0.5">{carried.map(row)}</div>
+          <button
+            onClick={onBundleCarried}
+            disabled={bundling}
+            title="Group the kept carried work into a few named focus blocks, each sized to its tasks"
+            className="tap fast mt-1.5 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-label text-accent hover:brightness-105 disabled:opacity-50"
+            style={{ background: "var(--accent-soft)" }}
+          >
+            {bundling ? "Grouping into blocks…" : "✦ Group into focus blocks"}
+          </button>
+          {bundleErr && <p className="mt-1 text-meta text-signal">{bundleErr}</p>}
         </div>
       )}
 
       {rest.length > 0 && (
         <div>
           <div className="section-label mb-1">Due, or going quiet <span className="mono normal-case tracking-normal text-muted">{rest.length}</span></div>
-          <div className="space-y-1">{rest.map(row)}</div>
+          <div className="space-y-0.5">{rest.map(row)}</div>
         </div>
       )}
-      </div>
+
+      <button
+        onClick={() => setShowMore((m) => !m)}
+        className="fast mono mt-3 text-meta text-muted hover:text-accent"
+      >
+        {showMore ? "hide" : "＋ add more"}
+      </button>
 
       {showMore && (
-        <div className="mt-2 max-h-[34vh] overflow-y-auto border-t border-line pt-2">
+        <div className="mt-1.5 border-t border-line pt-2">
           <div className="section-label mb-1">Inbox &amp; backlog ({more.length})</div>
           {more.length === 0 && <div className="px-2 py-3 text-center text-label text-muted">Nothing else waiting.</div>}
           {more.map((t) => (
@@ -1074,14 +967,16 @@ function Boundaries({
   );
 }
 
-// ── the commit bar — confidence read + the one required click ────────────────
+// ── the commit bar — the week in a line, and the one required click ──────────
+//
+// It used to carry its own capacity read ("11.8h planned vs your ~23.3h/wk
+// pace") while the header carried a different one ("19.2h of ~26.7h") — two
+// arithmetics for one week, on one screen, disagreeing. The capacity read now
+// lives once, on `CapacityMeter`, over the grid it measures.
 function CommitBar({
   goal,
   setGoal,
   lastGoal,
-  conf,
-  cal,
-  plannedMins,
   keptCount,
   applying,
   onCommit,
@@ -1089,16 +984,13 @@ function CommitBar({
   goal: string;
   setGoal: (g: string) => void;
   lastGoal: string;
-  conf: ReturnType<typeof confidence>;
-  cal: ReturnType<typeof calibrate>;
-  plannedMins: number;
   keptCount: number;
   applying: boolean;
   onCommit: () => void;
 }) {
   return (
-    <footer className="shrink-0 border-t border-line px-8 py-3">
-      <div className="mx-auto flex max-w-[1080px] items-center gap-4">
+    <footer className="shrink-0 border-t border-line px-6 py-3">
+      <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
           <input
             value={goal}
@@ -1106,17 +998,8 @@ function CommitBar({
             placeholder={lastGoal ? `Last week: "${lastGoal}" — name this one` : "One line — what does a good week look like?"}
             className="w-full bg-transparent text-head font-medium outline-none placeholder:text-muted/60"
           />
-          <div className="mono mt-0.5 text-meta text-muted">
-            {conf && cal ? (
-              <span style={{ color: conf.label === "stretch" ? "var(--signal)" : "var(--accent)" }}>
-                {conf.pct}% · {conf.label} — {hrs(plannedMins)}h planned vs your ~{hrs(cal.avgWeeklyDoneMins)}h/wk pace
-                {conf.deltaMins > 30 && ` · trim ~${hrs(conf.deltaMins)}h`}
-              </span>
-            ) : (
-              <span>{keptCount} committed · a confidence read arrives after a week or two of history</span>
-            )}
-          </div>
         </div>
+        <span className="mono shrink-0 text-meta text-muted">{keptCount} committed</span>
         <Btn kind="primary" onClick={onCommit} disabled={applying} className="shrink-0 px-4 py-2">
           {applying ? "committing…" : "Commit the week →"}
         </Btn>

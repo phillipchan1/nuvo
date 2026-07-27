@@ -48,14 +48,14 @@ been used to argue against things it doesn't forbid.
 | **Backlog** | Processed and **deliberately undated**. Project/initiative work lives here. Never on Today, never rolled. |
 | **The Week** | The gate. Committed work for this week (`sprint_id`). |
 | **The week's projects** | The projects committed to *this* week — the week's Priorities, derived from each project's On Deck span (`weekPushes`), never a stored list. Bringing a project in / taking it off IS the week's plan. Called *the slate* in code and specs (`weekSlate`); the UI says **Projects** (D-034). |
-| **Leftovers** | Step 2 of Plan the week: everything already owed before anything new — work that **carried over** (`roll_count > 0`), work **due** inside the week, and one small task from each domain that's gone **quiet**. A step, not a pool; the lane rule is `laneOf` in `src/lib/intake.ts`. |
+| **Leftovers** | The second source in Plan the week: everything already owed before anything new — work that **carried over** (`roll_count > 0`), work **due** inside the week, and one small task from each domain that's gone **quiet**. A step, not a pool; the lane rule is `laneOf` in `src/lib/intake.ts`. |
 | **Today / the Day** | `do_date` set; optionally blocked. |
 
 ## The ceremonies (flows)
 
 | Name | Cadence | Output |
 |---|---|---|
-| **Sunday** | weekly, forward | A composed, accepted week. Both shells now run the identical four steps — **Projects → Leftovers → Inbox → The week** (D-034) — over one composer (`useWeekDraft`) and one funnel header (`WeekIntakeBar`). Steps, not gates: every step is one click away at any time and the week is pre-composed on open. ⚠️ **The UI calls this flow "Plan the week" on both shells; "Sunday" now survives only in these docs and in code (`SundayRitual`, `openFlow("sunday")`).** Renaming the ceremony is a canon call nobody has made — flagged, not taken. |
+| **Sunday** | weekly, forward | A composed, accepted week. Both shells run the same three sources — **Projects · Leftovers · Inbox** (D-034) — over one composer (`useWeekDraft`). On the desktop it is **one screen**: the sources take turns in the planner rail while the week grid holds the right half permanently, so a keep or a drop re-shapes the week beside your cursor (D-035). The phone keeps a fourth step for the day-by-day read and carries the same live consequence in `CapacityMeter`. A switch, not gates: every source is one click away and the week is pre-composed on open. ⚠️ **The UI calls this flow "Plan the week" on both shells; "Sunday" now survives only in these docs and in code (`SundayRitual`, `openFlow("sunday")`).** Renaming the ceremony is a canon call nobody has made — flagged, not taken. |
 | **the Review** | weekly, backward | The closing valve. Evidence receipts, one scored **Find**, Keep, Note to Monday, a sealed `week_reviews` snapshot. [`weekly-review.md`](../weekly-review.md) |
 | **Sunrise** | daily, morning | The day's plan; pulls from the Week pool, surfaces prepared tasks. |
 | **Sundown** | daily, evening | Leads with the day's gain; "back to week" for leftovers. |
@@ -72,7 +72,7 @@ been used to argue against things it doesn't forbid.
 
 | Term | Definition |
 |---|---|
-| **The intake** | The three sources a week's load comes from — Projects · Leftovers · Inbox — and the capacity track they pour into. Drawn by `WeekIntakeBar`, computed by `readIntake` (`src/lib/intake.ts`). **Load** = the immovable calendar + every kept piece, measured against Calibration's proven pace. |
+| **The intake** | The three sources a week's load comes from — Projects · Leftovers · Inbox — and the capacity they pour into. Switched by `SourceSwitch` (in the rail), measured by `CapacityMeter` (over the week grid), computed by `readIntake` (`src/lib/intake.ts`). **Load** = the immovable calendar + every kept piece, measured against Calibration's proven pace — **the flow's only capacity arithmetic** (D-035). |
 | **Gain** | What moved — framed forward from where you were, not against an ideal. (Gap-and-Gain lineage.) The Review and Sundown both lead with it. |
 | **Readiness** | The ambient, always-on gauge of where the funnel needs you. A *thermometer* — reports, never commands. [`readiness-model.md`](../readiness-model.md) |
 | **Demand** | Σ required weekly pace across in-flight projects. |
