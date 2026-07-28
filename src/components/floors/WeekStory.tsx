@@ -161,7 +161,14 @@ export default function WeekStory({ report, state, weekLabel, onClose, onSeeDeta
   const carry = report.carryForward.length;
 
   return (
-    <div className="absolute inset-0 z-30 overflow-hidden" style={{ background: "color-mix(in srgb, var(--bg) 92%, transparent)", backdropFilter: "blur(24px)" }}>
+    <div
+      className="absolute inset-0 z-30 overflow-hidden"
+      style={{
+        background: "color-mix(in srgb, var(--bg) 96%, transparent)",
+        backdropFilter: "blur(24px)",
+        WebkitBackdropFilter: "blur(24px)",
+      }}
+    >
       {/* tap zones — left third back, right two-thirds forward (Wrapped pattern) */}
       <button className="absolute inset-y-0 left-0 z-0 w-1/3 cursor-default" onClick={() => go(-1)} aria-label="Previous" />
       <button className="absolute inset-y-0 right-0 z-0 w-2/3 cursor-default" onClick={() => go(1)} aria-label="Next" />

@@ -643,7 +643,16 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
   );
 
   return (
-    <div className="absolute inset-0 z-[45] overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)", backdropFilter: "blur(20px)" }}>
+    <div
+      className="absolute inset-0 z-[45] overflow-y-auto"
+      style={{
+        // Match mobile WeekPlanCard / MobilePlanWeek (96%) — 88% left the
+        // Schedule calendar readable through the surface and washed the copy out.
+        background: "color-mix(in srgb, var(--bg) 96%, transparent)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+      }}
+    >
       <div className="mx-auto w-full max-w-5xl px-8 py-10 pb-28 md:px-12">
         <WeekPlanBody report={report} state={state} tense={tense} viewedWeekISO={viewedWeekISO} header={header} onCompose={onCompose} composeLabel={composeLabel} />
       </div>

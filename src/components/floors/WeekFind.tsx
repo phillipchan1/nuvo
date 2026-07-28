@@ -191,7 +191,7 @@ export function WeekFindCard({
   return (
     <section data-marquee="find" className="mb-2">
       <div className="section-label mb-3">The Find</div>
-      <div className="rounded-xl border border-line px-4 py-4" style={{ background: "color-mix(in srgb, var(--surface) 55%, transparent)" }}>
+      <div className="rounded-xl border border-line px-4 py-4" style={{ background: "color-mix(in srgb, var(--surface) 88%, transparent)" }}>
         <p className="serif text-lead leading-relaxed text-ink">{headline}</p>
         <p className="mt-2 text-meta leading-relaxed text-muted">{detail}</p>
 
