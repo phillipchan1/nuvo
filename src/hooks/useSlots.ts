@@ -18,6 +18,9 @@ export function useSlots(rangeStartISO: string, rangeEndISO: string) {
       if (error) throw error;
       return data as Slot[];
     },
+    // Keep the previous range's slots on screen while a new range fetches —
+    // without this the calendar goes empty for the whole round-trip.
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -124,26 +127,40 @@ export function useSlotMutations() {
       if (error) throw error;
       // Children ride the slot's day — keep their do_date in lockstep so the
       // week board / readiness don't treat slotted work as "needs a day".
+      // Fire-and-forget: the UI already moved them in onMutate, and awaiting
+      // this (plus the Google mirror) was blanking the calendar for seconds.
       if (patch.do_date !== undefined) {
-        const { error: childErr } = await supabase
+        void supabase
           .from("tasks")
           .update({ do_date: patch.do_date })
-          .eq("slot_id", id);
-        if (childErr) throw childErr;
+          .eq("slot_id", id)
+          .then(({ error: childErr }) => {
+            if (childErr) console.warn("[nuvo] slot child do_date sync failed:", childErr.message);
+          });
       }
       return { id, patch };
     },
     onMutate: async ({ id, patch }) => {
-      await qc.cancelQueries({ queryKey: ["slots"] });
-      await qc.cancelQueries({ queryKey: ["tasks"] });
+      // Paint FIRST — any await before the cache write leaves FullCalendar
+      // reconciling against stale props, and the event vanishes until a slow
+      // refetch lands. Snapshot for rollback, then cancel in-flight refetches
+      // so they can't overwrite the optimistic times, then re-apply.
       const snapshot = qc.getQueriesData<Slot[]>({ queryKey: ["slots"] });
       const taskSnapshot = qc.getQueriesData<Task[]>({ queryKey: ["tasks"] });
-      patchSlotCaches(qc, id, patch);
-      if (patch.do_date !== undefined) {
-        qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-          old?.map((t) => (t.slot_id === id ? { ...t, do_date: patch.do_date! } : t)),
-        );
-      }
+      const paint = () => {
+        patchSlotCaches(qc, id, patch);
+        if (patch.do_date !== undefined) {
+          qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+            old?.map((t) => (t.slot_id === id ? { ...t, do_date: patch.do_date! } : t)),
+          );
+        }
+      };
+      paint();
+      await Promise.all([
+        qc.cancelQueries({ queryKey: ["slots"] }),
+        qc.cancelQueries({ queryKey: ["tasks"] }),
+      ]);
+      paint();
       return { snapshot, taskSnapshot };
     },
     onSuccess: ({ id }) => invokeQuiet("slot-mirror", { slotId: id }),
@@ -155,9 +172,15 @@ export function useSlotMutations() {
         for (const [key, data] of ctx.taskSnapshot) qc.setQueryData(key, data);
       }
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["slots"] });
-      qc.invalidateQueries({ queryKey: ["tasks"] });
+    onSettled: (_data, _err, vars) => {
+      // Do NOT invalidate slots here. The optimistic patch is the truth the
+      // user just dragged to; a refetch (often multi-second to Supabase, and
+      // echoed again by realtime from our own write) was clearing the event
+      // off the grid until it returned. Realtime still refreshes google_event_id
+      // / cross-tab edits. Tasks only when the day actually moved.
+      if (vars.patch.do_date !== undefined) {
+        qc.invalidateQueries({ queryKey: ["tasks"] });
+      }
     },
   });
 
@@ -172,6 +195,22 @@ export function useSlotMutations() {
       });
       const { error } = await supabase.from("slots").delete().eq("id", slot.id);
       if (error) throw error;
+    },
+    onMutate: async (slot) => {
+      const snapshot = qc.getQueriesData<Slot[]>({ queryKey: ["slots"] });
+      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+        old?.filter((s) => s.id !== slot.id),
+      );
+      await qc.cancelQueries({ queryKey: ["slots"] });
+      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+        old?.filter((s) => s.id !== slot.id),
+      );
+      return { snapshot };
+    },
+    onError: (_err, _slot, ctx) => {
+      if (ctx?.snapshot) {
+        for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
+      }
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["slots"] });

@@ -74,6 +74,7 @@ export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: strin
         .from("tasks")
         .select(TASK_COLS)
         .is("start_time", null)
+        .is("slot_id", null) // slot children ride their slot, not the anytime row
         .not("do_date", "is", null)
         .in("status", ["planned"])
         .gte("do_date", startDate)
@@ -122,11 +123,93 @@ export function useSprintTasks(sprintId: string | null) {
   });
 }
 
-/** Patch a task in every cached task list (optimistic update). */
+/**
+ * Patch a task across every cached task list. Filtered lists (inbox / day /
+ * anytime / slot / scheduled) are membership-sensitive: a naive `.map` leaves
+ * ghosts when a task *leaves* a list (e.g. assignToSlot stamps `slot_id` but
+ * the day query still holds the row), and the rail then concatenates that
+ * ghost with the slot-children fetch → duplicate rows. Drop or insert so each
+ * cache matches what its queryFn would return.
+ */
 function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
-  qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-    old?.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-  );
+  // Resolve the post-patch row from any cache that already has it — needed when
+  // inserting into a list the task is newly joining (slot children, etc.).
+  let resolved: Task | null = null;
+  for (const [, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+    const hit = data?.find((t) => t.id === id);
+    if (hit) {
+      resolved = { ...hit, ...patch };
+      break;
+    }
+  }
+
+  for (const [key, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+    if (!data) continue;
+    const existing = data.find((t) => t.id === id);
+    const next = existing ? { ...existing, ...patch } : resolved;
+    const kind = key[1];
+
+    let updated: Task[] | undefined;
+    if (kind === "inbox") {
+      const belongs = next != null && next.status === "inbox";
+      if (!belongs) updated = data.filter((t) => t.id !== id);
+      else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+    } else if (kind === "day") {
+      const dateISO = key[2] as string;
+      const belongs =
+        next != null &&
+        !next.slot_id &&
+        next.do_date === dateISO &&
+        (next.status === "planned" || next.status === "done");
+      if (!belongs) updated = data.filter((t) => t.id !== id);
+      else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+    } else if (kind === "anytime") {
+      const startDate = key[2] as string;
+      const endDate = key[3] as string;
+      const belongs =
+        next != null &&
+        !next.start_time &&
+        !next.slot_id &&
+        next.do_date != null &&
+        next.status === "planned" &&
+        next.do_date >= startDate &&
+        next.do_date < endDate;
+      if (!belongs) updated = data.filter((t) => t.id !== id);
+      else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+    } else if (kind === "scheduled") {
+      const rangeStart = key[2] as string;
+      const rangeEnd = key[3] as string;
+      const belongs =
+        next != null &&
+        next.start_time != null &&
+        (next.status === "planned" || next.status === "done") &&
+        next.start_time >= rangeStart &&
+        next.start_time < rangeEnd;
+      if (!belongs) updated = data.filter((t) => t.id !== id);
+      else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+    } else if (kind === "slot") {
+      const slotIds = key[2] as string[];
+      const belongs =
+        next != null &&
+        next.slot_id != null &&
+        slotIds.includes(next.slot_id) &&
+        next.status !== "trashed";
+      if (!belongs) {
+        updated = data.filter((t) => t.id !== id);
+      } else if (existing) {
+        updated = data.map((t) => (t.id === id ? next! : t));
+      } else if (next) {
+        // Entering a slot: the day/anytime caches drop it; insert here so the
+        // rail doesn't flash empty while the slot query refetches.
+        updated = [...data, next];
+      }
+    } else {
+      // "all" / "sprint" / "record" — same pool, just patch in place.
+      if (existing) updated = data.map((t) => (t.id === id ? { ...t, ...patch } : t));
+    }
+
+    if (updated) qc.setQueryData(key, updated);
+  }
 }
 
 function invalidateTasks(qc: QueryClient) {

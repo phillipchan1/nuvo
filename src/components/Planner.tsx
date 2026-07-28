@@ -73,9 +73,11 @@ export default function Planner({
   const { agent, navFocus, setRange: setAgentRange } = useAgentContext();
   const syncRange = useCallback(
     (start: string, end: string) => {
-      const next = { start, end };
-      setRangeLocal(next);
-      setAgentRange(next);
+      // Bail when the view's range didn't actually change — datesSet can re-fire
+      // after event drag/resize, and a fresh `{start,end}` object would re-render
+      // the whole planner for nothing.
+      setRangeLocal((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+      setAgentRange({ start, end });
     },
     [setAgentRange],
   );
@@ -268,14 +270,27 @@ export default function Planner({
   // Today's slot children augmented with their slot's start_time so they appear
   // in the "Scheduled on Calendar" section of the Today rail (slot children have
   // start_time null in the DB — the slot carries the time, not the task).
+  // Dedupe by id and prefer the slot-augmented copy: an optimistic assignToSlot
+  // used to leave the day-query row in place (with slot_id stamped) *and* add
+  // it via slotChildren, so the same task rendered twice.
   const todayTasksForRail = useMemo(() => {
     const todaySlotMap = new Map(
       slots.filter((s) => s.do_date === today).map((s) => [s.id, s]),
     );
-    const slotChildren = slotChildTasks
-      .filter((t) => t.slot_id != null && todaySlotMap.has(t.slot_id!) && t.status !== "trashed")
-      .map((t) => ({ ...t, start_time: todaySlotMap.get(t.slot_id!)!.start_time }));
-    return [...todayTasks, ...slotChildren];
+    const seen = new Set<string>();
+    const out: Task[] = [];
+    for (const t of slotChildTasks) {
+      if (!t.slot_id || !todaySlotMap.has(t.slot_id) || t.status === "trashed") continue;
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      out.push({ ...t, start_time: todaySlotMap.get(t.slot_id)!.start_time });
+    }
+    for (const t of todayTasks) {
+      if (t.slot_id || seen.has(t.id)) continue;
+      seen.add(t.id);
+      out.push(t);
+    }
+    return out;
   }, [todayTasks, slotChildTasks, slots, today]);
 
   const slotTitle = useCallback(
