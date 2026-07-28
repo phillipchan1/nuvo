@@ -56,7 +56,8 @@ against all of it.
 ## Design language — Notion (as of 2026-07-28)
 
 **The language is Notion's, adopted literally — read `docs/design-system.md` before
-building any new surface.** It carries the token provenance (what's verified vs derived),
+building any new surface, and `docs/design-system-next.md` if you're continuing the
+migration (what's done, what's next, in what order).** It carries the token provenance (what's verified vs derived),
 the **ratified 7-step 4px spacing scale** (`p-s3`, `gap-s2` — use these, not `gap-1.5`),
 the net-new **time vocabulary** Notion lacks (`--now`, `--slot`, `--busy`, `--span`), the
 **four layers**, and the intake pipeline. Decisions D-025 / D-026 in

@@ -13,7 +13,9 @@ rest are unavailable; you cannot reach that state by trying harder across 126 co
 because a thousand judgment calls drift no matter who makes them. This document is the
 constraint, plus the one place Notion had nothing to offer and we had to extend it.
 
-Siblings: the build conventions in [`CLAUDE.md`](../CLAUDE.md) · the retired grammar in
+Siblings: **the working plan in [`design-system-next.md`](./design-system-next.md)** (what's
+done, what's next, in what order — start there if you're picking this up) · the build
+conventions in [`CLAUDE.md`](../CLAUDE.md) · the retired grammar in
 [`design-language.md`](./design-language.md) · the docs contract in
 [`docs/CLAUDE.md`](./CLAUDE.md).
 
