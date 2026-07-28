@@ -1,4 +1,9 @@
 import { admin } from "../_shared/admin.ts";
+import {
+  buildWritableCalendars,
+  offerableCalendars,
+  type RawCalendarAccount,
+} from "./calendars.ts";
 // The week's rules — derived here from the same kernel the app derives them
 // from, so "what is on this week" cannot mean two things. Never re-implement
 // one of these locally; tests/planning-kernel.test.ts fails if you do.
@@ -106,13 +111,16 @@ export interface AgentContext {
   /** Tasks committed to this week's sprint and not yet done. */
   weekPool: unknown[];
   events: unknown[];
-  /** Writable calendars the agent can create on or move events to (Google + iCloud). */
+  /** Writable calendars the agent may create on or move events to (Google +
+   *  iCloud), excluding any the user has hidden from their board. Exactly one
+   *  carries `isDefault` — that's where anything unnamed goes. */
   writableCalendars: {
     accountId: string;
     provider: string;
     accountEmail: string;
     calendarId: string;
     name: string;
+    isDefault?: true;
   }[];
   labels: { id: string; name: string }[];
   /** Life structure — use ids from here when creating/updating vertical entities. */
@@ -210,15 +218,6 @@ function fmtEvent(
     past: end != null ? end <= now : false,
     ongoing: start != null && end != null ? start <= now && now < end : false,
   };
-}
-
-/** Google holiday / subscription feeds — readable but not writable. */
-function isReadOnlyCalendarId(id: string): boolean {
-  return (
-    id.includes("@import.calendar.google.com") ||
-    id.includes("#holiday@") ||
-    id.includes("@group.v.calendar.google.com")
-  );
 }
 
 function buildTodaySchedule(
@@ -378,7 +377,9 @@ export async function buildContext(
     admin.from("labels").select("id, name").eq("user_id", userId).order("name"),
     admin
       .from("user_settings")
-      .select("day_start_hour, day_end_hour, hidden_calendar_ids, hidden_events")
+      .select(
+        "day_start_hour, day_end_hour, hidden_calendar_ids, hidden_events, default_calendar_account_id",
+      )
       .eq("user_id", userId)
       .maybeSingle(),
     admin.from("domains").select("id, name, intention, charter, context, icon, color, weekly_target_hours").eq("user_id", userId).order("sort_order"),
@@ -483,15 +484,7 @@ export async function buildContext(
 
   // Calendar name / provider lookup for events + the writable target list for
   // create/move tools ("put it on Apple Family").
-  type CalRow = { id: string; summary: string; color: string | null; visible: boolean };
-  type AccountRow = {
-    id: string;
-    provider: string;
-    email: string;
-    sync_direction: string;
-    calendars: CalRow[] | null;
-  };
-  const accounts = (accountsRes.data ?? []) as AccountRow[];
+  const accounts = (accountsRes.data ?? []) as RawCalendarAccount[];
   const calLookup = new Map<string, { name: string; provider: string }>();
   for (const a of accounts) {
     for (const c of a.calendars ?? []) {
@@ -500,19 +493,16 @@ export async function buildContext(
       if (!calLookup.has(c.id)) calLookup.set(c.id, { name: c.summary, provider: a.provider });
     }
   }
-  const writableCalendars = accounts
-    .filter((a) => a.sync_direction === "two_way" && (a.provider === "google" || a.provider === "icloud"))
-    .flatMap((a) =>
-      (a.calendars ?? [])
-        .filter((c) => !isReadOnlyCalendarId(c.id))
-        .map((c) => ({
-          accountId: a.id,
-          provider: a.provider,
-          accountEmail: a.email,
-          calendarId: c.id,
-          name: c.summary,
-        })),
-    );
+  // Only the calendars the user actually keeps on their board, with the default
+  // marked. A hidden calendar is deliberately absent: the model can't offer what
+  // it can't see, and naming one still works (see agent/calendars.ts).
+  const writableCalendars = offerableCalendars(
+    buildWritableCalendars(
+      accounts,
+      [...hiddenCalendars],
+      (settingsRes.data?.default_calendar_account_id as string | null) ?? null,
+    ),
+  );
 
   const inbox = (inboxRes.data ?? []).map((t) => fmtTask(t, today, nowMs, tz));
   const todayTasks = (todayRes.data ?? [])

@@ -846,6 +846,95 @@ a fixture harness in both orders (weekday header, date alignment, the 5-vs-6
 row case, no horizontal overflow). **Not yet driven in a real account** (no
 credentials in this build environment).*
 
+**D-046 · 2026-07-28 · Inviting a guest is outbound mail, so the app asks first
+— and "contacts" means a real address book, not whoever turned up in a meeting.**
+
+**Nothing emails a human without saying so.** Creating an event with guests sent
+Google `sendUpdates=all` behind a button labelled *"Create"* — the chip UI read
+like tagging and the action was mail to real people. The last step now names the
+recipients and offers *Add without emailing*; adding a guest later offers *Email
+invite* or *Add quietly*. The mirror bug was worse and silent: **delete** passed
+`sendUpdates=none`, so cancelling a meeting you host removed it from every
+guest's calendar with no explanation. Cancelling now defaults to notifying when
+you are the organizer and there are guests, and says which it will do. The
+notification is a caller decision (`notifyGuests`) end to end — never a constant
+buried in an edge function.
+
+**Contacts come from address books.** The picker searched only attendees of
+synced events, so anyone emailed-but-never-met was invisible. We took Google's
+`contacts.readonly` **and** `contacts.other.readonly` — the second is where
+auto-recorded correspondents live, and without it the common case stays broken —
+plus Apple contacts over CardDAV, which needs no new credential because the
+app-specific password already in Vault reaches `contacts.icloud.com`. Both are
+*sensitive* scopes: one consent-screen resubmission, and connected accounts must
+re-consent. Taken now deliberately, while verification is still in Testing and
+the blast radius is one account. M365 was declined — not used here.
+
+**Sources are labelled, not blended.** A merged list that won't say where a
+name came from asks you to trust it blindly, so each row names its origin
+(*Google · Apple · Met before*) and a person in two books collapses to one row
+carrying both.
+→ **The bug underneath it all:** fuzzy matching scored the whole address, and
+`word_similarity` matches the best *substring* — so `@gmail.com` alone cleared
+the old 0.15 floor and every gmail contact matched every gmail address typed,
+ranked by how often you met them. Typing a stranger's address suggested your most
+frequent correspondent. Verified live: one address returned **20 unrelated gmail
+contacts**. Matching is now local-part to local-part, and a complete address the
+user typed always leads the list and is the default selection.
+*Status: standing — typechecked, 64 tests green (13 new vCard/CardDAV parse
+tests), edge functions parse, built, and driven in a real account: the exact
+address commits instead of the fuzzy stranger, and the confirm step was reached
+without sending. **Not yet deployed** — migration 47, four edge functions, and
+the Google consent screen are pending.*
+
+**D-047 · 2026-07-28 · A hidden calendar is never offered and never chosen —
+only named. Unnamed always means the default, and the agent never infers a
+calendar from what an event is about.**
+
+Asked to add *"Call with Tiffany Souers"*, the agent put it on a **Women's**
+calendar hidden from the board months earlier. Three gaps made that a legal
+answer, none of which a typecheck could see:
+
+- **The write list didn't respect hiding.** `agent/context.ts` filtered the
+  *events* feed by `hidden_calendar_ids` and left the **write-target** list
+  unfiltered ten lines later — so all twelve hidden Frontier calendars (Women's,
+  Men's, Youth, Sozo, Sunday Service) sat in the model's context as equal peers.
+- **There was no default.** `default_calendar_account_id` existed, was honored by
+  `google-events` only when no account was passed, and was never read by the
+  agent at all. The fallback was `writable.find(provider === "google")` — first
+  row in arbitrary DB order.
+- **Nothing forbade topical inference.** The prompt required *naming* the
+  calendar in the confirmation but never said how to *choose* one. Given topical
+  names and a person's name, the model matched on subject.
+
+**The rule: hidden means never offered, still nameable.** Hiding a calendar is a
+stated intent, so nothing unprompted may land there — but *"put it on Women's"*
+still resolves, because naming it is the user deciding (Principle 3: Nuvo
+proposes, you promote). One shared module (`agent/calendars.ts`) now answers
+"where may this go" for both the context builder and the tools, so the two can't
+drift; the offerable list excludes hidden calendars and marks exactly one
+`isDefault`, and the tools' resolver keeps the full list so an explicit name
+still lands. **A named destination outranks the stored default** — the recovery
+turn failed the same way, resolving *"my phil@frontierchurch account"* against
+the setting instead of the words, so account emails now resolve too.
+
+**The calendar is a control on the record card, not a caption.** It's the fact
+most likely to be wrong, so reading it and fixing it are the same gesture: the
+chip on the agent's event card opens the account/calendar picker and moves the
+event. It offers only calendars still on the board — the same rule the agent
+follows — so the fix can't put the event back out of sight.
+→ This is a **Principle 16** failure as much as a bug: in the builder's account
+the first Google row is benign, so nothing looked wrong until the row order
+happened to put a topical calendar first.
+*Status: standing — typechecked, 74 tests green (10 new, pinning the rule that
+would have caught it), built, and the card's picker driven in the real dev app at
+desktop and 375px: the twelve hidden calendars are absent, the event's own hidden
+calendar is retained with a ✓ so the card still tells the truth. **Deployed
+2026-07-28** and verified live against the deployed agent, read-only: asked what
+it can write to, it named exactly the four calendars still on the board —
+`phil@frontierchurch.us`, ROSE VILLA EVENTS, `phillipchan1@gmail.com` (default),
+Family — out of 21 writable rows, with the other seventeen hidden and absent.*
+
 ---
 
 ## 2 · Things we decided **not** to do

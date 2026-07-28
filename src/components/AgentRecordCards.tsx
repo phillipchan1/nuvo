@@ -9,13 +9,16 @@
 //
 // Everything degrades: an action with no ref (a Google write, a pure query)
 // falls back to the summary line it always was.
-import { useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAgentUndo, useEventRecord, useTaskRecord } from "../hooks/useAgentRecords";
-import { useCalendarAccounts } from "../hooks/useCalendar";
+import { useCalendarAccounts, useExternalEventMutations } from "../hooks/useCalendar";
+import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
+import { isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
 import { fmtDayLabel, fmtDuration, fmtTime } from "../lib/dates";
 import type { AgentAction, AgentVerb } from "../lib/agentTypes";
-import type { Task } from "../lib/types";
+import type { ExternalEvent, Task } from "../lib/types";
 
 const VERB_LABEL: Record<AgentVerb, string> = {
   created: "Added",
@@ -37,6 +40,10 @@ const FOLDED_ROWS = 3;
 /** A card floats on its own; a row rides inside a stack, where the stack owns
  *  the framing and the undo — so the row is just the record, one line. */
 type Variant = "card" | "row";
+
+/** A chip is a fact, unless the fact is worth acting on — then it's a control
+ *  that renders in the same pill. Keyed explicitly since a node has no text. */
+type Chip = string | null | undefined | { key: string; node: React.ReactNode };
 
 export default function AgentActions({ actions }: { actions: AgentAction[] }) {
   if (!actions.length) return null;
@@ -139,12 +146,141 @@ function EventRecord({ action, variant }: { action: AgentAction; variant: Varian
       chips={[
         fmtDayLabel(localDateISO(event.start_at)),
         event.all_day ? "All day" : `${fmtTime(event.start_at)} · ${fmtDuration(mins)}`,
-        calName,
+        // The calendar is where this went — the one fact most likely to be
+        // wrong, so it's a control, not a caption. Reading it and fixing it are
+        // the same gesture. (Row variant keeps its plain label; a stack row has
+        // no room, and the card underneath it does.)
+        variant === "card"
+          ? { key: "calendar", node: <CalendarChip event={event} label={calName} /> }
+          : calName,
         event.location,
       ]}
     />
   );
 }
+
+/** Which calendar the event landed on — and one tap to put it somewhere else.
+ *  Only the calendars still on the user's board are offered: the same rule the
+ *  agent now follows, so the fix can't land the event back out of sight. */
+function CalendarChip({ event, label }: { event: ExternalEvent; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const { data: accounts } = useCalendarAccounts();
+  const { settings } = useSettings();
+  const { moveEventToCalendar } = useExternalEventMutations();
+
+  // The card is glass, and backdrop-filter makes it a stacking context — a menu
+  // nested inside it can't rise above the chat's later siblings no matter its
+  // z-index. So it renders to the body, like every other popover in the app.
+  const place = useCallback(() => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return;
+    setAt({
+      top: Math.min(r.bottom + 4, window.innerHeight - 240),
+      left: Math.min(r.left, window.innerWidth - 200),
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) place();
+  }, [open, place]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!btn.current?.contains(t) && !menu.current?.contains(t)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", place);
+    // The chat scrolls under a fixed menu — follow it rather than drift off it.
+    window.addEventListener("scroll", place, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, place]);
+
+  const hidden = new Set(settings?.hidden_calendar_ids ?? []);
+  const groups = writableCalendarTargets(accounts ?? [], event.calendar_id)
+    .map((g) => ({
+      ...g,
+      calendars: g.calendars.filter((c) => !hidden.has(c.id) || c.id === event.calendar_id),
+    }))
+    .filter((g) => g.calendars.length > 0);
+  const count = groups.reduce((n, g) => n + g.calendars.length, 0);
+  const writable = isWritableAccount(accounts?.find((a) => a.id === event.account_id));
+
+  // Nowhere else to put it — the calendar is just a fact again.
+  if (!label || !writable || count < 2) {
+    return label ? <span className={CHIP}>{label}</span> : null;
+  }
+
+  return (
+    <>
+      <button
+        ref={btn}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={`fast tap ${CHIP} hover:border-accent hover:text-accent ${open ? "border-accent text-accent" : ""}`}
+      >
+        {label}
+        <span aria-hidden className="ml-1 opacity-60">▾</span>
+      </button>
+
+      {open && at && createPortal(
+        <div
+          ref={menu}
+          className="pop-in fixed z-[60] max-h-[230px] min-w-[190px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
+          style={{ top: at.top, left: at.left, boxShadow: "var(--shadow-3)" }}
+        >
+          {groups.map((g) => (
+            <div key={g.accountId}>
+              <div className="truncate px-3 pb-0.5 pt-1 text-micro uppercase tracking-wide text-muted/70">
+                {g.accountLabel} · {providerLabel(g.provider)}
+              </div>
+              {g.calendars.map((c) => {
+                const current = g.accountId === event.account_id && c.id === event.calendar_id;
+                return (
+                  <button
+                    key={`${g.accountId}:${c.id}`}
+                    onClick={() => {
+                      setOpen(false);
+                      if (current) return;
+                      moveEventToCalendar({
+                        id: event.id,
+                        targetAccountId: g.accountId,
+                        targetCalendarId: c.id,
+                      });
+                    }}
+                    className="fast tap flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption hover:bg-accent-soft"
+                  >
+                    <span
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: c.color ?? "var(--muted)" }}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{c.summary}</span>
+                    {current && <span className="shrink-0 text-accent">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+const CHIP =
+  "inline-flex items-center truncate rounded-full border border-line/70 px-2 py-0.5 text-micro text-muted";
 
 /** The calendar date an instant falls on, in the viewer's zone — the same zone
  *  `fmtTime` renders in, so the day chip and the time chip can't disagree. */
@@ -312,20 +448,22 @@ function Shell({
   variant: Variant;
   tint: string | null;
   title: string;
-  chips: (string | null | undefined)[];
+  chips: Chip[];
   verb: AgentVerb | undefined;
   done?: boolean;
 }) {
-  const live = chips.filter(Boolean) as string[];
+  const live = chips.filter(Boolean) as Exclude<Chip, null | undefined>[];
 
   if (variant === "row") {
+    // A row is one line of proof inside a stack — text only, no controls.
+    const first = live.find((c) => typeof c === "string") as string | undefined;
     return (
       <div className="flex items-center gap-2 py-1">
         <Dot color={tint} done={done} row />
         <span className={`min-w-0 flex-1 truncate text-caption ${done ? "text-muted line-through" : ""}`}>
           {title}
         </span>
-        {live[0] && <span className="shrink-0 text-micro text-muted">{live[0]}</span>}
+        {first && <span className="shrink-0 text-micro text-muted">{first}</span>}
       </div>
     );
   }
@@ -340,14 +478,15 @@ function Shell({
         <div className="min-w-0 flex-1">
           <div className={`text-body ${done ? "text-muted line-through" : ""}`}>{title}</div>
           <div className="mt-1 flex flex-wrap items-center gap-1">
-            {live.map((c) => (
-              <span
-                key={c}
-                className="truncate rounded-full border border-line/70 px-2 py-0.5 text-micro text-muted"
-              >
-                {c}
-              </span>
-            ))}
+            {live.map((c) =>
+              typeof c === "string" ? (
+                <span key={c} className={CHIP}>
+                  {c}
+                </span>
+              ) : (
+                <span key={c.key}>{c.node}</span>
+              ),
+            )}
           </div>
         </div>
         {verb && <span className="section-label shrink-0 text-micro text-muted">{VERB_LABEL[verb]}</span>}

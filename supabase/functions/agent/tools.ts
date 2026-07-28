@@ -1,5 +1,12 @@
 import { admin } from "../_shared/admin.ts";
 import { parseCapture } from "../_shared/nlp.ts";
+import {
+  accountPrimary,
+  buildWritableCalendars,
+  pickDefaultCalendar,
+  type RawCalendarAccount,
+  type WritableCal,
+} from "./calendars.ts";
 import { executeVerticalTool, isVerticalTool, VERTICAL_TOOL_DEFINITIONS } from "./verticalTools.ts";
 // The week's rules and the two placement ACTS — shared with the app, so the
 // agent's "bring it into the week" is byte-for-byte the UI's.
@@ -485,7 +492,7 @@ export const TOOL_DEFINITIONS = [
           calendar_name: {
             type: "string",
             description:
-              "Destination calendar display name from writableCalendars (e.g. 'Family', 'apple family calendar').",
+              "Destination the user named — a calendar from writableCalendars ('Family', 'apple family calendar') or an account ('phil@frontierchurch.com').",
           },
         },
         required: ["calendar_name"],
@@ -497,7 +504,7 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "create_calendar_event",
       description:
-        "Create a NEW calendar event (Google or Apple/iCloud). Only for first-time adds — NOT for 'put it on X calendar' when the event already exists (use move_event). Pass calendar_name to target a specific calendar; otherwise the default Google calendar. Always tell the user which calendar you used.",
+        "Create a NEW calendar event (Google or Apple/iCloud). Only for first-time adds — NOT for 'put it on X calendar' when the event already exists (use move_event). Pass calendar_name ONLY when the user named a calendar or account; otherwise omit it and the event goes to their default. NEVER infer a calendar from what the event is about or who it's with. Always tell the user which calendar you used.",
       parameters: {
         type: "object",
         properties: {
@@ -519,7 +526,7 @@ export const TOOL_DEFINITIONS = [
           calendar_name: {
             type: "string",
             description:
-              "Target calendar by display name from writableCalendars (e.g. 'Family', 'Apple Family', 'Work'). Match loosely — 'apple family' → Family on iCloud.",
+              "Only when the user NAMED where it goes. A calendar display name from writableCalendars ('Family', 'Apple Family', 'Work') or an account ('phil@frontierchurch.com', 'my gmail account'). Match loosely — 'apple family' → Family on iCloud. Omit entirely if they didn't say.",
           },
           location: { type: "string", description: "Optional location." },
         },
@@ -736,54 +743,83 @@ async function resolveEventId(
   throw new Error("Provide event_id or event_title");
 }
 
-interface WritableCal {
-  accountId: string;
-  provider: "google" | "icloud";
-  accountEmail: string;
-  calendarId: string;
-  name: string;
-}
-
-function isReadOnlyCalendarId(id: string): boolean {
-  return (
-    id.includes("@import.calendar.google.com") ||
-    id.includes("#holiday@") ||
-    id.includes("@group.v.calendar.google.com")
-  );
-}
-
 function eventsFnFor(provider: string): "google-events" | "icloud-events" {
   return provider === "icloud" ? "icloud-events" : "google-events";
 }
 
+/** Every writable calendar, hidden ones included and flagged. The hidden ones
+ *  are here so an explicitly named calendar still resolves — never so one can
+ *  be picked by default. See agent/calendars.ts. */
 async function loadWritableCalendars(userId: string): Promise<WritableCal[]> {
-  const { data } = await admin
-    .from("calendar_accounts")
-    .select("id, provider, email, sync_direction, calendars")
-    .eq("user_id", userId);
-  const out: WritableCal[] = [];
-  for (const a of data ?? []) {
-    if (a.sync_direction !== "two_way") continue;
-    if (a.provider !== "google" && a.provider !== "icloud") continue;
-    for (const c of (a.calendars as { id: string; summary: string }[] | null) ?? []) {
-      if (isReadOnlyCalendarId(c.id)) continue;
-      out.push({
-        accountId: a.id,
-        provider: a.provider,
-        accountEmail: a.email,
-        calendarId: c.id,
-        name: c.summary,
-      });
-    }
-  }
-  return out;
+  const [accountsRes, settingsRes] = await Promise.all([
+    admin
+      .from("calendar_accounts")
+      .select("id, provider, email, sync_direction, calendars")
+      .eq("user_id", userId),
+    admin
+      .from("user_settings")
+      .select("hidden_calendar_ids, default_calendar_account_id")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+  return buildWritableCalendars(
+    (accountsRes.data ?? []) as RawCalendarAccount[],
+    (settingsRes.data?.hidden_calendar_ids as string[] | null) ?? [],
+    (settingsRes.data?.default_calendar_account_id as string | null) ?? null,
+  );
 }
 
-/** Fuzzy-match a user phrase ("apple family calendar") to a writable calendar. */
+/** Match a phrase against connected ACCOUNTS ("phil@frontierchurch.com", "my
+ *  frontierchurch account", "gmail"), not calendar names. Returns that account's
+ *  primary calendar — or, if the phrase also names one of its calendars, that
+ *  one. Null when the phrase points at no account, or at more than one. */
+function resolveAccountRef(cals: WritableCal[], q: string): WritableCal | null {
+  const emails = [...new Set(cals.map((c) => c.accountEmail.toLowerCase()))];
+  const hit = emails.filter((e) => {
+    if (q.includes(e)) return true;
+    const [local, domain] = e.split("@");
+    const org = domain?.split(".")[0] ?? "";
+    // "frontierchurch" / "phillipchan1" — the part a person actually says out
+    // loud. Two chars is a false-positive machine, so require some length.
+    return (
+      (org.length >= 4 && new RegExp(`\\b${escapeRe(org)}\\b`).test(q)) ||
+      (local.length >= 4 && new RegExp(`\\b${escapeRe(local)}\\b`).test(q))
+    );
+  });
+  if (hit.length !== 1) return null;
+
+  const mine = cals.filter((c) => c.accountEmail.toLowerCase() === hit[0]);
+  // "the Family calendar on my iCloud account" — the account narrows it, the
+  // rest picks within it.
+  const residual = q.replace(hit[0], " ").replace(/\b(account|calendar|cal|my|on|the)\b/g, " ").trim();
+  if (residual) {
+    const named = mine.filter((c) => {
+      const n = c.name.toLowerCase();
+      return n === residual || n.includes(residual) || residual.includes(n);
+    });
+    if (named.length === 1) return named[0];
+  }
+  return accountPrimary(cals, mine[0].accountId) ?? null;
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Fuzzy-match a user phrase ("apple family calendar", "phil@frontierchurch.com")
+ *  to a writable calendar. Hidden calendars match here — naming one is the user
+ *  deciding, which is exactly when a hidden calendar is a legitimate target. */
 function resolveCalendarByName(cals: WritableCal[], query: string): WritableCal {
   const q = query.trim().toLowerCase();
   if (!q) throw new Error("calendar_name is required");
   if (!cals.length) throw new Error("No writable calendars connected");
+
+  // An ACCOUNT, not a calendar — "phil@frontierchurch.com", "my frontierchurch
+  // account". The user naming an account outranks any stored default: they said
+  // where it goes. Resolves to that account's primary unless they also named a
+  // calendar inside it.
+  const byAccount = resolveAccountRef(cals, q);
+  if (byAccount) return byAccount;
 
   const prefersApple = /\b(apple|icloud|family)\b/.test(q);
   const prefersGoogle = /\bgoogle\b/.test(q);
@@ -804,6 +840,9 @@ function resolveCalendarByName(cals: WritableCal[], query: string): WritableCal 
     if (prefersGoogle && c.provider === "google") s += 25;
     // "family" alone → prefer a calendar literally named Family on iCloud.
     if (/\bfamily\b/.test(q) && name.includes("family") && c.provider === "icloud") s += 15;
+    // Two calendars answer to the same phrase and one is hidden: the one still
+    // on the board is what the user meant. Breaks the tie instead of erroring.
+    if (!c.hidden) s += 1;
     return s;
   };
 
@@ -1330,8 +1369,9 @@ export async function executeTool(
       if (calendarName) {
         target = resolveCalendarByName(writable, calendarName);
       } else {
-        // Default write target — first Google calendar, else first writable.
-        target = writable.find((c) => c.provider === "google") ?? writable[0] ?? null;
+        // Unnamed → the user's default. Never a hidden calendar, never "first
+        // row wins": that's how "Call with Tiffany Souers" landed on Women's.
+        target = pickDefaultCalendar(writable);
       }
 
       // Safety net: the model often re-creates instead of moving. If the same
@@ -1359,7 +1399,13 @@ export async function executeTool(
         };
       }
 
-      if (!target) throw new Error("No writable calendar connected");
+      if (!target) {
+        throw new Error(
+          writable.length
+            ? "Every writable calendar is hidden — ask which one this should go on, then pass calendar_name."
+            : "No writable calendar connected",
+        );
+      }
 
       const provider = target.provider;
       const fn = eventsFnFor(provider);
@@ -1388,6 +1434,8 @@ export async function executeTool(
           title,
           start_at,
           calendar: target.name,
+          account: target.accountEmail,
+          isDefault: target.isDefault,
           provider,
         }),
         action: {
