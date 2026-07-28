@@ -53,8 +53,6 @@ const PAST_STEP = 14; // days of history the "earlier" control reveals per tap
 // scroll-mt so tap-to-jump and this reveal agree.
 const REVEAL_OFFSET = 112;
 const SWIPE_PX = 48; // horizontal travel that counts as a month swipe
-// Monday-start weeks, matching the app's planning week (see dates.ts).
-const WEEK_OPTS = { weekStartsOn: 1 as const };
 const MODE_KEY = "nuvo-mobile-cal-mode";
 // How far the Day lens fetches around the selected day's week. Anchoring the
 // window to the week (not the day) keeps the query key stable while you swipe
@@ -76,6 +74,13 @@ function readMode(): Mode {
 
 export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEvent?: (tap: CalendarTap) => void }) {
   const { settings } = useSettings();
+
+  // Which day the grid opens a week on — the user's "Week starts on" setting
+  // (Settings → Calendar), the same one the desktop CalendarPane reads. This is
+  // a *display* preference only: the planning week stays Monday-based in the
+  // kernel, so a Sunday-start grid never moves what week a task belongs to.
+  const weekStartsOn = (settings?.week_start === 0 ? 0 : 1) as 0 | 1;
+  const weekOpts = useMemo(() => ({ weekStartsOn }), [weekStartsOn]);
 
   const [mode, setModeState] = useState<Mode>(readMode);
   const setMode = (m: Mode) => {
@@ -105,12 +110,12 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
   // cached query.
   const range = useMemo(() => {
     if (mode === "month") {
-      const gridStart = startOfWeek(startOfMonth(monthCursor), WEEK_OPTS);
-      const gridEnd = addDays(endOfWeek(endOfMonth(monthCursor), WEEK_OPTS), 1);
+      const gridStart = startOfWeek(startOfMonth(monthCursor), weekOpts);
+      const gridEnd = addDays(endOfWeek(endOfMonth(monthCursor), weekOpts), 1);
       return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
     }
     if (mode === "day") {
-      const wk = startOfWeek(startOfDay(selected), WEEK_OPTS);
+      const wk = startOfWeek(startOfDay(selected), weekOpts);
       return {
         start: addDays(wk, -DAY_FETCH_BEHIND).toISOString(),
         end: addDays(wk, DAY_FETCH_AHEAD + 1).toISOString(),
@@ -119,7 +124,7 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
     const anchor = startOfDay(selected);
     const start = addDays(anchor, -pastDays);
     return { start: start.toISOString(), end: new Date(anchor.getTime() + HORIZON_DAYS * DAY_MS).toISOString() };
-  }, [mode, monthCursor, selected, pastDays]);
+  }, [mode, monthCursor, selected, pastDays, weekOpts]);
 
   const { data: events = [], isLoading: evLoading } = useExternalEvents(range.start, range.end);
   const { data: blocks = [], isLoading: blkLoading } = useScheduledTasks(range.start, range.end);
@@ -181,6 +186,7 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
           ctx={dayCtx}
           now={now}
           selected={selected}
+          weekStartsOn={weekStartsOn}
           weatherIndex={showWeather ? weatherIndex : null}
           onPrev={() => setMonthCursor((c) => startOfMonth(addMonths(c, -1)))}
           onNext={() => setMonthCursor((c) => startOfMonth(addMonths(c, 1)))}
@@ -194,6 +200,7 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
       ) : mode === "day" ? (
         <MobileDayView
           selected={selected}
+          weekStartsOn={weekStartsOn}
           ctx={dayCtx}
           weatherIndex={showWeather ? weatherIndex : null}
           loading={loading}
@@ -228,6 +235,7 @@ function MonthView({
   ctx,
   now,
   selected,
+  weekStartsOn,
   weatherIndex,
   onPrev,
   onNext,
@@ -239,6 +247,7 @@ function MonthView({
   ctx: DayCtx;
   now: Date;
   selected: Date;
+  weekStartsOn: 0 | 1;
   weatherIndex: ReturnType<typeof indexWeather> | null;
   onPrev: () => void;
   onNext: () => void;
@@ -246,15 +255,18 @@ function MonthView({
   onPick: (d: Date) => void;
   onOpenSchedule: () => void;
 }) {
-  const gridStart = useMemo(() => startOfWeek(startOfMonth(monthCursor), WEEK_OPTS), [monthCursor]);
+  const gridStart = useMemo(
+    () => startOfWeek(startOfMonth(monthCursor), { weekStartsOn }),
+    [monthCursor, weekStartsOn],
+  );
   const cells = useMemo(() => {
-    const gridEnd = endOfWeek(endOfMonth(monthCursor), WEEK_OPTS);
+    const gridEnd = endOfWeek(endOfMonth(monthCursor), { weekStartsOn });
     const out: DayPlan[] = [];
     for (let d = new Date(gridStart); d <= gridEnd; d = addDays(d, 1)) {
       out.push(buildDayPlan(d, ctx));
     }
     return out;
-  }, [gridStart, monthCursor, ctx]);
+  }, [gridStart, monthCursor, ctx, weekStartsOn]);
 
   const weekdays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(gridStart, i).toLocaleDateString([], { weekday: "short" }).slice(0, 2)),

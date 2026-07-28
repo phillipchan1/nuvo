@@ -36,12 +36,12 @@ const HOUR_PX = 88; // 30 min = 44px — a half-hour block IS a tap target
 const MIN_ITEM_PX = 22; // a 15-min item stays readable without lying much
 const GUTTER = 56; // hour-label column
 const SWIPE_PX = 48; // horizontal travel that counts as a day swipe
-// The strip is anchored to the selected day's week (Monday), matching the Day
-// fetch window in MobileCalendar, so its chips hold still while you swipe
-// within a week instead of re-centering on every day change.
+// The strip is anchored to the selected day's week — the user's "Week starts
+// on" setting, passed down so it matches the Day fetch window in
+// MobileCalendar — so its chips hold still while you swipe within a week
+// instead of re-centering on every day change.
 const STRIP_BEHIND = 7;
 const STRIP_AHEAD = 21;
-const WEEK_OPTS = { weekStartsOn: 1 as const };
 const STICKY_OFFSET = 112; // back header + date strip — matches the List lens
 
 /** The List | Day switch — the calendar view-pill idiom (rounded trough, the
@@ -128,6 +128,7 @@ const hourLabel = (h: number) => new Date(2000, 0, 1, h).toLocaleTimeString([], 
 
 export default function MobileDayView({
   selected,
+  weekStartsOn = 1,
   ctx,
   weatherIndex,
   loading = false,
@@ -137,6 +138,8 @@ export default function MobileDayView({
   onTapEvent,
 }: {
   selected: Date;
+  /** First day of the week for the date strip — user_settings.week_start. */
+  weekStartsOn?: 0 | 1;
   ctx: DayCtx;
   weatherIndex: ReturnType<typeof indexWeather> | null;
   loading?: boolean;
@@ -197,9 +200,9 @@ export default function MobileDayView({
   // The strip — the same chips as the List lens, but here they *select* the
   // visible day rather than jump-scrolling a list.
   const stripDays = useMemo(() => {
-    const start = addDays(startOfWeek(startOfDay(selected), WEEK_OPTS), -STRIP_BEHIND);
+    const start = addDays(startOfWeek(startOfDay(selected), { weekStartsOn }), -STRIP_BEHIND);
     return Array.from({ length: STRIP_BEHIND + STRIP_AHEAD }, (_, i) => buildDayPlan(addDays(start, i), ctx));
-  }, [selected, ctx]);
+  }, [selected, ctx, weekStartsOn]);
   const stripRef = useRef<HTMLDivElement>(null);
   const chipRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const stripSettled = useRef(false);
