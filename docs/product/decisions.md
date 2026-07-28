@@ -761,6 +761,53 @@ destination as a quiet line beneath (`next · Projects`) — a **name**, not a s
 number, because the stepper already owns the counting.
 *Status: standing — typechecked, 32 tests green, built, driven in a real account.*
 
+**D-044 · 2026-07-28 · The mobile Calendar gets a Day lens — proportional time
+beside the list, never instead of it.** *(The D-031 rejection stands and is
+narrower than it reads: what was rejected was the seven-column **week** grid,
+which can't be tapped at 375px. One column of one day is exactly what a phone
+holds — and it was the one projection the phone lacked: the desktop Schedule
+renders time as space; the phone had flattened it to text.)*
+
+The operator's ask, verbatim: the list is good, *but blocks of time show how
+long each event is instantly.* Duration-as-area is read preattentively;
+duration-as-text is arithmetic. The two lenses answer differently — **List**
+answers *"what's coming, and when am I free"* across two weeks; **Day** answers
+*"what is this day's shape"* — so neither replaces the other:
+
+- **They coexist behind the calendar view-pill** (List | Day) in the drill-in
+  header; the month grid stays home, and a month tap opens whichever lens you
+  used last. A lens, not a place — the bottom bar is untouched (Principle 10).
+- **One computation, two projections.** Both render `buildDayPlan` (now
+  `dayPlan.ts`), so the Day lens's `--slot` brackets are the *same* gaps the
+  list prints as Free chips, sized (`readDay`), and the header readout is one
+  shared `dayReadout` — the lenses cannot disagree about a day.
+- **Traversal is the planner grammar** (design-language, planner rule 6 — the
+  horizontal axis pages through time): swipe left/right walks a day, the date
+  strip jumps anywhere (and holds still within a week), a pinned **Today**
+  chip returns. Vertical scroll is deliberately *kept* across swipes so days
+  compare at the same hour. Switching List → Day hands over the day you were
+  scrolled to, not the anchor.
+- **Open time is drawn, not narrated** (D-041): no fill, one `--slot` bracket
+  and its size. Now is the `--signal` line. Blocks speak the list's vocabulary
+  at scale — accent = yours, neutral = events, `▸` + edge = project-backed,
+  struck = done. 30 min = 44px, so an ordinary block IS a tap target.
+
+→ Rejected: *replacing the list* (it answers a question the grid can't at a
+glance, and the two-lens pairing is the proven shape everywhere else); *a
+third navigation destination* (Principle 10 — it's a lens, not a place); and
+*mounting FullCalendar on mobile* (the desktop dependency stays desktop-only;
+the lens is a few hundred lines of absolute positioning over the shared plan).
+→ Strains **Principle 8** (one surface, now three lenses): named and accepted —
+the surface's question is unchanged (*what is my day, and where is it open*),
+the lenses are projections of one answer, and the pill is the one control.
+D3's *read* strengthens (a 40-minute window is now visibly 40 minutes) but its
+score stays ◐ — gap→task matching is still manual.
+*Status: standing — typechecked, 51 tests green, built, and driven in the
+`?daycal` fixture harness at 375px, light + dark: proportionality (30m = 44px,
+90m = 132px), overlap columns, gap brackets agreeing with the list's Free
+chips, tap→sheet wiring, chip traversal with the strip holding still. **Not
+yet driven in a real account** (no credentials in this build environment).*
+
 ---
 
 ## 2 · Things we decided **not** to do

@@ -935,6 +935,23 @@ body.nuvo-selecting * {
 }
 .slide-in-right { animation: slide-in-right var(--d-base) var(--ease-out) both; }
 
+/* Day-lens traversal (mobile Calendar): the arriving day slides in from the
+   direction you moved, so a swipe answers "which way did I go" without chrome.
+   Information, not decoration — and gone under reduced motion. */
+@keyframes day-in-fwd {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes day-in-back {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.day-in-fwd { animation: day-in-fwd var(--d-fast) var(--ease-out) both; }
+.day-in-back { animation: day-in-back var(--d-fast) var(--ease-out) both; }
+@media (prefers-reduced-motion: reduce) {
+  .day-in-fwd, .day-in-back { animation-duration: 1ms; }
+}
+
 /* Staggered entrance for lists / stations. Pair with --i index var. */
 .rise-stagger { animation: rise var(--d-base) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
 

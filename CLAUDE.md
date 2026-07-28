@@ -125,8 +125,10 @@ it needs to work on a phone.
   compute a week in a surface.
 - **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), Record
   screens, Domain chapel, Project/Initiative floors, Collection board/table/timeline, and
-  the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** (agenda + availability)
-  instead of FullCalendar.
+  the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** instead of
+  FullCalendar: month grid → drill into **List** (agenda + Free chips) or **Day** (one
+  day as a proportional time grid), both over one `buildDayPlan` (`dayPlan.ts`) — see
+  D-044.
 
 ## One rule, two runtimes — the app and the agent must never disagree
 

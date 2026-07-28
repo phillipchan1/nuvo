@@ -92,6 +92,7 @@ been used to argue against things it doesn't forbid.
 | **Prepare** | Pre-work written onto a task (approach, drafts, pitfalls). Carries the **✦** badge; surfaced at Sunrise, boosted in Now. |
 | **Marquee** | Nuvo *shows* an answer alongside telling it — brings a surface forward and holds a warm **limelight** orb on the thing it means. A held session, not a flash; a **return pill** makes it reversible. Vocabulary lives in `src/lib/marqueeRegistry.ts`. [`marquee.md`](../marquee.md) |
 | **Spine** | The vertical navigator of altitudes. ◉ marks a flow. |
+| **List · Day** (mobile Calendar lenses) | The phone Calendar's two drill-in lenses, switched by the header pill (`nuvo-mobile-cal-mode`; the month grid stays home). **List** (`ScheduleView`) = the 14-day agenda with Free chips; **Day** (`MobileDayView`) = one day as a proportional time grid — blocks to scale, open windows as `--slot` brackets, now as the `--signal` line. Both render one `buildDayPlan` (`dayPlan.ts`), so they can't disagree about a day. Swipe or tap the date strip to traverse days. D-044. |
 | **Floor** | An altitude's screen (Domain / Initiative / Project floors). |
 | **Wall · Chapel** | The Domain floor's two halves — the reference screens for Warm Paper alongside the Schedule. |
 | **the Vertical** | Spine + floors: *what matters and why.* |

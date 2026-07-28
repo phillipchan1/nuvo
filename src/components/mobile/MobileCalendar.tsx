@@ -14,19 +14,33 @@ import {
 import { useSettings } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
-import { fmtMins, isEventHidden, readDay, toBusyBlocks, type Gap } from "../../lib/now";
-import type { AttendeeStatus, ExternalEvent, Task } from "../../lib/types";
+import { fmtMins, isEventHidden } from "../../lib/now";
 import type { CalendarTap } from "./MobileEventSheet";
 import { useWeather, indexWeather } from "../../hooks/useWeather";
 import WeatherIcon from "../WeatherIcon";
 import TimeZoneChip from "../TimeZoneChip";
+import {
+  DAY_MS,
+  at,
+  buildDayPlan,
+  dayKey,
+  dayReadout,
+  scrollParent,
+  type DayCtx,
+  type DayPlan,
+} from "./dayPlan";
+import MobileDayView, { CalLensPill, type CalLens } from "./MobileDayView";
 
-// The mobile Calendar — two lenses on the same live day-shape math:
+// The mobile Calendar — three lenses on the same live day-shape math:
 //   • Month — the whole month at a glance (free/busy density per day), swipe or
 //     arrow between months, tap any day to drop into its schedule.
-//   • Schedule — a 14-day agenda from the selected day, where each day shows its
-//     commitments AND its open windows, computed by the same readDay() Now uses.
-// Both read from one buildDayPlan(), so "what counts as busy" lives in one place.
+//   • Schedule (List) — a 14-day agenda from the selected day, where each day
+//     shows its commitments AND its open windows, computed by the same readDay()
+//     Now uses.
+//   • Day — one day as a proportional time grid (MobileDayView): the same
+//     commitments and open windows, drawn to scale so duration reads instantly.
+// All read from one buildDayPlan() (dayPlan.ts), so "what counts as busy" lives
+// in one place.
 
 const HORIZON_DAYS = 14;
 // The schedule opens on the anchor day (today) as the FIRST rendered day, so the
@@ -38,147 +52,22 @@ const PAST_STEP = 14; // days of history the "earlier" control reveals per tap
 // just under the two sticky bars (back header + date strip). Matches DayCard's
 // scroll-mt so tap-to-jump and this reveal agree.
 const REVEAL_OFFSET = 112;
-const DAY_MS = 24 * 3600_000;
 const SWIPE_PX = 48; // horizontal travel that counts as a month swipe
 // Monday-start weeks, matching the app's planning week (see dates.ts).
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 const MODE_KEY = "nuvo-mobile-cal-mode";
+// How far the Day lens fetches around the selected day's week. Anchoring the
+// window to the week (not the day) keeps the query key stable while you swipe
+// within a week, so day-to-day traversal is instant from cache.
+const DAY_FETCH_BEHIND = 7;
+const DAY_FETCH_AHEAD = 21;
 
-type Mode = "month" | "schedule";
-
-const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-const at = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-
-// The schedule renders inside the shell's <main> scroller, not its own. WebKit
-// (iOS PWA + Tauri WKWebView) has no `overflow-anchor`, so when we add days above
-// the viewport we have to correct scrollTop by hand — this finds the element that
-// actually scrolls so we can measure and adjust it. Matched by overflow style
-// alone (not current scrollability): during the loading placeholder the content
-// isn't tall enough to overflow yet, but we still need the scroller to attach
-// listeners and land the anchor once data arrives. Walking *up* from the schedule
-// root never passes through the horizontal date strip, so this can't mismatch it.
-function scrollParent(el: HTMLElement | null): HTMLElement | null {
-  let n = el?.parentElement ?? null;
-  while (n) {
-    const oy = getComputedStyle(n).overflowY;
-    if (oy === "auto" || oy === "scroll") return n;
-    n = n.parentElement;
-  }
-  return null;
-}
-
-interface TimedItem {
-  title: string;
-  start: Date;
-  end: Date;
-  kind: "event" | "block";
-  location?: string | null;
-  done?: boolean;
-  // For tapping:
-  eventId?: string;
-  self_rsvp?: AttendeeStatus | null;
-  taskId?: string;
-  /** Project-backed block — renders as a "project slot" (significant work). */
-  projectBacked?: boolean;
-}
-
-interface DayPlan {
-  date: Date;
-  isToday: boolean;
-  label: string; // "Today" / "Tomorrow" / weekday
-  allDay: ExternalEvent[];
-  timed: TimedItem[];
-  gaps: Gap[];
-  openMins: number;
-  isPast: boolean; // a fully-elapsed work window (today, after hours)
-  isBygone: boolean; // a calendar date strictly before today — a historical read
-}
-
-interface DayCtx {
-  visibleEvents: ExternalEvent[];
-  blocks: Task[];
-  hidden: Set<string>;
-  workStart: number;
-  workEnd: number;
-  now: Date;
-}
-
-// The one place a calendar date becomes a plan — used by both the month grid
-// (for its free/busy density) and the schedule agenda (for the full read).
-function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
-  const { visibleEvents, blocks, hidden, workStart, workEnd, now } = ctx;
-  const dStart = startOfDay(date);
-  const dEnd = new Date(dStart.getTime() + DAY_MS);
-  const startNow = startOfDay(now);
-  const isToday = isSameDay(date, now);
-  const isBygone = dStart.getTime() < startNow.getTime();
-
-  const allDay = visibleEvents.filter(
-    (e) => e.all_day && new Date(e.start_at) < dEnd && new Date(e.end_at) > dStart,
-  );
-
-  const dayEvents = visibleEvents.filter((e) => !e.all_day && dayKey(new Date(e.start_at)) === dayKey(date));
-  const dayBlocks = blocks.filter((t: Task) => t.start_time && dayKey(new Date(t.start_time)) === dayKey(date));
-  const busy = toBusyBlocks(dayEvents, dayBlocks, hidden);
-
-  const ws = new Date(dStart);
-  ws.setHours(0, workStart, 0, 0);
-  const we = new Date(dStart);
-  we.setHours(0, workEnd, 0, 0);
-  const refNow = isToday ? new Date(Math.max(now.getTime(), ws.getTime())) : ws;
-  const read = readDay(refNow, busy, ws, we);
-
-  const timed: TimedItem[] = [
-    ...dayEvents.filter((e) => e.busy).map((e) => ({
-      title: e.title,
-      start: new Date(e.start_at),
-      end: new Date(e.end_at),
-      kind: "event" as const,
-      location: e.location,
-      done: false,
-      eventId: e.id,
-      self_rsvp: e.self_rsvp ?? null,
-    })),
-    ...dayBlocks
-      .filter((t: Task) => t.start_time)
-      .map((t: Task) => ({
-        title: t.title,
-        start: new Date(t.start_time!),
-        end: new Date(new Date(t.start_time!).getTime() + (t.duration_minutes ?? 30) * 60_000),
-        kind: "block" as const,
-        location: null,
-        done: t.status === "done",
-        taskId: t.id,
-        self_rsvp: null,
-        projectBacked: !!t.project_id,
-      })),
-  ].sort((a, b) => a.start.getTime() - b.start.getTime());
-
-  const label = isToday
-    ? "Today"
-    : isSameDay(date, addDays(startNow, 1))
-      ? "Tomorrow"
-      : isSameDay(date, addDays(startNow, -1))
-        ? "Yesterday"
-        : date.toLocaleDateString([], { weekday: "long" });
-
-  return {
-    date,
-    isToday,
-    label,
-    allDay,
-    timed,
-    gaps: read.gaps,
-    openMins: read.openMins,
-    isPast: isToday && now.getTime() >= we.getTime(),
-    isBygone,
-  };
-}
+type Mode = "month" | "schedule" | "day";
 
 function readMode(): Mode {
   try {
     const v = localStorage.getItem(MODE_KEY);
-    if (v === "month" || v === "schedule") return v;
+    if (v === "month" || v === "schedule" || v === "day") return v;
   } catch {
     /* ignore */
   }
@@ -205,15 +94,27 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
   // at 0 so the schedule always opens ON the anchor day (top of the list); the
   // "Earlier" control grows it. Reset to 0 on each entry.
   const [pastDays, setPastDays] = useState(0);
+  // The last drill-in lens (List or Day) — where a month tap lands you. Seeded
+  // from the persisted mode so the preference survives a reload.
+  const drill = useRef<Exclude<Mode, "month">>(mode === "day" ? "day" : "schedule");
 
   // The fetch window follows the active lens: the full month grid (up to 6
-  // weeks) in month mode, or — in the schedule — the loaded history behind the
-  // selected day through the 14-day forward horizon.
+  // weeks) in month mode; in the schedule, the loaded history behind the
+  // selected day through the 14-day forward horizon; in the Day lens, a window
+  // anchored to the selected day's week so swiping within a week stays on one
+  // cached query.
   const range = useMemo(() => {
     if (mode === "month") {
       const gridStart = startOfWeek(startOfMonth(monthCursor), WEEK_OPTS);
       const gridEnd = addDays(endOfWeek(endOfMonth(monthCursor), WEEK_OPTS), 1);
       return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
+    }
+    if (mode === "day") {
+      const wk = startOfWeek(startOfDay(selected), WEEK_OPTS);
+      return {
+        start: addDays(wk, -DAY_FETCH_BEHIND).toISOString(),
+        end: addDays(wk, DAY_FETCH_AHEAD + 1).toISOString(),
+      };
     }
     const anchor = startOfDay(selected);
     const start = addDays(anchor, -pastDays);
@@ -244,16 +145,33 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
     setSelected(d);
     setMonthCursor(startOfMonth(d));
     setPastDays(0);
-    setMode("schedule");
+    setMode(drill.current);
   };
 
-  // Month is home; the schedule is the drill-in. Tapping a day (or swiping up)
-  // pushes into the schedule; the schedule's back header pops back to the month.
+  // Month is home; List and Day are the two drill-in lenses (a tap or an upward
+  // swipe opens whichever you used last). Their back headers pop to the month —
+  // synced to wherever the Day lens wandered.
   const openSchedule = () => {
     setPastDays(0);
-    setMode("schedule");
+    setMode(drill.current);
   };
-  const backToMonth = () => setMode("month");
+  const backToMonth = () => {
+    setMonthCursor(startOfMonth(selected));
+    setMode("month");
+  };
+
+  // Switch drill-in lenses, optionally landing on a specific day — the List →
+  // Day toggle hands over the day you were scrolled to, so you keep your place.
+  const setLens = (lens: CalLens, day?: Date) => {
+    drill.current = lens;
+    if (day) {
+      const d = startOfDay(day);
+      setSelected(d);
+      setMonthCursor(startOfMonth(d));
+    }
+    setPastDays(0);
+    setMode(lens);
+  };
 
   return (
     <div className="pb-24">
@@ -273,6 +191,17 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
           onPick={pickDay}
           onOpenSchedule={openSchedule}
         />
+      ) : mode === "day" ? (
+        <MobileDayView
+          selected={selected}
+          ctx={dayCtx}
+          weatherIndex={showWeather ? weatherIndex : null}
+          loading={loading}
+          onSelect={(d) => setSelected(startOfDay(d))}
+          onLens={(l) => setLens(l)}
+          onBack={backToMonth}
+          onTapEvent={onTapEvent}
+        />
       ) : (
         <ScheduleView
           anchor={selected}
@@ -283,6 +212,7 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
           onLoadEarlier={() => setPastDays((p) => p + PAST_STEP)}
           onTapEvent={onTapEvent}
           onBack={backToMonth}
+          onDayLens={(d) => setLens("day", d)}
         />
       )}
     </div>
@@ -502,7 +432,9 @@ function SelectedSummary({ day, onOpen }: { day: DayPlan; onOpen: () => void }) 
 // to race on first load. Forward runs the 14-day horizon; the past is revealed
 // upward on demand via "Earlier days" at the top, which surfaces recent history
 // (most-recent day under the sticky bars, older above, today below).
-function ScheduleView({
+// Exported for the ?daycal verify harness only — it is prop-driven, so the
+// harness can drive it over fixtures beside the Day lens.
+export function ScheduleView({
   anchor,
   ctx,
   weatherIndex,
@@ -511,6 +443,7 @@ function ScheduleView({
   onLoadEarlier,
   onTapEvent,
   onBack,
+  onDayLens,
 }: {
   anchor: Date;
   ctx: DayCtx;
@@ -520,6 +453,7 @@ function ScheduleView({
   onLoadEarlier: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
   onBack: () => void;
+  onDayLens: (topDay: Date) => void;
 }) {
   const days = useMemo<DayPlan[]>(() => {
     const start = addDays(startOfDay(anchor), -pastDays);
@@ -604,11 +538,24 @@ function ScheduleView({
     onLoadEarlier();
   };
 
+  // The day you're actually looking at — the first day section still on screen
+  // under the sticky bars — so switching to the Day lens keeps your place.
+  const topDay = (): Date => {
+    const scroller = scrollParent(rootRef.current);
+    const top = scroller?.getBoundingClientRect().top ?? 0;
+    for (const d of days) {
+      const el = dayRefs.current[dayKey(d.date)];
+      if (el && el.getBoundingClientRect().bottom - top > REVEAL_OFFSET) return d.date;
+    }
+    return anchor;
+  };
+
   return (
     <div ref={rootRef}>
-      {/* Back header — pops to the month grid and names where you'll land. The
+      {/* Back header — pops to the month grid and names where you'll land; the
+          pill switches to the Day lens on the day you're scrolled to. The
           timezone chip names the clock these times are in (and flags travel). */}
-      <div className="sticky top-0 z-20 flex items-center border-b border-line bg-surface/90 pr-3 backdrop-blur">
+      <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-line bg-surface/90 pr-3 backdrop-blur">
         <button
           onClick={onBack}
           className="tap fast flex items-center gap-0.5 px-3 py-2.5 text-body font-medium text-accent active:opacity-70"
@@ -617,6 +564,7 @@ function ScheduleView({
           {format(anchor, "MMMM yyyy")}
         </button>
         <div className="flex-1" />
+        <CalLensPill lens="schedule" onLens={(l) => l === "day" && onDayLens(topDay())} />
         <TimeZoneChip now={ctx.now} />
       </div>
 
@@ -703,22 +651,12 @@ function DayCard({
   innerRef: (el: HTMLElement | null) => void;
   onTapEvent?: (tap: CalendarTap) => void;
 }) {
-  const { date, isToday, label, allDay, timed, gaps, openMins, isPast, isBygone } = day;
+  const { date, isToday, label, allDay, timed, gaps, isPast, isBygone } = day;
   const fullyOpen = timed.length === 0 && allDay.length === 0;
-  const busyCount = timed.length + allDay.length;
 
   // A past date is a record of what happened, not an availability question —
   // its readout counts commitments and it never advertises open windows.
-  const readout = isBygone
-    ? busyCount > 0
-      ? `${busyCount} scheduled`
-      : ""
-    : isPast
-      ? "done for today"
-      : openMins > 0
-        ? `${fmtMins(openMins)} open`
-        : "fully booked";
-  const readoutAccent = !isBygone && !isPast && openMins > 0;
+  const { text: readout, accent: readoutAccent } = dayReadout(day);
 
   return (
     <section ref={innerRef} className="scroll-mt-[112px] px-4 py-3.5">
