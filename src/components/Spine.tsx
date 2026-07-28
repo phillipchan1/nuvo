@@ -82,7 +82,11 @@ export default function Spine({
               single quiet line. */}
           <span className="flex items-center gap-2.5">
             <span
-              className="w-3.5 shrink-0 text-center leading-none"
+              // `spine-rung-n` is the terminal skin's hook: the console swaps
+              // the ordinal for a ▸/▾ disclosure caret so the spine reads as a
+              // file tree. Inert on every other material.
+              className="spine-rung-n w-3.5 shrink-0 text-center leading-none"
+              data-on={on}
               style={{
                 fontFamily: "var(--font-serif)",
                 fontSize: "14px",

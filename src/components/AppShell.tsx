@@ -28,6 +28,7 @@ import NewInitiative from "./floors/NewInitiative";
 import Orientation from "./orientation/Orientation";
 import { OrientationProvider } from "../hooks/useOrientation";
 import { TrialBanner } from "./billing/TrialBanner";
+import StatusBar from "./terminal/StatusBar";
 import { zoomIn, zoomOut, zoomReset } from "../hooks/useUiScale";
 
 export type Rung = "day" | "project" | "initiative" | "domain";
@@ -350,6 +351,9 @@ function AppShellInner() {
         <AgentSidebar agent={agent} open={effectiveAgentOpen} onToggle={toggleAgent} />
       </div>
       </div>
+
+      {/* The terminal skin's status bar — renders null on every other material. */}
+      <StatusBar />
 
       {/* the plan's step rides nav history, so browser/mouse back-forward walks
           the sources instead of dropping out of the flow */}

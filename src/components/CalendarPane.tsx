@@ -16,6 +16,7 @@ import { expandRule, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrenc
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useHiddenEvents, type useExternalEventMutations } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
+import { synClass } from "../lib/syntax";
 import { isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
@@ -731,6 +732,11 @@ export default function CalendarPane({
           durationEditable: writable && !e.all_day,
           classNames: [
             isGoogle || isIcloud ? "evt-google" : isIcs ? "evt-ics" : "evt-m365",
+            // Quantises this calendar onto the terminal skin's syntax ramp, so
+            // each calendar keeps a distinct ink drawn from the active editor
+            // theme instead of every block collapsing to one accent. Inert on
+            // every other skin (see src/lib/syntax.ts).
+            synClass(e.calendar_id),
             ...(rsvpClass ? [rsvpClass] : []),
             ...(eventHidden ? ["evt-hidden"] : []),
           ],
@@ -1926,7 +1932,7 @@ export default function CalendarPane({
 
         {/* Center — orientation masthead (its own column; cannot be overpainted) */}
         {view !== "board" ? (
-          <div className="pointer-events-none flex max-w-[220px] select-none flex-col items-center truncate leading-none">
+          <div data-breadcrumb className="pointer-events-none flex max-w-[220px] select-none flex-col items-center truncate leading-none">
             {(view === "timeGridWeek" || view === "timeGridDay") && (
               <span className="mono mb-0.5 text-micro uppercase tracking-wide text-muted">{sprintLabel(viewDate)}</span>
             )}
@@ -1957,12 +1963,13 @@ export default function CalendarPane({
           )}
 
           {onViewChange && (
-            <div className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
+            <div data-tabs="views" className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
               {(["board", "timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
                 const on = view === v;
                 return (
                   <button
                     key={v}
+                    data-on={on}
                     onClick={() => onViewChange(v)}
                     className="fast rounded-full px-1.5 py-0.5 text-label leading-none"
                     style={{

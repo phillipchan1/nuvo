@@ -81,7 +81,13 @@ export const SCHEMES: Record<Skin, Scheme[]> = {
       dark:  { bg: "#100f0b", surface: "#1a1714", line: "#2a2620", accent: "#d69b6a" } },
   ],
   terminal: [
-    { id: "phosphor", name: "Phosphor", hint: "Green CRT", modes: "dark",
+    { id: "phosphor", name: "Phosphor", hint: "Green console", modes: "dark",
+      light: { bg: "#0b0e0a", surface: "#101510", line: "#1e2b19", accent: "#8fef5a" },
+      dark:  { bg: "#0b0e0a", surface: "#101510", line: "#1e2b19", accent: "#8fef5a" } },
+    // The one nostalgic scheme: Phosphor's tokens plus the CRT treatment
+    // (scanlines, bloom, haloed ink). Kept apart from the editor themes so a
+    // flat-by-definition theme like Dracula never wears a screen filter.
+    { id: "crt", name: "CRT", hint: "Scanlines & bloom", modes: "dark",
       light: { bg: "#0b0e0a", surface: "#101510", line: "#1e2b19", accent: "#8fef5a" },
       dark:  { bg: "#0b0e0a", surface: "#101510", line: "#1e2b19", accent: "#8fef5a" } },
     { id: "ayu", name: "Ayu", hint: "Warm mirage", modes: "dark",
