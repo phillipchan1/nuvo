@@ -8,6 +8,7 @@ import type { DatesSetArg, DateSelectArg, DayCellContentArg, EventClickArg, Even
 import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
+import { firstDayOfWeek } from "../hooks/useSettings";
 import { endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
 import { sprintLabel } from "../lib/sprint";
 import { addDays } from "date-fns";
@@ -2101,7 +2102,7 @@ export default function CalendarPane({
           allDaySlot={!isMonth}
           allDayText="anytime"
           dayMaxEventRows={5}
-          firstDay={settings?.week_start ?? 0}
+          firstDay={firstDayOfWeek(settings)}
           nowIndicator={!isMonth}
           fixedMirrorParent={typeof document !== "undefined" ? document.body : undefined}
           nowIndicatorContent={(arg) =>

@@ -808,6 +808,44 @@ score stays ◐ — gap→task matching is still manual.
 chips, tap→sheet wiring, chip traversal with the strip holding still. **Not
 yet driven in a real account** (no credentials in this build environment).*
 
+**D-045 · 2026-07-28 · "Week starts on" is a display preference, honored
+everywhere, and it defaults to Sunday.** The operator opened the phone's month
+grid and read Monday in the first column. The bug underneath was not the day
+order: `MobileCalendar` hardcoded `weekStartsOn: 1` while a **Week starts on**
+setting already existed and already described itself as *"the first column of
+the week and month views."* The desktop calendar honored it; the phone silently
+didn't. A setting that one shell obeys and the other ignores is worse than no
+setting — it teaches the operator their preference doesn't hold.
+
+- **One reader, one fallback.** `firstDayOfWeek(settings)` in `useSettings.ts`
+  is the only place `week_start` is turned into a `weekStartsOn`. The four call
+  sites (mobile month grid, the Day lens's date strip, `CalendarPane`'s
+  `firstDay`, `useCapacity`'s week columns) had each invented their own
+  loading-state fallback — `?? 0`, `?? 1`, `=== 0 ? 0 : 1` — so a grid could
+  paint one order and flip to the other when settings landed.
+- **The default is now Sunday (0).** Sunday-first is the convention where this
+  is being used; Monday-first is ISO-8601. It is a regional split with no
+  correct answer, which is why it stays a setting — but the default should be
+  the one the operator expects to see, not the one that happens to match the
+  planner's internals. Only the column default moves (migration `…047`);
+  existing rows keep what they hold, so no one's chosen order shifts under them.
+- **Display only — the planning week stays Monday.** Sprints run Mon–Fri and
+  `planningRules.spansWeek` deliberately tests weekdays only, precisely so a
+  Sunday-start grid can't leak a project into the neighbouring sprint week. The
+  kernel already anticipated this reader; the default flip just makes the
+  anticipated case the common one.
+
+→ Rejected: *mass-updating existing `week_start` rows to 0* — that would
+overwrite a deliberate Monday choice to satisfy one operator's preference
+(Principle 16). Anyone who wants Sunday flips one toggle.
+→ Strains **Principle 8** lightly (a second thing the calendar's first column
+can be): named and accepted — it's one setting read through one function, and
+the surface's question is unchanged.
+*Status: standing — typechecked, 51 tests green, built, and driven at 375px in
+a fixture harness in both orders (weekday header, date alignment, the 5-vs-6
+row case, no horizontal overflow). **Not yet driven in a real account** (no
+credentials in this build environment).*
+
 ---
 
 ## 2 · Things we decided **not** to do

@@ -7,7 +7,7 @@ import { useMemo } from "react";
 import { addDays, startOfWeek } from "date-fns";
 import { useExternalEvents } from "./useCalendar";
 import { useScheduledTasks } from "./useTasks";
-import { useSettings } from "./useSettings";
+import { useSettings, firstDayOfWeek } from "./useSettings";
 import { toBusyBlocks } from "../lib/now";
 import { capacityByWeek, type WeekCapacity } from "../lib/capacity";
 
@@ -32,7 +32,7 @@ export function useCapacity(weeks: number = DEFAULT_WEEKS): CapacityRead {
   // Stable per mount — a fresh Date() every render would churn the query keys.
   const now = useMemo(() => new Date(), []);
 
-  const weekStartsOn = (settings?.week_start === 0 ? 0 : 1) as 0 | 1;
+  const weekStartsOn = firstDayOfWeek(settings);
   const wStartMin = settings?.work_start_minutes ?? 480;
   const wEndMin = settings?.work_end_minutes ?? 990;
 

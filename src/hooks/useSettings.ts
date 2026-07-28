@@ -10,7 +10,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   day_start_hour: 6,
   day_end_hour: 24,
   calendar_fit_hours: 13,
-  week_start: 1,
+  week_start: 0, // Sunday — display only; the planning week is Monday-based
   work_start_minutes: 480,
   work_end_minutes: 990,
   hidden_calendar_ids: [],
@@ -21,6 +21,21 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   default_calendar_account_id: null,
   onboarding_completed_version: null,
 };
+
+/**
+ * The first column of the week and month views — the "Week starts on" setting,
+ * as a date-fns `weekStartsOn` (0 = Sunday, the default; 1 = Monday).
+ *
+ * Read it through here rather than off `settings.week_start` directly: every
+ * caller then falls back to the same value while settings are still loading, so
+ * a grid can't paint one order and then flip to the other on first paint.
+ *
+ * This is a DISPLAY preference only. The planning week is always Monday-based
+ * (planningRules.ts), so choosing Sunday never moves which week something is in.
+ */
+export function firstDayOfWeek(settings: UserSettings | undefined): 0 | 1 {
+  return settings?.week_start === 1 ? 1 : 0;
+}
 
 export function useSettings() {
   const qc = useQueryClient();

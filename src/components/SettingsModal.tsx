@@ -6,6 +6,7 @@ import { linkGoogleIdentity } from "../lib/googleAuth";
 import { formatHourLabel } from "../lib/dates";
 import { readRevealConfig, writeRevealConfig, type RevealConfig } from "../lib/weekReveal";
 import type { CalendarAccount, UserSettings } from "../lib/types";
+import { firstDayOfWeek } from "../hooks/useSettings";
 import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
@@ -591,7 +592,7 @@ function SchedulePane({
 
         <Row layout="stack" title="Week starts on" desc="The first column of the week and month views.">
           <Segmented
-            value={String(settings?.week_start ?? 1)}
+            value={String(firstDayOfWeek(settings))}
             onChange={(v) => updateSettings({ week_start: Number(v) })}
             options={[
               { value: "0", label: "Sunday" },

@@ -11,7 +11,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { useSettings } from "../../hooks/useSettings";
+import { useSettings, firstDayOfWeek } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
 import { fmtMins, isEventHidden } from "../../lib/now";
@@ -79,8 +79,8 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
   // (Settings → Calendar), the same one the desktop CalendarPane reads. This is
   // a *display* preference only: the planning week stays Monday-based in the
   // kernel, so a Sunday-start grid never moves what week a task belongs to.
-  const weekStartsOn = (settings?.week_start === 0 ? 0 : 1) as 0 | 1;
-  const weekOpts = useMemo(() => ({ weekStartsOn }), [weekStartsOn]);
+  const firstDay = firstDayOfWeek(settings);
+  const weekOpts = useMemo(() => ({ weekStartsOn: firstDay }), [firstDay]);
 
   const [mode, setModeState] = useState<Mode>(readMode);
   const setMode = (m: Mode) => {
@@ -186,7 +186,7 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
           ctx={dayCtx}
           now={now}
           selected={selected}
-          weekStartsOn={weekStartsOn}
+          weekStartsOn={firstDay}
           weatherIndex={showWeather ? weatherIndex : null}
           onPrev={() => setMonthCursor((c) => startOfMonth(addMonths(c, -1)))}
           onNext={() => setMonthCursor((c) => startOfMonth(addMonths(c, 1)))}
@@ -200,7 +200,7 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
       ) : mode === "day" ? (
         <MobileDayView
           selected={selected}
-          weekStartsOn={weekStartsOn}
+          weekStartsOn={firstDay}
           ctx={dayCtx}
           weatherIndex={showWeather ? weatherIndex : null}
           loading={loading}
