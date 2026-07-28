@@ -1,0 +1,10 @@
+# Header rules for Cloudflare Pages / Netlify — the mirror of vercel.json's
+# `headers`. Ignored by Vercel, which stays the production host.
+#
+# The service worker must never be cached, or an installed PWA can pin itself to
+# a stale build and stop picking up deploys. (The manifest's
+# application/manifest+json Content-Type is already the default on both hosts,
+# so unlike vercel.json there is no rule for it here — neither host lets
+# _headers override Content-Type anyway.)
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate

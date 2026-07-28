@@ -206,6 +206,12 @@ not the front door.** Use plain text `<input>`s so iOS dictation works out of th
 - **PWA install (iOS) requires HTTPS** → deploy `dist/` to Vercel. Frontend is static; the
   Supabase anon key (`VITE_SUPABASE_*`) is baked at build time and is safe to embed.
   `start_url` / `scope` = "/". Icons live in `public/`.
+- **Vercel is the production host — one deployment, no second prod.** For the exception
+  (a network that blocks `*.vercel.app`), `netlify.toml` + `public/_redirects` +
+  `public/_headers` mirror `vercel.json` for Cloudflare Pages / Netlify; steps and the
+  Supabase redirect-allow-list gotcha are in
+  [`docs/deploy-alternate.md`](docs/deploy-alternate.md). Keep the four in sync — a
+  routing or header rule added to `vercel.json` has to land in the mirrors too.
 
 ### Test against live code — always (don't ship UI you couldn't see)
 

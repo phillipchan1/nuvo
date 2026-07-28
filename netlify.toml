@@ -1,0 +1,11 @@
+# Netlify config — a NON-PRODUCTION mirror of vercel.json. Production is Vercel;
+# this exists only so the app can be reached from a network that blocks
+# *.vercel.app. See docs/deploy-alternate.md.
+#
+# Routing and headers are not repeated here: public/_redirects and
+# public/_headers ship into dist/ and Netlify reads both from the publish
+# directory, so the same two files also serve Cloudflare Pages.
+
+[build]
+  command = "npm run build:web"
+  publish = "dist"

@@ -56,6 +56,11 @@ Statuses are owned by each doc's own header.
 - [`APPLE_WATCH.md`](./APPLE_WATCH.md) — wrist capture via Shortcuts → the `agent` endpoint.
 - [`../KEYBOARD_SHORTCUTS.md`](../KEYBOARD_SHORTCUTS.md) — the keyboard model.
 
+**Shipping**
+- [`desktop-releases.md`](./desktop-releases.md) — how the macOS app is built, signed, published, auto-updated.
+- [`deploy-alternate.md`](./deploy-alternate.md) — Vercel is production; how to stand up a second static host when a network blocks it.
+- [`billing-setup.md`](./billing-setup.md) — one-time Stripe wiring.
+
 ---
 
 ## Reading orders

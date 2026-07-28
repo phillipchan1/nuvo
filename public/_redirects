@@ -1,0 +1,6 @@
+# SPA fallback for Cloudflare Pages / Netlify — the mirror of vercel.json's
+# `rewrites`. Nuvo has no router and one index.html, so every path must serve it
+# (200, not 302) or a hard refresh on the deployed app 404s.
+#
+# Ignored by Vercel (it uses vercel.json), which stays the production host.
+/*  /index.html  200
