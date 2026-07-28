@@ -1,5 +1,12 @@
 # Nuvo design language — "Warm Paper" + glass
 
+> **Superseded by [`design-system.md`](./design-system.md) (2026-07-28, decision D-025).**
+> Nuvo's design language is now Notion's, adopted literally. This document is **retained,
+> not deleted**: it still governs the `paper` material, which remains selectable, and it
+> is the reference for what was traded away — the editorial serif, the `.atmosphere`
+> gradient, and the glass focal system. **For new work, read `design-system.md` instead.**
+> Where the two disagree about the default material, `design-system.md` wins.
+
 The look every screen is converging on. **Read this before building any new surface.**
 Tokens live in [`src/index.css`](../src/index.css); this file is the *grammar* — why the
 tokens are used the way they are, and the rules that keep new work coherent.

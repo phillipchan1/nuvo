@@ -12,10 +12,11 @@ import { useSyncExternalStore } from "react";
 // you last used for it. "paper" carries no data-skin attribute (the base CSS is
 // the paper skin); its scheme ids stay daybreak/dusk/fog so the original palette
 // CSS keeps matching. The attribute stays `data-palette` for the same reason.
-export type Skin = "paper" | "flat" | "terminal" | "blueprint" | "eink";
+export type Skin = "paper" | "notion" | "flat" | "terminal" | "blueprint" | "eink";
 
 export const SKIN_LABELS: Record<Skin, { name: string; hint: string }> = {
   paper: { name: "Aurora", hint: "Warm glass" },
+  notion: { name: "Notion", hint: "Ink on paper" },
   flat: { name: "Flat", hint: "Crisp UI" },
   terminal: { name: "Terminal", hint: "Mono console" },
   blueprint: { name: "Blueprint", hint: "Drafting print" },
@@ -47,6 +48,7 @@ export function schemeModes(skin: Skin, id: string): SchemeModes {
 // themes for terminal, and so on. The name is the material's vernacular.
 export const SCHEME_GROUP: Record<Skin, { label: string; hint: string }> = {
   paper: { label: "Mood", hint: "The warmth of the paper. Switch it whenever the day calls for it." },
+  notion: { label: "Ground", hint: "Notion ships one look. This is it — the warm off-white frame with a white page on top." },
   flat: { label: "Tone", hint: "The temperature of the white — neutral, cool, or warm." },
   terminal: { label: "Color scheme", hint: "Editor themes, straight from your terminal. Pick your flavor." },
   blueprint: { label: "Print", hint: "How the drawing is printed — cyanotype, whiteprint, or sepia." },
@@ -68,6 +70,13 @@ export const SCHEMES: Record<Skin, Scheme[]> = {
     { id: "fog", name: "Fog", hint: "Cool grey",
       light: { bg: "#eef0f5", surface: "#ffffff", line: "#e4e6ef", accent: "#5a4be2" },
       dark:  { bg: "#141320", surface: "#1c1a28", line: "#2d2b3d", accent: "#8b80ff" } },
+  ],
+  // Notion ships exactly one look, so this material offers exactly one scheme.
+  // Resist adding "tones" here — the point of adopting Notion is the constraint.
+  notion: [
+    { id: "notion", name: "Notion", hint: "Ink on paper",
+      light: { bg: "#f7f6f3", surface: "#ffffff", line: "#e9e9e7", accent: "#2383e2" },
+      dark:  { bg: "#191919", surface: "#202020", line: "#2f2f2f", accent: "#3b8ce8" } },
   ],
   flat: [
     { id: "snow", name: "Snow", hint: "Pure white",

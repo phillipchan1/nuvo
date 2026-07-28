@@ -272,7 +272,7 @@ function SchemeCard({
 // its swatch, so there's one source of truth for colours. `sharp` mirrors the
 // skin's corner language so the preview reads as the material, not the palette.
 const SKIN_SHARP: Record<Skin, boolean> = {
-  paper: false, flat: false, terminal: true, blueprint: true, eink: false,
+  paper: false, notion: false, flat: false, terminal: true, blueprint: true, eink: false,
 };
 
 function SkinCard({

@@ -101,10 +101,52 @@ bundle stays clean. *Status: standing.*
 
 **D-019 · Warm Paper: the canvas is continuous.** Full-bleed structural containers stay
 transparent and separate with hairlines; opaque backgrounds over `.atmosphere` are the
-"frost seam." *Status: standing.*
+"frost seam." *Status: **superseded by D-025** (2026-07-28) — retained because it still
+governs the `paper` material, which remains selectable.*
 
 **D-020 · Focus lifts, it doesn't outline.** No flat focus rings on focal elements — glass
-+ `--shadow-lift` + a small rise. *Status: standing.*
++ `--shadow-lift` + a small rise. *Status: **superseded by D-025** for the default
+material — Notion's focal state is a tinted fill on a flat plane, not a rise. Still
+standing inside `paper`.*
+
+**D-025 · The design language is Notion's, not Warm Paper's.** (2026-07-28) The app adopts
+Notion's language literally — its ink (`#37352f`), paper (`#f7f6f3`), action blue
+(`#2383e2`), nine-colour identity palette, 3/6/10px radii, strict 4px spacing unit, and its
+shadow discipline (**a resting thing has a border and casts nothing; only a floating thing
+casts**). Retired with it: the Fraunces ceremony voice, the dawn/dusk `.atmosphere`
+gradient, and the glass/frost focal system.
+
+→ **Why.** The measured problem was never the language — it was that nothing enforced one.
+126 components and 40,711 lines of TSX rested on 14 primitives, with 234 hand-rolled
+`border border-line` containers, 20 distinct spacing values and **32% of 3,053 spacing
+utilities off the 4px grid**. Over the same code, type drifted **0%** — because type had
+named tokens and spacing had none. The decision to adopt Notion is a decision to adopt a
+*constraint*, and the constraint is what buys the meticulousness.
+
+→ **The known cost, accepted deliberately.** Notion is a document tool and has **no
+vocabulary for time** — no now-line, no unclaimed slot, no bar spanning three weeks. Those
+four roles (`--now`, `--slot`, `--busy`, `--span`) are net-new, derived from Notion's own
+palette logic rather than invented, and they are the one place this language had to be
+extended rather than adopted. Nuvo also loses its most distinctive assets (the editorial
+serif, the glass lift); that was raised before the call and chosen anyway.
+
+→ **Non-destructive by construction.** The language ships as a `data-skin="notion"`
+material, so the whole app can be flipped into it and compared against `paper` before
+anything is migrated. Flipping the default is a separate, later decision.
+*Status: standing. Spec: [`design-system.md`](../design-system.md).*
+
+**D-026 · The component library is a product, and the gallery is its front door.**
+(2026-07-28) Four layers, each consuming only the one beneath: **tokens → primitives
+(no domain knowledge) → compositions (know Nuvo) → surfaces (assembly only)**. The
+enforceable test: *a surface file contains no `px-`, no `rounded-`, no `border`, no colour*
+— if it does, the layer below failed to provide something.
+
+→ Anything arriving from outside — a Dribbble shot, a 21st.dev component, an Untitled UI
+import — enters through the gallery (`?gallery`) with its **full state matrix** before it
+touches a screen. If it can't survive eight states in both themes at both breakpoints, it
+was a picture, not a component. Promotion into the library follows the rule of three:
+once is a one-off, twice is still local, three times earns a primitive.
+*Status: standing. Spec: [`design-system.md`](../design-system.md).*
 
 **D-021 · At most one Find per Review, hidden when nothing is notable.** Confidence +
 unexpectedness gates. → No manufactured profundity. *Status: standing — Principle 6.*

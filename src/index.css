@@ -261,6 +261,41 @@
   --text-micro--letter-spacing: 0.002em;
 }
 
+/* ── Spacing scale ─────────────────────────────────────────────────────
+   THE RATIFIED SCALE. Seven steps on a strict 4px unit — Notion's base — and
+   nothing between them. This exists because measuring the app found 3,053
+   spacing utilities across 126 components, of which 990 (32%) sat off the 4px
+   grid on Tailwind's half-steps (`gap-1.5`, `px-2.5`, `py-3.5`), spread over
+   20 distinct values. Type had zero drift over the same codebase for exactly
+   one reason: type had NAMED tokens and spacing had none, so every author
+   reached for raw Tailwind. This is that missing vocabulary.
+
+   Deliberately additive, under an `s` namespace (`p-s3`, `gap-s2`, `mt-s4`):
+   redefining Tailwind's own `--spacing-*` scale would silently re-space all
+   3,053 existing utilities at once. New and migrated work uses these; the old
+   values stay legal until their component is migrated, then stop being.
+
+     s1  4px   hairline gaps — icon↔label, chip padding
+     s2  8px   the default gap inside a row or control
+     s3  12px  padding inside a card / row; gap between related rows
+     s4  16px  gap between distinct elements; card padding at rest
+     s5  24px  gap between groups within a section
+     s6  32px  section separation
+     s7  48px  major region separation, page top padding
+
+   If you need a value that isn't here, the answer is one of the two nearest
+   steps — not a new step. Adding an eighth is a deliberate change to this
+   block, not something an author does inline.                             */
+@theme {
+  --spacing-s1: 4px;
+  --spacing-s2: 8px;
+  --spacing-s3: 12px;
+  --spacing-s4: 16px;
+  --spacing-s5: 24px;
+  --spacing-s6: 32px;
+  --spacing-s7: 48px;
+}
+
 :root {
   --d-fast: 130ms;
   --d-base: 220ms;
@@ -268,6 +303,39 @@
   --d-moment: 540ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+/* ── Time vocabulary ───────────────────────────────────────────────────
+   Notion is a document tool and has NO design language for time: no now-line,
+   no unclaimed slot, no bar that spans three weeks. Adopting Notion wholesale
+   therefore leaves a hole exactly where Nuvo does its actual work, so these
+   four roles are net-new — derived from Notion's own palette logic rather than
+   invented, so they sit inside the language instead of beside it.
+
+     --now       the live moment (now-line, the current column/week band).
+                 Derived from Notion's OVERDUE date colour — the one place
+                 Notion already says "time is pressing on you." Orange.
+     --slot      open / claimable / unbooked time, and AI-proposed-not-committed.
+                 Derived from Notion's blue text colour, the hue it uses for a
+                 thing you can act on. NEVER the accent — an open slot is an
+                 invitation, not a commitment.
+     --busy      occupied-but-not-yours time (external calendar). Notion's grey.
+     --span      a thing occupying more than one column. Neutral by design:
+                 duration is structure, not status, and colouring it competes
+                 with the domain identity the card already carries.
+
+   These alias the existing tokens so every skin inherits sane values and the
+   Notion skin's overrides flow through automatically.                       */
+:root,
+[data-theme],
+[data-palette],
+[data-skin] {
+  --now: var(--signal);
+  --now-soft: var(--signal-soft);
+  --slot-soft: color-mix(in srgb, var(--slot) 12%, transparent);
+  --busy: var(--muted);
+  --busy-soft: color-mix(in srgb, var(--muted) 10%, transparent);
+  --span: var(--line-strong);
 }
 
 /* Fill the screen top-to-bottom. `100dvh` overrides `100%` where the unit is
@@ -2005,13 +2073,127 @@ html[data-skin="eink"][data-theme="dark"] {
   color-scheme: dark;
 }
 
+/* ── NOTION — the literal Notion register, adopted as Nuvo's design language
+      (see docs/design-system.md; decision logged in docs/product/decisions.md).
+      Where `flat` was a Notion-*ish* approximation that kept the mulberry accent
+      and Nuvo's radii, this is the real thing: Notion's own ink, paper, blue and
+      palette, its 3/6/10px radii, and its two-shadow discipline (a resting thing
+      has a BORDER, never a shadow; only a floating thing casts one).
+
+      PROVENANCE — Notion publishes no design system. Every value below is either
+      (a) widely documented from Notion's rendered UI (the ink #37352f, the paper
+      #f7f6f3, the action blue #2383e2, the nine-colour text/background palette,
+      the 4px base unit, the popover shadow stack), or (b) derived from those by
+      the same logic and marked `derived` in the doc. Nothing here is invented
+      taste, and nothing is claimed as official. Verify against the real app
+      before treating any single value as settled.
+
+      Retires, deliberately: the editorial serif (Fraunces → the sans, so every
+      `.masthead` flattens for free), the dawn/dusk atmosphere, and the whole
+      glass/frost focal system. Notion has no ceremony voice and no glass. */
+html[data-skin="notion"][data-theme="light"] {
+  /* Ground: the warm off-white frame (Notion's sidebar) with white content
+     floating on it. --surface-2 is Notion's grey fill — hovers, secondary rows. */
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-2: #f1f1ef;
+  --line: #e9e9e7;
+  --line-strong: #dfdedb;
+  --text: #37352f;
+  --muted: #787774;
+  /* Intent = Notion's action blue. Its lighter interactive blue is --accent-2. */
+  --accent: #2383e2;
+  --accent-2: #2eaadc;
+  --accent-soft: rgba(35, 131, 226, 0.09);
+  --accent-glow: rgba(35, 131, 226, 0.18);
+  /* TIME (derived — Notion has no time vocabulary; see the block below). */
+  --signal: #d9730d;
+  --signal-soft: rgba(217, 115, 13, 0.12);
+  --slot: #337ea9;
+  --event-default: #787774;
+  --font-serif: var(--font-sans);
+  --radius-sm: 3px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  /* A resting surface gets a border, not a shadow — hence shadow-1: none. The
+     two real shadows are Notion's own popover and modal stacks. */
+  --shadow-1: none;
+  --shadow-2:
+    rgba(15, 15, 15, 0.05) 0 0 0 1px, rgba(15, 15, 15, 0.1) 0 3px 6px,
+    rgba(15, 15, 15, 0.2) 0 9px 24px;
+  --shadow-3:
+    rgba(15, 15, 15, 0.05) 0 0 0 1px, rgba(15, 15, 15, 0.1) 0 5px 10px,
+    rgba(15, 15, 15, 0.2) 0 15px 40px;
+  --shadow-lift: rgba(15, 15, 15, 0.1) 0 2px 6px, rgba(15, 15, 15, 0.16) 0 8px 20px;
+}
+html[data-skin="notion"][data-theme="dark"] {
+  --bg: #191919;
+  --surface: #202020;
+  --surface-2: #2f2f2f;
+  --line: #2f2f2f;
+  --line-strong: #454545;
+  --text: #d4d4d4;
+  --muted: #9b9b9b;
+  --accent: #3b8ce8;
+  --accent-2: #529cca;
+  --accent-soft: rgba(59, 140, 232, 0.14);
+  --accent-glow: rgba(59, 140, 232, 0.26);
+  --signal: #cb7b37;
+  --signal-soft: rgba(203, 123, 55, 0.16);
+  --slot: #529cca;
+  --event-default: #9b9b9b;
+  --font-serif: var(--font-sans);
+  --radius-sm: 3px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --shadow-1: none;
+  --shadow-2:
+    rgba(15, 15, 15, 0.2) 0 0 0 1px, rgba(15, 15, 15, 0.3) 0 3px 6px,
+    rgba(15, 15, 15, 0.4) 0 9px 24px;
+  --shadow-3:
+    rgba(15, 15, 15, 0.2) 0 0 0 1px, rgba(15, 15, 15, 0.3) 0 5px 10px,
+    rgba(15, 15, 15, 0.4) 0 15px 40px;
+  --shadow-lift: rgba(15, 15, 15, 0.3) 0 2px 6px, rgba(15, 15, 15, 0.45) 0 8px 20px;
+  color-scheme: dark;
+}
+
+/* ── NOTION · the identity palette ───────────────────────────────────────────
+   Notion's nine text colours and their background fills, verbatim. These are
+   what a domain/initiative/project inherits for identity, replacing the ad-hoc
+   domain hexes: a domain picks a palette entry, and every descendant reads it.
+   Text colour and background fill are a matched pair — never mix across rows. */
+html[data-skin="notion"][data-theme="light"] {
+  --hue-gray: #787774;    --hue-gray-bg: #f1f1ef;
+  --hue-brown: #9f6b53;   --hue-brown-bg: #f4eeee;
+  --hue-orange: #d9730d;  --hue-orange-bg: #fbecdd;
+  --hue-yellow: #cb912f;  --hue-yellow-bg: #fbf3db;
+  --hue-green: #448361;   --hue-green-bg: #edf3ec;
+  --hue-blue: #337ea9;    --hue-blue-bg: #e7f3f8;
+  --hue-purple: #9065b0;  --hue-purple-bg: #f6f3f9;
+  --hue-pink: #c14c8a;    --hue-pink-bg: #faf1f5;
+  --hue-red: #d44c47;     --hue-red-bg: #fdebec;
+}
+html[data-skin="notion"][data-theme="dark"] {
+  --hue-gray: #9b9b9b;    --hue-gray-bg: #2f2f2f;
+  --hue-brown: #ba856f;   --hue-brown-bg: #2e2724;
+  --hue-orange: #c77d48;  --hue-orange-bg: #36291f;
+  --hue-yellow: #ca9849;  --hue-yellow-bg: #372e20;
+  --hue-green: #529e72;   --hue-green-bg: #242b26;
+  --hue-blue: #529cca;    --hue-blue-bg: #1f282d;
+  --hue-purple: #9a6dd7;  --hue-purple-bg: #2a2430;
+  --hue-pink: #e255a1;    --hue-pink-bg: #2e2328;
+  --hue-red: #ff7369;     --hue-red-bg: #332523;
+}
+
 /* ── MATERIAL: re-skin the frost hooks to solid surfaces. One selector list for
       all flat skins keeps the resting-surface rule DRY — the glass becomes an
       opaque token surface with the blur removed; borders/shadows come from the
       tokens above. .atmosphere is per-skin because each ground differs. */
 
-/* The canvas: kill the dawn/dusk gradient; each skin paints its own ground. */
-html[data-skin="flat"] .atmosphere {
+/* The canvas: kill the dawn/dusk gradient; each skin paints its own ground.
+   Notion's ground is one flat warm off-white — no light, no gradient, ever. */
+html[data-skin="flat"] .atmosphere,
+html[data-skin="notion"] .atmosphere {
   background: var(--bg);
 }
 /* E-Ink: a faint paper grain — the matte tooth of electronic paper. */
@@ -2064,10 +2246,21 @@ html[data-skin="blueprint"] .glass-tint,
 html[data-skin="blueprint"] .glass-lift-row,
 html[data-skin="eink"] .glass-card,
 html[data-skin="eink"] .glass-tint,
-html[data-skin="eink"] .glass-lift-row {
+html[data-skin="eink"] .glass-lift-row,
+html[data-skin="notion"] .glass,
+html[data-skin="notion"] .glass-card,
+html[data-skin="notion"] .glass-tint,
+html[data-skin="notion"] .glass-lift-row {
   background: var(--surface);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* Notion's resting card is a bordered white surface with NO shadow. The base
+   .glass-card carries no border, so give it the hairline the language expects. */
+html[data-skin="notion"] .glass-card {
+  border: 1px solid var(--line);
+  box-shadow: none;
 }
 
 /* Focal lift + drag ghost → solid surface, no blur, no inset highlight. The
@@ -2104,6 +2297,28 @@ html[data-skin="eink"] .glass-lift {
   box-shadow: none;
 }
 
+/* ── NOTION · focus does NOT lift ────────────────────────────────────────────
+   This is the one place the Notion language actively contradicts Warm Paper's
+   sixth move ("the thing in focus lifts"), so it gets stated rather than
+   inherited. In Notion, a selected thing takes a blue-tinted FILL and stays
+   flat on the page — nothing rises, nothing casts. Cancel the base transform
+   and shadow outright; keep the border so the shape still reads.
+   The one exception is the same one Notion makes: a block you are DRAGGING
+   does float, and does cast — that's `.glass-grab` below. */
+html[data-skin="notion"] .glass-lift,
+html[data-skin="notion"] .glass-lift-row {
+  background: var(--accent-soft);
+  border-color: var(--accent) !important;
+  box-shadow: none;
+  transform: none;
+}
+html[data-skin="notion"] .glass-grab {
+  background: var(--surface);
+  border-color: var(--line) !important;
+  box-shadow: var(--shadow-lift);
+  transform: scale(1.01);
+}
+
 /* ── FLAT — the rest of the conventional-app conversion ───────────────────
    The token block flattened colour, type and radius; these rules flatten the
    remaining *behaviours* that read as "designed object" rather than "software":
@@ -2114,12 +2329,14 @@ html[data-skin="eink"] .glass-lift {
    500 weight that reads limp on a hero. A conventional app leads with weight —
    so heroes get 650, the chapel voice 600, and the tracking loosens back to
    normal (the -0.014em was cut for Fraunces' tight fit). */
-html[data-skin="flat"] .masthead {
+html[data-skin="flat"] .masthead,
+html[data-skin="notion"] .masthead {
   font-variation-settings: normal;
   font-weight: 650;
   letter-spacing: -0.02em;
 }
-html[data-skin="flat"] .serif {
+html[data-skin="flat"] .serif,
+html[data-skin="notion"] .serif {
   font-variation-settings: normal;
   font-weight: 600;
   letter-spacing: -0.012em;
@@ -2135,6 +2352,13 @@ html[data-skin="flat"] .serif {
 html[data-skin="flat"] .spine {
   background: var(--surface-2) !important;
 }
+/* Notion inverts the nesting: the SIDEBAR is the warm off-white ground (--bg)
+   and the content is the white page floating on it. So the spine keeps --bg
+   while content surfaces sit on --surface — the opposite of flat's tinted rail
+   against a white app. This is the single most Notion-defining layout move. */
+html[data-skin="notion"] .spine {
+  background: var(--bg) !important;
+}
 /* The active chapter's inline pill is 72%-translucent glass — over an opaque
    sidebar that's a barely-there smudge. Make it the solid selected row of a
    conventional nav: full surface, a real border, no shadow. */
@@ -2142,6 +2366,13 @@ html[data-skin="flat"] .spine [style*="backdrop-filter"],
 html[data-skin="flat"] .chapter-active {
   background: var(--surface) !important;
   border-color: var(--line) !important;
+  box-shadow: none !important;
+}
+/* Notion's selected sidebar row is a borderless grey fill — no rule, no lift. */
+html[data-skin="notion"] .spine [style*="backdrop-filter"],
+html[data-skin="notion"] .chapter-active {
+  background: var(--surface-2) !important;
+  border-color: transparent !important;
   box-shadow: none !important;
 }
 
@@ -2160,6 +2391,11 @@ html[data-skin="flat"] .glass-lift-row {
    here) — flat wants a squarer chip, closer to a calendar app's. */
 html[data-skin="flat"] .fc .fc-event {
   border-radius: 4px;
+}
+/* Notion's small-element radius is 3px, and a calendar block is a small
+   element. No frost (killed globally above), so the fill carries it alone. */
+html[data-skin="notion"] .fc .fc-event {
+  border-radius: 3px;
 }
 
 /* ════════════════════════════════════════════════════════════════════════

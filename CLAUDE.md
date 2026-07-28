@@ -53,12 +53,35 @@ ledger row if it moved.
 a default. `/anchor` runs check 1–4 properly; `/product-audit` holds the running app
 against all of it.
 
-## Design language — "Warm Paper"
+## Design language — Notion (as of 2026-07-28)
 
-The app is converging on one design language; the full grammar + token vocabulary is in
-**`docs/design-language.md`** — read it before building any new surface. The reference
-screens are the **Schedule** (`CalendarPane` + `LeftRail`) and the **Domain** wall/chapel.
-The rules that prevent regressions:
+**The language is Notion's, adopted literally — read `docs/design-system.md` before
+building any new surface.** It carries the token provenance (what's verified vs derived),
+the **ratified 7-step 4px spacing scale** (`p-s3`, `gap-s2` — use these, not `gap-1.5`),
+the net-new **time vocabulary** Notion lacks (`--now`, `--slot`, `--busy`, `--span`), the
+**four layers**, and the intake pipeline. Decisions D-025 / D-026 in
+`docs/product/decisions.md`.
+
+Three rules that prevent regressions in the Notion material:
+- **A resting thing has a border and casts nothing.** `--shadow-1` is `none`. Only a
+  floating thing — menu, modal, dragged block — casts.
+- **Focus does not lift.** Selected = a tinted fill, flat on the page. (This reverses the
+  Warm Paper rule below; the rise survives only inside the `paper` material.)
+- **Inverted nesting** — the frame is warm off-white (`--bg`), the content is white
+  (`--surface`) floating on it.
+
+**Look before you build:** `npm run dev` → **`localhost:5717/?gallery`** — every token and
+primitive, every state, both themes, live skin switcher. A primitive that isn't there isn't
+finished, and anything from outside enters there *with its full state matrix* before it
+touches a screen.
+
+### Warm Paper — retained, not deleted
+
+`docs/design-language.md` is **superseded** but still governs the `paper` material (still
+selectable) and records what was traded away. The rules below apply *inside* `paper`; where
+they disagree with `design-system.md` about the default material, `design-system.md` wins.
+The reference screens are the **Schedule** (`CalendarPane` + `LeftRail`) and the **Domain**
+wall/chapel.
 
 - **Never paint an opaque `bg-*` over the `.atmosphere` canvas.** Full-bleed structural
   containers (floor wrappers, the calendar pane, the agent rail) stay **transparent** and

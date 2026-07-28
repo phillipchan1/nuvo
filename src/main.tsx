@@ -42,12 +42,21 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?gallery, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
+const showGallery = import.meta.env.DEV && params.has("gallery");
 
-if (showEmblemHarness) {
+if (showGallery) {
+  void import("./gallery/Gallery").then(({ default: Gallery }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <Gallery />
+      </React.StrictMode>,
+    );
+  });
+} else if (showEmblemHarness) {
   void import("./components/floors/EmblemHarness").then(({ default: EmblemHarness }) => {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
