@@ -324,7 +324,9 @@ export interface GoogleAttendee {
 
 export interface GoogleRawEvent {
   attendees?: GoogleAttendee[];
-  organizer?: { email: string; displayName?: string };
+  /** `self` is Google's flag for "you are the organizer" — the difference
+   *  between leaving a meeting and cancelling it for everyone. */
+  organizer?: { email: string; displayName?: string; self?: boolean };
   description?: string;
   htmlLink?: string;
   conferenceData?: {

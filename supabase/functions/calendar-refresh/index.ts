@@ -43,6 +43,25 @@ Deno.serve(async (req) => {
         body: JSON.stringify(body),
       });
       if (!res.ok) errors.push(`${account.provider}: ${await res.text()}`);
+
+      // Refresh the address book alongside the calendar, but never let it fail
+      // the refresh: contacts feed the guest picker, and a stale picker is a
+      // far smaller problem than a calendar that reports an error.
+      const contactsFn = account.provider === "google"
+        ? "google-contacts"
+        : account.provider === "icloud"
+        ? "icloud-contacts"
+        : null;
+      if (contactsFn) {
+        const kick = fetch(`${base}/functions/v1/${contactsFn}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ accountId: account.id }),
+        }).catch(() => {});
+        // deno-lint-ignore no-explicit-any
+        const rt = (globalThis as any).EdgeRuntime;
+        if (rt?.waitUntil) rt.waitUntil(kick);
+      }
     }
 
     if (errors.length === (accounts ?? []).length && errors.length > 0) {

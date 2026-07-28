@@ -1046,6 +1046,12 @@ export function EventPopover({
   ];
 
   const hasAttendees = (raw?.attendees?.length ?? 0) > 0;
+  // Guests other than you. Deleting an event you organize cancels it for these
+  // people whatever we do, so the delete confirmation has to say so rather than
+  // reading like it only affects your own calendar.
+  const otherGuests = (raw?.attendees ?? []).filter((a) => !a.self);
+  const iOrganize = raw?.organizer?.self === true;
+  const cancelNotifies = iOrganize && otherGuests.length > 0;
 
   const toTimeInput = (iso: string) => {
     const d = new Date(iso);
@@ -1383,7 +1389,11 @@ export function EventPopover({
                           onChange={setNewGuests}
                           placeholder="Name or email…"
                         />
-                        <div className="flex items-center gap-2">
+                        {/* Both outcomes are spelled out rather than hiding the
+                            quiet one behind a checkbox: adding a guest to an
+                            existing meeting is a mail-out either way, and which
+                            one you meant should take one tap. */}
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             disabled={newGuests.length === 0 || inviting}
@@ -1391,21 +1401,44 @@ export function EventPopover({
                               if (!newGuests.length) return;
                               setInviting(true);
                               try {
-                                await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests });
+                                await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests, notifyGuests: true });
                                 setNewGuests([]);
                                 setAddingGuests(false);
                               } finally {
                                 setInviting(false);
                               }
                             }}
-                            className="fast rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-white hover:opacity-90 disabled:opacity-40"
+                            className="fast tap rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-white hover:opacity-90 disabled:opacity-40"
                           >
-                            {inviting ? "Sending…" : "Send invite"}
+                            {inviting
+                              ? "Sending…"
+                              : newGuests.length > 1
+                              ? `Email ${newGuests.length} invites`
+                              : "Email invite"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={newGuests.length === 0 || inviting}
+                            onClick={async () => {
+                              if (!newGuests.length) return;
+                              setInviting(true);
+                              try {
+                                await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests, notifyGuests: false });
+                                setNewGuests([]);
+                                setAddingGuests(false);
+                              } finally {
+                                setInviting(false);
+                              }
+                            }}
+                            title="Add them to the event without sending an email"
+                            className="fast tap rounded-[var(--radius-sm)] border border-line px-3 py-1 text-caption font-medium text-ink hover:bg-bg disabled:opacity-40"
+                          >
+                            Add quietly
                           </button>
                           <button
                             type="button"
                             onClick={() => { setAddingGuests(false); setNewGuests([]); }}
-                            className="fast text-caption text-muted hover:text-ink"
+                            className="fast tap text-caption text-muted hover:text-ink"
                           >
                             Cancel
                           </button>
@@ -1512,7 +1545,11 @@ export function EventPopover({
                 </>
               ) : recurring ? (
                 <>
-                  <span className="text-label text-muted">Delete…</span>
+                  <span className="text-label text-muted">
+                    {cancelNotifies
+                      ? `Cancel — ${otherGuests.length} ${otherGuests.length === 1 ? "guest is" : "guests are"} told…`
+                      : "Delete…"}
+                  </span>
                   <div className="min-w-0 flex-1" />
                   <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
                   <Btn
@@ -1535,9 +1572,27 @@ export function EventPopover({
                 </>
               ) : (
                 <>
-                  <span className="text-label text-muted">Delete this event?</span>
+                  {/* When you host the meeting, deleting it removes it from
+                      everyone's calendar — say that instead of "delete this
+                      event?", which reads like it is only yours. */}
+                  <span className="text-label text-muted">
+                    {cancelNotifies
+                      ? `Cancel for ${otherGuests.length} ${otherGuests.length === 1 ? "guest" : "guests"}?`
+                      : "Delete this event?"}
+                  </span>
                   <div className="min-w-0 flex-1" />
                   <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+                  {cancelNotifies && (
+                    <Btn
+                      onClick={() => {
+                        eventMutations.deleteEvent({ id: event.id, scope: "THIS", notifyGuests: false });
+                        onClose();
+                      }}
+                      title="Remove the meeting without emailing the guests"
+                    >
+                      Cancel quietly
+                    </Btn>
+                  )}
                   <Btn
                     kind="signal"
                     onClick={() => {
@@ -1545,7 +1600,7 @@ export function EventPopover({
                       onClose();
                     }}
                   >
-                    Delete
+                    {cancelNotifies ? "Cancel & notify" : "Delete"}
                   </Btn>
                 </>
               )

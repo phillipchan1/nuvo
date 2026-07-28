@@ -40,7 +40,7 @@ export default function DraftComposer({
   /** Domains offered on the Slot tab — pick one to make a "domain slot" the
    *  weekly plan routes matching work into (docs/standing-slots.md). */
   domains?: Array<{ id: string; name: string; color: string }>;
-  onCreate: (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[], calendarAccountId: string | undefined, domainId: string | null) => void;
+  onCreate: (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[], calendarAccountId: string | undefined, domainId: string | null, notifyGuests: boolean) => void;
   onCancel: () => void;
 }) {
   // Anytime (all-day) drafts are task-only — events and slots require a specific time.
@@ -53,6 +53,10 @@ export default function DraftComposer({
   const [attendees, setAttendees] = useState<string[]>([]);
   const [calendarAccountId, setCalendarAccountId] = useState(() => writableAccounts[0]?.id ?? "");
   const [domainId, setDomainId] = useState<string | null>(null);
+  // Creating an event with guests emails real people. That is not something a
+  // button labelled "Create" should do silently, so the last step names who is
+  // about to be mailed and offers to skip it.
+  const [confirmingGuests, setConfirmingGuests] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -105,12 +109,14 @@ export default function DraftComposer({
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         if (kind !== "slot" && !title.trim()) return;
         e.preventDefault();
-        onCreate(kind, title.trim(), repeat, attendees, calendarAccountId || undefined, kind === "slot" ? domainId : null);
+        // Routed through submit() so the shortcut can't skip the guest
+        // confirmation the button honours.
+        submitRef.current();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, onCreate, kind, title, repeat, attendees, calendarAccountId, domainId]);
+  }, [onCancel, kind, title]);
 
   const durationMins = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
 
@@ -123,10 +129,23 @@ export default function DraftComposer({
 
   const canCreate = kind === "slot" || Boolean(title.trim());
 
+  /** An event with guests is an outbound email, so it gets a confirm step. */
+  const sendsInvites = kind === "event" && attendees.length > 0;
+
+  const finish = (notifyGuests: boolean) => {
+    onCreate(kind, title.trim(), repeat, attendees, calendarAccountId || undefined, kind === "slot" ? domainId : null, notifyGuests);
+  };
+
   const submit = () => {
     if (!canCreate) return;
-    onCreate(kind, title.trim(), repeat, attendees, calendarAccountId || undefined, kind === "slot" ? domainId : null);
+    if (sendsInvites && !confirmingGuests) { setConfirmingGuests(true); return; }
+    finish(true);
   };
+
+  // Kept in a ref so the ⌘↵ listener always calls the current closure without
+  // re-subscribing on every keystroke.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
 
   const placeholder =
     kind === "event" ? "Event title…" : kind === "slot" ? "Slot name (optional)…" : "Task title…";
@@ -291,22 +310,62 @@ export default function DraftComposer({
         )}
 
         {/* ── Actions ── */}
-        <div className="mt-3.5 flex items-center justify-end gap-2 border-t border-line p-3.5">
-          <button
-            onClick={onCancel}
-            className="fast inline-flex items-center justify-center rounded-[var(--radius)] px-4 py-2.5 text-body font-medium text-muted hover:bg-bg"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={!canCreate}
-            className="fast inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-accent px-6 py-2.5 text-body font-semibold text-white shadow-[var(--shadow-1)] transition-opacity hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
-          >
-            Create
-            <span className="text-meta font-normal text-white/65">⌘↵</span>
-          </button>
-        </div>
+        {confirmingGuests ? (
+          /* Naming the recipients is the point: "3 guests" tells you a count,
+             not who is about to hear from you. */
+          <div className="mt-3.5 flex flex-col gap-3 border-t border-line p-3.5">
+            <div>
+              <div className="text-body font-medium text-ink">
+                Email {attendees.length === 1 ? "this guest" : `these ${attendees.length} guests`} an invite?
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {attendees.map((email) => (
+                  <span key={email} className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-meta text-muted">
+                    {email}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                onClick={() => setConfirmingGuests(false)}
+                className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] px-3 py-2.5 text-body font-medium text-muted hover:bg-bg"
+              >
+                Back
+              </button>
+              <button
+                onClick={() => finish(false)}
+                className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] border border-line px-3 py-2.5 text-body font-medium text-ink hover:bg-bg"
+                title="Add them to the event without sending an email"
+              >
+                Add without emailing
+              </button>
+              <button
+                onClick={() => finish(true)}
+                className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] bg-accent px-4 py-2.5 text-body font-semibold text-white shadow-[var(--shadow-1)] transition-opacity hover:opacity-90"
+              >
+                Send invites
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3.5 flex items-center justify-end gap-2 border-t border-line p-3.5">
+            <button
+              onClick={onCancel}
+              className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] px-4 py-2.5 text-body font-medium text-muted hover:bg-bg"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={!canCreate}
+              className="fast tap inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-accent px-6 py-2.5 text-body font-semibold text-white shadow-[var(--shadow-1)] transition-opacity hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
+            >
+              {sendsInvites ? "Create & invite…" : "Create"}
+              <span className="text-meta font-normal text-white/65">⌘↵</span>
+            </button>
+          </div>
+        )}
       </div>
     </>,
     document.body,

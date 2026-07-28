@@ -252,9 +252,20 @@ export function useExternalEventMutations() {
     // Await the function: it needs the mirror row to find the Google event, and
     // it deletes the row itself. If we returned early (fire-and-forget) the
     // onSettled refetch would race the deletion and the event would pop back.
-    mutationFn: async ({ id, scope = "THIS" }: { id: string; scope?: RecurrenceScope }) => {
+    mutationFn: async ({
+      id,
+      scope = "THIS",
+      notifyGuests,
+    }: {
+      id: string;
+      scope?: RecurrenceScope;
+      /** Send cancellation notices. Omit to let the edge function decide from
+       *  the event: a meeting you organize with guests notifies, a solo event
+       *  stays quiet. Pass false to cancel without telling anyone. */
+      notifyGuests?: boolean;
+    }) => {
       const { error } = await supabase.functions.invoke(eventsFunctionFor(providerForEvent(id)), {
-        body: { action: "delete", eventId: id, scope },
+        body: { action: "delete", eventId: id, scope, notifyGuests },
       });
       if (error) throw error;
     },
@@ -281,6 +292,7 @@ export function useExternalEventMutations() {
       calendarId,
       location,
       description,
+      notifyGuests,
     }: {
       title: string;
       start_at: string;
@@ -295,10 +307,14 @@ export function useExternalEventMutations() {
       calendarId?: string;
       location?: string;
       description?: string;
+      /** Email the guests. Defaults to true (an invite nobody is told about is
+       *  not an invite) — the composer confirms who gets mailed and can pass
+       *  false to add guests without sending. */
+      notifyGuests?: boolean;
     }) => {
       const provider = providerForAccount(accountId) ?? "google";
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
-        body: { action: "create", title, start_at, end_at, recurrence, attendees, accountId, calendarId, location, description },
+        body: { action: "create", title, start_at, end_at, recurrence, attendees, accountId, calendarId, location, description, notifyGuests },
       });
       if (error) throw error;
       return data;
@@ -334,9 +350,18 @@ export function useExternalEventMutations() {
   });
 
   const invite = useMutation({
-    mutationFn: async ({ id, attendees }: { id: string; attendees: string[] }) => {
+    mutationFn: async ({
+      id,
+      attendees,
+      notifyGuests,
+    }: {
+      id: string;
+      attendees: string[];
+      /** Email the new guests. Defaults to true. */
+      notifyGuests?: boolean;
+    }) => {
       const { error } = await supabase.functions.invoke("google-events", {
-        body: { action: "invite", eventId: id, attendees },
+        body: { action: "invite", eventId: id, attendees, notifyGuests },
       });
       if (error) throw error;
     },

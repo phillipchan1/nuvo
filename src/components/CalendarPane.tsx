@@ -1217,7 +1217,7 @@ export default function CalendarPane({
 
   const domainColor = (id: string | null) => (id ? domains.find((d) => d.id === id)?.color ?? null : null);
 
-  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[] = [], calendarAccountId?: string, domainId: string | null = null) => {
+  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[] = [], calendarAccountId?: string, domainId: string | null = null, notifyGuests = true) => {
     if (!draft) return;
     const { start, end, point, allDay: draftAllDay } = draft;
     const duration = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
@@ -1259,7 +1259,7 @@ export default function CalendarPane({
           start_at: start.toISOString(),
           end_at: end.toISOString(),
           ...(recurrence ? { recurrence: toGoogleRRULE(recurrence) } : {}),
-          ...(attendees.length ? { attendees } : {}),
+          ...(attendees.length ? { attendees, notifyGuests } : {}),
           ...(calendarAccountId ? { accountId: calendarAccountId } : {}),
         });
       } else if (recurrence) {

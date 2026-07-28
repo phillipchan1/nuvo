@@ -4,9 +4,23 @@
 import { admin, json, logSync, signState, storeSecret, verifyState } from "../_shared/admin.ts";
 import { GOOGLE_TOKEN_URL, MIRROR_CALENDAR_NAME } from "../_shared/google.ts";
 
+// The two contacts scopes are what make the guest picker search a real address
+// book instead of only people who happened to appear on a synced event.
+// `contacts.readonly` covers contacts the user deliberately saved;
+// `contacts.other.readonly` covers Google's auto-recorded "Other contacts",
+// which is where anyone emailed-but-never-saved actually lives — omitting it
+// would leave the common case unsolved. Both are *sensitive* (not restricted),
+// so they need consent-screen review but add no CASA burden beyond the one
+// auth/calendar already carries.
+//
+// Changing this list invalidates existing grants: an account connected before
+// these were added holds a calendar-only token, and google-contacts reports a
+// precise "reconnect to grant it" rather than failing obscurely.
 const SCOPES = [
   "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/contacts.readonly",
+  "https://www.googleapis.com/auth/contacts.other.readonly",
 ].join(" ");
 
 function selfUrl(): string {
@@ -131,10 +145,20 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({ mode: "full", accountId: account.id }),
     }).catch(() => {});
+    // Pull the address book too, so the guest picker knows this account's
+    // contacts on first use rather than after the next refresh.
+    const contactsKick = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/google-contacts`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ accountId: account.id }),
+    }).catch(() => {});
     // deno-lint-ignore no-explicit-any
     const rt = (globalThis as any).EdgeRuntime;
-    if (rt?.waitUntil) rt.waitUntil(kick);
-    else await kick;
+    if (rt?.waitUntil) { rt.waitUntil(kick); rt.waitUntil(contactsKick); }
+    else await Promise.all([kick, contactsKick]);
 
     return Response.redirect(state.r || Deno.env.get("APP_URL") || "/", 302);
   } catch (e) {

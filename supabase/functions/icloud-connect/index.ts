@@ -73,10 +73,20 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({ accountId: account.id }),
     }).catch(() => {});
+    // The same app-specific password reaches contacts.icloud.com, so pull the
+    // address book now too — connecting the calendar already granted it.
+    const contactsKick = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/icloud-contacts`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ accountId: account.id }),
+    }).catch(() => {});
     // deno-lint-ignore no-explicit-any
     const rt = (globalThis as any).EdgeRuntime;
-    if (rt?.waitUntil) rt.waitUntil(kick);
-    else await kick;
+    if (rt?.waitUntil) { rt.waitUntil(kick); rt.waitUntil(contactsKick); }
+    else await Promise.all([kick, contactsKick]);
 
     return json({ ok: true, id: account.id, calendars: calendars.length });
   } catch (e) {

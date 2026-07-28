@@ -50,9 +50,17 @@ Deno.serve(async (req) => {
       const location = (body.location as string | undefined) ?? undefined;
       const description = (body.description as string | undefined) ?? undefined;
 
+      // Whether guests are emailed is the caller's decision, not a constant.
+      // This used to be a hardcoded sendUpdates=all, so a composer whose button
+      // said "Create" silently mailed everyone in the guest field. The UI now
+      // states who gets mailed and offers to skip; an omitted flag still
+      // notifies, which is the right default for a real invite.
+      const notifyGuests = body.notifyGuests !== false;
       const res = await gFetch(
         account,
-        `/calendars/${encodeURIComponent(targetCal || "primary")}/events?sendUpdates=all`,
+        `/calendars/${encodeURIComponent(targetCal || "primary")}/events?sendUpdates=${
+          notifyGuests ? "all" : "none"
+        }`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -122,9 +130,12 @@ Deno.serve(async (req) => {
         ...newEmails.filter((e) => !existingEmails.has(e)).map((email) => ({ email })),
       ];
 
+      const notifyGuests = body.notifyGuests !== false;
       const patchRes = await gFetch(
         account,
-        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(evt.provider_event_id)}?sendUpdates=all`,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
+          encodeURIComponent(evt.provider_event_id)
+        }?sendUpdates=${notifyGuests ? "all" : "none"}`,
         { method: "PATCH", body: JSON.stringify({ attendees: merged }) },
       );
       if (!patchRes.ok) throw new Error(`invite: ${patchRes.status} ${await patchRes.text()}`);
@@ -192,10 +203,24 @@ Deno.serve(async (req) => {
     }
 
     // ── Delete / cancel: remove from Google + local mirror ───────────────
-    // sendUpdates "all" notifies attendees (a real cancellation for events the
-    // user organizes); "none" (default) quietly removes it from their calendar.
+    // Deleting an event you organize cancels it for every guest whatever we
+    // pass — sendUpdates only decides whether they are *told*. "none" was the
+    // flat default, so cancelling a meeting made it vanish from other people's
+    // calendars with no explanation. Now a meeting you host defaults to sending
+    // cancellation notices, and only a solo event stays quiet. The client can
+    // still override either way (notifyGuests), and the UI says which it will do.
     if (action === "delete") {
-      const sendUpdates = body.sendUpdates === "all" ? "all" : "none";
+      const rawEvent = (evt.raw ?? {}) as Record<string, unknown>;
+      // deno-lint-ignore no-explicit-any
+      const guests = ((rawEvent.attendees as any[]) ?? []).filter((a) => a?.self !== true);
+      // deno-lint-ignore no-explicit-any
+      const isOrganizer = (rawEvent.organizer as any)?.self === true;
+      const notifyByDefault = guests.length > 0 && isOrganizer;
+      const notifyGuests = typeof body.notifyGuests === "boolean"
+        ? body.notifyGuests
+        // Legacy callers passed sendUpdates directly; keep honouring it.
+        : body.sendUpdates === "all" || (body.sendUpdates === undefined && notifyByDefault);
+      const sendUpdates = notifyGuests ? "all" : "none";
       const recurringEventId = (evt.raw as Record<string, unknown>)?.recurringEventId as
         | string
         | undefined;
