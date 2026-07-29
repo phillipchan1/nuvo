@@ -167,6 +167,65 @@ all of its information and lost weight instead: micro labels, tighter rows, and 
 at ~half their old contrast, because empty cells are always the majority and at full
 contrast a block of *nothing* out-shouts the cards. *Status: standing.*
 
+**D-050 · 2026-07-29 · The record is a document with one spine, and the rail is
+annotation.** Both records (`src/components/record/RecordModal.tsx`) are now one skeleton —
+identity → the work → the Log, with a rail of standing beside it — because a project and a
+bet are the same object at two clock speeds (D-048) and may differ in what fills the slots,
+never in their frame. The sheet's own left edge carries the altitude tell: a project wears
+DeckCard's 3px inset spine, a bet the same colour at 5px full-height. What changed and why:
+
+- **One spine.** Every control hangs in a 26px gutter, so the section label, every row and
+  every composer share one left edge. Previously the label, the composer's box padding and
+  the checkbox each started at a different x — three ragged left edges, which was most of
+  what read as *disjointed*.
+- **One input idiom.** Tasks, key results, projects and the Log compose through the same
+  hairline row with a glyph in the gutter. There were three (a raised card, a bordered row,
+  a filled box) stacked in one column.
+- **The rule under each heading IS the meter**, and it retires the 54px ring. The ring was a
+  second hero beside the masthead, and it meant two different things — ticked tasks for a
+  project, KR attainment for a bet, silently falling back to child progress with no KRs. An
+  undisclosed basis switch is Principle 6.
+- **Placement, not dates.** `start ▸ … → target ▸ …` in a muted strip was the only thing
+  deciding which sprint column a project occupies on On Deck, set smaller than a task's
+  duration. **D-030's sprint-centric record editing finally exists on desktop**: both shells
+  now wear `record/PlacementBand.tsx`, hoisted out of the phone's detail sheet, writing
+  through `sprintSpanFor` (D-032).
+- **Weight follows importance.** Every enclosure and every saturated colour had ended up in
+  the rail — four bordered sprint chips with an accent fill, a dashed ghost button, a
+  bordered stepper, a coloured badge — while the work was hairlines and muted 13px. The eye
+  went right, to the auxiliary half. The rail is now borderless, fill-less and chroma-less
+  and rests at 78% opacity; the only saturated thing on the sheet is the section meter and a
+  ticked checkbox. The sprint scale became a **hairline track with the span filled**, which
+  is also the truer drawing — on On Deck it *is* a bar across columns of time.
+- **The composer moved below the rows** it feeds, and stays on top (autofocused) only while
+  the list is empty. Composer-first was built for scaffolding a new project and still wins
+  there, but on a populated record it meant the column opened on an empty box with the work
+  buried third. `t` reaches it in one keystroke instead of a slot in the hierarchy.
+- **The footer is gone.** `esc`, the scrim and ✕ all close, so a mulberry *Done* was the
+  loudest element on a sheet where `--accent` means *your intent*. Delete and status moved
+  into the ··· overflow, where a destructive act belongs.
+- **Prose became visuals**: readiness reads as ticks against two named axes instead of a
+  sentence (the finish line isn't among them — the placement band right above says whether
+  one is set, and a thing is named once, D-041); "Belongs here" is a count, a title and a
+  ＋; the runway lost its caption.
+
+→ Consequence: `TaskList` gains a `spine` layout and optional `keyboardNav`; `DeckCard` is
+reused for the projects feeding a bet, so the record shows the same object as the deck
+behind it. **Rejected: `⌥↑/⌥↓` reorder** — `tasks` has no sort column, so there is nothing to
+write; adding one is a migration, not a keybinding. *Status: standing — driven in the dev
+app against real records at 1500px and 375px.*
+
+**D-051 · 2026-07-29 · A surface that owns the screen suppresses the hotkeys behind it.**
+Two global bindings steered the floor *behind* an open record: `⌘↑/⌘↓` travelled a rung you
+couldn't see (`AppShell.tsx`), and `↵` opened the *selected task* from the left rail and
+navigated straight over the record you were reading (`Planner.tsx` — `anyModalOpen` listed
+every other modal but not the two record overlays). Both are now gated on an open overlay;
+`⌘[` stays live because it is a legitimate way *out* of one. Relatedly, **a field owns
+Escape first**: the record's handler listened in capture phase without checking the target,
+so Escape in the task composer cleared your draft *and* closed the whole record. Leaving a
+field and leaving the record are now two presses, as everywhere else. *Status: standing —
+both reproduced and re-verified in the dev app.*
+
 ### Tenancy
 
 **D-024 · 2026-07-25 · Nuvo is a multi-tenant product.** Many independent operators, one

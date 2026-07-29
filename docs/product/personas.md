@@ -179,8 +179,8 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 |---|---|---|---|
 | Q1 | Is this project on pace, or quietly dying? | pace / required-rate math · On Deck | ✅ |
 | Q2 | What's going to collide three weeks out that I can't see? | **On Deck** timeline | ✅ |
-| Q3 | What does "done" even mean here? | grooming *What* lens | ✳ *spec* |
-| Q4 | What are the actual steps? | Blueprint · scaffold · *How* lens | ◐ *AI scaffold ships; the lens is spec* |
+| Q3 | What does "done" even mean here? | the **record's lead line** · Groom deck *Brief* lens | ✅ *re-scored 2026-07-29 (D-050): the outcome sits directly under the name, and when empty it asks the question. Was ✳ against a spec that had since shipped.* |
+| Q4 | What are the actual steps? | the **record's Tasks hero** · *Path* lens · AI scaffold | ◐ *re-scored 2026-07-29: the Path lens shipped and the steps are now the record's hero (`t` to add), but an empty project still leans on AI to get its first list* |
 | Q5 | What's stuck, waiting, or dependent? | *In the way* lens | ✳ *spec* |
 | Q6 | Which bets do I pull this quarter, and which do I refuse? | Summit → Vows → Portfolio | ◐ *refusal isn't a first-class act* |
 | Q7 | Am I being faithful in what I've been given? | Domain wall / chapel | ◐ *the philosophical question — deliberately gentle* |

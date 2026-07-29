@@ -23,7 +23,17 @@ function agoLabel(days: number): string {
 }
 
 /** Per-project "Track activity from…" row. Desktop-only (Project floor). */
-export function ProjectActivityBind({ projectId, projectName }: { projectId: string; projectName: string }) {
+export function ProjectActivityBind({
+  projectId,
+  projectName,
+  compact = false,
+}: {
+  projectId: string;
+  projectName: string;
+  /** The record's rail is annotation: no boxes, no dashed ghosts, and the
+   *  section already carries the "Activity" label, so the row drops its own. */
+  compact?: boolean;
+}) {
   const { data: source } = useActivitySource();
   const { data: bindings } = useActivityBindings();
   const { bindRepo, unbind } = useActivityActions();
@@ -90,6 +100,24 @@ export function ProjectActivityBind({ projectId, projectName }: { projectId: str
 
   // ── Bound ──────────────────────────────────────────────────────────────
   if (binding) {
+    if (compact) {
+      return (
+        <div className="group flex items-center gap-2 text-meta text-muted">
+          <span className="mono min-w-0 flex-1 truncate text-ink">{repoName(binding.selector)}</span>
+          <span className="mono shrink-0 tabular-nums">
+            {mine.length}{lastDays != null ? ` · ${agoLabel(lastDays)}` : ""}
+          </span>
+          <button
+            onClick={() => binding && unbind.mutate(binding.id)}
+            title="Stop tracking"
+            aria-label="Stop tracking"
+            className="fast shrink-0 rounded-[var(--radius-sm)] px-1 opacity-0 hover:text-signal group-hover:opacity-100"
+          >
+            ✕
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="mb-6 flex items-center gap-3 rounded-md border border-line bg-surface px-4 py-2.5">
         <span className="section-label shrink-0">Activity</span>
@@ -110,6 +138,16 @@ export function ProjectActivityBind({ projectId, projectName }: { projectId: str
 
   // ── No source connected — never dead-end ───────────────────────────────
   if (!source) {
+    if (compact) {
+      return (
+        <button
+          onClick={() => { openOverlay("settings"); setSettingsSection("integrations"); }}
+          className="fast text-meta text-muted opacity-75 hover:text-ink hover:opacity-100"
+        >
+          ＋ Connect a source
+        </button>
+      );
+    }
     return (
       <div className="mb-6 flex items-center gap-3 rounded-md border border-line border-dashed px-4 py-2.5">
         <span className="section-label shrink-0">Track activity from</span>
@@ -127,18 +165,28 @@ export function ProjectActivityBind({ projectId, projectName }: { projectId: str
 
   // ── Connected, unbound ─────────────────────────────────────────────────
   return (
-    <div className="relative mb-6">
-      <div className="flex items-center gap-3 rounded-md border border-line px-4 py-2.5">
-        <span className="section-label shrink-0">Track activity from</span>
-        <div className="flex-1" />
+    <div className={`relative ${compact ? "" : "mb-6"}`}>
+      {compact ? (
         <button
           onClick={() => { setQuery(""); setPicking((v) => !v); }}
-          className="fast mono text-meta text-accent hover:underline"
           disabled={bindRepo.isPending}
+          className="fast text-meta text-muted opacity-75 hover:text-ink hover:opacity-100"
         >
-          {bindRepo.isPending ? "Linking…" : "Pick a repo →"}
+          {bindRepo.isPending ? "Linking…" : "＋ Repo"}
         </button>
-      </div>
+      ) : (
+        <div className="flex items-center gap-3 rounded-md border border-line px-4 py-2.5">
+          <span className="section-label shrink-0">Track activity from</span>
+          <div className="flex-1" />
+          <button
+            onClick={() => { setQuery(""); setPicking((v) => !v); }}
+            className="fast mono text-meta text-accent hover:underline"
+            disabled={bindRepo.isPending}
+          >
+            {bindRepo.isPending ? "Linking…" : "Pick a repo →"}
+          </button>
+        </div>
+      )}
 
       {picking && (
         <div className="glass-card absolute right-0 z-20 mt-1.5 flex max-h-80 w-96 flex-col rounded-lg border border-line shadow-[var(--shadow-lift)]">

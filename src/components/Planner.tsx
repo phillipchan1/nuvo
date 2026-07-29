@@ -374,7 +374,12 @@ export default function Planner({
     : null;
   const openSlot = slotPanel ? (slots.find((s) => s.id === slotPanel.id) ?? null) : null;
 
-  const anyModalOpen = showCmd || showSettings || showEvening || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
+  // A project/initiative record owns the screen exactly as much as the other
+  // modals do — it was missing here, so the rail behind an open record still
+  // answered its hotkeys: ↵ opened the *selected task* and navigated straight
+  // over the record you were reading.
+  const recordOpen = overlay === "project-record" || overlay === "initiative-record";
+  const anyModalOpen = showCmd || showSettings || showEvening || recordOpen || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
 
   // The searchable vertical for ⌘K — every task / project / initiative / domain
   // as a SearchHit whose `run` navigates to it. Built from the shared builder

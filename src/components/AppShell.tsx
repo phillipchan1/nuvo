@@ -220,6 +220,11 @@ function AppShellInner() {
         return;
       }
 
+      // Travelling the ladder while another surface owns the screen steered the
+      // floor BEHIND it — ⌘↓ with a record open moved a rung you couldn't see.
+      // ⌘[ stays live above this: it's a legitimate way *out* of an overlay.
+      if (nav.overlay !== "none" || nav.flow || nav.floorModal) return;
+
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         const i = LADDER.indexOf(rung);
@@ -236,7 +241,7 @@ function AppShellInner() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goRung, rung, back, canGoBack, closeOverlay]);
+  }, [goRung, rung, back, canGoBack, closeOverlay, nav.overlay, nav.flow, nav.floorModal]);
 
   // ⌘J toggles Nuvo from any floor — not just the schedule view.
   useEffect(() => {

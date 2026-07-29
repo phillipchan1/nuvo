@@ -310,6 +310,38 @@ first-class (`data-theme` on `<html>`); never write a raw hex that won't flip.
   a key-result tile. Use `.glass-card` + `rounded-lg` + a `--line` hairline (optional
   1.5px domain-color edge). The **Record modal** is a warm-paper sheet (`bg-bg` + `moment`
   + `elev-3`), title in `masthead`.
+
+### The record — one spine, and a rail that annotates (D-050)
+
+Both records wear one skeleton: **identity → the work → the Log**, with a rail of standing
+beside it. A project and a bet are the same object at two clock speeds, so they differ in
+what fills the slots, never in the frame. Four rules, and they're the ones that break:
+
+1. **One spine.** Every control — checkbox, `＋`, `✎` — hangs in a **26px gutter**, so the
+   section label, every row and every composer share one left edge. Text is on the spine;
+   controls hang left of it. Three left edges (label, composer box-padding, checkbox) is
+   what "disjointed" actually means, and it is measurable: they must all report the same
+   `getBoundingClientRect().left`.
+2. **One input idiom.** Every composer on the sheet is the same hairline row with a glyph
+   in the gutter. Never a raised card next to a bordered row next to a filled box.
+3. **The rule under a section heading IS its meter** — track `--line`, fill the domain hue,
+   2px. Progress is drawn, not dialled: **no ring**. A dial in the header is a second hero
+   beside the masthead, and one dial can't honestly carry two different bases.
+4. **The rail is annotation, so it holds no enclosure and no chroma.** No bordered chips,
+   no fills, no ghost buttons, no green — muted text and hairline tracks only, resting at
+   ~78% opacity and coming full on hover/focus. **Weight follows importance**: the work is
+   what the reader came for, so the only saturated things on the sheet are the section
+   meter and a ticked checkbox. A scale of four bordered chips with one accent-filled is
+   the single loudest thing you can put in a rail — draw it as a **track with the span
+   filled** instead, which is also truer (on the deck it *is* a bar across time).
+
+The sheet's **left edge carries the altitude**, exactly as `DeckCard` does: a project wears
+a 3px rounded spine inset from the ends, a bet the same colour at 5px, square, full-height.
+Scope reads as mass — never a different silhouette, a different font, or a different frame.
+
+**Composer position follows content:** below the rows once there are rows to read, on top
+(and autofocused) only while the list is empty. A populated surface must not open on an
+empty box; a keystroke (`t` / `k` / `p` / `l`) is cheaper than a slot in the hierarchy.
 - **Grid views go single-plane, full-height.** The collection **Calendar** and **Timeline**
   do *not* wear a `bg-surface` frame — the grid IS the paper (transparent, gridlines carry
   structure), and they **fill the floor** via `flex-1` (Timeline body) / `grid-auto-rows:

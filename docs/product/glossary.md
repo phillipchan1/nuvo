@@ -22,7 +22,12 @@ migrations)* should be confirmed against `supabase/migrations/` before being rel
 | **Slot** | `slots` | A container of time on the grid. Can hold child tasks. Title auto-derives when unnamed. **Plan the week uses this word for the blocks it groups leftovers and captures into** — it briefly said "grouped into blocks", a fourth vocabulary for a thing that already had a name (D-041). Calendar blocks wear their kind as an eyebrow: `PROJECT · 3 TASKS`, `SLOT · 2 CAPTURES`, `TASK`. |
 | **Standing slot** | `slots` + affinity (`project_id` / `domain_id`) | Protected *recurring* time with an affinity that acts as a magnet during Sunday compose. [`standing-slots.md`](../standing-slots.md) |
 | **Project slot** | *(spec)* | A block typed as protected project time, so capacity is measured in real project hours. [`project-slots.md`](../project-slots.md) |
-| **Record** | `src/components/record/` | The full detail screen for a project/initiative/task. Desktop-only. |
+| **Record** | `src/components/record/` | The single-record surface for a project/initiative/task — identity, the work, the Log, and a rail of standing (D-050). The *modal* is desktop; the phone reaches the same record through a bottom Sheet (`mobile/detail/`), and both write placement through one band (D-030). |
+| **Placement** | `start_date` / `target_date`, shown as sprints & quarters | *When this lands.* A project **spans** sprints (resizable); a bet **belongs to** a quarter. Dates remain the storage unit but are no longer the front door — the record edits a scale, not two date fields (D-030, D-050). |
+| **Ready** | derived, `lib/lenses.ts` | The record's readiness checklist, named per altitude: a project needs an **Outcome** and **Steps**; a bet needs an **Objective** and **a number moving**. The finish line is deliberately not a tick — the placement band above it already says whether one is set. |
+| **Assess** | `record/AssessLayer.tsx` | Nuvo's review pass over one record: it reads the record and lays margin notes beside the things it would sharpen, each accept-or-dismiss. Proposes, never writes (Principle 3). |
+| **Log** | `record_comments` | The running "what's going on" journal at the foot of a record — newest first, one line at a time. It replaced the static Brief document, which no surface ever wrote. |
+| **Belongs here** | derived, `lib/belonging.ts` | Loose or inbox work that looks like it wants this record as its home, offered as a fold-in. A suggestion pool, never a mutation. |
 
 ## Tenancy & people
 

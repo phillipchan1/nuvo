@@ -27,7 +27,7 @@ import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
  *  overflow parents / the Record modal's `.moment` transform (which traps
  *  `position: fixed`). Without this, DomainPicker clicks land on the row
  *  underneath and the domain never changes. */
-function FloatingMenu({
+export function FloatingMenu({
   open,
   anchorRef,
   align = "left",
@@ -455,6 +455,7 @@ export function DomainPicker({
   value,
   onChange,
   align = "left",
+  size = "sm",
 }: {
   domains: Domain[];
   value: string;
@@ -462,21 +463,29 @@ export function DomainPicker({
   /** Which edge the menu hangs from — "left" opens under the trigger, "right"
    *  right-aligns it (for triggers near the right edge of the viewport). */
   align?: "left" | "right";
+  /** `lg` on the record, where routing this thing to the right area is a primary
+   *  act and not a breadcrumb — it was set at meta size, the same weight as the
+   *  crumb text beside it, so it read as a label rather than a control. The
+   *  border goes with the size: one tinted fill carries it. */
+  size?: "sm" | "lg";
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const cur = domains.find((d) => d.id === value);
   const color = cur?.color ?? "var(--muted)";
+  const lg = size === "lg";
   return (
     <span className="relative inline-block">
       <button
         ref={btnRef}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className="fast flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-meta"
-        style={{ color, borderColor: `${color}66`, background: `${color}12` }}
+        className={`fast flex items-center rounded-full ${
+          lg ? "gap-2 px-3 py-1 text-caption hover:brightness-95" : "gap-1.5 border px-2 py-0.5 text-meta"
+        }`}
+        style={{ color, background: lg ? `${color}1f` : `${color}12`, ...(lg ? {} : { borderColor: `${color}66` }) }}
         title="Change domain"
       >
-        <span>{cur?.icon ?? "◇"}</span>
+        <span className={lg ? "text-body leading-none" : undefined}>{cur?.icon ?? "◇"}</span>
         <span className="font-medium">{cur?.name ?? "Domain"}</span>
         <span className="opacity-40">▾</span>
       </button>

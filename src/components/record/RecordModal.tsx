@@ -1,10 +1,39 @@
-// The Record modal — a project or initiative's command center, and the ONLY
-// single-record surface for both (neither rung has a full page anymore — the
-// modal is it, so the two stay symmetric). Clicking a record anywhere opens this
-// beautiful, fully-editable "moment" over whatever floor you're on: breadcrumb,
-// inline title + goal, a progress ring, status, dates, brief, key results / tasks
-// (full CRUD), and — the headline — "Tasks that belong here", the intelligence
-// that pulls matching loose/inbox work in with one click.
+// The Record modal — a project or initiative's command centre, and the ONLY
+// single-record surface for both (neither rung has a full page).
+//
+// ── The shape, and why ───────────────────────────────────────────────────────
+// ONE skeleton at both altitudes: identity → the work → the Log, with a rail of
+// standing beside it. A project and a bet are the same object at two clock
+// speeds (D-048), so the two records may differ in what fills the slots, never
+// in their frame.
+//
+//   1. ONE SPINE. Every control hangs in a 26px gutter so the section label,
+//      every row and every composer share one left edge. Three ragged left edges
+//      — label, composer-box padding, checkbox — was most of what read as
+//      "disjointed".
+//   2. ONE INPUT IDIOM. Tasks, key results, projects and the Log all compose
+//      through the same hairline row with a glyph in the gutter. There used to be
+//      three (a raised card, a bordered row, a filled box).
+//   3. THE RULE IS THE METER. The hairline under each section heading fills to
+//      the domain hue — progress drawn, not dialled. It replaces the 54px ring,
+//      which was a second hero beside the masthead AND meant two different things
+//      (ticked tasks for a project, KR attainment for a bet, silently falling
+//      back to child progress with no KRs — an undisclosed basis switch,
+//      Principle 6).
+//   4. PLACEMENT, NOT DATES. `start ▸ … → target ▸ …` in a muted strip was the
+//      only thing deciding which sprint column a project occupies on On Deck,
+//      rendered smaller than a task's duration. D-030 decided a record "opens on
+//      a scale of the next four sprints… not two date fields"; only the phone
+//      ever got it. Now both shells wear `PlacementBand`.
+//   5. THE RAIL IS ANNOTATION. Its every enclosure and every saturated colour is
+//      gone — no bordered chips, no fills, no chroma — and it rests at 78%,
+//      coming full on approach. Weight has to follow importance, and the work is
+//      what the reader came for; the rail only helps them place it.
+//
+// The old footer (Delete · Assess · Done) is gone with the meta strip: `esc`,
+// the scrim and ✕ all close, so a mulberry "Done" was the loudest thing on a
+// sheet where `--accent` is supposed to mean *your intent*. Delete and status
+// live in the ··· overflow, where a destructive act belongs.
 
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
@@ -12,7 +41,7 @@ import { useVertical } from "../../hooks/useVertical";
 import {
   domainById,
   initiativeById,
-  initiativeProgress,
+  initiativeAttainment,
   isStatusOverride,
   projectById,
   projectProgress,
@@ -20,32 +49,34 @@ import {
   projectsOf,
   tasksOf,
   type KeyResult,
+  type Momentum,
   type Project,
   type ProjectStatus,
 } from "../../lib/vertical";
+import { projectReadinessAxes } from "../../lib/lenses";
+import { sprintNumber } from "../../lib/sprint";
 import { ProjectShipAssess, type LeftoverVerdict } from "./ShipAssess";
 import { suggestForInitiative, suggestForProject, type Suggestion } from "../../lib/belonging";
-import { ENERGY_META } from "../../lib/energy";
 import {
-  Bar,
   DeleteBtn,
   DomainPicker,
-  InlineDate,
+  FloatingMenu,
   InlineNumber,
   InlineText,
-  MomentumChip,
-  PROJECT_STATUS,
   PROJECT_STATUS_COLORS,
-  PROJECT_STATUS_LABEL,
-  StatusPill,
 } from "../floors/parts";
-import TaskList from "../floors/TaskList";
+import TaskList, { isTypingIn } from "../floors/TaskList";
+import DeckCard, { deckWeight } from "../ondeck/DeckCard";
 import { ProjectActivityBind } from "../floors/ProjectActivityBind";
+import { QuarterBand, SprintBand } from "./PlacementBand";
 import { RecordLog } from "./RecordLog";
 import { AssessLayer, type AssessFinding } from "./AssessLayer";
-import { Btn } from "../ui";
 
 export type RecordKind = "project" | "initiative";
+
+/** The gutter every control hangs in. One number, so the spine can't drift. */
+const GUT = "w-[26px]";
+const GUT_PAD = "pl-[26px]";
 
 export default function RecordModal({
   kind,
@@ -57,22 +88,51 @@ export default function RecordModal({
   kind: RecordKind;
   id: string;
   onClose: () => void;
-  /** Hop to a project's record (child project / breadcrumb). */
   onOpenProject: (id: string) => void;
-  /** Hop to an initiative's record (breadcrumb). */
   onOpenInitiative: (id: string) => void;
 }) {
-  // Esc closes — capture phase + stopPropagation so we own it cleanly.
+  const sheetRef = useRef<HTMLDivElement>(null);
+
+  // Give focus back to whatever the record was opened from. Without this, closing
+  // dropped focus on <body> and every keyboard path died until you clicked.
+  useEffect(() => {
+    const from = document.activeElement as HTMLElement | null;
+    return () => from?.focus?.();
+  }, []);
+
+  // Esc — but a FIELD OWNS IT FIRST. The old handler listened in capture phase
+  // without checking the target, so Escape in the task composer cleared your
+  // draft *and* closed the whole record. Now leaving a field and leaving the
+  // record are two presses, the same as everywhere else in the app.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
+      if (e.key !== "Escape" || isTypingIn(e.target)) return;
+      e.stopPropagation();
+      onClose();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
+
+  // Focus trap — Tab cycles inside the sheet instead of walking out into the
+  // floor behind it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || !sheetRef.current) return;
+      const f = Array.from(
+        sheetRef.current.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),input,select,textarea,[contenteditable],[tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return createPortal(
     <div
@@ -80,216 +140,279 @@ export default function RecordModal({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       {kind === "project" ? (
-        <ProjectRecord
-          id={id}
-          onClose={onClose}
-          onOpenInitiative={onOpenInitiative}
-        />
+        <ProjectRecord sheetRef={sheetRef} id={id} onClose={onClose} onOpenInitiative={onOpenInitiative} />
       ) : (
-        <InitiativeRecord
-          id={id}
-          onClose={onClose}
-          onOpenProject={onOpenProject}
-        />
+        <InitiativeRecord sheetRef={sheetRef} id={id} onClose={onClose} onOpenProject={onOpenProject} />
       )}
     </div>,
     document.body,
   );
 }
 
-// ── The raised card every record shares ──────────────────────────────────────
-function Card({ accent, children }: { accent: string; children: ReactNode }) {
+// ── The sheet ────────────────────────────────────────────────────────────────
+// The altitude tell is the sheet's own left edge, exactly DeckCard's law: a
+// project wears a 3px spine inset from the ends, a bet the same colour at 5px
+// running full-height as the actual boundary. Scope reads as mass — never as a
+// different species. (This replaces a 3px gradient bleed across the top, which
+// was decoration repeating what the domain chip already said.)
+function Sheet({
+  variant,
+  spine,
+  wide,
+  sheetRef,
+  children,
+}: {
+  variant: "marked" | "bounded";
+  spine: string;
+  /** the coach's margin needs a wider sheet to lay its notes in. */
+  wide: boolean;
+  sheetRef: RefObject<HTMLDivElement>;
+  children: ReactNode;
+}) {
   return (
-    <div className="moment elev-3 relative flex max-h-[92vh] w-full max-w-[1080px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line bg-bg">
-      <div
-        className="h-[3px] w-full shrink-0"
-        style={{ background: `linear-gradient(90deg, ${accent}, ${accent}66 65%, transparent)` }}
+    <div
+      ref={sheetRef}
+      role="dialog"
+      aria-modal="true"
+      className={`moment elev-3 fast relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line bg-bg ${
+        wide ? "max-w-[1180px]" : "max-w-[1000px]"
+      }`}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute z-10"
+        style={
+          variant === "bounded"
+            ? { insetBlock: 0, left: 0, width: 5, background: spine, borderRadius: "var(--radius-lg) 0 0 var(--radius-lg)" }
+            : { top: 18, bottom: 18, left: 7, width: 3, background: spine, borderRadius: 999 }
+        }
       />
       {children}
     </div>
   );
 }
 
-// ── A progress ring — the glanceable hero of the header ───────────────────────
-function Ring({ pct, color, size = 54, stroke = 5 }: { pct: number; color: string; size?: number; stroke?: number }) {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const clamped = Math.max(0, Math.min(100, pct));
-  return (
-    <div className="relative shrink-0" style={{ width: size, height: size }} title={`${clamped}% complete`}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line)" strokeWidth={stroke} />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circ}
-          strokeDashoffset={circ * (1 - clamped / 100)}
-          style={{ transition: "stroke-dashoffset var(--d-slow) var(--ease-out)" }}
-        />
-      </svg>
-      <div className="mono absolute inset-0 flex items-center justify-center text-body font-semibold" style={{ color }}>
-        {clamped}
-      </div>
-    </div>
-  );
-}
-
-// ── Header (breadcrumb + actions, title + goal, ring) ─────────────────────────
-function Header({
-  accent,
+// ── Identity: crumbs + acts, the name, the outcome ───────────────────────────
+function Head({
   crumbs,
-  title,
-  onTitle,
-  goal,
-  onGoal,
-  goalPlaceholder,
-  goalLabel = "Goal",
-  showGoal = true,
-  pct,
-  onClose,
+  acts,
+  name,
+  onName,
+  outcome,
+  onOutcome,
+  outcomePlaceholder,
 }: {
-  accent: string;
   crumbs: ReactNode;
-  title: string;
-  onTitle: (v: string) => void;
-  goal: string;
-  onGoal: (v: string) => void;
-  goalPlaceholder: string;
-  goalLabel?: string;
-  /** Projects carry their Goal in the masthead; initiatives move the Objective
-   *  into the body so it heads the Key Results (a true OKR block), so hide it here. */
-  showGoal?: boolean;
-  pct: number;
-  onClose: () => void;
+  acts: ReactNode;
+  name: string;
+  onName: (v: string) => void;
+  outcome: string;
+  onOutcome: (v: string) => void;
+  outcomePlaceholder: string;
 }) {
   return (
-    <div className="px-7 pt-5 pb-4">
-      <div className="mono mb-2.5 flex items-center gap-1.5 text-meta">
+    <div className="shrink-0 pb-4 pl-[30px] pr-4 pt-3">
+      <div className="mb-2.5 flex items-center gap-2">
         {crumbs}
         <div className="flex-1" />
-        <button onClick={onClose} className="keycap" title="Close">esc</button>
+        {acts}
       </div>
-
-      <div className="flex items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-display masthead leading-tight">
-            <InlineText value={title} onChange={onTitle} placeholder="Untitled" />
-          </h1>
-          {showGoal && (
-            <div data-assess-anchor="objective" className="mt-1.5 flex items-baseline gap-2 text-head">
-              <span className="section-label shrink-0" style={{ marginTop: 2 }}>{goalLabel}</span>
-              <InlineText value={goal} onChange={onGoal} placeholder={goalPlaceholder} className="font-medium" />
-            </div>
-          )}
-        </div>
-        <Ring pct={pct} color={accent} />
+      {/* the ONE hero. Fraunces carries a name, never a number. */}
+      <h1 className="text-display masthead leading-tight">
+        <InlineText value={name} onChange={onName} placeholder="Untitled" />
+      </h1>
+      {/* No "GOAL" eyebrow: a lead line directly under a name is self-evidently
+          the outcome, and the placeholder teaches it when empty (D-041 — a thing
+          is named once). Set below the hero, not beside it. */}
+      <div
+        className="mt-1.5 max-w-[62ch] text-head leading-snug"
+        style={{ color: "color-mix(in srgb, var(--text) 72%, var(--muted))" }}
+      >
+        <InlineText value={outcome} onChange={onOutcome} placeholder={outcomePlaceholder} />
       </div>
     </div>
   );
 }
 
-// ── Scrollable two-column body ────────────────────────────────────────────────
-function Body({ main, side, overlay, scrollRef }: {
+function IconBtn({
+  glyph,
+  label,
+  onClick,
+  badge,
+  btnRef,
+}: {
+  glyph: string;
+  label: string;
+  onClick: () => void;
+  badge?: number;
+  btnRef?: RefObject<HTMLButtonElement>;
+}) {
+  return (
+    <button
+      ref={btnRef}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="fast relative flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-caption text-muted opacity-75 hover:bg-surface hover:text-ink hover:opacity-100"
+    >
+      {glyph}
+      {badge != null && badge > 0 && (
+        // muted, not filled: a bright dot in the top-right corner pulled the eye
+        // away from the work as hard as the rail did.
+        <span className="mono absolute right-0 top-0 text-micro font-semibold text-muted">{badge}</span>
+      )}
+    </button>
+  );
+}
+
+function MenuItem({ children, onClick, color }: { children: ReactNode; onClick: () => void; color?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className="fast block w-full px-2.5 py-1 text-left text-label hover:bg-accent-soft"
+      style={color ? { color } : undefined}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── Body: the work, and the rail beside it ───────────────────────────────────
+function Body({
+  main,
+  rail,
+  overlay,
+  scrollRef,
+  assessing,
+}: {
   main: ReactNode;
-  side: ReactNode;
-  /** Absolute layer inside the scroll container (Assess notes) — scrolls with content. */
+  rail: ReactNode;
   overlay?: ReactNode;
   scrollRef?: RefObject<HTMLDivElement>;
+  assessing: boolean;
 }) {
   return (
     <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto">
-      <div className="grid grid-cols-1 gap-x-10 gap-y-8 px-8 py-7 lg:grid-cols-[1fr_320px]">
-        <div className="min-w-0 space-y-7">{main}</div>
-        <div className="space-y-6">{side}</div>
+      {/* The rail column keeps its track while assessing — that empty gutter is
+          where AssessLayer lays its margin notes. */}
+      <div className={`grid grid-cols-1 ${assessing ? "lg:grid-cols-[1fr_320px]" : "lg:grid-cols-[1fr_236px]"}`}>
+        <div className="min-w-0 pb-7 pl-[30px] pr-6 pt-4">{main}</div>
+        <div className="fast flex flex-col gap-5 border-t border-line px-5 pb-7 pt-4 opacity-[0.78] hover:opacity-100 focus-within:opacity-100 lg:border-l lg:border-t-0">
+          {rail}
+        </div>
       </div>
       {overlay}
     </div>
   );
 }
 
-function Section({ label, action, children }: { label: string; action?: ReactNode; children: ReactNode }) {
+/** A section of the work. The hairline under the heading IS the meter. */
+function Sec({
+  label,
+  meter,
+  fill,
+  spine,
+  children,
+}: {
+  label: string;
+  meter?: string | null;
+  /** 0–100, or null for a section with nothing to measure (the Log). */
+  fill?: number | null;
+  spine: string;
+  children: ReactNode;
+}) {
   return (
-    <section>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="section-label">{label}</div>
-        {action}
+    <section className="mt-6 first:mt-0">
+      <div className={`flex items-baseline gap-3 ${GUT_PAD}`}>
+        <span className="section-label flex-1" style={{ color: "color-mix(in srgb, var(--text) 55%, var(--muted))" }}>
+          {label}
+        </span>
+        {meter && <span className="mono text-meta text-muted">{meter}</span>}
+      </div>
+      <div className="relative mt-1.5 h-0.5 rounded-full" style={{ background: "var(--line)" }}>
+        {fill != null && (
+          <div
+            className="fast absolute inset-y-0 left-0 rounded-full"
+            style={{ width: `${Math.max(0, Math.min(100, fill))}%`, background: spine }}
+          />
+        )}
       </div>
       {children}
     </section>
   );
 }
 
-// ── The intelligence: "Tasks that belong here" ────────────────────────────────
-function SuggestionPanel({
-  suggestions,
-  accent,
-  onFold,
-  hint,
-}: {
-  suggestions: Suggestion[];
-  accent: string;
-  onFold: (taskId: string) => void;
-  hint: string;
-}) {
+function RailSec({ label, right, children }: { label: string; right?: ReactNode; children: ReactNode }) {
   return (
     <section>
-      <div className="mb-1.5 flex items-center gap-2">
-        <span className="section-label" style={{ color: accent }}>✦ Belongs here</span>
-        <div className="h-px flex-1" style={{ background: "var(--line)" }} />
+      <div className="section-label mb-2 flex items-center gap-1.5">
+        <span className="flex-1">{label}</span>
+        {right}
       </div>
-
-      {suggestions.length === 0 ? (
-        <p className="text-label leading-relaxed text-muted">{hint}</p>
-      ) : (
-        <>
-          <p className="mb-1 text-meta leading-relaxed text-muted">
-            From your inbox & loose work — fold in what fits.
-          </p>
-          <div>
-            {suggestions.map((s) => (
-              <div
-                key={s.task.id}
-                className="group fast flex items-start gap-2 border-b border-line py-2 last:border-b-0"
-              >
-                <span className="mt-px shrink-0 text-caption text-muted">
-                  {s.task.energy ? ENERGY_META[s.task.energy].icon : "·"}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-caption leading-snug text-muted group-hover:text-ink">{s.task.title || "Untitled"}</div>
-                  {s.reasons.length > 0 && (
-                    <div className="mt-0.5 truncate text-micro leading-tight text-muted/70">
-                      {s.reasons.join(" · ")}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => onFold(s.task.id)}
-                  title="Fold this task in"
-                  className="fast mt-px shrink-0 text-meta font-medium hover:underline"
-                  style={{ color: accent }}
-                >
-                  + fold in
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      {children}
     </section>
   );
 }
 
-// ── Derived status — reads the truth off the tasks, never a field you maintain ─
-// A project/initiative SHIPS; only a task is "done". One word per altitude, and
-// the Shipped wall is already named for it. Waiting / Cancelled are the only
-// human-set states (the machine can't infer them), offered behind a "···"
-// override; everything else is computed in buildVertical — finish every task and
-// the project reads Shipped, here and everywhere else, with no step in between.
+/** Readiness as a checklist you watch fill in, not a sentence and not a dial.
+ *  The finish line is deliberately absent — the placement band right above says
+ *  whether one is set, and a thing is named once (D-041). */
+function ReadyTicks({ axes }: { axes: { label: string; met: boolean }[] }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {axes.map((a) => (
+        <div
+          key={a.label}
+          className={`flex items-center gap-2 text-meta text-muted ${a.met ? "" : "opacity-60"}`}
+          title={a.met ? `${a.label} — set` : `${a.label} — not set yet`}
+        >
+          <span
+            className="h-[5px] w-[5px] shrink-0 rounded-full"
+            style={
+              a.met
+                ? { background: "var(--muted)" }
+                : { boxShadow: "inset 0 0 0 1px var(--line-strong)" }
+            }
+          />
+          {a.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** "Belongs here" — the loose work that looks like it wants a home. A count, a
+ *  title and a ＋. The explainer line, the reason line and the "+ fold in" link
+ *  became a badge and a tooltip. */
+function Suggestions({ suggestions, onFold }: { suggestions: Suggestion[]; onFold: (taskId: string) => void }) {
+  if (suggestions.length === 0) return null; // a silence, not an apology (D-035)
+  return (
+    <RailSec label="Belongs here" right={<span className="mono text-meta font-semibold text-muted opacity-80">{suggestions.length}</span>}>
+      <div>
+        {suggestions.map((s) => (
+          <div key={s.task.id} className="flex items-center gap-2 border-b border-line py-1.5 last:border-b-0">
+            <span
+              className="min-w-0 flex-1 text-meta leading-snug text-muted"
+              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+              title={s.reasons.join(" · ")}
+            >
+              {s.task.title || "Untitled"}
+            </span>
+            <button
+              onClick={() => onFold(s.task.id)}
+              title="Fold it in"
+              aria-label="Fold it in"
+              className="fast flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-caption text-muted opacity-70 hover:bg-surface hover:text-accent hover:opacity-100"
+            >
+              ＋
+            </button>
+          </div>
+        ))}
+      </div>
+    </RailSec>
+  );
+}
+
 const STATUS_LABEL: Record<ProjectStatus, string> = {
   backlog: "Idea",
   in_progress: "In motion",
@@ -298,94 +421,52 @@ const STATUS_LABEL: Record<ProjectStatus, string> = {
   complete: "Shipped",
 };
 
-function StatusControl({
-  project,
-  status,
-  color,
-  onChange,
-}: {
-  project: Project;
-  status: ProjectStatus; // the DERIVED status
-  color: string;
-  onChange: (s: ProjectStatus) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  // Shipped / Waiting / Cancelled earn a label — they're the states worth saying
-  // out loud, whoever decided them. Read the EFFECTIVE status, not the stored one:
-  // tick the last task and the project IS shipped, so the strip has to say so.
-  // (Reading `storedStatus` here left a 5/5 project showing nothing at all — the
-  // very "it didn't mark it complete" silence this whole change set out to kill.)
-  const labelled = isStatusOverride(status);
-  // …but only a status you SET by hand can be handed back to the tasks.
-  const manual = isStatusOverride(project.storedStatus);
-  const filled = status === "in_progress" || status === "complete";
-  const pick = (s: ProjectStatus) => { onChange(s); setOpen(false); };
-  return (
-    <span className="relative inline-flex items-center gap-1">
-      {/* The derived middle states ("Idea", "In motion") stay silent — they named
-          nothing you could act on, and progress is already the tasks + the week
-          chip right here on this strip. */}
-      {labelled && (
-        <span
-          className="mono rounded-full border px-2 py-0.5 text-meta"
-          style={{ borderColor: color, color: filled ? "#fff" : color, background: filled ? color : "transparent" }}
-          title={manual ? "Status you set — click ··· to let it track your tasks again" : "Every task is done"}
-        >
-          {STATUS_LABEL[status]}
-        </span>
-      )}
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="fast mono rounded-full px-1 text-meta text-muted hover:text-ink"
-        title="Mark shipped, waiting, or cancelled"
-        aria-label="Set status"
-      >
-        ···
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="rise elev-2 absolute left-0 top-full z-50 mt-1 min-w-[150px] rounded-md border border-line bg-surface py-1">
-            <button onClick={() => pick("waiting")} className="fast mono block w-full px-2.5 py-1 text-left text-label hover:bg-accent-soft" style={{ color: PROJECT_STATUS_COLORS.waiting }}>Mark waiting</button>
-            <button onClick={() => pick("cancelled")} className="fast mono block w-full px-2.5 py-1 text-left text-label hover:bg-accent-soft" style={{ color: PROJECT_STATUS_COLORS.cancelled }}>Mark cancelled</button>
-            <button onClick={() => pick("complete")} className="fast mono block w-full px-2.5 py-1 text-left text-label hover:bg-accent-soft" style={{ color: PROJECT_STATUS_COLORS.complete }}>Mark shipped</button>
-            {manual && (
-              <>
-                <div className="my-1 h-px bg-line" />
-                <button onClick={() => pick("in_progress")} className="fast mono block w-full px-2.5 py-1 text-left text-label text-muted hover:bg-accent-soft">↺ Back to auto</button>
-              </>
-            )}
-          </div>
-        </>
-      )}
-    </span>
-  );
-}
+const MOMENTUM_LABEL: Record<Momentum, string> = { up: "↑ Rising", flat: "→ Steady", down: "↓ Stalled" };
 
-// ── Project record ────────────────────────────────────────────────────────────
+// ── Project record ───────────────────────────────────────────────────────────
 function ProjectRecord({
   id,
   onClose,
   onOpenInitiative,
+  sheetRef,
 }: {
   id: string;
   onClose: () => void;
   onOpenInitiative: (id: string) => void;
+  sheetRef: RefObject<HTMLDivElement>;
 }) {
-  const { data, updateProject, updateTask, deleteProject, routeTask, addProjectReadyToSprint } = useVertical();
+  const store = useVertical();
+  const { data, updateProject, updateTask, deleteProject, routeTask, addProjectReadyToSprint } = store;
   const project = projectById(data, id);
-  const [note, setNote] = useState<string | null>(null);
   const [assessing, setAssessing] = useState(false);
   const [shipping, setShipping] = useState(false);
+  const [grooming, setGrooming] = useState(false);
+  const [menu, setMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLButtonElement>(null);
+  const taskRef = useRef<HTMLInputElement>(null);
+  const logRef = useRef<HTMLTextAreaElement>(null);
+  const bandRef = useRef<HTMLDivElement>(null);
 
-  // Record vanished (deleted elsewhere) — close rather than show an empty shell.
+  // t = tasks · l = log · s = sprint. Bare letters, gated on "not typing".
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      const target = k === "t" ? taskRef.current : k === "l" ? logRef.current : k === "s" ? bandRef.current : null;
+      if (!target) return;
+      e.preventDefault();
+      target.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     if (!project) onClose();
   }, [project, onClose]);
   if (!project) return null;
 
-  // Apply an accepted coach patch to the right target.
   const applyAssess = (f: AssessFinding) => {
     if (!f.patch) return;
     if (f.patch.kind === "outcome" && f.patch.outcome) updateProject(project.id, { outcome: f.patch.outcome });
@@ -400,198 +481,189 @@ function ProjectRecord({
   const accent = domain?.color ?? "var(--accent)";
   const tasks = tasksOf(data, project.id);
   const done = tasks.filter((t) => t.status === "done").length;
-  const pct = projectProgress(data, project);
+  const openMins = tasks.filter((t) => t.status !== "done").reduce((s, t) => s + (t.durationMins || 0), 0);
   const inSprint = projectSprintCount(data, project.id);
   const suggestions = suggestForProject(data, project);
-  // Already the honest answer — buildVertical derives `complete` the moment the
-  // last task is ticked, so there's nothing to compute (or invite) here.
-  const status = project.status;
-  const statusColor = PROJECT_STATUS_COLORS[status];
+  const axes = projectReadinessAxes(data, project, new Date());
+  const manual = isStatusOverride(project.storedStatus);
 
-  const shipped = (verdict: LeftoverVerdict | null, open: number) =>
-    setNote(
-      verdict === "done"
-        ? `Shipped — and marked ${open} open task${open === 1 ? "" : "s"} done.`
-        : verdict === "drop"
-          ? `Shipped — and dropped ${open} task${open === 1 ? "" : "s"} you didn't need.`
-          : "Shipped.",
-    );
+  const setStatus = (s: ProjectStatus) => {
+    setMenu(false);
+    if (s === "complete") setShipping(true);
+    else updateProject(project.id, { status: s });
+  };
 
   return (
-    <Card accent={accent}>
-      <Header
-        accent={accent}
+    <Sheet variant="marked" spine={accent} wide={assessing} sheetRef={sheetRef}>
+      <Head
         crumbs={
           <>
-            {/* The domain is identity AND a routing decision you change — it was
-                read-only here, so a mis-filed project had to be fixed elsewhere. */}
+            {/* Routing this to the right area is a primary act, not a crumb —
+                it used to be set at the same weight as the text beside it. */}
             <DomainPicker
               domains={domains}
               value={project.domainId}
+              size="lg"
               onChange={(domainId) => {
                 // An initiative lives in one domain — crossing domains detaches
-                // the project (same rule as the Projects table). Leaving the
-                // FK set would keep it nested under the old bet.
+                // the project, or it stays nested under the old bet.
                 const init = initiativeById(data, project.initiativeId);
                 const crossDomain = Boolean(init && init.domainId !== domainId);
-                updateProject(project.id, {
-                  domainId,
-                  ...(crossDomain ? { initiativeId: null, keyResultId: null } : {}),
-                });
+                updateProject(project.id, { domainId, ...(crossDomain ? { initiativeId: null, keyResultId: null } : {}) });
               }}
             />
             {initiative && (
               <>
-                <span className="text-muted">›</span>
-                <button onClick={() => onOpenInitiative(initiative.id)} className="fast text-muted hover:text-ink">
+                <span className="text-meta text-muted">›</span>
+                <button onClick={() => onOpenInitiative(initiative.id)} className="fast text-meta text-muted hover:text-ink">
                   {initiative.name}
                 </button>
               </>
             )}
           </>
         }
-        title={project.name}
-        onTitle={(v) => updateProject(project.id, { name: v })}
-        goal={project.outcome}
-        onGoal={(v) => updateProject(project.id, { outcome: v })}
-        goalPlaceholder="What does done look like, in one line?"
-        pct={pct}
-        onClose={onClose}
+        acts={
+          <span className="flex items-center gap-0.5">
+            <IconBtn
+              glyph="★"
+              label="Slot this project's open tasks into this week"
+              badge={inSprint}
+              onClick={() => addProjectReadyToSprint(project.id)}
+            />
+            <IconBtn glyph="✦" label="Assess — have Nuvo review this and show where to sharpen it" onClick={() => setAssessing(true)} />
+            <span className="mx-1 h-3.5 w-px bg-line" />
+            <IconBtn glyph="···" label="Groom, status, delete" btnRef={menuRef} onClick={() => setMenu((o) => !o)} />
+            <IconBtn glyph="✕" label="Close" onClick={onClose} />
+            <FloatingMenu open={menu} anchorRef={menuRef} align="right" minWidth={170} onClose={() => setMenu(false)}>
+              <MenuItem onClick={() => { setGrooming(true); setMenu(false); }}>
+                <span style={{ color: accent }}>✦</span> Groom the steps
+              </MenuItem>
+              <div className="my-1 h-px bg-line" />
+              <MenuItem onClick={() => setStatus("waiting")} color={PROJECT_STATUS_COLORS.waiting}>Mark waiting</MenuItem>
+              <MenuItem onClick={() => setStatus("cancelled")} color={PROJECT_STATUS_COLORS.cancelled}>Mark cancelled</MenuItem>
+              <MenuItem onClick={() => setStatus("complete")} color={PROJECT_STATUS_COLORS.complete}>Ship it…</MenuItem>
+              {manual && <MenuItem onClick={() => setStatus("in_progress")}>↺ Back to auto</MenuItem>}
+              <div className="my-1 h-px bg-line" />
+              <div className="px-2.5 py-1">
+                <DeleteBtn what="project" onDelete={() => { deleteProject(project.id); onClose(); }} />
+              </div>
+            </FloatingMenu>
+          </span>
+        }
+        name={project.name}
+        onName={(v) => updateProject(project.id, { name: v })}
+        outcome={project.outcome}
+        onOutcome={(v) => updateProject(project.id, { outcome: v })}
+        outcomePlaceholder="What does done look like, in one line?"
       />
 
       <Body
+        assessing={assessing}
+        scrollRef={scrollRef}
         main={
           <>
-            {/* Tasks are the hero — composer pinned on top, scaffolding-first */}
-            <Section
+            <Sec
               label="Tasks"
-              action={
-                <button
-                  onClick={() => {
-                    addProjectReadyToSprint(project.id);
-                    setNote("Committed this project's open tasks to the week.");
-                  }}
-                  className="fast mono text-label text-muted hover:text-ink"
-                  title="Slot this project's open tasks into this week"
-                >
-                  ★ slot to this week{inSprint > 0 ? ` (${inSprint})` : ""}
-                </button>
-              }
+              spine={accent}
+              fill={projectProgress(data, project)}
+              meter={tasks.length ? `${done}/${tasks.length}${openMins ? ` · ${deckWeight(openMins)}` : ""}` : null}
             >
               <div data-assess-anchor="tasks">
                 <TaskList
                   tasks={tasks}
                   parent={{ projectId: project.id, initiativeId: project.initiativeId, domainId: project.domainId }}
                   accent={accent}
-                  composerFirst
-                  emptyHint="No tasks yet — dump the steps above, or paste a list."
+                  spine
+                  keyboardNav
+                  composerRef={taskRef}
+                  refining={grooming}
+                  onRefining={setGrooming}
                 />
               </div>
-            </Section>
+            </Sec>
 
-            {/* A quiet meta strip under the work. No derived "status" pill: the only
-                real measures of progress are the tasks and whether it's committed to
-                a week — both already visible — so a separate state label tracked
-                nothing you could act on. */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-3 text-label text-muted">
-              <span className="mono">{done}/{tasks.length} done</span>
-              <StatusControl
-                project={project}
-                status={status}
-                color={statusColor}
-                onChange={(s) => (s === "complete" ? setShipping(true) : updateProject(project.id, { status: s }))}
-              />
-              <div className="flex-1" />
-              <div className="mono flex items-center gap-2">
-                <span>start <InlineDate value={project.startDate} onChange={(v) => updateProject(project.id, { startDate: v })} /></span>
-                <span className="opacity-50">→</span>
-                <span>target <InlineDate value={project.targetDate} onChange={(v) => updateProject(project.id, { targetDate: v })} /></span>
-              </div>
-            </div>
-
-            {/* The Log — the "what's going on" journal that replaced the Brief.
-                Full main-column width so it's actually readable. */}
-            <Section label="Log">
-              <RecordLog kind="project" id={project.id} accent={accent} />
-            </Section>
+            <Sec label="Log" spine={accent}>
+              <RecordLog kind="project" id={project.id} accent={accent} spine composerRef={logRef} />
+            </Sec>
           </>
         }
-        scrollRef={scrollRef}
-        overlay={assessing && (
-          <AssessLayer kind="project" id={project.id} scrollRef={scrollRef} accent={accent} onAccept={applyAssess} onExit={() => setAssessing(false)} />
-        )}
-        side={assessing ? null : (
-          <>
-            <SuggestionPanel
-              suggestions={suggestions}
+        overlay={
+          assessing && (
+            <AssessLayer
+              kind="project"
+              id={project.id}
+              scrollRef={scrollRef}
               accent={accent}
-              onFold={(taskId) => routeTask(taskId, { projectId: project.id })}
-              hint="Nothing loose matches yet. Capture tasks to your inbox, and matches surface here."
+              onAccept={applyAssess}
+              onExit={() => setAssessing(false)}
             />
-            <Section label="Activity">
-              <ProjectActivityBind projectId={project.id} projectName={project.name} />
-            </Section>
-          </>
-        )}
+          )
+        }
+        rail={
+          assessing ? null : (
+            <>
+              <SprintBand p={project} store={store} color={accent} bandRef={bandRef} />
+              <RailSec label="Ready">
+                <ReadyTicks
+                  axes={[
+                    { label: "Outcome", met: project.outcome.trim() !== "" },
+                    { label: "Steps", met: axes.planned },
+                  ]}
+                />
+              </RailSec>
+              <Suggestions suggestions={suggestions} onFold={(taskId) => routeTask(taskId, { projectId: project.id })} />
+              <RailSec label="Activity">
+                <ProjectActivityBind projectId={project.id} projectName={project.name} compact />
+              </RailSec>
+            </>
+          )
+        }
       />
 
-      <Footer
-        onClose={onClose}
-        deleteWhat="project"
-        onDelete={() => { deleteProject(project.id); onClose(); }}
-        note={note}
-        leftExtra={!assessing && <AssessButton accent={accent} onClick={() => setAssessing(true)} />}
-      />
-
-      {shipping && <ProjectShipAssess id={project.id} onClose={() => setShipping(false)} onShipped={shipped} />}
-    </Card>
+      {shipping && <ProjectShipAssess id={project.id} onClose={() => setShipping(false)} onShipped={(_v: LeftoverVerdict | null) => onClose()} />}
+    </Sheet>
   );
 }
 
-// ── Initiative record ─────────────────────────────────────────────────────────
+// ── Initiative record ────────────────────────────────────────────────────────
 function krPct(kr: KeyResult) {
   if (kr.target === kr.baseline) return kr.current >= kr.target ? 100 : 0;
   return Math.max(0, Math.min(100, Math.round(((kr.current - kr.baseline) / (kr.target - kr.baseline)) * 100)));
 }
 
-// A persistent project composer, mirroring the task composer (TaskList): type a
-// name → Enter → the project lands (optimistically, via addProject) and the field
-// stays focused for the next one. ⌘/Ctrl+Enter opens the fresh project's record
-// to flesh it out; pasting a list creates one project per line. Projects need
-// less than tasks to be real (just a name under the initiative), so this makes
-// standing up an initiative's projects as fast as jotting its tasks.
+/** The project composer, on the same spine as everything else. */
 function ProjectComposer({
   domainId,
   initiativeId,
   addProject,
   onOpenProject,
+  accent,
+  inputRef,
 }: {
   domainId: string;
   initiativeId: string;
   addProject: (domainId: string, initiativeId: string | null, init?: Partial<Project>) => Promise<Project>;
   onOpenProject: (id: string) => void;
+  accent: string;
+  inputRef: RefObject<HTMLInputElement>;
 }) {
   const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const submit = (open = false) => {
     const name = draft.trim();
     if (!name) return;
-    void addProject(domainId, initiativeId, { name }).then((p) => {
-      if (open) onOpenProject(p.id);
-    });
+    void addProject(domainId, initiativeId, { name }).then((p) => { if (open) onOpenProject(p.id); });
     setDraft("");
     inputRef.current?.focus();
   };
 
-  // Paste a whole list → one project per non-empty line, in order.
   const onPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const text = e.clipboardData.getData("text");
-    const names = text
+    const names = e.clipboardData
+      .getData("text")
       .split(/\r?\n/)
       .map((l) => l.replace(/^\s*[-*•\d.)\]]+\s*/, "").trim())
       .filter(Boolean);
-    if (names.length < 2) return; // let the browser handle a plain single-line paste
+    if (names.length < 2) return;
     e.preventDefault();
     names.forEach((name) => void addProject(domainId, initiativeId, { name }));
     setDraft("");
@@ -599,19 +671,20 @@ function ProjectComposer({
   };
 
   return (
-    <div className="mt-2.5 flex items-center gap-2 rounded-[var(--radius)] border border-line px-3 py-2 focus-within:border-muted">
-      <span className="text-muted">＋</span>
+    <div className="flex items-center" style={{ minHeight: 36 }}>
+      <span className={`flex shrink-0 items-center text-body ${GUT}`} style={{ color: accent }}>＋</span>
       <input
         ref={inputRef}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") { e.preventDefault(); submit(e.metaKey || e.ctrlKey); }
-          if (e.key === "Escape") setDraft("");
+          if (e.key === "Escape") { e.stopPropagation(); setDraft(""); e.currentTarget.blur(); }
         }}
         onPaste={onPaste}
-        placeholder="Add a project… ↵ to add another, ⌘↵ to open, or paste a list"
-        className="tap flex-1 bg-transparent text-caption outline-none placeholder:text-muted"
+        placeholder="Add a project… ⌘↵ to open it"
+        className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted"
+        style={{ caretColor: accent }}
       />
     </div>
   );
@@ -621,25 +694,42 @@ function InitiativeRecord({
   id,
   onClose,
   onOpenProject,
+  sheetRef,
 }: {
   id: string;
   onClose: () => void;
   onOpenProject: (id: string) => void;
+  sheetRef: RefObject<HTMLDivElement>;
 }) {
+  const store = useVertical();
   const {
-    data,
-    updateInitiative,
-    deleteInitiative,
-    addProject,
-    updateProject,
-    addKeyResult,
-    updateKeyResult,
-    deleteKeyResult,
-    routeTask,
-  } = useVertical();
+    data, updateInitiative, deleteInitiative, addProject, updateProject,
+    addKeyResult, updateKeyResult, deleteKeyResult, routeTask,
+  } = store;
   const initiative = initiativeById(data, id);
   const [assessing, setAssessing] = useState(false);
+  const [menu, setMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLButtonElement>(null);
+  const projRef = useRef<HTMLInputElement>(null);
+  const logRef = useRef<HTMLTextAreaElement>(null);
+  const bandRef = useRef<HTMLDivElement>(null);
+  const [krFocus, setKrFocus] = useState(0);
+
+  // p = projects · l = log · q = quarter · k = add a key result.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "k") { e.preventDefault(); addKeyResult(id); setKrFocus((n) => n + 1); return; }
+      const target = k === "p" ? projRef.current : k === "l" ? logRef.current : k === "q" ? bandRef.current : null;
+      if (!target) return;
+      e.preventDefault();
+      target.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [addKeyResult, id]);
 
   useEffect(() => {
     if (!initiative) onClose();
@@ -650,7 +740,6 @@ function InitiativeRecord({
   const accent = domain?.color ?? "var(--accent)";
   const domains = [...data.domains].sort((a, b) => a.sort - b.sort);
 
-  // Apply an accepted coach patch: the objective one-liner, or a key result.
   const applyAssess = (f: AssessFinding) => {
     if (!f.patch) return;
     if (f.patch.kind === "outcome" && f.patch.outcome) updateInitiative(initiative.id, { outcome: f.patch.outcome });
@@ -668,213 +757,205 @@ function InitiativeRecord({
     updateInitiative(initiative.id, { domainId });
     projectsOf(data, initiative.id).forEach((p) => updateProject(p.id, { domainId }));
   };
+
   const projects = projectsOf(data, initiative.id);
-  const pct = initiativeProgress(data, initiative);
   const suggestions = suggestForInitiative(data, initiative);
+  const attainment = initiative.keyResults.length ? initiativeAttainment(data, initiative) : null;
+  const childPct = projects.length
+    ? Math.round(projects.reduce((s, p) => s + projectProgress(data, p), 0) / projects.length)
+    : 0;
 
   return (
-    <Card accent={accent}>
-      <Header
-        accent={accent}
-        crumbs={
-          /* Same DomainPicker as projects — domain is identity you change here,
-             not a read-only crumb. New initiatives default to domains[0]
-             (often Trading); without this, a mis-file looked permanent. */
-          <DomainPicker domains={domains} value={initiative.domainId} onChange={changeDomain} />
+    <Sheet variant="bounded" spine={accent} wide={assessing} sheetRef={sheetRef}>
+      <Head
+        crumbs={<DomainPicker domains={domains} value={initiative.domainId} size="lg" onChange={changeDomain} />}
+        acts={
+          <span className="flex items-center gap-0.5">
+            <IconBtn glyph="✦" label="Assess — have Nuvo review this and show where to sharpen it" onClick={() => setAssessing(true)} />
+            <span className="mx-1 h-3.5 w-px bg-line" />
+            <IconBtn glyph="···" label="Momentum, status, delete" btnRef={menuRef} onClick={() => setMenu((o) => !o)} />
+            <IconBtn glyph="✕" label="Close" onClick={onClose} />
+            <FloatingMenu open={menu} anchorRef={menuRef} align="right" minWidth={170} onClose={() => setMenu(false)}>
+              {(["up", "flat", "down"] as Momentum[]).map((m) => (
+                <MenuItem key={m} onClick={() => { updateInitiative(initiative.id, { momentum: m }); setMenu(false); }}>
+                  {MOMENTUM_LABEL[m]}
+                  {initiative.momentum === m && <span className="ml-2 text-micro opacity-60">✓</span>}
+                </MenuItem>
+              ))}
+              <div className="my-1 h-px bg-line" />
+              {(["waiting", "cancelled", "complete"] as ProjectStatus[]).map((s) => (
+                <MenuItem
+                  key={s}
+                  color={PROJECT_STATUS_COLORS[s]}
+                  onClick={() => { updateInitiative(initiative.id, { status: s }); setMenu(false); }}
+                >
+                  Mark {STATUS_LABEL[s].toLowerCase()}
+                </MenuItem>
+              ))}
+              <div className="my-1 h-px bg-line" />
+              <div className="px-2.5 py-1">
+                <DeleteBtn what="initiative" onDelete={() => { deleteInitiative(initiative.id); onClose(); }} />
+              </div>
+            </FloatingMenu>
+          </span>
         }
-        title={initiative.name}
-        onTitle={(v) => updateInitiative(initiative.id, { name: v })}
-        goal={initiative.outcome}
-        onGoal={(v) => updateInitiative(initiative.id, { outcome: v })}
-        goalPlaceholder="The outcome, one inspiring line — not a task"
-        goalLabel="Objective"
-        showGoal={false}
-        pct={pct}
-        onClose={onClose}
+        name={initiative.name}
+        onName={(v) => updateInitiative(initiative.id, { name: v })}
+        outcome={initiative.outcome}
+        onOutcome={(v) => updateInitiative(initiative.id, { outcome: v })}
+        outcomePlaceholder="The outcome, one inspiring line — not a task"
       />
 
       <Body
+        assessing={assessing}
+        scrollRef={scrollRef}
         main={
           <>
-            {/* The OKR block — Objective heads its Key Results, together, so the
-                record reads as a true OKR (the Objective is pulled out of the
-                masthead into the body for this). */}
-            <Section label="Objective">
-              <div data-assess-anchor="objective">
-                <InlineText
-                  value={initiative.outcome}
-                  onChange={(v) => updateInitiative(initiative.id, { outcome: v })}
-                  placeholder="The outcome, one inspiring line — not a task"
-                  className="text-lead font-medium"
-                />
-              </div>
-            </Section>
+            {/* The Objective used to head this section as its own block; it's now
+                the record's lead line, where an outcome belongs at every altitude. */}
+            <div data-assess-anchor="objective" />
 
-            <Section
-              label={`Key results${initiative.keyResults.length ? ` · ${initiative.keyResults.length}` : ""}`}
-              action={
-                <button onClick={() => addKeyResult(initiative.id)} className="fast mono text-label text-muted hover:text-ink">+ add</button>
-              }
+            <Sec
+              label="Key results"
+              spine={accent}
+              fill={attainment ?? 0}
+              meter={attainment != null ? `${attainment}%` : null}
             >
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {initiative.keyResults.map((kr) => (
-                  <div key={kr.id} data-assess-anchor={`kr:${kr.id}`} className="group glass-card rounded-[var(--radius)] border border-line p-3">
-                    <div className="flex items-center gap-2">
-                      <InlineText value={kr.name} onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })} className="text-caption font-medium" />
-                      <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
-                        <DeleteBtn what="result" onDelete={() => deleteKeyResult(initiative.id, kr.id)} />
-                      </div>
-                    </div>
-                    <div className="mono mt-1 flex items-center gap-1 text-meta text-muted">
+              {initiative.keyResults.map((kr, i) => (
+                <div
+                  key={kr.id}
+                  data-assess-anchor={`kr:${kr.id}`}
+                  className="group fast -mx-2 rounded-[var(--radius-sm)] border-b border-line px-2 py-2 last:border-b-0 hover:bg-accent-soft/40"
+                >
+                  <div className="flex items-center">
+                    <span className={`shrink-0 text-meta text-muted ${GUT}`}>◇</span>
+                    <InlineText
+                      value={kr.name}
+                      onChange={(v) => updateKeyResult(initiative.id, kr.id, { name: v })}
+                      placeholder="What number moves?"
+                      autoFocusEmpty={i === initiative.keyResults.length - 1 && krFocus > 0}
+                      className="min-w-0 flex-1 text-body font-medium"
+                    />
+                    <span className="mono shrink-0 pl-3 text-meta text-muted">{krPct(kr)}%</span>
+                    <span className="ml-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
+                      <DeleteBtn what="result" onDelete={() => deleteKeyResult(initiative.id, kr.id)} />
+                    </span>
+                  </div>
+                  <div className={`mt-1.5 flex items-center gap-3 ${GUT_PAD}`}>
+                    <span className="mono flex shrink-0 items-center gap-1 text-meta text-muted">
                       <InlineNumber value={kr.baseline} onChange={(v) => updateKeyResult(initiative.id, kr.id, { baseline: v })} />
-                      <span>→</span>
+                      <span className="opacity-50">→</span>
                       <span style={{ color: accent }}>
                         <InlineNumber value={kr.current} onChange={(v) => updateKeyResult(initiative.id, kr.id, { current: v })} />
                       </span>
-                      <span>→</span>
+                      <span className="opacity-50">→</span>
                       <InlineNumber value={kr.target} onChange={(v) => updateKeyResult(initiative.id, kr.id, { target: v })} />
-                      <InlineText value={kr.unit} onChange={(v) => updateKeyResult(initiative.id, kr.id, { unit: v })} placeholder="unit" className="ml-1 w-10" />
-                    </div>
-                    <Bar pct={krPct(kr)} color={accent} />
+                      <InlineText
+                        value={kr.unit}
+                        onChange={(v) => updateKeyResult(initiative.id, kr.id, { unit: v })}
+                        placeholder="unit"
+                        className="ml-0.5 w-10"
+                      />
+                    </span>
+                    <span className="h-0.5 flex-1 rounded-full" style={{ background: "var(--line)" }}>
+                      <span
+                        className="fast block h-full rounded-full"
+                        style={{ width: `${krPct(kr)}%`, background: accent }}
+                      />
+                    </span>
                   </div>
-                ))}
+                </div>
+              ))}
+              <div className="flex items-center" style={{ minHeight: 36 }}>
+                <span className={`flex shrink-0 items-center text-body ${GUT}`} style={{ color: accent }}>＋</span>
+                <button
+                  onClick={() => { addKeyResult(initiative.id); setKrFocus((n) => n + 1); }}
+                  className="fast flex-1 text-left text-body text-muted hover:text-ink"
+                >
+                  Add a key result…
+                </button>
               </div>
-              {initiative.keyResults.length === 0 && (
-                <div className="rounded-[var(--radius)] border border-dashed border-line p-4 text-center text-caption text-muted">
-                  No key results yet — this initiative has no number to move. Add one from a baseline (or draft the full set on the Groom deck) so you read the Gain, not just the gap.
-                </div>
-              )}
-            </Section>
+            </Sec>
 
-            <Section label={`${projects.length} project${projects.length === 1 ? "" : "s"} feeding it`}>
-              {projects.length > 0 ? (
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                  {projects.map((p) => {
-                    const pp = projectProgress(data, p);
-                    return (
-                      <button
-                        key={p.id}
-                        data-assess-anchor={`project:${p.id}`}
-                        onClick={() => onOpenProject(p.id)}
-                        className="fast group glass-card flex flex-col rounded-[var(--radius)] border border-line p-3 text-left hover:border-muted hover:-translate-y-px hover:[box-shadow:var(--shadow-2)]"
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="text-caption font-medium leading-snug">{p.name}</span>
-                          <span
-                            className="mono ml-auto shrink-0 rounded-full border px-1.5 text-micro"
-                            style={{ borderColor: PROJECT_STATUS_COLORS[p.status], color: PROJECT_STATUS_COLORS[p.status] }}
-                          >
-                            {PROJECT_STATUS_LABEL[p.status]}
-                          </span>
-                        </div>
-                        {p.outcome && <div className="mt-1 line-clamp-2 text-label text-muted">{p.outcome}</div>}
-                        <div className="mt-auto pt-2">
-                          <Bar pct={pp} color={accent} h={1} />
-                          <div className="mono text-meta text-muted">{pp}%{p.targetDate ? ` · by ${p.targetDate.slice(5)}` : ""}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-[var(--radius)] border border-dashed border-line p-4 text-center text-caption text-muted">
-                  No projects yet — type one below to carry this initiative's work.
-                </div>
-              )}
-              <ProjectComposer
-                domainId={initiative.domainId}
-                initiativeId={initiative.id}
-                addProject={addProject}
-                onOpenProject={onOpenProject}
-              />
-            </Section>
-
-            {/* Demoted status: state · momentum · counts · dates — domain lives in
-                the crumbs (parity with projects). */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3 text-label text-muted">
-              <StatusPill
-                value={initiative.status}
-                options={[...PROJECT_STATUS]}
-                colors={PROJECT_STATUS_COLORS}
-                labels={PROJECT_STATUS_LABEL}
-                filled={initiative.status === "in_progress" ? new Set(["in_progress"]) : undefined}
-                onChange={(s) => updateInitiative(initiative.id, { status: s })}
-              />
-              <MomentumChip value={initiative.momentum} onChange={(m) => updateInitiative(initiative.id, { momentum: m })} />
-              <span className="mono">
-                {projects.length} project{projects.length === 1 ? "" : "s"} · {initiative.keyResults.length} KR
-              </span>
-              <div className="flex-1" />
-              <div className="mono flex items-center gap-2">
-                <span>start <InlineDate value={initiative.startDate} onChange={(v) => updateInitiative(initiative.id, { startDate: v })} /></span>
-                <span className="opacity-50">→</span>
-                <span>target <InlineDate value={initiative.targetDate} onChange={(v) => updateInitiative(initiative.id, { targetDate: v })} /></span>
+            <Sec
+              label="Projects feeding it"
+              spine={accent}
+              fill={childPct}
+              meter={projects.length ? `${projects.length} · ${childPct}%` : null}
+            >
+              {/* The same card the deck behind this modal shows — one object, not
+                  a bespoke tile in a half-empty two-column grid. */}
+              {projects.map((p) => {
+                const pAxes = projectReadinessAxes(data, p, new Date());
+                const pOpen = tasksOf(data, p.id).filter((t) => t.status !== "done");
+                const pDomain = domainById(data, p.domainId);
+                return (
+                  <div key={p.id} data-assess-anchor={`project:${p.id}`} className="mt-2">
+                    <DeckCard
+                      variant="marked"
+                      spine={pDomain?.color ?? accent}
+                      eyebrow={pDomain?.name ?? "—"}
+                      title={p.name}
+                      weight={deckWeight(pOpen.reduce((s, t) => s + (t.durationMins || 0), 0))}
+                      status={p.targetDate ? { label: `Spr ${sprintNumber(new Date(p.targetDate + "T12:00:00"))}`, tone: "muted" } : null}
+                      pips={[pAxes.defined, pAxes.planned, pAxes.fits ?? true]}
+                      pipTone="muted"
+                      dim={p.status === "complete" || p.status === "cancelled"}
+                      className="cursor-pointer"
+                      onClick={() => onOpenProject(p.id)}
+                    />
+                  </div>
+                );
+              })}
+              <div className="mt-1">
+                <ProjectComposer
+                  domainId={initiative.domainId}
+                  initiativeId={initiative.id}
+                  addProject={addProject}
+                  onOpenProject={onOpenProject}
+                  accent={accent}
+                  inputRef={projRef}
+                />
               </div>
-            </div>
+            </Sec>
 
-            <Section label="Log">
-              <RecordLog kind="initiative" id={initiative.id} accent={accent} />
-            </Section>
+            <Sec label="Log" spine={accent}>
+              <RecordLog kind="initiative" id={initiative.id} accent={accent} spine composerRef={logRef} />
+            </Sec>
           </>
         }
-        scrollRef={scrollRef}
-        overlay={assessing && (
-          <AssessLayer kind="initiative" id={initiative.id} scrollRef={scrollRef} accent={accent} onAccept={applyAssess} onExit={() => setAssessing(false)} />
-        )}
-        side={assessing ? null : (
-          <SuggestionPanel
-            suggestions={suggestions}
-            accent={accent}
-            onFold={(taskId) => routeTask(taskId, { projectId: null, initiativeId: initiative.id })}
-            hint="Nothing loose matches yet. Capture tasks to your inbox, and matches surface here."
-          />
-        )}
+        overlay={
+          assessing && (
+            <AssessLayer
+              kind="initiative"
+              id={initiative.id}
+              scrollRef={scrollRef}
+              accent={accent}
+              onAccept={applyAssess}
+              onExit={() => setAssessing(false)}
+            />
+          )
+        }
+        rail={
+          assessing ? null : (
+            <>
+              <QuarterBand i={initiative} store={store} color={accent} bandRef={bandRef} />
+              <RailSec label="Ready">
+                <ReadyTicks
+                  axes={[
+                    { label: "Objective", met: initiative.outcome.trim() !== "" },
+                    { label: "A number moving", met: initiative.keyResults.length > 0 },
+                  ]}
+                />
+              </RailSec>
+              <Suggestions
+                suggestions={suggestions}
+                onFold={(taskId) => routeTask(taskId, { projectId: null, initiativeId: initiative.id })}
+              />
+            </>
+          )
+        }
       />
-
-      <Footer
-        onClose={onClose}
-        deleteWhat="initiative"
-        onDelete={() => { deleteInitiative(initiative.id); onClose(); }}
-        leftExtra={!assessing && <AssessButton accent={accent} onClick={() => setAssessing(true)} />}
-      />
-    </Card>
-  );
-}
-
-// ── Shared footer ─────────────────────────────────────────────────────────────
-function Footer({
-  onClose,
-  deleteWhat,
-  onDelete,
-  note,
-  leftExtra,
-}: {
-  onClose: () => void;
-  deleteWhat: string;
-  onDelete: () => void;
-  note?: string | null;
-  leftExtra?: ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-2 border-t border-line bg-surface/50 px-7 py-3.5">
-      <DeleteBtn what={deleteWhat} onDelete={onDelete} />
-      {leftExtra}
-      {note && <span className="text-label text-muted">{note}</span>}
-      <div className="flex-1" />
-      <Btn kind="primary" onClick={onClose}>Done</Btn>
-    </div>
-  );
-}
-
-// ── The "Assess" toggle — invites the coach's pass; the record wires the layer ─
-function AssessButton({ accent, onClick }: { accent: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="fast inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-meta font-medium text-muted hover:border-line-strong hover:text-ink"
-      title="Have Nuvo review this and show where to sharpen it"
-    >
-      <span style={{ color: accent }}>✦</span> Assess
-    </button>
+    </Sheet>
   );
 }
