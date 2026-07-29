@@ -150,6 +150,23 @@ disagreed about which week Saturday plans. So:
 - `npm test` (vitest) runs the conformance suite; CI (`.github/workflows/checks.yml`) runs
   typecheck + tests + an edge-function parse on every push.
 
+### Changing the agent — test it, don't just tell it
+
+The agent has a test harness now; see **[`docs/agent-harness.md`](docs/agent-harness.md)**.
+Before adding a rule to the system prompt, ask which layer should own it:
+
+- **A rule with one right answer belongs in code or in the context payload**, not in prose.
+  Prose is probabilistic and negotiates with its neighbours — that's how `start_time` ended
+  up documented as UTC, as local, and as `America/Los_Angeles` at the same time. The fixes
+  that held (`context.dates`, the `when` string on calendar results, `eventsFnFor`) each let
+  a rule be *deleted*.
+- **The prompt carries judgment** — what to say, when to push back, when to stay quiet.
+- **A behaviour change needs a case in `tests/agent-*.test.ts`**, and it must be
+  mutation-checked: break the code, watch it go red, put it back. `executeTool` runs for
+  real there against an in-memory account, so this is cheap.
+- **Prompt-only changes are measured with `npm run eval`** (live model, needs a key, not in
+  CI). `EVAL_RUNS=5` before and after is how a rule gets removed safely.
+
 ## Reuse the logic layer — don't duplicate
 
 - Day shape & availability: `readDay`, `toBusyBlocks`, `fmtMins`, `Gap`, `BusyBlock` in

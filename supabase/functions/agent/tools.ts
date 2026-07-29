@@ -384,7 +384,7 @@ export const TOOL_DEFINITIONS = [
           title: { type: "string" },
           notes: { type: "string" },
           do_date: { type: "string", description: "YYYY-MM-DD" },
-          start_time: { type: "string", description: "America/Los_Angeles local time: 'YYYY-MM-DDTHH:MM' (24h, no offset). Server converts to UTC." },
+          start_time: { type: "string", description: "The user's own local wall clock (their zone is named at the top of the snapshot): 'YYYY-MM-DDTHH:MM' (24h, no offset, no Z). Server converts to UTC." },
           duration_minutes: { type: "integer" },
           priority: { type: "string", enum: ["none", "low", "medium", "high"] },
           label_names: { type: "array", items: { type: "string" } },
@@ -421,7 +421,7 @@ export const TOOL_DEFINITIONS = [
         properties: {
           task_id: { type: "string" },
           task_title: { type: "string" },
-          start_time: { type: "string", description: "America/Los_Angeles local time: 'YYYY-MM-DDTHH:MM' (24h, no offset). Server converts to UTC." },
+          start_time: { type: "string", description: "The user's own local wall clock (their zone is named at the top of the snapshot): 'YYYY-MM-DDTHH:MM' (24h, no offset, no Z). Server converts to UTC." },
           duration_minutes: { type: "integer" },
         },
         required: ["start_time"],
@@ -452,7 +452,7 @@ export const TOOL_DEFINITIONS = [
         properties: {
           task_id: { type: "string" },
           task_title: { type: "string" },
-          start_time: { type: "string", description: "America/Los_Angeles local time: 'YYYY-MM-DDTHH:MM' (24h, no offset). Server converts to UTC." },
+          start_time: { type: "string", description: "The user's own local wall clock (their zone is named at the top of the snapshot): 'YYYY-MM-DDTHH:MM' (24h, no offset, no Z). Server converts to UTC." },
           duration_minutes: { type: "integer" },
         },
         required: ["start_time"],

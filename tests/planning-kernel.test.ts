@@ -320,7 +320,7 @@ describe("a spoken day resolves the same everywhere", () => {
   it("the agent hands the model a date table instead of asking it to count", () => {
     const ctx = readFileSync("supabase/functions/agent/context.ts", "utf8");
     expect(ctx, "context must carry a resolved date table").toMatch(/dates: buildDateTable\(/);
-    const prompt = readFileSync("supabase/functions/agent/index.ts", "utf8");
+    const prompt = readFileSync("supabase/functions/agent/systemPrompt.ts", "utf8");
     expect(prompt, "the prompt must send 'next <weekday>' to nextWeek").toContain(
       "dates.nextWeek[<weekday>]",
     );
@@ -350,7 +350,7 @@ describe("calendar writes reach both writable providers", () => {
       const start = tools.indexOf(marker);
       expect(tools.slice(start, start + 4000), `${marker} must return a "when"`).toMatch(/when/);
     }
-    expect(readFileSync("supabase/functions/agent/index.ts", "utf8")).toContain(
+    expect(readFileSync("supabase/functions/agent/systemPrompt.ts", "utf8")).toContain(
       "Never format a time from start_at yourself",
     );
   });
