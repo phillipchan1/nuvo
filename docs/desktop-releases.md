@@ -26,11 +26,20 @@ is a Tauri v2 build of the same `dist/` the web/PWA ships; CI produces a
 
 ## Cutting a release
 
-Releases are **deliberate**, not per-push (so routine commits don't spend macOS
-runner minutes). Two ways to trigger:
+Releases are **throttled**, not per-push (so routine commits don't spend macOS
+runner minutes). A build fires when:
 
 - **Version tag:** `git tag v0.2.0 && git push origin v0.2.0` → releases exactly `0.2.0`.
 - **Manual:** Actions tab → **Release** → **Run workflow** → releases `<major>.<minor>.<run>`.
+- **`[release]` in the commit message** on `master`.
+- **Smart gate** on `master` push or the daily cron: `scripts/should-release.mjs`
+  looks at commits since `last-built-sha.txt` in the releases repo.
+  - **Heuristic SHIP** — fix/bug/data-quality-ish subjects that touch `src/` /
+    `src-tauri/` / other app paths.
+  - **Heuristic SKIP** — only docs, marketing, CI, or other non-app paths.
+  - **Otherwise** a cheap OpenAI call (same key/model family as release notes)
+    answers SHIP or SKIP for a desktop user. On doubt or API failure → SKIP;
+    cron / `[release]` / manual remain the backstops.
 
 The workflow builds, signs, notarizes, and publishes automatically. Release notes are
 AI-generated from the commit range by `scripts/release-notes.mjs` (OpenAI, with a
@@ -38,7 +47,7 @@ deterministic commit-filter fallback if `OPENAI_API_KEY` is absent).
 
 > The `nuvo` source repo is **public**, so GitHub Actions minutes are free/unlimited.
 > If it's ever made private again, macOS runners bill at 10× included minutes — the
-> tag/manual trigger keeps that in check.
+> gate keeps that in check.
 
 ## One-time setup (required before the first real release)
 
@@ -51,7 +60,10 @@ Create **public** repo `phillipchan1/nuvo-releases` (empty is fine).
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — same values the web build uses.
 - `RELEASES_TOKEN` — a PAT (fine-grained: `contents:read/write` on `nuvo-releases`)
   used to publish releases + read/write `last-built-sha.txt`.
-- `OPENAI_API_KEY` — for AI release notes (optional; falls back to cleaned commits).
+- `OPENAI_API_KEY` — for AI release notes **and** the smart release gate
+  (`scripts/should-release.mjs`). Optional for notes (falls back to cleaned
+  commits); without it the gate only ships on heuristic hits / `[release]` /
+  tag / manual / first release.
 
 **Tauri updater signing**
 - `TAURI_SIGNING_PRIVATE_KEY` — the full contents of `~/.tauri/nuvo-updater.key`.

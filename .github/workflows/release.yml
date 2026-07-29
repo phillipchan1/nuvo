@@ -6,12 +6,14 @@ name: Release
 # code doesn't ship on every commit. A release fires when:
 #   • a commit message contains [release]   → push freely; ship intentionally
 #   • a version tag vX.Y.Z is pushed          → that exact version
-#   • the daily cron finds master changed     → batches a day into one release
+#   • push/cron: scripts/should-release.mjs says SHIP for commits since the
+#     last published build (heuristic for fix/data-quality touching src/, else
+#     a cheap OpenAI call; SKIP on doubt / AI failure)
 #   • you run it on demand                     → Actions "Run workflow", or a
 #     Claude session running `gh workflow run release.yml` when you say "cut a
 #     release" / "rebuild this"
 #
-# Plain pushes without [release] do NOT build. On-demand + tags always build.
+# Docs/marketing/CI-only pushes still skip. On-demand + tags always build.
 #
 # Publishes a UNIVERSAL (Apple Silicon + Intel) DMG + the updater artifacts
 # (.app.tar.gz + .sig) + latest.json to the PUBLIC releases repo
@@ -34,35 +36,60 @@ env:
   RELEASES_REPO: phillipchan1/nuvo-releases
 
 jobs:
-  # Cheap gate on the expensive macOS build. A branch push only builds when its
-  # HEAD commit message contains [release]; the daily cron only builds when
-  # master changed since the last release (last-built-sha.txt in the releases
-  # repo); tags and manual dispatch always build.
+  # Cheap gate on the expensive macOS build. Tags and manual dispatch always
+  # build; [release] in the commit message always builds; otherwise push + the
+  # daily cron ask scripts/should-release.mjs (commits since last-built-sha.txt
+  # in the releases repo) whether a desktop user would notice.
   gate:
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.decide.outputs.go }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Decide whether to build
         id: decide
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MSG: ${{ github.event.head_commit.message }}
         run: |
+          set -euo pipefail
           EVENT="${{ github.event_name }}"
           REF_TYPE="${{ github.ref_type }}"
           GO=false
+          REASON="default skip"
+
           if [ "$EVENT" = "workflow_dispatch" ] || [ "$REF_TYPE" = "tag" ]; then
             GO=true
-          elif [ "$EVENT" = "push" ]; then
-            case "$MSG" in *"[release]"*) GO=true ;; esac
-          elif [ "$EVENT" = "schedule" ]; then
+            REASON="dispatch/tag always builds"
+          elif [ "$EVENT" = "push" ] && [[ "$MSG" == *"[release]"* ]]; then
+            GO=true
+            REASON="commit message contains [release]"
+          elif [ "$EVENT" = "push" ] || [ "$EVENT" = "schedule" ]; then
             LAST_SHA=$(gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
               --jq '.content' 2>/dev/null | base64 -d | tr -d '[:space:]' || echo "")
-            [ "$LAST_SHA" != "${{ github.sha }}" ] && GO=true
+            if [ -z "$LAST_SHA" ]; then
+              GO=true
+              REASON="no last-built-sha yet — first release"
+            elif [ "$LAST_SHA" = "${{ github.sha }}" ]; then
+              GO=false
+              REASON="HEAD already published"
+            else
+              VERDICT=$(node scripts/should-release.mjs "$LAST_SHA" | tee /dev/stderr | awk '{print $1; exit}')
+              if [ "$VERDICT" = "SHIP" ]; then
+                GO=true
+              else
+                GO=false
+              fi
+              REASON="should-release → ${VERDICT:-SKIP}"
+            fi
           fi
+
           echo "go=$GO" >> "$GITHUB_OUTPUT"
-          echo "event=$EVENT ref_type=$REF_TYPE → build=$GO"
+          echo "event=$EVENT ref_type=$REF_TYPE → build=$GO ($REASON)"
 
   release:
     needs: gate
