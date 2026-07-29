@@ -92,7 +92,7 @@ function ResponsiveShell() {
 }
 
 function AppShellInner() {
-  const { data, ready } = useVertical();
+  const { data } = useVertical();
   const {
     nav,
     goRung,
@@ -192,18 +192,12 @@ function AppShellInner() {
     });
   };
 
-  // Live data arrives async: seed the focus branch once domains land.
-  useEffect(() => {
-    if (!ready || focus.domainId) return;
-    const dom = [...data.domains].sort((a, b) => a.sort - b.sort)[0];
-    if (!dom) return;
-    const init = initiativesOf(data, dom.id)[0];
-    const proj = init ? projectsOf(data, init.id)[0] : null;
-    navigate({
-      focus: { domainId: dom.id, initiativeId: init?.id ?? "", projectId: proj?.id ?? "" },
-    }, "none");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, data.domains.length]);
+  // No focus seeding. We used to auto-point `focus` at the first domain once
+  // data landed, so the app always "had" a branch selected — but focus is what
+  // the Domain rung reads to decide wall vs chapel, so a fresh session opened
+  // straight into whichever domain sorted first (Trading) instead of the wall.
+  // Same lie as the old `domains[0]` attribution default (D-044): ambient focus
+  // must mean "you went there", never "something had to be picked".
 
   // ⌘1–4 jump to a rung; ⌘↑ / ⌘↓ travel the ladder; ⌘[ goes back.
   useEffect(() => {

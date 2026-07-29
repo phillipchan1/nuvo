@@ -57,10 +57,9 @@ export default function FloorPane({
   const openInitiativeRecord = (id: string) => openRecord("initiative", id);
 
   // "‹ all domains" always means the wall, full stop — it can't lean on
-  // history.back(): focus.domainId persists across rung switches, so landing
-  // on the domain rung (e.g. via the sidebar tab) with a domain already
-  // focused never pushed a fresh "wall" entry to pop back to. back() would
-  // instead exit the rung entirely, to whatever was open before Domains.
+  // history.back(): a chapel can be entered from outside the rung (Marquee
+  // point-at, ⌘K), where no "wall" entry was ever pushed to pop back to, so
+  // back() would exit the rung entirely, to whatever was open before Domains.
   const exitDomain = () => focusDomain("");
 
   // Direct navigation back to each rung's front door (On Deck).
