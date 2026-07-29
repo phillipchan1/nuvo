@@ -524,7 +524,7 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "move_event",
       description:
-        "PREFERRED when the user wants an EXISTING event on a different calendar: 'put it on Family', 'apple family', 'switch to Work', 'move to …'. Pass event_id from the event you just created (or event_title). NEVER recreate with create_calendar_event — that duplicates. Cross-account/provider copies then deletes the original.",
+        "Put an EXISTING event on a different calendar: 'put it on Family', 'apple family', 'switch to Work', 'move to …'. Pass event_id from the event you just created, or event_title. A cross-account move copies then deletes the original.",
       parameters: {
         type: "object",
         properties: {
@@ -545,7 +545,7 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "create_calendar_event",
       description:
-        "Create a NEW calendar event (Google or Apple/iCloud). Only for first-time adds — NOT for 'put it on X calendar' when the event already exists (use move_event). Pass calendar_name ONLY when the user named a calendar or account; otherwise omit it and the event goes to their default. NEVER infer a calendar from what the event is about or who it's with. Always tell the user which calendar you used.",
+        "Create a NEW calendar event (Google or Apple/iCloud) — an event that does not exist yet. To change one that does, use move_event / reschedule_event / cancel_event.",
       parameters: {
         type: "object",
         properties: {
@@ -567,7 +567,7 @@ export const TOOL_DEFINITIONS = [
           calendar_name: {
             type: "string",
             description:
-              "Only when the user NAMED where it goes. A calendar display name from writableCalendars ('Family', 'Apple Family', 'Work') or an account ('phil@frontierchurch.com', 'my gmail account'). Match loosely — 'apple family' → Family on iCloud. Omit entirely if they didn't say.",
+              "The destination the user NAMED, verbatim — a display name from writableCalendars ('Family', 'Apple Family') or an account ('phil@frontierchurch.com'). Matched loosely server-side. Omit entirely when they named none; the server routes to their default.",
           },
           location: { type: "string", description: "Optional location." },
         },

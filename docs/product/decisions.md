@@ -97,6 +97,25 @@ verified against the *running app* with real data. *Status: standing.*
 project), sharing tokens but not the SPA shell. → Design truth stays close; the product
 bundle stays clean. *Status: standing.*
 
+**D-050 · 2026-07-29 · A rule with one right answer belongs in code, not in the prompt —
+and the agent gets a test harness so rules can be *removed*.** For two months every agent
+bug was found by Phil in a real conversation and fixed by adding a sentence to the system
+prompt, which reached 4,000 words with 83% of it mechanics rather than judgment. The rules
+then began contradicting each other: `start_time` was documented as UTC, as the user's
+local wall clock, and as `America/Los_Angeles` simultaneously, with only one matching the
+code; "dinner with no time" was both a calendar event and a `plan_task`. The model resolved
+those ties on its own, and the visible result was a dinner on the wrong day at a time the
+user never gave. → Three harnesses: `agent-calendar.test.ts` runs the real `executeTool`
+against an in-memory account (CI), `agent-prompt-hygiene.test.ts` checks the prompt as an
+artifact — one rule one home, no hardcoded zone, no dead tool names, a size ratchet (CI),
+and `agent-prompt.eval.ts` asserts tool choice against a live model (`npm run eval`, by
+hand). The eval is the load-bearing one: it is what makes deleting a rule safe, via
+`EVAL_RUNS=5` before and after. Full contract in
+[`agent-harness.md`](../agent-harness.md). **Costs:** the eval needs an API key and real
+money, so it can't gate CI, and a prompt-only change is therefore still unverified at
+merge time. **Open:** the prompt is still ~4,120 words; getting it to mostly-judgment is
+step 3 and hasn't been done. *Status: standing.*
+
 ### Design
 
 **D-019 · Warm Paper: the canvas is continuous.** Full-bleed structural containers stay

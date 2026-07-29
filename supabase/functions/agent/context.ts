@@ -41,7 +41,7 @@ const MIN_SLOT_MINUTES = 30;
 export interface FreeSlot {
   startISO: string;
   endISO: string;
-  /** Pre-formatted in America/Los_Angeles */
+  /** Pre-formatted in the user's own zone — use verbatim. */
   timeRange: string;
   minutes: number;
 }
@@ -51,7 +51,7 @@ export interface ScheduleItem {
   id: string;
   title: string;
   localDate: string;
-  /** Pre-formatted in America/Los_Angeles — use this verbatim, never convert ISO yourself. */
+  /** Pre-formatted in the user's own zone — use verbatim, never convert ISO yourself. */
   timeRange: string;
   past: boolean;
   ongoing?: boolean;
@@ -117,8 +117,6 @@ export interface AgentContext {
   nowISO: string;
   /** Human current time in the user's zone, e.g. "Fri, 2:30 PM". */
   nowLabel: string;
-  /** UTC offset for America/Los_Angeles right now, e.g. "-07:00". Use this when building start_time ISO strings for tools — user-stated times are always in this zone. */
-  laUtcOffset: string;
   /** THE DATE TABLE — every day the user can name out loud, already resolved.
    *  Look a spoken day up here; never count days yourself. "next <weekday>" is
    *  nextWeek[weekday] (a different week, never tomorrow); a bare "<weekday>"
@@ -127,7 +125,7 @@ export interface AgentContext {
   rangeStart: string;
   rangeEnd: string;
   settings: { dayStartHour: number; dayEndHour: number } | null;
-  /** Pre-filtered timed items for today (LA calendar). Primary source for "what's on today". */
+  /** Pre-filtered timed items for today (the user's calendar day). Primary source for "what's on today". */
   todaySchedule: ScheduleItem[];
   /** Pre-computed open windows today (≥30 min, future-only, between real busy blocks). Use this for all availability questions — never count gaps from todaySchedule yourself. */
   todayFreeSlots: FreeSlot[];
@@ -378,12 +376,6 @@ export async function buildContext(
     hour: "numeric",
     minute: "2-digit",
   }).format(now);
-  // Derive the zone's current UTC offset (handles DST automatically).
-  const laOffsetParts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    timeZoneName: "longOffset",
-  }).formatToParts(now);
-  const laUtcOffset = (laOffsetParts.find((p) => p.type === "timeZoneName")?.value ?? "GMT-07:00").replace("GMT", "");
   const start = rangeStart ?? new Date(now.getTime() - 7 * 86400_000).toISOString();
   const end = rangeEnd ?? new Date(now.getTime() + 7 * 86400_000).toISOString();
 
@@ -614,7 +606,6 @@ export async function buildContext(
     today,
     nowISO: now.toISOString(),
     nowLabel,
-    laUtcOffset,
     dates: buildDateTable(today),
     rangeStart: start,
     rangeEnd: end,
