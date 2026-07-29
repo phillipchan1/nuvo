@@ -12,8 +12,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { addDays, format, startOfWeek } from "date-fns";
-import type { Task, UserSettings } from "../../lib/types";
-import { fmtDuration, fmtTime, isOverdue, toDateISO, todayISO } from "../../lib/dates";
+import type { Slot, Task, UserSettings } from "../../lib/types";
+import { fmtDuration, isOverdue, toDateISO, todayISO } from "../../lib/dates";
 import { fmtMins, readDay, toBusyBlocks } from "../../lib/now";
 import {
   useInboxTasks,
@@ -25,9 +25,28 @@ import {
 import { useSlotTasks, useSlots } from "../../hooks/useSlots";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useVertical } from "../../hooks/useVertical";
+import { deriveSlotTitle } from "../../lib/slots";
+import { taskDomainColor } from "../../lib/vertical";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 const DEFAULT_DUR = 30;
+const SLOTS_KEY = "nuvo.weekboard.slots";
+
+/** "6:15a" — the clock at column width. Seven columns can't spare the six
+ *  characters of "6:15 AM", and the meridiem still has to survive. */
+function clock(iso: string): string {
+  const d = new Date(iso);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")}${h < 12 ? "a" : "p"}`;
+}
+
+/** A day column's stream, in the order it renders: slot containers and timed
+ *  rows interleaved by start, then the untimed ("Anytime") group. */
+type DayRow =
+  | { kind: "slot"; key: string; at: number; slot: Slot; children: Task[] }
+  | { kind: "task"; key: string; at: number; task: Task };
 
 export default function WeekBoard({
   now,
@@ -122,19 +141,90 @@ export default function WeekBoard({
     });
   }, [sprintTasks, scheduled, anytime, slotChildren, slotDayById, today]);
 
-  const dayTasks = (iso: string): Task[] => {
+  // Slots as a view, not a fact: off, a slot's children read as ordinary anytime
+  // work (what the board always did); on, they nest under their container so the
+  // day reads as "this block, then that block" instead of a flat list.
+  const [showSlots, setShowSlots] = useState(() => {
+    try {
+      return localStorage.getItem(SLOTS_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(SLOTS_KEY, showSlots ? "1" : "0");
+    } catch { /* private mode — the toggle just doesn't persist */ }
+  }, [showSlots]);
+
+  const slotsByDay = useMemo(() => {
+    const m = new Map<string, Slot[]>();
+    for (const s of slots) {
+      const arr = m.get(s.do_date);
+      if (arr) arr.push(s);
+      else m.set(s.do_date, [s]);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a.start_time.localeCompare(b.start_time));
+    return m;
+  }, [slots]);
+
+  const childrenBySlot = useMemo(() => {
+    const m = new Map<string, Task[]>();
+    for (const t of slotChildren) {
+      if (!t.slot_id) continue;
+      const arr = m.get(t.slot_id);
+      if (arr) arr.push(t);
+      else m.set(t.slot_id, [t]);
+    }
+    return m;
+  }, [slotChildren]);
+
+  const doneLast = (a: Task, b: Task) => {
+    const ad = a.status === "done";
+    const bd = b.status === "done";
+    if (ad !== bd) return ad ? 1 : -1;
+    return 0;
+  };
+
+  /** A day column split into what the eye needs: a timed stream (slots + blocks,
+   *  in clock order) and the untimed pool underneath it. */
+  const dayStream = (iso: string): { timed: DayRow[]; anytime: Task[] } => {
     const list = placed.get(iso) ?? [];
     // Past days show only what actually happened (done); slipped work is in the tray.
     const visible = list.filter((t) => t.status === "done" || iso >= today);
-    return visible.sort((a, b) => {
-      const ad = a.status === "done";
-      const bd = b.status === "done";
-      if (ad !== bd) return ad ? 1 : -1; // done last
-      const at = a.start_time ? new Date(a.start_time).getTime() : Infinity;
-      const bt = b.start_time ? new Date(b.start_time).getTime() : Infinity;
-      return at - bt; // timed first, by start; anytime trails
-    });
+    const daySlots = showSlots ? slotsByDay.get(iso) ?? [] : [];
+    const slotIdSet = new Set(daySlots.map((s) => s.id));
+
+    const timed: DayRow[] = [];
+    const anytime: Task[] = [];
+    for (const t of visible) {
+      if (t.slot_id && slotIdSet.has(t.slot_id)) continue; // rendered inside its slot
+      if (t.start_time) {
+        timed.push({ kind: "task", key: t.id, at: new Date(t.start_time).getTime(), task: t });
+      } else {
+        anytime.push(t);
+      }
+    }
+    for (const s of daySlots) {
+      timed.push({
+        kind: "slot",
+        key: s.id,
+        at: new Date(s.start_time).getTime(),
+        slot: s,
+        children: (childrenBySlot.get(s.id) ?? [])
+          .filter((c) => c.status === "done" || iso >= today)
+          .sort(doneLast),
+      });
+    }
+    timed.sort((a, b) => a.at - b.at);
+    anytime.sort(doneLast);
+    return { timed, anytime };
   };
+
+  const slotTitle = (s: Slot, children: Task[]) => deriveSlotTitle(s, children, vertical);
+  const slotAccent = (s: Slot) =>
+    s.color ??
+    taskDomainColor(vertical, { domain_id: s.domain_id, project_id: s.project_id, initiative_id: null });
 
   // Committed effort vs the work window. Timed commitments (calendar events +
   // scheduled task blocks) are *merged* via readDay so overlaps don't double-
@@ -225,7 +315,13 @@ export default function WeekBoard({
         const s = live.current;
         if (!moved) {
           if (fromBoard) s.onOpenTask(task, el.getBoundingClientRect());
-        } else if (target?.kind === "day" && target.day && target.day !== task.do_date) {
+        } else if (
+          target?.kind === "day" &&
+          target.day &&
+          // A slot child can already carry the target day while living in a
+          // slot — moving it out is still a real change, so don't no-op it.
+          (target.day !== task.do_date || task.slot_id)
+        ) {
           s.mutations.planFor(task, target.day);
         } else if (target?.kind === "tray") {
           // Keep it in the week, just drop the day — and make sure it's committed
@@ -293,6 +389,21 @@ export default function WeekBoard({
             This week
           </button>
         )}
+        {slots.length > 0 && (
+          <button
+            onClick={() => setShowSlots((s) => !s)}
+            aria-pressed={showSlots}
+            title={showSlots ? "Show a flat day — no slot grouping" : "Group each day by its slots"}
+            className="fast rounded-full border px-2 py-0.5 text-label font-medium"
+            style={{
+              borderColor: showSlots ? "var(--accent)" : "var(--line)",
+              color: showSlots ? "var(--accent)" : "var(--muted)",
+              background: showSlots ? "var(--accent-soft)" : "transparent",
+            }}
+          >
+            Slots
+          </button>
+        )}
         <div className="flex-1" />
         {/* The week's goal + the ring that only ever fills — absorbed from the
             old Week tab, the one thing the board didn't already carry. */}
@@ -306,50 +417,59 @@ export default function WeekBoard({
       {(tray.length > 0 || drag) && (
         <div
           data-tray
-          className="mx-4 mb-3 flex shrink-0 items-center gap-2 overflow-x-auto rounded-xl border border-dashed px-3 py-2 transition-colors"
+          className="mx-4 mb-3 flex shrink-0 items-start gap-2 rounded-xl border border-dashed px-3 py-2 transition-colors"
           style={{
             borderColor: dropTarget?.kind === "tray" ? "var(--accent)" : "var(--line-strong)",
             background: dropTarget?.kind === "tray" ? "var(--accent-soft)" : "color-mix(in srgb, var(--surface) 30%, transparent)",
           }}
         >
-          <span className="section-label !p-0 shrink-0">Needs a day · {tray.length}</span>
-          {tray.map((t) => (
-            <TrayChip key={t.id} t={t} now={now} today={today} accent={taskAccent(t)} />
-          ))}
-          <span className="ml-auto shrink-0 whitespace-nowrap pl-2 text-meta text-muted">
+          <span className="section-label !p-0 shrink-0 pt-1">Needs a day · {tray.length}</span>
+          {/* A uniform grid, not a flow: equal cells wrap to two rows, then
+              scroll. Cells are ~2× the old truncation width, so most titles read
+              in full — and the ones that don't at least line up. */}
+          <div
+            className="grid max-h-[156px] min-w-0 flex-1 gap-2 overflow-y-auto"
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(172px, 1fr))" }}
+          >
+            {tray.map((t) => (
+              <TrayChip key={t.id} t={t} today={today} accent={taskAccent(t)} />
+            ))}
+          </div>
+          <span className="shrink-0 whitespace-nowrap pl-2 pt-1 text-meta text-muted">
             {drag ? "drop here to keep it this week, no day" : "drag onto a day →"}
           </span>
         </div>
       )}
 
-      {/* Seven columns — transparent over the atmosphere, hairline-separated. */}
-      <div className="grid min-h-0 flex-1 grid-cols-7 gap-2 px-4 pb-3">
-        {days.map((d) => {
+      {/* Seven lanes, not seven cards. The column is a transparent stretch of the
+          same warm paper, separated by a hairline — so the only framed things on
+          the board are the cards, and they get to float. (A bordered column
+          holding bordered cards is boxes-in-boxes; that's what read as crowded.) */}
+      <div className="grid min-h-0 flex-1 grid-cols-7 px-2 pb-3">
+        {days.map((d, i) => {
           const iso = toDateISO(d);
           const isToday = iso === today;
           const isPast = iso < today;
           const load = dayLoad(d);
-          const tasks = dayTasks(iso);
+          const { timed, anytime } = dayStream(iso);
+          const empty = timed.length === 0 && anytime.length === 0;
           const hovered = hoverDay === iso;
           return (
             <div
               key={iso}
               data-day={isPast ? undefined : iso}
-              className="flex min-h-0 flex-col rounded-lg border px-2 pb-1.5 pt-2.5"
+              className="flex min-h-0 flex-col px-1.5 pb-1.5 pt-2"
               style={{
-                borderColor: hovered ? "var(--accent)" : isToday ? "var(--signal-soft)" : "var(--line)",
+                borderRight: i < 6 ? "1px solid var(--line)" : undefined,
                 background: hovered
                   ? "var(--accent-soft)"
                   : isToday
-                    ? "color-mix(in srgb, var(--surface) 72%, transparent)"
-                    : isPast
-                      ? "transparent"
-                      : "color-mix(in srgb, var(--surface) 40%, transparent)",
-                boxShadow: isToday && !hovered ? "var(--shadow-lift)" : undefined,
-                opacity: isPast ? 0.62 : 1,
+                    ? "color-mix(in srgb, var(--signal) 5%, transparent)"
+                    : undefined,
+                opacity: isPast ? 0.5 : 1,
               }}
             >
-              <div className="flex items-baseline justify-between px-0.5">
+              <div className="flex items-baseline justify-between">
                 <span
                   className="text-body font-semibold"
                   style={{ color: isToday ? "var(--signal)" : "var(--ink)" }}
@@ -363,14 +483,46 @@ export default function WeekBoard({
 
               <Meter load={load} isPast={isPast} isToday={isToday} />
 
-              <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
-                {tasks.map((t) => (
-                  <TaskChip key={t.id} t={t} now={now} accent={taskAccent(t)} />
-                ))}
-                {!isPast && tasks.length === 0 && (
+              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pb-2">
+                {/* Anytime — dated to this day, but not to an hour. It sits ABOVE
+                    the timed stream, the same place the Week grid puts its
+                    all-day lane (FullCalendar `allDaySlot`, labelled "anytime"):
+                    one concept can't be above the clock in one view and below it
+                    in another. A rule closes the lane before the day's hours. */}
+                {anytime.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-micro uppercase tracking-wide text-muted">Anytime</span>
+                      <span className="h-px flex-1" style={{ background: "var(--line)" }} />
+                    </div>
+                    {anytime.map((t) => (
+                      <TaskCard key={t.id} t={t} now={now} accent={taskAccent(t)} />
+                    ))}
+                    {timed.length > 0 && (
+                      <div style={{ marginTop: 12, height: 1, background: "var(--line)" }} />
+                    )}
+                  </>
+                )}
+
+                {timed.map((row) =>
+                  row.kind === "slot" ? (
+                    <SlotCard
+                      key={row.key}
+                      slot={row.slot}
+                      title={slotTitle(row.slot, row.children)}
+                      items={row.children}
+                      accent={slotAccent(row.slot)}
+                    />
+                  ) : (
+                    <TaskCard key={row.key} t={row.task} now={now} accent={taskAccent(row.task)} />
+                  ),
+                )}
+
+                {!isPast && empty && (
                   <div
-                    className="mt-1 rounded-lg border border-dashed py-4 text-center text-caption"
+                    className="flex items-center justify-center rounded-lg border border-dashed text-caption"
                     style={{
+                      height: CARD_H,
                       borderColor: hovered ? "var(--accent)" : "var(--line)",
                       color: hovered ? "var(--accent)" : "var(--muted)",
                     }}
@@ -425,7 +577,27 @@ function Meter({
   );
 }
 
-function TaskChip({
+/**
+ * ── The card, and the only card ────────────────────────────────────────────
+ * One shape carries every piece of work on this board — a day's task, a slot,
+ * a tray item. It floats on the paper (the lane behind it is transparent), and
+ * its height never depends on its content: the title gets a reserved two-line
+ * box and the meta a reserved line, so a short title and a long one occupy the
+ * same rectangle. That fixed rectangle is what lets seven columns read as one
+ * week instead of seven ragged lists.
+ */
+const CARD_H = 74;
+const CARD_BASE =
+  "fast relative cursor-pointer touch-none select-none rounded-lg border border-line bg-surface px-1.5 py-1.5 hover:border-line-strong";
+// Three lines, not two: at column width half of all titles clip at two, and
+// only a fifth clip at three. Shrinking the type instead barely moves it
+// (50%→42%) — the line count is the lever. 12px costs nothing at three lines
+// and shows ~6 more characters than 13px would.
+const TITLE_BOX = "line-clamp-3 h-[45px] text-caption leading-[15px]";
+
+const META_LINE = "mono mt-0.5 h-[13px] truncate text-meta leading-[13px] text-muted";
+
+function TaskCard({
   t,
   now,
   accent,
@@ -436,15 +608,21 @@ function TaskChip({
 }) {
   const done = t.status === "done";
   const overdueTimed = !done && isOverdue(t, now);
+  const meta = [
+    t.start_time ? clock(t.start_time) : null,
+    t.duration_minutes ? fmtDuration(t.duration_minutes) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div
       data-task-drag={t.id}
-      className="fast group mb-2 cursor-pointer touch-none select-none rounded-lg border border-line bg-surface/80 px-2.5 py-2 hover:-translate-y-px hover:border-line-strong hover:bg-surface"
-      style={{ boxShadow: accent ? `inset 3px 0 0 0 ${accent}` : undefined }}
+      className={CARD_BASE}
+      style={{ height: CARD_H, boxShadow: accent ? `inset 3px 0 0 0 ${accent}` : undefined }}
       title={t.title}
     >
       <div
-        className="line-clamp-2 text-body leading-snug"
+        className={TITLE_BOX}
         style={{
           textDecoration: done ? "line-through" : undefined,
           color: done ? "var(--muted)" : overdueTimed ? "var(--signal)" : "var(--ink)",
@@ -452,47 +630,80 @@ function TaskChip({
       >
         {t.title}
       </div>
-      {(t.start_time || t.duration_minutes) && (
-        <div className="mt-1.5 flex items-center gap-2">
-          {t.start_time && <span className="mono text-micro text-muted">{fmtTime(t.start_time)}</span>}
-          {t.duration_minutes ? (
-            <span className="mono text-micro text-muted">{fmtDuration(t.duration_minutes)}</span>
-          ) : null}
-        </div>
-      )}
+      <div className={META_LINE}>{meta}</div>
     </div>
   );
 }
 
+/** A slot is one thing on the week, not a folder you read through: the same
+ *  card, naming the container and how full it is, drawn as a small stack of
+ *  paper. What's inside is a Day-view question — flip Slots off and every child
+ *  comes back as its own card. */
+function SlotCard({
+  slot,
+  title,
+  items,
+  accent,
+}: {
+  slot: Slot;
+  title: string;
+  items: Task[];
+  accent: string | null;
+}) {
+  const done = items.filter((t) => t.status === "done").length;
+  const hue = accent ?? "var(--slot)";
+  return (
+    <div
+      className={`${CARD_BASE} mb-1`}
+      style={{
+        height: CARD_H,
+        // The stack tell: two offset copies peeking out below, so a container
+        // reads as "several things" before you've read a word of it.
+        boxShadow: `inset 3px 0 0 0 ${hue}, 0 3px 0 -1px var(--surface), 0 4px 0 -1px var(--line)`,
+      }}
+      title={items.length > 0 ? `${title}\n${items.map((t) => `· ${t.title}`).join("\n")}` : title}
+    >
+      <div className={`${TITLE_BOX} font-medium text-ink`}>{title}</div>
+      <div className={META_LINE}>
+        {clock(slot.start_time)}
+        {items.length > 0 && ` · ${done}/${items.length}`}
+      </div>
+    </div>
+  );
+}
+
+/** The same card, in a uniform grid. The tray is where you decide *which* task
+ *  to place, so the title keeps both its lines — one line at this width renders
+ *  "Freedom Discipleship Curric…" for two different tasks. */
 function TrayChip({
   t,
-  now,
   today,
   accent,
 }: {
   t: Task;
-  now: Date;
   today: string;
   accent: string | null;
 }) {
   const overdue = t.do_date != null && t.do_date < today;
-  void now;
   return (
     <div
       data-task-drag={t.id}
-      className="fast flex shrink-0 cursor-pointer touch-none select-none items-center gap-2 rounded-lg border bg-surface/80 px-2.5 py-1.5 text-body hover:-translate-y-px hover:bg-surface"
+      className={`${CARD_BASE} min-w-0`}
       style={{
-        borderColor: overdue ? "var(--signal-soft)" : "var(--line)",
+        height: CARD_H,
+        borderColor: overdue ? "var(--signal-soft)" : undefined,
         boxShadow: accent ? `inset 3px 0 0 0 ${accent}` : undefined,
       }}
-      title={overdue ? "Overdue — drag onto a day" : "Drag onto a day"}
+      title={`${t.title}${overdue ? " — overdue" : ""}`}
     >
-      <span className="max-w-[180px] truncate" style={{ color: overdue ? "var(--signal)" : "var(--ink)" }}>
+      <div className={TITLE_BOX} style={{ color: overdue ? "var(--signal)" : "var(--ink)" }}>
         {t.title}
-      </span>
-      {t.duration_minutes ? (
-        <span className="mono shrink-0 text-micro text-muted">{fmtDuration(t.duration_minutes)}</span>
-      ) : null}
+      </div>
+      <div className={META_LINE}>
+        {[overdue ? "overdue" : null, t.duration_minutes ? fmtDuration(t.duration_minutes) : null]
+          .filter(Boolean)
+          .join(" · ")}
+      </div>
     </div>
   );
 }
