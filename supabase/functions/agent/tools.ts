@@ -64,6 +64,47 @@ function fmtZonedTime(isoUtc: string, tz: string): string {
   }).format(new Date(isoUtc));
 }
 
+/**
+ * "Wed Aug 5, 6:30–8:00 PM" — the one sentence a calendar confirmation is
+ * allowed to say about time.
+ *
+ * Every calendar tool returns this alongside the raw ISO, because the model was
+ * being handed UTC and asked to narrate a local time: it announced a dinner at
+ * "6:30–8:00 PM" over a card that read 5:15, and the user had no way to know
+ * which one was on their calendar. The card renders the row; this string is
+ * derived from the same row, so prose and card cannot drift apart.
+ */
+function whenLabel(startIsoUtc: string, endIsoUtc: string | null, tz: string): string {
+  const start = new Date(startIsoUtc);
+  const day = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, weekday: "short", month: "short", day: "numeric",
+  }).format(start);
+  const time = (d: Date) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+  if (!endIsoUtc) return `${day}, ${time(start)}`;
+  const end = new Date(endIsoUtc);
+  const [sT, eT] = [time(start), time(end)];
+  // "6:30–8:00 PM" reads better than "6:30 PM–8:00 PM" when both sit in the
+  // same half of the day; keep both meridiems when they differ.
+  const sameMeridiem = sT.slice(-2) === eT.slice(-2);
+  return `${day}, ${sameMeridiem ? sT.slice(0, -3) : sT}–${eT}`;
+}
+
+/** The "YYYY-MM-DDTHH:MM" a tool would have been given for this instant — the
+ *  exact round-trip of `localToUtc`, so a result can echo back what it stored. */
+function utcToLocal(isoUtc: string, tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+    // h23, not hour12:false — the latter renders midnight as "24:00" on the
+    // previous day in some ICU builds, which reads back as the wrong day.
+    hourCycle: "h23",
+  })
+    .format(new Date(isoUtc))
+    .replace(", ", "T");
+}
+
 /** Today's calendar date in `tz` — the day the user is actually living. */
 function todayIn(tz: string): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -512,11 +553,11 @@ export const TOOL_DEFINITIONS = [
           start_local: {
             type: "string",
             description:
-              "Start in America/Los_Angeles local time — 'YYYY-MM-DDTHH:MM' (24h, no offset). Example: Tuesday Jun 30 at 5pm → '2026-06-30T17:00'. The server handles UTC conversion.",
+              "Start in the user's own local time (the zone named at the top of the snapshot) — 'YYYY-MM-DDTHH:MM' (24h, no offset). Example: Tuesday Jun 30 at 5pm → '2026-06-30T17:00'. The server handles UTC conversion; never shift the stated time yourself.",
           },
           end_local: {
             type: "string",
-            description: "End in America/Los_Angeles local time — 'YYYY-MM-DDTHH:MM' (24h, no offset).",
+            description: "End in the user's own local time — 'YYYY-MM-DDTHH:MM' (24h, no offset).",
           },
           attendees: {
             type: "array",
@@ -538,17 +579,25 @@ export const TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "reschedule_event",
-      description: "Reschedule a Google calendar event (not a Nuvo task block).",
+      description:
+        "Change an EXISTING calendar event's day, time or title — Google and Apple/iCloud alike (not a Nuvo task block). This is how you fix an event you just created when the user corrects you ('next Wednesday not tomorrow', '6:30 not 5'): move the one you made, never add a second. Pass event_id from your own create action when you have it.",
       parameters: {
         type: "object",
         properties: {
-          event_id: { type: "string" },
-          event_title: { type: "string" },
-          start_at: { type: "string", description: "ISO 8601 timestamp" },
-          end_at: { type: "string", description: "ISO 8601 timestamp" },
-          title: { type: "string" },
+          event_id: { type: "string", description: "Event id from context or a prior create/move action." },
+          event_title: { type: "string", description: "Search by title if id unknown." },
+          start_local: {
+            type: "string",
+            description:
+              "New start in the user's local time — 'YYYY-MM-DDTHH:MM' (24h, no offset). The server converts to UTC. Omit to keep the current start.",
+          },
+          end_local: {
+            type: "string",
+            description:
+              "New end in the user's local time — 'YYYY-MM-DDTHH:MM'. Omit when only the start moves and the length is unchanged; the server keeps the duration.",
+          },
+          title: { type: "string", description: "New title, when the correction is to the name." },
         },
-        required: ["start_at", "end_at"],
       },
     },
   },
@@ -557,7 +606,7 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "cancel_event",
       description:
-        "Remove a Google calendar event from the user's calendar (cancel it). For meetings the user organizes this cancels for everyone; for an invite it drops off their calendar. Confirm with the user before calling. Only set notify=true if the user explicitly wants attendees told.",
+        "Remove a calendar event from the user's calendar (cancel it) — Google and Apple/iCloud alike, including one you just created. For meetings the user organizes this cancels for everyone; for an invite it drops off their calendar. Confirm with the user before calling. Only set notify=true if the user explicitly wants attendees told.",
       parameters: {
         type: "object",
         properties: {
@@ -711,24 +760,48 @@ function dateInTz(isoUtc: string, tz: string): string {
   }).format(new Date(isoUtc));
 }
 
+/** An event the agent is about to write to — resolved WITH its provider, because
+ *  which function can edit it is a property of the row, not of the caller's
+ *  hopes. Cancel used to assume Google and told the user their own brand-new
+ *  Apple event was "on a non-Google calendar" and therefore unremovable. */
+interface ResolvedEvent {
+  id: string;
+  title: string;
+  provider: string;
+  start_at: string;
+  end_at: string;
+}
+
+const EVENT_REF_COLS = "id, title, start_at, end_at, calendar_accounts(provider)";
+
+function asResolved(row: Record<string, unknown>): ResolvedEvent {
+  return {
+    id: row.id as string,
+    title: row.title as string,
+    provider: (row.calendar_accounts as { provider: string } | null)?.provider ?? "google",
+    start_at: row.start_at as string,
+    end_at: row.end_at as string,
+  };
+}
+
 async function resolveEventId(
   userId: string,
   args: { event_id?: string; event_title?: string },
-): Promise<{ id: string; title: string }> {
+): Promise<ResolvedEvent> {
   if (args.event_id) {
     const { data, error } = await admin
       .from("external_events")
-      .select("id, title")
+      .select(EVENT_REF_COLS)
       .eq("id", args.event_id)
       .eq("user_id", userId)
       .single();
     if (error || !data) throw new Error(`Event not found: ${args.event_id}`);
-    return { id: data.id, title: data.title };
+    return asResolved(data);
   }
   if (args.event_title) {
     const { data } = await admin
       .from("external_events")
-      .select("id, title")
+      .select(EVENT_REF_COLS)
       .eq("user_id", userId)
       .ilike("title", `%${args.event_title}%`)
       .limit(5);
@@ -738,13 +811,22 @@ async function resolveEventId(
         `Multiple events match "${args.event_title}": ${data.map((e) => `"${e.title}" (${e.id})`).join(", ")}. Use event_id.`,
       );
     }
-    return { id: data[0].id, title: data[0].title };
+    return asResolved(data[0]);
   }
   throw new Error("Provide event_id or event_title");
 }
 
 function eventsFnFor(provider: string): "google-events" | "icloud-events" {
   return provider === "icloud" ? "icloud-events" : "google-events";
+}
+
+/** Both writable providers, in the words the user uses. Anything else (M365) is
+ *  read-only, and saying so beats a generic failure. */
+function assertWritableProvider(provider: string, verb: string, title: string): void {
+  if (provider === "google" || provider === "icloud") return;
+  throw new Error(
+    `"${title}" is on a ${provider === "m365" ? "Microsoft" : provider} calendar, which Nuvo can read but not write — ${verb} it in that app.`,
+  );
 }
 
 /** Every writable calendar, hidden ones included and flagged. The hidden ones
@@ -935,11 +1017,44 @@ async function findNearDuplicate(
   return pick((loose ?? []) as EventRow[]);
 }
 
+/**
+ * The same event, somewhere else on the calendar — a title match within ±14
+ * days that is NOT the row we're about to write.
+ *
+ * The near-duplicate check above only sees a re-create at the *same* time, so it
+ * never fires on the shape that actually bit: the model put a dinner on the
+ * wrong day, the user corrected the day, and the model answered the correction
+ * with a second create a week later. Two dinners, and the confirmation mentioned
+ * only one. This can't decide which the user wants — a fortnightly standing
+ * dinner is a real thing — so it doesn't block the write; it hands the twin back
+ * in the result, and the prompt requires the reply to raise it.
+ */
+async function findLooseDuplicate(
+  userId: string,
+  title: string,
+  startAt: string,
+  excludeId?: string,
+): Promise<EventRow | null> {
+  const startMs = new Date(startAt).getTime();
+  if (!Number.isFinite(startMs)) return null;
+  const windowMs = 14 * 86_400_000;
+  const { data } = await admin
+    .from("external_events")
+    .select("id, title, start_at, end_at, location, account_id, calendar_id, raw, calendar_accounts(provider)")
+    .eq("user_id", userId)
+    .ilike("title", title)
+    .gte("start_at", new Date(startMs - windowMs).toISOString())
+    .lte("start_at", new Date(startMs + windowMs).toISOString())
+    .limit(8);
+  return ((data ?? []) as EventRow[]).find((r) => r.id !== excludeId) ?? null;
+}
+
 /** Move (or copy+delete across accounts) an event onto a target calendar. */
 async function moveEventToTarget(
   userId: string,
   evt: EventRow,
   target: WritableCal,
+  tz: string,
   userToken?: string,
 ): Promise<{ result: string; action: AgentAction }> {
   const sourceProvider =
@@ -947,10 +1062,11 @@ async function moveEventToTarget(
   if (sourceProvider !== "google" && sourceProvider !== "icloud") {
     throw new Error(`Can't move events from ${sourceProvider} — only Google and Apple calendars are writable.`);
   }
+  const when = whenLabel(evt.start_at, evt.end_at, tz);
 
   if (target.accountId === evt.account_id && target.calendarId === evt.calendar_id) {
     return {
-      result: JSON.stringify({ id: evt.id, alreadyOn: target.name, calendar: target.name }),
+      result: JSON.stringify({ id: evt.id, alreadyOn: target.name, calendar: target.name, when }),
       action: {
         tool: "move_event",
         summary: `"${evt.title}" is already on ${target.name}`,
@@ -968,7 +1084,7 @@ async function moveEventToTarget(
     );
     if (!ok) throw new Error(`Couldn't move "${evt.title}" to ${target.name}`);
     return {
-      result: JSON.stringify({ id: evt.id, calendar: target.name, provider: target.provider }),
+      result: JSON.stringify({ id: evt.id, calendar: target.name, provider: target.provider, when }),
       action: {
         tool: "move_event",
         summary: `Moved "${evt.title}" to ${target.name}`,
@@ -1016,6 +1132,7 @@ async function moveEventToTarget(
       calendar: target.name,
       provider: target.provider,
       id: newId ?? null,
+      when,
     }),
     action: {
       tool: "move_event",
@@ -1379,7 +1496,7 @@ export async function executeTool(
       const existing = await findNearDuplicate(userId, title, start_at, target);
       if (existing) {
         if (target) {
-          return moveEventToTarget(userId, existing, target, userToken);
+          return moveEventToTarget(userId, existing, target, tz, userToken);
         }
         const provider = existing.calendar_accounts?.provider ?? "google";
         const where = calendarLabel(writable, existing.account_id, existing.calendar_id, provider);
@@ -1389,6 +1506,7 @@ export async function executeTool(
             id: existing.id,
             calendar: where,
             title: existing.title,
+            when: whenLabel(existing.start_at, existing.end_at, tz),
           }),
           action: {
             tool: name,
@@ -1428,19 +1546,44 @@ export async function executeTool(
       }
 
       const eventId = (res.event as { id?: string } | null)?.id;
+      // The same title already sitting a few days either side is usually the
+      // wrong-day version of THIS event, corrected. Hand it back so the reply
+      // has to account for both instead of confirming one and stranding the other.
+      const twin = await findLooseDuplicate(userId, title, start_at, eventId);
+      const when = whenLabel(start_at, end_at, tz);
       return {
         result: JSON.stringify({
           created: true,
           title,
+          when,
+          start_local: utcToLocal(start_at, tz),
+          end_local: utcToLocal(end_at, tz),
           start_at,
           calendar: target.name,
           account: target.accountEmail,
           isDefault: target.isDefault,
           provider,
+          ...(twin
+            ? {
+                possibleDuplicate: {
+                  id: twin.id,
+                  title: twin.title,
+                  when: whenLabel(twin.start_at, twin.end_at, tz),
+                  calendar: calendarLabel(
+                    writable,
+                    twin.account_id,
+                    twin.calendar_id,
+                    twin.calendar_accounts?.provider ?? "google",
+                  ),
+                  note:
+                    "Same title, nearby day — if this is the version the user just corrected, tell them it's still there and offer to remove it.",
+                },
+              }
+            : {}),
         }),
         action: {
           tool: name,
-          summary: `Added "${title}" to ${target.name} at ${fmtZonedTime(start_at, tz)}`,
+          summary: `Added "${title}" to ${target.name} on ${when}`,
           verb: "created",
           ...(eventId ? { ref: { kind: "event" as const, id: eventId } } : {}),
         },
@@ -1469,80 +1612,99 @@ export async function executeTool(
       if (error || !evt) throw new Error(`Event not found: ${eventId}`);
 
       const target = resolveCalendarByName(await loadWritableCalendars(userId), calendarName);
-      return moveEventToTarget(userId, evt as EventRow, target, userToken);
+      return moveEventToTarget(userId, evt as EventRow, target, tz, userToken);
     }
 
     case "reschedule_event": {
-      let eventId = args.event_id as string | undefined;
-      if (!eventId && args.event_title) {
-        const { data } = await admin
-          .from("external_events")
-          .select("id, title")
-          .eq("user_id", userId)
-          .ilike("title", `%${args.event_title}%`)
-          .limit(5);
-        if (!data?.length) throw new Error(`No event matching "${args.event_title}"`);
-        if (data.length > 1) {
-          throw new Error(
-            `Multiple events match: ${data.map((e) => `"${e.title}" (${e.id})`).join(", ")}`,
-          );
-        }
-        eventId = data[0].id;
+      const evt = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+      // Apple events reschedule over CalDAV exactly as Google ones do over the
+      // API — this used to hard-fail on anything non-Google, which meant a
+      // corrected dinner on Family could only be fixed by adding a second one.
+      assertWritableProvider(evt.provider, "reschedule", evt.title);
+
+      // Local wall-clock is the contract everywhere else in this file; the old
+      // ISO-only signature made the model do its own zone math to call it.
+      const startLocal = args.start_local as string | undefined;
+      const endLocal = args.end_local as string | undefined;
+      const start_at = startLocal ? localToUtc(startLocal, tz) : (args.start_at as string | undefined);
+      const end_at = endLocal ? localToUtc(endLocal, tz) : (args.end_at as string | undefined);
+      const title = (args.title as string | undefined)?.trim();
+      if (!start_at && !end_at && !title) {
+        throw new Error("Nothing to change — pass start_local/end_local, or a new title.");
       }
-      if (!eventId) throw new Error("Provide event_id or event_title");
 
-      const patch: Record<string, string> = {
-        start_at: args.start_at as string,
-        end_at: args.end_at as string,
-      };
-      if (args.title) patch.title = args.title as string;
+      // Keep the duration when only one edge moved, so "make it 7" doesn't
+      // silently stretch or crush the event.
+      const durationMs = new Date(evt.end_at).getTime() - new Date(evt.start_at).getTime();
+      const nextStart = start_at ?? evt.start_at;
+      const nextEnd = end_at ?? (start_at ? new Date(new Date(start_at).getTime() + durationMs).toISOString() : evt.end_at);
 
-      const { data: evt, error } = await admin
-        .from("external_events")
-        .select("id, title, account_id, calendar_accounts(provider)")
-        .eq("id", eventId)
-        .eq("user_id", userId)
-        .single();
-      if (error || !evt) throw new Error("Event not found");
+      const patch: Record<string, string> = { start_at: nextStart, end_at: nextEnd };
+      if (title) patch.title = title;
 
-      const provider = (evt.calendar_accounts as { provider: string } | null)?.provider;
-      if (provider !== "google") throw new Error("Only Google events can be rescheduled");
-
-      const { error: updErr } = await admin.from("external_events").update(patch).eq("id", eventId);
-      if (updErr) throw new Error(updErr.message);
-
-      await invokeFn("google-events", { eventId, patch }, userToken);
+      const ok = await invokeFn(eventsFnFor(evt.provider), { eventId: evt.id, patch, scope: "THIS" }, userToken);
+      if (!ok) throw new Error(`Couldn't reschedule "${evt.title}" — the write to ${evt.provider} failed.`);
+      // Mirror locally AFTER the provider write, not before: google-events only
+      // refreshes `raw` on a patch, so without this the card in the transcript
+      // shows the old time until the next sync — and writing it first would zero
+      // the delta the series path measures against the stored start.
+      const { error: mirrorErr } = await admin.from("external_events").update(patch).eq("id", evt.id);
+      if (mirrorErr) throw new Error(mirrorErr.message);
+      const when = whenLabel(nextStart, nextEnd, tz);
 
       return {
-        result: JSON.stringify({ id: eventId, patch }),
+        result: JSON.stringify({
+          id: evt.id,
+          title: title ?? evt.title,
+          when,
+          start_local: utcToLocal(nextStart, tz),
+          end_local: utcToLocal(nextEnd, tz),
+          rescheduled: true,
+          provider: evt.provider,
+        }),
         action: {
           tool: name,
-          summary: `Rescheduled event "${evt.title}" to ${fmtZonedTime(patch.start_at, tz)}`,
+          summary: `Moved "${title ?? evt.title}" to ${when}`,
           verb: "moved",
-          ref: { kind: "event", id: eventId },
+          ref: { kind: "event", id: evt.id },
           // No undo on calendar writes: reversing means another round-trip to
-          // Google (and possibly re-notifying attendees). The card shows the
-          // event; reversing it is a fresh instruction, not a one-tap.
+          // the provider (and possibly re-notifying attendees). The card shows
+          // the event; reversing it is a fresh instruction, not a one-tap.
         },
       };
     }
 
     case "cancel_event": {
-      const { id, title } = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+      const { id, title, provider, start_at, end_at } = await resolveEventId(
+        userId,
+        args as { event_id?: string; event_title?: string },
+      );
+      assertWritableProvider(provider, "cancel", title);
+      const when = whenLabel(start_at, end_at, tz);
       const ok = await invokeFn(
-        "google-events",
-        { eventId: id, action: "delete", sendUpdates: args.notify ? "all" : "none" },
+        eventsFnFor(provider),
+        {
+          eventId: id,
+          action: "delete",
+          scope: "THIS",
+          // sendUpdates only — google-events reads it to decide whether guests
+          // are told, and its own organizer-aware default stays intact.
+          sendUpdates: args.notify ? "all" : "none",
+        },
         userToken,
       );
-      if (!ok) throw new Error(`Couldn't cancel "${title}" — only Google events can be cancelled.`);
+      if (!ok) throw new Error(`Couldn't cancel "${title}" — the delete on ${provider} failed.`);
       return {
-        result: JSON.stringify({ id, cancelled: true }),
-        action: { tool: name, summary: `Cancelled "${title}"${args.notify ? " (attendees notified)" : ""}` },
+        result: JSON.stringify({ id, title, when, cancelled: true, provider }),
+        action: { tool: name, summary: `Cancelled "${title}" (${when})${args.notify ? " — attendees notified" : ""}` },
       };
     }
 
     case "decline_event": {
-      const { id, title } = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+      const { id, title, provider } = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+      if (provider !== "google") {
+        throw new Error(`RSVP only works on Google events — "${title}" is on ${provider}. Cancel it instead to take it off the calendar.`);
+      }
       const ok = await invokeFn(
         "google-events",
         { eventId: id, action: "rsvp", responseStatus: "declined", sendNotifications: Boolean(args.notify) },

@@ -122,6 +122,83 @@ export function spanWidthWeeks(p: Pick<SpanProject, "startDate" | "targetDate">)
   return Math.max(1, Math.floor(d / (7 * DAY_MS)) + 1);
 }
 
+// ── naming a day out loud ────────────────────────────────────────────────────
+// "Next Wednesday" said on a Tuesday means Wednesday of NEXT week — never
+// tomorrow. The agent read it as tomorrow, put a dinner on the wrong day, and
+// then had to be talked out of it; the correction produced a second event. A
+// spoken day is a rule, not a judgement call, so it lives here and both runtimes
+// resolve it identically.
+
+export const WEEKDAY_NAMES = [
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+] as const;
+export type WeekdayName = (typeof WEEKDAY_NAMES)[number];
+
+/** `iso` shifted by whole days, still YYYY-MM-DD. */
+export function addDaysISO(iso: string, days: number): string {
+  const base = dayMs(iso);
+  return Number.isNaN(base) ? iso : isoOf(base + days * DAY_MS);
+}
+
+/**
+ * Monday of the calendar week `iso` falls in — the week the user is *standing*
+ * in, with no weekend shift. Deliberately NOT `planningWeekStart`: that one
+ * rolls the weekend forward to the week being planned, which is right for a
+ * sprint and wrong for a sentence. Reading "next Friday" on a Saturday through
+ * the planning week lands 13 days out; through the calendar week it lands 6,
+ * which is what a person means.
+ */
+export function calendarWeekStart(iso: string): string {
+  const base = dayMs(iso);
+  if (Number.isNaN(base)) return iso;
+  const sinceMonday = (new Date(base).getUTCDay() + 6) % 7;
+  return isoOf(base - sinceMonday * DAY_MS);
+}
+
+/** The seven dates of a Monday-started week, keyed by weekday name. */
+export function weekDates(weekStartISO: string): Record<WeekdayName, string> {
+  const monday = calendarWeekStart(weekStartISO);
+  const out = {} as Record<WeekdayName, string>;
+  for (let i = 0; i < 7; i++) {
+    const iso = addDaysISO(monday, i);
+    out[WEEKDAY_NAMES[dayOfWeek(iso)]] = iso;
+  }
+  return out;
+}
+
+/** The weekday a phrase names ("wed", "Wednesday"), or null. */
+export function weekdayFromName(name: string): WeekdayName | null {
+  const n = name.trim().toLowerCase();
+  if (!n) return null;
+  return WEEKDAY_NAMES.find((d) => d === n || (n.length >= 3 && d.startsWith(n))) ?? null;
+}
+
+/**
+ * The date a spoken day phrase means, from the day the user is standing in.
+ *
+ *   · `"next"`  → that weekday in the week AFTER this calendar week. Always a
+ *                 different week, so "next Wednesday" on a Tuesday is 8 days
+ *                 out, never tomorrow.
+ *   · `"this"`  → that weekday in this calendar week, even if it has passed
+ *                 (the caller decides whether a past date is an error).
+ *   · `"soonest"` (a bare "Wednesday") → the next occurrence strictly after
+ *                 today, which is what "put it on Wednesday" asks for.
+ */
+export function resolveDayPhrase(
+  todayISO: string,
+  weekday: WeekdayName,
+  qualifier: "next" | "this" | "soonest",
+): string {
+  const target = WEEKDAY_NAMES.indexOf(weekday);
+  if (target < 0 || Number.isNaN(dayMs(todayISO))) return todayISO;
+  if (qualifier === "soonest") {
+    const ahead = (target - dayOfWeek(todayISO) + 7) % 7;
+    return addDaysISO(todayISO, ahead === 0 ? 7 : ahead);
+  }
+  const week = calendarWeekStart(todayISO);
+  return weekDates(qualifier === "next" ? addDaysISO(week, 7) : week)[weekday];
+}
+
 // ── the two membership rules ─────────────────────────────────────────────────
 
 /**

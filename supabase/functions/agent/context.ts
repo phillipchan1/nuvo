@@ -8,6 +8,8 @@ import {
 // from, so "what is on this week" cannot mean two things. Never re-implement
 // one of these locally; tests/planning-kernel.test.ts fails if you do.
 import {
+  addDaysISO,
+  calendarWeekStart,
   fromProjectRow,
   isCompleteStatus,
   isOnSlate,
@@ -15,6 +17,9 @@ import {
   needsASprint,
   planningWeekStart,
   spansWeek,
+  weekDates,
+  WEEKDAY_NAMES,
+  type WeekdayName,
 } from "../_shared/planningRules.ts";
 
 /** Fallback when the client didn't say where it is — the app's established home. */
@@ -73,6 +78,39 @@ export interface SlateProject {
   scheduledTaskCount: number;
 }
 
+/** The resolved calendar around today, so naming a day is a lookup and not
+ *  arithmetic. Each value is "YYYY-MM-DD (Weekday)" — the weekday is spelled out
+ *  next to the date so a wrong pairing is visible rather than silently wrong. */
+export interface DateTable {
+  today: string;
+  tomorrow: string;
+  /** Monday → Sunday of the week the user is standing in. */
+  thisWeek: Record<WeekdayName, string>;
+  /** Monday → Sunday of the following week — where "next <weekday>" lands. */
+  nextWeek: Record<WeekdayName, string>;
+}
+
+/** "2026-08-05 (Wednesday)" — the pairing the model quotes back. */
+function labelDate(iso: string): string {
+  const day = WEEKDAY_NAMES[new Date(`${iso}T00:00:00Z`).getUTCDay()];
+  return `${iso} (${day[0].toUpperCase()}${day.slice(1)})`;
+}
+
+function buildDateTable(today: string): DateTable {
+  const thisMonday = calendarWeekStart(today);
+  const label = (dates: Record<WeekdayName, string>) => {
+    const out = {} as Record<WeekdayName, string>;
+    for (const d of WEEKDAY_NAMES) out[d] = labelDate(dates[d]);
+    return out;
+  };
+  return {
+    today: labelDate(today),
+    tomorrow: labelDate(addDaysISO(today, 1)),
+    thisWeek: label(weekDates(thisMonday)),
+    nextWeek: label(weekDates(addDaysISO(thisMonday, 7))),
+  };
+}
+
 export interface AgentContext {
   today: string;
   /** Absolute current time, so the model can tell past from upcoming. */
@@ -81,6 +119,11 @@ export interface AgentContext {
   nowLabel: string;
   /** UTC offset for America/Los_Angeles right now, e.g. "-07:00". Use this when building start_time ISO strings for tools — user-stated times are always in this zone. */
   laUtcOffset: string;
+  /** THE DATE TABLE — every day the user can name out loud, already resolved.
+   *  Look a spoken day up here; never count days yourself. "next <weekday>" is
+   *  nextWeek[weekday] (a different week, never tomorrow); a bare "<weekday>"
+   *  is the soonest one still ahead. */
+  dates: DateTable;
   rangeStart: string;
   rangeEnd: string;
   settings: { dayStartHour: number; dayEndHour: number } | null;
@@ -572,6 +615,7 @@ export async function buildContext(
     nowISO: now.toISOString(),
     nowLabel,
     laUtcOffset,
+    dates: buildDateTable(today),
     rangeStart: start,
     rangeEnd: end,
     settings: settingsRes.data

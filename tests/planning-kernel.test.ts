@@ -16,23 +16,30 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import * as chrono from "chrono-node";
 import { describe, expect, it } from "vitest";
 
 import {
+  addDaysISO,
   bringIntoWeekPatch,
+  calendarWeekStart,
   deriveSlateIds,
   fromProjectRow,
   isOnSlate,
   needsASprint,
   planningWeekStart,
+  resolveDayPhrase,
   spansWeek,
   takeOffWeekPatch,
   toRowPatch,
+  weekDates,
+  WEEKDAY_NAMES,
+  weekdayFromName,
   weekSpanFor,
   type ProjectRow,
 } from "../supabase/functions/_shared/planningRules.ts";
 
-import { planningWeekStartISO } from "../src/lib/dates";
+import { planningWeekStartISO, toDateISO } from "../src/lib/dates";
 import { projectsOnDeck, weekPushes } from "../src/lib/priorities";
 import { sprintSpanFor } from "../src/lib/onDeck";
 import type { Project, VerticalData } from "../src/lib/vertical";
@@ -239,6 +246,116 @@ describe("bring in / take off — the same act in chat and on a tap", () => {
   });
 });
 
+// ── 3b · naming a day out loud ───────────────────────────────────────────────
+// From a real transcript: on Tuesday Jul 28 the user said "next Wednesday" and
+// the agent put dinner on Wednesday Jul 29 — tomorrow. Correcting it produced a
+// SECOND event a week later, and the wrong one stayed on the calendar. The date
+// a phrase names is a rule, so it is pinned here.
+
+describe("a spoken day resolves the same everywhere", () => {
+  const TUE = "2026-07-28"; // Tuesday
+  const SAT = "2026-08-01"; // Saturday
+  const SUN = "2026-08-02"; // Sunday
+
+  it("'next Wednesday' on a Tuesday is next week's, never tomorrow", () => {
+    expect(resolveDayPhrase(TUE, "wednesday", "next")).toBe("2026-08-05");
+    expect(resolveDayPhrase(TUE, "wednesday", "next")).not.toBe(addDaysISO(TUE, 1));
+  });
+
+  it("a bare weekday is the soonest one still ahead", () => {
+    expect(resolveDayPhrase(TUE, "wednesday", "soonest")).toBe("2026-07-29");
+    expect(resolveDayPhrase(TUE, "monday", "soonest")).toBe("2026-08-03");
+    // Naming today's own weekday means the next one, not this morning.
+    expect(resolveDayPhrase(TUE, "tuesday", "soonest")).toBe("2026-08-04");
+  });
+
+  it("'this <weekday>' stays inside the week the user is standing in", () => {
+    expect(resolveDayPhrase(TUE, "friday", "this")).toBe("2026-07-31");
+    expect(resolveDayPhrase(TUE, "monday", "this")).toBe("2026-07-27"); // already past
+  });
+
+  it("the weekend reads the calendar week, not the planning week", () => {
+    // planningWeekStart rolls Sat/Sun forward to the week being planned; using
+    // it here would push "next Friday" 13 days out instead of 6.
+    expect(calendarWeekStart(SAT)).toBe("2026-07-27");
+    expect(planningWeekStart(SAT)).toBe("2026-08-03");
+    expect(resolveDayPhrase(SAT, "friday", "next")).toBe("2026-08-07");
+    expect(resolveDayPhrase(SUN, "wednesday", "next")).toBe("2026-08-05");
+  });
+
+  it("every weekday of a week lands on its own name", () => {
+    const week = weekDates("2026-07-28"); // any day in the week
+    expect(week.monday).toBe("2026-07-27");
+    expect(week.sunday).toBe("2026-08-02");
+    for (const [name, iso] of Object.entries(week)) {
+      expect(WEEKDAY_NAMES[new Date(`${iso}T00:00:00Z`).getUTCDay()]).toBe(name);
+    }
+  });
+
+  it("abbreviations resolve to the same day", () => {
+    expect(weekdayFromName("wed")).toBe("wednesday");
+    expect(weekdayFromName("Tues")).toBe("tuesday");
+    expect(weekdayFromName("nope")).toBeNull();
+  });
+
+  it("typed capture reads 'next <weekday>' exactly the way the chat does", () => {
+    // The one act whose UI half isn't the kernel: capture parses a sentence, so
+    // it goes through chrono. chrono already agreed with this rule — this pins
+    // the agreement, so an upgrade that changes its convention fails here rather
+    // than making the ＋ box and the chat file the same words on different days.
+    for (let i = 0; i < 14; i++) {
+      const today = addDaysISO("2026-07-27", i);
+      const [y, m, d] = today.split("-").map(Number);
+      const ref = new Date(y, m - 1, d, 10, 0);
+      for (const weekday of WEEKDAY_NAMES) {
+        const viaChrono = chrono.parseDate(`next ${weekday}`, ref);
+        expect(viaChrono, `chrono parsed nothing for "next ${weekday}"`).toBeTruthy();
+        expect(toDateISO(viaChrono!), `"next ${weekday}" read from ${today}`).toBe(
+          resolveDayPhrase(today, weekday, "next"),
+        );
+      }
+    }
+  });
+
+  it("the agent hands the model a date table instead of asking it to count", () => {
+    const ctx = readFileSync("supabase/functions/agent/context.ts", "utf8");
+    expect(ctx, "context must carry a resolved date table").toMatch(/dates: buildDateTable\(/);
+    const prompt = readFileSync("supabase/functions/agent/index.ts", "utf8");
+    expect(prompt, "the prompt must send 'next <weekday>' to nextWeek").toContain(
+      "dates.nextWeek[<weekday>]",
+    );
+  });
+});
+
+// ── 3c · a correction edits the event, it never adds a second ────────────────
+// Same transcript: the agent could create on an Apple calendar but cancel and
+// reschedule were hardcoded to google-events, so the wrong event could not be
+// taken back — "the mistaken entry appears to be on a non-Google calendar".
+
+describe("calendar writes reach both writable providers", () => {
+  const tools = readFileSync("supabase/functions/agent/tools.ts", "utf8");
+
+  it("cancel and reschedule route by the event's provider", () => {
+    const cancel = tools.slice(tools.indexOf('case "cancel_event"'), tools.indexOf('case "decline_event"'));
+    expect(cancel, "cancel_event must not hardcode google-events").not.toContain('"google-events"');
+    expect(cancel).toContain("eventsFnFor(provider)");
+
+    const resched = tools.slice(tools.indexOf('case "reschedule_event"'), tools.indexOf('case "cancel_event"'));
+    expect(resched, "reschedule_event must not hardcode google-events").not.toContain('"google-events"');
+    expect(resched).toContain("eventsFnFor(evt.provider)");
+  });
+
+  it("every calendar result carries a formatted local time for the reply to quote", () => {
+    for (const marker of ['case "create_calendar_event"', 'case "reschedule_event"', 'case "cancel_event"']) {
+      const start = tools.indexOf(marker);
+      expect(tools.slice(start, start + 4000), `${marker} must return a "when"`).toMatch(/when/);
+    }
+    expect(readFileSync("supabase/functions/agent/index.ts", "utf8")).toContain(
+      "Never format a time from start_at yourself",
+    );
+  });
+});
+
 // ── 4 · nobody grows a second copy ───────────────────────────────────────────
 // The tests above only prove the two runtimes agree *while they both call the
 // kernel*. This one proves they still do: it fails the moment any surface
@@ -254,6 +371,9 @@ const OWNED_RULES = [
   "takeOffWeekPatch",
   "isOnSlate",
   "isOnDeckThisWeek",
+  "calendarWeekStart",
+  "resolveDayPhrase",
+  "weekDates",
 ];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

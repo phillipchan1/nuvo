@@ -75,6 +75,23 @@ The pairing to keep true. Adding a row means adding a kernel function first, the
 | Bring a project into the week | `bringIntoWeekPatch` | `BigRocks.bringIn`, `MobilePlanWeek.bringIn`, deck drop (`sprintSpanFor`) | `create_priority` |
 | Take a project off the week | `takeOffWeekPatch` | `BigRocks.takeOff`, `MobilePlanWeek.takeOff` | `delete_priority` |
 | Where a placement lands | `weekSpanFor` | `sprintSpanFor` (deck drag, sprint picker) | `create_priority` |
+| What day a person just named | `resolveDayPhrase` / `weekDates` / `calendarWeekStart` | chrono, via `parseCapture` (`lib/nlp.ts`) — pinned equal by test | `context.dates`, quoted by the prompt |
+
+**On the day-phrase row.** "Next Wednesday" said on a Tuesday means Wednesday of *next*
+week — never tomorrow. The agent read it as tomorrow, put a dinner on the wrong day, and the
+correction produced a second event rather than moving the first. So the resolution is a
+kernel rule, and `context.dates` hands the model an already-resolved table (today, tomorrow,
+every weekday of this week and next) instead of asking it to count days in its head. Note
+that this row uses **`calendarWeekStart`**, not `planningWeekStart`: the planning week rolls
+the weekend forward to the week being planned, which is right for a sprint and wrong for a
+sentence — through it, "next Friday" said on a Saturday lands 13 days out instead of 6.
+
+The UI half is chrono, inside `parseCapture` — the one place the kernel does *not* own the
+implementation, because typed capture parses a whole sentence, not a weekday. It already
+agreed with this rule, so the test pins the agreement rather than replacing the parser:
+`resolveDayPhrase` and chrono are checked against each other for every `next <weekday>` from
+every reference day of a fortnight. If chrono's convention ever shifts under an upgrade, that
+test fails instead of the two surfaces quietly drifting.
 
 ## 4 · Rules for working on it
 
@@ -95,7 +112,9 @@ The pairing to keep true. Adding a row means adding a kernel function first, the
 Named so nobody assumes the guarantee is wider than it is.
 
 - **Capture parsing** (`nlp.ts`) is still two implementations, and they differ today. Same
-  fix applies; not done.
+  fix applies; not done. Related: the browser's capture resolves "next Wednesday" through
+  chrono, not through the kernel's `resolveDayPhrase`, so typed capture and the chat can
+  still read the same phrase differently. The chat side is fixed; the capture side isn't.
 - **The composer.** `composeWeek` / the pull / calibration run only in the client
   (`useWeekDraft`), so the agent can *propose* a shape but never computes the same one. Today
   the chat flow proposes in prose and writes through task tools; if the agent ever needs to
