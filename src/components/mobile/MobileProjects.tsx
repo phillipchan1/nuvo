@@ -19,44 +19,17 @@ import { useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useMaxPerWeek } from "../../hooks/usePlannerPrefs";
-import {
-  readOnDeck,
-  sprintSpanFor,
-  weekIndexIn,
-  type OnDeckLane,
-  type ReadyTier,
-} from "../../lib/onDeck";
+import { readOnDeck, sprintSpanFor, weekIndexIn, type OnDeckLane } from "../../lib/onDeck";
 import { sprintNumber } from "../../lib/sprint";
 import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
-import { PROJECT_STATUS_COLORS } from "../floors/parts";
-import { READY } from "../floors/ReadinessBanner";
-import { ProjectShipAssess } from "../record/ShipAssess";
 import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
 import { Hint, VerticalList } from "./detail/verticalDetail";
+// One card across both shells — the phone must not invent its own grammar (D-048).
+import PlannerCard, { deckWeight } from "../ondeck/DeckCard";
+import { PIP_TONE, projectCardStatus } from "../ondeck/deckStatus";
 
-const CAUTION = PROJECT_STATUS_COLORS.waiting;
 // The same near-term horizon the desktop deck plans over.
 const HORIZON_SPRINTS = 4;
-
-// Readiness ramp — one color per tier, so a page of cards sorts itself by eye.
-const TIER_COLOR: Record<ReadyTier, string> = {
-  ready: READY,
-  grooming: CAUTION,
-  raw: "var(--line-strong)",
-  parked: "var(--muted)",
-  done: READY,
-};
-
-/** The one label beside the meter: a word for the extremes, else the specific
- *  missing check. Same rule as the desktop card (`meterHint`). */
-function meterHint(l: OnDeckLane): string {
-  if (l.readyTier === "done") return "Done";
-  if (l.readyTier === "parked") return "Parked";
-  if (l.readyTier === "ready") return "Ready";
-  if (l.gaps.length) return l.gaps.map((g) => g.label).join(" · ");
-  if (l.axes.fits === false) return "won't fit the sprint";
-  return "Raw";
-}
 
 const fmtDay = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
@@ -77,7 +50,6 @@ export default function MobileProjects({
     () => readOnDeck(d, byWeek, weeklyAvgMins, now, HORIZON_SPRINTS, true),
     [d, byWeek, weeklyAvgMins, now],
   );
-  const [shipId, setShipId] = useState<string | null>(null);
 
   const [seg, setSegState] = useState<Seg>(() => {
     try {
@@ -141,9 +113,8 @@ export default function MobileProjects({
     <ProjectCard
       lane={l}
       dot={domainById(d, l.project.domainId)?.color ?? "var(--accent)"}
+      domainName={domainById(d, l.project.domainId)?.name ?? "no area"}
       onOpen={() => onOpenItem("project", l.project.id)}
-      onShip={() => setShipId(l.project.id)}
-      onReopen={() => updateProject(l.project.id, { status: "in_progress" })}
     />
   );
 
@@ -258,70 +229,40 @@ export default function MobileProjects({
         />
       )}
 
-      {shipId && <ProjectShipAssess id={shipId} onClose={() => setShipId(null)} />}
     </div>
   );
 }
 
 // ── the deck card — the desktop card at thumb scale ───────────────────────────
+// The SAME card the desktop deck wears (D-048), sized for a thumb — the grammar
+// must not fork per device. Marked (a domain spine) = a project; enclosed = a bet.
+// No completion check here either: tapping the card opens the record, which owns
+// the ship assessment, and the card's left edge belongs to the name.
 function ProjectCard({
   lane,
   dot,
+  domainName,
   onOpen,
-  onShip,
-  onReopen,
 }: {
   lane: OnDeckLane;
   dot: string;
+  domainName: string;
   onOpen: () => void;
-  onShip: () => void;
-  onReopen: () => void;
 }) {
   const done = lane.readyTier === "done";
-  const color = TIER_COLOR[lane.readyTier];
-  const segs = done ? [true, true, true] : [lane.axes.defined, lane.axes.planned, lane.axes.fits];
   return (
-    <div
+    <PlannerCard
+      size="phone"
       onClick={onOpen}
-      className="glass-card fast relative rounded-xl border border-line py-3 pl-4 pr-3"
-      style={{ opacity: lane.readyTier === "parked" ? 0.6 : 1 }}
-    >
-      {/* domain rail — identity; readiness lives in the meter */}
-      <span className="pointer-events-none absolute inset-y-3 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
-      <div className="flex items-start gap-2.5">
-        <button
-          data-card-control
-          aria-label={done ? "Reopen project" : "Mark project complete"}
-          onClick={(e) => {
-            e.stopPropagation();
-            done ? onReopen() : onShip();
-          }}
-          className="tap fast -my-2 -ml-1 flex w-9 shrink-0 items-center justify-center"
-        >
-          <span
-            className="flex h-[22px] w-[22px] items-center justify-center rounded-full border"
-            style={done ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
-          >
-            <svg width="11" height="11" viewBox="0 0 10 10" fill="none" className={done ? "opacity-100" : "opacity-0"} style={{ color: "#fff" }}>
-              <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-        </button>
-        <span className="mt-[7px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-        <div className={`min-w-0 flex-1 text-body font-semibold leading-snug ${done ? "text-muted" : "text-ink"}`}>
-          {lane.project.name}
-        </div>
-      </div>
-      {/* Defined · Planned · Fits — the meter IS the "N of 3", so no number */}
-      <div className="mt-2.5 flex items-center gap-2 pl-9">
-        <span className="flex flex-1 items-center gap-1">
-          {segs.map((met, i) => (
-            <span key={i} className="h-[5px] flex-1 rounded-full" style={{ background: met ? color : "var(--line)" }} />
-          ))}
-        </span>
-        <span className="mono shrink-0 text-micro" style={{ color }}>{meterHint(lane)}</span>
-      </div>
-    </div>
+      spine={dot}
+      eyebrow={domainName}
+      title={lane.project.name}
+      weight={done ? null : deckWeight(lane.pace.remainingMins)}
+      status={projectCardStatus(lane)}
+      pips={done ? [true, true, true] : [lane.axes.defined, lane.axes.planned, lane.axes.fits === true]}
+      pipTone={PIP_TONE[lane.readyTier]}
+      dim={done || lane.readyTier === "parked"}
+    />
   );
 }
 

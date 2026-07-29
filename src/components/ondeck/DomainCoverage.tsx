@@ -50,8 +50,14 @@ export default function DomainCoverage({
 
   // No ruler — the deck's sprint headers directly below label the (aligned) columns,
   // so coverage stays a compact band that doesn't crowd the deck.
+  // The strip is an ANNOTATION over the grid, not a table of its own. It sits
+  // above the deck, so at full contrast its empty cells — always the majority —
+  // become the first and heaviest thing on the page, and a block of nothing
+  // out-shouts the eight cards that are the actual content. Everything here is
+  // sized to keep it a band of marks on the paper: micro labels, tight rows, and
+  // unlit cells that barely register until you hover one.
   return (
-    <div className="pb-2 pt-0.5">
+    <div className="pb-1.5 pt-0.5">
       {rows.map((r) => {
         const { domain: d } = r;
         const covered = r.cells.some((n) => n > 0);
@@ -60,7 +66,10 @@ export default function DomainCoverage({
             {/* The label gutter has to occlude the scrolling cells, but an opaque
                 fill would cover the atmosphere — so it's frosted glass instead. */}
             <div
-              className="sticky left-0 z-10 flex min-w-0 items-center gap-2 py-1 pl-0.5 pr-2"
+              // Right-aligned against the grid: the labels then share one clean edge
+              // with the columns instead of leaving a ragged one, and the leftover
+              // gutter reads as the grid's margin rather than a hole beside it.
+              className="sticky left-0 z-10 flex min-w-0 items-center justify-end gap-1.5 py-[3px] pl-0.5 pr-2.5"
               style={{
                 background: "color-mix(in srgb, var(--bg) 82%, transparent)",
                 backdropFilter: "blur(6px)",
@@ -71,17 +80,17 @@ export default function DomainCoverage({
                 className="h-1.5 w-1.5 shrink-0 rounded-full"
                 style={covered ? { background: d.color } : { background: "transparent", boxShadow: "inset 0 0 0 1px var(--line-strong)" }}
               />
-              <span className="truncate text-caption leading-none" style={{ color: covered ? "var(--ink)" : "var(--muted)" }} title={d.name}>
+              <span className="truncate text-micro leading-none" style={{ color: covered ? "var(--ink)" : "var(--muted)" }} title={d.name}>
                 {d.name}
               </span>
             </div>
             {r.cells.map((count, i) =>
               count > 0 ? (
-                <div key={i} className={`${rule} px-1 py-[3px]`} style={i === 0 ? { background: NOW_BAND } : undefined} title={`${d.name} · ${count} ${itemNoun}${count === 1 ? "" : "s"} ${i === 0 ? `this ${colNoun}` : `${colNoun} +${i}`}`}>
+                <div key={i} className={`${rule} px-1 py-[2px]`} style={i === 0 ? { background: NOW_BAND } : undefined} title={`${d.name} · ${count} ${itemNoun}${count === 1 ? "" : "s"} ${i === 0 ? `this ${colNoun}` : `${colNoun} +${i}`}`}>
                   {/* accumulating pips — one identical block per unit of work; more = more */}
                   <div className="flex items-center gap-[3px]">
                     {Array.from({ length: Math.min(count, MAX_PIPS) }).map((_, k) => (
-                      <span key={k} className="h-2 shrink-0 rounded-[2px]" style={{ width: PIP_W, background: d.color }} />
+                      <span key={k} className="h-[6px] shrink-0 rounded-[2px]" style={{ width: PIP_W, background: d.color }} />
                     ))}
                     {count > MAX_PIPS && <span className="mono text-micro leading-none" style={{ color: d.color }}>+{count - MAX_PIPS}</span>}
                   </div>
@@ -92,13 +101,13 @@ export default function DomainCoverage({
                   onClick={() => onAdd(d, i)}
                   aria-label={`Start a ${d.name} ${itemNoun} ${i === 0 ? `this ${colNoun}` : i === 1 ? `next ${colNoun}` : `in ${i} ${colNoun}s`}`}
                   title={`Start a ${d.name} ${itemNoun} here`}
-                  className={`group/cell fast ${rule} px-1 py-[3px]`}
+                  className={`group/cell fast ${rule} px-1 py-[2px]`}
                   style={i === 0 ? { background: NOW_BAND } : undefined}
                 >
                   {/* open time for this domain — a soft full-width recess at pip
                       height. Solid, not dashed — empty cells dissolve into the
                       paper until hover blooms them to `--slot`. */}
-                  <div className="coverage-gap h-2 w-full rounded-[2px] transition-colors" />
+                  <div className="coverage-gap h-[6px] w-full rounded-[2px] transition-colors" />
                 </button>
               ),
             )}

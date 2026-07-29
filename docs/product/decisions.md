@@ -118,6 +118,55 @@ vocabulary.*
 (coarse calls), then the per-project card run. → Sorting by *when it's needed* rather than
 *how unready it is.* *Status: standing.*
 
+**D-048 · 2026-07-28 · The deck card: one object, two altitudes — *marked* vs *enclosed*.**
+The project and initiative On Deck cards are now one component
+(`src/components/ondeck/DeckCard.tsx`): identity · **name** · one meta line
+(`area · weight`, then a status word and readiness pips, right-aligned). What changed and
+why:
+
+- **The name is the hero.** It's the only thing you read while scanning a wall, so nothing
+  sits to its left any more — the completion check and the second domain dot are gone.
+- **Readiness is subordinate, not co-equal.** The old three full-width bars were the
+  loudest thing on the card, read like *progress* when they're a grooming checklist
+  (Principle 6), and answered the **Groom deck's** question on a surface whose question is
+  "when does this land, and what collides" (Principle 8, D-023). They're now 4px pips at
+  the right margin.
+- **The card carries its weight in hours.** Remaining effort is the currency the pinch math
+  actually runs on, so a column of weights explains an over-committed sprint the way `5/2`
+  never could (W1/Q2). Null when nothing is sized — never a guess.
+- **One status word, by precedence, and only when there's something to say** (Principle 9).
+  Deliberately *not* said: the pace read. `behind`/`stalled` fire on nearly every honest
+  dated project, so a wall of "behind" says nothing, and "no motion" dresses *absence of
+  history* up as bad news — Principle 6's corollary. Drift stays where it can be explained.
+- **The altitude tell is the spine, and nothing else.** A project and a bet are the *same
+  object* — a thing you pick up and drop on a column of time — differing only in scope, so
+  they may differ only in **weight**. A project is **marked**: a 3px rounded spine inset
+  from the card's ends, the bar it occupies on the grid. A bet is **bounded**: the same
+  colour at 5px, square, full-height, so the mark becomes the card's left edge. Everything
+  else is identical. *Scope reads as mass.*
+
+  Two tells were tried and rejected on the way, both wrong in the same direction — they
+  made altitude a difference in **kind**, so a bet read as a different species rather than
+  a bigger sibling: a **serif** name (altitude as a font choice, an arbitrary signal a
+  reader can't decode) and an **enclosed** card (domain-tinted border + wash — a different
+  silhouette). Recorded so neither comes back.
+
+**Shipping stays reachable** from right-click ("Ship it…") and the record, and still derives
+on its own once every task is done — so removing the check cost an act nothing, and bought
+the card's left edge. *Status: standing.*
+
+**D-049 · 2026-07-28 · A planner grid fills its pane.** The deck's sprint/quarter columns
+were short stubs in a tall pane. That, not the coverage strip, was what made On Deck feel
+out of balance: with no structure running down beside it, the coverage strip's label gutter
+read as a *hole* in the middle of the page rather than the grid's own margin. Columns now
+`flex-1` to the floor (the design language's "grid views go single-plane, full-height" rule),
+the gutter is as narrow as the domain names allow with its labels right-aligned against the
+grid, and column widths were cut so the **whole horizon fits without scrolling** — a deck
+that exists to show you a collision three weeks out shouldn't hide week four. Coverage kept
+all of its information and lost weight instead: micro labels, tighter rows, and unlit cells
+at ~half their old contrast, because empty cells are always the majority and at full
+contrast a block of *nothing* out-shouts the cards. *Status: standing.*
+
 ### Tenancy
 
 **D-024 · 2026-07-25 · Nuvo is a multi-tenant product.** Many independent operators, one

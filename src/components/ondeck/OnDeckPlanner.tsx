@@ -19,59 +19,36 @@ import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
 import { useRecordContextMenu } from "../RecordContextMenu";
 import { domainById, isOpenStatus, type Domain } from "../../lib/vertical";
-import {
-  readOnDeck,
-  sprintSpanFor,
-  weekIndexIn,
-  type OnDeckLane,
-  type ReadyTier,
-} from "../../lib/onDeck";
+import { readOnDeck, sprintSpanFor, weekIndexIn } from "../../lib/onDeck";
 import { sprintNumber } from "../../lib/sprint";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
-import { READY } from "../floors/ReadinessBanner";
 import ShippedStrip from "../floors/ShippedStrip";
-import { ProjectShipAssess } from "../record/ShipAssess";
 import InlineAdd from "./InlineAdd";
 import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
 import PlannerRail from "./PlannerRail";
+import DeckCard, { deckWeight } from "./DeckCard";
+import { PIP_TONE, projectCardStatus } from "./deckStatus";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 
 // A planning surface wants runway — show more weeks than the compact hub and let
 // it scroll. More than this many projects committed to one week is a red flag.
 // The left label column — holds coverage domain names, empty in the deck; wide enough
-// for a domain name, so coverage cells align to the sprint columns beneath.
-const LABEL_W = 132;
+// for a domain name, so coverage cells align to the sprint columns beneath. Kept as
+// narrow as the names allow: below the strip it's necessarily blank, and every pixel
+// of it is a void running down the middle of the page.
+const LABEL_W = 96;
 // A fixed near-term horizon — the deck is for scaffolding the next stretch; coverage
 // measures load per domain over it. (A window selector proved to be noise once the
 // pips carried "how much" per lane.)
 const HORIZON_WEEKS = 4;
-// Cards now carry the readiness meter + completion control, so give them room:
-// wide columns mean ~4 weeks fill a typical pane comfortably and the rest scroll.
-const WEEK_COL_PX = 288;
-
-// Readiness ramp — one color per tier, so a wall of cards sorts itself by eye:
-// teal = ready to pull in, amber = mid-groom, faint = raw/untouched.
-const TIER_COLOR: Record<ReadyTier, string> = {
-  ready: READY,
-  grooming: CAUTION,
-  raw: "var(--line-strong)",
-  parked: "var(--muted)",
-  done: READY,
-};
-/** The one readiness label beside the meter — the meter carries "how many of 3"
- *  (so no redundant N/3 number), this names the *state*: a word for the extremes,
- *  the specific missing check while grooming ("no steps"). Never null — the label
- *  is the meter's caption. */
-function meterHint(l: OnDeckLane): string {
-  if (l.readyTier === "done") return "Done";
-  if (l.readyTier === "parked") return "Parked";
-  if (l.readyTier === "ready") return "Ready";
-  if (l.gaps.length) return l.gaps.map((g) => g.label).join(" · ");
-  if (l.axes.fits === false) return "won't fit the week";
-  return "Raw";
-}
+// Column width. The card lost its checkbox, its second domain dot and its full-width
+// meter, so it needs less: narrower columns mean the whole 4-week horizon fits a
+// typical pane instead of leaving a truncated card hanging off the right edge — the
+// deck's job is to show you the collision, and a horizon you have to scroll to see
+// isn't one. `minmax(…, 1fr)` still lets the columns stretch when there's room.
+const WEEK_COL_PX = 216;
 
 const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtWk = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -126,19 +103,13 @@ export default function OnDeckPlanner() {
   const [dropWeek, setDropWeek] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
   const [preview, setPreview] = useState<Preview>(null);
-  // Shipping asks first — the card's check is one click, and a project with open
-  // tasks used to get sealed by it silently. The assessment owns the write; the
-  // check bloom + card fade only play once you've actually said yes (readOnDeck
-  // excludes complete projects, so the card drops off after).
-  const [completingId, setCompletingId] = useState<string | null>(null);
-  const [shipId, setShipId] = useState<string | null>(null);
-  const completeProject = (id: string) => setShipId(id);
-  const onShipped = (id: string) => {
-    setCompletingId(id);
-    window.setTimeout(() => setCompletingId(null), 260);
-  };
-  // Reopen a finished project — the check toggles it back into flight.
-  const reopenProject = (id: string) => updateProject(id, { status: "in_progress" });
+  // No completion control on the card. Shipping a project is a *judgment* — the
+  // assessment asks about the leftovers — and it is not this surface's act
+  // (D-023: the timeline decides, the deck does). It stayed reachable the whole
+  // time from right-click ("Ship it…" in RecordContextMenu) and from the record,
+  // and completion still derives on its own once every task is done. What the
+  // check cost was the card's left edge: the eye met a control before it met the
+  // name.
   // Click an empty week → compose a project inline, right there in that week (no
   // modal). The full composer (domain, tasks, links) stays a click away in the inbox.
   // composeDomain carries an explicit domain when the compose was launched from a
@@ -255,8 +226,6 @@ export default function OnDeckPlanner() {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       const tgt = e.target as HTMLElement;
-      // the completion check owns its click — never start a drag / open the record.
-      if (tgt?.closest?.("[data-card-complete]")) return;
       const el = tgt?.closest?.("[data-project-drag]") as HTMLElement | null;
       if (!el) return;
       const id = el.getAttribute("data-project-drag");
@@ -392,23 +361,18 @@ export default function OnDeckPlanner() {
         ) : (
           <div className="mt-1.5 flex flex-col gap-2">
             {inbox.map((p) => {
-              const dot = domainById(data, p.domainId)?.color ?? "var(--accent)";
-              const sub = !p.targetDate ? "no finish line" : `due ${format(new Date(p.targetDate + "T00:00:00"), "MMM d")}`;
+              const dom = domainById(data, p.domainId);
               return (
-                <div
+                <DeckCard
                   key={p.id}
-                  data-project-drag={p.id}
+                  dragAttr={{ "data-project-drag": p.id }}
                   onContextMenu={onContextMenu("project", p.id)}
-                  className="glass-card lift-anim fast relative cursor-grab select-none rounded-lg border border-line py-2.5 pl-4 pr-3 hover:border-line-strong active:cursor-grabbing"
-                >
-                  {/* domain rail — the same identity edge the placed cards wear */}
-                  <span className="pointer-events-none absolute inset-y-2.5 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-                    <span className="truncate text-caption text-ink">{p.name}</span>
-                  </div>
-                  <div className="mono mt-0.5 pl-4 text-micro text-muted">{sub}</div>
-                </div>
+                  className="cursor-grab active:cursor-grabbing"
+                  spine={dom?.color ?? "var(--accent)"}
+                  eyebrow={dom?.name ?? "no area"}
+                  title={p.name}
+                  status={p.targetDate ? { label: `due ${format(new Date(p.targetDate + "T00:00:00"), "MMM d")}`, tone: "muted" } : null}
+                />
               );
             })}
           </div>
@@ -419,7 +383,7 @@ export default function OnDeckPlanner() {
           No hero here: the crown is this surface's one anchor (execution voice),
           and the floor's top bar already names On Deck — the same reason the
           Schedule has no header over its calendar. */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-5 py-3">
+      <div className="flex min-w-0 flex-1 flex-col px-5 py-3">
         {/* coverage controls — collapse + domain filter. One quiet toolbar over the grid. */}
         <CoverageControls
           collapsed={coverageCollapsed}
@@ -433,8 +397,13 @@ export default function OnDeckPlanner() {
           setOpen={setFilterOpen}
         />
 
-        <div className="mt-1 overflow-x-auto pb-3">
-          <div className="relative" style={{ minWidth: gridMinW }}>
+        {/* The grid FILLS the pane (flex-1, per the design language's "grid views go
+            single-plane, full-height" rule — flex-1, never min-h-full). Short column
+            stubs floating in a tall pane were the surface's real imbalance: with
+            nothing running down beside it, the coverage label gutter read as a hole
+            in the middle of the page rather than as the grid's margin. */}
+        <div className="mt-1 flex min-h-0 flex-1 flex-col overflow-auto pb-1">
+          <div className="relative flex min-h-0 flex-1 flex-col" style={{ minWidth: gridMinW }}>
             {/* domain coverage — a NAMED read aligned OVER the sprint columns (shares
                 the grid template), so a lit cell points straight down at its sprint.
                 Collapsible: the deck is the primary surface. */}
@@ -442,7 +411,7 @@ export default function OnDeckPlanner() {
             {/* week headers — label · date, with the week's committed load folded in
                 (amber past the max). Faint column rules only — no frame, no gauge row. */}
             <div
-              className="grid"
+              className="grid shrink-0"
               style={{
                 gridTemplateColumns: cols,
                 borderTop: coverageCollapsed ? undefined : "1px solid var(--line)",
@@ -475,7 +444,7 @@ export default function OnDeckPlanner() {
                 );
               })}
             </div>
-            <div className="h-px w-full" style={{ background: "var(--line)" }} />
+            <div className="h-px w-full shrink-0" style={{ background: "var(--line)" }} />
 
             {/* the timeline body — one relative box. Behind: full-height,
                 clickable week columns, each with a "+ project" pinned at its
@@ -483,7 +452,7 @@ export default function OnDeckPlanner() {
                 that week (not just a hover sliver). In front: the lane-packed
                 cards, whose wrapper ignores the pointer so a click on empty space
                 falls through to the week column beneath. */}
-            <div className="relative" style={{ minHeight: 320 }}>
+            <div className="relative flex-1" style={{ minHeight: 320 }}>
               {/* week columns — drop targets + click-to-create + faint rules. The
                   leading spacer holds the label gutter so columns align with coverage. */}
               <div className="absolute inset-0 grid" style={{ gridTemplateColumns: cols }}>
@@ -538,77 +507,35 @@ export default function OnDeckPlanner() {
                       const { l } = g;
                       const { start, end, beyond } = effOf(g);
                       const dot = domainById(data, l.project.domainId)?.color ?? "var(--accent)";
-                      const color = TIER_COLOR[l.readyTier];
                       const dragging = preview?.id === l.project.id;
                       const done = l.readyTier === "done";
-                      const segs = done ? [true, true, true] : [l.axes.defined, l.axes.planned, l.axes.fits];
-                      const hint = meterHint(l);
-                      const completing = completingId === l.project.id;
                       return (
-                        <div
+                        <DeckCard
                           key={l.project.id}
-                          data-project-drag={l.project.id}
+                          dragAttr={{ "data-project-drag": l.project.id }}
                           onContextMenu={onContextMenu("project", l.project.id)}
-                          className="group/bar glass-card lift-anim pointer-events-auto fast relative mx-1 flex min-h-[62px] cursor-grab flex-col gap-2 rounded-lg border border-line py-3 pl-4 pr-3.5 active:cursor-grabbing"
+                          className="pointer-events-auto mx-1 min-h-[62px] cursor-grab justify-center active:cursor-grabbing"
                           style={{
                             gridColumn: `${start + 2} / ${end + 3}`,
                             gridRow: 1,
                             borderColor: dragging ? dot : undefined,
                             boxShadow: dragging ? "var(--shadow-lift)" : beyond ? `5px 0 0 -1px ${dot}` : undefined,
                             transform: dragging ? "translateY(-3px)" : undefined,
-                            opacity: l.readyTier === "parked" ? 0.6 : 1,
                           }}
+                          spine={dot}
+                          eyebrow={domainById(data, l.project.domainId)?.name ?? "no area"}
+                          title={l.project.name}
+                          // the weight the pinch math actually runs on — a column of
+                          // hours explains an over-committed sprint; a count doesn't.
+                          weight={done ? null : deckWeight(l.pace.remainingMins)}
+                          status={projectCardStatus(l)}
+                          pips={done ? [true, true, true] : [l.axes.defined, l.axes.planned, l.axes.fits === true]}
+                          pipTone={PIP_TONE[l.readyTier]}
+                          dim={done || l.readyTier === "parked"}
                         >
-                          {/* domain rail — color demarcation of *which area* this is (identity);
-                              readiness lives in the meter below (status). Same as the Groom card. */}
-                          <span className="pointer-events-none absolute inset-y-2.5 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
                           <span data-resize="start" className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" aria-hidden />
-                          {/* title row — just the check, domain dot, and name. Readiness
-                              lives entirely in the meter below; the sprint column carries
-                              the "when" so no due-date pill. */}
-                          <div className="flex items-start gap-2">
-                            {/* completion check — mirrors the Schedule's done toggle. Fills
-                                teal + blooms on complete; a finished project stays on the
-                                deck in a done state and the check toggles it back open. */}
-                            <button
-                              data-card-complete
-                              aria-label={done ? "Reopen project" : "Mark project complete"}
-                              title={done ? "Reopen" : "Mark complete"}
-                              onClick={(e) => { e.stopPropagation(); done ? reopenProject(l.project.id) : completeProject(l.project.id); }}
-                              className={`fast relative mt-[1px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border ${completing ? "bloom" : ""}`}
-                              style={done || completing ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
-                            >
-                              <svg
-                                width="10"
-                                height="10"
-                                viewBox="0 0 10 10"
-                                fill="none"
-                                className={done || completing ? "opacity-100" : "opacity-0 transition-opacity group-hover/bar:opacity-50"}
-                                style={{ color: done || completing ? "#fff" : READY }}
-                              >
-                                <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </button>
-                            <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-                            <div className={`min-w-0 flex-1 text-caption font-semibold leading-snug ${done ? "text-muted" : "text-ink"}`}>{l.project.name}</div>
-                          </div>
-                          {/* the definition-of-ready meter — Defined · Planned · Fits — with
-                              its one caption (state word, or the specific missing check). The
-                              meter IS the "N of 3", so no redundant number. */}
-                          <div className="flex items-center gap-1.5">
-                            <span className="flex flex-1 items-center gap-1" title={done ? "Complete" : "Defined · Planned · Fits"}>
-                              {segs.map((met, i) => (
-                                <span
-                                  key={i}
-                                  className="h-[5px] flex-1 rounded-full"
-                                  style={{ background: met ? color : "var(--line)" }}
-                                />
-                              ))}
-                            </span>
-                            <span className="mono shrink-0 text-micro" style={{ color }}>{hint}</span>
-                          </div>
                           <span data-resize="end" className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" aria-hidden />
-                        </div>
+                        </DeckCard>
                       );
                     })}
                     {composeRowIdx === ri && composerCell}
@@ -643,14 +570,6 @@ export default function OnDeckPlanner() {
           </div>
           <div className="mono mt-0.5 pl-4 text-micro text-muted">{drag.sub}</div>
         </div>
-      )}
-
-      {shipId && (
-        <ProjectShipAssess
-          id={shipId}
-          onClose={() => setShipId(null)}
-          onShipped={() => onShipped(shipId)}
-        />
       )}
     </div>
   );

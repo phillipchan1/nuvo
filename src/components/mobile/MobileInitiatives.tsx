@@ -27,30 +27,15 @@ import {
 import { initiativeReadinessAxes } from "../../lib/lenses";
 import { sprintsBetween } from "../../lib/sprint";
 import { domainById, type Domain, type Initiative, type VerticalData } from "../../lib/vertical";
-import { DomainPicker, PROJECT_STATUS_COLORS } from "../floors/parts";
-import { READY } from "../floors/ReadinessBanner";
+import { DomainPicker } from "../floors/parts";
 import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
+// One card across both shells — the phone must not invent its own grammar (D-048).
+import PlannerCard, { type DeckTone } from "../ondeck/DeckCard";
+import { initiativeCardStatus, initiativeWeight } from "../ondeck/deckStatus";
 import { Hint, VerticalList } from "./detail/verticalDetail";
 
-const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const HORIZON_QUARTERS = 4;
 
-const STATE_COLOR: Record<InitiativeLaneState, string> = {
-  on_track: READY,
-  at_risk: "var(--signal)",
-  needs_okrs: CAUTION,
-  needs_shaping: CAUTION,
-  idea: "var(--line-strong)",
-  parked: "var(--muted)",
-};
-const STATE_LABEL: Record<InitiativeLaneState, string> = {
-  on_track: "on track",
-  at_risk: "at risk",
-  needs_okrs: "needs OKRs",
-  needs_shaping: "needs shaping",
-  idea: "no finish line",
-  parked: "parked",
-};
 // Most urgent first inside a quarter — the desktop deck's order.
 const STATE_ORDER: Record<InitiativeLaneState, number> = {
   at_risk: 0, needs_okrs: 1, needs_shaping: 2, on_track: 3, idea: 4, parked: 5,
@@ -262,59 +247,43 @@ function InitiativeCard({
   const suggestion = lane.needsDomain ? suggestDomainForInitiative(d, i) : null;
   const axes = initiativeReadinessAxes(d, i);
   const met = (axes.defined ? 1 : 0) + (axes.planned ? 1 : 0);
-  const groomColor =
-    lane.state === "parked" ? "var(--muted)" : met === 2 ? READY : met === 1 ? CAUTION : "var(--line-strong)";
-  const overdue = lane.overdue && lane.state !== "parked" ? "⚠ overdue · " : "";
-  const caption =
-    lane.state === "parked"
-      ? "parked"
-      : lane.gaps.length
-        ? overdue + lane.gaps.map((g) => g.label).join(" · ")
-        : overdue + STATE_LABEL[lane.state];
+  const pipTone: DeckTone = lane.state === "parked" ? "muted" : met === 2 ? "ready" : met === 1 ? "caution" : "muted";
 
+  // The same card the desktop deck wears (D-048), sized for a thumb. The only
+  // altitude tell is the spine: heavier and full-height for a bet.
   return (
-    <div onClick={onOpen} className="glass-card fast relative rounded-xl border border-line py-3 pl-4 pr-3">
-      <span className="pointer-events-none absolute inset-y-3 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
-      <div className="flex items-start gap-2.5">
-        <span className="mt-[7px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-        {/* A bet is a NAME, so it earns the serif — the register tell that separates
-            this altitude from a project card. */}
-        <div className="serif min-w-0 flex-1 text-body leading-snug text-ink">{i.name}</div>
-        {lane.attainment != null && (
-          <span className="mono mt-0.5 shrink-0 text-micro text-muted tabular-nums">
-            {Math.round(lane.attainment * 100)}%
-          </span>
-        )}
-      </div>
-
-      {/* Defined · Measured — a bet's two readiness axes */}
-      <div className="mt-2.5 flex items-center gap-2 pl-[18px]">
-        <span className="flex flex-1 items-center gap-1">
-          {[axes.defined, axes.planned].map((m, k) => (
-            <span key={k} className="h-[5px] flex-1 rounded-full" style={{ background: m ? groomColor : "var(--line)" }} />
-          ))}
-        </span>
-        <span className="mono shrink-0 text-micro" style={{ color: STATE_COLOR[lane.state] }}>{caption}</span>
-      </div>
-
-      {/* the one placement necessity: a bet with no domain gets a one-tap home */}
-      {lane.needsDomain && (
-        <div data-card-control className="mt-2 flex items-center gap-2 pl-[18px]" onClick={(e) => e.stopPropagation()}>
-          {suggestion ? (
-            <button
-              onClick={() => onSetDomain(i, suggestion.domain.id)}
-              className="tap fast flex items-center gap-1 rounded-full border px-2.5 py-1 text-micro font-medium"
-              style={{ color: suggestion.domain.color, borderColor: `${suggestion.domain.color}66`, background: `${suggestion.domain.color}12` }}
-            >
-              <span>{suggestion.domain.icon}</span>
-              <span>Link → {suggestion.domain.name}</span>
-            </button>
-          ) : (
-            <DomainPicker domains={d.domains} value="" onChange={(id) => onSetDomain(i, id)} />
-          )}
-        </div>
-      )}
-    </div>
+    <PlannerCard
+      size="phone"
+      variant="bounded"
+      onClick={onOpen}
+      spine={dot}
+      eyebrow={domainById(d, i.domainId)?.name ?? "no area"}
+      title={i.name}
+      weight={initiativeWeight(lane)}
+      status={initiativeCardStatus(lane)}
+      pips={[axes.defined, axes.planned]}
+      pipTone={pipTone}
+      dim={lane.state === "parked"}
+      footer={
+        // the one placement necessity: a bet with no domain gets a one-tap home
+        lane.needsDomain ? (
+          <div data-card-control className="relative mt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {suggestion ? (
+              <button
+                onClick={() => onSetDomain(i, suggestion.domain.id)}
+                className="tap fast flex items-center gap-1 rounded-full border px-2.5 py-1 text-micro font-medium"
+                style={{ color: suggestion.domain.color, borderColor: `${suggestion.domain.color}66`, background: `${suggestion.domain.color}12` }}
+              >
+                <span>{suggestion.domain.icon}</span>
+                <span>Link → {suggestion.domain.name}</span>
+              </button>
+            ) : (
+              <DomainPicker domains={d.domains} value="" onChange={(id) => onSetDomain(i, id)} />
+            )}
+          </div>
+        ) : null
+      }
+    />
   );
 }
 

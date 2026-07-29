@@ -114,12 +114,15 @@ export default function PlannerRail({
         )}
       </div>
 
-      {/* ── the pool ─────────────────────────────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-3">
+      {/* ── the pool ─────────────────────────────────────────────────────────────
+          An EMPTY pool centres its one line in the space it owns rather than
+          stranding it under the label with a rail-height void beneath — an empty
+          drop target should read as open room, not as an unfinished panel. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-3">
         <div className="section-label !px-1 pt-2.5">
           {poolLabel} · {poolCount}
         </div>
-        {children}
+        <div className={poolCount === 0 ? "flex flex-1 flex-col justify-center" : ""}>{children}</div>
       </div>
 
       {/* ── the foot pill — a persistent action, out of the hierarchy ─────────── */}

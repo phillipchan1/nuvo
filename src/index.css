@@ -649,7 +649,11 @@ body.odp-dragging [data-resize] {
 /* Coverage gap — a soft solid recess matching a pip's geometry. Empty cells
    used to be dashed pills; that lattice was the "sloppy dotted lines." */
 .coverage-gap {
-  background: color-mix(in srgb, var(--line-strong) 22%, transparent);
+  /* An unlit cell is *absence*, and absence should be the quietest thing on a
+     surface — there are always far more empty cells than lit ones, so at any real
+     contrast the strip stops reading as marks on paper and starts reading as a
+     striped block that out-weighs the deck below it. It blooms on hover. */
+  background: color-mix(in srgb, var(--line-strong) 11%, transparent);
 }
 .group\/cell:hover .coverage-gap {
   background: color-mix(in srgb, var(--slot) 38%, transparent);

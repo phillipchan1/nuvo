@@ -39,31 +39,25 @@ import {
   type InitiativeLaneState,
 } from "../../lib/initiativeDeck";
 import { DomainPicker, PROJECT_STATUS_COLORS } from "../floors/parts";
-import { READY } from "../floors/ReadinessBanner";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
 import PlannerRail from "./PlannerRail";
+import DeckCard, { type DeckTone } from "./DeckCard";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
-const COL_PX = 248;
+const COL_PX = 216;
 // Quarters are adjacent, ruled columns now (not gapped boxes) — the same
 // demarcation the project deck's weeks use, so both decks read as one grid idiom.
 const COL_GAP = 0;
 // The left label column — holds coverage domain names, empty in the deck; aligns the
 // coverage cells to the quarter columns beneath.
-const LABEL_W = 132;
+const LABEL_W = 96;
 // A fixed near-term horizon — a year of quarters. Coverage now measures load per
 // domain (the pips), so a window selector was noise; near-term is what matters.
 const HORIZON_QUARTERS = 4;
 
-const STATE_COLOR: Record<InitiativeLaneState, string> = {
-  on_track: READY,
-  at_risk: "var(--signal)",
-  needs_okrs: CAUTION,
-  needs_shaping: CAUTION,
-  idea: "var(--line-strong)",
-  parked: "var(--muted)",
-};
+// The card no longer paints a colour per state — it says at most ONE thing, in
+// one of the four deck tones (see DeckCard). The labels stay; the ramp is gone.
 const STATE_LABEL: Record<InitiativeLaneState, string> = {
   on_track: "on track",
   at_risk: "at risk",
@@ -286,7 +280,7 @@ export default function InitiativeDeck() {
       {/* ── the grid ─────────────────────────────────────────────────────────
           No hero: the crown anchors this surface (one hero per surface), and the
           floor's top bar already names On Deck. */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-6 py-4">
+      <div className="flex min-w-0 flex-1 flex-col px-6 py-4">
           <CoverageControls
             collapsed={coverageCollapsed}
             setCollapsed={setCoverageCollapsed}
@@ -298,8 +292,11 @@ export default function InitiativeDeck() {
             open={filterOpen}
             setOpen={setFilterOpen}
           />
-          <div className="mt-2 overflow-x-auto pb-2">
-            <div style={{ minWidth: gridMinW }}>
+          {/* the grid FILLS the pane — same rule as the project deck: short column
+              stubs in a tall pane leave the coverage label gutter reading as a hole
+              in the middle of the page instead of the grid's own margin. */}
+          <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-auto pb-1">
+            <div className="flex min-h-0 flex-1 flex-col" style={{ minWidth: gridMinW }}>
               {!coverageCollapsed && (
                 <DomainCoverage
                   rows={coverageRows}
@@ -311,7 +308,7 @@ export default function InitiativeDeck() {
                   onAdd={addForDomain}
                 />
               )}
-              <div className="grid" style={{ gridTemplateColumns: cols }}>
+              <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: cols }}>
                 <div aria-hidden />
                 {board.quarters.map((q) => {
               const lanes = byColumn.get(q.idx) ?? [];
@@ -360,11 +357,22 @@ export default function InitiativeDeck() {
                     {lanes.length === 0 && composeCol !== q.idx ? (
                       <div
                         onClick={() => composeInCol(q.idx)}
-                        className="slot-open fast flex flex-1 cursor-pointer items-center justify-center rounded-lg border px-2 py-6 text-center text-micro text-muted transition-colors"
+                        // Not flex-1: now that a column runs the full height of the
+                        // pane, a stretched drop zone becomes a huge empty framed box
+                        // — the loudest thing in an empty quarter. It stays a modest
+                        // offer at the top; the rest of the column is a click target too.
+                        className="slot-open fast cursor-pointer rounded-lg border px-2 py-6 text-center text-micro text-muted transition-colors"
                         title="New initiative in this quarter"
                       >
                         Drop an initiative here, or tap to add
                       </div>
+                    ) : null}
+                    {lanes.length === 0 && composeCol !== q.idx ? (
+                      <div
+                        onClick={() => composeInCol(q.idx)}
+                        title="New initiative in this quarter"
+                        className="slot-col fast min-h-[28px] flex-1 cursor-pointer rounded-lg transition-colors"
+                      />
                     ) : (
                       <>
                         {lanes.map((l) => (
@@ -469,68 +477,71 @@ function InitiativeCard({
   // groomed, amber = mid, faint = raw), so a partial bar reads "needs grooming".
   const axes = initiativeReadinessAxes(data, i);
   const met = (axes.defined ? 1 : 0) + (axes.planned ? 1 : 0);
-  const groomColor =
-    lane.state === "parked" ? "var(--muted)" : met === 2 ? READY : met === 1 ? CAUTION : "var(--line-strong)";
-  const overdue = lane.overdue && lane.state !== "parked" ? "⚠ overdue · " : "";
-  // caption mirrors the project card: the specific gap while grooming, else the health
-  // word (on track / at risk). Coloured by state so health still reads.
-  const caption =
+  const pipTone: DeckTone = lane.state === "parked" ? "muted" : met === 2 ? "ready" : met === 1 ? "caution" : "muted";
+
+  // The bet's weight isn't hours — it's how measured it is. Key results are the
+  // unit, and attainment is the one *measured* number a bet has (Principle 6), so
+  // it's shown only when there are KRs to average. Never a guess.
+  const weight =
+    lane.krCount === 0
+      ? null
+      : lane.attainment == null
+        ? `${lane.krCount} KR${lane.krCount === 1 ? "" : "s"}`
+        : `${lane.krCount} KR${lane.krCount === 1 ? "" : "s"} · ${Math.round(lane.attainment * 100)}%`;
+
+  // one status word, by precedence — the same rule the project card follows.
+  const status: { label: string; tone: DeckTone } | null =
     lane.state === "parked"
-      ? "parked"
-      : lane.gaps.length
-        ? overdue + lane.gaps.map((g) => g.label).join(" · ")
-        : overdue + STATE_LABEL[lane.state];
+      ? { label: "parked", tone: "muted" }
+      : lane.overdue
+        ? { label: "overdue", tone: "signal" }
+        : lane.state === "at_risk"
+          ? { label: STATE_LABEL.at_risk, tone: "signal" }
+          : lane.gaps.length
+            ? { label: lane.gaps[0].label, tone: "caution" }
+            : lane.state === "needs_okrs" || lane.state === "idea"
+              ? { label: STATE_LABEL[lane.state], tone: "caution" }
+              : null;
 
   return (
-    <div
-      data-init-drag={i.id}
+    <DeckCard
+      dragAttr={{ "data-init-drag": i.id }}
       onContextMenu={onContextMenu("initiative", i.id)}
-      className="group/card glass-card fast relative cursor-grab select-none rounded-lg border border-line py-2.5 pl-4 pr-3 hover:border-line-strong active:cursor-grabbing"
+      className="cursor-grab active:cursor-grabbing"
+      // The one altitude tell: the same domain spine, heavier and full-height, so a
+      // bet reads as a weightier sibling — not a different kind of object.
+      variant="bounded"
+      spine={dot}
+      eyebrow={domain?.name ?? "no area"}
+      title={i.name}
+      weight={weight}
+      status={status}
+      pips={[axes.defined, axes.planned]}
+      pipTone={pipTone}
+      dim={lane.state === "parked"}
+      footer={
+        // auto-link — only when the bet has no domain yet (a placement necessity,
+        // not default clutter); the deep OKR work lives in Groom / the record
+        lane.needsDomain ? (
+          <div data-card-control className="mt-2 flex items-center gap-2" onPointerDown={(e) => e.stopPropagation()}>
+            {suggestion ? (
+              <button
+                onClick={() => onSetDomain(i, suggestion.domain.id)}
+                className="tap fast flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-medium"
+                style={{ color: suggestion.domain.color, borderColor: `${suggestion.domain.color}66`, background: `${suggestion.domain.color}12` }}
+                title="Link this initiative to its domain"
+              >
+                <span>{suggestion.domain.icon}</span>
+                <span>Link → {suggestion.domain.name}</span>
+              </button>
+            ) : (
+              <DomainPicker domains={data.domains} value="" onChange={(id) => onSetDomain(i, id)} />
+            )}
+          </div>
+        ) : null
+      }
     >
       {menu}
-      {/* domain rail — identity demarcation, mirrors the project deck card */}
-      <span className="pointer-events-none absolute inset-y-2.5 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
-      {/* title row — dot + name, nothing else */}
-      <div className="flex items-start gap-2">
-        <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />
-        {/* A bet is a NAME, so it earns the serif — the one register tell that
-            separates this altitude from a project card (system) and a task row. */}
-        <div className="serif min-w-0 flex-1 truncate text-body text-ink">{i.name}</div>
-      </div>
-
-      {/* grooming meter — Defined · Measured, the initiative's readiness bars */}
-      <div className="mt-2 flex items-center gap-1.5" title="Defined · Measured (OKRs)">
-        <span className="flex flex-1 items-center gap-1">
-          {[axes.defined, axes.planned].map((m, k) => (
-            <span key={k} className="h-[5px] flex-1 rounded-full" style={{ background: m ? groomColor : "var(--line)" }} />
-          ))}
-        </span>
-        <span className="mono shrink-0 text-micro" style={{ color: STATE_COLOR[lane.state] }}>{caption}</span>
-      </div>
-
-      {/* auto-link — only when the bet has no domain yet (a placement necessity, not
-          default clutter); the deep OKR work lives in Groom / the record */}
-      {lane.needsDomain && (
-        <div data-card-control className="mt-2 flex items-center gap-2 pl-4" onPointerDown={(e) => e.stopPropagation()}>
-          {suggestion ? (
-            <button
-              onClick={() => onSetDomain(i, suggestion.domain.id)}
-              className="tap fast flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-medium"
-              style={{ color: suggestion.domain.color, borderColor: `${suggestion.domain.color}66`, background: `${suggestion.domain.color}12` }}
-              title="Link this initiative to its domain"
-            >
-              <span>{suggestion.domain.icon}</span>
-              <span>Link → {suggestion.domain.name}</span>
-            </button>
-          ) : (
-            <DomainPicker
-              domains={data.domains}
-              value=""
-              onChange={(id) => onSetDomain(i, id)}
-            />
-          )}
-        </div>
-      )}
-    </div>
+    </DeckCard>
   );
 }

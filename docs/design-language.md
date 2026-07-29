@@ -203,17 +203,49 @@ The law, so a new planner surface can't drift:
    week / quarter band matches the calendar's now-line. An empty, claimable cell —
    an unbooked column, an uncovered domain cell, the pool you drop into to *release*
    time — wears `--slot` (`.slot-open` / `.slot-col`). Never accent for "now".
-5. **Altitude reads through weight and voice, never chrome.** Same glass, same
-   domain-color edge; what changes is mass and register:
+5. **One deck card, and the altitude tell is structural** (`DeckCard.tsx`, D-048).
+   Both decks render the same object in the same geometry and the same type ramp:
 
-   | | Card | Time relation | Voice |
+   ```
+   [identity]  The name — the hero, text-body, nothing to its left
+               area · weight                    status word   ● ● ●
+   ```
+
+   - **The name is the hero.** No control, no dot, no meter competing with it.
+   - **One meta line** carries the rest: the area *by name* (colour alone fails for
+     anyone who hasn't memorised the palette — P16), the **weight** (remaining hours;
+     null when nothing is sized, never a guess), then a **single status word** and the
+     **readiness pips**, right-aligned so the wall has one column to scan down.
+   - **Readiness is subordinate** — 4px pips, not full-width bars. Full-width bars read
+     as *progress* when they're a grooming checklist, and grooming is the deck's
+     question, not the timeline's (D-023, Principle 8).
+   - **Quiet by default.** A healthy card says only its name, its area and its weight.
+     The status word appears only for a *fact* — a passed date, a missing outcome, a week
+     that can't hold it. Never the pace read: `behind`/`stalled` fire on nearly every
+     honest dated project, and "no motion" dresses absence of history up as bad news.
+
+   **The altitude tell is the SPINE, and nothing else.** A project and a bet are the
+   same object — a thing you pick up and drop on a column of time. They differ only in
+   scope, so they may differ only in **weight**, by as little as will register:
+
+   | | Domain spine | Weight | Time relation |
    |---|---|---|---|
-   | Task | one row + time | fills a slot | system |
-   | Project | title + Defined·Planned·Fits meter | **spans** weeks (resize handles) | system |
-   | Initiative | title + Defined·Measured meter | **belongs to** a quarter (no resize) | `serif` — a bet is a *name* |
+   | Task | — (one row + time) | — | fills a slot |
+   | Project | **marked** — 3px, rounded, inset from the card's ends: a mark *on* the card, the bar it occupies on the grid | remaining hours | **spans** weeks (resize handles) |
+   | Initiative | **bounded** — same colour at 5px, square, full-height: the mark *becomes* the card's left edge | KRs · attainment | **belongs to** a quarter (no resize) |
 
-   Resize handles only where duration is real is the honest tell that a project isn't
-   an initiative. Don't reach for a different frame to say "this is a bigger thing."
+   Everything else is identical — same glass, same hairline, same radius, same type ramp,
+   same meta line. Scope reads as mass.
+
+   **Two rejected tells, both wrong the same way** — they made altitude a difference in
+   *kind* rather than degree, so a bet stopped reading as a bigger sibling and started
+   reading as a different species:
+
+   - a **serif** name — altitude as a font choice, an arbitrary signal a reader can't decode;
+   - an **enclosed** card (domain-tinted border + wash) — a different silhouette entirely.
+
+   Resize handles only where duration is real is the same kind of honest, minimal tell.
+   Don't reach for a different frame, fill, or face to say "this is a bigger thing."
 6. **On a phone the same surface ROTATES INTO A SWIPE — it does not become a list.**
    The grammar is preserved by turning the horizontal axis into pages, not by
    shrinking the grid or flattening it into rows: **page one is the pool, then one
