@@ -490,7 +490,7 @@ export function buildVertical(
 
   // ── derive the domain gain ledger from completed blocks ────────────────────
   // Alongside the week/quarter/last totals, bucket each completed block into one
-  // of the last 13 weeks — the faithfulness "pulse" the chapel renders as an arc.
+  // of the last 13 weeks — the faithfulness "pulse" the open domain renders as an arc.
   const WEEK_MS = 7 * 86_400_000;
   const seriesStart = weekStart.getTime() - 12 * WEEK_MS;
   const ledger = new Map<string, { week: number; quarter: number; last: number | null }>();
@@ -930,7 +930,7 @@ export function domainLongestQuiet(weeks: number[]): number {
 }
 
 /** Completed blocks parked in a domain over the last 90 days — the "built" count
- *  that pairs with `quarterHours` (the hours) in the chapel's Gain read. */
+ *  that pairs with `quarterHours` (the hours) in the open domain's Gain read. */
 export function domainQuarterDone(
   d: VerticalData,
   domainId: string,

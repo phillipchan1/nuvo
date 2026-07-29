@@ -1,5 +1,5 @@
 import CalendarsVisual from './components/CalendarsVisual'
-import ChapelVisual from './components/ChapelVisual'
+import DomainFloorVisual from './components/DomainFloorVisual'
 import OnDeckVisual from './components/OnDeckVisual'
 import PlanWeekVisual from './components/PlanWeekVisual'
 import ProjectRoomVisual from './components/ProjectRoomVisual'
@@ -429,7 +429,7 @@ export default function Home() {
                 Each world, and whether you showed up.
               </h2>
             </div>
-            <ChapelVisual />
+            <DomainFloorVisual />
           </div>
         </section>
 

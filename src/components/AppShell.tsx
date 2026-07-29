@@ -194,7 +194,7 @@ function AppShellInner() {
 
   // No focus seeding. We used to auto-point `focus` at the first domain once
   // data landed, so the app always "had" a branch selected — but focus is what
-  // the Domain rung reads to decide wall vs chapel, so a fresh session opened
+  // the Domain rung reads to decide wall vs open domain, so a fresh session opened
   // straight into whichever domain sorted first (Trading) instead of the wall.
   // Same lie as the old `domains[0]` attribution default (D-044): ambient focus
   // must mean "you went there", never "something had to be picked".

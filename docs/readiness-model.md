@@ -67,7 +67,7 @@ stays inside the Today tab. So Today's spine rung is pure navigation — no gaug
 
 Note the **two axes on Domain**: the meter is *structural* readiness (ready for the
 floor below); *faithfulness* (did you spend time there) is a separate signal — it drives
-the cue and the existing chapel lamp, not the meter. They mean different things and must
+the cue and the existing domain lamp, not the meter. They mean different things and must
 not be blended.
 
 The Week's `attributed` term is the **up-flow**: loose / miscategorised tasks don't trace
@@ -128,7 +128,7 @@ are desktop-only). So the gauge distils:
 Reward the **act** — the Tending Yield already does this (the readiness meter rising,
 "you ripened 3 items"). And design the **resting state as the prize**: when a floor
 crosses into ready, and when the *whole spine* is calm, the surface changes character
-(the chapel idiom) — serene, settled, "mind like water." This is the magnet the entire
+(the domain floor's idiom) — serene, settled, "mind like water." This is the magnet the entire
 gauge trends toward, and it's the one genuinely *new* build (everything else in §2–§5 is
 framing on data we already compute). Peak-end rule + competence (SDT): the experience is
 judged by its peak and its end, so make crossing-into-ready and all-at-rest feel earned.

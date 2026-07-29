@@ -183,7 +183,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | Q4 | What are the actual steps? | the **record's Tasks hero** · *Path* lens · AI scaffold | ◐ *re-scored 2026-07-29: the Path lens shipped and the steps are now the record's hero (`t` to add), but an empty project still leans on AI to get its first list* |
 | Q5 | What's stuck, waiting, or dependent? | *In the way* lens | ✳ *spec* |
 | Q6 | Which bets do I pull this quarter, and which do I refuse? | Summit → Vows → Portfolio | ◐ *refusal isn't a first-class act* |
-| Q7 | Am I being faithful in what I've been given? | Domain wall / chapel | ◐ *the philosophical question — deliberately gentle* |
+| Q7 | Am I being faithful in what I've been given? | Domain wall / open domain | ◐ *the philosophical question — deliberately gentle* |
 
 ### Ambient dread — *the questions that wake you up*
 

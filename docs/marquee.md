@@ -32,7 +32,7 @@ export type MarqueeNav =
   | { kind: "flow"; flow }                        // a ritual (Sunday, Refine…)
   | { kind: "settings"; section? }                // the settings overlay
   | { kind: "record"; entity: "project"|"initiative" } // a record — needs `ref`
-  | { kind: "domain" } | { kind: "task" };        // chapel / task — need `ref`
+  | { kind: "domain" } | { kind: "task" };        // open domain / task — need `ref`
 
 export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
   { key: "priorities", label: "Week's Plan", spotlight: "priorities",

@@ -344,7 +344,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
   });
 
   // Attended calendar events feed the same domain ledger as completed blocks.
-  // Pull the 13-week pulse window (oldest week the chapel renders → end of the
+  // Pull the 13-week pulse window (oldest week the open domain renders → end of the
   // current week) so meeting actuals line up with the task series.
   const eventsRange = useMemo(() => {
     const ws = new Date(`${weekStart}T00:00:00`).getTime();

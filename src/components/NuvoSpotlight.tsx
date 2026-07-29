@@ -7,6 +7,7 @@ import { ASSISTANT_NAME } from "../lib/assistant";
 import AgentMessageBubble from "./AgentMessageBubble";
 import AgentSuggestionChips from "./AgentSuggestionChips";
 import { Keycap, Modal } from "./ui";
+import { AltitudeIcon, type AltitudeKind } from "./icons";
 
 const NAME = "Phil";
 
@@ -54,12 +55,9 @@ const HIT_SECTIONS: { kind: SearchHit["kind"]; label: string; cap: number }[] = 
   { kind: "domain", label: "Domains", cap: 4 },
 ];
 
-const HIT_GLYPH: Record<SearchHit["kind"], string> = {
-  task: "✓",
-  project: "◆",
-  initiative: "▲",
-  domain: "❖",
-};
+// A hit's kind is drawn with the shared altitude family (`components/icons.tsx`)
+// — the same glyphs as the spine and the phone's bottom bar, so a result looks
+// like the thing it opens.
 
 export interface SpotlightProps {
   labels: Label[];
@@ -275,7 +273,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
   // so the whole result set is visible at once instead of one tall scroll. Each
   // item is a Command (SearchHit extends Command), so the column runs through the
   // same close path. Commands lead as their own column when matched.
-  type DeckItem = { run: () => void; title: string; subtitle?: string; glyph?: string };
+  type DeckItem = { run: () => void; title: string; subtitle?: string; kind?: AltitudeKind };
   const columns = useMemo(() => {
     const cols: { key: string; label: string; items: DeckItem[] }[] = [];
     if (query && matches.length) {
@@ -285,7 +283,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
       cols.push({
         key: g.label,
         label: g.label,
-        items: g.hits.map((h) => ({ run: () => runCmd(h), title: h.title, subtitle: h.subtitle, glyph: HIT_GLYPH[h.kind] })),
+        items: g.hits.map((h) => ({ run: () => runCmd(h), title: h.title, subtitle: h.subtitle, kind: h.kind })),
       });
     }
     return cols;
@@ -677,7 +675,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
                         active ? "glass-lift bg-accent-soft text-ink" : "text-ink/75 hover:bg-accent-soft/50"
                       }`}
                     >
-                      {it.glyph && <span className="shrink-0 text-caption text-muted/60">{it.glyph}</span>}
+                      {it.kind && <span className="shrink-0 text-muted/60"><AltitudeIcon kind={it.kind} size={14} /></span>}
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-body">{it.title}</div>
                         {it.subtitle && (
@@ -798,7 +796,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
                           highlight === idx ? "bg-accent-soft text-ink" : "text-ink/75 hover:bg-accent-soft/50"
                         }`}
                       >
-                        <span className="shrink-0 text-caption text-muted/60">{HIT_GLYPH[h.kind]}</span>
+                        <span className="shrink-0 text-muted/60"><AltitudeIcon kind={h.kind} size={14} /></span>
                         <span className="min-w-0 flex-1 truncate text-body">{h.title}</span>
                         {h.subtitle && (
                           <span className="mono shrink-0 truncate text-meta text-muted/60">{h.subtitle}</span>

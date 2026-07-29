@@ -3,8 +3,7 @@
    font so the type recedes across every panel. */
 @import "@fontsource/plus-jakarta-sans/600.css";
 @import "@fontsource/plus-jakarta-sans/700.css";
-/* Fraunces — the editorial serif, reserved for ceremonial surfaces (the Domain
-   chapel). Variable: optical sizing + a touch of SOFT warms the terminals. */
+/* Fraunces — the editorial serif, reserved for ceremonial surfaces (the Domain   floor). Variable: optical sizing + a touch of SOFT warms the terminals. */
 @import "@fontsource-variable/fraunces/full.css";
 @import "@fontsource-variable/fraunces/full-italic.css";
 
@@ -396,9 +395,14 @@ html.tauri-macos .spine-top {
 }
 
 /* Right-side separator for the spine. Runs the full height — the spine is now
-   wide enough (188px) that the line sits clear of the macOS traffic lights. */
+   wide enough (188px) that the line sits clear of the macOS traffic lights.
+   Railed (64px), the line would cut through them, so it starts below the inset. */
 .spine-separator {
   top: 0;
+}
+
+html.tauri-macos .spine[data-rail] .spine-separator {
+  top: var(--titlebar-inset-top);
 }
 
 
@@ -413,7 +417,7 @@ html.tauri-macos .spine-top {
 }
 
 /* The ceremonial voice — Fraunces with optical sizing and softened terminals.
-   Reserved for the Domain chapel: vows set as inscriptions, names as plaques. */
+   Reserved for the Domain floor: vows set as inscriptions, names as plaques. */
 .serif {
   font-family: var(--font-serif);
   font-optical-sizing: auto;
@@ -424,7 +428,7 @@ html.tauri-macos .spine-top {
 /* The editorial voice for everyday surfaces — Fraunces on greetings, flow &
    ritual titles, day numerals. Pairs with the existing size classes: just add
    `masthead` alongside text-lead / text-head / text-display. This is how the
-   chapel's craft reaches the screens you live in. */
+   ceremonial craft reaches the screens you live in. */
 .masthead {
   font-family: var(--font-serif);
   font-optical-sizing: auto;
@@ -2156,7 +2160,7 @@ html[data-skin="eink"] .glass-lift {
 /* One sans, all sizes. --font-serif already points at the sans, but Fraunces'
    settings came with it: an optical-sizing axis the sans doesn't have, and a
    500 weight that reads limp on a hero. A conventional app leads with weight —
-   so heroes get 650, the chapel voice 600, and the tracking loosens back to
+   so heroes get 650, the ceremonial voice 600, and the tracking loosens back to
    normal (the -0.014em was cut for Fraunces' tight fit). */
 html[data-skin="flat"] .masthead {
   font-variation-settings: normal;
@@ -2683,13 +2687,21 @@ html[data-skin="terminal"] .fc-timegrid-now-indicator-line::after {
 }
 
 /* ── DISCLOSURE TREE — the spine is a file tree, not a numbered list. Each
-      rung's ordinal becomes a leaf caret (the section labels turn into open
-      folders in the PERSONALITY block below, where the "> " prompt is set).
-      The ordinal span is sized with an inline style, so the swap needs
-      !important (same mechanic as the tabs above); ⌘1–⌘4 still work, the digit
-      was never the affordance. */
-html[data-skin="terminal"] .spine-rung-n {
+      rung's altitude glyph becomes a leaf caret (the section labels turn into
+      open folders in the PERSONALITY block below, where the "> " prompt is set).
+      A console draws with characters, not iconography, so the glyph is hidden
+      outright; ⌘1–⌘4 still work, the icon was never the affordance. Railed,
+      there is no filename beside the caret for it to disclose — so the tree
+      reading only applies to the expanded spine, and the icons stand. */
+html[data-skin="terminal"] .spine:not([data-rail]) .spine-rung-n {
   font-size: 0 !important;
+  width: auto !important;
+}
+html[data-skin="terminal"] .spine:not([data-rail]) .spine-rung-n > svg {
+  display: none;
+}
+html[data-skin="terminal"] .spine[data-rail] .spine-rung-n::before {
+  content: none;
 }
 html[data-skin="terminal"] .spine-rung-n::before {
   content: "▸";

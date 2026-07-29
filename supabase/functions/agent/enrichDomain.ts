@@ -7,7 +7,7 @@
 // the person says the domain is) is authoritative; children only corroborate it.
 // A child that contradicts the charter isn't context — it's a mis-file to flag.
 //
-// Proposes ONLY: the chapel persists the context on accept and re-homes mis-files
+// Proposes ONLY: the domain floor persists the context on accept and re-homes mis-files
 // on the user's say-so. Mirror of verify.ts.
 
 import { admin } from "../_shared/admin.ts";

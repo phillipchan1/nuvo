@@ -510,7 +510,7 @@ Deno.serve(async (req) => {
       return json(await enrichInboxBatch(user.id, taskIds));
     }
     // Domain refinement: expand a charter blurb into routing context (entities,
-    // keywords, boundary) grooming reads. Proposes only — chapel persists it.
+    // keywords, boundary) grooming reads. Proposes only — the domain floor persists it.
     if (body.enrichDomain?.domainId) {
       return json(await enrichDomain(user.id, body.enrichDomain));
     }

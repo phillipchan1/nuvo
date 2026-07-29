@@ -3,10 +3,10 @@
 // SIGIL (src/components/floors/DomainSigil.tsx) generated from the domain's own
 // 13-week pulse — warm when tended, a cold ember when you've gone quiet — plus a
 // balance strip that answers "am I starving a domain to feed another?". Click a
-// card to descend into its "chapel": the standing vow as a Fraunces inscription,
-// the faithfulness pulse, the Gain you've banked, what you've built, the
-// portfolio pointed at outcomes, and Nuvo's derived read. Domains don't ask for
-// action — they ask to be kept.
+// card to open that domain: the standing vow as a Fraunces inscription, the
+// faithfulness pulse, the Gain you've banked, what you've built, the portfolio
+// pointed at outcomes, and Nuvo's derived read. Domains don't ask for action —
+// they ask to be kept.
 
 import { useEffect, useMemo, useState } from "react";
 import { useVertical } from "../../hooks/useVertical";
@@ -57,6 +57,7 @@ import {
   RefinedTick,
   useRefinedCelebration,
 } from "./parts";
+import { AltitudeIcon } from "../icons";
 import { readSpine } from "../../lib/readiness";
 
 const SWATCHES = ["#DB2777", "#7C3AED", "#2563EB", "#0D9488", "#059669", "#D97706", "#4F46E5", "#DC2626", "#0891B2", "#65A30D"];
@@ -238,7 +239,7 @@ export default function DomainFloor({
   if (open) {
     return (
       <div className="floor-enter">
-        <Chapel key={open.id} domain={open} onBack={() => { setFreshDomain(null); onExitDomain(); }} onOpenInitiative={onOpenInitiative} onOpenProject={onOpenProject} />
+        <DomainDetail key={open.id} domain={open} onBack={() => { setFreshDomain(null); onExitDomain(); }} onOpenInitiative={onOpenInitiative} onOpenProject={onOpenProject} />
       </div>
     );
   }
@@ -372,8 +373,8 @@ function Stat({ n, sub, label }: { n: string; sub?: string; label: string }) {
   );
 }
 
-// ══ The chapel — a single domain, entered ════════════════════════════════════
-function Chapel({ domain, onBack, onOpenInitiative, onOpenProject }: { domain: Domain; onBack: () => void; onOpenInitiative: (id: string) => void; onOpenProject: (id: string) => void }) {
+// ══ The open domain — a single domain, entered ════════════════════════════════════
+function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { domain: Domain; onBack: () => void; onOpenInitiative: (id: string) => void; onOpenProject: (id: string) => void }) {
   const { data, updateDomain, deleteDomain, addInitiative, addProject } = useVertical();
   const now = useMemo(() => new Date(), []);
   const st = stateOf(domain);
@@ -648,7 +649,7 @@ function FormPicker({ domain, form, onPick }: { domain: Domain; form: SigilForm;
   );
 }
 
-// The routing-context workbench — quiet at the foot of the chapel. Machine-facing,
+// The routing-context workbench — quiet at the foot of the open domain. Machine-facing,
 // not ceremony: a one-line charter (the source of truth for filing) that Nuvo
 // expands into entities/boundary so passive grooming can route captures here, and
 // a mis-file catcher that re-homes work the charter says doesn't belong.
@@ -704,7 +705,6 @@ function DomainRefine({ domain }: { domain: Domain }) {
     setMoved((s) => ({ ...s, [m.id]: true }));
   };
 
-  const glyph = { initiative: "◆", project: "▸", task: "·" } as const;
   const chip = "rounded-sm px-1.5 py-px text-micro font-medium leading-none";
 
   return (
@@ -778,7 +778,10 @@ function DomainRefine({ domain }: { domain: Domain }) {
                 {pendingMis.map((m) => (
                   <div key={m.id} className="flex items-center gap-1.5 text-meta">
                     <span className="min-w-0 flex-1 truncate">
-                      <span className="text-muted" style={{ marginRight: 4 }}>{glyph[m.kind]}</span>{m.name}
+                      <span className="mr-1 inline-flex align-[-2px] text-muted">
+                        <AltitudeIcon kind={m.kind} size={13} />
+                      </span>
+                      {m.name}
                     </span>
                     <select
                       value={targets[m.id] ?? m.suggestDomainId ?? ""}

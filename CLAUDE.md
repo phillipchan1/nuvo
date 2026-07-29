@@ -57,7 +57,7 @@ against all of it.
 
 The app is converging on one design language; the full grammar + token vocabulary is in
 **`docs/design-language.md`** — read it before building any new surface. The reference
-screens are the **Schedule** (`CalendarPane` + `LeftRail`) and the **Domain** wall/chapel.
+screens are the **Schedule** (`CalendarPane` + `LeftRail`) and the **Domain** wall + open domain.
 The rules that prevent regressions:
 
 - **Never paint an opaque `bg-*` over the `.atmosphere` canvas.** Full-bleed structural
@@ -124,7 +124,7 @@ it needs to work on a phone.
   (desktop grid, drag) and `MobilePlanWeek` (phone steps, tap) are layouts over it. Never
   compute a week in a surface.
 - **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), Record
-  screens, Domain chapel, Project/Initiative floors, Collection board/table/timeline, and
+  screens, the Domain floor, Project/Initiative floors, Collection board/table/timeline, and
   the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** instead of
   FullCalendar: month grid → drill into **List** (agenda + Free chips) or **Day** (one
   day as a proportional time grid), both over one `buildDayPlan` (`dayPlan.ts`) — see

@@ -57,7 +57,7 @@ export default function FloorPane({
   const openInitiativeRecord = (id: string) => openRecord("initiative", id);
 
   // "‹ all domains" always means the wall, full stop — it can't lean on
-  // history.back(): a chapel can be entered from outside the rung (Marquee
+  // history.back(): an open domain can be entered from outside the rung (Marquee
   // point-at, ⌘K), where no "wall" entry was ever pushed to pop back to, so
   // back() would exit the rung entirely, to whatever was open before Domains.
   const exitDomain = () => focusDomain("");

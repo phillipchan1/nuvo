@@ -1,5 +1,5 @@
 -- Domain refinement — the routing context that makes passive grooming work.
--- `intention` is the human-facing VOW (the chapel inscription, an ambition);
+-- `intention` is the human-facing VOW (the vow inscription, an ambition);
 -- it's useless for placing a terse capture. `charter` is the user's plain-line
 -- blurb of what the domain actually *is*, and `context` is Nuvo's AI-expanded
 -- routing metadata (scope, entities/proper-nouns, keywords, boundary, exemplars)

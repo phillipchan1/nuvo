@@ -226,6 +226,34 @@ so Escape in the task composer cleared your draft *and* closed the whole record.
 field and leaving the record are now two presses, as everywhere else. *Status: standing —
 both reproduced and re-verified in the dev app.*
 
+**D-052 · 2026-07-29 · The spine collapses to iconography, and the altitude glyphs live
+in exactly one file.** The spine now has two widths — 188px named, 64px railed (⌘\, the
+footer control, persisted) — with focus mode (⌘.) still the third state that shuts it
+entirely. Railed, readiness survives the narrowing rather than being dropped: the cue
+becomes a dot on the glyph's shoulder, the meter a hairline underscore, and the label
+comes back as a glass flyout on hover. What made this worth a decision is what the audit
+found on the way: **the same four things were being drawn four different ways** — `▦ ▤ ◆ ❖`
+in the phone's bottom bar, `✓ ◆ ▲ ❖` in the command palette, `◆ ▸ ·` in the domain's
+mis-filed list, ordinals in the spine. `src/components/icons.tsx` is now the only place
+they're drawn, and every surface imports from it. Rejected along the way: a **calendar
+glyph carrying today's date** for the Schedule rung — the date is already on that screen
+twice, it would be the one glyph carrying text and changing daily (so the eye lands there
+first), and 8px numerals inside a 19px frame are mush at 1×. Also rejected: a *summit* for
+Domains (collides with the Summit ritual) and *pillars* (reads as a bar chart).
+*Status: standing — typechecked, built, 74 tests green, driven in the dev app on both
+widths, in paper/flat/terminal skins, light and dark, and at a 375px layout with no
+horizontal overflow.*
+
+**D-053 · 2026-07-29 · "Chapel" is retired vocabulary.** The entered single-domain view
+was called *the chapel* in comments, in `DomainFloor`'s component name, in the marketing
+visual, and in six docs — including `CLAUDE.md` and `design-language.md`, which is exactly
+why it kept coming back into conversation. It never reached a user's screen, but house
+vocabulary becomes product vocabulary, so it's gone: the two halves of the Domain floor
+are **the wall** and **the open domain** (`DomainDetail`, `DomainFloorVisual`). The
+ceremonial *register* — Fraunces, vows as inscriptions — is unchanged; it just isn't named
+after a building any more. *Status: standing — zero occurrences left in `src/`, `docs/`,
+`supabase/`, `marketing/`, or `CLAUDE.md`.*
+
 ### Tenancy
 
 **D-024 · 2026-07-25 · Nuvo is a multi-tenant product.** Many independent operators, one

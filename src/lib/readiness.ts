@@ -112,7 +112,7 @@ export function projectedFloorShaped(
 
 /** One domain's STRUCTURAL readiness = its open bets (+ loose projects) settled.
  *  Faithfulness (did you spend time there) is a separate axis — it drives the
- *  cue and the chapel lamp, never this meter. */
+ *  cue and the domain lamp, never this meter. */
 export function readinessOfDomain(d: VerticalData, domainId: string): number {
   const inits = initiativesOf(d, domainId)
     .filter((i) => isOpenStatus(i.status))
@@ -133,7 +133,7 @@ export function isDomainClear(dom: Domain): boolean {
 
 /** The Domain floor meter = how much of the life map Nuvo can actually route —
  *  the share of domains that have been refined. Not faithfulness (that's the
- *  chapel lamp): a one-time clarity that, once earned, holds. */
+ *  domain lamp): a one-time clarity that, once earned, holds. */
 export function readinessOfDomainFloor(d: VerticalData): number {
   if (!d.domains.length) return 1;
   return d.domains.filter(isDomainClear).length / d.domains.length;
@@ -195,7 +195,7 @@ function groomCue(silent: GroomCandidate[], raw: GroomCandidate[], kind: "projec
 
 /** Domain cue = a life area Nuvo can't yet route — unrefined, no charter/context.
  *  A one-time clarity nudge ("refine this and grooming gets it forever"), not the
- *  faithfulness nag the chapel lamp already carries. */
+ *  faithfulness nag the domain lamp already carries. */
 function domainCue(d: VerticalData): FloorCue | null {
   const unclear = d.domains.filter((dom) => !isDomainClear(dom));
   if (!unclear.length) return null;

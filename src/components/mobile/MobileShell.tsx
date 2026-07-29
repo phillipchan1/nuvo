@@ -20,6 +20,7 @@ import type { Floor } from "../../lib/readiness";
 import type { AgentHintContext } from "../../lib/agentHints";
 import type { Task } from "../../lib/types";
 import SettingsModal from "../SettingsModal";
+import { AltitudeIcon, type AltitudeKind } from "../icons";
 import { TrialBanner } from "../billing/TrialBanner";
 import Orientation from "../orientation/Orientation";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
@@ -49,13 +50,16 @@ const TAB_KEY_V2 = "nuvo-mobile-tab-v2"; // pre-redesign: now|calendar|tasks|pla
 const SUB_KEY = "nuvo-mobile-tasksub";
 const LEGACY_KEY = "nuvo-mobile-tab"; // pre-v2: now|today|week|inbox
 
-const NAV: { id: Tab; label: string; glyph: string }[] = [
-  { id: "calendar", label: "Calendar", glyph: "▦" },
-  { id: "tasks", label: "Tasks", glyph: "▤" },
+// The glyphs are the shared altitude family (`components/icons.tsx`) — the same
+// set the desktop spine and the command palette draw from, so a project looks
+// like a project on every surface.
+const NAV: { id: Tab; label: string; kind: AltitudeKind }[] = [
+  { id: "calendar", label: "Calendar", kind: "day" },
+  { id: "tasks", label: "Tasks", kind: "task" },
   // The concrete near-term unit (weeks) and the longer multi-facet arc (quarters),
   // each opening to its read-first On Deck.
-  { id: "projects", label: "Projects", glyph: "◆" },
-  { id: "initiatives", label: "Initiatives", glyph: "❖" },
+  { id: "projects", label: "Projects", kind: "project" },
+  { id: "initiatives", label: "Initiatives", kind: "initiative" },
 ];
 
 const SUBTABS: { id: MobileTab; label: string }[] = [
@@ -510,7 +514,7 @@ function NavTab({
   onClick,
   badge = 0,
 }: {
-  tab: { id: Tab; label: string; glyph: string };
+  tab: { id: Tab; label: string; kind: AltitudeKind };
   active: boolean;
   onClick: () => void;
   badge?: number;
@@ -522,7 +526,9 @@ function NavTab({
         active ? "text-accent" : "text-muted"
       }`}
     >
-      <span className="flex h-7 items-center text-lead leading-none">{tab.glyph}</span>
+      <span className="flex h-7 items-center leading-none">
+        <AltitudeIcon kind={tab.kind} size={22} />
+      </span>
       <span className="text-meta font-medium leading-none">{tab.label}</span>
       {badge > 0 && (
         <span

@@ -27,7 +27,7 @@ export type MarqueeNav =
   | { kind: "flow"; flow: FlowName }                  // a full-screen ritual
   | { kind: "settings"; section?: SettingsSection }   // the settings overlay (+ section)
   | { kind: "record"; entity: "project" | "initiative" } // a record modal — needs `ref` (id)
-  | { kind: "domain" }                                // the domain chapel — needs `ref` (domainId)
+  | { kind: "domain" }                                // the open domain — needs `ref` (domainId)
   | { kind: "task" };                                 // a task record — needs `ref` (task id)
 
 export interface MarqueeTargetDef {
@@ -95,7 +95,7 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     label: "the domain",
     nav: { kind: "domain" },
     entity: true,
-    describe: "A specific domain's chapel. Pass the domain's id as `ref`. Point here when the user asks to see / open a particular life area (Work, Church, Family, Health…).",
+    describe: "A specific domain, opened. Pass the domain's id as `ref`. Point here when the user asks to see / open a particular life area (Work, Church, Family, Health…).",
   },
   {
     key: "task",

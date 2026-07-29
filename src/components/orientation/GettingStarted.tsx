@@ -31,15 +31,15 @@ function lsSet(k: string) {
   try { localStorage.setItem(k, "1"); } catch { /* ignore */ }
 }
 
-export default function GettingStarted() {
+export default function GettingStarted({ compact = false }: { compact?: boolean }) {
   // Cheap gate — no data hooks. Once retired (dismissed/completed) the Inner never
   // mounts, so useAllTasks & friends never fetch for the ~everyone who's past this.
   const [gone, setGone] = useState(() => lsGet(LS.dismissed) || lsGet(LS.completed));
   if (gone) return null;
-  return <GettingStartedInner onGone={() => setGone(true)} />;
+  return <GettingStartedInner compact={compact} onGone={() => setGone(true)} />;
 }
 
-function GettingStartedInner({ onGone }: { onGone: () => void }) {
+function GettingStartedInner({ compact, onGone }: { compact: boolean; onGone: () => void }) {
   const { data, ready } = useVertical();
   const { data: accounts = [], isLoading: accountsLoading } = useCalendarAccounts();
   const { data: allTasks = [], isLoading: tasksLoading } = useAllTasks();
@@ -115,17 +115,27 @@ function GettingStartedInner({ onGone }: { onGone: () => void }) {
 
   return (
     <>
-      {/* Spine entry — matches the Settings/Shortcuts rows, with a progress ring. */}
-      <button
-        onClick={() => setOpen((o) => !o)}
-        title={`Getting started — ${doneCount} of ${steps.length}`}
-        className="fast flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left text-muted hover:text-ink"
-        style={open ? { color: "var(--ink)" } : undefined}
-      >
-        <Ring done={doneCount} total={steps.length} />
-        <span className="flex-1 text-caption leading-none">Getting started</span>
-        <span className="mono text-micro leading-none" style={{ color: "var(--accent)" }}>{doneCount}/{steps.length}</span>
-      </button>
+      {/* Spine entry — matches the Settings/Shortcuts rows, with a progress ring.
+          Railed, the ring is already an icon: it stands alone and the count moves
+          into the tooltip. */}
+      <div className={compact ? "flex justify-center py-0.5" : undefined}>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          title={`Getting started — ${doneCount} of ${steps.length}`}
+          className={`fast flex items-center rounded-lg border border-transparent text-muted hover:text-ink ${
+            compact ? "h-11 w-11 justify-center" : "w-full gap-2.5 px-2.5 py-2 text-left"
+          }`}
+          style={open ? { color: "var(--ink)" } : undefined}
+        >
+          <Ring done={doneCount} total={steps.length} />
+          {!compact && (
+            <>
+              <span className="flex-1 text-caption leading-none">Getting started</span>
+              <span className="mono text-micro leading-none" style={{ color: "var(--accent)" }}>{doneCount}/{steps.length}</span>
+            </>
+          )}
+        </button>
+      </div>
 
       {open &&
         createPortal(

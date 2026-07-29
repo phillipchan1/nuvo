@@ -8,7 +8,7 @@ The thesis, in one line: **one continuous sheet of warm paper, written on with a
 editorial hand — and the things you touch are panes of glass that lift toward you.**
 It is not a color theme. It is spacing, hierarchy, flatness, restraint, type, and a
 single, physical idea of "focus." Reference screens: the **Schedule** calendar
-(`CalendarPane` + `LeftRail`) and the **Domain** wall/chapel (`DomainFloor`). When in
+(`CalendarPane` + `LeftRail`) and the **Domain** wall + open domain (`DomainFloor`). When in
 doubt, go look at those.
 
 ---
@@ -272,7 +272,7 @@ The law, so a new planner surface can't drift:
 | Use | Class | Notes |
 |-----|-------|-------|
 | Floor / record / day heroes | `masthead` (+ size) | Fraunces, the editorial voice. Every floor `<h1>` uses this — never `font-semibold`. |
-| Ceremony (vows, plaques) | `serif` | Fraunces, softer terminals — the Domain chapel register. |
+| Ceremony (vows, plaques) | `serif` | Fraunces, softer terminals — the Domain floor's register. |
 | Everything else (UI, lists) | system (`--font-sans`) | The default. Recedes by design. |
 | Section eyebrows | `section-label` | Tracked uppercase, `--muted`, the only "chrome." |
 | Aligned numerics (times, %) | `mono` | System sans with tabular figures — *not* monospace. |
@@ -396,6 +396,19 @@ horizontal scroll of larger chips you drag onto the grid.
 - **Spine left, Nuvo right, work between** — all the same paper, divided only by
   `border-l/-r` hairlines. The Nuvo agent rail (`AgentSidebar`) is the one home for chat
   on desktop (⌘J); it stays transparent like the spine.
+- **The spine has two widths, and one vocabulary.** 188px named, 64px railed (⌘\ or the
+  footer control, persisted in `nuvo-spine-rail`); focus mode (⌘.) is a third state that
+  shuts it entirely. Railed, the glyph *is* the row — readiness survives the narrowing as
+  a status dot on the shoulder and the meter as a hairline underscore, and the label comes
+  back as a glass flyout on hover, never a native tooltip. Anything positioning against
+  the spine reads `--spine-width`, which the component keeps in sync with both states.
+- **The altitude glyphs live in one file.** `src/components/icons.tsx` draws task ·
+  schedule · project · initiative · domain in one hand — 20×20 field, hairline stroke,
+  round caps — and *every* surface that says "what kind of thing is this" imports from
+  there: the spine, the phone's bottom bar, the command palette, the mis-filed list. They
+  read as span, widening up the ladder: one box and a tick → a day's column → staggered
+  bars → the mark being aimed at → the wall it all stands on. Never draw a fifth set
+  inline; a domain's own emoji (`domain.icon`) is identity, a different thing entirely.
 - Floor heroes: `section-label` eyebrow → `text-display masthead` title → a muted
   `text-body` line (`FloorHeader` encodes this).
 - Mobile parity is non-negotiable — see the golden rule in [`CLAUDE.md`](../CLAUDE.md).

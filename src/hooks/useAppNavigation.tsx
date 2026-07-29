@@ -213,7 +213,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       if (r === "project") patch.projectView = "ondeck";
       if (r === "initiative") patch.initiativeView = "ondeck";
       // Every rung opens on its front door: On Deck for project/initiative, the
-      // wall for domains. Entering a chapel is a drill-in (the domain analogue of
+      // wall for domains. Opening a domain is a drill-in (the domain analogue of
       // opening a record), and no other rung reopens the last record you were in,
       // so a sticky focus.domainId must not survive the trip either. Pointing at
       // one domain from elsewhere (Marquee, ⌘K) navigates rung+focus together and
