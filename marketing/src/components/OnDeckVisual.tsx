@@ -11,7 +11,7 @@
  *
  * It earns two sections at once, which is why the marketing site now shows it
  * whole instead of cropping it twice: **how a big thing gets provisioned across
- * weeks** and **which world you're starving** are the same picture. An empty
+ * weeks** and **which life you're starving** are the same picture. An empty
  * coverage row is the answer to the second, and it costs nothing to show.
  */
 
@@ -138,7 +138,7 @@ export default function OnDeckVisual() {
                 <p className="text-[10px] text-[var(--muted)]">Domains 4/6 ▾</p>
               </div>
 
-              {/* every world you run, three weeks across */}
+              {/* every life you are living, three weeks across */}
               <ul className="border-b border-[var(--line)]">
                 {COVERAGE.map((r) => {
                   const empty = r.bars.every((b) => b.length === 0)

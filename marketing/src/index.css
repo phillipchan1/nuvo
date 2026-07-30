@@ -258,21 +258,21 @@ body {
   -webkit-backdrop-filter: blur(8px);
 }
 
-/* The worlds × altitude plane — a DIAGRAM, and it has to look like one. No card,
+/* The lives × altitude plane — a DIAGRAM, and it has to look like one. No card,
    no glass, no chrome: hairlines on the paper, so it can never be mistaken for a
    screen we haven't built. */
-.worlds-grid {
+.lives-grid {
   display: grid;
   grid-template-columns: 7rem repeat(4, minmax(0, 1fr));
   align-items: stretch;
 }
 
-.worlds-head {
+.lives-head {
   padding: 0 0 0.5rem 0.75rem;
   border-bottom: 1px solid var(--line);
 }
 
-.worlds-world {
+.lives-life {
   display: flex;
   align-items: center;
   gap: 0.45rem;
@@ -286,14 +286,14 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
-.worlds-dot {
+.lives-dot {
   height: 6px;
   width: 6px;
   border-radius: 9999px;
   flex: none;
 }
 
-.worlds-cell {
+.lives-cell {
   display: flex;
   align-items: center;
   padding: 0.45rem 0.35rem 0.45rem 0.75rem;
@@ -302,7 +302,7 @@ body {
   min-width: 0;
 }
 
-.worlds-chip {
+.lives-chip {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -315,18 +315,18 @@ body {
 }
 
 @media (max-width: 767px) {
-  .worlds {
+  .lives {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
   }
-  .worlds-grid {
+  .lives-grid {
     min-width: 640px;
   }
 }
 
 /* On Deck — rail beside the plane, exactly as the real floor lays out. The plane
-   scrolls inside itself on a phone rather than collapsing: six worlds against
+   scrolls inside itself on a phone rather than collapsing: six lives against
    three sprints IS the picture, and a reflow destroys it. */
 .ondeck-body {
   display: grid;

@@ -1,10 +1,10 @@
 import CalendarsVisual from './components/CalendarsVisual'
 import DomainFloorVisual from './components/DomainFloorVisual'
+import LivesVisual from './components/LivesVisual'
 import OnDeckVisual from './components/OnDeckVisual'
 import PlanWeekVisual from './components/PlanWeekVisual'
 import ProjectRoomVisual from './components/ProjectRoomVisual'
 import SpineVisual from './components/SpineVisual'
-import WorldsVisual from './components/WorldsVisual'
 import { useCallback, useState } from 'react'
 import { ACCESS_MAILTO, APP_URL, DOWNLOAD_MAC_URL, RELEASES_REPO } from './config'
 
@@ -74,7 +74,7 @@ const INVENTORY = [
     group: 'Looking back',
     items: [
       'A Friday review, with evidence',
-      'What moved, in every world',
+      'What moved, in each of your lives',
       'Where your hours actually went',
       'Meetings count as time spent',
       'GitHub work counts itself',
@@ -323,6 +323,16 @@ export default function Home() {
           section that hasn't earned its screen yet. */}
       <main>
         {/* Hero — the offer as a plane, not a screen.
+            The headline addresses the person, not a segment. Rotating an identity
+            noun ("the todo app for Solopreneurs / Overemployed / …") was rejected:
+            P1 has no name for itself, half those labels are business structure
+            rather than self-image, and "todo app" caps the claim at the ceiling
+            this product exists to break (personas.md §4 — the task minimalist is
+            an anti-persona). People recognize their situation faster than a label.
+            Beat two says "hold", not "keep up": the itch is an *incomplete*
+            system, not a slow one, and keeping up is table stakes. "Your system
+            should keep up" survives as the OG/social line in index.html, where
+            the job is a click rather than a claim.
             The hero used to be the Schedule, which put a week grid at the top of
             the page and another one in the very next section. It also sold only
             one of the three things that actually matter here. The offer is
@@ -331,17 +341,17 @@ export default function Home() {
         <section className="mx-auto max-w-6xl px-5 pb-16 pt-10 sm:px-8 sm:pb-24 sm:pt-14">
           <div className="max-w-2xl">
             <h1 className="masthead reveal text-display text-[var(--text)]">
-              Multiple jobs. Multiple domains. Multiple projects. One tool to rule them all.
+              You live more than one life. One system should hold all of them.
             </h1>
             <p className="reveal reveal-delay-1 mt-5 max-w-xl text-pretty hero-support text-[var(--muted)]">
-              From the promise you made in January to the hour it happens on Wednesday — every world
-              you run, at every speed.
+              From the promise you made in January to the hour it happens on Wednesday — every life
+              you’re living, at every speed.
             </p>
             <CtaGroup className="reveal reveal-delay-2 mt-8" />
           </div>
 
           <div className="reveal reveal-delay-3 mt-12 sm:mt-16">
-            <WorldsVisual />
+            <LivesVisual />
           </div>
         </section>
 
@@ -395,9 +405,9 @@ export default function Home() {
 
         {/* 3 · Two questions, one screen — which is a fact about the product, not
                a saving of space. "How does a big thing get provisioned across
-               weeks" and "which world am I starving" are answered by the same
+               weeks" and "which life am I starving" are answered by the same
                floor: projects time-boxed into sprints, above a coverage grid
-               where a world with nothing in it is an empty row.
+               where a life with nothing in it is an empty row.
 
                This replaced three shrunken panels of three different screens.
                They read as UI while being nobody's actual screen — the exact
@@ -426,7 +436,7 @@ export default function Home() {
                 “What am I actually working toward here?”
               </p>
               <h2 className="masthead mt-3 text-lead text-[var(--text)]">
-                Each world, and whether you showed up.
+                Each life, and whether you showed up.
               </h2>
             </div>
             <DomainFloorVisual />
@@ -528,7 +538,7 @@ export default function Home() {
               the week, it still lets you.
             </p>
             <p className="mt-6 text-[0.9375rem] text-[var(--muted)]">
-              — Phil, who runs four worlds and built this for the Sunday night it kept ruining.
+              — Phil, who’s living four lives and built this for the Sunday night it kept ruining.
             </p>
           </div>
 
@@ -704,8 +714,8 @@ export default function Home() {
               Built for the person everything runs through.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Catch the loose end. Hold the bet. Land the hour. Every world you’re responsible
-              for — finally in one place, finally on the calendar.
+              Catch the loose end. Hold the bet. Land the hour. Every one of your lives — finally
+              in one place, finally on the calendar.
             </p>
             <CtaGroup className="mt-10 justify-center" />
           </div>
