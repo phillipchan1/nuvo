@@ -504,7 +504,9 @@ export function TaskRow({ t, onToggle }: { t: VTask; onToggle: () => void }) {
         onClick={onToggle}
         aria-label={done ? "Reopen" : "Mark done"}
         className={`tap fast flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-caption ${
-          done ? "border-accent bg-accent text-white" : "border-line-strong text-transparent active:border-accent"
+          // border-muted, not border-line-strong: 3.7:1 vs 1.37:1 on the paper,
+          // and a control the finger aims at has to be visible. See D-054a.
+          done ? "border-accent bg-accent text-white" : "border-muted text-transparent active:border-accent"
         }`}
       >
         ✓

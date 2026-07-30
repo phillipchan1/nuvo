@@ -198,7 +198,9 @@ export default function TaskList({
                 onClick={() => toggleTask(t.id)}
                 className="fast flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border text-micro"
                 style={{
-                  borderColor: t.status === "done" ? accent : "var(--line-strong)",
+                  // `--line-strong` is 1.37:1 on the paper; a non-text control
+                  // needs 3:1. `--muted` clears it at 3.7:1. See D-054a.
+                  borderColor: t.status === "done" ? accent : "var(--muted)",
                   background: t.status === "done" ? accent : "transparent",
                   color: "#fff",
                 }}

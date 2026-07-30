@@ -332,6 +332,38 @@ grain where it broke. So, written down:
   changes (`Plan the week` · `The plan ▸` · `Review`). The state changes the word, never
   the weight.
 
+**D-054a · same day · weight, not size — and hover was a no-op.** Held against the
+running app once the shape was right, the rows still felt un-actionable, and the reason
+measured out rather than being a matter of taste:
+
+- **The title had a 2.5px size gap and a ZERO weight gap over the metadata annotating
+  it** — both were 400 — while the chips carry fills, so 10.5px chip text had visual mass
+  that unfilled 13px title text didn't. The title barely outranked its own footnotes.
+  **Weight carries the hierarchy, not size** — and the resolved title goes the *opposite*
+  way from the obvious fix: **down** a size step (13 → 12, `text-caption`) and **up** a
+  weight step (400 → 500). 14px and 15px were both driven against real data and read as
+  overcompensation; they bought less than the weight step and cost real title characters.
+  12/500 lands calmer than 13/500 *and* truncates less than 13/400 ever did — a title that
+  fits is worth more than a title that shouts. **Contrast was never the lever** and
+  is worth recording so nobody tries it: the title is already 15.29:1 against the paper
+  out of a possible 18.62:1, so darkening is spent. Tracking is already negative
+  (−0.078px) and tightening further hurts legibility at 13px.
+- **Hover and selection were literal no-ops in the rail.** Rows were `hover:bg-bg` /
+  `selected:bg-bg`, but the rail is transparent — its rows already sit *on* `--bg`.
+  Measured: canvas 0.8808 luminance, hover target 0.8808. Nothing happened on either.
+  Now `hover:bg-surface` (0.977 — a real delta) and the focal row wears `.glass-lift-row`,
+  so focus **lifts** instead of gaining a flat ring, per the house idiom. Lesson worth
+  keeping: **on a transparent surface, a `bg-*` hover must be checked against what the row
+  actually sits on, not against `--surface`'s neighbours in the token list.**
+- **The inbox wears the same row now.** A grooming guess had its own silhouette — a
+  small-caps parent eyebrow, a third line for energy + estimate, `items-start`, 67px — so
+  the inbox mixed 44px and 67px rows and was exactly as ragged as Today had been. A guess
+  is still obvious, but through the thing that actually differs: it carries **Accept / ✕**.
+  The suggested parent takes the area chip in its own hue (a proposal still reads as a
+  proposal), the estimate takes the weight slot, and the energy read survives in the row's
+  tooltip. *Uniformity is the rule, so it has to hold on every tab — not just the one you
+  were looking at.*
+
 Also fixed in the same pass: the **double hairline** under the list (every `TaskRow` had
 `border-b` with no last-child suppression, and the done group added its own `border-t` 4px
 below it), and the tab strip's discontinuous baseline. *Deliberately not done:* the type

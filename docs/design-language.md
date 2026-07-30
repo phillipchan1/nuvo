@@ -175,14 +175,26 @@ the rule that keeps a dense screen calm.
    ragged reads as noise however little is on it, and tidy reads as calm even when it's
    full. The title truncates; that's the price, and a title you can open beats a column you
    can't scan. Enclosure goes to the one *categorical* fact (the area chip) — numerics don't
-   need a boundary, they align. D-054.
-6. **Altitude reads through type, not chrome.** Serif = intent (the week, a floor's name);
+   need a boundary, they align. And the row's title carries **one weight step** over its
+   metadata (`font-medium`, 500 vs 400) — a title with the same weight as its own footnotes
+   reads as a caption describing the task rather than the task itself. **Buy that hierarchy
+   with weight, not size:** the resolved row went *down* a size step and *up* a weight one
+   (`text-caption` at 500), which reads calmer than 13/500 and truncates less than 13/400
+   did. 14px and 15px were both driven against real data and were overcompensation.
+   Contrast can't buy it either — ink is already 15.29:1 of a possible 18.62:1. D-054.
+6. **A `hover:bg-*` on a transparent surface must be checked against what the row sits
+   on.** The rail is transparent, so its rows sit *on* `--bg` — and they were
+   `hover:bg-bg`, painting each row the exact colour it already was. Measured 0.8808
+   luminance against 0.8808: hover and selection were **literal no-ops**, which is why a
+   perfectly good list felt untouchable. Hover lifts to `--surface`; the focal row wears
+   `.glass-lift-row`, because focus lifts and never outlines.
+7. **Altitude reads through type, not chrome.** Serif = intent (the week, a floor's name);
    system = execution (the day, the rows). A change of altitude should feel like a change
    of voice, marked by **one** `--line-strong` divider — not a pile of hairlines.
-7. **Persistent actions float; they don't take a hierarchy slot.** Capture interrupts every
+8. **Persistent actions float; they don't take a hierarchy slot.** Capture interrupts every
    mode, so on the rail it rides low as a pill (mirroring the mobile ＋ FAB), and on mobile
    it's the FAB — never a titled row competing with the content.
-8. **A door to a major surface wears one shape in every state.** The week's plan guides the
+9. **A door to a major surface wears one shape in every state.** The week's plan guides the
    whole week, so its entry can't be the quietest thing in the crown — it was 9.5px muted
    `open ▸` in `view` while `plan` and `review` got accent pills. One pill, one position,
    three verbs (`Plan the week` · `The plan ▸` · `Review`): **the state changes the word,

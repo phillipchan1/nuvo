@@ -164,64 +164,25 @@ export default function TaskRow({
   //
   // The title truncates. That is the price, and it's the right price: a title you
   // can open beats a column you can't scan.
-  const trailing = !groom && (state || durText || areaName) ? (
-    <div className="flex shrink-0 items-center gap-1.5 pl-2">
-      {state && (
-        <span
-          title={state.title}
-          className={`mono text-meta ${state.signal ? "font-medium text-signal" : "text-muted"}`}
-        >
-          {state.text}
-        </span>
-      )}
-      {durText && <span className="mono text-meta text-muted">{durText}</span>}
-      {/* The area chip spends its hue ONCE: a wash for the ground, and the same hue
-          pulled most of the way to --muted for the label. A domain-coloured label
-          on a domain-coloured ground is two colour signals stacked on the row's
-          quietest element, which is how a chip meant to whisper identity ends up
-          dominating the surface. Named, not just tinted — colour alone fails
-          because nobody memorises the palette. */}
-      {areaName && (
-        <span
-          className="max-w-[92px] truncate rounded px-1.5 py-px text-meta"
-          style={
-            areaColor
-              ? {
-                  background: `color-mix(in srgb, ${areaColor} 9%, transparent)`,
-                  color: `color-mix(in srgb, ${areaColor} 45%, var(--muted))`,
-                }
-              : { background: "color-mix(in srgb, var(--muted) 9%, transparent)", color: "var(--muted)" }
-          }
-          title={areaName}
-        >
-          {areaName}
-        </span>
-      )}
-    </div>
-  ) : null;
+  // The INBOX wears the same row. A grooming guess used to get its own shape — a
+  // small-caps parent eyebrow, a third line for energy + estimate, `items-start`,
+  // 67px — so the inbox mixed 44px and 67px rows and stayed exactly as ragged as
+  // the Today list used to be. A guess is still distinguishable, but through the
+  // thing that actually differs: it carries Accept / ✕. Not through a different
+  // height. The suggested parent takes the area chip (in its own hue, so a
+  // proposal still reads as a proposal), the estimate takes the weight slot, and
+  // the energy read survives in the row's tooltip rather than a whole line.
+  const showArea = groom ? groom.targetLabel : areaName;
+  const showColor = groom ? groom.domainColor : areaColor;
+  const showDur = groom
+    ? (groom.durationMinutes ? fmtDuration(groom.durationMinutes) : null)
+    : durText;
+  const showState = groom ? null : state;
 
-  const bg = multiSelected
-    ? "bg-accent-soft"
-    : selected
-      ? "bg-bg"
-      : "hover:bg-bg";
-
-  // Type the grooming guess so the inbox reads as two piles, not one uniform
-  // list. A project/initiative binding is a "push" — it moves a real object up
-  // the vertical, so it earns presence: a colored spine + the parent as an
-  // eyebrow + its weight up front. A domain/none guess is a loose task and stays
-  // a compact one-liner. Only inbox rows carry a guess, so nothing else changes.
-  const groomPush =
-    groom != null &&
-    (groom.level === "project" || groom.level === "initiative") &&
-    Boolean(groom.targetLabel);
-  // The push spine borrows the suggested domain color even before the task is
-  // filed; loose rows fall back to the row's own accent (usually none in inbox).
-  const spineColor = groomPush && groom ? (groom.domainColor ?? accent ?? null) : (accent ?? null);
-
-  // Accept / dismiss — shared by the push weight line and the loose one-liner.
+  // Accept / dismiss — the one thing that genuinely distinguishes a guess from a
+  // filed fact, so it's what marks the row instead of a taller silhouette.
   const acceptControls = groom ? (
-    <span className="ml-auto flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+    <span className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
       <button
         onClick={(e) => { e.stopPropagation(); onAcceptSuggestion?.(); }}
         className="fast rounded px-1.5 py-px text-micro font-medium text-accent hover:bg-accent-soft"
@@ -238,6 +199,67 @@ export default function TaskRow({
     </span>
   ) : null;
 
+  const trailing = showState || showDur || showArea || groom ? (
+    <div className="flex shrink-0 items-center gap-1.5 pl-2">
+      {showState && (
+        <span
+          title={showState.title}
+          className={`mono text-meta ${showState.signal ? "font-medium text-signal" : "text-muted"}`}
+        >
+          {showState.text}
+        </span>
+      )}
+      {showDur && <span className="mono text-meta text-muted">{showDur}</span>}
+      {/* The area chip spends its hue ONCE: a wash for the ground, and the same hue
+          pulled most of the way to --muted for the label. A domain-coloured label
+          on a domain-coloured ground is two colour signals stacked on the row's
+          quietest element, which is how a chip meant to whisper identity ends up
+          dominating the surface. Named, not just tinted — colour alone fails
+          because nobody memorises the palette. */}
+      {showArea && (
+        <span
+          className="max-w-[92px] truncate rounded px-1.5 py-px text-meta"
+          style={
+            showColor
+              ? {
+                  background: `color-mix(in srgb, ${showColor} 9%, transparent)`,
+                  color: `color-mix(in srgb, ${showColor} 45%, var(--muted))`,
+                }
+              : { background: "color-mix(in srgb, var(--muted) 9%, transparent)", color: "var(--muted)" }
+          }
+          title={showArea}
+        >
+          {showArea}
+        </span>
+      )}
+      {acceptControls}
+    </div>
+  ) : null;
+
+  // The rail is transparent, so its rows already sit ON `--bg` — which means the
+  // old `hover:bg-bg` / `selected:bg-bg` painted the row the exact colour it
+  // already was. Measured: canvas 0.8808 luminance, hover target 0.8808. Hover
+  // and selection were literal no-ops, which is why nothing here read as
+  // touchable. `--surface` sits at ~0.977, so a row now lifts off the paper on
+  // hover, and the focal row *lifts* rather than gaining a flat ring
+  // (`.glass-lift-row` is the house idiom for exactly this).
+  const bg = multiSelected
+    ? "bg-accent-soft"
+    : selected
+      ? "glass-lift-row"
+      : "hover:bg-surface";
+
+  // A guess that binds a project/initiative is a "push" — it moves a real object
+  // up the vertical, so its spine reads thicker. That's the whole tell now; the
+  // eyebrow and the third line are gone (see the inbox note above).
+  const groomPush =
+    groom != null &&
+    (groom.level === "project" || groom.level === "initiative") &&
+    Boolean(groom.targetLabel);
+  // The push spine borrows the suggested domain color even before the task is
+  // filed; loose rows fall back to the row's own accent (usually none in inbox).
+  const spineColor = groomPush && groom ? (groom.domainColor ?? accent ?? null) : (accent ?? null);
+
   return (
     <div
       data-task-drag={draggable ? task.id : undefined}
@@ -247,18 +269,35 @@ export default function TaskRow({
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onContextMenu={onContextMenu}
-      className={`fast group flex cursor-pointer select-none gap-2 border-b border-line last:border-b-0 px-3 ${
-        groom ? "min-h-[52px] items-start py-2" : "h-11 items-center py-0"
-      } ${completing ? "task-completing" : ""} ${bg}`}
+      /* The guess's energy read used to own a whole line; it survives here, where
+         it costs no height. The estimate and the parent already ride the row. */
+      title={
+        groom
+          ? [groom.energy ? `${ENERGY_META[groom.energy].icon} ${ENERGY_META[groom.energy].label}` : null, groom.rationale]
+              .filter(Boolean)
+              .join(" · ")
+          : undefined
+      }
+      className={`fast group flex h-11 cursor-pointer select-none items-center gap-2 border-b border-line last:border-b-0 px-3 ${
+        completing ? "task-completing" : ""
+      } ${bg}`}
       style={spineColor ? { boxShadow: `inset ${groomPush ? 3 : 2}px 0 0 0 ${spineColor}` } : undefined}
     >
       {/* Checkbox */}
       <button
         aria-label={done ? "Mark not done" : "Mark done"}
         onClick={(e) => { e.stopPropagation(); toggle(); }}
-        className={`fast relative ${groom ? "mt-[2px]" : ""} flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
+        /* The empty box wore `border-line` — 1.16:1 against the paper, where the
+           minimum for a non-text UI control is 3:1. It wasn't dim, it was
+           invisible, and an invisible control is most of why a row didn't read as
+           actionable. `--line` is defined as "hairlines at the edge of
+           perception": right for a divider, wrong for the one thing on the row
+           you're meant to click. `--muted` clears the bar at 3.7:1 without
+           becoming an accent (accent would read as already-checked).
+           `--line-strong` was not an option — 1.37:1 still fails. */
+        className={`fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
           completing ? "bloom" : ""
-        } ${done || completing ? "border-accent bg-accent text-white" : "border-line hover:border-accent"}`}
+        } ${done || completing ? "border-accent bg-accent text-white" : "border-muted hover:border-accent"}`}
       >
         {(done || completing) && (
           <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
@@ -271,17 +310,6 @@ export default function TaskRow({
 
       {/* Title + meta */}
       <div className="min-w-0 flex-1">
-        {/* Push eyebrow — the parent this work moves, small-caps in its color. */}
-        {groom && groomPush && (
-          <div
-            className="mb-[3px] flex items-center gap-1 truncate text-micro font-semibold uppercase tracking-[0.04em]"
-            style={{ color: groom.domainColor ?? "var(--muted)" }}
-            title={groom.rationale}
-          >
-            <span aria-hidden className="mono">✦</span>
-            <span className="truncate">{groom.targetLabel}</span>
-          </div>
-        )}
         {/* Line 1 — the title, ALONE. The only thing allowed to cross it is the
             prework mark, because "prep is ready" is the one fact that acts right
             now. Everything that used to pile up here — the repeat glyph, the roll
@@ -289,7 +317,20 @@ export default function TaskRow({
             number. And the title keeps its ink when late: red-alert styling for a
             non-urgent state is exactly what P4 forbids. */}
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className={`min-w-0 flex-1 truncate text-body ${done ? "text-muted line-through" : ""}`}>
+          {/* WEIGHT carries the hierarchy here, not size. The title used to have a
+              2.5px size gap and a ZERO weight gap over the metadata annotating it
+              — both 400 — while the chips carry fills, so 10.5px chip text had
+              visual mass that unfilled 13px title text didn't. The title barely
+              outranked its own footnotes, which is what read as thin and
+              un-actionable.
+              So the title went the other way from the obvious fix: DOWN a size
+              step (13 → 12, `text-caption`) and UP a weight step (400 → 500).
+              14px and 15px were both driven against real data and were
+              overcompensation — they bought less than the weight step and cost
+              real title characters. 12/500 is calmer than 13/500 *and* truncates
+              less than 13/400 ever did. Contrast was never the lever: ink is
+              already 15.29:1 of a possible 18.62:1 on the paper. */}
+          <span className={`min-w-0 flex-1 truncate text-caption font-medium ${done ? "text-muted line-through" : ""}`}>
             {task.title}
           </span>
 
@@ -297,57 +338,7 @@ export default function TaskRow({
             <span className="mono shrink-0 text-micro text-accent" title="Prework ready">✦</span>
           )}
           {trailing}
-
-          {/* Loose guess (domain / none) stays a compact one-liner: its whole
-              identity + weight rides the title row, so it reads as batchable. */}
-          {groom && !groomPush && (
-            <>
-              {groom.level === "domain" && groom.targetLabel && (
-                <span
-                  className="flex shrink-0 items-center gap-1 text-meta font-medium"
-                  style={{ color: groom.domainColor ?? "var(--muted)" }}
-                >
-                  <span
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ background: groom.domainColor ?? "var(--muted)" }}
-                  />
-                  <span className="max-w-[90px] truncate">{groom.targetLabel}</span>
-                </span>
-              )}
-              {groom.durationMinutes ? (
-                <span className="mono shrink-0 text-meta text-muted">{fmtDuration(groom.durationMinutes)}</span>
-              ) : null}
-              {groom.energy && (
-                <span className="shrink-0 text-meta text-muted">
-                  {ENERGY_META[groom.energy].icon} {ENERGY_META[groom.energy].label}
-                </span>
-              )}
-              {acceptControls}
-            </>
-          )}
         </div>
-
-        {/* Push weight line — the deep/decide register + estimate in the parent's
-            color, so the commitment reads before you accept it. */}
-        {groom && groomPush && (
-          <div
-            className="mt-[5px] flex items-center gap-2"
-            onClick={(e) => e.stopPropagation()}
-            title={groom.rationale}
-          >
-            {(groom.energy || groom.durationMinutes) && (
-              <span
-                className="text-meta font-medium"
-                style={{ color: groom.domainColor ?? "var(--ink)" }}
-              >
-                {groom.energy ? `${ENERGY_META[groom.energy].icon} ${ENERGY_META[groom.energy].label}` : ""}
-                {groom.energy && groom.durationMinutes ? " · " : ""}
-                {groom.durationMinutes ? fmtDuration(groom.durationMinutes) : ""}
-              </span>
-            )}
-            {acceptControls}
-          </div>
-        )}
       </div>
 
       {action}

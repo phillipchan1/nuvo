@@ -78,7 +78,7 @@ export function SuggestList({ accent, label, children }: { accent: string; label
 export function SuggRow({ on, accent, onToggle, title, meta }: { on: boolean; accent: string; onToggle: () => void; title: string; meta: string }) {
   return (
     <button onClick={onToggle} className="tap fast flex w-full items-center gap-2.5 rounded-md px-1 py-1 text-left">
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro text-white" style={{ borderColor: on ? accent : "var(--line)", background: on ? accent : "transparent" }}>{on ? "✓" : ""}</span>
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border text-micro text-white" style={{ borderColor: on ? accent : "var(--muted)", background: on ? accent : "transparent" }}>{on ? "✓" : ""}</span>
       <span className={`min-w-0 flex-1 truncate text-caption ${on ? "" : "text-muted line-through"}`}>{title}</span>
       {meta && <span className="mono shrink-0 text-micro text-muted">{meta}</span>}
     </button>
