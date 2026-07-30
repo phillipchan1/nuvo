@@ -237,17 +237,20 @@ export default function TaskRow({
   ) : null;
 
   // The rail is transparent, so its rows already sit ON `--bg` — which means the
-  // old `hover:bg-bg` / `selected:bg-bg` painted the row the exact colour it
+  // original `hover:bg-bg` / `selected:bg-bg` painted the row the exact colour it
   // already was. Measured: canvas 0.8808 luminance, hover target 0.8808. Hover
   // and selection were literal no-ops, which is why nothing here read as
-  // touchable. `--surface` sits at ~0.977, so a row now lifts off the paper on
-  // hover, and the focal row *lifts* rather than gaining a flat ring
-  // (`.glass-lift-row` is the house idiom for exactly this).
+  // touchable.
+  // Then the first fix overshot: a full `bg-surface` row is a +11.6% luminance
+  // jump, which reads as the row lighting up rather than answering the pointer.
+  // `.row-hover` is 40% of that (~+3.9%) — see the note on it in index.css. The
+  // focal row still *lifts* rather than gaining a flat ring, and stays the louder
+  // of the two states, which is the correct order.
   const bg = multiSelected
     ? "bg-accent-soft"
     : selected
       ? "glass-lift-row"
-      : "hover:bg-surface";
+      : "row-hover";
 
   // A guess that binds a project/initiative is a "push" — it moves a real object
   // up the vertical, so its spine reads thicker. That's the whole tell now; the

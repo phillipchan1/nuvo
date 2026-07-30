@@ -690,6 +690,19 @@ body.odp-dragging [data-resize] {
     var(--shadow-3);
   transform: translateY(-2px);
 }
+/* Row hover — a WASH, not a surface swap. A full `--surface` row is a +11.6%
+   luminance jump off the paper, which reads as the row *lighting up* rather than
+   acknowledging the pointer. 40% of it is ~+3.9%: perceptible, not loud, and it
+   leaves room for `.glass-lift-row` to still be the louder, focal state.
+   Deliberately a FRACTION OF A TOKEN (the chip idiom) rather than `--surface-2`,
+   because the surface ramp inverts between themes — light is
+   bg < surface-2 < surface, dark is bg < surface < surface-2 — so `--surface-2`
+   would read subtle in light and loud in dark. A fraction of `--surface` is a
+   partial step toward whatever the theme's raised surface is, so it stays a
+   whisper in both. */
+.row-hover:hover {
+  background-color: color-mix(in srgb, var(--surface) 40%, transparent);
+}
 
 /* Entrances */
 @keyframes rise {

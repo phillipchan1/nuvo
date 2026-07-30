@@ -186,8 +186,13 @@ the rule that keeps a dense screen calm.
    on.** The rail is transparent, so its rows sit *on* `--bg` — and they were
    `hover:bg-bg`, painting each row the exact colour it already was. Measured 0.8808
    luminance against 0.8808: hover and selection were **literal no-ops**, which is why a
-   perfectly good list felt untouchable. Hover lifts to `--surface`; the focal row wears
-   `.glass-lift-row`, because focus lifts and never outlines.
+   perfectly good list felt untouchable. And when you fix it, **hover is a wash, not a
+   surface swap** — a full `--surface` row is a +11.6% jump that reads as the row lighting
+   up; `.row-hover` is 40% of it (+4.6%), which leaves `.glass-lift-row` as the louder focal
+   state. Reach for a **fraction of a token, not the next token along**: the surface ramp
+   inverts between themes (light `bg < surface-2 < surface`, dark `bg < surface <
+   surface-2`), so `--surface-2` would be subtle in light and loud in dark. Focus still
+   lifts and never outlines.
 7. **Altitude reads through type, not chrome.** Serif = intent (the week, a floor's name);
    system = execution (the day, the rows). A change of altitude should feel like a change
    of voice, marked by **one** `--line-strong` divider — not a pile of hairlines.

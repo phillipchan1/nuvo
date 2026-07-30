@@ -351,10 +351,20 @@ measured out rather than being a matter of taste:
 - **Hover and selection were literal no-ops in the rail.** Rows were `hover:bg-bg` /
   `selected:bg-bg`, but the rail is transparent — its rows already sit *on* `--bg`.
   Measured: canvas 0.8808 luminance, hover target 0.8808. Nothing happened on either.
-  Now `hover:bg-surface` (0.977 — a real delta) and the focal row wears `.glass-lift-row`,
-  so focus **lifts** instead of gaining a flat ring, per the house idiom. Lesson worth
-  keeping: **on a transparent surface, a `bg-*` hover must be checked against what the row
-  actually sits on, not against `--surface`'s neighbours in the token list.**
+  The first fix then **overshot** — a full `bg-surface` row is a **+11.6%** luminance jump,
+  which reads as the row *lighting up* rather than answering the pointer. Settled on
+  `.row-hover`: a **wash** at 40% of `--surface`, **+4.6%** — perceptible, not loud, and it
+  leaves `.glass-lift-row` as the louder focal state, which is the right order. Focus
+  **lifts** rather than gaining a flat ring, per the house idiom.
+  Two lessons worth keeping. **On a transparent surface, a `bg-*` hover must be measured
+  against what the row actually sits on**, not against `--surface`'s neighbours in the token
+  list. And **use a fraction of a token, not the next token along**: `--surface-2` looked
+  like the obvious subtler pick (+4.9% in light) but the surface ramp **inverts between
+  themes** — light is `bg < surface-2 < surface`, dark is `bg < surface < surface-2` — so it
+  would read subtle in light and loud in dark. A percentage of `--surface` is a partial step
+  toward whatever that theme's raised surface is, so it stays a whisper in both. (Relative-
+  to-paper percentages are meaningless in dark, where the paper is near-black — compare
+  absolute steps there, not ratios.)
 - **The inbox wears the same row now.** A grooming guess had its own silhouette — a
   small-caps parent eyebrow, a third line for energy + estimate, `items-start`, 67px — so
   the inbox mixed 44px and 67px rows and was exactly as ragged as Today had been. A guess
