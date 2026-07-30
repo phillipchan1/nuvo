@@ -1,9 +1,16 @@
 // Product-faithful mini-illustrations for the welcome walkthrough. Built from the
-// same tokens as the app (never a raw hex) so they flip in light/dark automatically,
+// same tokens as the app (never a raw hex — the Appearance step below is the one
+// deliberate exception, see its own comment) so they flip in light/dark automatically,
 // and animated with the shared orientation motion. These aren't decoration — they
-// mirror the REAL app chrome (the Spine's ⌘1–4 rail, the domain→initiative→project→
-// task funnel, On Deck's sprint grid, the Schedule) so a new user learns WHERE each
-// concept lives, not just what it means. Lightweight — inline divs/SVG, no deps.
+// mirror the REAL app chrome (the Spine's ⌘1–4 rail, On Deck's sprint grid, the
+// Schedule, the Domain floor's pulse) so a new user learns WHERE each concept lives,
+// not just what it means.
+//
+// The task→project→initiative ladder (steps 2–4 in steps.tsx) shares the app's own
+// real lifecycle as its visual grammar, not an invented one: a thing sits loose/ungroomed
+// until it earns a slot in a progressively bigger time-container (hour → week → quarter).
+// Domain (step 5) is the deliberate exception — ongoing, never slotted. Lightweight —
+// inline divs/SVG, no deps.
 import type { CSSProperties } from "react";
 
 // A soft glass plate the illustration sits on — echoes the app's resting material.
@@ -38,6 +45,30 @@ function KeyBadge({ k }: { k: string }) {
   );
 }
 
+// A small "still loose" precursor row — dashed, muted — used by the task/project
+// steps to show the thing BEFORE it earns its slot.
+function LooseRow({ label, note, i = 0 }: { label: string; note: string; i?: number }) {
+  return (
+    <div
+      className="orient-stagger flex items-center gap-2 rounded-md border border-dashed border-line px-2.5 py-1.5"
+      style={at(i)}
+    >
+      <span className="section-label shrink-0">{label}</span>
+      <span className="ml-auto truncate text-micro text-muted">{note}</span>
+    </div>
+  );
+}
+
+// The downward "it just got groomed / slotted" connector between a LooseRow and
+// the time-container below it.
+function DropArrow({ i = 1 }: { i?: number }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="orient-stagger mx-auto" style={at(i)}>
+      <path d="M7 1v9m0 0l-3.5-3.5M7 10l3.5-3.5" stroke="var(--line-strong)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // 1 — Welcome: the areas of a life, gathering into one calm frame.
 export function WelcomeVisual() {
   return (
@@ -60,39 +91,261 @@ export function WelcomeVisual() {
   );
 }
 
-// 2 — The map: a faithful mini of the left Spine (Execute / Build · ⌘1–4).
-export function SpineMapVisual() {
-  const Row = ({ n, label, active, ready, i }: { n: string; label: string; active?: boolean; ready: number; i: number }) => (
-    <div
-      className="orient-stagger flex flex-col gap-1 rounded-md px-2 py-1.5"
-      style={{ ...at(i), background: active ? "color-mix(in oklab, var(--surface) 75%, transparent)" : "transparent", boxShadow: active ? "var(--shadow-1)" : undefined }}
-    >
-      <div className="flex items-center gap-2">
-        <span className="serif w-3.5 text-center text-caption leading-none" style={{ color: active ? "var(--accent)" : "var(--muted)" }}>{n}</span>
-        <span className="flex-1 text-caption leading-none" style={{ color: active ? "var(--ink)" : "var(--muted)", fontWeight: active ? 600 : 400 }}>{label}</span>
-      </div>
-      <span className="ml-[22px] h-0.5 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-        <span className="block h-full rounded-full" style={{ width: `${ready}%`, background: "var(--accent)" }} />
-      </span>
-    </div>
-  );
+// 2 — Schedule: a task starts loose in the Inbox, then a real time-block makes it
+// work. The atom of the ladder — the smallest time-container (an hour).
+export function TimeblockVisual() {
+  const rows = ["9", "10", "11", "12", "1"];
   return (
     <Plate>
-      <div className="flex w-[188px] flex-col gap-1 rounded-lg border border-line bg-surface-2/30 p-2">
-        <div className="wordmark px-1 pb-1 text-body leading-none text-ink">Nuvo</div>
-        <div className="section-label px-1">Execute</div>
-        <Row n="1" label="Schedule" active ready={70} i={0} />
-        <div className="mx-1 my-1 border-t border-line" />
-        <div className="section-label px-1">Build</div>
-        <Row n="2" label="Projects" ready={55} i={1} />
-        <Row n="3" label="Initiatives" ready={40} i={2} />
-        <Row n="4" label="Domains" ready={85} i={3} />
+      <div className="flex w-full max-w-[240px] flex-col gap-2">
+        <LooseRow label="Inbox" note="Book trail passes" i={0} />
+        <DropArrow i={1} />
+        <div className="flex gap-2">
+          <div className="flex flex-col justify-between py-0.5">
+            {rows.map((r) => (
+              <span key={r} className="mono text-micro leading-none text-muted">{r}</span>
+            ))}
+          </div>
+          <div className="relative flex-1">
+            {rows.map((_, i) => (
+              <div key={i} className="h-7 border-t border-line" />
+            ))}
+            {/* an existing calendar commitment */}
+            <div
+              className="absolute left-1 right-1 top-[2px] flex items-center rounded px-2"
+              style={{ height: 24, background: tint("var(--muted)", 22), borderLeft: "2px solid var(--muted)" }}
+            >
+              <span className="text-micro text-muted">Standup</span>
+            </div>
+            {/* the task, dropping in and landing lifted like a grabbed block */}
+            <div
+              className="orient-drop glass-lift absolute left-3 right-0 flex items-center rounded px-2"
+              style={{ top: 58, height: 34, background: tint("var(--accent)", 30), borderLeft: "2px solid var(--accent)" }}
+            >
+              <span className="text-meta text-ink">Book trail passes</span>
+            </div>
+          </div>
+        </div>
       </div>
     </Plate>
   );
 }
 
-// 3 — The flow: domain → initiative → project → task, each with its ⌘ home.
+// 3 — On Deck: a project sits ungroomed until it's ready, then it earns a week
+// (or two) — the next size up in the same time-container grammar as Schedule.
+export function OnDeckVisual() {
+  const weeks = ["Jul 21", "Jul 28", "Aug 4"];
+  const blocks: Record<number, { t: string; color: string }[]> = {
+    0: [{ t: "Sat adventure", color: "var(--accent)" }, { t: "Q3 plan", color: "var(--slot)" }],
+    1: [{ t: "Bedtime routine", color: "var(--accent)" }],
+    2: [],
+  };
+  return (
+    <Plate>
+      <div className="flex w-full max-w-[260px] flex-col gap-1.5">
+        <LooseRow label="Not ready" note="Sat adventure — needs an outcome" i={0} />
+        <DropArrow i={1} />
+        <div className="orient-stagger flex items-center gap-1" style={at(2)}>
+          <span className="section-label flex-1">Sprint 30</span>
+          <span className="rounded-full border border-signal px-1.5 py-0.5 text-micro leading-none" style={{ color: "var(--signal)", background: tint("var(--signal)", 12) }}>week full</span>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {weeks.map((w, i) => (
+            <div key={w} className="orient-stagger flex flex-col gap-1 rounded-md border border-line bg-surface-2/30 p-1.5" style={{ ...at(i + 3), minHeight: 74 }}>
+              <span className="mono text-micro text-muted">{w}</span>
+              {blocks[i].map((b) => (
+                <span key={b.t} className="glass-card truncate rounded px-1.5 py-1 text-micro text-ink" style={{ borderLeft: `2px solid ${b.color}`, background: tint(b.color, 16) }}>{b.t}</span>
+              ))}
+              {blocks[i].length === 0 && <span className="mt-auto rounded border border-dashed border-line px-1 py-1 text-center text-micro text-muted">open</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Plate>
+  );
+}
+
+// 4 — Initiative: the same groom-then-slot pattern one size up — a handful of
+// projects converging on one outcome, sized to a quarter rather than a week.
+export function InitiativeVisual() {
+  const c = "var(--accent)";
+  const months = ["Jul", "Aug", "Sep"];
+  const projects: Record<number, string> = {
+    0: "Sat adventure",
+    1: "Bedtime routine",
+    2: "Family trip",
+  };
+  return (
+    <Plate>
+      <div className="flex w-full max-w-[260px] flex-col gap-1.5">
+        <div
+          className="orient-stagger flex items-center gap-2 rounded-md border border-line px-2.5 py-1.5"
+          style={{ ...at(0), background: tint(c, 12) }}
+        >
+          <span className="h-4 w-1 shrink-0 rounded-full" style={{ background: c }} />
+          <span className="min-w-0 flex-1 truncate text-meta text-ink">More present at home</span>
+          <span className="text-micro text-muted">groomed</span>
+          <KeyBadge k="⌘3" />
+        </div>
+        <div className="mx-auto h-3 w-px" style={{ background: "var(--line-strong)" }} aria-hidden />
+        <div className="grid grid-cols-3 gap-1.5">
+          {months.map((m, i) => (
+            <div key={m} className="orient-stagger flex flex-col gap-1 rounded-md border border-line bg-surface-2/30 p-1.5" style={{ ...at(i + 1), minHeight: 60 }}>
+              <span className="mono text-micro text-muted">{m}</span>
+              <span className="glass-card truncate rounded px-1.5 py-1 text-micro text-ink" style={{ borderLeft: `2px solid ${c}`, background: tint(c, 16) }}>{projects[i]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Plate>
+  );
+}
+
+// 5 — Domain: it all rolls up here. No grid, no edges — the deliberate exception to
+// the groom-then-slot pattern above: a Domain has no start or end, just a continuous
+// pulse of weeks you can glance back across.
+export function DomainVisual() {
+  const c = "var(--accent)";
+  const weeks = [30, 55, 20, 70, 45, 85, 35, 60, 25, 75, 50, 40];
+  return (
+    <Plate>
+      <div className="flex w-full max-w-[260px] flex-col gap-2.5">
+        <div
+          className="orient-stagger flex items-center gap-2 rounded-md border border-line px-2.5 py-1.5"
+          style={{ ...at(0), background: tint(c, 12) }}
+        >
+          <span className="h-4 w-1 shrink-0 rounded-full" style={{ background: c }} />
+          <span className="min-w-0 flex-1 truncate text-meta text-ink">Family</span>
+          <KeyBadge k="⌘4" />
+        </div>
+        <div className="orient-stagger flex items-end gap-[3px]" style={{ ...at(1), height: 40 }}>
+          {weeks.map((h, i) => (
+            <span
+              key={i}
+              className="flex-1 rounded-sm"
+              style={{ height: `${h}%`, background: tint(c, 24 + (i % 3) * 10) }}
+            />
+          ))}
+        </div>
+        <span className="orient-stagger text-micro text-muted" style={at(2)}>every week, however it went</span>
+      </div>
+    </Plate>
+  );
+}
+
+// 6 — Nuvo: the assistant does the legwork; you decide. Rides after the ladder so
+// its own words (grooms, slots, plans the week) are already the reader's vocabulary.
+export function NuvoVisual() {
+  return (
+    <Plate>
+      <div className="flex w-full max-w-[250px] flex-col gap-2.5">
+        <div className="orient-stagger flex items-center gap-2" style={at(0)}>
+          <span className="text-body" style={{ color: "var(--accent)" }}>✦</span>
+          <span className="section-label flex-1">Nuvo</span>
+          <KeyBadge k="⌘J" />
+        </div>
+        <div className="orient-stagger glass-card rounded-lg rounded-tl-sm border border-line px-3 py-2.5" style={at(1)}>
+          <p className="text-meta leading-relaxed text-ink">
+            You have <span className="text-ink">3 open hours</span> Thursday. Want me to place
+            <span style={{ color: "var(--accent)" }}> Saturday adventure</span> there?
+          </p>
+        </div>
+        <div className="orient-stagger flex gap-2" style={at(2)}>
+          <span className="orient-pulse rounded-md border border-accent px-2.5 py-1 text-micro" style={{ background: tint("var(--accent)", 14), color: "var(--accent)" }}>Place it</span>
+          <span className="rounded-md border border-line px-2.5 py-1 text-micro text-muted">Not now</span>
+        </div>
+      </div>
+    </Plate>
+  );
+}
+
+// 7 — Capture: brain-dump raw text; it parses into structure and lands right in the
+// Inbox already taught in step 2 — the fast door in, revealed once the room behind
+// it makes sense.
+export function CaptureVisual() {
+  const chips = [
+    { t: "Call David", meta: "tue 9am", color: "var(--accent)" },
+    { t: "Book flights", meta: "#family", color: "var(--slot)" },
+    { t: "Draft Q3 plan", meta: "!high", color: "var(--signal)" },
+  ];
+  return (
+    <Plate>
+      <div className="flex w-full max-w-[250px] flex-col gap-3">
+        <div className="orient-stagger flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2" style={at(0)}>
+          <KeyBadge k="⌘K" />
+          <span className="text-meta text-muted">Brain-dump anything…</span>
+        </div>
+        <svg width="18" height="16" viewBox="0 0 18 16" fill="none" className="mx-auto rotate-90">
+          <path className="orient-flow" d="M2 8h12" stroke="var(--line-strong)" strokeWidth="1.4" strokeLinecap="round" />
+          <path d="M14 8l-4-4m4 4l-4 4" stroke="var(--line-strong)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <div className="flex flex-col gap-1.5">
+          {chips.map((c, i) => (
+            <div key={c.t} className="orient-stagger glass-card flex items-center gap-2 rounded-md border border-line px-2.5 py-1.5" style={{ ...at(i + 1), borderLeft: `2px solid ${c.color}` }}>
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: c.color }} />
+              <span className="text-meta text-ink">{c.t}</span>
+              <span className="mono ml-auto text-micro text-muted">{c.meta}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Plate>
+  );
+}
+
+// 8 — Appearance: a few looks to pick from. Raw hexes are the deliberate exception
+// to this file's "never a raw hex" rule — these swatches show OTHER themes, not the
+// one currently active, so they can't be app tokens by definition. Names/hints match
+// SKIN_LABELS in useSkin.ts.
+export function AppearanceVisual() {
+  const skins = [
+    { name: "Aurora", bg: "#F7F1E8", ink: "#3A342C", accent: "#B5804F" },
+    { name: "Flat", bg: "#FFFFFF", ink: "#1A1A1A", accent: "#2563EB" },
+    { name: "Terminal", bg: "#0B0F0E", ink: "#D7F5DE", accent: "#5FD97A" },
+    { name: "Blueprint", bg: "#0E2A4A", ink: "#DCEFFF", accent: "#8FD1FF" },
+  ];
+  return (
+    <Plate>
+      <div className="grid w-full max-w-[260px] grid-cols-2 gap-2">
+        {skins.map((s, i) => (
+          <div
+            key={s.name}
+            className="orient-stagger flex flex-col gap-2 rounded-lg border border-line p-2.5"
+            style={{ ...at(i), background: s.bg }}
+          >
+            <span className="h-2 w-8 rounded-full" style={{ background: s.accent }} />
+            <span className="h-1.5 w-full rounded-full opacity-60" style={{ background: s.ink }} />
+            <span className="text-micro" style={{ color: s.ink }}>{s.name}</span>
+          </div>
+        ))}
+      </div>
+    </Plate>
+  );
+}
+
+// 9 — Ready: the week, at rest.
+export function ReadyVisual() {
+  return (
+    <Plate>
+      <div className="flex flex-col items-center gap-3">
+        <div className="orient-stagger flex items-center gap-1.5" style={at(0)}>
+          {AREAS.map((a) => (
+            <span key={a.label} className="h-2.5 w-2.5 rounded-full" style={{ background: a.color }} />
+          ))}
+        </div>
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" className="orient-stagger" style={at(1)}>
+          <circle cx="26" cy="26" r="24" stroke="var(--accent)" strokeWidth="1.5" opacity="0.35" />
+          <path d="M17 26.5l6 6 12-13" stroke="var(--accent)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="orient-stagger section-label" style={at(2)}>all at rest</span>
+      </div>
+    </Plate>
+  );
+}
+
+// The flow: domain → initiative → project → task, each with its ⌘ home. Not part of
+// the numbered walkthrough sequence above — reused by the Initiatives empty-state
+// teacher (see InitiativeOnDeckFloor.tsx).
 export function FlowVisual() {
   const c = "var(--accent)";
   const tiers = [
@@ -126,149 +379,6 @@ export function FlowVisual() {
             )}
           </div>
         ))}
-      </div>
-    </Plate>
-  );
-}
-
-// 4 — On Deck: time-box projects into the weeks (sprints) you'll do them.
-export function OnDeckVisual() {
-  const weeks = ["Jul 21", "Jul 28", "Aug 4"];
-  const blocks: Record<number, { t: string; color: string }[]> = {
-    0: [{ t: "Sat adventure", color: "var(--accent)" }, { t: "Q3 plan", color: "var(--slot)" }],
-    1: [{ t: "Bedtime routine", color: "var(--accent)" }],
-    2: [],
-  };
-  return (
-    <Plate>
-      <div className="flex w-full max-w-[260px] flex-col gap-1.5">
-        <div className="orient-stagger flex items-center gap-1" style={at(0)}>
-          <span className="section-label flex-1">Sprint 30</span>
-          <span className="rounded-full border border-signal px-1.5 py-0.5 text-micro leading-none" style={{ color: "var(--signal)", background: tint("var(--signal)", 12) }}>week full</span>
-        </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          {weeks.map((w, i) => (
-            <div key={w} className="orient-stagger flex flex-col gap-1 rounded-md border border-line bg-surface-2/30 p-1.5" style={{ ...at(i + 1), minHeight: 74 }}>
-              <span className="mono text-micro text-muted">{w}</span>
-              {blocks[i].map((b) => (
-                <span key={b.t} className="glass-card truncate rounded px-1.5 py-1 text-micro text-ink" style={{ borderLeft: `2px solid ${b.color}`, background: tint(b.color, 16) }}>{b.t}</span>
-              ))}
-              {blocks[i].length === 0 && <span className="mt-auto rounded border border-dashed border-line px-1 py-1 text-center text-micro text-muted">open</span>}
-            </div>
-          ))}
-        </div>
-      </div>
-    </Plate>
-  );
-}
-
-// 5 — Schedule: a task dropped onto the day becomes a real block of time.
-export function TimeblockVisual() {
-  const rows = ["9", "10", "11", "12", "1"];
-  return (
-    <Plate>
-      <div className="flex w-full max-w-[240px] gap-2">
-        <div className="flex flex-col justify-between py-0.5">
-          {rows.map((r) => (
-            <span key={r} className="mono text-micro leading-none text-muted">{r}</span>
-          ))}
-        </div>
-        <div className="relative flex-1">
-          {rows.map((_, i) => (
-            <div key={i} className="h-7 border-t border-line" />
-          ))}
-          {/* an existing calendar commitment */}
-          <div
-            className="absolute left-1 right-1 top-[2px] flex items-center rounded px-2"
-            style={{ height: 24, background: tint("var(--muted)", 22), borderLeft: "2px solid var(--muted)" }}
-          >
-            <span className="text-micro text-muted">Standup</span>
-          </div>
-          {/* the task, dropping in and landing lifted like a grabbed block */}
-          <div
-            className="orient-drop glass-lift absolute left-3 right-0 flex items-center rounded px-2"
-            style={{ top: 58, height: 34, background: tint("var(--accent)", 30), borderLeft: "2px solid var(--accent)" }}
-          >
-            <span className="text-meta text-ink">Book trail passes</span>
-          </div>
-        </div>
-      </div>
-    </Plate>
-  );
-}
-
-// 6 — Capture: brain-dump raw text; it parses into structure.
-export function CaptureVisual() {
-  const chips = [
-    { t: "Call David", meta: "tue 9am", color: "var(--accent)" },
-    { t: "Book flights", meta: "#family", color: "var(--slot)" },
-    { t: "Draft Q3 plan", meta: "!high", color: "var(--signal)" },
-  ];
-  return (
-    <Plate>
-      <div className="flex w-full max-w-[250px] flex-col gap-3">
-        <div className="orient-stagger flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2" style={at(0)}>
-          <KeyBadge k="⌘K" />
-          <span className="text-meta text-muted">Brain-dump anything…</span>
-        </div>
-        <svg width="18" height="16" viewBox="0 0 18 16" fill="none" className="mx-auto rotate-90">
-          <path className="orient-flow" d="M2 8h12" stroke="var(--line-strong)" strokeWidth="1.4" strokeLinecap="round" />
-          <path d="M14 8l-4-4m4 4l-4 4" stroke="var(--line-strong)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        <div className="flex flex-col gap-1.5">
-          {chips.map((c, i) => (
-            <div key={c.t} className="orient-stagger glass-card flex items-center gap-2 rounded-md border border-line px-2.5 py-1.5" style={{ ...at(i + 1), borderLeft: `2px solid ${c.color}` }}>
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: c.color }} />
-              <span className="text-meta text-ink">{c.t}</span>
-              <span className="mono ml-auto text-micro text-muted">{c.meta}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </Plate>
-  );
-}
-
-// 7 — Nuvo: the assistant does the legwork; you decide.
-export function NuvoVisual() {
-  return (
-    <Plate>
-      <div className="flex w-full max-w-[250px] flex-col gap-2.5">
-        <div className="orient-stagger flex items-center gap-2" style={at(0)}>
-          <span className="text-body" style={{ color: "var(--accent)" }}>✦</span>
-          <span className="section-label flex-1">Nuvo</span>
-          <KeyBadge k="⌘J" />
-        </div>
-        <div className="orient-stagger glass-card rounded-lg rounded-tl-sm border border-line px-3 py-2.5" style={at(1)}>
-          <p className="text-meta leading-relaxed text-ink">
-            You have <span className="text-ink">3 open hours</span> Thursday. Want me to place
-            <span style={{ color: "var(--accent)" }}> Saturday adventure</span> there?
-          </p>
-        </div>
-        <div className="orient-stagger flex gap-2" style={at(2)}>
-          <span className="orient-pulse rounded-md border border-accent px-2.5 py-1 text-micro" style={{ background: tint("var(--accent)", 14), color: "var(--accent)" }}>Place it</span>
-          <span className="rounded-md border border-line px-2.5 py-1 text-micro text-muted">Not now</span>
-        </div>
-      </div>
-    </Plate>
-  );
-}
-
-// 8 — Ready: the week, at rest.
-export function ReadyVisual() {
-  return (
-    <Plate>
-      <div className="flex flex-col items-center gap-3">
-        <div className="orient-stagger flex items-center gap-1.5" style={at(0)}>
-          {AREAS.map((a) => (
-            <span key={a.label} className="h-2.5 w-2.5 rounded-full" style={{ background: a.color }} />
-          ))}
-        </div>
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" className="orient-stagger" style={at(1)}>
-          <circle cx="26" cy="26" r="24" stroke="var(--accent)" strokeWidth="1.5" opacity="0.35" />
-          <path d="M17 26.5l6 6 12-13" stroke="var(--accent)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        <span className="orient-stagger section-label" style={at(2)}>all at rest</span>
       </div>
     </Plate>
   );

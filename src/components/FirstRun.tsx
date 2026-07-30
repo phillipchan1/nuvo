@@ -15,7 +15,7 @@ import { useVertical } from "../hooks/useVertical";
 type Kind = {
   key: string;
   kind: string;
-  blurb: string;
+  prompt: string;
   examples: string;
   suggested: string;
   color: string;
@@ -23,11 +23,15 @@ type Kind = {
 
 // Colors are data (a domain's identity tint), not theme tokens — same hexes the
 // domain swatch picker offers in DomainFloor.
+//
+// Each row leads with a plain question, not an abstract category noun — "Work" or
+// "Discipline" reads as Nuvo's vocabulary, not yours. `kind` survives only as an
+// internal id (color mapping, key prop); it is never rendered.
 const KINDS: Kind[] = [
   {
     key: "work",
     kind: "Work",
-    blurb: "The job, company, or practice that pays.",
+    prompt: "What pays the bills?",
     examples: "Work · Company · Clients · Practice",
     suggested: "Work",
     color: "#2563EB",
@@ -35,7 +39,7 @@ const KINDS: Kind[] = [
   {
     key: "community",
     kind: "Community",
-    blurb: "A team or cause that depends on you showing up.",
+    prompt: "Who's counting on you to show up?",
     examples: "Church · Board · Coaching · Volunteering",
     suggested: "Community",
     color: "#7C3AED",
@@ -43,7 +47,7 @@ const KINDS: Kind[] = [
   {
     key: "discipline",
     kind: "Discipline",
-    blurb: "A craft you keep sharp. It needs time, not tasks.",
+    prompt: "What craft do you protect time for?",
     examples: "Trading · Training · Writing · Study",
     suggested: "Discipline",
     color: "#0D9488",
@@ -51,7 +55,7 @@ const KINDS: Kind[] = [
   {
     key: "people",
     kind: "People",
-    blurb: "The relationships that never file a ticket — and get starved quietly.",
+    prompt: "Who do you love that never files a ticket?",
     examples: "Family · Marriage · Friends",
     suggested: "Family",
     color: "#DB2777",
@@ -59,7 +63,7 @@ const KINDS: Kind[] = [
   {
     key: "stewardship",
     kind: "Stewardship",
-    blurb: "The things that cost you later if you neglect them now.",
+    prompt: "What costs you later if you ignore it now?",
     examples: "Finances · Health · Home",
     suggested: "Health",
     color: "#059669",
@@ -79,12 +83,15 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
     setPicked((p) => {
       const next = { ...p };
       if (k.key in next) delete next[k.key];
-      else next[k.key] = k.suggested;
+      else next[k.key] = "";
       return next;
     });
 
   const chosen = [
-    ...KINDS.filter((k) => k.key in picked).map((k) => ({ name: picked[k.key].trim(), color: k.color })),
+    ...KINDS.filter((k) => k.key in picked).map((k) => ({
+      name: picked[k.key].trim() || k.suggested,
+      color: k.color,
+    })),
     ...extras.map((name, i) => ({ name: name.trim(), color: EXTRA_COLORS[i % EXTRA_COLORS.length] })),
   ].filter((d) => d.name.length > 0);
 
@@ -137,10 +144,9 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
                       }}
                     />
                     <span className="min-w-0">
-                      <span className={`block text-body ${on ? "text-ink" : "text-ink"}`}>{k.kind}</span>
-                      <span className="mt-0.5 block text-caption text-muted">{k.blurb}</span>
+                      <span className="block text-body text-ink">{k.prompt}</span>
                       {!on && (
-                        <span className="mt-1 block text-meta text-muted">{k.examples}</span>
+                        <span className="mt-1 block text-caption text-muted">{k.examples}</span>
                       )}
                     </span>
                   </button>
