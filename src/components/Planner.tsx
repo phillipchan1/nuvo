@@ -17,7 +17,7 @@ import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { taskDomainColor } from "../lib/vertical";
-import { isWritableAccount } from "../lib/calendarWrite";
+import { isReadOnlyCalendarId, isWritableAccount } from "../lib/calendarWrite";
 import {
   applySpotlightNav,
   buildSearchHits,
@@ -577,7 +577,7 @@ export default function Planner({
             <EventPopover
               event={openEvent}
               anchor={panelRect}
-              editable={isWritableAccount(openEventAccount)}
+              editable={isWritableAccount(openEventAccount) && !isReadOnlyCalendarId(openEvent.calendar_id)}
               calendarId={openEvent.calendar_id}
               calendarName={openEventCalendar?.summary}
               calendarColor={openEventCalendar?.color}

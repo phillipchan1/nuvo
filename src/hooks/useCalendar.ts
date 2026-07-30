@@ -1,10 +1,18 @@
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import type { AttendeeStatus, CalendarAccount, CalendarProvider, ExternalEvent, GoogleRawEvent, HiddenEvent, Label, RecurrenceScope } from "../lib/types";
 import { eventInstanceKey, eventSeriesKey, isEventHidden } from "../lib/now";
 import { eventsFunctionFor } from "../lib/calendarWrite";
 import { useSettings } from "./useSettings";
+
+function throwIfInvokeFailed(data: unknown, error: Error | null) {
+  if (error) throw error;
+  if (data && typeof data === "object" && "error" in data && (data as { error?: unknown }).error) {
+    throw new Error(String((data as { error: unknown }).error));
+  }
+}
 
 export function useCalendarRefresh() {
   const qc = useQueryClient();
@@ -113,6 +121,33 @@ export function useExternalEventMutations() {
       if (ev) return providerForAccount(ev.account_id) ?? "google";
     }
     return "google";
+  };
+
+  const resolveProviderForEvent = async (id: string): Promise<CalendarProvider> => {
+    let accountId: string | undefined;
+    for (const [, data] of qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] })) {
+      const ev = data?.find((e) => e.id === id);
+      if (ev) {
+        accountId = ev.account_id;
+        break;
+      }
+    }
+    if (!accountId) {
+      const { data: ev } = await supabase.from("external_events").select("account_id").eq("id", id).single();
+      accountId = ev?.account_id;
+    }
+    if (!accountId) throw new Error("Event not found");
+
+    const cached = providerForAccount(accountId);
+    if (cached) return cached;
+
+    const { data: acct, error } = await supabase
+      .from("calendar_accounts")
+      .select("provider")
+      .eq("id", accountId)
+      .single();
+    if (error || !acct?.provider) throw new Error("Calendar account not found");
+    return acct.provider as CalendarProvider;
   };
 
   const update = useMutation({
@@ -264,16 +299,25 @@ export function useExternalEventMutations() {
        *  stays quiet. Pass false to cancel without telling anyone. */
       notifyGuests?: boolean;
     }) => {
-      const { error } = await supabase.functions.invoke(eventsFunctionFor(providerForEvent(id)), {
+      const provider = await resolveProviderForEvent(id);
+      const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
         body: { action: "delete", eventId: id, scope, notifyGuests },
       });
-      if (error) throw error;
+      throwIfInvokeFailed(data, error);
     },
     onMutate: async ({ id }) => {
       await qc.cancelQueries({ queryKey: ["external_events"] });
+      const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old?.filter((e) => e.id !== id),
       );
+      return { snapshot };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.snapshot) {
+        for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
+      }
+      toast.error(err instanceof Error ? err.message : "Couldn't delete event");
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });

@@ -17,7 +17,7 @@ import type { useTaskMutations } from "../hooks/useTasks";
 import { useEventDetails, useHiddenEvents, type useExternalEventMutations } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
 import { synClass } from "../lib/syntax";
-import { isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
+import { isReadOnlyCalendarId, isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftComposer";
@@ -270,6 +270,7 @@ export default function CalendarPane({
   );
   const eventMenuCancelNotifies =
     eventMenuDetails?.organizer?.self === true && eventMenuOtherGuests.length > 0;
+  const eventMenuHasInvitees = eventMenuOtherGuests.length > 0;
   // Delete is a hard API call — confirm in-place rather than firing on one click.
   const [eventDeleteConfirm, setEventDeleteConfirm] = useState<RecurrenceScope | null>(null);
   // Right-click "Move to…" — expands to a grouped calendar/account list in place;
@@ -1598,9 +1599,13 @@ export default function CalendarPane({
         const hiddenNow = isHidden(ev);
         const series = Boolean(eventSeriesKey(ev));
         const account = accountById.get(ev.account_id);
-        const writable = isWritableAccount(account);
+        const writable = isWritableAccount(account) && !isReadOnlyCalendarId(ev.calendar_id);
         const moveGroups = writable ? writableCalendarTargets(accounts, ev.calendar_id) : [];
         const moveCount = moveGroups.reduce((n, g) => n + g.calendars.length, 0);
+        const requestDelete = (scope: RecurrenceScope) => {
+          if (eventMenuHasInvitees) setEventDeleteConfirm(scope);
+          else deleteEventNow(ev, scope);
+        };
         const left = fixedCssPx(Math.min(eventMenu.x, window.innerWidth - 210));
         const menuReserve = eventDeleteConfirm
           ? (eventMenuCancelNotifies && !series ? 190 : 130)
@@ -1777,15 +1782,15 @@ export default function CalendarPane({
                   </div>
                 ) : series ? (
                   <>
-                    <EventMenuItem onClick={() => setEventDeleteConfirm("THIS")}>
+                    <EventMenuItem onClick={() => requestDelete("THIS")}>
                       <span style={{ color: "var(--signal)" }}>Delete this event</span>
                     </EventMenuItem>
-                    <EventMenuItem onClick={() => setEventDeleteConfirm("ALL")}>
+                    <EventMenuItem onClick={() => requestDelete("ALL")}>
                       <span style={{ color: "var(--signal)" }}>Delete all events in series</span>
                     </EventMenuItem>
                   </>
                 ) : (
-                  <EventMenuItem onClick={() => setEventDeleteConfirm("THIS")}>
+                  <EventMenuItem onClick={() => requestDelete("THIS")}>
                     <span style={{ color: "var(--signal)" }}>Delete event</span>
                   </EventMenuItem>
                 )}

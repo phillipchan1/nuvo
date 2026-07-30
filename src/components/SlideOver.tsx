@@ -1586,7 +1586,18 @@ export function EventPopover({
               !confirmDelete ? (
                 <>
                   <div className="min-w-0 flex-1" />
-                  <Btn kind="signal" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+                  <Btn
+                    kind="signal"
+                    onClick={() => {
+                      if (recurring || cancelNotifies) setConfirmDelete(true);
+                      else {
+                        eventMutations.deleteEvent({ id: event.id, scope: "THIS" });
+                        onClose();
+                      }
+                    }}
+                  >
+                    Delete
+                  </Btn>
                 </>
               ) : recurring ? (
                 <>
