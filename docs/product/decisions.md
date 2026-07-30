@@ -601,7 +601,9 @@ allows an unbound priority, but every built week surface — the Priorities edit
 slate, the week's plan card — renders the derived slate, so an unbound one is invisible in
 practice. The agent now says so instead of writing one silently. Where that lands for good is
 [`priorities-and-projects.md`](../priorities-and-projects.md), flagged there, not decided
-here.* **(b)** The desktop had a
+here.* **→ Decided 2026-07-30 in D-060: it narrows. A priority is a project.** The Week's
+Plan floor — the last surface still reading `big_rocks` as a list — now derives from
+`weekPushes` like everything else, and the free-text priority box is gone. **(b)** The desktop had a
 weekly ritual and the phone had none, so the phone's only route into the week was the chat.
 `src/components/mobile/MobilePlanWeek.tsx` runs the same act in three thumb-sized steps —
 **Slate → Pull → Shape** — entered from a card at the top of the Week segment.
@@ -984,6 +986,12 @@ nothing moves on its own.
 
 → The report under the grid no longer just names the problem: when project work
 is in "No open time left" it points at the step that can resolve it.
+
+→ **Extended 2026-07-30 (D-060): the remedies are no longer Sunday-only.** They sit on each
+row of the Week's Plan mid-week too, where a week actually stops being true, sharing one
+`RemedyPanel` so the wording can't drift. **W3 re-scored ✅** in the ledger, which this entry
+claimed but never carried through.
+
 *Status: standing — typechecked, 29 tests green (4 new for the span math, which is
 verified in isolation rather than by mutating a real account's project dates),
 built, and driven in a real account: "Only 1 of 5 pieces fit this week" with both
@@ -1427,6 +1435,167 @@ cosmetic, and P11 cuts against minting a word users don't perceive a need for.
 
 ---
 
+**D-059 · 2026-07-30 · Orientation forks instead of choosing: "Show me around" or "Walk me
+through it." A coach-mark tour over a cold account was tried on paper and rejected.**
+
+**The problem.** Nuvo's concepts are the hard part of Nuvo, and the tour taught them with
+rebuilt art — honest, but it leaves the reader one translation short of the actual screen.
+Real stranger feedback (2026-07-29) was that the concepts read as confusing.
+
+**Why the obvious fix doesn't work, and this is the load-bearing part.** Replacing the art
+with coach marks on the live app **fails on a cold account.** `AppShell` gates the shell on
+`domains.length === 0`, so `FirstRun` runs first: orientation opens with **1–5 domains the
+user just named and nothing else.** Four of the five ladder steps would spotlight empty
+surfaces. An orb on an empty Inbox teaches *less* than a drawing of a full one — Principle 7
+("useful on day one, with an empty backlog") straining at exactly the moment it matters
+most. Logged as **N-13** so it stops coming back.
+
+**So it forks.** The welcome step asks the one question it's actually qualified to ask —
+*how do you want to learn this?* — and offers two doors. **Show me around** is the existing
+8-step visual tour, untouched. **Walk me through it** docks a panel beside a fully live app,
+names one act per step, lights the real element, and ticks from real data. Phil's framing:
+*"power users like me want to just be shown, but I know my wife would want a thorough
+walkthrough."* Two audiences, one question, no guessing.
+
+**The live path teaches by making the thing exist** — which is what resolves the cold-start
+problem without touching **D-026** (signup still seeds nothing; every row is created by the
+user, in their words). Its five acts are deliberately the five `GettingStarted` milestones,
+in order, read through the *same* derivations — the walkthrough **is** that tracker,
+performed live — so finishing it retires the tracker and clears the floors' empty states.
+
+→ **Three rules that keep it honest.** The Initiative step **stays a drawing** and says
+*"you won't need this today"* — an initiative is several projects and a day-one account has
+one, so staging a fake would be the dishonest version. A step whose whole teach is
+*arriving* (the domain wall) gets **navigation, no orb** — an orb around a whole wall is a
+rectangle with its edges off-screen, which reads as no spotlight at all; same reason the
+Nuvo step lights the **✦ badge**, not the full-height agent rail. And auto-advance fires
+**only on a real not-done → done transition**, so a milestone already satisfied shows its
+tick and waits instead of flying past.
+
+→ **Nothing gates.** Next is always live, Skip is on every step, Esc leaves, and Back from
+the first slide of either path reopens the fork. A user who hates walkthroughs is one key
+from an empty app they can drive.
+
+→ **Consequence.** Closes **O1** and gives Nuvo its first real answer to **O6** (the
+five-minute win). Partly answers **Q-10**: the picker and the tour compose deliberately now
+— *collect what you carry → choose how you learn → learn.* Spec:
+[`orientation.md`](../orientation.md). `ORIENTATION_VERSION` 3 → 4.
+
+→ **Rejected:** the straight swap to a full coach-mark tour (**N-13**); reusing Marquee's
+session to drive the tour — it's a single held spotlight that ends the moment you
+self-navigate, the opposite of what a multi-step walkthrough needs (the orb CSS and the
+wait-for-target idea *are* reused).
+
+---
+
+**D-060 · 2026-07-30 · The Week's Plan shows the week's *projects*, at depth — and D-004
+narrows: a priority IS a project.** *(Closes the open thread D-031 named and
+[`priorities-and-projects.md`](../priorities-and-projects.md) has carried as a status note
+since 2026-07-26.)*
+
+**The defect, which was structural, not cosmetic.** The full-screen Week's Plan built its
+priority list from `vertical.bigRocks` — the `sprints.big_rocks` jsonb — while every other
+week surface (the rail crown, Sunday, the phone's Plan the week, the agent's `weekSlate`)
+derives the slate from each project's On Deck span via `weekPushes`. Since D-031 the jsonb
+holds **only the per-week verdict**, so the floor was blind to the week's actual projects:
+it printed *"The week is open — nothing named yet"* over a week holding four, and the only
+way to put anything on it was a free-text box that minted project-less rocks nothing else
+could render. The floor was the last surface reading `big_rocks` as a list.
+
+**So D-004 narrows in practice.** A priority is a project you brought into the week.
+Bringing it in / taking it off IS the week's plan. **The cost, stated rather than buried:**
+a "pure intention" priority — one with no project behind it — is no longer expressible on
+any surface. The data model still permits the row; nothing renders it. The crystallization
+line of D-004 survives only at its right-hand end.
+
+**What the surface became.** One question at two points on the arc, which is why forming and
+sealed can share it without straining P8: *forming* asks **"is the week I committed to still
+true?"** and *sealed* asks **"did anything move?"** The rail crown already answers "what am I
+on this week?" in a glance, so the floor earns its full screen by going deeper — each project
+with its outcome line, its open work, and **the honest arithmetic: how much of what's left
+actually has a time this week, and how much is loose.** A project with 4h remaining and
+nothing on the grid is not "in progress"; it's a promise the week hasn't made room for.
+(Work parked inside a *slot* counts as placed — slot children carry no `start_time` of their
+own, so without threading slots into `composeWeek` an hour sitting on Tuesday morning would
+have read as loose. That's the difference between a number and a true number.)
+
+→ **Extends D-039 to mid-week.** Its two remedies were offered on the Projects step *while
+you're still choosing*; nothing offered them on a Wednesday, which is exactly when a week
+stops being true. Both now sit on the row itself (plus *Take it off this week*), via the same
+kernel patches, through a shared `RemedyPanel` — one copy of the wording, and its acts are
+now always visible and ≥44px, because the Sunday original was hover-revealed and this panel
+renders inside the phone's Week's Plan sheet (P13).
+
+→ **Three latent bugs surfaced and fixed with it.** (a) *Carry to next week* appended a rock
+to next week's `big_rocks` — a week whose slate is derived from spans — so the toast said
+"Carried…" and nothing happened; it's now `pushToNextWeekPatch`. (b) The ✓ wrote `done_at`
+directly, which reads as "complete" while finalizing nothing; it now opens
+`ProjectShipAssess` like every other ship path. (c) The Review **sealed on first open** — so
+opening the plan on Monday made Monday's slate that week's permanent Review. A live week now
+re-snapshots on every open; a past week is sealed once and never rewritten. *(Already-sealed
+weeks keep their old snapshot — history isn't retroactively corrected.)*
+
+→ **Cut:** both free-text capture boxes (this week's priorities, next week — the second wrote
+where Sunday never reads), the standalone **Highlights** list (its receipts already expand
+under each domain in the weave; it was the living relative of the throughput count
+`weekly-review.md` cut years-equivalent ago), and drag-to-reorder (it persisted a `big_rocks`
+array order the rail doesn't honor — kept, it would have snapped back).
+
+*Status: standing — typecheck + build green, 96 tests (12 new for the placement math,
+verified in isolation rather than by mutating a real account). Driven in the running app at
+1440×900 and 375px: the floor's list, the rail crown and the On Deck board show the same four
+projects; the ship ✓ opens the assessment and cancels clean; the sealed week is read-only
+with the full weave. Not driven: pressing a span remedy on live data — the acts are the same
+kernel patches D-039 already covers with tests, and widening a real project's dates to prove
+it isn't worth the mutation.*
+
+---
+
+**D-061 · 2026-07-30 · The conscience note speaks while the week can still change, and goes
+quiet once it's sealed.** *(Closes open decision #2 in
+[`weekly-review.md`](../weekly-review.md) — the grace-vs-audit dial.)*
+
+Resolved on the **forward-folding rule**, not on tone. Mid-week a quiet domain is
+*actionable*, so naming it hands something forward — which is the entire justification for
+looking at it. Once the week is sealed nothing can be done, so a sentence there is pure
+audit and the faint ember carries it alone (P4 — never present undone things as debt; and
+never shame a quiet domain, since sometimes weighting elsewhere was right).
+
+So the hours section forks: **forming** → one sentence in the opportunity register, paired
+with the open hours so it reads as room; the full weave sits one tap away behind a
+disclosure. **Sealed** → the weave, expanded, receipts and all, with no sentence added. The
+grace dial made structural.
+
+Honesty guards, because this must be true in a stranger's account on their first Tuesday
+(P7/P16): if **no** domain has hours yet, say *"Nothing has landed against a domain yet this
+week"* and name no one; name at most **two** quiet domains, and past that say *"most of your
+domains are quiet so far — X has the hours."* Naming five quiet domains to a new account is
+the app inventing a failure.
+
+*Status: standing — driven in the running app.*
+
+---
+
+**D-062 · 2026-07-30 · No forward-fold write ships without its reader.**
+
+The forming conscience read wants a *"flag it for next week"* button and **doesn't get one**,
+because there is nowhere honest to write it — and this repo already has the receipt.
+`week_reviews.note_to_monday` has been written by the Find since migration 33 and is **read
+by nothing**; `useWeekReview.ts` says so in a comment. A write with no reader is worse than
+no button: the user believes something will happen next Sunday, and it won't.
+
+**The rule:** a control whose only job is to carry something forward ships with the surface
+that picks it up, in the same change, or it doesn't ship. If we want the quiet-domain flag,
+it arrives as both halves at once — a column *and* a reader in Sunday's opening beat.
+
+→ Leaves `note_to_monday` itself as an open thread (§3), not fixed here: deciding where
+Monday's reader lives is a surface decision, not a wiring task.
+
+*Status: standing — Principle 6, and the general form of the bug D-060 fixed three times
+over.*
+
+---
+
 ## 2 · Things we decided **not** to do
 
 | # | The idea | Why not | Would change if… |
@@ -1442,6 +1611,7 @@ cosmetic, and P11 cuts against minting a word users don't perceive a need for.
 | **N-09** | Extracting `packages/design` fully now | Stub is enough while there are two consumers | A third consumer appears |
 | **N-10** | Folding marketing into the SPA | D-018 | Never |
 | **N-11** | Rebuilding the UI wholesale on Untitled UI React | Tried for real — a full overnight rebuild on branch `untitled-ui-rebuild` (2026-07-28: React 19, UUI tokens bridged under every surface, one RecordCard, focus-trapped dialogs; all gates green). Phil's feel test rejected the look, and a feel test has exactly one judge. Branch destroyed same day (tip `832ae43`, unreferenced). Transferable learnings noted before deletion: the React 19 upgrade is ~3 type fixes; workbox precaches nothing over 2 MiB; react-aria adds ~200KB to the bundle | A concrete new reason beyond cohesion — e.g. hand-rolled component debt starts blocking features — and even then, propose per-primitive adoption, not a wholesale reskin |
+| **N-13** | Replacing the orientation's rebuilt art with coach marks on the live app | A cold account has nothing to point at. `FirstRun` gates the shell on zero domains, so orientation opens with the domains they just named and **nothing else** — four of five ladder steps would spotlight empty surfaces, and an orb on an empty Inbox teaches less than a drawing of a full one (P7). D-059 forks instead, and the live door teaches by *making the thing exist* | Never as a straight swap. The live door already covers the real want; if it needs more reach, extend it — don't point at emptiness |
 | **N-12** | Pasting the video-call link into the event description | It's the *unstructured* copy of a structured fact (D-056): invisible to every client's Join button, doesn't move when the meeting does, outlives a removed conference, and can't be told apart from a link a human typed. `conferenceData` is the field they all already read | A provider Nuvo writes to has no conference field at all — and even then, say plainly that the link is pasted |
 
 ---
@@ -1455,5 +1625,6 @@ cosmetic, and P11 cuts against minting a word users don't perceive a need for.
 | **Q-03** | Does non-calendar work become visible via activity sources beyond GitHub? | W8 ("where did my time go") is ◐ while shipped-but-unblocked work is invisible | The GitHub instance proving the pattern |
 | **Q-04** | Should `TendingFlow` be retired now the Refine run has proven out? | Two grooming paths is a Principle 11 violation waiting to happen | Refine run confidence on real data |
 | **Q-05** | What is the transitional CTA on the marketing site? | Currently direct CTA only — the biggest funnel gap (brandscript §5) | Picking one and writing it |
-| **Q-10** | Two first-run surfaces now exist — the **Orientation** tour (8 steps, teaches the app) and the **domain picker** (collects what you carry). Do they compose, merge, or does one go? | Principle 8 (one surface, one question) and Principle 11. They're currently sequenced picker → tour, which is defensible — *collect, then teach* — but nobody has watched a stranger go through both back to back | Driving the pair in a fresh account |
+| **Q-10** | ~~Do the two first-run surfaces compose?~~ **Mostly answered by D-059** — the sequence is now deliberate and each surface asks one question: the picker collects *what you carry*, the fork asks *how you want to learn*, the path teaches. Still open: nobody has watched a stranger take the pair back to back, and the live door's auto-advance transition is unverified (every milestone is pre-satisfied in the builder's account) | Principle 8, and whether the fork reads as a choice or as a wall | One genuinely fresh account, watched |
 | **Q-07** | Where do timezone and working hours come from for a new account? | Rollover is LA-anchored and hours default to 480/990. Both are silent wrongness for anyone else — and capacity math depends on them | Reading how the rollover cron and `user_settings` actually resolve per user |
+| **Q-11** | Where does Monday's reader for `note_to_monday` live? | The Find has written this column since migration 33 and **nothing reads it** — the surface that did went with the Today rung. It's a letter from Friday-you to Monday-you that never arrives, and it's the precedent D-062 was written against. Either give it a reader or cut the field; leaving it is the one thing that shouldn't continue | Deciding which surface Monday actually opens on |

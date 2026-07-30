@@ -183,9 +183,18 @@ function task(partial: Partial<VTask> & Pick<VTask, "id" | "title">): VTask {
     priorities: [
       {
         rock: { id: "r1", title: "Ship playbook", win: "", initiative_id: null, project_id: "p1", done_at: null, roll_count: 3 },
+        projectId: "p1",
+        name: "Ship playbook",
+        outcome: "",
+        domainColor: "#f59e0b",
+        ready: true,
+        gapLabel: null,
         verdict: "carried" as const,
+        shipped: false,
         done: 2,
         total: 3,
+        placedMins: 0,
+        looseMins: 0,
         label: "Playbook",
         nextBlock: null,
       },

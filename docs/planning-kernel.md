@@ -71,11 +71,12 @@ zero-import module beside it (e.g. `_shared/conferencing.ts`) and is cited inlin
 | Act | Kernel | UI | Agent |
 |---|---|---|---|
 | Which week am I planning | `planningWeekStart` | `planningWeekStartISO` (`lib/dates.ts`) | `context.ts`, `tools.ts` |
-| What's on this week (scoreboard) | `isOnSlate` / `deriveSlateIds` | `weekPushes` → Priorities editor, phone slate, week card | `context.weekSlate` |
+| What's on this week (scoreboard) | `isOnSlate` / `deriveSlateIds` | `weekPushes` → rail crown, phone slate, week card, **`composeWeek` / the Week's Plan floor** (D-060 — the last surface still reading `big_rocks` as a list) | `context.weekSlate` |
 | What can I work on this week | `isOnDeckThisWeek` | `projectsOnDeck` → `suggestPull` | `context.weekSlate[].openTasks` |
 | What has no week yet | `needsASprint` *(code drift, D-007)* | deck pool "Needs a week" | `context.needsASprint` |
-| Bring a project into the week | `bringIntoWeekPatch` | `BigRocks.bringIn`, `MobilePlanWeek.bringIn`, deck drop (`sprintSpanFor`) | `create_priority` |
-| Take a project off the week | `takeOffWeekPatch` | `BigRocks.takeOff`, `MobilePlanWeek.takeOff` | `delete_priority` |
+| Bring a project into the week | `bringIntoWeekPatch` | `SundayRitual.bringIn`, `MobilePlanWeek.bringIn`, deck drop (`sprintSpanFor`) | `create_priority` |
+| Take a project off the week | `takeOffWeekPatch` | `MobilePlanWeek.takeOff`, `SundayRitual`, **Week's Plan row** | `delete_priority` |
+| It doesn't fit the week | `spanAnotherWeekPatch` / `pushToNextWeekPatch` | **`RemedyPanel`** — one shell shared by the Sunday Projects step and each Week's Plan row (D-039, extended mid-week by D-060) | — |
 | Where a placement lands | `weekSpanFor` | `sprintSpanFor` (deck drag, sprint picker) | `create_priority` |
 | Does this meeting get a video link | `shouldAddMeet` (`_shared/conferencing.ts`) | `DraftComposer` Meet toggle · Settings → Calendars | `create_calendar_event` (`add_meet`) |
 

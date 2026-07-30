@@ -282,7 +282,7 @@ export default function DomainFloor({
       </FloorHeader>
 
       {totalWeek > 0 && <BalanceStrip domains={domains} total={totalWeek} />}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-teach="domain-wall">
         {domains.map((d) => (
           <Niche key={d.id} domain={d} focused={d.id === focus.domainId} onEnter={() => enter(d.id)} />
         ))}

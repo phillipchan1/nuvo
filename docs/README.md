@@ -53,6 +53,7 @@ Statuses are owned by each doc's own header.
 **Surfaces & craft**
 - [`design-language.md`](./design-language.md) — **Warm Paper.** Read before building any surface.
 - [`marquee.md`](./marquee.md) — Nuvo shows an answer as well as telling it.
+- [`orientation.md`](./orientation.md) — first run forks: be shown, or be walked through.
 - [`APPLE_WATCH.md`](./APPLE_WATCH.md) — wrist capture via Shortcuts → the `agent` endpoint.
 - [`../KEYBOARD_SHORTCUTS.md`](../KEYBOARD_SHORTCUTS.md) — the keyboard model.
 

@@ -12,6 +12,7 @@ import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { planningWeekStartISO } from "../lib/dates";
+import { upsertPushVerdict } from "../lib/priorities";
 import {
   DEFAULT_DURATION_MINUTES,
   DEFAULT_PROJECT_DURATION_MINUTES,
@@ -1163,26 +1164,16 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       // rock behind it yet. The rock is ONLY the verdict record — upsert it the
       // moment a verdict is actually cast, keyed by project.
       togglePushLanded: (projectId) => {
-        const existing = data.bigRocks.find((r) => r.project_id === projectId);
-        if (existing) {
-          void patchSprint({
-            big_rocks: data.bigRocks.map((r) =>
-              r === existing ? { ...r, done_at: r.done_at ? null : new Date().toISOString() } : r,
-            ),
-          });
-          return;
-        }
         const proj = data.projects.find((p) => p.id === projectId);
-        const rock: BigRock = {
-          id: crypto.randomUUID(),
-          title: proj?.name ?? "",
-          win: proj?.outcome ?? "",
-          initiative_id: null,
-          project_id: projectId,
-          done_at: new Date().toISOString(),
-          roll_count: 0,
-        };
-        void patchSprint({ big_rocks: [...data.bigRocks, rock] });
+        const landed = !data.bigRocks.find((r) => r.project_id === projectId)?.done_at;
+        void patchSprint({
+          big_rocks: upsertPushVerdict(
+            data.bigRocks,
+            { id: projectId, name: proj?.name ?? "", outcome: proj?.outcome ?? "" },
+            landed,
+            new Date().toISOString(),
+          ),
+        });
       },
       markSprintReviewed: () => void patchSprint({ reviewed_at: new Date().toISOString() }),
 

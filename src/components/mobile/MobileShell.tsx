@@ -354,6 +354,7 @@ export default function MobileShell() {
             <button
               onClick={() => openChat()}
               aria-label="Ask Nuvo"
+              data-teach="nuvo"
               className="elev-2 fast absolute right-[calc(1rem_+_3.5rem_+_0.75rem)] bottom-[calc(100%_+_0.75rem_+_4px)] flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface text-[22px] leading-none text-accent active:scale-95"
             >
               ✦
@@ -362,6 +363,7 @@ export default function MobileShell() {
             <button
               onClick={() => setQuickOpen(true)}
               aria-label="Quick task"
+              data-teach="capture"
               className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95"
             >
               ＋
@@ -446,7 +448,7 @@ export default function MobileShell() {
 
       {/* First-run welcome — the Calendars CTA opens Settings (tap through to
           Connections). */}
-      <Orientation onAction={() => setSettingsOpen(true)} />
+      <Orientation onAction={() => setSettingsOpen(true)} mobile />
     </div>
   );
 }
@@ -522,6 +524,7 @@ function NavTab({
   return (
     <button
       onClick={onClick}
+      data-teach={`mtab-${tab.id}`}
       className={`tap fast relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 ${
         active ? "text-accent" : "text-muted"
       }`}

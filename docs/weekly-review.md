@@ -4,6 +4,17 @@ Status: **shipped core + The Find** (2026-07-10). Week's Plan / Review lives on
 Schedule; evidence receipts, one scored Find, source-level correction, sealed
 `week_reviews` snapshots, optional AI narration, Keep, and Note to Monday are in.
 
+**Updated 2026-07-30 (D-060/61/62) — the forming face was rebuilt.** It renders **the week's
+projects** derived from their On Deck spans (it was reading `sprints.big_rocks` as a list,
+which since D-031 holds only the verdict — so it was blind to the week's real projects), each
+row carrying its outcome, its open work, the placed-vs-loose split, and D-039's span remedies
+inline. **Cut:** both free-text capture boxes and the standalone Highlights list (its
+receipts expand under each domain in the weave instead). The **hours weave is now
+forming-collapsed / sealed-expanded** — open decision #2 below is closed. `note_to_monday`
+is still written and still read by nothing; that's now a logged open thread (D-062), not a
+silent gap. The 70/30 and forward-folding doctrines below are what the cuts were made
+against and are unchanged.
+
 ## What it is
 
 A **weekly looking-back ritual** — the mirror of Sunday. Sunday *opens* the week (sets
@@ -148,13 +159,19 @@ Three guarantees:
 
 ## Build on what exists (don't rebuild)
 
-- **Priorities = `big_rocks`** (jsonb on `sprints`; element `{id,title,win,initiative_id,
-  done_at,roll_count,project_id}`; `big_rock_id` on tasks). The Review's Priority verdicts
-  read `priorityWork()` tracking (done/total) that already exists.
+- ⚠️ **Stale since D-031, corrected 2026-07-30 (D-060).** *"Priorities = `big_rocks`"* is no
+  longer how a week is read. The slate is **derived from each project's On Deck span**
+  (`weekPushes`); `big_rocks` (jsonb on `sprints`) survives **only** as the per-week verdict,
+  looked up by `project_id`. `priorityWork()` still supplies the done/total tracking, and
+  `weekPlacement()` beside it supplies the placed-vs-loose split. A **sealed** week is the
+  exception and reads its stored rocks verbatim — that snapshot is the historical record and
+  is never re-derived.
 - **`roll_count`** already exists on each priority and is *never incremented* — the Review
   is the moment that increments it (carry-forward, the long-deferred TODO).
-- **The Gain / `Standback`** already holds `BigRocksReckoning` — the seed of the reckoning
-  beat; promote it into the Review ritual.
+- ~~**The Gain / `Standback`** already holds `BigRocksReckoning` — promote it into the
+  Review ritual.~~ **Never happened, and it can't now:** the Review grew its own reckoning
+  (`WeekProjectRow`), and as of 2026-07-30 `Standback.tsx` / `bigRocks.tsx` / `lib/standback.ts`
+  have no importers at all — the whole chain is dead and queued for deletion.
 - **`composeBrief`** (`lib/brief.ts`) is the deterministic-first-person-from-real-numbers
   pattern to mirror for the weekly letter (`composeWeekStory`).
 - **`supabase/functions/agent/priorities.ts`** (the free-text→structured parser, gpt-4.1-
@@ -280,11 +297,15 @@ doctrine in [[nuvo-funnel-thesis]] (opportunity/Gain, never debt/shame).
    rings = domains (sweep ∝ hours); satellites = priorities (filled = landed, **half-moon =
    carried**, **open ring = open**); faint dots = ambient done-work. Phil saw it rendered and
    liked it. Keep the half-moon/open-ring state vocabulary regardless.
-2. **Conscience note: picture or prose or both?** Right now a quiet domain shows as both
-   the faint ember *and* a sentence. The ember alone is gentler (you notice without being
-   told); the sentence is clearer but more audit-like. This is the **grace-vs-audit dial** —
-   honor the gentle-steward doctrine ("the app reports, you decide"; opportunity not debt;
-   never shame a quiet domain — sometimes weighting elsewhere was right).
+2. ~~Conscience note: picture or prose or both?~~ — **DECIDED (2026-07-30, D-061): prose
+   while it's forming, picture once it's sealed.** Resolved on the forward-folding rule
+   rather than on tone — mid-week a quiet domain is *actionable*, so naming it hands
+   something forward; once the week is sealed nothing can be done, so a sentence there is
+   pure audit and the ember carries it alone. The forming face therefore leads with one
+   sentence and puts the weave behind a disclosure; the sealed face shows the weave
+   expanded and says nothing. Guards for a stranger's account: silent when no domain has
+   hours yet, at most two domains named. Still honors the gentle-steward doctrine ("the app
+   reports, you decide"; opportunity not debt; never shame a quiet domain).
 3. ~~Where Reviews live navigationally~~ — **DECIDED:** the Review is a prompted moment AND
    the sealed state of the Week's Plan, which lives on the **Schedule** rung (the week's
    natural horizon). Entry = a living-emblem "This week" button in the Schedule top bar.

@@ -394,26 +394,29 @@ export default function LeftRail({
       </div>
 
       {/* List — opt out of the titlebar drag region so row drags aren't window drags */}
-      <div className="min-h-0 flex-1 overflow-y-auto" data-tauri-drag-region="false">
-        {/* Shown when dragging a calendar task to the rail while on week/today tab */}
-        <div className="rail-drop-banner" aria-hidden>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
-            <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
-          </svg>
-          Release to return to inbox
-        </div>
-
-        {tab === "inbox" && (
-          <>
-            {/* Shown when dragging a calendar task to the rail while on inbox tab */}
-            <div className="rail-inbox-landing" aria-hidden>
+      <div className="rail-list relative min-h-0 flex-1 overflow-y-auto" data-tauri-drag-region="false" data-teach="day-list">
+        {/* Inbox drop targets float over the list — never push rows down mid-drag. */}
+        <div className="rail-drop-chrome pointer-events-none" aria-hidden>
+          <div className="rail-drop-banner">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+              <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
+            </svg>
+            Release to return to inbox
+          </div>
+          {tab === "inbox" && (
+            <div className="rail-inbox-landing">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
                 <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
               </svg>
               Drop to unschedule
             </div>
+          )}
+        </div>
+
+        {tab === "inbox" && (
+          <>
             {inbox.map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
@@ -483,7 +486,7 @@ export default function LeftRail({
           hierarchy: it interrupts every mode, so it isn't a titled section (and
           mirrors the mobile ＋ FAB). Stays a real <input> so iOS dictation works
           (low-data-entry). Press C to focus. */}
-      <form onSubmit={(e) => void submitCapture(e)} className="shrink-0 border-t border-line p-2.5" data-tauri-drag-region="false">
+      <form onSubmit={(e) => void submitCapture(e)} className="shrink-0 border-t border-line p-2.5" data-tauri-drag-region="false" data-teach="capture">
         <div className="relative">
           {/* A quill — capture is organic free text, the front door, not a form. */}
           <svg

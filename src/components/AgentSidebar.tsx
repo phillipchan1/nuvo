@@ -117,8 +117,12 @@ export default function AgentSidebar({
           aria-label={`Open ${ASSISTANT_NAME}`}
           className="agent-rail-toggle fast group flex h-full w-full flex-col items-center gap-2.5 py-4 text-muted hover:text-accent"
         >
+          {/* The walkthrough lights the badge, not the rail: the rail is a
+              full-height sliver, and an orb around it is a bar with its ends
+              off-screen. This is the thing you actually click. */}
           <span
             aria-hidden
+            data-teach="nuvo"
             className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-[18px] leading-none text-accent transition-colors group-hover:bg-accent/15"
           >
             ✦

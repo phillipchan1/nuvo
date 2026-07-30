@@ -8,6 +8,14 @@
 > line below) is real in the data model but **invisible on every planning surface**. The agent
 > now says so rather than writing one silently. Whether the crystallization line gets a surface
 > or D-004 narrows to "a priority is a project" is **open** — decide it deliberately.
+>
+> **Closed · 2026-07-30 (D-060): D-004 narrows. A priority IS a project.** The last holdout
+> was the full-screen Week's Plan, which still read `big_rocks` as a list and offered a
+> free-text box that minted project-less rocks; it now derives from `weekPushes` like every
+> other surface, and the box is gone. **So the crystallization line below survives only at its
+> right-hand end** — the data model still permits an unbound priority, and nothing renders
+> one. Read the rest of this spec as the *history* of how we got to "bringing a project into
+> the week IS naming a priority", not as a description of a surface that exists.
 
 > The week's **Priorities** (code: `big_rocks`) and the vertical's **Projects** are not two
 > competing lists. They are the *same work at two time-horizons*, joined by one idea:

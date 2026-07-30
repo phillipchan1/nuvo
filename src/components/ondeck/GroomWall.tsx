@@ -163,6 +163,8 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
   orderRef.current = order;
   const draggingRef = useRef(false);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [reorderLineTop, setReorderLineTop] = useState<number | null>(null);
+  const targetIndexRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const idsKey = stepIds.join(",");
   useEffect(() => {
@@ -177,21 +179,26 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
     draggingRef.current = true;
     setDragId(id);
     document.body.classList.add("wb-noselect");
-    const move = (ev: PointerEvent) => {
-      const rows = listRef.current ? Array.from(listRef.current.querySelectorAll<HTMLElement>("[data-step-id]")) : [];
-      let target = rows.length - 1;
-      for (let i = 0; i < rows.length; i++) {
-        const r = rows[i].getBoundingClientRect();
-        if (ev.clientY < r.top + r.height / 2) { target = i; break; }
+    const insertLineTop = (clientY: number) => {
+      const list = listRef.current;
+      if (!list) return null;
+      const rows = [...list.querySelectorAll<HTMLElement>("[data-step-id]")].filter(
+        (r) => r.getAttribute("data-step-id") !== id,
+      );
+      let k = 0;
+      for (const r of rows) {
+        const b = r.getBoundingClientRect();
+        if (clientY > b.top + b.height / 2) k++;
       }
-      setOrder((prev) => {
-        const cur = [...prev];
-        const from = cur.indexOf(id);
-        if (from < 0 || from === target) return prev;
-        cur.splice(from, 1);
-        cur.splice(Math.max(0, Math.min(target, cur.length)), 0, id);
-        return cur;
-      });
+      targetIndexRef.current = k;
+      const contTop = list.getBoundingClientRect().top;
+      if (!rows.length) return 0;
+      if (k < rows.length) return rows[k].getBoundingClientRect().top - contTop;
+      return rows[rows.length - 1].getBoundingClientRect().bottom - contTop;
+    };
+    setReorderLineTop(insertLineTop(e.clientY));
+    const move = (ev: PointerEvent) => {
+      setReorderLineTop(insertLineTop(ev.clientY));
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -199,7 +206,15 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
       document.body.classList.remove("wb-noselect");
       draggingRef.current = false;
       setDragId(null);
-      store.reorderTasks(orderRef.current);
+      setReorderLineTop(null);
+      const from = orderRef.current.indexOf(id);
+      const to = targetIndexRef.current;
+      if (from < 0 || from === to) return;
+      const next = [...orderRef.current];
+      next.splice(from, 1);
+      next.splice(Math.max(0, Math.min(to, next.length)), 0, id);
+      setOrder(next);
+      store.reorderTasks(next);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -342,7 +357,10 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
       {/* what already exists — editable in place: drag the grip to reorder,
           retitle (⏎/blur), resize (tap the duration), delete (✕, with Undo). */}
       {existing.length > 0 && (
-        <div ref={listRef} className="max-h-[38vh] overflow-y-auto">
+        <div ref={listRef} className="relative max-h-[38vh] overflow-y-auto">
+          {reorderLineTop != null && (
+            <div className="reorder-insert-line" style={{ top: reorderLineTop }} aria-hidden />
+          )}
           {displaySteps.map((t) => (
             <div
               key={t.id}

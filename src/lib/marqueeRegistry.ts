@@ -110,14 +110,14 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     key: "week-plan",
     label: "Week's Plan",
     nav: { kind: "surface", surface: "week-plan", rung: "day" },
-    describe: "The Week's Plan surface (the week's game plan: priorities, hours, highlights). Point here when the user asks to see their week or their plan in general.",
+    describe: "The Week's Plan surface (the week's game plan: the week's projects and where the hours are going). Point here when the user asks to see their week or their plan in general.",
   },
   {
     key: "priorities",
     label: "Week's Plan",
     nav: { kind: "surface", surface: "week-plan", rung: "day" },
     spotlight: "priorities",
-    describe: "The week's named priorities (big rocks). Point here when the user asks about their priorities or what they're focused on this week.",
+    describe: "The week's projects — what's committed to this week, with how much of each one's remaining work has a time. Point here when the user asks about their priorities or what they're focused on this week.",
   },
   {
     key: "hours",
@@ -127,11 +127,14 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     describe: "Where the week's hours are going (capacity by domain). Point here when the user asks how their time/hours/capacity are spread this week.",
   },
   {
+    // The standalone Highlights section is gone — its receipts now expand under
+    // each domain in the weave. The KEY stays: "what did I get done this week"
+    // is the agent's learned vocabulary, and it shouldn't regress to a stall.
     key: "highlights",
     label: "Week's Plan",
     nav: { kind: "surface", surface: "week-plan", rung: "day" },
-    spotlight: "highlights",
-    describe: "The week's highlights — the done work that actually moved a domain. Point here when the user asks what they got done or what moved this week.",
+    spotlight: "hours",
+    describe: "Where the week's hours went, and the receipts behind them — the work that moved a domain expands under each domain. Point here when the user asks what they got done or what moved this week.",
   },
   {
     key: "find",
@@ -140,13 +143,9 @@ export const MARQUEE_TARGETS: MarqueeTargetDef[] = [
     spotlight: "find",
     describe: "The Find — one evidence-backed discovery about the week (hidden bet, comeback, plan/reality mismatch, etc.). Point here when the user asks what Nuvo noticed or what stood out.",
   },
-  {
-    key: "next-week",
-    label: "Week's Plan",
-    nav: { kind: "surface", surface: "week-plan", rung: "day" },
-    spotlight: "next-week",
-    describe: "Next week's capture column on the Week's Plan. Point here when the user asks about, or wants to add to, next week.",
-  },
+  // (No `next-week` entry: that column is gone. Next week is composed from the
+  //  project spans in Plan the week — pointing here would promise a destination
+  //  that doesn't answer the question.)
 
   // ── Rail tabs + calendar views ───────────────────────────────────────────
   {

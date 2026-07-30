@@ -51,19 +51,19 @@ function buildScenes(report: WeekReport, state: "forming" | "sealed", weekLabel:
     caption:
       total > 0 ? (
         <>
-          <div className="section-label wk-in mb-3">Priorities</div>
+          <div className="section-label wk-in mb-3">The week's projects</div>
           <div className="masthead wk-in text-ink" style={{ fontSize: "4.5rem", lineHeight: 1, ...wk(0.1) }}>
             {landed} <span className="text-muted">of</span> {total}
           </div>
           <div className="wk-in mt-2 text-lead text-muted" style={wk(0.3)}>{sealed ? "landed" : "landed so far"}</div>
           <p className="wk-in mx-auto mt-5 max-w-sm text-meta text-muted" style={wk(0.6)}>
-            Each orbiting light is a priority — filled if it landed, a ring if it's still open.
+            Each orbiting light is a project on the week — filled if it landed, a ring if it's still open.
           </p>
         </>
       ) : (
         <>
-          <div className="section-label wk-in mb-3">Priorities</div>
-          <p className="serif wk-in text-lead text-ink" style={wk(0.1)}>Nothing named yet this week.</p>
+          <div className="section-label wk-in mb-3">The week's projects</div>
+          <p className="serif wk-in text-lead text-ink" style={wk(0.1)}>Nothing was on this week.</p>
         </>
       ),
   });
@@ -208,7 +208,9 @@ export default function WeekStory({ report, state, weekLabel, onClose, onSeeDeta
             <div className="wk-in pointer-events-auto mt-8 flex flex-col items-center gap-4" style={wk(0.9)}>
               {carry > 0 && (
                 <p className="serif max-w-md text-body leading-relaxed text-ink">
-                  {carry} to carry into next week — Sunday won't start cold.
+                  {/* A statement, not a promised act: carrying is a span write on
+                      the row now, not a button that seeds next week's rocks. */}
+                  {carry} still open — {carry === 1 ? "it'll" : "they'll"} be waiting on Monday.
                 </p>
               )}
               <button onClick={onSeeDetail} className="fast rounded-full bg-accent px-6 py-2.5 text-label font-medium text-white hover:opacity-90">

@@ -5,8 +5,8 @@ import { liveSuggestion } from "../lib/grooming";
 import { fmtDuration, fmtLateness, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
 import { PriorityDot } from "./ui";
 
-/** Row exit + checkbox bloom — mutation waits so the list doesn't yank the row early. */
-const COMPLETE_MS = 480;
+/** Row exit + checkbox bloom — keep in sync with `--d-task-complete` in index.css. */
+const COMPLETE_MS = 640;
 
 export interface TaskMeta {
   project?: string | null;

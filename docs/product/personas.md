@@ -165,12 +165,12 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | # | The question | Where Nuvo answers it | Honesty |
 |---|---|---|---|
 | W1 | Can I actually carry this week? | Commitment (demand ÷ capacity) + calibration | ✅ **the flagship answer** |
-| W2 | If I only get three real hours, where do they go? | Priorities + Sunday pull | ◐ *ranking is implicit* |
-| W3 | What should I drop, and what breaks if I do? | — | ○ *no consequence-of-cutting view* |
+| W2 | If I only get three real hours, where do they go? | Priorities + Sunday pull · **the Week's Plan's placed-vs-loose line** | ◐ *re-scored 2026-07-30 (D-060): each project now says how much of what's left has a time and how much is loose, which is the raw material for the answer — but nothing **ranks** them, so it stays ◐* |
+| W3 | What should I drop, and what breaks if I do? | Plan the week's span remedies · **the same acts on each Week's Plan row** | ✅ *re-scored 2026-07-30. D-039 (2026-07-27) claimed to close this and the table was never updated — a stale ○. D-060 also lifted the remedies out of Sunday, so the question is answerable mid-week, which is when it's actually asked.* |
 | W4 | Is it safe to say yes to this new thing? | Commitment ratio (indirectly) | ◐ *no "what would this cost me" simulation* |
-| W5 | Which domain am I starving? | Domain floor · invested/quarter | ◐ *visible if you go look; nothing surfaces it* |
+| W5 | Which domain am I starving? | Domain floor · invested/quarter · **the Week's Plan conscience read** | ◐ *re-scored 2026-07-30 (D-061): it is now **surfaced unasked** on a week that can still change, in plain language. Deliberately still ◐, not ✅ — the read names the quiet domain and hands nothing forward, because a "flag it for next week" button has no reader (D-062). It goes ✅ when the act exists with its reader.* |
 | W6 | Did anything move this week, or was I just busy? | **the Review** + evidence + the Find | ✅ |
-| W7 | What's carrying over, and is that a pattern? | Review → back to week · `roll_count` | ◐ *pattern detection only via the Find* |
+| W7 | What's carrying over, and is that a pattern? | Review → back to week · `roll_count` | ◐ *stays ◐. Carrying is at least **honest** now (2026-07-30, D-060): the old "Carry to next week" wrote a rock into a week whose slate is derived from spans, so it did nothing at all; it's a real span write. Pattern detection is still only the Find.* |
 | W8 | Where did my time actually go? | completed blocks · activity sources | ◐ *actuals from calendar; non-calendar work invisible (spec)* |
 
 ### Project / quarterly — *"is the important thing alive?"*
@@ -201,12 +201,12 @@ exactly why they're all unanswered — nobody in the building has ever needed an
 
 | # | The question | Where Nuvo answers it | Honesty |
 |---|---|---|---|
-| **O1** | What is this, and what do I do first? | — | ○ *no onboarding path; a fresh account lands in an empty system* |
+| **O1** | What is this, and what do I do first? | the **Orientation fork** — *Show me around* (visual tour) or *Walk me through it* (live, docked panel over the real app) | ✅ *re-scored 2026-07-30 (D-059). Driven in the dev app on both shells. "What do I do first" is now literally the first step, and the live door hands you the act instead of describing it.* |
 | **O2** | These aren't my domains — how do I make them mine? | **first-run picker** (`FirstRun.tsx`) — five kinds, named by you | ✅ *D-026. Unverified against a running app — see the note below.* |
 | **O3** | Do I have to connect a calendar before this is useful? | — | ○ *the whole capacity model degrades silently without one; nothing says so* |
 | **O4** | Who can see my calendar and my work? | — | ○ *no privacy surface. Single-player is a **selling point** we never state.* |
 | **O5** | What happens if I fall off for two weeks? | rollover · backlog stays undated | ◐ *the model handles it well; nothing reassures you it will* |
-| **O6** | Is this worth the setup before I trust it with my week? | — | ○ *no first-value moment defined. What's the 5-minute win?* |
+| **O6** | Is this worth the setup before I trust it with my week? | the walkthrough's live door — capture → block → project → ask Nuvo, each in the real app | ◐ *re-scored 2026-07-30 (D-059): a five-minute win now exists and ends with a non-empty account. Still ◐ because it's opt-in behind a door, and nobody has watched a stranger take it.* |
 
 > **Read this cluster as a block.** These ○s aren't separate features — they're one missing
 > thing (a cold start), and that's the difference between multi-tenant *architecture* and a

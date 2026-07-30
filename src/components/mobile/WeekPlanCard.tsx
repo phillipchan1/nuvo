@@ -50,8 +50,8 @@ export default function WeekPlanCard() {
                 ? "Your week left a pattern"
                 : "Your week is ready to receive"
               : total > 0
-                ? `${report.landedCount} of ${total} priorities landed`
-                : "Set what matters most"}
+                ? `${report.landedCount} of ${total} landed`
+                : "Nothing on this week yet"}
           </div>
         </div>
         {reviewReady && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--signal)" }} />}
@@ -119,7 +119,10 @@ function WeekPlanSheet({
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 96%, transparent)", backdropFilter: "blur(20px)" }}>
       <div className="px-4 pb-24 pt-3">
-        <WeekPlanBody report={report} state={state} viewedWeekISO={viewedWeekISO} header={header} />
+        {/* `tense` was never passed, so walking back to a sealed week still read
+            "Where the hours are going" over a week that had finished. No
+            `onOpenProject`: MobileShell doesn't mount the record overlay. */}
+        <WeekPlanBody report={report} state={state} tense={isCurrent ? "current" : "past"} viewedWeekISO={viewedWeekISO} header={header} />
       </div>
     </div>
   );

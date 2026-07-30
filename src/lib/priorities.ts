@@ -18,6 +18,10 @@ export interface RockWork {
   label: string | null; // the linked project/bet name
 }
 
+/** NOTE on `scheduledMins` below: it is NOT week-scoped — it sums every task in
+ *  `status === "scheduled"` wherever it sits in time. That's what its callers
+ *  want. For "does this work have a time *this week*", use `weekPlacement`. The
+ *  two look mergeable and are not. */
 export function priorityWork(data: VerticalData, rock: BigRock): RockWork {
   const init = initiativeById(data, rock.initiative_id);
   const proj = projectById(data, rock.project_id ?? null);
@@ -91,6 +95,86 @@ export function weekPushes(d: VerticalData, weekStartISO: string): WeekPush[] {
       // writes the verdict, so un-shipping simply reveals the verdict again.
       return { project, rock, done: Boolean(rock?.done_at) || shipped, shipped };
     });
+}
+
+/** A push rendered as a rock: the stored verdict record when one exists, else a
+ *  stand-in built from the live project. Every week surface needs this shape —
+ *  it was copied character-for-character into WeekPanel and the (now dead)
+ *  bigRocks editor before it lived here. */
+export function pushAsRock(push: WeekPush): BigRock {
+  return (
+    push.rock ?? {
+      id: `derived:${push.project.id}`,
+      title: push.project.name,
+      win: push.project.outcome ?? "",
+      initiative_id: null,
+      project_id: push.project.id,
+      done_at: null,
+      roll_count: 0,
+    }
+  );
+}
+
+/** Where a project's REMAINING work actually sits this week.
+ *
+ *  Placed = it has a time inside this week — either its own `start_time` block,
+ *  or a slot that starts this week (slot children carry `start_time: null`, so
+ *  they are invisible to `useScheduledTasks` and would otherwise read as loose).
+ *  Everything else is loose, INCLUDING work timed into another week: honest,
+ *  because it is not happening here. */
+export function weekPlacement(
+  work: RockWork,
+  weekBlockTaskIds: Set<string>,
+  weekSlotIds: Set<string>,
+): { placedMins: number; looseMins: number; openCount: number } {
+  let placedMins = 0;
+  let looseMins = 0;
+  let openCount = 0;
+  for (const t of work.tasks) {
+    if (t.status === "done") continue;
+    openCount++;
+    if (weekBlockTaskIds.has(t.id) || (t.slotId != null && weekSlotIds.has(t.slotId))) placedMins += t.durationMins;
+    else looseMins += t.durationMins;
+  }
+  return { placedMins, looseMins, openCount };
+}
+
+/** What a row on the week IS — shared by the rail crown and the Week's Plan so
+ *  the two can never disagree about the same project. */
+export type PushState = "shipped" | "landed" | "ready-to-ship" | "in-motion";
+
+export function pushState(p: { shipped: boolean; doneAt: string | null; done: number; total: number }): PushState {
+  if (p.shipped) return "shipped";
+  if (p.doneAt) return "landed";
+  if (p.total > 0 && p.done === p.total) return "ready-to-ship";
+  return "in-motion";
+}
+
+/** Cast or clear a week's verdict for a project — the ONE definition of "the
+ *  rock is the verdict record". Membership is derived from the span, so a push
+ *  can exist with no rock behind it; the rock is minted the moment a verdict is
+ *  actually cast, and clearing one that was never cast is a no-op. */
+export function upsertPushVerdict(
+  rocks: BigRock[],
+  project: { id: string; name: string; outcome: string },
+  landed: boolean,
+  atISO: string,
+): BigRock[] {
+  const existing = rocks.find((r) => r.project_id === project.id);
+  if (existing) return rocks.map((r) => (r === existing ? { ...r, done_at: landed ? atISO : null } : r));
+  if (!landed) return rocks;
+  return [
+    ...rocks,
+    {
+      id: crypto.randomUUID(),
+      title: project.name,
+      win: project.outcome,
+      initiative_id: null,
+      project_id: project.id,
+      done_at: atISO,
+      roll_count: 0,
+    },
+  ];
 }
 
 /** A priority's verdict for the Review / forming Plan. */

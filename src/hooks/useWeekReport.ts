@@ -11,6 +11,7 @@ import { supabase } from "../lib/supabase";
 import { useVertical } from "./useVertical";
 import { useExternalEvents } from "./useCalendar";
 import { useScheduledTasks } from "./useTasks";
+import { useSlots } from "./useSlots";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { useActivityUnits } from "./useActivity";
@@ -43,6 +44,9 @@ export function useWeekReport(weekStartISO: string, now: Date): WeekReport {
   const { settings } = useSettings();
   const { data: events = [] } = useExternalEvents(startISO, endISO);
   const { data: blocks = [] } = useScheduledTasks(startISO, endISO);
+  // Work parked inside a slot holds a time the blocks query can't see (slot
+  // children carry `start_time: null`) — without these it would read as loose.
+  const { data: slots = [] } = useSlots(startISO, endISO);
   const eventRouting = useEventRouting();
   const { data: activityUnits = [] } = useActivityUnits(startISO, endISO);
   const sealedRow = useWeekReviewRow(weekStartISO);
@@ -97,6 +101,7 @@ export function useWeekReport(weekStartISO: string, now: Date): WeekReport {
       vertical,
       events,
       blocks,
+      slots,
       workStartMin: settings?.work_start_minutes ?? WORK_START_DEFAULT,
       workEndMin: settings?.work_end_minutes ?? WORK_END_DEFAULT,
       hiddenCalendarIds: settings?.hidden_calendar_ids ?? [],
@@ -119,6 +124,7 @@ export function useWeekReport(weekStartISO: string, now: Date): WeekReport {
     vertical,
     events,
     blocks,
+    slots,
     settings,
     eventRouting,
     activityUnits,

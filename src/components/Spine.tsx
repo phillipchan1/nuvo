@@ -161,7 +161,7 @@ export default function Spine({
     // funnel is still legible at 64px.
     if (railed) {
       return (
-        <div key={r.id} className="flex justify-center py-0.5">
+        <div key={r.id} className="flex justify-center py-0.5" data-teach={`rung-${r.id}`}>
           <button
             onClick={() => setRung(r.id)}
             aria-label={`${r.label} (⌘${n})`}
@@ -202,7 +202,7 @@ export default function Spine({
     }
 
     return (
-      <div key={r.id}>
+      <div key={r.id} data-teach={`rung-${r.id}`}>
         <button
           onClick={() => setRung(r.id)}
           title={`${r.label} (⌘${n})`}

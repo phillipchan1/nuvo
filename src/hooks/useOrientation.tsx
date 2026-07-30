@@ -24,6 +24,17 @@ import { ORIENTATION_VERSION } from "../components/orientation/steps";
 //  • The DB mirror is written directly + silently (NOT through the toasting settings
 //    mutation), so once the column exists the flag also syncs across devices, and a
 //    missing column just no-ops instead of raising a red error toast.
+/**
+ * Which door the reader chose on the welcome step.
+ *  • `choose` — the fork itself, still open
+ *  • `show`   — the visual tour (rebuilt art, one concept a step)
+ *  • `teach`  — the live walkthrough over the real app (TeachPanel)
+ * The pair exists because "show me and leave me alone" and "walk me through it"
+ * are different people, and guessing which one you have is how a walkthrough
+ * ends up either useless or insulting.
+ */
+export type OrientationMode = "choose" | "show" | "teach";
+
 interface OrientationCtx {
   /** Whether the welcome overlay is showing right now. */
   visible: boolean;
@@ -31,11 +42,19 @@ interface OrientationCtx {
   open: () => void;
   /** Finish/skip: persist the current version and hide. */
   dismiss: () => void;
+  /** The chosen door, persisted so a mid-walkthrough reload resumes it. */
+  mode: OrientationMode;
+  chooseMode: (m: OrientationMode) => void;
+  /** Where the live walkthrough got to, likewise persisted. */
+  teachStep: number;
+  setTeachStep: (i: number) => void;
 }
 
 const Ctx = createContext<OrientationCtx | null>(null);
 
 const LS_KEY = "nuvo.onboarding.version";
+const LS_MODE = "nuvo.onboarding.mode";
+const LS_STEP = "nuvo.onboarding.step";
 
 function readLocalVersion(): number {
   try {
@@ -47,6 +66,28 @@ function readLocalVersion(): number {
 function writeLocalVersion(v: number) {
   try {
     localStorage.setItem(LS_KEY, String(v));
+  } catch {
+    /* ignore */
+  }
+}
+
+function lsRead(k: string): string | null {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+function lsWrite(k: string, v: string) {
+  try {
+    localStorage.setItem(k, v);
+  } catch {
+    /* ignore */
+  }
+}
+function lsClear(k: string) {
+  try {
+    localStorage.removeItem(k);
   } catch {
     /* ignore */
   }
@@ -88,21 +129,48 @@ export function OrientationProvider({ children }: { children: ReactNode }) {
     if (needsWelcome) setVisible(true);
   }, [isLoading, needsWelcome]);
 
+  // The chosen door + how far the live walkthrough got. Persisted so a reload
+  // mid-walkthrough (or the HMR remount that bit us during dev) resumes where it
+  // was instead of dumping the reader back at the fork.
+  const [mode, setMode] = useState<OrientationMode>(
+    () => (lsRead(LS_MODE) as OrientationMode | null) ?? "choose",
+  );
+  const [teachStep, setTeachStepState] = useState(() => Number(lsRead(LS_STEP)) || 0);
+
+  const chooseMode = useCallback((m: OrientationMode) => {
+    setMode(m);
+    lsWrite(LS_MODE, m);
+  }, []);
+
+  const setTeachStep = useCallback((i: number) => {
+    setTeachStepState(i);
+    lsWrite(LS_STEP, String(i));
+  }, []);
+
   const open = useCallback(() => {
     autoHandled.current = true; // a manual replay also satisfies the auto-open gate
+    // A replay starts at the fork again — the reader may want the other door.
+    setMode("choose");
+    setTeachStepState(0);
+    lsClear(LS_MODE);
+    lsClear(LS_STEP);
     setVisible(true);
   }, []);
 
   const dismiss = useCallback(() => {
     autoHandled.current = true;
     setVisible(false);
+    setMode("choose");
+    setTeachStepState(0);
+    lsClear(LS_MODE);
+    lsClear(LS_STEP);
     writeLocalVersion(ORIENTATION_VERSION);
     void mirrorToDb(ORIENTATION_VERSION);
   }, []);
 
   const value = useMemo<OrientationCtx>(
-    () => ({ visible, open, dismiss }),
-    [visible, open, dismiss]
+    () => ({ visible, open, dismiss, mode, chooseMode, teachStep, setTeachStep }),
+    [visible, open, dismiss, mode, chooseMode, teachStep, setTeachStep]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

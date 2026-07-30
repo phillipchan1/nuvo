@@ -47,6 +47,7 @@ import { projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { bringIntoWeekPatch, pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { PLAN_STEPS, STEP_ASK, STEP_LABEL, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekPlanStep } from "../../lib/intake";
 import SourceSwitch, { CapacityMeter } from "./WeekIntake";
+import { RemedyPanel } from "../floors/RemedyPanel";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import { Btn } from "../ui";
 
@@ -1008,35 +1009,34 @@ function ProjectRow({
           line item you shrug at: it's the thing that moves the needle, so "no
           room" without a remedy is the app leaving you stuck. */}
       {fit && fit.unplaced > 0 && (
-        <div className="mb-2 rounded-md px-2.5 py-2" style={{ background: "var(--signal-soft)" }}>
-          <div className="text-caption" style={{ color: "var(--signal)" }}>
-            {fit.placed > 0
+        <RemedyPanel
+          problem={
+            fit.placed > 0
               ? `Only ${fit.placed} of ${fit.placed + fit.unplaced} pieces fit this week.`
-              : `None of its ${fit.unplaced} pieces fit this week.`}
-          </div>
-          {/* …and WHY, in the composer's own words. "No room" beside a calendar
-              with ten open hours reads as a lie unless it says what the room was
-              missing — length, order, or a deadline. */}
-          {fit.reason && <div className="mt-0.5 text-meta text-muted">{fit.reason}</div>}
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {fit.placed > 0 && (
-              <button
-                onClick={onSpan}
-                title="Give it another week — same project, longer run. This week takes what fits; the rest continues next week."
-                className="tap fast rounded-md border border-line px-2.5 py-1 text-caption text-ink hover:border-line-strong hover:bg-surface-2"
-              >
-                Give it another week
-              </button>
-            )}
-            <button
-              onClick={onPushOut}
-              title="Move the whole project to next week, keeping how long it runs."
-              className="tap fast rounded-md border border-line px-2.5 py-1 text-caption text-muted hover:border-line-strong hover:bg-surface-2"
-            >
-              Move it to next week
-            </button>
-          </div>
-        </div>
+              : `None of its ${fit.unplaced} pieces fit this week.`
+          }
+          // …and WHY, in the composer's own words. "No room" beside a calendar
+          // with ten open hours reads as a lie unless it says what the room was
+          // missing — length, order, or a deadline.
+          why={fit.reason}
+          acts={[
+            ...(fit.placed > 0
+              ? [
+                  {
+                    label: "Give it another week",
+                    title: "Give it another week — same project, longer run. This week takes what fits; the rest continues next week.",
+                    onPress: onSpan,
+                  },
+                ]
+              : []),
+            {
+              label: "Move it to next week",
+              title: "Move the whole project to next week, keeping how long it runs.",
+              onPress: onPushOut,
+              quiet: true,
+            },
+          ]}
+        />
       )}
 
       {open && rows.length > 0 && (

@@ -14,7 +14,7 @@ import { weekName } from "../lib/week";
 import { addDays } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
-import { useHiddenEvents, type useExternalEventMutations } from "../hooks/useCalendar";
+import { useEventDetails, useHiddenEvents, type useExternalEventMutations } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
 import { synClass } from "../lib/syntax";
 import { isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
@@ -263,7 +263,14 @@ export default function CalendarPane({
   const { keys: hiddenKeys, isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const [showHidden, setShowHidden] = useState(false);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent } | null>(null);
-  // Delete is a hard API call (Google only) — confirm in-place rather than firing on one click.
+  const { data: eventMenuDetails } = useEventDetails(eventMenu?.event.id ?? null);
+  const eventMenuOtherGuests = useMemo(
+    () => (eventMenuDetails?.attendees ?? []).filter((a) => !a.self),
+    [eventMenuDetails],
+  );
+  const eventMenuCancelNotifies =
+    eventMenuDetails?.organizer?.self === true && eventMenuOtherGuests.length > 0;
+  // Delete is a hard API call — confirm in-place rather than firing on one click.
   const [eventDeleteConfirm, setEventDeleteConfirm] = useState<RecurrenceScope | null>(null);
   // Right-click "Move to…" — expands to a grouped calendar/account list in place;
   // a lossy cross-account pick asks to confirm the copy.
@@ -865,9 +872,17 @@ export default function CalendarPane({
     if (key) unhide(key);
     setEventMenu(null);
   };
-  // Hard delete — Google only, the edge function has no write path for M365/ICS.
-  const deleteEventNow = (event: ExternalEvent, scope: RecurrenceScope) => {
-    eventMutations.deleteEvent({ id: event.id, scope });
+  // Hard delete — writable calendars only (Google + iCloud two-way). M365/ICS stay read-only.
+  const deleteEventNow = (
+    event: ExternalEvent,
+    scope: RecurrenceScope,
+    notifyGuests?: boolean,
+  ) => {
+    eventMutations.deleteEvent({
+      id: event.id,
+      scope,
+      ...(notifyGuests === undefined ? {} : { notifyGuests }),
+    });
     setEventDeleteConfirm(null);
     setEventMenu(null);
   };
@@ -1587,7 +1602,14 @@ export default function CalendarPane({
         const moveGroups = writable ? writableCalendarTargets(accounts, ev.calendar_id) : [];
         const moveCount = moveGroups.reduce((n, g) => n + g.calendars.length, 0);
         const left = fixedCssPx(Math.min(eventMenu.x, window.innerWidth - 210));
-        const top = fixedCssPx(Math.min(eventMenu.y, window.innerHeight - 140));
+        const menuReserve = eventDeleteConfirm
+          ? (eventMenuCancelNotifies && !series ? 190 : 130)
+          : eventMoveMode
+            ? 240
+            : writable
+              ? (onConvertEventToTask && !ev.all_day ? 250 : 210)
+              : 160;
+        const top = fixedCssPx(Math.min(eventMenu.y, window.innerHeight - menuReserve));
         return (
           <div
             ref={eventMenuRef}
@@ -1698,29 +1720,59 @@ export default function CalendarPane({
                 </EventMenuItem>
               </>
             )}
-            {account?.provider === "google" && (
+            {writable && (
               <>
                 <div className="my-1 border-t border-line" />
                 {eventDeleteConfirm ? (
                   <div className="px-3 py-2">
                     <p className="text-caption text-ink">
-                      Delete {eventDeleteConfirm === "ALL" ? "all events in this series" : "this event"}?
+                      {eventMenuCancelNotifies
+                        ? series
+                          ? `Cancel — ${eventMenuOtherGuests.length} ${eventMenuOtherGuests.length === 1 ? "guest is" : "guests are"} told…`
+                          : `Cancel for ${eventMenuOtherGuests.length} ${eventMenuOtherGuests.length === 1 ? "guest" : "guests"}?`
+                        : `Delete ${eventDeleteConfirm === "ALL" ? "all events in this series" : "this event"}?`}
                     </p>
                     <p className="mt-0.5 text-meta text-muted">This can't be undone.</p>
-                    <div className="mt-2.5 flex items-center gap-1.5">
-                      <button
-                        onClick={() => deleteEventNow(ev, eventDeleteConfirm)}
-                        className="fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-center text-caption font-medium text-white"
-                        style={{ background: "var(--signal)" }}
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={() => setEventDeleteConfirm(null)}
-                        className="fast flex-1 rounded-[var(--radius-sm)] border border-line px-2 py-1 text-center text-caption text-muted hover:text-ink"
-                      >
-                        Cancel
-                      </button>
+                    <div className={`mt-2.5 flex gap-1.5 ${eventMenuCancelNotifies && !series ? "flex-col" : "items-center"}`}>
+                      {eventMenuCancelNotifies && !series ? (
+                        <>
+                          <button
+                            onClick={() => deleteEventNow(ev, eventDeleteConfirm)}
+                            className="fast rounded-[var(--radius-sm)] px-2 py-1.5 text-center text-caption font-medium text-white"
+                            style={{ background: "var(--signal)" }}
+                          >
+                            Cancel & notify
+                          </button>
+                          <button
+                            onClick={() => deleteEventNow(ev, eventDeleteConfirm, false)}
+                            className="fast rounded-[var(--radius-sm)] border border-line px-2 py-1.5 text-center text-caption text-muted hover:text-ink"
+                          >
+                            Cancel quietly
+                          </button>
+                          <button
+                            onClick={() => setEventDeleteConfirm(null)}
+                            className="fast rounded-[var(--radius-sm)] border border-line px-2 py-1.5 text-center text-caption text-muted hover:text-ink"
+                          >
+                            Back
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => deleteEventNow(ev, eventDeleteConfirm)}
+                            className="fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-center text-caption font-medium text-white"
+                            style={{ background: "var(--signal)" }}
+                          >
+                            {eventMenuCancelNotifies ? "Cancel & notify" : "Delete"}
+                          </button>
+                          <button
+                            onClick={() => setEventDeleteConfirm(null)}
+                            className="fast flex-1 rounded-[var(--radius-sm)] border border-line px-2 py-1 text-center text-caption text-muted hover:text-ink"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ) : series ? (

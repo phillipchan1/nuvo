@@ -13,17 +13,41 @@ import { addDays } from "date-fns";
 import { parseDateISO, fmtHours } from "./dates";
 import { type VerticalData } from "./vertical";
 import { toBusyBlocks } from "./now";
-import { priorityWork, priorityVerdict, type PriorityVerdict } from "./priorities";
+import { priorityWork, priorityVerdict, pushAsRock, weekPlacement, weekPushes, type PriorityVerdict } from "./priorities";
+import { lensGaps } from "./lenses";
+import { isCompleteStatus } from "../../supabase/functions/_shared/planningRules.ts";
 import { seedFromWeek, satelliteAngles, type EmblemSpec } from "./weekEmblem";
 import { buildWeekEvidence, type WeekEvidence } from "./weekEvidence";
 import { composeWeekFinds, type WeekFind } from "./weekFinds";
-import type { ActivityUnit, BigRock, ExternalEvent, Task } from "./types";
+import type { ActivityUnit, BigRock, ExternalEvent, Slot, Task } from "./types";
 
+/** One row on the week: the project committed to it, joined to its verdict.
+ *
+ *  On a LIVE week these are derived from `weekPushes` (the On Deck spans), so
+ *  the floor, the rail crown and the board can never disagree about what is on
+ *  the week. On a SEALED week they come from that week's stored snapshot and are
+ *  never re-derived — the snapshot IS what you committed to back then. */
 export interface WeekPriority {
   rock: BigRock;
+  /** null only on a legacy sealed rock that was never project-bound. */
+  projectId: string | null;
+  name: string;
+  /** what done looks like — the project's outcome line. */
+  outcome: string;
+  domainColor: string;
+  /** groomed enough to work on — `lensGaps` is empty. */
+  ready: boolean;
+  /** "no outcome · no steps" — what it's missing, when it isn't ready. */
+  gapLabel: string | null;
   verdict: PriorityVerdict;
+  /** the project shipped INSIDE this week — the loudest verdict there is. */
+  shipped: boolean;
   done: number;
   total: number;
+  /** Live weeks only: how much of the remaining work has a time THIS week, and
+   *  how much is loose. Both 0 on a sealed week — the row hides the line. */
+  placedMins: number;
+  looseMins: number;
   label: string | null;
   /** the next future time-block serving this priority, if any (forward hook). */
   nextBlock: { startISO: string; title: string } | null;
@@ -78,6 +102,9 @@ export interface ComposeWeekInput {
   vertical: VerticalData;
   events: ExternalEvent[]; // external events intersecting the week
   blocks: Task[]; // scheduled tasks in the week (start_time set)
+  /** Slots starting inside the week — their children hold a time the blocks
+   *  query can't see (slot children carry `start_time: null`). */
+  slots?: Slot[];
   workStartMin: number; // e.g. 480
   workEndMin: number; // e.g. 990
   hiddenCalendarIds?: string[];
@@ -114,25 +141,90 @@ export function composeWeek(input: ComposeWeekInput): WeekReport {
   const weekStart = parseDateISO(weekStartISO);
   const weekEnd = addDays(weekStart, 7);
 
-  // ── Priorities (named, non-empty rocks) → verdicts + next forward block ────
-  const sourceRocks = input.bigRocks ?? vertical.bigRocks;
-  const rocks = sourceRocks.filter((r) => r.title.trim().length > 0);
-  const priorities: WeekPriority[] = rocks.map((rock) => {
-    const work = priorityWork(vertical, rock);
-    const nextBlock = blocks
-      .filter((t) => t.big_rock_id === rock.id && t.start_time && new Date(t.start_time) >= now)
-      .sort((a, b) => new Date(a.start_time!).getTime() - new Date(b.start_time!).getTime())[0];
-    return {
-      rock,
-      verdict: priorityVerdict(rock),
-      done: work.done,
-      total: work.total,
-      label: work.label,
-      nextBlock: nextBlock ? { startISO: nextBlock.start_time!, title: nextBlock.title } : null,
-    };
-  });
-  const landedCount = priorities.filter((p) => p.verdict === "landed").length;
-  const carryForward = rocks.filter((r) => !r.done_at); // unfinished → seeds Sunday
+  // ── The week's projects → verdicts, placement, next forward block ──────────
+  // The fork that keeps history honest: a sealed week supplies its own rocks and
+  // is rendered from them verbatim (re-deriving would rewrite what you actually
+  // committed to back then — priorities.ts:47-50). A live week derives the slate
+  // from the On Deck spans, exactly like the rail crown and Sunday do.
+  const fromSnapshot = input.bigRocks != null;
+
+  /** The next future block serving this row — matched by rock OR project, since
+   *  a derived row has no `big_rock_id` on its tasks to match against. */
+  const nextBlockFor = (rockId: string, projectId: string | null) => {
+    const b = blocks
+      .filter(
+        (t) =>
+          (t.big_rock_id === rockId || (projectId != null && t.project_id === projectId)) &&
+          t.start_time &&
+          new Date(t.start_time) >= now,
+      )
+      .sort((a, b2) => new Date(a.start_time!).getTime() - new Date(b2.start_time!).getTime())[0];
+    return b ? { startISO: b.start_time!, title: b.title } : null;
+  };
+
+  let priorities: WeekPriority[];
+  let landedCount: number;
+  let carryForward: BigRock[];
+
+  if (fromSnapshot) {
+    const rocks = input.bigRocks!.filter((r) => r.title.trim().length > 0);
+    priorities = rocks.map((rock) => {
+      const work = priorityWork(vertical, rock);
+      const proj = rock.project_id ? vertical.projects.find((p) => p.id === rock.project_id) : undefined;
+      return {
+        rock,
+        projectId: rock.project_id ?? null,
+        name: rock.title,
+        outcome: rock.win,
+        // The project may since have been deleted or re-homed — fall back rather
+        // than invent a color for a week that's already over.
+        domainColor: (proj ? vertical.domains.find((d) => d.id === proj.domainId)?.color : null) ?? "var(--accent)",
+        ready: true, // readiness is a *now* question; a sealed week can't act on it
+        gapLabel: null,
+        verdict: priorityVerdict(rock),
+        shipped: false,
+        done: work.done,
+        total: work.total,
+        placedMins: 0,
+        looseMins: 0,
+        label: work.label,
+        nextBlock: null,
+      };
+    });
+    landedCount = priorities.filter((p) => p.verdict === "landed").length;
+    carryForward = rocks.filter((r) => !r.done_at);
+  } else {
+    const weekBlockTaskIds = new Set(blocks.filter((t) => t.start_time).map((t) => t.id));
+    const weekSlotIds = new Set((input.slots ?? []).map((s) => s.id));
+    const pushes = weekPushes(vertical, weekStartISO);
+    priorities = pushes.map(({ project, rock, done, shipped }) => {
+      const asRock = pushAsRock({ project, rock, done, shipped });
+      const work = priorityWork(vertical, asRock);
+      const placement = weekPlacement(work, weekBlockTaskIds, weekSlotIds);
+      const gaps = lensGaps(vertical, "project", project, now);
+      return {
+        rock: asRock,
+        projectId: project.id,
+        name: project.name,
+        outcome: project.outcome ?? "",
+        domainColor: vertical.domains.find((d) => d.id === project.domainId)?.color ?? "var(--accent)",
+        ready: gaps.length === 0,
+        gapLabel: gaps.length > 0 ? gaps.map((g) => g.label).join(" · ") : null,
+        verdict: priorityVerdict(asRock),
+        shipped,
+        done: work.done,
+        total: work.total,
+        placedMins: placement.placedMins,
+        looseMins: placement.looseMins,
+        label: work.label,
+        nextBlock: nextBlockFor(asRock.id, project.id),
+      };
+    });
+    // `done` folds in "shipped inside this week" — finishing your biggest thing
+    // must count on the scoreboard, not erase it from the week.
+    landedCount = pushes.filter((p) => p.done).length;
+    carryForward = pushes.filter((p) => !p.done).map(pushAsRock);
+  }
 
   // ── Domains → hours weave + quiet flag (hours-based, so it works for past
   //    weeks too: a domain with no real hours that week reads as an ember). ─────
@@ -235,7 +327,18 @@ export function composeWeek(input: ComposeWeekInput): WeekReport {
     seed,
   };
 
-  const brief = composeWeekBrief({ priorities, landedCount, domains, capacity, carryForward, now, sealed: !!input.sealed });
+  const brief = composeWeekBrief({
+    priorities,
+    landedCount,
+    domains,
+    capacity,
+    carryForward,
+    now,
+    sealed: !!input.sealed,
+    // Day one has no projects at all — a different sentence from "you have
+    // projects, none are on this week" (P7/P16: honest in a stranger's account).
+    hasAnyOpenProject: vertical.projects.some((p) => !isCompleteStatus(p.status)),
+  });
 
   const reportBase = {
     weekStartISO,
@@ -274,6 +377,7 @@ function composeWeekBrief({
   carryForward,
   now,
   sealed,
+  hasAnyOpenProject,
 }: {
   priorities: WeekPriority[];
   landedCount: number;
@@ -282,26 +386,29 @@ function composeWeekBrief({
   carryForward: BigRock[];
   now: Date;
   sealed: boolean;
+  hasAnyOpenProject: boolean;
 }): string {
   const parts: string[] = [];
   const total = priorities.length;
   const dominant = domains.find((d) => d.hours > 0) ?? null;
 
-  // The outcome line — priorities are the heart of it.
+  // The outcome line — the week's projects are the heart of it.
   if (total === 0) {
     parts.push(
       sealed
-        ? "A quiet week — nothing was named. Some weeks are like that, and that's alright."
-        : "The week is open — nothing named yet. When you're ready, set what matters most.",
+        ? "A quiet week — nothing was on it. Some weeks are like that, and that's alright."
+        : hasAnyOpenProject
+          ? "Nothing's on this week yet. Bring a project in and the week has a shape."
+          : "No projects yet — the week is genuinely empty, and that's a fine place to start.",
     );
   } else if (landedCount === total) {
-    parts.push(`Every one of your ${total} priorities landed. That's a week to be proud of.`);
+    parts.push(`Every one of your ${total} projects landed. That's a week to be proud of.`);
   } else if (landedCount > 0) {
-    parts.push(`${landedCount} of ${total} priorities landed${landedCount >= total - 1 ? " — you came close on the rest" : ""}.`);
+    parts.push(`${landedCount} of ${total} landed${landedCount >= total - 1 ? " — you came close on the rest" : ""}.`);
   } else if (sealed) {
     parts.push(`None of the ${total} landed this week — but the work moved, and that counts.`);
   } else {
-    parts.push(`${total} priorit${total === 1 ? "y is" : "ies are"} still in flight — the week isn't done with you yet.`);
+    parts.push(`${total} project${total === 1 ? " is" : "s are"} still in flight — the week isn't done with you yet.`);
   }
 
   // Where the hours went — affirming, never an audit.
@@ -313,10 +420,16 @@ function composeWeekBrief({
     parts.push(`There's still ${openH}h of open room ahead.`);
   }
 
-  // Forward-folding — what carries (a gentle invitation; carry is yours to make).
+  // Forward-folding — what's still open, and where the act to resolve it lives.
+  // (It used to invite a "carry" that wrote into next week's big_rocks, which
+  // nothing reads; the real act is a span write, and it's on the row.)
   if (carryForward.length > 0) {
     const n = carryForward.length;
-    parts.push(`${n} ${n === 1 ? "is" : "are"} still open — carry ${n === 1 ? "it" : "them"} into next week so Sunday doesn't start cold.`);
+    parts.push(
+      sealed
+        ? `${n} ${n === 1 ? "was" : "were"} still open when the week closed.`
+        : `${n} still open — each one can take another week or move out, on its row.`,
+    );
   }
 
   void now;

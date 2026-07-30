@@ -33,7 +33,9 @@ export function FloorGuide({
         <h1 className="rise masthead text-display leading-tight text-ink">{title}</h1>
         <p className="rise text-lead mx-auto mt-3 max-w-sm leading-relaxed text-muted">{teach}</p>
         {actionLabel && (
-          <div className="rise mt-6 flex justify-center">
+          // Tagged for the live walkthrough: on a floor with nothing on it yet,
+          // this button IS the floor's only act, so it's what the orb lights.
+          <div className="rise mt-6 flex justify-center" data-teach="floor-new">
             <Btn kind="primary" onClick={onAction}>{actionLabel}</Btn>
           </div>
         )}

@@ -1,295 +1,42 @@
-// The Week's Plan / Review — one surface, two states. Forming (this week, mid-
-// week, present tense) and sealed (a past week, looking back). It slides over the
-// Schedule calendar (full-width, hiding the task rail — this is a moment to
-// receive, not to triage). You reach past weeks by walking ‹ ›.
+// The Week's Plan / Review — one surface, two states, one question asked at two
+// points on the arc. Forming (this week, still changeable): **is the week I
+// committed to still true?** Sealed (a past week): **did anything move?** It
+// slides over the Schedule calendar; you reach past weeks by walking ‹ ›.
 //
-// Wide, low-scroll layout: a hero (emblem + the warm brief), then two columns —
-// THIS WEEK (reckon each priority: complete / carry) and NEXT WEEK (capture what's
-// in your head + what carried) — then the hours weave + the highlights that
-// actually moved a domain. The big priority actions are just two: land it, or
-// carry it forward. No domain-linking here (that's not this moment's job).
+// The rail crown already answers "what am I on this week?" in a glance, so this
+// surface earns its full screen by going *deeper*, not wider: the week's
+// projects with their outcome, their open work, and the honest arithmetic of how
+// much of what's left actually has a time — each row carrying the acts that
+// resolve it (another week / move out / take off). D-039 put those remedies on
+// the Sunday step while you're still choosing; this is where you reach for them
+// on a Wednesday.
+//
+// What used to live here and doesn't any more: two free-text capture boxes that
+// minted project-less rocks and wrote into a next week nothing reads, and a
+// Highlights list that described the past and handed nothing forward. The
+// receipts behind that list now expand under each domain in the weave.
 
-import { useRef, useState, useEffect, type ReactNode } from "react";
-import { toast } from "sonner";
-import { addDays } from "date-fns";
+import { useState, useEffect, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { fmtHours, parseDateISO, toDateISO } from "../../lib/dates";
+import { fmtHours } from "../../lib/dates";
 import { weekSpan } from "../../lib/week";
 import { fmtMins } from "../../lib/now";
+import { useVertical } from "../../hooks/useVertical";
+import { useAppNavigation } from "../../hooks/useAppNavigation";
+import { projectById } from "../../lib/vertical";
+import { pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import type { WeekReport, WeekPriority } from "../../lib/composeWeek";
-import { useWeekSprintRocks } from "../../hooks/useWeekSprintRocks";
+import { useWeekVerdicts } from "../../hooks/useWeekVerdicts";
 import { useWeekReviewActions, useWeekReviewRow } from "../../hooks/useWeekReview";
+import { ProjectShipAssess } from "../record/ShipAssess";
 import WeekEmblem from "./WeekEmblem";
 import WeekStory from "./WeekStory";
 import { WhatYouBuilt } from "./WhatYouBuilt";
 import { WeekFindCard } from "./WeekFind";
+import { WeekProjectRow } from "./WeekProjectRow";
 import { DomainEvidenceList } from "./WeekEvidence";
-import { Bar, InlineText } from "./parts";
-import type { BigRock } from "../../lib/types";
+import { Bar } from "./parts";
 
-// A six-dot grip — the affordance for pointer-drag reorder (Tauri swallows
-// HTML5 DnD, so all drag is pointer-based; see CLAUDE.md / nuvo-tauri-dnd).
-function GripIcon() {
-  return (
-    <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden>
-      {[4, 8, 12].map((cy) => (
-        <g key={cy}>
-          <circle cx="3" cy={cy} r="1.1" />
-          <circle cx="7" cy={cy} r="1.1" />
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-// ── This week — reckon each priority: land it (complete) or carry it forward ──
-function ReckonRow({
-  p,
-  onToggleDone,
-  onCarry,
-  onRemove,
-  onEdit,
-  dragHandle,
-  dragging,
-  dragOffsetY = 0,
-}: {
-  p: WeekPriority;
-  onToggleDone: () => void;
-  onCarry: () => void;
-  onRemove: () => void;
-  /** edit title / description in place (editable weeks only; omitted = read-only). */
-  onEdit?: (patch: Partial<BigRock>) => void;
-  /** pointer-drag grip rendered at the left when the list is reorderable. */
-  dragHandle?: ReactNode;
-  dragging?: boolean;
-  /** while dragging, how far the pointer has moved — the card follows it. */
-  dragOffsetY?: number;
-}) {
-  const landed = p.verdict === "landed";
-  return (
-    <div
-      className={`group flex items-start gap-2 py-3 ${dragging ? "glass-grab relative z-50 rounded-lg px-2" : "border-b border-line last:border-0"}`}
-      style={dragging ? { transform: `translateY(${dragOffsetY}px) scale(1.025)` } : undefined}
-    >
-      {dragHandle}
-      <button
-        onClick={onToggleDone}
-        aria-label={landed ? "Mark not done" : "Mark complete"}
-        className={`fast mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-micro leading-none ${
-          landed ? "border-accent bg-accent text-white" : "border-line-strong text-transparent hover:border-accent"
-        }`}
-      >
-        ✓
-      </button>
-      <div className="min-w-0 flex-1">
-        {onEdit ? (
-          <>
-            <InlineText
-              value={p.rock.title}
-              onChange={(v) => onEdit({ title: v })}
-              placeholder="Untitled priority"
-              className={`block text-body ${landed ? "text-muted line-through" : "text-ink"}`}
-              inputClassName="text-body text-ink"
-            />
-            <InlineText
-              value={p.rock.win ?? ""}
-              onChange={(v) => onEdit({ win: v })}
-              placeholder="add a note…"
-              className="block text-meta text-muted"
-              inputClassName="text-meta text-ink"
-            />
-          </>
-        ) : (
-          <>
-            <div className={`text-body ${landed ? "text-muted line-through" : "text-ink"}`}>{p.rock.title}</div>
-            {p.rock.win && <div className="text-meta text-muted">{p.rock.win}</div>}
-          </>
-        )}
-        <div className="mt-1 flex items-center gap-3">
-          {p.rock.roll_count > 0 && <span className="mono text-micro text-signal">carried {p.rock.roll_count}w</span>}
-          {!landed && (
-            <button onClick={onCarry} className="fast text-micro font-medium text-slot hover:text-ink">
-              Carry to next week →
-            </button>
-          )}
-          <button
-            onClick={onRemove}
-            className="fast ml-auto text-micro text-muted opacity-0 hover:text-ink group-hover:opacity-100"
-            aria-label="Remove priority"
-          >
-            Remove
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Reorderable priority list — pointer-drag sortable (Tauri- + touch-safe). ──
-// Drag the grip; rows resort live as the pointer crosses neighbours' midpoints;
-// the new order persists on drop. Order survives because composeWeek renders
-// priorities in big_rocks array order (no re-sort).
-function ReorderablePriorities({
-  priorities,
-  onToggleDone,
-  onCarry,
-  onRemove,
-  onUpdate,
-  onReorder,
-}: {
-  priorities: WeekPriority[];
-  onToggleDone: (id: string) => void;
-  onCarry: (p: WeekPriority) => void;
-  onRemove: (id: string) => void;
-  onUpdate: (id: string, patch: Partial<BigRock>) => void;
-  onReorder: (orderedIds: string[]) => void;
-}) {
-  // dragId drives which row lifts (state, for render); refs carry live drag data
-  // so the move/up handlers never read stale closures.
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [offsetY, setOffsetY] = useState(0);
-  const [lineTop, setLineTop] = useState<number | null>(null);
-  const dragIdRef = useRef<string | null>(null);
-  const startYRef = useRef(0);
-  const targetKRef = useRef(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const ids = priorities.map((p) => p.rock.id);
-
-  const start = (id: string, e: React.PointerEvent) => {
-    e.preventDefault();
-    dragIdRef.current = id;
-    startYRef.current = e.clientY;
-    setDragId(id);
-    setOffsetY(0);
-    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
-  };
-  const move = (e: React.PointerEvent) => {
-    const id = dragIdRef.current;
-    if (!id || !containerRef.current) return;
-    setOffsetY(e.clientY - startYRef.current);
-    const cont = containerRef.current;
-    const others = [...cont.querySelectorAll("[data-rock-id]")].filter(
-      (r) => r.getAttribute("data-rock-id") !== id,
-    );
-    // landing index = how many other rows have their midpoint above the pointer
-    let k = 0;
-    for (const r of others) {
-      const b = r.getBoundingClientRect();
-      if (e.clientY > b.top + b.height / 2) k++;
-    }
-    targetKRef.current = k;
-    // place the drop indicator at the resulting gap
-    const contTop = cont.getBoundingClientRect().top;
-    if (!others.length) setLineTop(0);
-    else if (k < others.length) setLineTop(others[k].getBoundingClientRect().top - contTop);
-    else setLineTop(others[others.length - 1].getBoundingClientRect().bottom - contTop);
-  };
-  const end = () => {
-    const id = dragIdRef.current;
-    dragIdRef.current = null;
-    setDragId(null);
-    setLineTop(null);
-    setOffsetY(0);
-    if (!id) return;
-    const others = ids.filter((x) => x !== id);
-    const k = targetKRef.current;
-    const next = [...others.slice(0, k), id, ...others.slice(k)];
-    if (next.some((x, i) => x !== ids[i])) onReorder(next);
-  };
-
-  return (
-    <div ref={containerRef} className="relative flex flex-col">
-      {lineTop != null && (
-        <div
-          className="pointer-events-none absolute left-0 right-0 z-40 h-0.5 rounded-full"
-          style={{ top: lineTop, background: "var(--accent)" }}
-        />
-      )}
-      {priorities.map((p) => (
-        <div key={p.rock.id} data-rock-id={p.rock.id}>
-          <ReckonRow
-            p={p}
-            dragging={dragId === p.rock.id}
-            dragOffsetY={dragId === p.rock.id ? offsetY : 0}
-            dragHandle={
-              <button
-                onPointerDown={(e) => start(p.rock.id, e)}
-                onPointerMove={move}
-                onPointerUp={end}
-                onPointerCancel={end}
-                aria-label="Drag to reorder"
-                title="Drag to reorder"
-                className="fast mt-0.5 flex h-6 w-6 shrink-0 cursor-grab items-center justify-center rounded text-muted/40 hover:text-ink active:cursor-grabbing"
-                style={{ touchAction: "none" }}
-              >
-                <GripIcon />
-              </button>
-            }
-            onToggleDone={() => onToggleDone(p.rock.id)}
-            onCarry={() => onCarry(p)}
-            onRemove={() => onRemove(p.rock.id)}
-            onEdit={(patch) => onUpdate(p.rock.id, patch)}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── Dump-one-per-line capture — the low-data-entry way to name priorities ─────
-function RockCapture({ onAdd, placeholder, rows = 2 }: { onAdd: (titles: string[]) => void; placeholder: string; rows?: number }) {
-  const [text, setText] = useState("");
-  const submit = () => {
-    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-    if (lines.length) onAdd(lines);
-    setText("");
-  };
-  return (
-    <textarea
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          submit();
-        }
-      }}
-      rows={rows}
-      placeholder={placeholder}
-      className="w-full resize-none rounded-lg border border-line bg-surface/60 px-3 py-2.5 text-body text-ink outline-none placeholder:text-muted/70 focus:border-accent"
-    />
-  );
-}
-
-// ── Next week — capture what's in your head + what carried over ────────────────
-function NextWeek({ rocks, onAdd, onRemove }: { rocks: { id: string; title: string; roll_count: number }[]; onAdd: (titles: string[]) => void; onRemove: (id: string) => void }) {
-  return (
-    <div className="flex flex-col gap-4">
-      <RockCapture onAdd={onAdd} placeholder="What matters next week? Dump it — one per line. Leftovers carry themselves." />
-      {rocks.length === 0 ? (
-        <p className="text-meta text-muted">Nothing queued yet. Sunday will start from here.</p>
-      ) : (
-        <div className="flex flex-col">
-          {rocks.map((r) => (
-            <div key={r.id} className="group flex items-baseline gap-2 border-b border-line py-2 text-body last:border-0">
-              <span className="text-slot">→</span>
-              <span className="min-w-0 flex-1 truncate text-ink">{r.title}</span>
-              {r.roll_count > 0 && <span className="mono shrink-0 text-micro text-signal">carried {r.roll_count}w</span>}
-              <button
-                onClick={() => onRemove(r.id)}
-                className="fast shrink-0 text-micro text-muted opacity-0 hover:text-ink group-hover:opacity-100"
-                aria-label="Remove"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** Where the hours went — capacity + the per-domain weave, with expandable receipts. */
 function HoursWeave({ report, onCorrected }: { report: WeekReport; onCorrected?: () => void }) {
@@ -340,23 +87,44 @@ function HoursWeave({ report, onCorrected }: { report: WeekReport; onCorrected?:
   );
 }
 
-/** Highlights — the done work that actually moved a domain (felt impact). */
-function Highlights({ report }: { report: WeekReport }) {
-  if (report.highlights.length === 0) {
-    return <p className="text-meta text-muted">No domain-tagged work logged this week.</p>;
+/** The conscience read — one sentence, on a week that can still change.
+ *
+ *  This resolves the grace-vs-audit dial that `docs/weekly-review.md` left open,
+ *  and it resolves it on the forward-folding rule rather than on tone: mid-week
+ *  a quiet domain is *actionable*, so naming it hands something forward. Once
+ *  the week is sealed nothing can be done about it, so the sentence would be
+ *  pure audit and the ember carries it alone (P4 — never present undone things
+ *  as debt, and never shame a quiet domain; sometimes weighting elsewhere was
+ *  right).
+ *
+ *  It is deliberately actless. A "flag it for next week" button has nowhere
+ *  honest to write — and this repo already has that receipt: `note_to_monday`
+ *  has been written since migration 33 and is read by nothing. If the act
+ *  arrives it ships with its reader, or not at all. */
+function ConscienceRead({ report, tense }: { report: WeekReport; tense: "ahead" | "current" | "past" }) {
+  const withHours = report.domains.filter((d) => d.hours > 0);
+  const quiet = report.domains.filter((d) => d.quiet);
+  const openH = report.capacity.openMins > 0 ? `${fmtHours(report.capacity.openMins)}h` : null;
+  const yet = tense === "ahead" ? "" : " yet";
+
+  // Day one: every domain is quiet because the account is new, not because
+  // anything was neglected. Naming five of them on someone's first Tuesday is
+  // the app inventing a failure (P7/P16).
+  if (withHours.length === 0) {
+    return <p className="text-body text-muted">Nothing has landed against a domain{yet} this week.</p>;
   }
-  return (
-    <div className="flex flex-col">
-      {report.highlights.map((h, i) => (
-        <div key={i} className="flex items-baseline gap-3 border-b border-line py-2 last:border-0">
-          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ background: h.domainColor }} />
-          <span className="min-w-0 flex-1 truncate text-body text-ink">{h.title}</span>
-          <span className="shrink-0 text-meta text-muted" style={{ color: h.domainColor }}>{h.domainName}</span>
-          {h.mins > 0 && <span className="mono shrink-0 text-micro text-muted">{fmtMins(h.mins)}</span>}
-        </div>
-      ))}
-    </div>
-  );
+  if (quiet.length === 0) return null;
+
+  // One em-dash per sentence: the earlier draft read "…quiet so far — SCE has
+  // the hours — there's 6.5h still open", which parses as an aside inside an
+  // aside.
+  const room = openH ? `, and there's ${openH} still open.` : ".";
+  const line =
+    quiet.length > 2
+      ? `Most of your domains are quiet so far — ${withHours[0].name} has the hours${room}`
+      : `${quiet.map((d) => d.name).join(" and ")} ${quiet.length === 1 ? "hasn't" : "haven't"} had time${yet} this week${room}`;
+
+  return <p className="text-body text-ink">{line}</p>;
 }
 
 function Col({ label, children }: { label: string; children: ReactNode }) {
@@ -378,6 +146,7 @@ export function WeekPlanBody({
   header,
   onCompose,
   composeLabel,
+  onOpenProject,
 }: {
   report: WeekReport;
   state: "forming" | "sealed";
@@ -390,6 +159,10 @@ export function WeekPlanBody({
   onCompose?: () => void;
   /** CTA wording — "Plan the week" when fresh, "Re-plan the week" once planned. */
   composeLabel?: string;
+  /** Open a project's record. Omitted on mobile — MobileShell doesn't mount the
+   *  record overlay, so a button there would be a dead end (the row then states
+   *  the gap without offering an act). */
+  onOpenProject?: (projectId: string) => void;
 }) {
   const forming = state === "forming";
   const ahead = tense === "ahead";
@@ -397,23 +170,27 @@ export function WeekPlanBody({
   // allocation; the lived week shows it *filling*; a sealed week, where it *went*.
   const hoursLabel = tense === "ahead" ? "Where the hours will go" : tense === "current" ? "Where the hours are going" : "Where the hours went";
   const total = report.priorityTotal;
-  const nextWeekISO = toDateISO(addDays(parseDateISO(viewedWeekISO), 7));
-  const thisWeek = useWeekSprintRocks(viewedWeekISO);
-  const nextWeek = useWeekSprintRocks(nextWeekISO);
+  const { data: vertical, updateProject } = useVertical();
+  const verdicts = useWeekVerdicts(viewedWeekISO);
   const reviewActions = useWeekReviewActions(viewedWeekISO);
   const sealedRow = useWeekReviewRow(viewedWeekISO);
   const qc = useQueryClient();
+  const [shipId, setShipId] = useState<string | null>(null);
 
-  // Seal the Review once when viewing a lived week that has no durable snapshot yet.
+  // Snapshot the week for its future Review. A week still RUNNING has no final
+  // shape, so re-snapshot on every open while it's live; a week that's over is
+  // sealed once and then never rewritten (it's the historical record). Sealing
+  // once on first open — which is what this used to do — meant that opening the
+  // plan on Monday made Monday's slate the permanent Review of that week.
   useEffect(() => {
     if (ahead) return;
     if (sealedRow.isLoading) return;
     const hasFull = sealedRow.data?.report && typeof sealedRow.data.report === "object" && "emblem" in sealedRow.data.report;
-    if (hasFull) return;
+    if (tense === "past" && hasFull) return;
     void reviewActions.seal.mutateAsync(report).catch(() => {});
     // Only on first open / week change — not on every report tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewedWeekISO, ahead, sealedRow.isLoading, sealedRow.data?.id]);
+  }, [viewedWeekISO, ahead, tense, sealedRow.isLoading, sealedRow.data?.id]);
 
   const reseal = () => {
     void qc.invalidateQueries({ queryKey: ["vertical"] });
@@ -423,9 +200,31 @@ export function WeekPlanBody({
     }, 400);
   };
 
-  const carry = (p: WeekPriority) => {
-    const n = nextWeek.carryIn([p.rock]);
-    toast.success(n > 0 ? `Carried "${p.rock.title}" into next week.` : "Already in next week.");
+  // Every act on a row is a span write through the kernel — the same act as
+  // dragging the project's card on On Deck, so the deck and the plan cannot
+  // disagree about where a project lives. (The old "Carry to next week" appended
+  // a rock to next week's big_rocks, which nothing renders: the toast was a lie.)
+  const proj = (p: WeekPriority) => (p.projectId ? projectById(vertical, p.projectId) : null);
+  const span = (p: WeekPriority) => {
+    const project = proj(p);
+    if (project) updateProject(project.id, spanAnotherWeekPatch(project, viewedWeekISO));
+  };
+  const pushOut = (p: WeekPriority) => {
+    const project = proj(p);
+    if (project) updateProject(project.id, pushToNextWeekPatch(project, viewedWeekISO));
+  };
+  const takeOff = (p: WeekPriority) => {
+    if (p.projectId) updateProject(p.projectId, takeOffWeekPatch());
+  };
+  // Ticking a row SHIPS its project — one completion act, not two. Writing
+  // `done_at` directly reads as "complete" while finalizing nothing, which let a
+  // priority go struck-through with five tasks still live underneath. The
+  // assessment shows what's open before anything is written.
+  const ship = (p: WeekPriority) => {
+    if (p.projectId && !p.shipped) setShipId(p.projectId);
+  };
+  const reopen = (p: WeekPriority) => {
+    if (p.projectId) verdicts.setLanded(p.projectId, false);
   };
 
   return (
@@ -443,12 +242,12 @@ export function WeekPlanBody({
               {ahead ? (
                 <>
                   <span className="mono text-head text-ink">{total}</span>
-                  <span className="ml-2 text-meta text-muted">priorit{total === 1 ? "y" : "ies"} set for the week</span>
+                  <span className="ml-2 text-meta text-muted">project{total === 1 ? "" : "s"} on the week</span>
                 </>
               ) : (
                 <>
                   <span className="mono text-head text-ink">{report.landedCount} of {total}</span>
-                  <span className="ml-2 text-meta text-muted">priorit{total === 1 ? "y" : "ies"} landed</span>
+                  <span className="ml-2 text-meta text-muted">landed</span>
                 </>
               )}
             </div>
@@ -456,11 +255,19 @@ export function WeekPlanBody({
           {/* The deterministic brief narrates the week that *was* — skip it for a
               week you're planning (nothing has happened yet). */}
           {report.brief && !ahead && <p className="serif text-lead leading-relaxed text-ink">{report.brief}</p>}
-          {ahead && <p className="serif text-lead leading-relaxed text-ink">Here's the week ahead. Name what matters, then compose it into time.</p>}
+          {ahead && (
+            <p className="serif text-lead leading-relaxed text-ink">
+              {total > 0
+                ? `Here's the week ahead. ${total} project${total === 1 ? "" : "s"} on it so far.`
+                : "Here's the week ahead. Bring the projects in, then compose them into time."}
+            </p>
+          )}
 
-          {/* The week's forward job: turn the projects into time blocks. The door
-              to the planning flow lives here so the week button is one place. */}
-          {forming && onCompose && (
+          {/* The ritual is the act only when there's no week yet to fix — an
+              empty slate, or a week you're planning. Mid-week you reach for one
+              project's remedy, not a re-run, so the door demotes to a quiet link
+              at the foot of the projects column. */}
+          {forming && onCompose && (ahead || total === 0) && (
             <div className="mt-5">
               <button
                 onClick={onCompose}
@@ -475,85 +282,98 @@ export function WeekPlanBody({
         </div>
       </div>
 
-      {/* MAIN — the week's priorities (set / reckon) | time | (lived weeks) forward-fold */}
-      <div className="grid gap-x-14 gap-y-10 md:grid-cols-2">
-        <div data-marquee="priorities">
-        <Col label={forming ? (ahead ? "The week's priorities" : "This week's priorities") : "How they landed"}>
-          {report.priorities.length > 0 && (
-            <div className="mb-3">
-              {forming ? (
-                // Forming weeks: drag the grip to reorder priorities on the fly.
-                <ReorderablePriorities
-                  priorities={report.priorities}
-                  onToggleDone={thisWeek.toggleDone}
-                  onCarry={carry}
-                  onRemove={thisWeek.removeRock}
-                  onUpdate={thisWeek.updateRock}
-                  onReorder={thisWeek.reorder}
-                />
-              ) : (
-                <div className="flex flex-col">
-                  {report.priorities.map((p) => (
-                    <ReckonRow
-                      key={p.rock.id}
-                      p={p}
-                      onToggleDone={() => thisWeek.toggleDone(p.rock.id)}
-                      onCarry={() => carry(p)}
-                      onRemove={() => thisWeek.removeRock(p.rock.id)}
-                    />
-                  ))}
+      {/* Forming: the conscience is one sentence, so it rides ABOVE as a band —
+          given a column of its own it left half the screen dead, and it made the
+          projects (this surface's actual hero) share the stage with a sentence.
+          Sealed: the weave is the moment's content and fills its column. */}
+      {forming && (
+        <div className="mb-10 min-w-0" data-marquee="hours">
+          <Col label={hoursLabel}>
+            <div className="flex flex-col gap-2">
+              <ConscienceRead report={report} tense={tense} />
+              <details className="group">
+                <summary className="tap fast cursor-pointer list-none text-meta text-muted hover:text-accent">
+                  <span className="mr-1 inline-block transition-transform group-open:rotate-90" aria-hidden>▸</span>
+                  {hoursLabel}
+                </summary>
+                <div className="mt-3 max-w-xl">
+                  <HoursWeave report={report} onCorrected={reseal} />
                 </div>
-              )}
+              </details>
             </div>
-          )}
-          {/* Forming weeks are editable — name priorities here (Compose then blocks
-              them). Sealed weeks are read-only. */}
-          {forming ? (
-            <RockCapture
-              onAdd={thisWeek.addTitles}
-              placeholder={report.priorities.length === 0 ? "What needs to happen this week? Name it — one per line." : "Add another priority…"}
-            />
+          </Col>
+        </div>
+      )}
+
+      {/* MAIN — the week's projects at depth | (sealed) where the time went */}
+      {/* `min-w-0` on the grid items is load-bearing: a grid child defaults to
+          min-width:auto, so without it the row's long outcome line sets the
+          track width and `truncate` never engages — the text just runs off the
+          side of a phone. */}
+      <div className={`grid gap-x-14 gap-y-10 ${forming ? "" : "md:grid-cols-2"}`}>
+        <div className="min-w-0" data-marquee="priorities">
+        <Col label={forming ? "The week's projects" : "How they landed"}>
+          {report.priorities.length > 0 ? (
+            // A readable measure, not the full bleed: at 1440px an unconstrained
+            // row strands the progress chip a screen away from the name it
+            // belongs to, and the remedy panel becomes a banner.
+            <div className="flex max-w-3xl flex-col">
+              {report.priorities.map((p) => (
+                <WeekProjectRow
+                  key={p.rock.id}
+                  p={p}
+                  editable={forming}
+                  onShip={() => ship(p)}
+                  onReopen={() => reopen(p)}
+                  onSpan={() => span(p)}
+                  onPushOut={() => pushOut(p)}
+                  onTakeOff={() => takeOff(p)}
+                  onOpenProject={onOpenProject && p.projectId ? () => onOpenProject(p.projectId!) : undefined}
+                />
+              ))}
+            </div>
+          ) : forming ? (
+            // Adding is the ritual's job, not a fifth editor's — say what's true
+            // and point at the one door that does it.
+            <p className="text-body text-muted">
+              {report.brief.startsWith("No projects yet")
+                ? "No projects yet. The week is genuinely empty — that's a fine place to start."
+                : "Nothing's on this week yet — bring a project in and the week has a shape."}
+            </p>
           ) : (
-            report.priorities.length === 0 && <p className="text-body text-muted">No priorities were named this week.</p>
+            <p className="text-body text-muted">Nothing was on this week.</p>
+          )}
+
+          {/* The ritual, demoted: mid-week you fix one project, you don't re-run
+              the week. It stays the loud pill in the hero when the slate is empty. */}
+          {forming && onCompose && !ahead && total > 0 && (
+            <button onClick={onCompose} className="fast tap mt-3 text-label text-muted hover:text-accent">
+              {composeLabel ?? "Plan the week"} →
+            </button>
           )}
         </Col>
         </div>
 
-        <div data-marquee="hours">
-        <Col label={hoursLabel}>
-          <HoursWeave report={report} onCorrected={reseal} />
-        </Col>
-        </div>
+        {!forming && (
+          <div className="min-w-0" data-marquee="hours">
+            <Col label={hoursLabel}>
+              <HoursWeave report={report} onCorrected={reseal} />
+            </Col>
+          </div>
+        )}
 
         {/* The Find — one discovery; self-hides when nothing notable / ahead week. */}
         {!ahead && report.find && (
-          <div className="md:col-span-2">
+          <div className={forming ? "" : "md:col-span-2"}>
             <WeekFindCard find={report.find} weekStartISO={viewedWeekISO} sealed={state === "sealed"} onReseal={reseal} />
-          </div>
-        )}
-
-        {/* Next week capture is a forward-fold for the *lived* week. On a week
-            you're planning ahead, "next week" would be two weeks out — drop it. */}
-        {!ahead && (
-          <div data-marquee="next-week">
-          <Col label="Next week">
-            <NextWeek rocks={nextWeek.rocks} onAdd={nextWeek.addTitles} onRemove={nextWeek.removeRock} />
-          </Col>
-          </div>
-        )}
-
-        {/* Highlights are spent-work — meaningless before the week has run. */}
-        {!ahead && (
-          <div data-marquee="highlights">
-          <Col label="Highlights — what moved a domain">
-            <Highlights report={report} />
-          </Col>
           </div>
         )}
 
         {/* What you built — merged PRs as shipped work (self-hides if none). */}
         {!ahead && <WhatYouBuilt weekStartISO={viewedWeekISO} />}
       </div>
+
+      {shipId && <ProjectShipAssess id={shipId} onClose={() => setShipId(null)} />}
     </>
   );
 }
@@ -584,6 +404,8 @@ export interface WeekPlanFloorProps {
  *  Opens as a paced story (the received moment); "See the full week" → the detail. */
 export default function WeekPlanFloor({ report, state, tense = "current", weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext, onCompose, composeLabel, story }: WeekPlanFloorProps) {
   const [mode, setMode] = useState<"story" | "detail">(story ? "story" : "detail");
+  // Desktop only — a project's definition gets fixed where the project lives.
+  const { openRecord } = useAppNavigation();
 
   // Esc dismisses the surface (story or detail) — same gesture as every other overlay.
   useEffect(() => {
@@ -654,7 +476,7 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
       }}
     >
       <div className="mx-auto w-full max-w-5xl px-8 py-10 pb-28 md:px-12">
-        <WeekPlanBody report={report} state={state} tense={tense} viewedWeekISO={viewedWeekISO} header={header} onCompose={onCompose} composeLabel={composeLabel} />
+        <WeekPlanBody report={report} state={state} tense={tense} viewedWeekISO={viewedWeekISO} header={header} onCompose={onCompose} composeLabel={composeLabel} onOpenProject={(id) => openRecord("project", id)} />
       </div>
     </div>
   );

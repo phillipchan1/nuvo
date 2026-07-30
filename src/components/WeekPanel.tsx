@@ -17,7 +17,7 @@ import { useState } from "react";
 import { addDays, format } from "date-fns";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { priorityWork, weekPushes } from "../lib/priorities";
+import { priorityWork, pushAsRock, weekPushes } from "../lib/priorities";
 import { planningWeekStartISO } from "../lib/dates";
 import { domainById, initiativeById, projectById, type VerticalData } from "../lib/vertical";
 import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
@@ -55,18 +55,7 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   // derived, so this rail can never drift from the board (or from Set-the-week).
   // The stored rock, when one exists, carries only the verdict.
   const pushes = weekPushes(data, data.sprint?.week_start ?? planningWeekStartISO());
-  const rocks: BigRock[] = pushes.map(
-    ({ project, rock }) =>
-      rock ?? {
-        id: `derived:${project.id}`,
-        title: project.name,
-        win: project.outcome ?? "",
-        initiative_id: null,
-        project_id: project.id,
-        done_at: null,
-        roll_count: 0,
-      },
-  );
+  const rocks: BigRock[] = pushes.map(pushAsRock);
   // `done` already folds in "shipped inside this week" — a shipped project must
   // count on the scoreboard, not vanish from it.
   const landed = pushes.filter((p) => p.done).length;
