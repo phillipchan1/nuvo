@@ -232,7 +232,10 @@ export function SprintBand({
     ? renderDates({ start: p.startDate, target: p.targetDate, onStart, onTarget })
     : <CompactDates start={p.startDate} target={p.targetDate} onStart={onStart} onTarget={onTarget} />;
 
-  const litRange = from >= 0 ? `${fmtDay(weeks[from].weekStart)} – ${format(parseISO(p.targetDate ?? ""), "MMM d")}` : null;
+  const litRange =
+    from >= 0 && p.targetDate
+      ? `${fmtDay(weeks[from].weekStart)} – ${format(parseISO(p.targetDate), "MMM d")}`
+      : null;
 
   return (
     <div>
