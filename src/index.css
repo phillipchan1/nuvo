@@ -1183,14 +1183,32 @@ select.field { appearance: none; -webkit-appearance: none; }
   background: color-mix(in srgb, var(--muted) 55%, transparent);
 }
 
-/* Completion micro-interaction: a calm strike + settle, no confetti. */
+/* Completion micro-interaction: check blooms, title strikes, row fades out and
+   collapses — mutation waits for this (~480ms) so the list doesn't yank it early. */
 @keyframes task-complete {
-  0% { opacity: 1; }
-  55% { opacity: 0.55; transform: translateX(3px); }
-  100% { opacity: 0.42; transform: translateX(0); }
+  0% {
+    opacity: 1;
+    max-height: 2.75rem;
+    transform: translateX(0) scale(1);
+  }
+  35% {
+    opacity: 0.82;
+    transform: translateX(2px) scale(0.995);
+  }
+  100% {
+    opacity: 0;
+    max-height: 0;
+    transform: translateX(5px) scale(0.97);
+    border-bottom-color: transparent;
+  }
 }
 .task-completing {
-  animation: task-complete 200ms var(--ease-out) forwards;
+  overflow: hidden;
+  pointer-events: none;
+  animation: task-complete var(--d-moment) var(--ease-out) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-completing { animation-duration: 1ms; }
 }
 
 /* Vertical floor transition: a subtle rise as you change altitude. */

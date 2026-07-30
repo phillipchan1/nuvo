@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Label, Task } from "../lib/types";
 import { ENERGY_META } from "../lib/energy";
 import { liveSuggestion } from "../lib/grooming";
 import { fmtDuration, fmtLateness, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
 import { PriorityDot } from "./ui";
+
+/** Row exit + checkbox bloom — mutation waits so the list doesn't yank the row early. */
+const COMPLETE_MS = 480;
 
 export interface TaskMeta {
   project?: string | null;
@@ -60,6 +63,13 @@ export default function TaskRow({
   now?: Date;
 }) {
   const [completing, setCompleting] = useState(false);
+  const completeTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (completeTimer.current) clearTimeout(completeTimer.current);
+    },
+    [],
+  );
   const done = task.status === "done";
   const overdue = !done && isOverdue(task, now);
   const taskLabels = (task.task_labels ?? [])
@@ -67,10 +77,20 @@ export default function TaskRow({
     .filter((l): l is Label => Boolean(l));
 
   const toggle = () => {
+    if (completing) return;
     if (!done) {
+      const instant =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (instant) {
+        onToggleDone();
+        return;
+      }
       setCompleting(true);
-      onToggleDone(); // fire mutation immediately so optimistic update lands before animation ends
-      window.setTimeout(() => { setCompleting(false); }, 200);
+      completeTimer.current = window.setTimeout(() => {
+        completeTimer.current = null;
+        onToggleDone();
+      }, COMPLETE_MS);
     } else {
       onToggleDone();
     }
@@ -334,7 +354,7 @@ export default function TaskRow({
               real title characters. 12/500 is calmer than 13/500 *and* truncates
               less than 13/400 ever did. Contrast was never the lever: ink is
               already 15.29:1 of a possible 18.62:1 on the paper. */}
-          <span className={`min-w-0 flex-1 truncate text-caption font-medium ${done ? "text-muted line-through" : ""}`}>
+          <span className={`min-w-0 flex-1 truncate text-caption font-medium ${done || completing ? "text-muted line-through" : ""}`}>
             {task.title}
           </span>
 
