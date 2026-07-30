@@ -9,9 +9,7 @@
 
 import type { Domain } from "../../lib/vertical";
 
-// NOW is `--signal` at every altitude (the deck columns and the calendar's
-// now-line agree), so the leading column's band matches the grid beneath it.
-const NOW_BAND = "color-mix(in srgb, var(--signal) 7%, transparent)";
+import { NOW_BAND } from "./plannerNow";
 const PIP_W = 22; // each unit of work is one fixed-size block
 const MAX_PIPS = 8; // clamp (a domain rarely carries this many in one column)
 

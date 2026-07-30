@@ -6,7 +6,7 @@
 //
 // A quarter is a long way off in sprints, which is the honest unit of runway, so
 // every quarter page counts itself out in sprints: thirteen pips, the spent ones
-// dimmed, the one you're standing in lit `--signal`. That is the read the old
+// dimmed, the one you're standing in marked quietly. That is the read the old
 // text list never gave — "this bet has nine sprints left," not "Q3 2026".
 //
 // Cards lead with OKR health, because grooming a bet is about making the outcome
@@ -14,6 +14,7 @@
 // with no domain still gets its one-tap auto-link, exactly like the desktop card.
 
 import { useMemo, useState } from "react";
+import { NOW_MARK } from "../ondeck/plannerNow";
 import { useVertical } from "../../hooks/useVertical";
 import { useMaxPerQuarter } from "../../hooks/usePlannerPrefs";
 import {
@@ -301,7 +302,7 @@ function SprintRunway({ total, spent, current }: { total: number; spent: number;
               key={i}
               className="h-1.5 flex-1 rounded-full"
               style={{
-                background: isNow ? "var(--signal)" : past ? "var(--line-strong)" : "var(--accent)",
+                background: isNow ? NOW_MARK : past ? "var(--line-strong)" : "var(--accent)",
                 opacity: isNow ? 1 : past ? 0.3 : 0.55,
               }}
             />

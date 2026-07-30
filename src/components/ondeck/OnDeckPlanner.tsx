@@ -29,6 +29,7 @@ import CoverageControls from "./CoverageControls";
 import PlannerRail from "./PlannerRail";
 import DeckCard, { deckWeight } from "./DeckCard";
 import { PIP_TONE, projectCardStatus } from "./deckStatus";
+import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 
@@ -313,14 +314,10 @@ export default function OnDeckPlanner() {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
-  // "You are here" — a band down the current week (idx 0), the focus column and the
-  // one that matters most, so the eye lands on now first. NOW is `--signal` at every
-  // altitude (it's the same idea as the calendar's now-line); `--accent` stays your
-  // *intent*. The drop target is `--slot` — open time you're about to claim — and it
-  // still wins while dragging.
-  const THISWEEK_BAND = "color-mix(in srgb, var(--signal) 7%, transparent)";
+  // "You are here" — a quiet band down the current week (idx 0). Orientation, not
+  // alarm: `--signal` stays for at-risk / overdue; `--slot` is the drop target.
   const DROP_BAND = "color-mix(in srgb, var(--slot) 14%, transparent)";
-  const cellBg = (i: number) => (dropWeek === i ? DROP_BAND : i === 0 ? THISWEEK_BAND : undefined);
+  const cellBg = (i: number) => (dropWeek === i ? DROP_BAND : i === 0 ? NOW_BAND : undefined);
 
   return (
     <div className="flex h-full min-h-0">
@@ -426,11 +423,11 @@ export default function OnDeckPlanner() {
                     key={w.idx}
                     data-week={w.idx}
                     className="fast border-l border-line first:border-l-0 px-4 pb-2.5 pt-2"
-                    style={{ background: cellBg(w.idx), borderTop: w.idx === 0 ? "2px solid var(--signal)" : undefined }}
+                    style={{ background: cellBg(w.idx), borderTop: w.idx === 0 ? NOW_BORDER : undefined }}
                   >
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: w.idx === 0 ? "var(--signal)" : "var(--ink)" }}>
-                        {w.idx === 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--signal)" }} />}
+                      <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: w.idx === 0 ? NOW_INK : "var(--ink)" }}>
+                        {w.idx === 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: NOW_MARK }} />}
                         Sprint {sprintNumber(w.weekStart)}
                       </span>
                       <span className="mono text-micro tabular-nums" title={`${n} committed · max ${maxPerWeek} — your per-week focus cap`} style={{ color: over ? CAUTION : n > 0 ? "var(--muted)" : "var(--line-strong)" }}>

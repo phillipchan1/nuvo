@@ -9,9 +9,8 @@
 //
 //   crown   — readiness in the execution voice (the PlannerRail crown, compact).
 //   strip   — every column at once: pool · sprint · sprint · … Each cell carries
-//             its load as a bar, `--signal` marks now, and the cells are the DROP
-//             TARGETS while you're holding a card. It is the mini-map, the
-//             navigation, and the destination — one object doing three jobs.
+//             its load as a bar, a quiet now-band marks the current column, and
+//             the cells are the DROP TARGETS while you're holding a card.
 //   pager   — one page per column, snap-scrolled; the page you're on is lifted in
 //             the strip.
 //
@@ -28,6 +27,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Domain } from "../../../lib/vertical";
 import InlineAdd from "../../ondeck/InlineAdd";
+import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "../../ondeck/plannerNow";
 
 const LONG_PRESS_MS = 260;
 const CANCEL_PX = 10;
@@ -48,7 +48,7 @@ export interface DeckColumn {
   /** how many items are committed here, and your focus cap. */
   load: number;
   cap: number;
-  /** the current sprint / quarter — `--signal`, at every altitude. */
+  /** the current sprint / quarter — quiet orientation, not alarm. */
   now: boolean;
   /** optional per-page read (capacity gauge, sprint runway). */
   head?: ReactNode;
@@ -322,7 +322,7 @@ export default function MobileDeck({
                 isTarget
                   ? { background: "color-mix(in srgb, var(--slot) 12%, transparent)" }
                   : col.now
-                    ? { background: "color-mix(in srgb, var(--signal) 5%, transparent)" }
+                    ? { background: NOW_BAND }
                     : undefined
               }
             >
@@ -494,13 +494,13 @@ function ColumnStrip({
                 : on
                   ? "var(--surface)"
                   : undefined,
-              borderTop: c.now ? "2px solid var(--signal)" : "2px solid transparent",
+              borderTop: c.now ? NOW_BORDER : "1px solid transparent",
               boxShadow: isTarget ? "inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 55%, transparent)" : undefined,
             }}
           >
             <span
               className="mono truncate text-caption font-semibold leading-none"
-              style={{ color: isTarget ? "var(--slot)" : c.now ? "var(--signal)" : on ? "var(--ink)" : "var(--muted)" }}
+              style={{ color: isTarget ? "var(--slot)" : c.now ? NOW_INK : on ? "var(--ink)" : "var(--muted)" }}
             >
               {c.chip}
             </span>
@@ -532,10 +532,10 @@ function ColumnHead({ col }: { col: DeckColumn }) {
       <div className="flex items-baseline justify-between gap-2">
         <span
           className="text-head font-semibold"
-          style={{ color: col.now ? "var(--signal)" : "var(--ink)" }}
+          style={{ color: col.now ? NOW_INK : "var(--ink)" }}
         >
           {col.now && (
-            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: "var(--signal)" }} />
+            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: NOW_MARK }} />
           )}
           {col.title}
         </span>
@@ -683,7 +683,7 @@ function CoverageBand({
                     onClick={() => onAdd(r.domain, i)}
                     title={n > 0 ? `${n} in ${c.title}` : `Start one in ${c.title}`}
                     className="fast flex h-6 items-center justify-center gap-0.5 border-l border-line"
-                    style={c.now ? { background: "color-mix(in srgb, var(--signal) 6%, transparent)" } : undefined}
+                    style={c.now ? { background: NOW_BAND } : undefined}
                   >
                     {n === 0 ? (
                       <span className="text-micro text-muted/35">+</span>

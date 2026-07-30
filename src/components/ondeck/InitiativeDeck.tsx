@@ -43,6 +43,7 @@ import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
 import PlannerRail from "./PlannerRail";
 import DeckCard, { type DeckTone } from "./DeckCard";
+import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const COL_PX = 216;
@@ -315,10 +316,8 @@ export default function InitiativeDeck() {
               const risky = lanes.filter((l) => l.atRisk.atRisk).length;
               const over = lanes.length > maxPerQuarter;
               const dropping = dropCol === q.idx;
-              // NOW is `--signal` at every altitude, so the current quarter reads the
-              // same way the current week and the calendar's now-line do. The column
-              // is a RULED region on the paper — not a filled box — matching the
-              // project deck's weeks; a drop target washes `--slot` (open time).
+              // "You are here" — a quiet band on the current quarter. Orientation,
+              // not alarm: `--signal` stays for at-risk; `--slot` is the drop target.
               const current = q.idx === 0;
               return (
                 <div
@@ -329,15 +328,15 @@ export default function InitiativeDeck() {
                     background: dropping
                       ? "color-mix(in srgb, var(--slot) 14%, transparent)"
                       : current
-                        ? "color-mix(in srgb, var(--signal) 7%, transparent)"
+                        ? NOW_BAND
                         : undefined,
-                    borderTop: current ? "2px solid var(--signal)" : undefined,
+                    borderTop: current ? NOW_BORDER : undefined,
                     boxShadow: dropping ? "inset 0 0 0 1.5px color-mix(in srgb, var(--slot) 45%, transparent)" : undefined,
                   }}
                 >
                   <div className="flex items-baseline justify-between gap-2 px-1 pb-0.5 pt-1">
-                    <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: current ? "var(--signal)" : "var(--ink)" }}>
-                      {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--signal)" }} />}
+                    <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: current ? NOW_INK : "var(--ink)" }}>
+                      {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: NOW_MARK }} />}
                       {q.label}
                     </span>
                     <span className="mono text-micro tabular-nums" title={`${lanes.length} committed · max ${maxPerQuarter} — your per-quarter focus cap`} style={{ color: over ? CAUTION : "var(--muted)" }}>
@@ -346,7 +345,7 @@ export default function InitiativeDeck() {
                   </div>
                   {/* month span + sprint scale — each column reads when it starts and
                       ends, and (for the current quarter) how many sprints deep you are. */}
-                  <div className="mono px-1 pb-2 text-micro" style={{ color: current ? "color-mix(in srgb, var(--signal) 70%, var(--muted))" : "var(--muted)" }}>
+                  <div className="mono px-1 pb-2 text-micro text-muted">
                     {quarterRangeLabel(q.start, q.end)}
                     {current
                       ? ` · sprint ${Math.min(sprintsBetween(q.start, q.end) + 1, Math.max(1, sprintsBetween(q.start, new Date()) + 1))}/${sprintsBetween(q.start, q.end) + 1}`

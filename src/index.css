@@ -40,6 +40,15 @@
   color-scheme: dark;
 }
 
+/* Planner columns — "you are here" reads as orientation, not alarm.
+   Signal stays for at-risk / overdue / the calendar now-line. */
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  --now-band: color-mix(in srgb, var(--ink) 3.5%, transparent);
+  --now-mark: color-mix(in srgb, var(--ink) 68%, var(--muted));
+}
+
 /* ── Daybreak — warm paper (the default mood) ────────────────────────────────
    Accent is a warm mulberry (not blue), the slot a dusty teal, and uncoloured
    events default to warm stone — so the whole surface reads warm, not cold. */
