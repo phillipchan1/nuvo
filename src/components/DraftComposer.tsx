@@ -6,8 +6,28 @@ import { expandRule, type RecurrenceRule } from "../lib/recurrence";
 import { fixedCssPx, getUiScale } from "../hooks/useUiScale";
 import { RepeatControl } from "./RecurrencePicker";
 import { GuestsInput } from "./GuestsInput";
+import {
+  DEFAULT_MEET_PREFERENCE,
+  type MeetPreference,
+  shouldAddMeet,
+} from "../../supabase/functions/_shared/conferencing.ts";
 
 export type CreateKind = "task" | "event" | "slot";
+
+/** Everything the composer decided, handed over in one piece — the fields are
+ *  mostly optional flags, and eight positional arguments (two of them adjacent
+ *  booleans) is how a "don't email them" turns into a mass invite. */
+export interface CreateDraft {
+  kind: CreateKind;
+  title: string;
+  recurrence: RecurrenceRule | null;
+  attendees: string[];
+  calendarAccountId?: string;
+  domainId: string | null;
+  notifyGuests: boolean;
+  /** Attach a Google Meet link (events only). */
+  addMeet: boolean;
+}
 
 const KINDS: { value: CreateKind; label: string; hint: string }[] = [
   { value: "task", label: "Task", hint: "a time-blocked to-do" },
@@ -27,6 +47,7 @@ export default function DraftComposer({
   googleAvailable,
   writableAccounts = [],
   domains = [],
+  meetPreference = DEFAULT_MEET_PREFERENCE,
   onCreate,
   onCancel,
 }: {
@@ -40,7 +61,11 @@ export default function DraftComposer({
   /** Domains offered on the Slot tab — pick one to make a "domain slot" the
    *  weekly plan routes matching work into (docs/standing-slots.md). */
   domains?: Array<{ id: string; name: string; color: string }>;
-  onCreate: (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[], calendarAccountId: string | undefined, domainId: string | null, notifyGuests: boolean) => void;
+  /** The account's standing answer for "does a new event get a Meet link"
+   *  (Settings → Calendars). Decides where the toggle starts; the user's own
+   *  tap always wins for this event. */
+  meetPreference?: MeetPreference;
+  onCreate: (draft: CreateDraft) => void;
   onCancel: () => void;
 }) {
   // Anytime (all-day) drafts are task-only — events and slots require a specific time.
@@ -53,6 +78,10 @@ export default function DraftComposer({
   const [attendees, setAttendees] = useState<string[]>([]);
   const [calendarAccountId, setCalendarAccountId] = useState(() => writableAccounts[0]?.id ?? "");
   const [domainId, setDomainId] = useState<string | null>(null);
+  // null = "nobody has said" → follow the account preference, which for the
+  // default ("guests") means the toggle turns itself on the moment a guest is
+  // added. Once tapped, the explicit choice sticks for this event.
+  const [meetChoice, setMeetChoice] = useState<boolean | null>(null);
   // Creating an event with guests emails real people. That is not something a
   // button labelled "Create" should do silently, so the last step names who is
   // about to be mailed and offers to skip it.
@@ -132,8 +161,19 @@ export default function DraftComposer({
   /** An event with guests is an outbound email, so it gets a confirm step. */
   const sendsInvites = kind === "event" && attendees.length > 0;
 
+  const addMeet = kind === "event" && (meetChoice ?? shouldAddMeet(meetPreference, attendees.length));
+
   const finish = (notifyGuests: boolean) => {
-    onCreate(kind, title.trim(), repeat, attendees, calendarAccountId || undefined, kind === "slot" ? domainId : null, notifyGuests);
+    onCreate({
+      kind,
+      title: title.trim(),
+      recurrence: repeat,
+      attendees,
+      calendarAccountId: calendarAccountId || undefined,
+      domainId: kind === "slot" ? domainId : null,
+      notifyGuests,
+      addMeet,
+    });
   };
 
   const submit = () => {
@@ -309,6 +349,45 @@ export default function DraftComposer({
           </div>
         )}
 
+        {/* ── Google Meet — Google never adds one to an event created through
+              the API, so this toggle is the only thing that puts a way to meet
+              digitally on the invite ── */}
+        {kind === "event" && (
+          <div className="px-3.5 pt-3">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={addMeet}
+              onClick={() => setMeetChoice(!addMeet)}
+              className={`fast tap flex w-full items-center gap-2.5 rounded-[var(--radius)] border px-3.5 py-2.5 text-left transition-colors ${
+                addMeet ? "border-accent/40 bg-accent-soft" : "border-line bg-surface-2 hover:border-line-strong"
+              }`}
+            >
+              <svg width="13" height="13" viewBox="0 0 12 12" fill="none" className={`shrink-0 ${addMeet ? "text-accent" : "text-muted/70"}`}>
+                <rect x="1" y="3" width="6.5" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M7.5 5.5L10.8 3.8v4.4L7.5 6.5v-1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+              </svg>
+              <span className={`flex-1 text-body font-medium ${addMeet ? "text-accent" : "text-muted"}`}>
+                Google Meet
+              </span>
+              <span
+                className={`fast relative h-5 w-9 shrink-0 rounded-full ${addMeet ? "bg-accent" : "bg-line-strong"}`}
+              >
+                <span
+                  className={`fast absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[var(--shadow-1)] transition-[left] ${
+                    addMeet ? "left-[18px]" : "left-0.5"
+                  }`}
+                />
+              </span>
+            </button>
+            {addMeet && (
+              <p className="mt-1.5 pl-1 text-meta text-muted">
+                Google mints the link and puts it on the invite — no need to paste it into the notes.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* ── Actions ── */}
         {confirmingGuests ? (
           /* Naming the recipients is the point: "3 guests" tells you a count,
@@ -316,7 +395,8 @@ export default function DraftComposer({
           <div className="mt-3.5 flex flex-col gap-3 border-t border-line p-3.5">
             <div>
               <div className="text-body font-medium text-ink">
-                Email {attendees.length === 1 ? "this guest" : `these ${attendees.length} guests`} an invite?
+                Email {attendees.length === 1 ? "this guest" : `these ${attendees.length} guests`} an invite
+                {addMeet ? " with a Google Meet link" : ""}?
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {attendees.map((email) => (

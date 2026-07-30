@@ -12,7 +12,7 @@ import { firstDayOfWeek } from "../hooks/useSettings";
 import { endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
 import { sprintLabel } from "../lib/sprint";
 import { addDays } from "date-fns";
-import { expandRule, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
+import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useHiddenEvents, type useExternalEventMutations } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
@@ -20,7 +20,7 @@ import { synClass } from "../lib/syntax";
 import { isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
-import DraftComposer, { type CreateKind } from "./DraftComposer";
+import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftComposer";
 import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
 import type { EmblemSpec } from "../lib/weekEmblem";
@@ -1247,7 +1247,16 @@ export default function CalendarPane({
 
   const domainColor = (id: string | null) => (id ? domains.find((d) => d.id === id)?.color ?? null : null);
 
-  const handleCreate = async (kind: CreateKind, title: string, recurrence: RecurrenceRule | null, attendees: string[] = [], calendarAccountId?: string, domainId: string | null = null, notifyGuests = true) => {
+  const handleCreate = async ({
+    kind,
+    title,
+    recurrence,
+    attendees,
+    calendarAccountId,
+    domainId,
+    notifyGuests,
+    addMeet,
+  }: CreateDraft) => {
     if (!draft) return;
     const { start, end, point, allDay: draftAllDay } = draft;
     const duration = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000));
@@ -1291,6 +1300,7 @@ export default function CalendarPane({
           ...(recurrence ? { recurrence: toGoogleRRULE(recurrence) } : {}),
           ...(attendees.length ? { attendees, notifyGuests } : {}),
           ...(calendarAccountId ? { accountId: calendarAccountId } : {}),
+          addMeet,
         });
       } else if (recurrence) {
         await recurrenceMutations.createSeries({
@@ -1897,6 +1907,7 @@ export default function CalendarPane({
           googleAvailable={canCreateEvents}
           writableAccounts={writableAccounts}
           domains={domains}
+          meetPreference={settings?.auto_add_meet}
           onCreate={handleCreate}
           onCancel={() => {
             setDraft(null);

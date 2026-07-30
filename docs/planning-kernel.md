@@ -65,6 +65,8 @@ the kernel; the scan is what notices when someone stops.
 ## 3 · The acts registry
 
 The pairing to keep true. Adding a row means adding a kernel function first, then both ends.
+Most rows live in `planningRules.ts`; a shared rule that isn't about the *week* gets its own
+zero-import module beside it (e.g. `_shared/conferencing.ts`) and is cited inline below.
 
 | Act | Kernel | UI | Agent |
 |---|---|---|---|
@@ -75,6 +77,7 @@ The pairing to keep true. Adding a row means adding a kernel function first, the
 | Bring a project into the week | `bringIntoWeekPatch` | `BigRocks.bringIn`, `MobilePlanWeek.bringIn`, deck drop (`sprintSpanFor`) | `create_priority` |
 | Take a project off the week | `takeOffWeekPatch` | `BigRocks.takeOff`, `MobilePlanWeek.takeOff` | `delete_priority` |
 | Where a placement lands | `weekSpanFor` | `sprintSpanFor` (deck drag, sprint picker) | `create_priority` |
+| Does this meeting get a video link | `shouldAddMeet` (`_shared/conferencing.ts`) | `DraftComposer` Meet toggle · Settings → Calendars | `create_calendar_event` (`add_meet`) |
 
 ## 4 · Rules for working on it
 

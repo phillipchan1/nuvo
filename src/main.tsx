@@ -42,13 +42,22 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek / ?daycal, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?daycal / ?meet, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
 const showDayCalHarness = import.meta.env.DEV && params.has("daycal");
+const showMeetHarness = import.meta.env.DEV && params.has("meet");
 
-if (showEmblemHarness) {
+if (showMeetHarness) {
+  void import("./components/MeetHarness").then(({ default: MeetHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <MeetHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showEmblemHarness) {
   void import("./components/floors/EmblemHarness").then(({ default: EmblemHarness }) => {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>

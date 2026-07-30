@@ -52,7 +52,8 @@ supabase/functions/         edge functions (all server-side logic)
   google-oauth/             OAuth consent + callback, mirror-calendar setup
   google-sync/              full/incremental sync, watch channels, poll fallback
   google-webhook/           push notification receiver
-  google-events/            write-back for real Google events (move/resize/retitle)
+  google-events/            write-back for real Google events (create/move/resize/retitle,
+                            invite, RSVP, delete, and Google Meet links)
   task-mirror/              scheduled task → "Nuvo" Google calendar reconciler
   m365-oauth/               Microsoft identity platform OAuth
   m365-sync/                Graph calendarView delta polling (read-only)

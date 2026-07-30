@@ -1,5 +1,6 @@
 import type { Energy } from "./energy";
 import type { RecurrenceRule } from "./recurrence";
+import type { MeetPreference } from "../../supabase/functions/_shared/conferencing.ts";
 
 // inbox = raw capture · backlog = processed, deliberately undated (never in
 // inbox, never on Today, never rolls) · planned = dated · done/trashed.
@@ -247,6 +248,11 @@ export interface UserSettings {
   show_weather: boolean;
   /** calendar_accounts.id to use when Nuvo creates new Google Calendar events. Null = first connected account. */
   default_calendar_account_id: string | null;
+  /** When Nuvo attaches a Google Meet link to events it creates — "guests"
+   *  (default), "always" or "never". Google never applies its own auto-
+   *  conferencing setting to API-created events, so this is the only thing that
+   *  decides. Rule + values live in _shared/conferencing.ts. */
+  auto_add_meet: MeetPreference;
   /** The ORIENTATION_VERSION the user last finished/skipped. Null = never seen. The
    *  welcome re-surfaces when this is null or below the current version in code. */
   onboarding_completed_version: number | null;
@@ -329,6 +335,10 @@ export interface GoogleRawEvent {
   organizer?: { email: string; displayName?: string; self?: boolean };
   description?: string;
   htmlLink?: string;
+  /** Legacy join link. Google still sets it on older events and on some events
+   *  created by other clients, so reading only `conferenceData` misses meetings
+   *  that really do have a link — read both through `joinUrl()`. */
+  hangoutLink?: string;
   conferenceData?: {
     conferenceSolution?: { name?: string };
     entryPoints?: Array<{

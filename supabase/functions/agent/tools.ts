@@ -529,6 +529,11 @@ export const TOOL_DEFINITIONS = [
               "Only when the user NAMED where it goes. A calendar display name from writableCalendars ('Family', 'Apple Family', 'Work') or an account ('phil@frontierchurch.com', 'my gmail account'). Match loosely — 'apple family' → Family on iCloud. Omit entirely if they didn't say.",
           },
           location: { type: "string", description: "Optional location." },
+          add_meet: {
+            type: "boolean",
+            description:
+              "Attach a Google Meet link. OMIT unless the user said something about it — omitted follows their setting, which by default adds one to any event with guests. Pass true for 'add a Meet link' / 'make it a video call' / 'zoom-style call', false for 'no video' / 'in person'. Google only.",
+          },
         },
         required: ["title", "start_local", "end_local"],
       },
@@ -1418,6 +1423,12 @@ export async function executeTool(
           end_at,
           ...(location ? { location } : {}),
           ...(attendees.length && provider === "google" ? { attendees } : {}),
+          // Omitted → the account's auto_add_meet preference decides, the same
+          // rule the grid composer starts from, so booking by chat and booking
+          // by drag produce the same event.
+          ...(typeof args.add_meet === "boolean" && provider === "google"
+            ? { addMeet: args.add_meet as boolean }
+            : {}),
           accountId: target.accountId,
           calendarId: target.calendarId,
         },
@@ -1428,6 +1439,7 @@ export async function executeTool(
       }
 
       const eventId = (res.event as { id?: string } | null)?.id;
+      const meetUrl = (res.meetUrl as string | null) ?? null;
       return {
         result: JSON.stringify({
           created: true,
@@ -1437,6 +1449,9 @@ export async function executeTool(
           account: target.accountEmail,
           isDefault: target.isDefault,
           provider,
+          // Told, not assumed: the model can only say "with a Meet link" when
+          // Google actually returned one.
+          ...(meetUrl ? { meetUrl } : {}),
         }),
         action: {
           tool: name,

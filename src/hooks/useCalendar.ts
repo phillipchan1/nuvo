@@ -293,6 +293,7 @@ export function useExternalEventMutations() {
       location,
       description,
       notifyGuests,
+      addMeet,
     }: {
       title: string;
       start_at: string;
@@ -311,10 +312,15 @@ export function useExternalEventMutations() {
        *  not an invite) — the composer confirms who gets mailed and can pass
        *  false to add guests without sending. */
       notifyGuests?: boolean;
+      /** Attach a Google Meet link. Omit to let the account's `auto_add_meet`
+       *  preference decide (shared rule in _shared/conferencing.ts) — Google
+       *  never applies its own auto-conferencing setting to API-created events,
+       *  so nobody asking means no link at all. Google only. */
+      addMeet?: boolean;
     }) => {
       const provider = providerForAccount(accountId) ?? "google";
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
-        body: { action: "create", title, start_at, end_at, recurrence, attendees, accountId, calendarId, location, description, notifyGuests },
+        body: { action: "create", title, start_at, end_at, recurrence, attendees, accountId, calendarId, location, description, notifyGuests, ...(provider === "google" ? { addMeet } : {}) },
       });
       if (error) throw error;
       return data;
@@ -364,6 +370,21 @@ export function useExternalEventMutations() {
         body: { action: "invite", eventId: id, attendees, notifyGuests },
       });
       if (error) throw error;
+    },
+    onSettled: (_d, _e, vars) => {
+      qc.invalidateQueries({ queryKey: ["event_details", vars.id] });
+    },
+  });
+
+  // Add a Google Meet link to an event that doesn't have one — the meeting
+  // booked before the preference existed, or one that grew guests later.
+  const addMeet = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const { data, error } = await supabase.functions.invoke("google-events", {
+        body: { action: "add_meet", eventId: id },
+      });
+      if (error) throw error;
+      return data as { meetUrl: string | null; pending?: boolean };
     },
     onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: ["event_details", vars.id] });
@@ -425,6 +446,7 @@ export function useExternalEventMutations() {
     createEvent: create.mutateAsync,
     deleteEvent: del.mutate,
     inviteToEvent: invite.mutateAsync,
+    addMeetToEvent: addMeet.mutateAsync,
   };
 }
 

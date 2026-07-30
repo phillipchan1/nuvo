@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleAttendee, Label, Recurrence, Slot, Task } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES, DURATION_PRESETS, ruleOf } from "../lib/types";
 import { providerLabel, writableCalendarTargets, type MoveTargetGroup } from "../lib/calendarWrite";
+import { conferenceName, joinUrl } from "../../supabase/functions/_shared/conferencing.ts";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
@@ -939,6 +940,8 @@ export function EventPopover({
   const [rsvpError, setRsvpError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hideMode, setHideMode] = useState(false);
+  const [addingMeet, setAddingMeet] = useState(false);
+  const [meetError, setMeetError] = useState<string | null>(null);
   const [addingGuests, setAddingGuests] = useState(false);
   const [newGuests, setNewGuests] = useState<string[]>([]);
   const [inviting, setInviting] = useState(false);
@@ -970,6 +973,7 @@ export function EventPopover({
     setPendingRsvp(null);
     setConfirmDelete(false);
     setHideMode(false);
+    setMeetError(null);
   }, [event.id, event.title, event.start_at, event.end_at, event.location]);
 
   // Seed the notes field once the raw payload (with the description) arrives.
@@ -1037,7 +1041,13 @@ export function EventPopover({
     }
   };
 
-  const joinEntry = raw?.conferenceData?.entryPoints?.find((ep) => ep.entryPointType === "video");
+  // Where to join, read through the shared reader so `hangoutLink`-only events
+  // (older ones, and ones other clients made) show a Join button too.
+  const joinLink = joinUrl(raw);
+  // Only Google can mint a Meet link; iCloud write-back can't, and offering the
+  // button on an event we'd fail to add one to is worse than not offering it.
+  const isGoogleEvent = (accounts ?? []).find((a) => a.id === event.account_id)?.provider === "google";
+  const canAddMeet = editable && isGoogleEvent && !joinLink && !detailsLoading;
 
   const rsvpOptions: { status: AttendeeStatus; label: string }[] = [
     { status: "accepted", label: "Yes" },
@@ -1273,9 +1283,9 @@ export function EventPopover({
             ) : null}
 
             {/* Join meeting */}
-            {joinEntry && (
+            {joinLink && (
               <a
-                href={joinEntry.uri}
+                href={joinLink}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="fast inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-1.5 text-caption font-medium text-accent hover:bg-accent hover:text-white"
@@ -1283,8 +1293,43 @@ export function EventPopover({
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0">
                   <path d="M2 6h8M6 2l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
-                Join {raw?.conferenceData?.conferenceSolution?.name ?? "meeting"}
+                Join {conferenceName(raw)}
               </a>
+            )}
+
+            {/* Add a Meet link to a meeting that hasn't got one */}
+            {canAddMeet && (
+              <div className="flex flex-col items-start gap-1">
+                <button
+                  onClick={async () => {
+                    setMeetError(null);
+                    setAddingMeet(true);
+                    try {
+                      const res = await eventMutations.addMeetToEvent({ id: event.id });
+                      // Google can accept the request and still be minting the
+                      // link. Say that rather than showing a button that looks
+                      // like it did nothing.
+                      if (!res?.meetUrl) setMeetError("Google is still creating the link — give it a moment.");
+                    } catch (e) {
+                      setMeetError(e instanceof Error ? e.message : "Couldn't add a Meet link");
+                    } finally {
+                      setAddingMeet(false);
+                    }
+                  }}
+                  disabled={addingMeet}
+                  className="fast inline-flex items-center gap-2 rounded-md border border-line px-3 py-1.5 text-caption font-medium text-muted hover:border-line-strong hover:text-ink disabled:opacity-50"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0">
+                    <rect x="1" y="3" width="6.5" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.2" />
+                    <path d="M7.5 5.5L10.8 3.8v4.4L7.5 6.5v-1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+                  </svg>
+                  {addingMeet ? "Adding…" : "Add Google Meet"}
+                </button>
+                {otherGuests.length > 0 && !addingMeet && (
+                  <span className="text-meta text-muted">Guests get an update with the link.</span>
+                )}
+                {meetError && <span className="text-meta text-signal">{meetError}</span>}
+              </div>
             )}
 
             {/* RSVP */}

@@ -1248,6 +1248,68 @@ it can write to, it named exactly the four calendars still on the board —
 `phil@frontierchurch.us`, ROSE VILLA EVENTS, `phillipchan1@gmail.com` (default),
 Family — out of 21 writable rows, with the other seventeen hidden and absent.*
 
+**D-056 · 2026-07-30 · A meeting Nuvo books gets a Google Meet link the same way
+one booked in Google does — as a real conference, never a URL pasted into the
+notes.**
+
+**The bug: nobody was asking.** Google's *"automatically add Google Meet video
+conferences to events I create"* is a property of **their web UI**, not of the
+account or the calendar. It is never applied to an event created through the
+API, and `google-events` never sent `conferenceData` — so *every* event Nuvo
+ever created, by drag or by chat, went out with no way to meet digitally. It
+didn't look broken from inside Nuvo, because the read path renders whatever
+Google returns and Google was returning nothing to render. Two details make the
+request work and both fail silently when missed: `conferenceDataVersion=1` on
+the URL (without it the whole field is ignored, no error), and a fresh
+`requestId` per attempt (Google dedupes by it and hands back the previous
+conference).
+
+**Where the link lives is the interesting half — and the answer is not the
+description.** The tempting fix is to paste `meet.google.com/…` into the event
+body. We rejected it: a description is free text, so a pasted link is invisible
+to every client's Join button, to the calendar chip on a phone's lock screen, and
+to Meet's own knock-to-enter; it doesn't move when the meeting is rescheduled,
+survives as a stale link if the conference is removed, and can't be told apart
+from a link someone typed. `conferenceData` is the structured field every client
+already reads. **Google puts the link on the invite email and the event card for
+free — the description stays for what a human wrote.** So Nuvo asks Google to
+mint the conference and never writes the URL anywhere itself.
+
+**The default is guests-only, and it is one rule in one file.** A solo block
+doesn't need a room; a meeting with someone does. `auto_add_meet` (`guests` ·
+`always` · `never`, default `guests`) is the account's standing answer, and
+`_shared/conferencing.ts` holds the rule both runtimes call — the composer's
+toggle starts from it, and the edge function falls back to it when the caller
+says nothing, so booking by drag and booking by chat can't disagree
+(root `CLAUDE.md`: one rule, two runtimes). The toggle turns itself on the moment
+a guest is added and stops following the rule the instant it's tapped: Nuvo
+proposes, you promote (Principle 3). Because the link goes out on an invite,
+the guest-confirmation step now says so — *"Email these 2 guests an invite with a
+Google Meet link?"* — extending D-046 rather than working around it.
+
+**Meetings that already exist get the same repair.** `action: "add_meet"` adds a
+conference to an event booked before any of this, idempotently (an event that
+already has one returns its link instead of minting a second), notifying guests
+by default because a meeting moving online is news. And the join link is now
+read through one function that checks `conferenceData` **and** the legacy
+`hangoutLink`, so older events — and events other clients made — stop looking
+link-less. The phone got the button it never had: Join is the top action on the
+mobile event sheet, which is where a video meeting actually gets joined.
+→ **No Question Ledger row.** This isn't a new act; it's an existing act
+(*book the meeting*) that was quietly producing a broken artifact. Nearest
+neighbour is D2 — *what's already decided so I don't have to re-decide it* — and
+a meeting you have to re-open in Google to make joinable was not, in fact,
+decided.
+*Status: standing — typechecked, 82 tests green (8 new, pinning the default rule
+and the `hangoutLink` fallback), edge functions parse, `npm run build` green, and
+the composer driven in the dev app via a `?meet` harness at desktop and 375px:
+off with no guests, on the moment a guest is added, an explicit tap sticks
+through further edits, and the emitted draft carries `addMeet`. **Not verified
+against Google** — this container has no Supabase credentials, so the
+round-trip (link actually minted, `conferenceDataVersion` honored, the async
+mint settling within the poll) is unproven until migration 49 and `google-events`
++ `agent` are deployed. **Not yet deployed.***
+
 ---
 
 ## 2 · Things we decided **not** to do
@@ -1265,6 +1327,7 @@ Family — out of 21 writable rows, with the other seventeen hidden and absent.*
 | **N-09** | Extracting `packages/design` fully now | Stub is enough while there are two consumers | A third consumer appears |
 | **N-10** | Folding marketing into the SPA | D-018 | Never |
 | **N-11** | Rebuilding the UI wholesale on Untitled UI React | Tried for real — a full overnight rebuild on branch `untitled-ui-rebuild` (2026-07-28: React 19, UUI tokens bridged under every surface, one RecordCard, focus-trapped dialogs; all gates green). Phil's feel test rejected the look, and a feel test has exactly one judge. Branch destroyed same day (tip `832ae43`, unreferenced). Transferable learnings noted before deletion: the React 19 upgrade is ~3 type fixes; workbox precaches nothing over 2 MiB; react-aria adds ~200KB to the bundle | A concrete new reason beyond cohesion — e.g. hand-rolled component debt starts blocking features — and even then, propose per-primitive adoption, not a wholesale reskin |
+| **N-12** | Pasting the video-call link into the event description | It's the *unstructured* copy of a structured fact (D-056): invisible to every client's Join button, doesn't move when the meeting does, outlives a removed conference, and can't be told apart from a link a human typed. `conferenceData` is the field they all already read | A provider Nuvo writes to has no conference field at all — and even then, say plainly that the link is pasted |
 
 ---
 

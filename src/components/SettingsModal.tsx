@@ -822,6 +822,28 @@ function ConnectionsPane({
     <div>
       <PaneHeader title="Calendars" sub="Calendars Nuvo reads from and writes to. Toggle which appear on your board, and set the domain each one's meetings count toward." />
       <div className="space-y-5">
+        {/* Google's own "add video conferencing automatically" preference only
+            applies to events created in *their* web UI — it never reaches an
+            event booked through the API, so this is the only thing deciding
+            whether a meeting Nuvo makes has a way to meet digitally. */}
+        {accounts.some((a) => a.provider === "google" && a.sync_direction === "two_way") && (
+          <Row
+            layout="stack"
+            title="Add Google Meet to new events"
+            desc="Google never adds a Meet link to events created outside its own web app, so Nuvo asks for one. The composer can still override it per event."
+          >
+            <Segmented
+              value={settings?.auto_add_meet ?? "guests"}
+              onChange={(v) => updateSettings({ auto_add_meet: v as UserSettings["auto_add_meet"] })}
+              options={[
+                { value: "guests", label: "With guests" },
+                { value: "always", label: "Always" },
+                { value: "never", label: "Never" },
+              ]}
+            />
+          </Row>
+        )}
+
         {/* Account cards flow into two columns on a wide modal — a busy calendar
             setup (several accounts) fills the space instead of a long scroll. */}
         <div className="columns-1 gap-5 xl:columns-2 [&>*]:mb-5 [&>*]:break-inside-avoid">

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import type { UserSettings } from "../lib/types";
+import { DEFAULT_MEET_PREFERENCE, normalizeMeetPreference } from "../../supabase/functions/_shared/conferencing.ts";
 
 const KEY = ["settings"];
 
@@ -19,6 +20,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   last_rollover_date: null,
   show_weather: false,
   default_calendar_account_id: null,
+  auto_add_meet: DEFAULT_MEET_PREFERENCE,
   onboarding_completed_version: null,
 };
 
@@ -59,6 +61,10 @@ export function useSettings() {
           hidden_calendar_ids: data.hidden_calendar_ids ?? [],
           hidden_events: data.hidden_events ?? [],
           calendar_domain_map: data.calendar_domain_map ?? {},
+          // A row written before the column existed reads back null — fall to
+          // the same default the edge function uses, so the composer's toggle
+          // and what Google actually gets can't disagree.
+          auto_add_meet: normalizeMeetPreference(data.auto_add_meet),
         };
       }
       const { data: u } = await supabase.auth.getUser();

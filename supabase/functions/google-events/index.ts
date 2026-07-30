@@ -7,6 +7,7 @@
 //                 which shifts every instance in the series
 import { admin, handleOptions, json, logSync, requireUser } from "../_shared/admin.ts";
 import { type GoogleAccount, gFetch, loadGoogleAccounts, mapGoogleEvent } from "../_shared/google.ts";
+import { hasConference, joinUrl, meetCreateRequest, shouldAddMeet } from "../_shared/conferencing.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -56,11 +57,27 @@ Deno.serve(async (req) => {
       // states who gets mailed and offers to skip; an omitted flag still
       // notifies, which is the right default for a real invite.
       const notifyGuests = body.notifyGuests !== false;
+
+      // Video conferencing. Google never applies the user's "add Meet
+      // automatically" web-UI preference to API-created events, so unless we ask
+      // here the event has no link at all. An explicit addMeet from the caller
+      // wins; otherwise the account's standing preference decides
+      // (_shared/conferencing.ts), which is the same rule the composer shows.
+      let addMeet = typeof body.addMeet === "boolean" ? (body.addMeet as boolean) : undefined;
+      if (addMeet === undefined) {
+        const { data: prefs } = await admin
+          .from("user_settings")
+          .select("auto_add_meet")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        addMeet = shouldAddMeet(prefs?.auto_add_meet, attendees.length);
+      }
+
       const res = await gFetch(
         account,
         `/calendars/${encodeURIComponent(targetCal || "primary")}/events?sendUpdates=${
           notifyGuests ? "all" : "none"
-        }`,
+        }${addMeet ? "&conferenceDataVersion=1" : ""}`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -71,11 +88,36 @@ Deno.serve(async (req) => {
             ...(description ? { description } : {}),
             ...(recurrence?.length ? { recurrence } : {}),
             ...(attendees.length ? { attendees: attendees.map((email) => ({ email })) } : {}),
+            ...(addMeet ? meetCreateRequest(crypto.randomUUID()) : {}),
           }),
         },
       );
       if (!res.ok) throw new Error(`create event failed: ${res.status} ${await res.text()}`);
-      const created = await res.json();
+      let created = await res.json();
+
+      // Google mints the conference asynchronously: the create response comes
+      // back with status "pending" and no entry points, and the link appears a
+      // beat later. Without this re-read the row we store — and everything the
+      // caller reports — says the meeting has no way to join, which is exactly
+      // the bug this feature exists to fix. Two short reads, then give up and
+      // let the next sync fill it in.
+      if (addMeet && !hasConference(created)) {
+        const calForRead = targetCal || (created.organizer?.email as string) || account.email;
+        for (const waitMs of [700, 1500]) {
+          await new Promise((r) => setTimeout(r, waitMs));
+          const again = await gFetch(
+            account,
+            `/calendars/${encodeURIComponent(calForRead)}/events/${
+              encodeURIComponent(created.id)
+            }?conferenceDataVersion=1`,
+          );
+          if (!again.ok) break;
+          const fresh = await again.json();
+          if (hasConference(fresh)) { created = fresh; break; }
+          // A failed create request never resolves — stop waiting on it.
+          if (fresh?.conferenceData?.createRequest?.status?.statusCode === "failure") break;
+        }
+      }
 
       // Prefer the explicit target calendar; else the primary's id (the account
       // email, which Google returns as the organizer). Write the row now so it
@@ -94,7 +136,9 @@ Deno.serve(async (req) => {
         event = data;
       }
       await logSync("google", "event-create", "ok", undefined, user.id);
-      return json({ ok: true, event });
+      // meetUrl lets the caller *say* the link is there (the agent quotes it,
+      // the composer can surface it) instead of the user going to Google to check.
+      return json({ ok: true, event, meetUrl: joinUrl(created) });
     }
 
     if (!eventId) return json({ error: "eventId required" }, 400);
@@ -151,6 +195,68 @@ Deno.serve(async (req) => {
 
       await logSync("google", "event-invite", "ok", undefined, user.id);
       return json({ ok: true });
+    }
+
+    // ── Add Google Meet to an existing event ─────────────────────────────
+    // For the meeting that was booked before the preference existed, or booked
+    // as a solo block and then given guests. Idempotent: an event that already
+    // has a conference returns its link rather than minting a second one.
+    if (action === "add_meet") {
+      const getRes = await gFetch(
+        account,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
+          encodeURIComponent(evt.provider_event_id)
+        }?conferenceDataVersion=1`,
+      );
+      if (!getRes.ok) throw new Error(`fetch event: ${getRes.status}`);
+      const current = await getRes.json();
+      if (hasConference(current)) {
+        await admin.from("external_events").update({ raw: current }).eq("id", eventId);
+        return json({ ok: true, meetUrl: joinUrl(current), alreadyHad: true });
+      }
+
+      // Guests need to be told a meeting moved online, so notifying is the
+      // default here — same rule as delete: only a solo event stays quiet.
+      // deno-lint-ignore no-explicit-any
+      const guests = ((current.attendees as any[]) ?? []).filter((a) => a?.self !== true);
+      const notifyGuests = typeof body.notifyGuests === "boolean"
+        ? (body.notifyGuests as boolean)
+        : guests.length > 0;
+
+      const patchRes = await gFetch(
+        account,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
+          encodeURIComponent(evt.provider_event_id)
+        }?conferenceDataVersion=1&sendUpdates=${notifyGuests ? "all" : "none"}`,
+        { method: "PATCH", body: JSON.stringify(meetCreateRequest(crypto.randomUUID())) },
+      );
+      if (!patchRes.ok) throw new Error(`add meet: ${patchRes.status} ${await patchRes.text()}`);
+      let updated = await patchRes.json();
+
+      // Same asynchronous mint as on create — poll briefly for the entry point.
+      for (const waitMs of [700, 1500]) {
+        if (hasConference(updated)) break;
+        await new Promise((r) => setTimeout(r, waitMs));
+        const again = await gFetch(
+          account,
+          `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
+            encodeURIComponent(evt.provider_event_id)
+          }?conferenceDataVersion=1`,
+        );
+        if (!again.ok) break;
+        updated = await again.json();
+        if (updated?.conferenceData?.createRequest?.status?.statusCode === "failure") break;
+      }
+
+      await admin.from("external_events").update({ raw: updated }).eq("id", eventId);
+      await logSync("google", "event-add-meet", "ok", undefined, user.id);
+      const meetUrl = joinUrl(updated);
+      if (!meetUrl) {
+        // Google accepted the request but hasn't produced a link. Say so —
+        // a silent ok would read as "there's a Meet link" when there isn't one yet.
+        return json({ ok: true, meetUrl: null, pending: true });
+      }
+      return json({ ok: true, meetUrl });
     }
 
     // ── RSVP: accept / decline / tentative ───────────────────────────────

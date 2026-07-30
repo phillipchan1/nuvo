@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { AttendeeStatus, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
-import { useExternalEventMutations } from "../../hooks/useCalendar";
+import { useEventDetails, useExternalEventMutations } from "../../hooks/useCalendar";
+import { conferenceName, joinUrl } from "../../../supabase/functions/_shared/conferencing.ts";
 import { todayISO, tomorrowISO, nextWeekISO } from "../../lib/dates";
 import Sheet from "./Sheet";
 
@@ -40,6 +41,11 @@ export default function MobileEventSheet({
   onEditTask?: (taskId: string) => void;
 }) {
   const { rsvpEvent } = useExternalEventMutations();
+  // The phone is where a video meeting actually gets joined, so the sheet pulls
+  // the raw event for its conference link the same way the desktop inspector
+  // does. Null for a task block — hooks can't hide behind the branch below.
+  const { data: raw } = useEventDetails(tap.kind === "event" ? tap.id : null);
+  const meetLink = joinUrl(raw);
   const [rsvping, setRsvping] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);
 
@@ -104,6 +110,24 @@ export default function MobileEventSheet({
               )}
             </div>
           </div>
+
+          {/* Join — the one thing you open a meeting for on a phone, so it sits
+              above RSVP and reads as the primary action. */}
+          {meetLink && (
+            <a
+              href={meetLink}
+              target="_blank"
+              rel="noreferrer"
+              onClick={onClose}
+              className="tap fast mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3.5 text-head font-semibold text-white active:translate-y-px"
+            >
+              <svg width="16" height="16" viewBox="0 0 12 12" fill="none" className="shrink-0">
+                <rect x="1" y="3" width="6.5" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M7.5 5.5L10.8 3.8v4.4L7.5 6.5v-1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+              </svg>
+              Join {conferenceName(raw)}
+            </a>
+          )}
 
           {showRsvp && (
             <Section label="RSVP">
