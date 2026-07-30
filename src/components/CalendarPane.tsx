@@ -522,9 +522,14 @@ export default function CalendarPane({
     let fromRail = false; // did this drag start inside the rail itself?
     let calTask = false; // calendar block being dragged (inbox via eventDragStop, not here)
     let overRail = false; // is the pointer currently over the rail?
-    const inboxBannerAt = (x: number, y: number) => {
+    // Returning a row to the inbox drops it on the INBOX TAB. The tab is
+    // already in the layout, already says "Inbox", and sits above the list — so
+    // arming it costs no reflow and covers no rows. The banner it replaces
+    // appeared over the top of the list the moment a drag began, which is what
+    // made a rail drag feel like the list lurching out from under the cursor.
+    const inboxTabAt = (x: number, y: number) => {
       const hit = document.elementFromPoint(x, y) as HTMLElement | null;
-      return Boolean(hit?.closest(".rail-drop-banner, .rail-inbox-landing"));
+      return Boolean(hit?.closest("[data-inbox-tab]"));
     };
     // A cursor-following label that names the slot you're about to drop into. The
     // ghost fades to ~10% over a slot, so this is what tells you the target — and it
@@ -538,7 +543,7 @@ export default function CalendarPane({
       overSlot?.classList.remove("slot-drop-target");
       overSlot = null;
       chip.classList.remove("is-visible");
-      railRef.current?.classList.remove("rail-drop-active");
+      railRef.current?.classList.remove("rail-drop-active", "rail-return-armed");
     };
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement | null;
@@ -600,24 +605,32 @@ export default function CalendarPane({
         const onRail =
           e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom;
         overRail = onRail && !slotEl;
-        // Calendar → rail: whole rail is the inbox zone. Rail-origin: only the
-        // banner at the top (shown once the drag clears the 5px threshold).
-        const showInboxRail =
-          (fromRail && Boolean(dragId) && moved) ||
-          (!fromRail && overRail && (Boolean(dragId) || calTask));
-        rail.classList.toggle("rail-drop-active", showInboxRail);
+        // Two different offers, so two different marks.
+        // Calendar → rail: the WHOLE rail is the inbox zone, so the whole rail
+        // takes the wash. Rail-origin: the row is already in the rail — the
+        // only new destination is the Inbox tab, so arm just that. Tinting the
+        // rail for a drag that started inside it said "drop anywhere here",
+        // which was never true.
+        rail.classList.toggle(
+          "rail-drop-active",
+          !fromRail && overRail && (Boolean(dragId) || calTask),
+        );
+        rail.classList.toggle("rail-return-armed", fromRail && Boolean(dragId) && moved);
       }
     };
     const onUp = () => {
       // Capture drag state before resetting — needed to suppress the phantom
       // click the browser fires on the original element after any drag gesture.
-      const wasRailDrag = moved && fromRail;
+      let swallowClick = moved && fromRail;
       armed = false;
       if (active && moved) {
         active = false;
         const dropInbox =
           Boolean(dragId) &&
-          ((!fromRail && overRail) || (fromRail && inboxBannerAt(lastX, lastY)));
+          ((!fromRail && overRail) || (fromRail && inboxTabAt(lastX, lastY)));
+        // Releasing ON the Inbox tab would otherwise also *click* it and swap
+        // the rail out from under the drop.
+        if (inboxTabAt(lastX, lastY)) swallowClick = true;
         if (dropInbox) {
           const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${dragId}"]`);
           const group = dragEl?.getAttribute("data-task-drag-group");
@@ -642,7 +655,7 @@ export default function CalendarPane({
       // After dragging from the rail (whether dropped, cancelled, or returned),
       // the browser fires a click on the original TaskRow. Eat it once so the
       // task popover doesn't open when the user changes their mind mid-drag.
-      if (wasRailDrag) {
+      if (swallowClick) {
         document.addEventListener("click", (e) => { e.stopPropagation(); }, { capture: true, once: true });
       }
     };

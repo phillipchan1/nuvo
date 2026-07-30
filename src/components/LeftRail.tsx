@@ -8,6 +8,7 @@ import type { NewTaskInput, useTaskMutations } from "../hooks/useTasks";
 import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { useListReorder } from "../hooks/useListReorder";
 import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
 import TaskRow, { type TaskMeta } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
@@ -100,10 +101,18 @@ export default function LeftRail({
   }, [nav]);
 
   const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
+  // The inbox is a hand-ordered queue, so it renders by sort_order rather than
+  // by whatever the cache happens to hold — an optimistic reorder patches rows
+  // in place without re-sorting them, so without this the drop wouldn't show
+  // until the refetch landed.
+  const inboxOrdered = useMemo(
+    () => [...inbox].sort((a, b) => a.sort_order - b.sort_order),
+    [inbox],
+  );
 
   const visible: Task[] =
     tab === "inbox"
-      ? inbox
+      ? inboxOrdered
       : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
 
   const selected = visible.find((t) => t.id === selectedId) ?? null;
@@ -286,6 +295,67 @@ export default function LeftRail({
     selectedIds.size > 1 ? visible.filter((t) => selectedIds.has(t.id)).map((t) => t.id) : [];
   const dragGroupStr = dragGroupIds.length > 1 ? dragGroupIds.join(",") : undefined;
 
+  // ── hand ordering ───────────────────────────────────────────────────────────
+  // A row can only be dragged to a new place among rows whose order is actually
+  // ours to set. The inbox is one free queue; inside the day, the "anytime" run
+  // is free, and a slot's children are free *within their slot*. A row with a
+  // real time on it is ordered by the clock — dropping it two rows up would
+  // snap straight back, so it gets no insertion line here and moves on the
+  // calendar instead.
+  const bands = useMemo(() => {
+    const of = new Map<string, string>();
+    const ids = new Map<string, string[]>();
+    const add = (id: string, band: string) => {
+      of.set(id, band);
+      ids.set(band, [...(ids.get(band) ?? []), id]);
+    };
+    if (tab === "inbox") inboxOrdered.forEach((t) => add(t.id, "inbox"));
+    else {
+      todaySections.unblocked.forEach((t) => add(t.id, "anytime"));
+      todaySections.scheduled.forEach((t) => t.slot_id && add(t.id, `slot:${t.slot_id}`));
+    }
+    return { of, ids };
+  }, [tab, inboxOrdered, todaySections]);
+
+  const listRef = useRef<HTMLDivElement>(null);
+  // A drag is a move, not a selection. Selection resolves on mousedown (so
+  // modifier-clicks always register), which used to leave the row you merely
+  // dragged sitting lifted afterwards — put the cursor back where it was.
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
+  const preDragSelection = useRef<string | null>(null);
+
+  const byId = useMemo(() => new Map(visible.map((t) => [t.id, t])), [visible]);
+
+  const { draggingId, lineTop } = useListReorder({
+    containerRef: listRef,
+    itemSelector: "[data-task-drag]",
+    idAttr: "data-task-drag",
+    bandOf: (id) => bands.of.get(id) ?? null,
+    bandIds: (band) => bands.ids.get(band) ?? [],
+    onPointerDown: () => {
+      preDragSelection.current = selectedIdRef.current;
+    },
+    onDragEnd: () => {
+      setSelectedId(preDragSelection.current);
+      setSelectedIds(new Set());
+    },
+    onCommit: (_band, ids) => {
+      // Re-deal the band's OWN sort_order values instead of renumbering 0..n.
+      // sort_order is a global column — a project's steps and a slot's children
+      // read it too — so a reorder here must not renumber rows it can't see.
+      const pool = ids.map((id) => byId.get(id)).filter((t): t is Task => Boolean(t));
+      if (pool.length < 2) return;
+      let vals = pool.map((t) => t.sort_order).sort((a, b) => a - b);
+      // Ties (every fresh capture lands on the same default) can't express an
+      // order — spread them densely from the band's own floor.
+      if (new Set(vals).size !== vals.length) vals = vals.map((_, i) => vals[0] + i);
+      pool.forEach((t, i) => {
+        if (t.sort_order !== vals[i]) mutations.patchTask(t.id, { sort_order: vals[i] });
+      });
+    },
+  });
+
   const rowProps = (t: Task) => ({
     task: t,
     labels,
@@ -294,6 +364,7 @@ export default function LeftRail({
     selected: t.id === selectedId,
     multiSelected: selectedIds.has(t.id),
     draggable: true,
+    dragging: draggingId === t.id,
     dragGroup: selectedIds.has(t.id) ? dragGroupStr : undefined,
     accent: accentOf(t),
     meta: metaOf(t),
@@ -394,33 +465,20 @@ export default function LeftRail({
       </div>
 
       {/* List — opt out of the titlebar drag region so row drags aren't window drags */}
-      <div className="rail-list relative min-h-0 flex-1 overflow-y-auto" data-tauri-drag-region="false" data-teach="day-list">
-        {/* Inbox drop targets float over the list — never push rows down mid-drag. */}
-        <div className="rail-drop-chrome pointer-events-none" aria-hidden>
-          <div className="rail-drop-banner">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
-              <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
-            </svg>
-            Release to return to inbox
-          </div>
-          {tab === "inbox" && (
-            <div className="rail-inbox-landing">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
-                <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
-              </svg>
-              Drop to unschedule
-            </div>
-          )}
-        </div>
+      <div ref={listRef} className="rail-list relative min-h-0 flex-1 overflow-y-auto" data-tauri-drag-region="false" data-teach="day-list">
+        {/* Where a released row will land. The list never reflows to show it —
+            rows shifting under the cursor is what made the old drop chrome read
+            as the list jumping away from you. */}
+        {lineTop != null && (
+          <div className="reorder-insert-line" style={{ top: lineTop }} aria-hidden />
+        )}
 
         {tab === "inbox" && (
           <>
-            {inbox.map((t) => (
+            {inboxOrdered.map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
-            {inbox.length === 0 && <EmptyState text="Inbox zero. Capture with C or ⌘K." />}
+            {inboxOrdered.length === 0 && <EmptyState text="Inbox zero. Capture with C or ⌘K." />}
           </>
         )}
 
@@ -814,10 +872,21 @@ function buildTodaySections(today: Task[], now: Date) {
     .filter((t) => isOverdue(t, now))
     .sort((a, b) => b.roll_count - a.roll_count || (a.start_time ?? "").localeCompare(b.start_time ?? ""));
   const pinnedIds = new Set(pinned.map((t) => t.id));
-  const unblocked = active.filter((t) => !t.start_time && !pinnedIds.has(t.id));
+  // Both runs sort by sort_order last so a hand reorder shows the instant it's
+  // patched (patchTask updates rows in place; it doesn't re-sort the cache).
+  // Scheduled rows are the clock's to order — sort_order only breaks ties, and
+  // a tie inside one slot IS that slot's hand-set order.
+  const unblocked = active
+    .filter((t) => !t.start_time && !pinnedIds.has(t.id))
+    .sort((a, b) => a.sort_order - b.sort_order);
   const scheduled = active
     .filter((t) => t.start_time && !pinnedIds.has(t.id))
-    .sort((a, b) => (a.start_time! < b.start_time! ? -1 : 1));
+    .sort(
+      (a, b) =>
+        a.start_time!.localeCompare(b.start_time!) ||
+        (a.slot_id ?? "").localeCompare(b.slot_id ?? "") ||
+        a.sort_order - b.sort_order,
+    );
   return { pinned, unblocked, scheduled, done };
 }
 

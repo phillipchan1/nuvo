@@ -1596,6 +1596,61 @@ over.*
 
 ---
 
+**D-063 · 2026-07-30 · A rail row can be dragged to a new place in its own list — but only
+where the new place will actually hold. The return-to-inbox banner is retired; the Inbox
+tab is the target.**
+
+**The defect, reported from a real Thursday.** Four failures in one gesture. (1) There was
+**no reorder at all** — every row drag was FullCalendar's "drop this onto the grid," so the
+day's list could not be hand-ordered. (2) No insertion line, so even a working drag would
+have been aimed blind. (3) The *"Release to return to inbox"* banner unfurled over the top
+of the list the instant a drag began — it overlaid rather than reflowed, but it covered the
+first row, which reads as the list lurching away from the cursor. (4) The dragged row kept
+its lifted `glass-lift-row` state after the drop, because selection resolves on `mousedown`
+(deliberately — see D-054a) and nothing cleared it.
+
+**The rule that decides where a line may appear.** A drop offer is a promise. Order in the
+rail is only *ours to set* in three places: the inbox queue, the day's **anytime** run, and
+the children of one slot. A row with a real clock time is ordered by its clock — dropping it
+two rows up would snap straight back on the next read, so it gets **no line**, and it moves
+on the calendar instead, where its position means something. Offering the line everywhere
+would have been the friendlier lie.
+
+**The banner is retired because the tab was already there.** The Inbox tab sits above the
+list, is permanently in the layout, and already carries the word *Inbox*. Arming it costs
+zero reflow and covers zero rows. Two drags, two marks: a calendar item over the rail wash
+the **whole rail** (the whole rail is the zone); a row already *in* the rail arms **only the
+tab** (the tab is the only new destination — tinting the rail said "drop anywhere here,"
+which was never true).
+
+→ **Mechanism.** `useListReorder` (`src/hooks/useListReorder.ts`) — pointer events, since
+Tauri swallows HTML5 DnD. Deliberately *passive*: it never calls `preventDefault` or
+`stopPropagation`, so it rides alongside FullCalendar's `Draggable` on the same rows rather
+than replacing it. FC keeps the cursor ghost and owns drops onto the grid; the hook owns the
+line and drops inside the list; they resolve by geometry, and the line goes quiet the moment
+the pointer leaves the rail. A commit **re-deals the band's own `sort_order` values** instead
+of renumbering `0..n` — `sort_order` is a global column that a project's steps and a slot's
+children also read, so a reorder here must not renumber rows it can't see.
+
+→ **Consequence.** Sharpens **D2** (*"what do I do next?"*) — the day's order is now a thing
+you can state, not just a thing that happens to you. Costs one honest limitation, stated
+above. `GroomWall` and the slot popover still carry their own hand-rolled copies of this
+gesture; they should adopt the hook, and until they do this is the reference.
+
+→ **Rejected:** a drag handle/grip to disambiguate reorder from calendar-drop (hover-only
+chrome on a row deliberately kept to one line — and the axis already disambiguates); a
+banner pinned to the *bottom* of the list instead of the top (same covering, lower down).
+
+→ **Not taken here, worth its own decision:** a **cross-band** drop as a real act — dragging
+a slot child up into the anytime run meaning *take it out of the slot*, and the reverse
+meaning *put it in*. That's a genuine planning move, not a reorder, and it deserves to be
+designed rather than inherited from a gesture.
+
+*Status: standing — verified against the running app 2026-07-30 (both bands reordered and
+restored, persistence confirmed across a reload).*
+
+---
+
 ## 2 · Things we decided **not** to do
 
 | # | The idea | Why not | Would change if… |

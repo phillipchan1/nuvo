@@ -20,6 +20,7 @@ export default function TaskRow({
   selected,
   multiSelected,
   draggable,
+  dragging,
   dragGroup,
   onSelect,
   onOpen,
@@ -39,6 +40,9 @@ export default function TaskRow({
   selected: boolean;
   multiSelected?: boolean;
   draggable: boolean;
+  /** This row is the one currently being dragged — it reads as the *source*
+   *  (quiet, left behind) while the ghost under the cursor is the live copy. */
+  dragging?: boolean;
   /** Comma-joined ids of the whole multi-selection, set on each selected row so
    *  dragging any one of them carries the group onto the calendar. */
   dragGroup?: string;
@@ -304,7 +308,7 @@ export default function TaskRow({
       }
       className={`fast group flex h-11 cursor-pointer select-none items-center gap-2 border-b border-line last:border-b-0 px-3 ${
         completing ? "task-completing" : ""
-      } ${bg}`}
+      } ${dragging ? "row-dragging" : bg}`}
       style={spineColor ? { boxShadow: `inset ${groomPush ? 3 : 2}px 0 0 0 ${spineColor}` } : undefined}
     >
       {/* Checkbox */}

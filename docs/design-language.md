@@ -94,8 +94,25 @@ tray — owes the user **two things at all times**, or it feels lost:
    **vacated slot** (`.is-dragging`, dashed + faded, for move-between-containers), or the
    live target cell highlight (calendar). Never leave the user guessing where a release
    lands.
+3. **Only where it will hold, and never by moving the list.** Two failure modes, both
+   found in the Schedule rail (**D-063**). *(a)* A drop indicator is a promise — show it
+   only where the new position is genuinely ours to store. A row ordered by its clock (a
+   time-blocked task) gets **no line**: it moves on the calendar, where its position means
+   something. Offering the line everywhere is the friendlier lie. *(b)* Drop chrome
+   **never enters the list.** No banner, strip, or placeholder that unfurls over the rows
+   you're dragging between — overlaying reads the same as reflowing. Arm something already
+   in the layout instead (the Schedule rail arms the **Inbox tab**: permanent, already
+   labelled, costs zero reflow and covers zero rows).
 
-Reference implementation: the Week's Plan priority reorder (`WeekPlanFloor.tsx` —
+And when the gesture ends, **it ends** — a drag is a move, not a selection. Nothing may
+stay lifted, armed, or `user-select`-locked after the release.
+
+Reference implementation for a list that shares its rows with another drag system:
+`useListReorder` (`src/hooks/useListReorder.ts`, used by `LeftRail`) — passive by design
+(no `preventDefault` / `stopPropagation`) so it rides alongside FullCalendar's `Draggable`
+on the same rows; FC keeps the cursor ghost, the hook owns the line, geometry decides.
+
+Reference implementation for a list that owns its rows outright: the Week's Plan priority reorder (`WeekPlanFloor.tsx` —
 `ReorderablePriorities`): pointer-events (Tauri swallows HTML5 DnD — see
 `nuvo-tauri-dnd`), grip handle with `touch-action: none`, `.glass-grab` + pointer-follow
 on the held row, `--accent` drop bar at the computed gap, persist on release.
