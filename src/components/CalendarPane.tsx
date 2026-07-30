@@ -1878,7 +1878,10 @@ export default function CalendarPane({
       {/* ── Navigation bar — three grid zones (nav · masthead · altitude/door).
             Equal side columns keep the masthead truly centered; sides never
             overlay the title. Also fills the macOS titlebar zone (titlebar-pad). */}
-      <div className="titlebar-pad grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 py-1.5">
+      <div
+        data-tauri-drag-region="deep"
+        className="titlebar-pad grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 py-1.5"
+      >
         {/* Left — Show panels (focus exit only) + period nav */}
         <div className="flex min-w-0 items-center gap-1">
           {onToggleFocus && focusMode && (
@@ -1945,6 +1948,7 @@ export default function CalendarPane({
         {/* Right — quiet clock · week door · altitude · overflow. No overflow-hidden
             here — the ··· menu drops below and must be allowed to paint. */}
         <div className="flex min-w-0 items-center justify-end gap-1">
+          <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
           <TimeZoneChip now={now} />
 
           {onOpenWeekPlan && weekGlyph && (

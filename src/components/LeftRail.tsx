@@ -350,6 +350,7 @@ export default function LeftRail({
       {/* Inner keeps its natural width so nothing reflows while the outer clips
           it shut in focus mode. */}
       <div
+        data-tauri-drag-region="deep"
         className="titlebar-pad relative flex h-full flex-col border-r border-line"
         style={{
           width: railWidth,

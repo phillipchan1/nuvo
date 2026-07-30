@@ -368,6 +368,15 @@ html.tauri-macos .flow-topbar {
   padding-left: var(--titlebar-inset-left);
 }
 
+/* The trial banner sits above the Spine, at the true top of the window, so it
+   — not the Spine — is what the traffic lights float over here. Its height
+   already matches the inset band; only the left inset is needed so the
+   message/buttons don't render underneath the (unclickable-through-web)
+   lights. */
+html.tauri-macos .trial-banner {
+  padding-left: var(--titlebar-inset-left);
+}
+
 /* The Schedule has no chrome header. Instead the rail + the calendar toolbar
    carry this inset so their own surfaces rise to fill the macOS titlebar zone
    (traffic lights float over the spine; nothing reads as an empty bar). On the

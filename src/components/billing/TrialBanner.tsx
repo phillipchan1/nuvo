@@ -31,7 +31,7 @@ export function TrialBanner() {
       {!dismissed && (
         <div
           role="status"
-          className={`flex shrink-0 items-center gap-3 border-b px-4 py-1.5 text-caption ${
+          className={`trial-banner flex shrink-0 items-center gap-3 border-b px-4 py-1.5 text-caption ${
             urgent
               ? "border-signal/30 bg-signal-soft font-medium text-signal"
               : "border-line bg-signal-soft/60 text-signal"

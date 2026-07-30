@@ -106,7 +106,7 @@ export default function FloorPane({
           The face switcher rides the RIGHT cluster in the calendar toolbar's own
           idiom, so "which shape of this altitude" reads identically everywhere. */}
       <div
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
         className="app-topbar flex h-11 shrink-0 items-center gap-1.5 border-b border-line px-5"
       >
         {rung === "domain" && <span className="mono text-label font-medium text-ink">Domains</span>}

@@ -74,7 +74,10 @@ export default function FlowShell({
   return (
     <div className="scrim atmosphere fixed inset-0 z-50 flex flex-col">
       {/* the pipeline header: inputs → stages → output, all live */}
-      <header className="flow-topbar flex shrink-0 items-center gap-4 border-b border-line bg-surface px-5 py-2 elev-1">
+      <header
+        data-tauri-drag-region="deep"
+        className="flow-topbar flex shrink-0 items-center gap-4 border-b border-line bg-surface px-5 py-2 elev-1"
+      >
         <div className="w-[108px] shrink-0">
           <div className="wordmark text-head">{title}</div>
           <div className="mono text-meta text-muted">{sub}</div>
