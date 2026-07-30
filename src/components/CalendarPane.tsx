@@ -504,10 +504,20 @@ export default function CalendarPane({
   useEffect(() => {
     let armed = false;
     let active = false;
+    let moved = false;
+    let startX = 0;
+    let startY = 0;
+    let lastX = 0;
+    let lastY = 0;
     let overSlot: HTMLElement | null = null;
     let dragId: string | null = null; // external [data-task-drag] id (rail / slot popover row)
     let fromRail = false; // did this drag start inside the rail itself?
+    let calTask = false; // calendar block being dragged (inbox via eventDragStop, not here)
     let overRail = false; // is the pointer currently over the rail?
+    const inboxBannerAt = (x: number, y: number) => {
+      const hit = document.elementFromPoint(x, y) as HTMLElement | null;
+      return Boolean(hit?.closest(".rail-drop-banner, .rail-inbox-landing"));
+    };
     // A cursor-following label that names the slot you're about to drop into. The
     // ghost fades to ~10% over a slot, so this is what tells you the target — and it
     // shows the full slot title even when a narrow/inset slot truncates its own.
@@ -528,10 +538,21 @@ export default function CalendarPane({
       const dragEl = el?.closest?.("[data-task-drag]") as HTMLElement | null;
       dragId = dragEl?.getAttribute("data-task-drag") ?? null;
       fromRail = Boolean(dragEl && railRef.current?.contains(dragEl));
+      calTask = Boolean(el?.closest?.(".evt-task"));
+      startX = lastX = e.clientX;
+      startY = lastY = e.clientY;
+      moved = false;
     };
     const onMove = (e: PointerEvent) => {
       if (!armed) return;
-      if (!active) { active = true; document.body.classList.add("cal-dragging"); }
+      lastX = e.clientX;
+      lastY = e.clientY;
+      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 5) return;
+      if (!moved) {
+        moved = true;
+        active = true;
+        document.body.classList.add("cal-dragging");
+      }
       // Hit-test slots by geometry, not elementFromPoint: FullCalendar stacks the
       // .fc-highlight selection box and the drag mirror *above* the slot event, so
       // elementFromPoint+closest never sees the slot and the drop lands beside it.
@@ -571,21 +592,25 @@ export default function CalendarPane({
         const onRail =
           e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom;
         overRail = onRail && !slotEl;
-        // Calendar → rail returns to inbox; rail-origin drags that cancel over the
-        // list must not (a tiny wobble while holding a Today row used to file it).
-        rail.classList.toggle("rail-drop-active", overRail && Boolean(dragId) && !fromRail);
+        // Calendar → rail: whole rail is the inbox zone. Rail-origin: only the
+        // banner at the top (shown once the drag clears the 5px threshold).
+        const showInboxRail =
+          (fromRail && Boolean(dragId) && moved) ||
+          (!fromRail && overRail && (Boolean(dragId) || calTask));
+        rail.classList.toggle("rail-drop-active", showInboxRail);
       }
     };
     const onUp = () => {
       // Capture drag state before resetting — needed to suppress the phantom
       // click the browser fires on the original element after any drag gesture.
-      const wasRailDrag = active && fromRail;
+      const wasRailDrag = moved && fromRail;
       armed = false;
-      if (active) {
+      if (active && moved) {
         active = false;
-        // Calendar → rail drop → Inbox (removes from slot too). Rail-origin cancels
-        // release over the list and must not re-file the task.
-        if (overRail && dragId && !fromRail) {
+        const dropInbox =
+          Boolean(dragId) &&
+          ((!fromRail && overRail) || (fromRail && inboxBannerAt(lastX, lastY)));
+        if (dropInbox) {
           const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${dragId}"]`);
           const group = dragEl?.getAttribute("data-task-drag-group");
           const ids = group ? group.split(",") : [dragId];
@@ -598,9 +623,13 @@ export default function CalendarPane({
         // microtask so onReceive can read it; if no drop occurred it clears itself.
         Promise.resolve().then(() => { overSlotIdRef.current = null; });
         reset();
+      } else if (!moved) {
+        reset();
       }
       dragId = null;
       fromRail = false;
+      calTask = false;
+      moved = false;
       overRail = false;
       // After dragging from the rail (whether dropped, cancelled, or returned),
       // the browser fires a click on the original TaskRow. Eat it once so the

@@ -280,6 +280,10 @@ export default function WeekBoard({
       const fromBoard = Boolean(boardRef.current?.contains(el));
       const rail = document.querySelector<HTMLElement>("[data-rail-drop]");
       const fromRail = Boolean(rail?.contains(el));
+      const inboxBannerAt = (x: number, y: number) => {
+        const bannerHit = document.elementFromPoint(x, y) as HTMLElement | null;
+        return Boolean(bannerHit?.closest(".rail-drop-banner, .rail-inbox-landing"));
+      };
       const start = { x: e.clientX, y: e.clientY };
       let moved = false;
       let target: DropTarget = null;
@@ -302,10 +306,14 @@ export default function WeekBoard({
         const dayEl = hit?.closest("[data-day]");
         if (dayEl) target = { kind: "day", day: dayEl.getAttribute("data-day") ?? "" };
         else if (hit?.closest("[data-tray]")) target = { kind: "tray" };
-        else if (hit?.closest("[data-rail-drop]") && !fromRail) target = { kind: "inbox" };
+        else if (hit?.closest("[data-rail-drop]")) {
+          if (!fromRail) target = { kind: "inbox" };
+          else if (inboxBannerAt(ev.clientX, ev.clientY)) target = { kind: "inbox" };
+          else target = null;
+        }
         else target = null;
         setDropTarget(target);
-        rail?.classList.toggle("rail-drop-active", target?.kind === "inbox");
+        rail?.classList.toggle("rail-drop-active", target?.kind === "inbox" || (fromRail && moved));
       };
       const up = () => {
         window.removeEventListener("pointermove", move);
