@@ -37,6 +37,7 @@ import {
 } from "../../lib/vertical";
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO } from "../../lib/dates";
 import { weekName, weekSpan } from "../../lib/week";
+import { noticeIfUnready } from "../../lib/readyNotice";
 import { CONTEXT_META, type DayContext, type Placement, type UnplacedTask } from "../../lib/compose";
 import { readDay, toBusyBlocks, type Gap } from "../../lib/now";
 import { type Batch } from "../../lib/batch";
@@ -800,6 +801,9 @@ function ProjectsLane({
   const bringIn = (p: Project) => {
     const patch = bringIntoWeekPatch(p, weekStartISO);
     if (patch) updateProject(p.id, patch);
+    // Placed either way — but a project with no steps can't be sized, and the
+    // week is where that costs you. Name it, offer the fix, don't refuse.
+    noticeIfUnready(data, p, () => openRecord("project", p.id));
   };
   const takeOff = (p: Project) => updateProject(p.id, takeOffWeekPatch());
   // Both remediations are span writes through the kernel — the same act as

@@ -1,19 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Btn } from "../ui";
 import { useOrientation } from "../../hooks/useOrientation";
-import { ORIENTATION_STEPS, type OrientationAction } from "./steps";
+import type { OrientationAction } from "./steps";
+import { WelcomeHero } from "./Visuals";
 import TeachPanel from "./TeachPanel";
 
-// The first-run welcome. Full-viewport warm paper (same trick the floor overlay
-// uses — an opaque `.atmosphere` layer over everything) with a single glass card
-// that teaches one concept at a time. One component serves both shells: two-column
-// on desktop, stacked ≤767px. Chrome, not a route (see useOrientation).
+// The first-run welcome — one screen, one promise, one door.
 //
-// The welcome step is a fork, not a slide: **Show me around** runs this card path
-// (rebuilt art, no data required), **Walk me through it** hands off to TeachPanel,
-// which docks aside and narrates over the live app. Both are skippable at every
-// step; the chooser itself has a Skip.
+// It used to fork: a visual tour of rebuilt art beside the live walkthrough. The
+// tour is gone (D-065). The whole reason this work started was that a diagram
+// asks the reader to map a picture onto a screen they've never seen, and once the
+// live path existed the tour was strictly the weaker half of the pair — while the
+// closing rules card now carries the *concepts* the tour was there to deliver. A
+// power user doesn't need a second door either: Skip sits on every step and Esc
+// leaves from anywhere.
+//
+// So this screen's only job is emotional. It says what the app is *for* before any
+// vocabulary arrives, and hands off. Deliberately not a dialog-shaped card: full
+// warm paper, one Fraunces line, generous air.
 export default function Orientation({
   onAction,
   mobile = false,
@@ -24,193 +29,89 @@ export default function Orientation({
   mobile?: boolean;
 }) {
   const { visible, dismiss, mode, chooseMode } = useOrientation();
-  const [rawStep, setStep] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  const last = ORIENTATION_STEPS.length - 1;
-  // Step 0 is the fork, so it belongs to `choose` alone. Clamping here (rather
-  // than trusting setStep) is what keeps a reload honest: `mode` is persisted but
-  // `step` isn't, so a refresh mid-tour would otherwise land on the welcome slide
-  // with the doors already gone and no way back to them.
-  const step = mode === "show" ? Math.max(1, rawStep) : rawStep;
-  const atEnd = step >= last;
-
-  // Fresh start every time it opens (first run or a Settings replay).
-  useEffect(() => {
-    if (visible) setStep(0);
-  }, [visible]);
-
-  const next = useCallback(() => {
-    setStep((s) => (s >= last ? s : s + 1));
-  }, [last]);
-  // Stepping back off the first slide reopens the fork — the other door should
-  // never be more than one Back away.
-  const back = useCallback(() => {
-    if (step <= 1) { chooseMode("choose"); setStep(0); return; }
-    setStep((s) => Math.max(0, s - 1));
-  }, [step, chooseMode]);
-
-  const advance = useCallback(() => {
-    if (atEnd) dismiss();
-    else next();
-  }, [atEnd, dismiss, next]);
-
-  // Keyboard: ←/→ move, Enter advances, Esc skips. Captured so it wins over the
-  // app. Idle while the fork is open (Enter would pick a door arbitrarily) and
-  // while the live walkthrough runs — TeachPanel owns the keyboard then.
-  useEffect(() => {
-    if (!visible || mode !== "show") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.stopPropagation(); dismiss(); }
-      else if (e.key === "ArrowRight") { e.preventDefault(); next(); }
-      else if (e.key === "ArrowLeft") { e.preventDefault(); back(); }
-      else if (e.key === "Enter") { e.preventDefault(); advance(); }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible, mode, dismiss, next, back, advance]);
-
-  // Land keyboard focus inside the dialog when it opens.
   useEffect(() => {
     if (visible) cardRef.current?.focus();
   }, [visible]);
 
-  // Escape from the fork itself — the card path's handler is idle here.
+  // Esc leaves from the welcome. (TeachPanel owns the key once it's running.)
   useEffect(() => {
     if (!visible || mode !== "choose") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.stopPropagation(); dismiss(); }
+      else if (e.key === "Enter") { e.preventDefault(); chooseMode("teach"); }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible, mode, dismiss]);
+  }, [visible, mode, dismiss, chooseMode]);
 
   if (!visible) return null;
 
-  // The live door — the overlay gets out of the way entirely and the panel takes
-  // over, docked beside a fully usable app.
   if (mode === "teach") {
     return <TeachPanel onDone={dismiss} onAction={onAction} mobile={mobile} />;
   }
 
-  const s = ORIENTATION_STEPS[step];
-  const Visual = s.Visual;
-  // The welcome slide with the door still unchosen: its footer is the fork.
-  const isFork = mode === "choose";
-
-  const runCta = () => {
-    if (s.cta) {
-      onAction?.(s.cta.action);
-      dismiss(); // opening Settings needs the overlay out of the way
-    }
-  };
-
   return createPortal(
     <div
-      className="scrim atmosphere fixed inset-0 z-[60] flex items-center justify-center p-4 pt-safe pb-safe"
+      className="scrim atmosphere fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto p-6 pt-safe pb-safe"
       role="dialog"
       aria-modal="true"
       aria-labelledby="orient-title"
     >
+      {/* Quiet, always available — leaving costs one click and no explanation. */}
+      <button
+        onClick={dismiss}
+        className="tap fast absolute right-4 top-4 z-10 rounded-md px-3 py-2 text-caption text-muted hover:text-ink"
+      >
+        Skip
+      </button>
+
       <div
         ref={cardRef}
         tabIndex={-1}
-        className="moment glass elev-3 relative w-full max-w-3xl overflow-hidden rounded-2xl border border-line outline-none"
+        className="moment flex w-full max-w-xl flex-col items-center text-center outline-none"
       >
-        {/* Skip — quiet, top-right, always available */}
-        <button
-          onClick={dismiss}
-          className="tap fast absolute right-3 top-3 z-10 rounded-md px-2.5 py-1.5 text-caption text-muted hover:text-ink"
+        <div className="rise h-[132px] w-full max-w-[360px] sm:h-[168px]">
+          <WelcomeHero />
+        </div>
+
+        {/* "Organized" was the first draft and it's the wrong verb: it's what the
+            tools this replaces already do. personas.md on the boards P1 left —
+            "work goes in and never comes out onto a Tuesday; the board is a
+            graveyard with good UI." Tidiness is the failure mode, not the
+            promise. The promise is that it *moves*. */}
+        <h1
+          id="orient-title"
+          className="rise masthead mt-7 text-[32px] leading-[1.12] text-ink sm:text-[44px]"
         >
-          Skip
-        </button>
+          Your whole life,
+          <br />
+          actually moving.
+        </h1>
 
-        <div className="grid gap-0 md:grid-cols-2">
-          {/* Visual — on top on mobile, left on desktop */}
-          <div className="flex min-h-[200px] items-center justify-center p-5 md:min-h-[380px] md:p-8">
-            <div key={`v-${s.id}`} className="rise flex h-full w-full items-center justify-center">
-              <Visual />
-            </div>
-          </div>
+        {/* Says what the diagram says: loose things in, one line out — Nuvo takes
+            the complexity. The second half is not decoration. "Nuvo handles it"
+            alone promises Motion-style autopilot, which is N-01 ("removes the
+            judgment the product exists to build"), so the sentence has to hand
+            the deciding back in the same breath. It's also the cleanest thing we
+            can say against both neighbours: a board organizes but never moves it;
+            an auto-scheduler moves it but takes the call.
 
-          {/* Teaching column */}
-          <div className="flex flex-col justify-center p-6 md:p-9">
-            <div key={`t-${s.id}`} className="rise">
-              <div className="section-label mb-3">{s.eyebrow}</div>
-              <h1 id="orient-title" className="masthead text-display leading-tight text-ink">
-                {s.title}
-              </h1>
-              <p className="text-lead mt-4 leading-relaxed text-muted">{s.teach}</p>
-              {s.cta && (
-                <button
-                  onClick={runCta}
-                  className="tap fast mt-5 inline-flex w-fit items-center gap-1.5 rounded-md border border-accent px-3.5 py-2 text-body font-medium text-accent hover:bg-accent-soft active:translate-y-px"
-                >
-                  {s.cta.label}
-                </button>
-              )}
-            </div>
-          </div>
+            Do NOT enumerate domains here. An earlier draft read "work, family,
+            faith, health" — persona zero's own list, which personas.md §1 names
+            as the Principle 16 violation behind the retired four-domain seed. */}
+        <p className="rise text-lead mt-5 max-w-md leading-relaxed text-muted">
+          The complexity is ours. The decisions stay yours.
+        </p>
+
+        <div className="rise mt-8 flex w-full justify-center">
+          <Btn kind="primary" onClick={() => chooseMode("teach")} className="!px-7 !py-3 !text-lead">
+            Walk me through it →
+          </Btn>
         </div>
 
-        {/* Footer. On the welcome step it's the fork — two doors, no Next. The
-            choice is how you want to learn this, which is the one question that
-            step asks (P8). */}
-        {isFork ? (
-          <div className="flex flex-col gap-2.5 border-t border-line px-5 py-4 sm:flex-row sm:items-center md:px-9">
-            <Btn
-              kind="ghost"
-              onClick={() => { chooseMode("show"); setStep(1); }}
-              title="A two-minute read-through — nothing to set up"
-            >
-              Show me around
-            </Btn>
-            <Btn
-              kind="primary"
-              onClick={() => chooseMode("teach")}
-              title="Set up your first week together, one step at a time"
-            >
-              Walk me through it
-            </Btn>
-            <p className="text-caption text-muted sm:ml-auto sm:max-w-[14rem] sm:text-right">
-              Either way, you can stop at any point.
-            </p>
-          </div>
-        ) : (
-        <div className="flex items-center gap-3 border-t border-line px-5 py-4 md:px-9">
-          {/* The fork isn't a slide you can page back to, so it gets no dot. */}
-          <div className="flex items-center gap-1.5">
-            {ORIENTATION_STEPS.slice(1).map((st, idx) => {
-              const i = idx + 1;
-              return (
-              <button
-                key={st.id}
-                aria-label={`Go to step ${i}: ${st.eyebrow}`}
-                onClick={() => setStep(i)}
-                className="tap fast flex h-6 items-center"
-              >
-                <span
-                  className="block rounded-full transition-all"
-                  style={{
-                    width: i === step ? 20 : 7,
-                    height: 7,
-                    background: i === step ? "var(--accent)" : "var(--line-strong)",
-                  }}
-                />
-              </button>
-              );
-            })}
-          </div>
-
-          <div className="ml-auto flex items-center gap-2.5">
-            {/* Back is always live here — at step 1 it reopens the fork. */}
-            <Btn kind="ghost" onClick={back}>Back</Btn>
-            <Btn kind="primary" onClick={advance}>
-              {atEnd ? "Get started" : "Next"}
-            </Btn>
-          </div>
-        </div>
-        )}
+        <p className="rise mt-4 text-caption text-muted">Three minutes. Stop anywhere.</p>
       </div>
     </div>,
     document.body

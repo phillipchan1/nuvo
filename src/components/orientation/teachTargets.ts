@@ -37,6 +37,14 @@ export type TeachArm =
 export interface TeachTargetDef {
   /** The element to light. A comma list is fine — first match in the DOM wins. */
   selector?: string;
+  /**
+   * A second, quieter highlight naming *where you now are* — in practice the Spine
+   * rung. Changing floors without it reads as the app jumping on its own: the
+   * reader sees a new screen and has no idea what moved or how to get back. Only
+   * set this where a step actually travels. Desktop-only; the phone's bottom tab
+   * is already the primary target on those steps.
+   */
+  waypoint?: string;
   /** Bring this floor forward first. Omitted = the target is already on screen. */
   rung?: Rung;
   /** Put the app in the state this step is describing (see TeachArm). */
@@ -83,6 +91,7 @@ export const TEACH_TARGETS: Record<TeachTargetKey, TeachTargetDef> = {
   "project-new": {
     selector: '[data-teach="floor-new"], [data-teach="project-new"]',
     rung: "project",
+    waypoint: '[data-teach="rung-project"]',
     mobileSelector: '[data-teach="mtab-projects"]',
   },
 
@@ -91,6 +100,7 @@ export const TEACH_TARGETS: Record<TeachTargetKey, TeachTargetDef> = {
   "initiative-new": {
     selector: '[data-teach="floor-new"], [data-teach="initiative-new"]',
     rung: "initiative",
+    waypoint: '[data-teach="rung-initiative"]',
     mobileSelector: '[data-teach="mtab-initiatives"]',
   },
 
@@ -99,6 +109,7 @@ export const TEACH_TARGETS: Record<TeachTargetKey, TeachTargetDef> = {
   "domain-card": {
     selector: '[data-teach="domain-card"]',
     rung: "domain",
+    waypoint: '[data-teach="rung-domain"]',
     clearFocus: true,
   },
 

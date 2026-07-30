@@ -42,7 +42,9 @@ export default function TeachPanel({
 
   const [step, setStep] = useState(0);
   const [orbSel, setOrbSel] = useState<string | null>(null);
+  const [waySel, setWaySel] = useState<string | null>(null);
   const orbRef = useRef<HTMLDivElement | null>(null);
+  const wayRef = useRef<HTMLDivElement | null>(null);
   const dimRef = useRef<HTMLDivElement | null>(null);
 
   // Does this step reach the real app on THIS shell — either by lighting an
@@ -109,6 +111,7 @@ export default function TeachPanel({
     const def = s.target ? TEACH_TARGETS[s.target] : null;
     const d = drive.current;
     setOrbSel(null);
+    setWaySel(null);
 
     // A step with nothing to point at still has to tidy up — otherwise the closing
     // step ("let's make this week land") delivers you into the Settings modal the
@@ -143,6 +146,16 @@ export default function TeachPanel({
 
     // …then open whatever the step is about to talk about.
     if (arm) runArm(arm);
+
+    // Name where we just landed, in the Spine. Without it a floor change reads as
+    // the app moving on its own — you get a new screen and nothing says what
+    // changed or how you'd get back.
+    if (!mobile && def.waypoint) {
+      const way = def.waypoint;
+      void waitForTarget(way, 2400).then((el) => {
+        if (!cancelled && el) setWaySel(way);
+      });
+    }
 
     const sel = mobile ? def.mobileSelector : def.selector;
     if (!sel) return;
@@ -199,6 +212,34 @@ export default function TeachPanel({
     };
   }, [orbSel]);
 
+  // The waypoint gets its own loop — it rides the Spine, which doesn't move with
+  // the floor's scrolling, and it has no cut-out to keep in register.
+  useEffect(() => {
+    if (!waySel) return;
+    const pad = 6;
+    const place = () => {
+      const el = document.querySelector(waySel) as HTMLElement | null;
+      const way = wayRef.current;
+      if (!way) return;
+      if (!el) { way.style.opacity = "0"; return; }
+      const r = el.getBoundingClientRect();
+      way.style.opacity = "1";
+      way.style.left = `${r.left - pad}px`;
+      way.style.top = `${r.top - pad}px`;
+      way.style.width = `${r.width + pad * 2}px`;
+      way.style.height = `${r.height + pad * 2}px`;
+    };
+    place();
+    const id = window.setInterval(place, 400);
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [waySel]);
+
   // ── auto-advance, but only on a real transition ────────────────────────────
   // `baseline` is whether this step's milestone was ALREADY met when the step
   // opened. If it was, we show the tick and wait — nobody should watch a step
@@ -230,11 +271,20 @@ export default function TeachPanel({
 
   return createPortal(
     <>
+      {/* The Spine waypoint — quieter than the main orb on purpose. It answers
+          "where am I now", not "what do I click", so it must never compete with
+          the thing the step is actually asking for. */}
+      {waySel && (
+        <div ref={wayRef} className="marquee-orb is-teach is-waypoint" aria-hidden>
+          <div className="marquee-orb-glow" />
+        </div>
+      )}
+
       {orbSel && (
         <>
-          {/* The dim. Everything but the target goes quiet, so a first-time reader
-              has exactly one place to look. Click-through, always — the whole
-              premise is that the app stays usable while it's lit. */}
+          {/* A whisper of a scrim. The ring does the pointing; this only takes the
+              edge off everything else. Click-through, always — the whole premise
+              is that the app stays usable while it's lit. */}
           <div ref={dimRef} className="teach-dim" aria-hidden />
           <div ref={orbRef} className="marquee-orb is-teach" aria-hidden>
             <div className="marquee-orb-glow" />

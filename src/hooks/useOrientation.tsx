@@ -25,15 +25,17 @@ import { ORIENTATION_VERSION } from "../components/orientation/steps";
 //    mutation), so once the column exists the flag also syncs across devices, and a
 //    missing column just no-ops instead of raising a red error toast.
 /**
- * Which door the reader chose on the welcome step.
- *  • `choose` — the fork itself, still open
- *  • `show`   — the visual tour (rebuilt art, one concept a step)
- *  • `teach`  — the live walkthrough over the real app (TeachPanel)
- * The pair exists because "show me and leave me alone" and "walk me through it"
- * are different people, and guessing which one you have is how a walkthrough
- * ends up either useless or insulting.
+ * Where first-run is.
+ *  • `choose` — the welcome screen is up
+ *  • `teach`  — the live walkthrough is running (TeachPanel)
+ *
+ * There was briefly a third, `show`: a card tour of rebuilt art offered beside the
+ * live path. It's retired (D-065) — a diagram makes the reader map a picture onto
+ * a screen they've never seen, which is the problem the live path exists to solve.
+ * The name stays `choose` rather than `welcome` because the welcome still ends in
+ * a choice: start, or skip.
  */
-export type OrientationMode = "choose" | "show" | "teach";
+export type OrientationMode = "choose" | "teach";
 
 interface OrientationCtx {
   /** Whether the welcome overlay is showing right now. */

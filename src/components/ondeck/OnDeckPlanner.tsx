@@ -21,6 +21,7 @@ import { useRecordContextMenu } from "../RecordContextMenu";
 import { domainById, isOpenStatus, type Domain } from "../../lib/vertical";
 import { readOnDeck, sprintSpanFor, weekIndexIn } from "../../lib/onDeck";
 import { weekName, weekSpan as weekDates } from "../../lib/week";
+import { noticeIfUnready } from "../../lib/readyNotice";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
@@ -292,6 +293,8 @@ export default function OnDeckPlanner() {
           s.openRecord("project", p.id);
         } else if (mode === "move" && tWeek != null && w[tWeek]) {
           s.updateProject(p.id, { ...weekSpan(p, w[tWeek].weekStart), status: "in_progress" });
+          // Dropped either way — but say what an unshaped project costs the week.
+          noticeIfUnready(s.data, p, () => s.openRecord("project", p.id));
         } else if (mode === "move" && tInbox && p.targetDate) {
           s.updateProject(p.id, { startDate: null, targetDate: null, status: "backlog" });
         } else if (mode === "end" && tWeek != null && w[tWeek]) {

@@ -1703,6 +1703,125 @@ carry an Undo after it.*
 
 ---
 
+**D-064 · 2026-07-30 · The funnel is stated as a law and defended with friction, not
+refusal. "Every task needs a time" is not one of the rules.**
+
+**What prompted it.** The walkthrough taught the four altitudes and never taught the thing
+that makes them a *funnel* — that work earns the floor below it by being groomed. Phil's
+framing: *"what's key in this entire thing is the groomed funnel… we are an enforced funnel
+machine."*
+
+**The check, and the correction.** We are **not** an enforced funnel machine today, and it
+matters before writing any copy that says we are. `bringIntoWeekPatch`
+([`planningRules.ts`](../../supabase/functions/_shared/planningRules.ts)) refuses exactly
+one thing — a project already spanning that week. The Sunday ritual's `bringIn` calls that
+same patch; its span/push-out remediations are about **capacity**, not readiness.
+`ripenessOfProject` returns a *stage* (RAW → SHAPED → SCAFFOLDED → ACTIVE), never a gate. So
+an outcome-less, taskless project can take a week right now, and a walkthrough claiming
+otherwise would be disproved by the user in about ten seconds.
+
+**So: friction, not refusal.** Placing an unready project still works, and then the app says
+what it costs — *"the week can only size work it can see; without steps this won't get real
+time on your calendar"* — with a one-tap **Add steps**. The incentive goes to the operator
+with the consequence named, which is Principle 4 (*reports, doesn't command*) rather than a
+wall. `src/lib/readyNotice.ts`, fired from the Sunday bring-in and the On Deck drop.
+
+→ **A hard gate was rejected**, and not only on P4: it's the version that **only works with
+clean data** (Principle 7). An account mid-import, or an operator who genuinely holds a
+project in their head, would be blocked from recording something true. Logged as **N-14**.
+
+→ **The kernel stays ungated on purpose.** `bringIntoWeekPatch` is the shared *act* — the
+browser and the agent both apply it — so a refusal there would make the two runtimes
+disagree about what a week can hold. This is a UI-layer nudge over an unchanged act.
+
+→ **The law, as the walkthrough's closing card** (rules *after* the doing — stated up front
+they're terms of service; stated after they consolidate a pattern the reader has felt):
+
+> **A task earns a day** by getting a time · **A project earns a week** by having tasks ·
+> **An initiative earns a quarter** by having projects.
+
+→ **"Every task needs a time" was cut from that triad**, though it was in the original
+framing. It contradicts the Backlog, which is *"processed and **deliberately** undated"*
+([glossary](./glossary.md)) and never rolled, and contradicts loose weeks' `for_week: null`
+Someday state. **"Earns" rather than "requires"** makes all three lines true, gives them one
+grammar, and makes the card say the same sentence as `ripenessOfProject` and
+[`readiness-model.md`](../readiness-model.md) §3 ("ready for the floor below").
+
+→ **Consequence.** The walkthrough closes on the funnel instead of a generic sign-off, and
+**W1** ("can I actually carry this week?") finally gets named during onboarding. Still open:
+the walkthrough shows the *rule* but not **Plan the week**, the ritual where the rule pays
+off — deferred because on a day-one account the ritual has almost nothing to compose, which
+is the same cold-start trap as **N-13**.
+
+---
+
+**D-065 · 2026-07-30 · One door. The visual tour is retired and first-run opens on a
+promise, not a menu.**
+
+D-059 gave the welcome two doors — *Show me around* (a card tour of rebuilt art) and *Walk
+me through it* (live, over the real app) — on the reasoning that being shown and being
+walked through are different people. Watching both, the pair didn't hold up:
+
+- **The tour is the weaker half by our own argument.** This whole line of work started from
+  the observation that a diagram makes the reader map a picture onto a screen they've never
+  seen. The live path removes that translation; keeping a door to the thing we'd just
+  diagnosed was preserving the problem out of politeness.
+- **The power-user case is already served.** Skip sits on every step and Esc leaves from
+  anywhere, so "show me and get out of my way" costs one key — it never needed a fork.
+- **The concepts survive.** D-064's closing rules card carries the abstraction the tour
+  existed to deliver, and it lands *after* the doing, where it actually sticks.
+
+→ **The welcome becomes one screen with one promise.** Not a dialog-shaped card with a
+feature diagram: full warm paper, a Fraunces line, one button.
+
+> **Your whole life, actually moving.**
+> The complexity is ours. The decisions stay yours.
+
+**The subhead says what the diagram says.** The art is loose motes gathering into one line
+— *you bring the tangle, Nuvo makes it coherent* — and the copy should make the same claim
+rather than a different one. **The second sentence is load-bearing, not balance:** "Nuvo
+handles the complexity" on its own promises Motion-style autopilot, which is **N-01**
+(*"removes the judgment the product exists to build"*), so the deciding has to be handed
+back in the same breath. It doubles as the sharpest line against both neighbours — a board
+organizes but never moves it; an auto-scheduler moves it but takes the call.
+
+**Two subheads were rejected on the way.** *"Work, family, faith, health"* — persona zero's
+own list, and [`personas.md`](./personas.md) §1 names that exact move as the Principle 16
+violation behind the retired four-domain seed (*"these are kinds, so the app never assumes
+names"*). `FirstRun` had already been de-biased for the same reason, so enumerating here
+would have reintroduced the bias one screen earlier. Then *"especially the parts nobody's
+chasing you about"* — true, and it names the silent-starving failure the doc calls the
+expensive one, but it describes a *symptom* where the visual is describing the *service*.
+
+**The verb is the decision.** The first draft said *organized*, and *organized is what the
+tools this replaces already do* — [`personas.md`](./personas.md) on the boards P1 left:
+*"work goes in and never comes out onto a Tuesday; the board is a graveyard with good UI."*
+Tidiness is the failure mode, not the promise, so the word had to be **execution**. A
+week-scale promise ("a week you can believe", straight from the same doc's success
+criterion) was also tried and rejected as too small for a cold open — the scope a stranger
+recognises is their whole life; *the week* is the mechanism they meet a minute later.
+
+⚠️ The headline uses **"life"** deliberately, which is the one place D-057's *lives outside,
+domains inside* line bends: this screen is the boundary between the marketing promise and
+the app's vocabulary, and it's the last surface before any altitude noun appears. No app
+surface past it says it.
+
+→ The hero art is the funnel as a feeling: loose motes on the left gathering into one calm
+line. No labels, no altitude vocabulary — the feeling arrives before any of it, which is the
+only thing a welcome screen can honestly do, and it rhymes with the rules card at the end.
+
+→ **Consequence.** `ORIENTATION_STEPS` and the card path are deleted; `OrientationMode`
+drops `"show"`. `WelcomeVisual` / `OnDeckVisual` / `FlowVisual` stay — the floor
+empty-state teachers use them. `TimeblockVisual`, `NuvoVisual`, `CaptureVisual`,
+`AppearanceVisual` and `ReadyVisual` are now unreferenced; left in place as the orientation
+art library rather than swept, since the teachers draw from the same family.
+
+→ **What we gave up, honestly:** someone who wants the concepts *without* touching their own
+data no longer has a path. The rules card covers most of it; if that turns out to matter,
+the answer is a help surface, not a second door on first run.
+
+---
+
 ## 2 · Things we decided **not** to do
 
 | # | The idea | Why not | Would change if… |
@@ -1718,6 +1837,7 @@ carry an Undo after it.*
 | **N-09** | Extracting `packages/design` fully now | Stub is enough while there are two consumers | A third consumer appears |
 | **N-10** | Folding marketing into the SPA | D-018 | Never |
 | **N-11** | Rebuilding the UI wholesale on Untitled UI React | Tried for real — a full overnight rebuild on branch `untitled-ui-rebuild` (2026-07-28: React 19, UUI tokens bridged under every surface, one RecordCard, focus-trapped dialogs; all gates green). Phil's feel test rejected the look, and a feel test has exactly one judge. Branch destroyed same day (tip `832ae43`, unreferenced). Transferable learnings noted before deletion: the React 19 upgrade is ~3 type fixes; workbox precaches nothing over 2 MiB; react-aria adds ~200KB to the bundle | A concrete new reason beyond cohesion — e.g. hand-rolled component debt starts blocking features — and even then, propose per-primitive adoption, not a wholesale reskin |
+| **N-14** | Hard-gating the week on readiness — refusing a project that has no tasks | It's the version that only works with clean data (P7): an account mid-import, or an operator who really is holding a project in their head, gets blocked from recording something true. It also contradicts P4 and `readiness-model.md` §1 ("never commands, never shames, never auto-acts"), and a refusal in `bringIntoWeekPatch` would make the browser and the agent disagree about what a week can hold. D-064 uses friction with the cost named instead | Evidence that the notice is ignored often enough to matter — and even then, gate at the *ritual*, not in the shared kernel act |
 | **N-13** | Replacing the orientation's rebuilt art with coach marks on the live app | A cold account has nothing to point at. `FirstRun` gates the shell on zero domains, so orientation opens with the domains they just named and **nothing else** — four of five ladder steps would spotlight empty surfaces, and an orb on an empty Inbox teaches less than a drawing of a full one (P7). D-059 forks instead, and the live door teaches by *making the thing exist* | Never as a straight swap. The live door already covers the real want; if it needs more reach, extend it — don't point at emptiness |
 | **N-12** | Pasting the video-call link into the event description | It's the *unstructured* copy of a structured fact (D-056): invisible to every client's Join button, doesn't move when the meeting does, outlives a removed conference, and can't be told apart from a link a human typed. `conferenceData` is the field they all already read | A provider Nuvo writes to has no conference field at all — and even then, say plainly that the link is pasted |
 

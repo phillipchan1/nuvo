@@ -1,45 +1,46 @@
-# Orientation — two doors into the app
+# Orientation — set up your first week, together
 
-**Status:** shipped 2026-07-30 · revised the same day after a first real walk-through
-(every step now highlights, travels, and opens what it's describing).
+**Status:** shipped 2026-07-30 · revised twice the same day — every step highlights,
+travels and opens what it names (D-064's law card), and first-run went from a fork to a
+single welcome (D-065).
 Builds on [`personas.md`](./product/personas.md) §5 rows **O1/O6** and the onboarding
 layers described in [`design-language.md`](./design-language.md).
 
-> *Some people want to be shown. Some want to be walked through. Guessing which one you
-> have is how a walkthrough ends up either useless or patronising — so the welcome step
-> asks.*
+> *A diagram of a screen you've never seen teaches less than the screen, with your own work
+> in it. So the walkthrough doesn't describe the app — it hands it to you.*
 
 Nuvo's concepts are the hard part of Nuvo. The funnel has four altitudes and two acts, and
-a first-time reader has to hold all of it before a single screen makes sense. The tour has
-always taught with **rebuilt art** (`Visuals.tsx`), which is honest but leaves the reader
-one translation short: they still have to map a diagram onto a screen they've never seen.
+a first-time reader has to hold all of it before a single screen makes sense. Teaching that
+with **rebuilt art** is honest but leaves the reader one translation short.
 
 The obvious fix — coach marks over the live app — **fails on a cold account**, and that
-failure is the whole design constraint. `AppShell.tsx` gates the shell on
-`domains.length === 0`, so `FirstRun` runs *first*: by the time orientation opens, the
-account has **1–5 domains the user just named and nothing else.** Four of the five ladder
-steps would spotlight empty surfaces. Pointing at an empty Inbox teaches less than a
-drawing of a full one.
+failure is the design constraint the whole thing is shaped around. `AppShell.tsx` gates the
+shell on `domains.length === 0`, so `FirstRun` runs *first*: by the time orientation opens,
+the account has **1–5 domains the user just named and nothing else.** Most of the ladder
+would spotlight empty surfaces, and pointing at an empty Inbox teaches less than a drawing
+of a full one.
 
-So orientation doesn't choose. **It forks.**
+So the walkthrough **teaches by making the thing exist** — every row it lands is created by
+the user, in their words (D-026 holds: we still seed nothing) — and closes by naming the
+rule they just lived through.
 
-## The fork
+## The welcome
 
-`ORIENTATION_STEPS[0]` (`welcome`) renders two doors instead of a Next:
+One screen, one promise, one button (D-065). Not a dialog-shaped card with a feature
+diagram: full warm paper, a Fraunces line, generous air, and *Walk me through it*.
 
-| Door | What it is | Mode |
-|---|---|---|
-| **Show me around** | The 8-step visual tour, unchanged — art, no data required, ~2 minutes | `show` |
-| **Walk me through it** | A docked panel that narrates over the live app while you act | `teach` |
+The promise comes from the canon rather than fresh copy — [`personas.md`](./product/personas.md)
+defines success as *"Sunday takes 20 minutes and ends with a week you believe"* and names
+the real failure as a domain going dark **silently**. The hero art is the funnel as a
+feeling: loose motes gathering into one calm line, no labels, no altitude vocabulary. (The
+word *life* stays out — D-057 keeps it to marketing.)
 
-The chooser has its own Skip, Esc closes it, and **Back from the first slide of either
-path reopens the fork** — the other door is never more than one press away.
+There was briefly a second door — a card tour of rebuilt art. It's retired: a diagram makes
+the reader map a picture onto a screen they've never seen, which is the problem the live
+path exists to remove, and Skip/Esc already served the "just show me" case.
 
-`mode` and the live path's step index are persisted (`nuvo.onboarding.{mode,step}`)
-alongside the existing version flag, so a reload mid-walkthrough resumes rather than
-restarting. Because `mode` persists and React state doesn't, the card path **clamps step to
-≥ 1 in `show` mode** — otherwise a refresh lands on the welcome slide with the doors
-already gone.
+`mode` and the step index are persisted (`nuvo.onboarding.{mode,step}`) alongside the
+version flag, so a reload mid-walkthrough resumes rather than restarting.
 
 ## The live door
 
@@ -57,12 +58,12 @@ real create surface. Nothing to keep in sync, nothing taught twice.
 | 1 | Let's add your first task | Schedule | the rail's capture form | an inbox task exists |
 | 2 | There it is — your Inbox | Schedule, rail on **Inbox** | the Inbox tab | — |
 | 3 | Now give it a time | Schedule, rail back on **Today** | the rail list | a task has `do_date` + `start_time` |
-| 4 | More than one task? A Project | Projects | the floor's ＋ (empty-state teacher, or the deck's foot pill) | a project exists |
-| 5 | More than one project? An Initiative | Initiatives | the floor's ＋ | — |
-| 6 | It all rolls up to a Domain | the Domain wall | the **first domain card** | — |
+| 4 | More than one task? A Project | Projects | the floor's ＋ (empty-state teacher, or the deck's foot pill) *+ the Spine rung* | a project exists |
+| 5 | More than one project? An Initiative | Initiatives | the floor's ＋ *+ the Spine rung* | — |
+| 6 | It all rolls up to a Domain | the Domain wall | the **first domain card** *+ the Spine rung* | — |
 | 7 | This is Nuvo. Ask it something | the **agent rail, opened** | the chat composer | a user message exists |
 | 8 | Bring your calendars in | **Settings → Calendars** | that pane | a calendar account exists |
-| 9 | Let's make this week land | back to the Schedule, overlays closed | — | — |
+| 9 | **Now — the rules that make it sing** | back to the Schedule, overlays closed | — | — |
 
 Steps 1/3/4/7/8 are **exactly the five `GettingStarted` milestones, in order, read through
 the same derivations** — this walkthrough *is* that tracker, performed live. Finishing it
@@ -71,17 +72,25 @@ because the floors now have data.
 
 ### The rules that keep it clear, and honest
 
-- **Every step highlights something, and the spotlight is a real spotlight.** A `.teach-dim`
-  layer sits *above* the modal layer with a box-shadow cut-out on the target, so a
-  first-timer's eye has exactly one place to land. It's `pointer-events: none` — the app
-  stays fully usable while it's lit.
-  **The scrim is one token, `--teach-scrim`, and it took three passes to land:** mixing with
-  `--bg` washes out entirely in light mode (a highlight nobody can see is no highlight);
-  pure black at 0.7 brings focus but reads as *overwhelming*, and neutral black over warm
-  paper is colder than anything else in the app. It settled on a **warm** brown-black at
-  **0.45** in light and **0.42** in dark (dark starts dark, so the same alpha lands
-  heavier). The job is to *quiet* the surroundings, not black them out — the target's own
-  ring does the pointing, and the reader should still see the surface being shown to them.
+- **Every step highlights something, and the ring is what does the pointing.** A
+  `.teach-dim` layer sits *above* the modal layer with a box-shadow cut-out on the target,
+  `pointer-events: none` so the app stays usable.
+  **The scrim is one token, `--teach-scrim`, and the honest answer is that it should barely
+  exist** — warm brown-black at **0.1** light / **0.14** dark. Getting there took four
+  passes: mixing with `--bg` is invisible in light mode (a highlight nobody can see is no
+  highlight); 0.45 is comfortable; 0.7 brings focus but reads as *overwhelming* and hides
+  the surface the reader is supposed to be getting familiar with. The ring and glow were
+  always doing the work — a heavy overlay makes the app feel **locked** rather than pointed
+  at. Keep it a breath, not a blackout.
+
+- **Travelling needs a second, quieter highlight — the Spine waypoint.** Changing floors
+  with only the action lit reads as the app jumping on its own: a new screen appears and
+  nothing says what moved or how to get back. So a step that travels also rings its Spine
+  rung (`waypoint` in the registry), at half the voice of the main orb — no breathing, a
+  tighter radius, lower alpha. It answers *where am I now*, which is context; the main orb
+  answers *what do I click*, which is instruction. If they pulled equally the step would be
+  pointing at two things at once. Phone steps don't need it — the bottom tab is already the
+  primary target there.
 - **Light the thing you can click, never the container.** An orb around a whole wall, or the
   full-height agent rail, is a rectangle with its edges off-screen — it reads as nothing.
   So: one domain card, not the wall; the chat composer, not the 380px rail.
@@ -94,6 +103,14 @@ because the floors now have data.
 - **Auto-advance only on a real transition.** A milestone already satisfied when the step
   opens shows its tick and *waits* — nobody should watch a step they didn't do fly past.
   The step captures a baseline on entry and only advances on not-done → done.
+
+- **The law comes last, and it's the shortest screen.** Stated up front, rules are terms of
+  service — vocabulary with nothing to attach to. Stated after the reader has done all
+  three, they consolidate a pattern already felt. Hence the closing card (D-064): *a task
+  earns a day by getting a time · a project earns a week by having tasks · an initiative
+  earns a quarter by having projects*. **"Earns", never "requires"** — an undated Backlog
+  task is a legitimate resting state, so "every task needs a time" would be false on the
+  second screen they visit.
 
 ### Two bugs worth not re-introducing
 

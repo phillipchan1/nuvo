@@ -1,15 +1,5 @@
 import type { FC } from "react";
-import {
-  WelcomeVisual,
-  TimeblockVisual,
-  OnDeckVisual,
-  InitiativeVisual,
-  DomainVisual,
-  NuvoVisual,
-  CaptureVisual,
-  AppearanceVisual,
-  ReadyVisual,
-} from "./Visuals";
+import { InitiativeVisual, DomainVisual, RulesVisual } from "./Visuals";
 import type { TeachTargetKey } from "./teachTargets";
 
 // Bump when a launch is big enough that returning users should see the tour again.
@@ -20,115 +10,14 @@ export const ORIENTATION_VERSION = 4;
 // something real (desktop/mobile open their own Settings surface for "connect-calendars").
 export type OrientationAction = "connect-calendars";
 
-export interface OrientationStep {
-  id: string;
-  /** Tracked small-caps eyebrow. */
-  eyebrow: string;
-  /** The Fraunces hero line — names the concept and, where it matters, its ⌘ home. */
-  title: string;
-  /** One short supporting line. Keep it tight — the visual does the teaching. */
-  teach: string;
-  Visual: FC;
-  /** An extra button beside Back/Next that does something real in the app. */
-  cta?: { label: string; action: OrientationAction };
-}
 
-// The single source of truth for the walkthrough. Each concept is anchored to WHERE
-// it lives in the app (the Spine's ⌘1–4, ⌘K capture, ⌘J Nuvo) so a new user can
-// actually find it. Adding a feature later = one object here.
+// ══ The walkthrough ════════════════════════════════════════════════════════════
 //
-// Deliberately additive, one concept at a time, starting from what's already familiar
-// (a task) rather than naming all four altitudes up front: task → project → initiative
-// → domain. The real, in-app lifecycle (Inbox → Groom → Slot — the same two acts at
-// every altitude, see planning-kernel.md) IS the teaching device, not an invented one:
-// a task lands in the Inbox loose, then gets time-blocked; a project sits ungroomed
-// until it earns a real slot on On Deck; an initiative is the same pattern one size up.
-// Domain is deliberately the exception — it's never slotted, just ongoing.
-//
-// Nuvo (⌘J) rides after the ladder so its teach line can reuse the exact words just
-// taught ("grooms your inbox, slots your projects") as a payoff, not a new vocabulary.
-// Capture (⌘K) and Appearance are the "nice things" cluster at the end — power-user
-// speed and personalization, not core concepts a first read needs.
-export const ORIENTATION_STEPS: OrientationStep[] = [
-  {
-    // The fork. Orientation renders two doors here instead of Next — some people
-    // want to be shown and left alone, some want to be walked through it, and
-    // guessing wrong makes the walkthrough either useless or patronising.
-    id: "welcome",
-    eyebrow: "Before we start",
-    title: "Ready to organize your life?",
-    teach:
-      "You're carrying a lot — work, family, faith, health. Nuvo gives each its own place and connects them into one plan. Want the quick read, or shall we set up your first week together?",
-    Visual: WelcomeVisual,
-  },
-  {
-    id: "schedule",
-    eyebrow: "Schedule · ⌘1",
-    title: "Everything starts in your Inbox.",
-    teach: "A task lands loose. Time-block it onto your Schedule, and it's real work.",
-    Visual: TimeblockVisual,
-  },
-  {
-    id: "ondeck",
-    eyebrow: "Projects · ⌘2",
-    title: "More than one task? Groom it into a Project.",
-    teach: "Once it's ready, slot it onto a week (or two) on On Deck.",
-    Visual: OnDeckVisual,
-  },
-  {
-    id: "initiative",
-    eyebrow: "Initiatives · ⌘3",
-    title: "More than one project? That's an Initiative.",
-    teach: "Same idea, groomed and sized to a quarter, not a week.",
-    Visual: InitiativeVisual,
-  },
-  {
-    id: "domain",
-    eyebrow: "Domains · ⌘4",
-    title: "It all rolls up to a Domain.",
-    teach:
-      "The area of your life all of this belongs to — always on, never finished, never slotted away.",
-    Visual: DomainVisual,
-  },
-  {
-    id: "nuvo",
-    eyebrow: "Your co-pilot · ⌘J",
-    title: "Nuvo can do almost anything.",
-    teach:
-      "Ask in plain words — it grooms your inbox, slots your projects, and plans the week for you. You always make the call.",
-    Visual: NuvoVisual,
-  },
-  {
-    id: "capture",
-    eyebrow: "Your inbox · ⌘K",
-    title: "The fast way into your Inbox.",
-    teach: "Hit ⌘K anytime, brain-dump in plain words — no forms, it lands right where you saw it.",
-    Visual: CaptureVisual,
-  },
-  {
-    id: "appearance",
-    eyebrow: "Make it yours",
-    title: "Pick a look that feels like you.",
-    teach: "Nuvo comes in a few skins, from warm glass to a mono terminal. Change it anytime in Settings.",
-    Visual: AppearanceVisual,
-  },
-  {
-    id: "ready",
-    eyebrow: "You're set",
-    title: "Let's make this week land.",
-    teach: "Name what matters, block it in, let Nuvo help. First step: bring your calendars in.",
-    Visual: ReadyVisual,
-    cta: { label: "Connect your calendars →", action: "connect-calendars" },
-  },
-];
-
-// ══ The other door: "Walk me through it" ═══════════════════════════════════════
-//
-// The visual tour above teaches with rebuilt art, which asks the reader to map a
-// picture onto a screen they've never seen. This path removes that translation:
-// the card docks out of the way, the *real* app stays live behind it, and each
-// step names one act the user performs in the real UI. The panel then watches for
-// it in real data.
+// There used to be a second path here — a card tour of rebuilt art. It's gone
+// (D-065): a diagram asks the reader to map a picture onto a screen they've never
+// seen, which is the exact problem this path removes. The card docks out of the
+// way, the *real* app stays live behind it, and each step names one act the user
+// performs in the real UI. The panel then watches for it in real data.
 //
 // It cannot simply be "coach marks over the app," because at first-run there IS
 // no data: FirstRun gates the shell on `domains.length === 0` (AppShell), so the
@@ -233,10 +122,15 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     cta: { label: "Connect your calendars →", action: "connect-calendars" },
   },
   {
-    id: "done",
+    // The rules land LAST on purpose. Stated up front they're terms of service —
+    // vocabulary with nothing to attach to. Stated here they consolidate: the
+    // reader has just done all three, so this names a pattern they've felt.
+    // Shortest screen in the flow, and it's the one worth remembering.
+    id: "rules",
     eyebrow: "You're set",
-    title: "Let's make this week land.",
-    teach: "That's the whole app: capture it, groom it, slot it. Everything else is a bigger clock.",
-    Visual: ReadyVisual,
+    title: "Now — the rules that make it sing.",
+    teach:
+      "You just did all three. Nothing moves down a floor until it's ready for the one below — that's the whole machine, and it's why the week can be trusted.",
+    Visual: RulesVisual,
   },
 ];

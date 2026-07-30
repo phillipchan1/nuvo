@@ -359,6 +359,123 @@ export function ReadyVisual() {
   );
 }
 
+// The welcome hero — scattered, then held.
+//
+// The one image the whole product is: things you're carrying, arriving loose and
+// out of register, gathering into a single calm line. No labels, no altitude
+// jargon, nothing a cold reader has to decode — the feeling arrives before any
+// vocabulary does, which is the only thing a welcome screen can honestly do.
+//
+// It's also literally the funnel, so the closing rules card lands as the same
+// shape they were shown at the start.
+const MOTES = [
+  { x: 18, y: 34, r: 3.0, o: 0.28 },
+  { x: 34, y: 118, r: 2.4, o: 0.22 },
+  { x: 58, y: 66, r: 3.4, o: 0.34 },
+  { x: 82, y: 140, r: 2.6, o: 0.3 },
+  { x: 104, y: 40, r: 3.0, o: 0.4 },
+  { x: 132, y: 104, r: 3.2, o: 0.48 },
+  { x: 158, y: 74, r: 3.4, o: 0.58 },
+];
+
+// Where each mote ends up: a calm, evenly-spaced line on the right.
+const HELD = [206, 226, 246, 266, 286, 306, 326];
+
+export function WelcomeHero() {
+  return (
+    <svg viewBox="0 0 360 180" fill="none" className="h-full w-full" aria-hidden>
+      <defs>
+        <radialGradient id="wh-glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      {/* An ellipse, not a rect — a gradient-filled rect fades to nothing but its
+          own edge still reads as a faint box against the paper. */}
+      <ellipse cx="268" cy="90" rx="120" ry="76" fill="url(#wh-glow)" />
+
+      {/* the gathering sweep — one line the loose things find */}
+      <path
+        d="M8 92 C 90 92, 120 90, 196 90"
+        stroke="var(--line-strong)"
+        strokeWidth="1"
+        strokeDasharray="2 5"
+        opacity="0.55"
+      />
+      <path d="M196 90 H 340" stroke="var(--accent)" strokeWidth="1.5" opacity="0.5" />
+
+      {/* loose */}
+      {MOTES.map((m, i) => (
+        <circle
+          key={`m${i}`}
+          cx={m.x}
+          cy={m.y}
+          r={m.r}
+          fill="var(--muted)"
+          opacity={m.o}
+          className="orient-stagger"
+          style={at(i)}
+        />
+      ))}
+
+      {/* held */}
+      {HELD.map((x, i) => (
+        <circle
+          key={`h${i}`}
+          cx={x}
+          cy={90}
+          r={3.6}
+          fill="var(--accent)"
+          opacity={0.55 + i * 0.06}
+          className="orient-stagger"
+          style={at(i + 3)}
+        />
+      ))}
+    </svg>
+  );
+}
+
+// The law, as three lines of one grammar. This is the walkthrough's closing card:
+// the rule comes *after* the doing, so it names a pattern the reader has already
+// felt rather than front-loading vocabulary they can't attach to anything.
+//
+// The parallel is "earns", not "requires" — a task sitting undated in the Backlog
+// is a legitimate resting state (see glossary: "processed and deliberately
+// undated"), so "every task needs a time" would be false on the second screen
+// they visit. What's true at every altitude is that nothing moves down a floor
+// until it's ready for the one below — which is `ripenessOfProject` and
+// readiness-model.md's "each ceremony's output is readiness for the floor below",
+// finally said in one sentence a human can repeat.
+const LAW: { what: string; earns: string; by: string }[] = [
+  { what: "A task", earns: "a day", by: "by getting a time" },
+  { what: "A project", earns: "a week", by: "by having tasks" },
+  { what: "An initiative", earns: "a quarter", by: "by having projects" },
+];
+
+export function RulesVisual() {
+  return (
+    <Plate>
+      <div className="flex w-full max-w-[260px] flex-col gap-2.5">
+        {LAW.map((r, i) => (
+          <div key={r.what} className="orient-stagger flex flex-col gap-0.5" style={at(i)}>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-caption font-semibold text-ink">{r.what}</span>
+              <span className="text-caption text-muted">earns</span>
+              <span
+                className="rounded px-1.5 py-0.5 text-micro font-semibold"
+                style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+              >
+                {r.earns}
+              </span>
+            </div>
+            <span className="text-micro text-muted">{r.by}</span>
+          </div>
+        ))}
+      </div>
+    </Plate>
+  );
+}
+
 // The flow: domain → initiative → project → task, each with its ⌘ home. Not part of
 // the numbered walkthrough sequence above — reused by the Initiatives empty-state
 // teacher (see InitiativeOnDeckFloor.tsx).
