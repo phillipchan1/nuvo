@@ -22,9 +22,7 @@ import { useAgentContext } from "../hooks/useAgentContext";
 import SundayRitual from "./rituals/SundayRitual";
 import SummitRitual from "./rituals/SummitRitual";
 import CapacityRun from "./capacity/CapacityRun";
-import QuickCreate from "./floors/QuickCreate";
-import NewProject from "./floors/NewProject";
-import NewInitiative from "./floors/NewInitiative";
+import CreateRecord from "./floors/CreateRecord";
 import Orientation from "./orientation/Orientation";
 import { OrientationProvider } from "../hooks/useOrientation";
 import { TrialBanner } from "./billing/TrialBanner";
@@ -158,10 +156,10 @@ function AppShellInner() {
     });
   }, []);
 
-  // the fast composer is the default create surface, summonable from anywhere;
-  // "more options" swaps in the full moment, carrying what's already typed.
-  const [createFull, setCreateFull] = useState<{ domainId: string; initiativeId: string | null; name: string } | null>(null);
-  const closeCreate = () => { setCreateFull(null); closeFloorModal(); };
+  // One create surface, summonable from anywhere. There is no "more options"
+  // fork any more — it swapped in a second layout mid-typing and dropped the
+  // subtasks you'd already entered.
+  const closeCreate = () => closeFloorModal();
 
   const focusDomain = (id: string) => {
     const init = initiativesOf(data, id)[0];
@@ -301,7 +299,6 @@ function AppShellInner() {
       const key = e.key.toLowerCase();
       if (key !== "p" && key !== "i") return;
       e.preventDefault();
-      setCreateFull(null);
       openFloorModal(key === "p" ? "new-project" : "new-initiative");
     };
     window.addEventListener("keydown", onKey);
@@ -369,45 +366,24 @@ function AppShellInner() {
       )}
       {flow === "capacity" && <CapacityRun onClose={closeFlow} />}
 
-      {/* The fast composer — summoned by P / I or any "+ new" button, mounted
-          globally so it works from any rung. "more options" swaps in the full
-          moment for the chunks of work that earn the ceremony. */}
+      {/* Create — summoned by P / I or any "＋ new" button, mounted globally so it
+          works from any rung. It is the RECORD's frame with a draft inside it, so
+          committing doesn't hand you a different-looking sheet. */}
       {nav.floorModal === "new-project" && (
-        createFull ? (
-          <NewProject
-            initialDomainId={createFull.domainId}
-            initialInitiativeId={createFull.initiativeId}
-            initialName={createFull.name}
-            onClose={closeCreate}
-            onCreated={(id) => { setCreateFull(null); openProjectDetail(id); }}
-          />
-        ) : (
-          <QuickCreate
-            kind="project"
-            initialDomainId={focus.domainId || null}
-            onClose={closeCreate}
-            onCreated={(id) => { setCreateFull(null); openProjectDetail(id); }}
-            onExpand={setCreateFull}
-          />
-        )
+        <CreateRecord
+          kind="project"
+          initialDomainId={focus.domainId || null}
+          onClose={closeCreate}
+          onCreated={openProjectDetail}
+        />
       )}
       {nav.floorModal === "new-initiative" && (
-        createFull ? (
-          <NewInitiative
-            initialDomainId={createFull.domainId}
-            initialName={createFull.name}
-            onClose={closeCreate}
-            onCreated={(id) => { setCreateFull(null); openInitiativeDetail(id); }}
-          />
-        ) : (
-          <QuickCreate
-            kind="initiative"
-            initialDomainId={focus.domainId || null}
-            onClose={closeCreate}
-            onCreated={(id) => { setCreateFull(null); openInitiativeDetail(id); }}
-            onExpand={({ domainId, name }) => setCreateFull({ domainId, initiativeId: null, name })}
-          />
-        )
+        <CreateRecord
+          kind="initiative"
+          initialDomainId={focus.domainId || null}
+          onClose={closeCreate}
+          onCreated={openInitiativeDetail}
+        />
       )}
 
       {/* The Record command center — a project / initiative opened as a modal. */}

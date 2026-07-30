@@ -291,7 +291,9 @@ export default function TaskList({
         }}
         onPaste={onPaste}
         placeholder="Add a task…"
-        className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted"
+        // `nuvo-inline-input` drops the global 3px accent ring: this field IS the
+        // focal element of its own row, and focus lifts here — it doesn't outline.
+        className="nuvo-inline-input min-w-0 flex-1 bg-transparent text-body shadow-none outline-none placeholder:text-muted"
         style={{ caretColor: accent }}
       />
     </div>
@@ -316,7 +318,8 @@ export default function TaskList({
         }}
         onPaste={onPaste}
         placeholder="Add a task… ↵ to add another, or paste a list"
-        className="min-w-0 flex-1 bg-transparent text-lead outline-none placeholder:text-muted/60"
+        // the card around it already lifts on focus — a ring inside that is noise
+        className="nuvo-inline-input min-w-0 flex-1 bg-transparent text-lead shadow-none outline-none placeholder:text-muted/60"
         style={{ caretColor: accent }}
       />
     </div>

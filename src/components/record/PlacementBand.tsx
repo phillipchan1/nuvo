@@ -33,6 +33,13 @@ import type { Initiative, Project } from "../../lib/vertical";
 type Store = ReturnType<typeof useVertical>;
 export type PlacementTone = "primary" | "quiet";
 
+/** Where a band sends its write. A saved record patches the row through the
+ *  store; the CREATE sheet has no row yet, so it hands in a setter and the same
+ *  band drives a draft. Either way the dates come out of `sprintSpanFor` /
+ *  `quarterEndISO`, so there is still ONE placement formula (D-032). */
+type PlacePatch = { startDate?: string | null; targetDate?: string | null };
+export type OnPlace = (patch: PlacePatch) => void;
+
 /** How far out either scale reaches. Past the runway there is no week — only
  *  Someday (loose-weeks.md); reaching for sprint 14 isn't scheduling, it's
  *  avoiding. */
@@ -158,13 +165,16 @@ function TrailActs({ onShelve, onDates, datesOpen }: { onShelve?: () => void; on
 export function SprintBand({
   p,
   store,
+  onPlace,
   tone = "quiet",
   color = "var(--accent)",
   renderDates,
   bandRef,
 }: {
-  p: Project;
-  store: Store;
+  p: Pick<Project, "id" | "startDate" | "targetDate">;
+  /** omit only when `onPlace` is driving a draft. */
+  store?: Store;
+  onPlace?: OnPlace;
   tone?: PlacementTone;
   /** the record's domain hue — identity, so the lit span reads as *this* record. */
   color?: string;
@@ -190,12 +200,16 @@ export function SprintBand({
   const outside = Boolean(p.targetDate) && dueIdx < 0 && startIdx < 0;
 
   // The one write. Identical to the deck drag's — `sprintSpanFor` is the kernel.
+  const write = (patch: PlacePatch, status: Project["status"]) => {
+    if (onPlace) onPlace(patch);
+    else store?.updateProject(p.id, { ...patch, status });
+  };
   const place = (i: number, width: number = span) => {
     const ws = weeks[i]?.weekStart;
     if (!ws) return;
-    store.updateProject(p.id, { ...sprintSpanFor(p, ws, width), status: "in_progress" });
+    write(sprintSpanFor(p, ws, width), "in_progress");
   };
-  const shelve = () => store.updateProject(p.id, { startDate: null, targetDate: null, status: "backlog" });
+  const shelve = () => write({ startDate: null, targetDate: null }, "backlog");
 
   // ← → walk the placement, ⇧ resizes the span — the deck's drag and resize
   // without the pointer.
@@ -209,21 +223,14 @@ export function SprintBand({
     else place(Math.max(0, Math.min(HORIZON - 1, from + dir)), span);
   };
 
+  const onStart = (v: string | null) =>
+    onPlace ? onPlace({ startDate: v }) : store?.updateProject(p.id, { startDate: v });
+  const onTarget = (v: string | null) =>
+    onPlace ? onPlace({ targetDate: v }) : store?.updateProject(p.id, { targetDate: v });
+
   const dates = renderDates
-    ? renderDates({
-        start: p.startDate,
-        target: p.targetDate,
-        onStart: (v) => store.updateProject(p.id, { startDate: v }),
-        onTarget: (v) => store.updateProject(p.id, { targetDate: v }),
-      })
-    : (
-      <CompactDates
-        start={p.startDate}
-        target={p.targetDate}
-        onStart={(v) => store.updateProject(p.id, { startDate: v })}
-        onTarget={(v) => store.updateProject(p.id, { targetDate: v })}
-      />
-    );
+    ? renderDates({ start: p.startDate, target: p.targetDate, onStart, onTarget })
+    : <CompactDates start={p.startDate} target={p.targetDate} onStart={onStart} onTarget={onTarget} />;
 
   const litRange = from >= 0 ? `${fmtDay(weeks[from].weekStart)} – ${format(parseISO(p.targetDate ?? ""), "MMM d")}` : null;
 
@@ -294,13 +301,16 @@ export function SprintBand({
 export function QuarterBand({
   i,
   store,
+  onPlace,
   tone = "quiet",
   color = "var(--accent)",
   renderDates,
   bandRef,
 }: {
-  i: Initiative;
-  store: Store;
+  i: Pick<Initiative, "id" | "startDate" | "targetDate">;
+  /** omit only when `onPlace` is driving a draft. */
+  store?: Store;
+  onPlace?: OnPlace;
   tone?: PlacementTone;
   color?: string;
   renderDates?: (v: { start: string | null; target: string | null; onStart: (s: string | null) => void; onTarget: (s: string | null) => void }) => ReactNode;
@@ -323,9 +333,12 @@ export function QuarterBand({
   // runway in sprints — the honest count at this altitude
   const left = i.targetDate ? sprintsBetween(now, new Date(i.targetDate + "T12:00:00")) + 1 : 0;
 
-  const place = (k: number) =>
-    store.updateInitiative(i.id, { targetDate: quarterEndISO(quarters[k].start), status: "in_progress" });
-  const shelve = () => store.updateInitiative(i.id, { targetDate: null, status: "backlog" });
+  const write = (patch: PlacePatch, status: Initiative["status"]) => {
+    if (onPlace) onPlace(patch);
+    else store?.updateInitiative(i.id, { ...patch, status });
+  };
+  const place = (k: number) => write({ targetDate: quarterEndISO(quarters[k].start) }, "in_progress");
+  const shelve = () => write({ targetDate: null }, "backlog");
 
   // A bet BELONGS TO a quarter — it doesn't span (design-language planner law 5),
   // so there is no ⇧-resize here, only ← →.
@@ -337,21 +350,14 @@ export function QuarterBand({
     place(idx < 0 ? (dir > 0 ? 0 : HORIZON - 1) : Math.max(0, Math.min(HORIZON - 1, idx + dir)));
   };
 
+  const onStart = (v: string | null) =>
+    onPlace ? onPlace({ startDate: v }) : store?.updateInitiative(i.id, { startDate: v });
+  const onTarget = (v: string | null) =>
+    onPlace ? onPlace({ targetDate: v }) : store?.updateInitiative(i.id, { targetDate: v });
+
   const dates = renderDates
-    ? renderDates({
-        start: i.startDate,
-        target: i.targetDate,
-        onStart: (v) => store.updateInitiative(i.id, { startDate: v }),
-        onTarget: (v) => store.updateInitiative(i.id, { targetDate: v }),
-      })
-    : (
-      <CompactDates
-        start={i.startDate}
-        target={i.targetDate}
-        onStart={(v) => store.updateInitiative(i.id, { startDate: v })}
-        onTarget={(v) => store.updateInitiative(i.id, { targetDate: v })}
-      />
-    );
+    ? renderDates({ start: i.startDate, target: i.targetDate, onStart, onTarget })
+    : <CompactDates start={i.startDate} target={i.targetDate} onStart={onStart} onTarget={onTarget} />;
 
   return (
     <div>

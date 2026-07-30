@@ -203,6 +203,7 @@ export function InlineText({
   className = "",
   inputClassName = "",
   autoFocusEmpty = false,
+  live = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -211,6 +212,11 @@ export function InlineText({
   /** @deprecated no separate edit state anymore — kept for call-site compat. */
   inputClassName?: string;
   autoFocusEmpty?: boolean;
+  /** Report every keystroke, not just the blur. A record commits on blur — one
+   *  write per edit — but a CREATE sheet has to know the name as you type: the
+   *  commit button and the readiness ticks read it live, and clicking the button
+   *  blurs this field in the same tick, which is too late. */
+  live?: boolean;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
 
@@ -244,6 +250,8 @@ export function InlineText({
       suppressContentEditableWarning
       data-placeholder={placeholder}
       onBlur={commit}
+      // untrimmed on purpose — trimming mid-word eats the space you just typed.
+      onInput={live ? (e) => onChange(e.currentTarget.textContent ?? "") : undefined}
       onKeyDown={(e) => {
         if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
         if (e.key === "Escape") { e.currentTarget.textContent = value; e.currentTarget.blur(); }

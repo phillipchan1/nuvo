@@ -306,7 +306,7 @@ export interface ActivityUnit {
 export const DEFAULT_DURATION_MINUTES = 30;
 /** Project-backed steps — matches `MIN_PROJECT_BLOCK` in compose; never stamp 20. */
 export const DEFAULT_PROJECT_DURATION_MINUTES = 45;
-/** Shared sitting presets — grooming, QuickCreate, task record, Plan-the-week Pull. */
+/** Shared sitting presets — grooming, CreateRecord, task record, Plan-the-week Pull. */
 export const DURATION_PRESETS = [15, 30, 45, 60, 90, 120, 180, 240] as const;
 export type DurationPreset = (typeof DURATION_PRESETS)[number];
 
