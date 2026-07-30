@@ -1649,6 +1649,43 @@ designed rather than inherited from a gesture.
 *Status: standing — verified against the running app 2026-07-30 (both bands reordered and
 restored, persistence confirmed across a reload).*
 
+**D-063a · same day · a drop target names its destination, or it loses the row.** Held
+against a real Thursday within the hour: dropping *Build company DNA/heartbeat* on the
+Inbox tab **made it disappear.** Not a regression — `backToInbox` has always routed a
+**parented** task to `status: "backlog"`, its project's, and only a loose one to the triage
+`inbox`. But the rail renders neither backlog, so the row left the day, never arrived in the
+Inbox, and the tab's own count didn't move. The control said *Inbox* and meant *Stampede v3
+backlog*. Confirmed in the row itself before writing a line of the fix.
+
+**The routing is right; the label was the lie.** The inbox is the triage queue for *unfiled*
+captures — flooding it with parented project work would break the funnel (**P10**, near
+enough). So the destination gets **named** instead:
+
+→ **Before the drop**, a cursor chip states the act and where it lands — *"↩ Back to
+Stampede v3 backlog"* vs *"↩ Back to Inbox"*, read from the row's own project. It's the
+calendar's slot-chip idiom in `--accent` (intent) rather than `--slot` (open/unclaimed).
+
+→ **After the drop**, a toast names it again and carries **Undo**, which restores the exact
+four fields either act moves (`status` · `do_date` · `start_time` · `slot_id`). Verified
+round-trip on live data.
+
+→ **And the strip is symmetric now.** During a drag the two tabs stop being *places* and
+become the two acts available to the row in hand: the **Inbox** tab takes it off the day,
+the **Today** tab puts it on. Three states each, because *"you could drop here"* and *"you
+are about to"* are different promises — resting · armed (dashed ring) · ready (filled +
+lift). Rail-origin drags now have exactly **one** owner: `LeftRail`. `CalendarPane` and
+`WeekBoard` each kept a copy of the tab hit-test; both are gone, and `CalendarPane` keeps
+only what it alone knows — a *calendar* item over the rail.
+
+→ **Found in passing.** `CalendarPane`'s drag tracker only reset on `pointerup`, so Escape
+(which the rail's reorder honours) left `body.cal-dragging` behind — every day cell still
+glowing for a drag that had ended. It now aborts on Escape and `pointercancel` too. Same
+family as the stuck row-highlight in D-063: **when the gesture ends, it ends.**
+
+*Status: standing — the general rule is in `design-language.md`'s drag contract: a target
+that can route somewhere the surface doesn't render must say so before the release, and
+carry an Undo after it.*
+
 ---
 
 ## 2 · Things we decided **not** to do

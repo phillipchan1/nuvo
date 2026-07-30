@@ -515,22 +515,16 @@ export default function CalendarPane({
     let moved = false;
     let startX = 0;
     let startY = 0;
-    let lastX = 0;
-    let lastY = 0;
     let overSlot: HTMLElement | null = null;
     let dragId: string | null = null; // external [data-task-drag] id (rail / slot popover row)
     let fromRail = false; // did this drag start inside the rail itself?
     let calTask = false; // calendar block being dragged (inbox via eventDragStop, not here)
     let overRail = false; // is the pointer currently over the rail?
-    // Returning a row to the inbox drops it on the INBOX TAB. The tab is
-    // already in the layout, already says "Inbox", and sits above the list — so
-    // arming it costs no reflow and covers no rows. The banner it replaces
-    // appeared over the top of the list the moment a drag began, which is what
-    // made a rail drag feel like the list lurching out from under the cursor.
-    const inboxTabAt = (x: number, y: number) => {
-      const hit = document.elementFromPoint(x, y) as HTMLElement | null;
-      return Boolean(hit?.closest("[data-inbox-tab]"));
-    };
+    // Rail-origin drags (reorder, and the tab strip's take-it-off-the-day /
+    // put-it-on-the-day acts) belong to the rail — `LeftRail`'s `useListReorder`
+    // owns them, chip and Undo included. This effect keeps only what it alone
+    // can know: a CALENDAR item dragged over the rail, where the whole rail is
+    // the zone.
     // A cursor-following label that names the slot you're about to drop into. The
     // ghost fades to ~10% over a slot, so this is what tells you the target — and it
     // shows the full slot title even when a narrow/inset slot truncates its own.
@@ -552,14 +546,12 @@ export default function CalendarPane({
       dragId = dragEl?.getAttribute("data-task-drag") ?? null;
       fromRail = Boolean(dragEl && railRef.current?.contains(dragEl));
       calTask = Boolean(el?.closest?.(".evt-task"));
-      startX = lastX = e.clientX;
-      startY = lastY = e.clientY;
+      startX = e.clientX;
+      startY = e.clientY;
       moved = false;
     };
     const onMove = (e: PointerEvent) => {
       if (!armed) return;
-      lastX = e.clientX;
-      lastY = e.clientY;
       if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 5) return;
       if (!moved) {
         moved = true;
@@ -605,32 +597,24 @@ export default function CalendarPane({
         const onRail =
           e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom;
         overRail = onRail && !slotEl;
-        // Two different offers, so two different marks.
-        // Calendar → rail: the WHOLE rail is the inbox zone, so the whole rail
-        // takes the wash. Rail-origin: the row is already in the rail — the
-        // only new destination is the Inbox tab, so arm just that. Tinting the
-        // rail for a drag that started inside it said "drop anywhere here",
+        // Calendar → rail only: the WHOLE rail is the inbox zone, so the whole
+        // rail takes the wash. A drag that started *inside* the rail is the
+        // rail's own business — tinting it there said "drop anywhere here",
         // which was never true.
         rail.classList.toggle(
           "rail-drop-active",
           !fromRail && overRail && (Boolean(dragId) || calTask),
         );
-        rail.classList.toggle("rail-return-armed", fromRail && Boolean(dragId) && moved);
       }
     };
     const onUp = () => {
       // Capture drag state before resetting — needed to suppress the phantom
       // click the browser fires on the original element after any drag gesture.
-      let swallowClick = moved && fromRail;
+      const swallowClick = moved && fromRail;
       armed = false;
       if (active && moved) {
         active = false;
-        const dropInbox =
-          Boolean(dragId) &&
-          ((!fromRail && overRail) || (fromRail && inboxTabAt(lastX, lastY)));
-        // Releasing ON the Inbox tab would otherwise also *click* it and swap
-        // the rail out from under the drop.
-        if (inboxTabAt(lastX, lastY)) swallowClick = true;
+        const dropInbox = Boolean(dragId) && !fromRail && overRail;
         if (dropInbox) {
           const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${dragId}"]`);
           const group = dragEl?.getAttribute("data-task-drag-group");
@@ -659,13 +643,34 @@ export default function CalendarPane({
         document.addEventListener("click", (e) => { e.stopPropagation(); }, { capture: true, once: true });
       }
     };
+    // Abandoning a drag must clear the glow too. Without these, Escape (which
+    // the rail's reorder honours) or a cancelled pointer left `cal-dragging` on
+    // the body — every day cell still lit for a drag that had already ended.
+    const onAbort = () => {
+      armed = false;
+      active = false;
+      moved = false;
+      dragId = null;
+      fromRail = false;
+      calTask = false;
+      overRail = false;
+      overSlotIdRef.current = null;
+      reset();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onAbort();
+    };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("pointermove", onMove, true);
     document.addEventListener("pointerup", onUp, true);
+    document.addEventListener("pointercancel", onAbort, true);
+    window.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("pointerup", onUp, true);
+      document.removeEventListener("pointercancel", onAbort, true);
+      window.removeEventListener("keydown", onKey);
       reset();
       chip.remove();
     };

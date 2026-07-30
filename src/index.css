@@ -1555,6 +1555,16 @@ select.field { appearance: none; -webkit-appearance: none; }
   opacity: 1;
   transform: translateY(0) scale(1);
 }
+/* The same chip when it names an ACT rather than a container: `--accent` is
+   intent, `--slot` is open/unclaimed. Wider, because the destination is the
+   whole message — a chip that ellipsises "…Stampede v3 backl…" has failed at
+   the one job it has. */
+.slot-drop-chip.drop-chip-act {
+  max-width: 340px;
+  color: color-mix(in srgb, var(--accent) 32%, var(--ink));
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent), var(--shadow-lift);
+}
 /* ── Rail drop zone: calendar → inbox ─────────────────────────────────────── */
 /* Smooth transition so the drop zone feel enters and exits gracefully. */
 [data-rail-drop] {
@@ -1569,21 +1579,39 @@ select.field { appearance: none; -webkit-appearance: none; }
   box-shadow: inset 1.5px 0 0 color-mix(in srgb, var(--accent) 45%, transparent) !important;
 }
 
-/* The Inbox tab IS the return-to-inbox target. It's already in the layout and
-   already carries the word, so arming it costs no reflow and covers no rows —
-   unlike the banner it replaces, which unfurled over the top of the list the
-   moment a drag began and made the list read as lurching away from the cursor.
-   `.rail-drop-active` = a calendar item is over the rail (whole rail is the
-   zone); `.rail-return-armed` = a rail row is in hand and the tab is the one
-   place left to put it. Dashed, because the border is the drop-zone idiom and
-   this is the only dashed thing on the surface. */
-.rail-drop-active [data-inbox-tab],
-[data-drop-tab="today"].rail-return-armed [data-inbox-tab] {
+/* The tab strip is the rail's drop router. During a drag the tabs stop being
+   places and become the two acts available to the row in hand — so they need
+   the drag contract's three states, because "you could drop here" and "you are
+   about to" are different promises:
+     · armed  — a compatible row is in hand. A dashed accent ring: the drop-zone
+                idiom, and the only dashed thing on the surface.
+     · ready  — the pointer is ON it. Solid fill + lift, so the commit reads as
+                imminent rather than merely possible.
+   `.rail-drop-active` is the third case, owned by the calendar: an item from
+   outside is over the rail, where the WHOLE rail is the zone. */
+.rail-tab-armed,
+.rail-drop-active [data-inbox-tab] {
   color: var(--accent);
   border-bottom-color: transparent;
   background: color-mix(in srgb, var(--accent) 7%, transparent);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 40%, transparent);
   border-radius: 6px;
+}
+.rail-tab-ready {
+  color: var(--accent);
+  border-bottom-color: transparent;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 75%, transparent),
+    var(--shadow-lift);
+  border-radius: 6px;
+  transform: translateY(-1px);
+}
+/* The count is metadata; it must not out-shout the word that names the act. */
+.rail-tab-armed .mono,
+.rail-tab-ready .mono {
+  color: inherit;
+  opacity: 0.6;
 }
 
 /* The row left behind while its ghost follows the cursor. It recedes rather

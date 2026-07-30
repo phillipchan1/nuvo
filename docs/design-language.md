@@ -104,8 +104,17 @@ tray — owes the user **two things at all times**, or it feels lost:
    in the layout instead (the Schedule rail arms the **Inbox tab**: permanent, already
    labelled, costs zero reflow and covers zero rows).
 
+4. **The destination is named when it isn't obvious, and undoable when it's a write**
+   (**D-063a**). If a target can route somewhere *this* surface doesn't render — the Inbox
+   tab sends a **parented** task to its project's backlog, not to the triage inbox — the
+   row will simply vanish. So a **cursor chip** states the real destination before release
+   (the slot-chip idiom, in `--accent` for an act rather than `--slot` for a container),
+   and a **toast with Undo** names it again after. A target may not be labelled one thing
+   and do another.
+
 And when the gesture ends, **it ends** — a drag is a move, not a selection. Nothing may
-stay lifted, armed, or `user-select`-locked after the release.
+stay lifted, armed, `cal-dragging`, or `user-select`-locked after the release, and that
+includes an abandoned drag: Escape and `pointercancel` reset the same as a drop.
 
 Reference implementation for a list that shares its rows with another drag system:
 `useListReorder` (`src/hooks/useListReorder.ts`, used by `LeftRail`) — passive by design

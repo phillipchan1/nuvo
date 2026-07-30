@@ -280,13 +280,6 @@ export default function WeekBoard({
       const fromBoard = Boolean(boardRef.current?.contains(el));
       const rail = document.querySelector<HTMLElement>("[data-rail-drop]");
       const fromRail = Boolean(rail?.contains(el));
-      // A row already in the rail goes back to the inbox by being dropped on the
-      // Inbox TAB — the rail at large is only a target for things arriving from
-      // elsewhere (see the note in CalendarPane).
-      const inboxTabAt = (x: number, y: number) => {
-        const hit = document.elementFromPoint(x, y) as HTMLElement | null;
-        return Boolean(hit?.closest("[data-inbox-tab]"));
-      };
       const start = { x: e.clientX, y: e.clientY };
       let moved = false;
       let target: DropTarget = null;
@@ -309,22 +302,19 @@ export default function WeekBoard({
         const dayEl = hit?.closest("[data-day]");
         if (dayEl) target = { kind: "day", day: dayEl.getAttribute("data-day") ?? "" };
         else if (hit?.closest("[data-tray]")) target = { kind: "tray" };
-        else if (hit?.closest("[data-rail-drop]")) {
-          if (!fromRail) target = { kind: "inbox" };
-          else if (inboxTabAt(ev.clientX, ev.clientY)) target = { kind: "inbox" };
-          else target = null;
-        }
+        // A row already in the rail is the rail's own business — LeftRail's
+        // reorder hook owns its tab-strip acts, chip and Undo included.
+        else if (hit?.closest("[data-rail-drop]")) target = fromRail ? null : { kind: "inbox" };
         else target = null;
         setDropTarget(target);
         rail?.classList.toggle("rail-drop-active", !fromRail && target?.kind === "inbox");
-        rail?.classList.toggle("rail-return-armed", fromRail && moved);
       };
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
         document.body.style.cursor = "";
         document.body.classList.remove("wb-noselect");
-        rail?.classList.remove("rail-drop-active", "rail-return-armed");
+        rail?.classList.remove("rail-drop-active");
         const s = live.current;
         if (!moved) {
           if (fromBoard) s.onOpenTask(task, el.getBoundingClientRect());

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { captureTitle, parseCapture } from "../lib/nlp";
@@ -327,12 +328,65 @@ export default function LeftRail({
 
   const byId = useMemo(() => new Map(visible.map((t) => [t.id, t])), [visible]);
 
-  const { draggingId, lineTop } = useListReorder({
+  // ── the tab strip as a router ───────────────────────────────────────────────
+  // During a drag the two tabs stop being *places* and become the two acts you
+  // can perform on the row in hand: take it off the day, or put it on the day.
+  // They're already in the layout and already carry the words, so arming them
+  // costs no reflow and covers no rows.
+  //
+  // The destination is NAMED, not implied. `backToInbox` sends a parented task
+  // to its project's backlog, not to the triage Inbox — so a row dropped on a
+  // tab labelled "Inbox" could land somewhere the rail doesn't render, and
+  // simply vanish. The chip says where it's actually going before you let go,
+  // and the toast says where it went with an Undo.
+  const homeOf = (t: Task) => {
+    if (!t.project_id) return "Inbox";
+    const p = projectById(vertical, t.project_id);
+    return p?.name ? `${p.name} backlog` : "its project's backlog";
+  };
+  const dropActs: Record<string, { label: (t: Task) => string; run: (t: Task) => void }> = {
+    inbox: {
+      label: (t) => `↩ Back to ${homeOf(t)}`,
+      run: (t) => mutations.backToInbox(t),
+    },
+    today: {
+      label: () => "→ Onto today",
+      run: (t) => mutations.planFor(t, todayISO(now)),
+    },
+  };
+
+  const { draggingId, lineTop, zone, pointer } = useListReorder({
     containerRef: listRef,
     itemSelector: "[data-task-drag]",
     idAttr: "data-task-drag",
     bandOf: (id) => bands.of.get(id) ?? null,
     bandIds: (band) => bands.ids.get(band) ?? [],
+    // A tab only offers itself when the act would change something: you can't
+    // take an inbox row off the day, and a row already on the day is already there.
+    externalDropAt: (x, y) => {
+      const hit = document.elementFromPoint(x, y) as HTMLElement | null;
+      if (!hit) return null;
+      if (tab === "today" && hit.closest("[data-inbox-tab]")) return "inbox";
+      if (tab === "inbox" && hit.closest("[data-today-tab]")) return "today";
+      return null;
+    },
+    onExternalDrop: (key, id) => {
+      const t = byId.get(id);
+      const act = dropActs[key];
+      if (!t || !act) return;
+      // Snapshot the four fields both acts move, so Undo is exact.
+      const before = {
+        status: t.status,
+        do_date: t.do_date,
+        start_time: t.start_time,
+        slot_id: t.slot_id,
+      };
+      act.run(t);
+      toast(`${t.title} — ${key === "inbox" ? homeOf(t) : "today"}`, {
+        action: { label: "Undo", onClick: () => mutations.patchTask(t.id, before) },
+        duration: 7000,
+      });
+    },
     onPointerDown: () => {
       preDragSelection.current = selectedIdRef.current;
     },
@@ -448,19 +502,26 @@ export default function LeftRail({
         {/* The strip carries one continuous baseline so the active underline sits ON
             a line instead of floating between the crown's divider and nothing. */}
         <div className="flex border-b border-line">
-          {(["today", "inbox"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              {...(t === "inbox" ? { "data-inbox-tab": "" } : {})}
-              className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
-                tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
-              }`}
-            >
-              {t === "inbox" ? "Inbox" : "Today"}
-              <span className="mono ml-1.5 text-meta text-muted">{tabCount(t)}</span>
-            </button>
-          ))}
+          {(["today", "inbox"] as const).map((t) => {
+            // Three states, because "you could drop here" and "you are about to"
+            // are different promises: resting · armed (a compatible row is in
+            // hand) · ready (the pointer is on it, release commits).
+            const armed = Boolean(draggingId) && t !== tab;
+            const ready = zone === t;
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                {...(t === "inbox" ? { "data-inbox-tab": "" } : { "data-today-tab": "" })}
+                className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
+                  tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
+                } ${ready ? "rail-tab-ready" : armed ? "rail-tab-armed" : ""}`}
+              >
+                {t === "inbox" ? "Inbox" : "Today"}
+                <span className="mono ml-1.5 text-meta text-muted">{tabCount(t)}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -472,6 +533,22 @@ export default function LeftRail({
         {lineTop != null && (
           <div className="reorder-insert-line" style={{ top: lineTop }} aria-hidden />
         )}
+        {/* Names the act at the cursor, so nothing lands anywhere unannounced.
+            Portalled — the rail clips its own overflow. Same idiom as the
+            calendar's slot chip. */}
+        {zone &&
+          pointer &&
+          draggingId &&
+          createPortal(
+            <div
+              className="slot-drop-chip drop-chip-act is-visible"
+              style={{ left: pointer.x + 14, top: pointer.y + 16 }}
+              aria-hidden
+            >
+              {dropActs[zone]?.label(byId.get(draggingId) ?? ({} as Task))}
+            </div>,
+            document.body,
+          )}
 
         {tab === "inbox" && (
           <>

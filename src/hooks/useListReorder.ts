@@ -29,6 +29,14 @@ export interface ListReorderOptions {
   bandIds: (band: string) => string[];
   /** Commit a new order for the band. */
   onCommit: (band: string, ids: string[]) => void;
+  /** A destination the surface owns rather than the list — a tab, a tray. Return
+   *  a key while the pointer is over one. Reorder stands down for as long as it
+   *  answers: no insertion line, and a release commits the external act instead.
+   *  Zones win over the band, because a zone that overlaps the list's top edge
+   *  must not silently reorder when you meant to leave. */
+  externalDropAt?: (x: number, y: number, id: string) => string | null;
+  /** Commit the external act. Only called for a release inside a zone. */
+  onExternalDrop?: (key: string, id: string) => void;
   /** Fired on press, before the gesture has decided what it is. */
   onPointerDown?: (id: string) => void;
   /** Fired once the press clears the drag threshold. */
@@ -56,6 +64,8 @@ export function useListReorder({
   bandOf,
   bandIds,
   onCommit,
+  externalDropAt,
+  onExternalDrop,
   onPointerDown,
   onDragStart,
   onDragEnd,
@@ -63,11 +73,14 @@ export function useListReorder({
 }: ListReorderOptions) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [lineTop, setLineTop] = useState<number | null>(null);
+  const [zone, setZone] = useState<string | null>(null);
+  /** Live pointer while dragging — for a cursor-following label. */
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
 
   // Everything the live gesture reads, held in refs so a mid-drag re-render
   // (the line moving) never re-subscribes the listeners underneath it.
-  const opts = useRef({ bandOf, bandIds, onCommit, onPointerDown, onDragStart, onDragEnd });
-  opts.current = { bandOf, bandIds, onCommit, onPointerDown, onDragStart, onDragEnd };
+  const opts = useRef({ bandOf, bandIds, onCommit, externalDropAt, onExternalDrop, onPointerDown, onDragStart, onDragEnd });
+  opts.current = { bandOf, bandIds, onCommit, externalDropAt, onExternalDrop, onPointerDown, onDragStart, onDragEnd };
 
   const rowRect = useCallback(
     (id: string) => {
@@ -92,6 +105,8 @@ export function useListReorder({
     let targetIndex: number | null = null;
     let scrollRaf = 0;
     let pointerY = 0;
+    let pointerX = 0;
+    let inZone: string | null = null;
 
     const stopScroll = () => {
       if (scrollRaf) cancelAnimationFrame(scrollRaf);
@@ -142,10 +157,13 @@ export function useListReorder({
     const finish = (commit: boolean) => {
       const draggedId = id;
       const wasDragging = dragging;
+      const droppedIn = inZone;
       stopScroll();
       document.body.classList.remove("wb-noselect");
       let reordered = false;
-      if (commit && wasDragging && draggedId && band && targetIndex != null) {
+      if (commit && wasDragging && draggedId && droppedIn) {
+        opts.current.onExternalDrop?.(droppedIn, draggedId);
+      } else if (commit && wasDragging && draggedId && band && targetIndex != null) {
         const current = opts.current.bandIds(band);
         const from = current.indexOf(draggedId);
         const next = current.filter((x) => x !== draggedId);
@@ -160,8 +178,11 @@ export function useListReorder({
       peers = [];
       dragging = false;
       targetIndex = null;
+      inZone = null;
       setDraggingId(null);
       setLineTop(null);
+      setZone(null);
+      setPointer(null);
       if (wasDragging && draggedId) opts.current.onDragEnd?.(draggedId, reordered);
     };
 
@@ -187,6 +208,7 @@ export function useListReorder({
     const onMove = (e: PointerEvent) => {
       if (!id) return;
       pointerY = e.clientY;
+      pointerX = e.clientX;
       if (!dragging) {
         if (Math.hypot(e.clientX - startX, e.clientY - startY) < DRAG_THRESHOLD) return;
         dragging = true;
@@ -195,12 +217,21 @@ export function useListReorder({
         opts.current.onDragStart?.(id);
         if (!scrollRaf) scrollRaf = requestAnimationFrame(autoScroll);
       }
+      setPointer({ x: pointerX, y: pointerY });
+
+      // A surface-owned zone wins outright, so a tab hanging over the list's top
+      // edge can't be read as "reorder to position 0".
+      const nextZone = opts.current.externalDropAt?.(e.clientX, e.clientY, id) ?? null;
+      if (nextZone !== inZone) {
+        inZone = nextZone;
+        setZone(nextZone);
+      }
       const list = container();
       const r = list?.getBoundingClientRect();
       // Outside the list horizontally, the gesture belongs to whoever owns the
       // surface it left for (the calendar) — go quiet rather than promising a
       // drop we won't honour.
-      if (!band || !r || e.clientX < r.left || e.clientX > r.right) {
+      if (inZone || !band || !r || e.clientX < r.left || e.clientX > r.right) {
         targetIndex = null;
         setLineTop(null);
         return;
@@ -230,5 +261,5 @@ export function useListReorder({
     };
   }, [containerRef, itemSelector, idAttr, rowRect, disabled]);
 
-  return { draggingId, lineTop };
+  return { draggingId, lineTop, zone, pointer };
 }
