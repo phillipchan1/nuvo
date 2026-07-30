@@ -33,6 +33,8 @@ const listeners = new Set<() => void>();
 let relaunchFn: (() => Promise<void>) | null = null;
 let inFlight = false;
 let staged = false; // an update is downloaded and waiting for restart
+let stagedVersion: string | null = null; // survives past a later "checking"/"up-to-date" transient
+let stagedNotes: string | null = null;
 let pollStarted = false;
 let transientTimer: number | undefined;
 
@@ -45,22 +47,40 @@ function set(next: UpdateState) {
   emit();
 }
 
+// Rests on IDLE, unless a build is already staged — then a transient (checking
+// / up-to-date / error) should fall back to re-showing "ready", not erase it.
+// Reads the dedicated staged* vars rather than `state`, since `state` may
+// already have been overwritten (e.g. to "checking") by the time this runs.
+function restingState(): UpdateState {
+  return staged
+    ? { status: "ready", version: stagedVersion, progress: 100, error: null, notes: stagedNotes }
+    : IDLE;
+}
+
 function setTransient(next: UpdateState) {
+  const fallback = restingState();
   set(next);
   window.clearTimeout(transientTimer);
   transientTimer = window.setTimeout(() => {
     // Only clear if nothing more important happened since.
-    if (state.status === next.status) set(IDLE);
+    if (state.status === next.status) set(fallback);
   }, TRANSIENT_MS);
 }
 
 /**
  * Run one update check. `manual` surfaces "checking" / "up to date" feedback
  * that the silent background poll suppresses. Safe to call concurrently — extra
- * calls no-op while one is in flight or an update is already staged.
+ * calls no-op while one is already in flight.
+ *
+ * Keeps checking even after a build is staged: a release that ships while the
+ * first one is just sitting there waiting for "Restart to update" would
+ * otherwise go unnoticed until the user restarts into the stale build and
+ * immediately gets prompted to restart again for the newer one. `runCheck`
+ * compares against the already-staged version so a still-current staged build
+ * is a silent no-op, not a redundant re-download.
  */
 export async function checkForUpdate(manual = false): Promise<void> {
-  if (!isDesktopTauri() || inFlight || staged) return;
+  if (!isDesktopTauri() || inFlight) return;
   inFlight = true;
   if (manual) set({ status: "checking", version: null, progress: 0, error: null, notes: null });
   try {
@@ -81,6 +101,15 @@ async function runCheck(manual: boolean, attempt = 1): Promise<void> {
     if (!update) {
       if (manual) setTransient({ status: "up-to-date", version: null, progress: 0, error: null, notes: null });
       else if (state.status !== "ready") set(IDLE);
+      return;
+    }
+
+    // A build is already staged and nothing newer has shipped since — `check()`
+    // will keep reporting it as "available" every poll until we actually
+    // relaunch (it compares against the still-running old binary, not what's
+    // staged on disk). Re-downloading the same version would be pure waste.
+    if (staged && update.version === stagedVersion) {
+      if (manual) setTransient({ status: "up-to-date", version: null, progress: 0, error: null, notes: null });
       return;
     }
 
@@ -118,6 +147,8 @@ async function runCheck(manual: boolean, attempt = 1): Promise<void> {
     const { relaunch } = await import("@tauri-apps/plugin-process");
     relaunchFn = relaunch;
     staged = true;
+    stagedVersion = lastVersion;
+    stagedNotes = lastNotes;
     set({ status: "ready", version: lastVersion, progress: 100, error: null, notes: lastNotes });
   } catch (err) {
     if (attempt < 2) {

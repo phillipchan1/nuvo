@@ -107,7 +107,11 @@ Per release, to `nuvo-releases` as GitHub's `--latest`:
 
 - `src/lib/appUpdate.ts` — one shared store. Background-polls every 30 min, silently
   downloads a new build, then surfaces an unobtrusive **"Restart to update"** (the
-  bottom-right `UpdateToast`). Cascades so a mid-download newer build only restarts once.
+  bottom-right `UpdateToast`). Cascades so a mid-download newer build only restarts once,
+  and **keeps polling even after one is staged** — a build that ships while an earlier
+  one is just sitting there waiting for a click gets swapped in silently, so restarting
+  always lands on the latest instead of restarting once for the stale build and again
+  right after for the one that shipped in between.
 - Settings → **Desktop app** — running version, a manual **"Check for updates"**, and a
   **"What's new"** history (`src/lib/changelog.ts`, bundled `public/changelog.json` with a
   GitHub Releases API fallback). Shares the store with the toast so they never disagree.
