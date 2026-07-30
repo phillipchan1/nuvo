@@ -141,7 +141,13 @@ async function runCheck(manual: boolean, attempt = 1): Promise<void> {
       });
 
       cascade++;
-      update = cascade < MAX_CASCADE ? await check() : null;
+      const next = cascade < MAX_CASCADE ? await check() : null;
+      // `check()` compares against the still-running (pre-relaunch) binary, so
+      // it keeps reporting the version we JUST installed as "available" —
+      // forever, until an actual relaunch happens. Only treat it as another
+      // cascade hop if it's a genuinely different (newer) version; otherwise
+      // we'd redownload the same build up to MAX_CASCADE times for no reason.
+      update = next && next.version !== lastVersion ? next : null;
     }
 
     const { relaunch } = await import("@tauri-apps/plugin-process");
