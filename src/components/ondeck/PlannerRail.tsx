@@ -96,7 +96,7 @@ export default function PlannerRail({
       }
     >
       {/* ── the crown — readiness, execution voice ───────────────────────────── */}
-      <div className="shrink-0 border-b border-line-strong px-3 pb-3 pt-3.5">
+      <div className="shrink-0 border-b border-line-strong px-3 pb-3 pt-2">
         <CrownFace crown={crown} pct={pct} />
         {crown.gap && (
           <button

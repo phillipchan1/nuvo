@@ -383,7 +383,7 @@ export default function OnDeckPlanner() {
           No hero here: the crown is this surface's one anchor (execution voice),
           and the floor's top bar already names On Deck — the same reason the
           Schedule has no header over its calendar. */}
-      <div className="flex min-w-0 flex-1 flex-col px-5 py-3">
+      <div className="flex min-w-0 flex-1 flex-col px-5 pb-3 pt-2">
         {/* coverage controls — collapse + domain filter. One quiet toolbar over the grid. */}
         <CoverageControls
           collapsed={coverageCollapsed}

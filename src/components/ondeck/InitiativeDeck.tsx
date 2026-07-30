@@ -280,7 +280,7 @@ export default function InitiativeDeck() {
       {/* ── the grid ─────────────────────────────────────────────────────────
           No hero: the crown anchors this surface (one hero per surface), and the
           floor's top bar already names On Deck. */}
-      <div className="flex min-w-0 flex-1 flex-col px-6 py-4">
+      <div className="flex min-w-0 flex-1 flex-col px-6 pb-4 pt-2">
           <CoverageControls
             collapsed={coverageCollapsed}
             setCollapsed={setCoverageCollapsed}
