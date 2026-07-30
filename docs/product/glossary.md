@@ -13,17 +13,18 @@ migrations)* should be confirmed against `supabase/migrations/` before being rel
 | User-facing | In code | What it is |
 |---|---|---|
 | **Domain** | `domains` *(per migrations)*, `domain_id` | An area of lasting responsibility — one you've committed to keep showing up in and producing from. **Not a folder or a tag.** Carries a color used as identity across calendar and rails. Signup seeds **none**; the account names its own via the first-run picker over the five domain *kinds* in [`personas.md`](./personas.md) §1 (D-026). |
+| **Life** *(marketing only)* | — *(no code name — the app says **domain**)* | The **outward-facing** word for a domain on [nuvo.day](https://nuvo.day): *"You live more than one life."* A cold reader has no word for themselves and doesn't know what a "domain" is, but recognizes the plural life instantly. Two names for one concept is the deliberate ceiling — *lives* outside, *domains* inside (D-057). **No app surface says "life."** |
 | **Initiative** | `initiatives` *(per migrations)* | A big outcome under a domain, usually a quarter's worth. Has vows / key results. |
 | **Project** | `projects` *(per migrations)*, `project_id` | A finite thing that gets *finished*. Has size (remaining effort) and a finish line — the two inputs to pace. |
 | **Task** | `tasks` | The atom. One row carries pool membership, planning, *and* scheduling. |
 | **Priority** | **`big_rocks`**, `tasks.big_rock_id` | ⚠️ **The main naming drift.** The week's priorities. A real node that can own tasks — it slides along a crystallization line from pure intention → proto-object → bound to a project. See [`priorities-and-projects.md`](../priorities-and-projects.md). |
-| **Week** | **`sprints`**, `tasks.sprint_id` | ⚠️ Drift. The commitment gate. One row per week; tasks point at it. |
+| **Week** | **`sprints`**, `tasks.sprint_id` | ⚠️ Drift, and now the *only* place the word survives. The commitment gate. One row per week; tasks point at it. A week **names itself by distance** — "This week", "Next week", "In 3 weeks", then "Week of Aug 24" — never by an ISO number (D-058). `src/lib/week.ts` owns every label. |
 | **Block** | *no separate entity* | A `tasks` row with `do_date` **and** `start_time`. **A scheduled task IS a time block.** |
 | **Slot** | `slots` | A container of time on the grid. Can hold child tasks. Title auto-derives when unnamed. **Plan the week uses this word for the blocks it groups leftovers and captures into** — it briefly said "grouped into blocks", a fourth vocabulary for a thing that already had a name (D-041). Calendar blocks wear their kind as an eyebrow: `PROJECT · 3 TASKS`, `SLOT · 2 CAPTURES`, `TASK`. |
 | **Standing slot** | `slots` + affinity (`project_id` / `domain_id`) | Protected *recurring* time with an affinity that acts as a magnet during Sunday compose. [`standing-slots.md`](../standing-slots.md) |
 | **Project slot** | *(spec)* | A block typed as protected project time, so capacity is measured in real project hours. [`project-slots.md`](../project-slots.md) |
 | **Record** | `src/components/record/` | The single-record surface for a project/initiative/task — identity, the work, the Log, and a rail of standing (D-050). The *modal* is desktop; the phone reaches the same record through a bottom Sheet (`mobile/detail/`), and both write placement through one band (D-030). |
-| **Placement** | `start_date` / `target_date`, shown as sprints & quarters | *When this lands.* A project **spans** sprints (resizable); a bet **belongs to** a quarter. Dates remain the storage unit but are no longer the front door — the record edits a scale, not two date fields (D-030, D-050). |
+| **Placement** | `start_date` / `target_date`, shown as weeks & quarters | *When this lands.* A project **spans** weeks (resizable); a bet **belongs to** a quarter. Dates remain the storage unit but are no longer the front door — the record edits a scale, not two date fields (D-030, D-050). |
 | **Ready** | derived, `lib/lenses.ts` | The record's readiness checklist, named per altitude: a project needs an **Outcome** and **Steps**; a bet needs an **Objective** and **a number moving**. The finish line is deliberately not a tick — the placement band above it already says whether one is set. |
 | **Assess** | `record/AssessLayer.tsx` | Nuvo's review pass over one record: it reads the record and lays margin notes beside the things it would sharpen, each accept-or-dismiss. Proposes, never writes (Principle 3). |
 | **Log** | `record_comments` | The running "what's going on" journal at the foot of a record — newest first, one line at a time. It replaced the static Brief document, which no surface ever wrote. |
@@ -112,7 +113,7 @@ been used to argue against things it doesn't forbid.
 | **Mirror calendar** | A Google calendar named **"Nuvo"**, found-or-created on first connect. Every scheduled task is reconciled to it. One-directional — the app always wins. |
 | **Materialized occurrence** | A repeat is a `recurrences` row (rule + template); occurrences are stamped as *ordinary* `tasks`/`slots` rows to a 35-day `HORIZON_DAYS`, so drag/resize need no special-casing. |
 | **`needs_reconnect`** | Flag on a calendar account after token/credential failure → surfaces the orange reconnect banner. Sync never fails silently; everything writes to `sync_log`. |
-| **Day contexts** | Per-day markers on the sprint (`day_contexts`): normal · ◐ light · ✈ travel · — off. They bound the composer. |
+| **Day contexts** | Per-day markers on the week (`day_contexts`): normal · ◐ light · ✈ travel · — off. They bound the composer. |
 | **Working hours** | `user_settings.work_start_minutes` / `work_end_minutes` (default 480/990). |
 
 ## Design language
@@ -132,6 +133,8 @@ been used to argue against things it doesn't forbid.
 
 | Retired | Use instead | Why |
 |---|---|---|
+| *Worlds* | **lives** (marketing) · **domains** (in app) | A *third* name for one concept: the site said "worlds", the app says "domains", and the hero now says "lives". P11 — an overlapping name. Swept from `marketing/src` including the component and CSS classes (`LivesVisual`, `.lives-*`), because a stale identifier is how the retired word gets back into copy. D-057. |
+| *Sprint* / *Sprint 33* / *Spr 33* | **This week · Next week · In 3 weeks · Week of Aug 24** | Agile jargon for a **single-player** app (P12) that also means *hurry* — the opposite of what we sell. And the number it carried was ISO week-of-year, a convention US readers don't use (Google and Apple both ship week numbers off by default). Every surface that printed "Sprint 33" already printed "This week · Aug 10" underneath, so the number was decoration. D-058. **`sprints` / `sprint_id` survive in code only** (D-007). |
 | *Harvest* | **the Review** | Farming metaphor. D-006. |
 | *Tend / Tending* | **the Refine run** / grooming | Same. (`TendingFlow` survives in code pending retirement.) |
 | *Ritual* (in copy) | **flow**, or the ceremony's name | Reads culty. Code keeps the folder name. |

@@ -32,7 +32,7 @@ Each of these shipped. None was caught by typecheck, build, or review.
 Three layers, in increasing order of how much they buy you.
 
 **a · One derivation.** The rules — what week am I planning, does this project's span cover
-it, did it ship inside it, what's on the slate, what needs a sprint — live in the kernel as
+it, did it ship inside it, what's on the slate, what needs a week — live in the kernel as
 pure functions over a minimal `SpanProject`. The client's `Project` matches structurally; a
 Supabase row goes through `fromProjectRow`. Neither runtime owns the rule; both call it.
 
@@ -73,7 +73,7 @@ zero-import module beside it (e.g. `_shared/conferencing.ts`) and is cited inlin
 | Which week am I planning | `planningWeekStart` | `planningWeekStartISO` (`lib/dates.ts`) | `context.ts`, `tools.ts` |
 | What's on this week (scoreboard) | `isOnSlate` / `deriveSlateIds` | `weekPushes` → Priorities editor, phone slate, week card | `context.weekSlate` |
 | What can I work on this week | `isOnDeckThisWeek` | `projectsOnDeck` → `suggestPull` | `context.weekSlate[].openTasks` |
-| What has no week yet | `needsASprint` | deck pool "Needs a sprint" | `context.needsASprint` |
+| What has no week yet | `needsASprint` *(code drift, D-007)* | deck pool "Needs a week" | `context.needsASprint` |
 | Bring a project into the week | `bringIntoWeekPatch` | `BigRocks.bringIn`, `MobilePlanWeek.bringIn`, deck drop (`sprintSpanFor`) | `create_priority` |
 | Take a project off the week | `takeOffWeekPatch` | `BigRocks.takeOff`, `MobilePlanWeek.takeOff` | `delete_priority` |
 | Where a placement lands | `weekSpanFor` | `sprintSpanFor` (deck drag, sprint picker) | `create_priority` |

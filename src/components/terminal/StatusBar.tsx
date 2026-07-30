@@ -2,7 +2,7 @@ import { useVertical } from "../../hooks/useVertical";
 import { useSkin } from "../../hooks/useSkin";
 import { weekReadiness } from "../../lib/readiness";
 import { planningWeekStartISO } from "../../lib/dates";
-import { sprintLabel } from "../../lib/sprint";
+import { weekName } from "../../lib/week";
 
 // ── The status bar — the terminal skin's bottom strip ───────────────────────
 // An editor is recognisable in a thumbnail before you can read a word of it,
@@ -40,7 +40,7 @@ export default function StatusBar() {
         <span aria-hidden>⎇</span>
         <span>week/{weekStart}</span>
       </span>
-      <span className="term-status-seg">{sprintLabel(weekStart).toLowerCase()}</span>
+      <span className="term-status-seg">{weekName(weekStart).toLowerCase()}</span>
       <span className="term-status-seg">
         {planned ? "planned" : "unplanned"}
       </span>

@@ -46,7 +46,7 @@ That's what we design against:
 | **The paid work** | teams, a roadmap, meetings that fill the calendar by default | Eats every open hour. Wins by default because it's loudest and has other people enforcing it. | job · company · practice · clients |
 | **The committed community** | a season, other people depending on you, recurring hard dates | Non-negotiable deadlines with no project plan behind them. | church · nonprofit board · coaching · volunteering |
 | **The discipline** | protected recurring time; consistency matters more than output | Needs *time*, not tasks — so a task-shaped tool can't hold it. Dies first when work surges. | trading · training · writing · a craft · study |
-| **The relational** | presence, on a calendar that doesn't care about your sprint | Never generates a ticket, so it never enters the system, and gets starved **silently** — the failure nobody notices until it's expensive. | family · marriage · aging parents · friendship |
+| **The relational** | presence, on a calendar that doesn't care about your deadlines | Never generates a ticket, so it never enters the system, and gets starved **silently** — the failure nobody notices until it's expensive. | family · marriage · aging parents · friendship |
 | **The stewardship** *(often implicit)* | periodic attention, high cost of neglect | Invisible until a deadline or a mistake. | finances · health · home · admin |
 
 > **Design consequence — now built (D-026).** These are *kinds*, so the app never assumes

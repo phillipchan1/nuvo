@@ -1,15 +1,15 @@
 // The Projects tab — the phone's On Deck, and now the SAME surface the desktop
-// deck is: projects time-boxed onto sprints. Desktop lays the sprints out as
+// deck is: projects time-boxed onto weeks. Desktop lays the weeks out as
 // columns you drag across; the phone pages through them (pool first, then time),
-// so the act is identical — press and hold a project, drop it on a sprint, and it
+// so the act is identical — press and hold a project, drop it on a week, and it
 // is committed there. What changed from the old mobile screen: it is no longer a
 // demand-ranked *list* that only reads. It is the deck, and it edits.
 //
-// The pool ("Needs a sprint") is page one, exactly the desktop rail's job. Each
-// sprint page carries its own load against your focus cap, its capacity read
+// The pool ("Needs a week") is page one, exactly the desktop rail's job. Each
+// week page carries its own load against your focus cap, its capacity read
 // (demand blocks vs open blocks) and — on the week that pinches — the one steward
 // sentence. Cards are the desktop cards: domain rail, name, the three-check
-// definition-of-ready meter. Tap opens the record (where the sprint picker moves
+// definition-of-ready meter. Tap opens the record (where the week picker moves
 // it without a gesture); the check ships it, asking first.
 //
 // "All" stays what it was: the flat browse list, reaching backlog/complete work
@@ -20,7 +20,7 @@ import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useMaxPerWeek } from "../../hooks/usePlannerPrefs";
 import { readOnDeck, sprintSpanFor, weekIndexIn, type OnDeckLane } from "../../lib/onDeck";
-import { sprintNumber } from "../../lib/sprint";
+import { weekName, weekSpan, weekTick } from "../../lib/week";
 import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
 import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
 import { Hint, VerticalList } from "./detail/verticalDetail";
@@ -31,7 +31,6 @@ import { PIP_TONE, projectCardStatus } from "../ondeck/deckStatus";
 // The same near-term horizon the desktop deck plans over.
 const HORIZON_SPRINTS = 4;
 
-const fmtDay = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
 
 const SEG_KEY = "nuvo-mobile-projects-seg";
@@ -75,7 +74,7 @@ export default function MobileProjects({
   const placed = board.lanes.filter((l) => l.project.targetDate);
   const placedIds = new Set(placed.map((l) => l.project.id));
   // The pool is every open project NOT on the timeline — including a backlog one
-  // that still carries a date; it needs a sprint, so it belongs here.
+  // that still carries a date; it needs a week, so it belongs here.
   const pool = d.projects.filter((p) => isOpenStatus(p.status) && !placedIds.has(p.id));
 
   const geom = placed.map((l) => {
@@ -84,7 +83,7 @@ export default function MobileProjects({
     return { l, start: Math.min(sIdx, dIdx), end: Math.max(sIdx, dIdx), beyond: l.dueWeekIdx == null };
   });
 
-  // Load per sprint — projects occupying it, finished ones excluded (they're no
+  // Load per week — projects occupying it, finished ones excluded (they're no
   // longer pending work). Matches the desktop's `weekLoad`.
   const load = board.weeks.map(
     (_, i) => geom.filter((g) => i >= g.start && i <= g.end && g.l.readyTier !== "done").length,
@@ -92,11 +91,9 @@ export default function MobileProjects({
 
   const columns: DeckColumn[] = board.weeks.map((w) => ({
     key: String(w.idx),
-    chip: `S${sprintNumber(w.weekStart)}`,
-    title: `Sprint ${sprintNumber(w.weekStart)}`,
-    when:
-      (w.idx === 0 ? "This week · " : w.idx === 1 ? "Next week · " : "Week of ") +
-      fmtDay(w.weekStart),
+    chip: weekTick(w.weekStart),
+    title: weekName(w.weekStart),
+    when: weekSpan(w.weekStart),
     load: load[w.idx],
     cap: maxPerWeek,
     now: w.idx === 0,
@@ -129,7 +126,7 @@ export default function MobileProjects({
         node: <PoolCard p={p} dot={dot} onOpen={() => onOpenItem("project", p.id)} />,
       } satisfies DeckCard;
     }),
-    // a project spanning sprints appears in each of them, with continuation marks
+    // a project spanning weeks appears in each of them, with continuation marks
     ...geom.flatMap((g) => {
       const dot = domainById(d, g.l.project.domainId)?.color ?? "var(--accent)";
       const out: DeckCard[] = [];
@@ -203,7 +200,7 @@ export default function MobileProjects({
         <MobileDeck
           scope="project"
           crown={{
-            eyebrow: `Next ${H} sprints`,
+            eyebrow: `Next ${H} weeks`,
             done: readyN + doneN,
             total: placed.length,
             noun: "ready",
@@ -217,9 +214,9 @@ export default function MobileProjects({
           }}
           columns={columns}
           cards={cards}
-          poolLabel="Needs a sprint"
+          poolLabel="Needs a week"
           poolEmpty={
-            <Hint>Every project has a sprint. Hold one and drop it here to shelve it.</Hint>
+            <Hint>Every project has a week. Hold one and drop it here to shelve it.</Hint>
           }
           addNoun="project"
           addAccent={defaultDomain?.color}

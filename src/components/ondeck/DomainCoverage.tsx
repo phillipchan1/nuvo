@@ -46,7 +46,7 @@ export default function DomainCoverage({
   // a gap between columns makes the left rule redundant (and misplaced), so drop it
   const rule = ruled && columnGap === 0 ? "border-l border-line" : "";
 
-  // No ruler — the deck's sprint headers directly below label the (aligned) columns,
+  // No ruler — the deck's week headers directly below label the (aligned) columns,
   // so coverage stays a compact band that doesn't crowd the deck.
   // The strip is an ANNOTATION over the grid, not a table of its own. It sits
   // above the deck, so at full contrast its empty cells — always the majority —

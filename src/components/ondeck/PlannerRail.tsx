@@ -61,10 +61,11 @@ export default function PlannerRail({
   footLabel,
   onFoot,
   footTitle,
+  footTeach,
   children,
 }: {
   crown: RailCrown;
-  /** the section label over the loose items ("Needs a sprint"). */
+  /** the section label over the loose items ("Needs a week"). */
   poolLabel: string;
   poolCount: number;
   /** a drag is hovering the rail — releasing here un-claims the item's time. */
@@ -74,6 +75,8 @@ export default function PlannerRail({
   footLabel: string;
   onFoot: () => void;
   footTitle?: string;
+  /** `data-teach` key, so the live walkthrough can light this ＋ (see teachTargets). */
+  footTeach?: string;
   children: ReactNode;
 }) {
   const pct = crown.total > 0 ? (crown.done / crown.total) * 100 : 0;
@@ -126,7 +129,7 @@ export default function PlannerRail({
       </div>
 
       {/* ── the foot pill — a persistent action, out of the hierarchy ─────────── */}
-      <div className="shrink-0 border-t border-line p-2.5">
+      <div className="shrink-0 border-t border-line p-2.5" data-teach={footTeach}>
         <button
           onClick={onFoot}
           title={footTitle ?? footLabel}

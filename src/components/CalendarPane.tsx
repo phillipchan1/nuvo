@@ -10,7 +10,7 @@ import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserS
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
 import { endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
-import { sprintLabel } from "../lib/sprint";
+import { weekName } from "../lib/week";
 import { addDays } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
@@ -254,7 +254,7 @@ export default function CalendarPane({
   mutationsRef.current = mutations;
 
   const [viewTitle, setViewTitle] = useState("");
-  // The date the view is anchored on — drives the ambient Sprint N label.
+  // The date the view is anchored on — drives the ambient week label.
   const [viewDate, setViewDate] = useState<Date>(() => new Date());
 
   // Hidden events (Fantastical-style): kept off the board + out of the busy math.
@@ -1978,7 +1978,7 @@ export default function CalendarPane({
         {view !== "board" ? (
           <div data-breadcrumb className="pointer-events-none flex max-w-[220px] select-none flex-col items-center truncate leading-none">
             {(view === "timeGridWeek" || view === "timeGridDay") && (
-              <span className="mono mb-0.5 text-micro uppercase tracking-wide text-muted">{sprintLabel(viewDate)}</span>
+              <span className="mono mb-0.5 text-micro uppercase tracking-wide text-muted">{weekName(viewDate)}</span>
             )}
             <span className="masthead truncate text-lead leading-none text-text">{viewTitle}</span>
           </div>

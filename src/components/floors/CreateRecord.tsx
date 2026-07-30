@@ -37,7 +37,7 @@ import type { Energy } from "../../lib/energy";
 import { DomainPicker, FloatingMenu } from "./parts";
 import DurationSelect from "../DurationSelect";
 import { deckWeight } from "../ondeck/DeckCard";
-import { QuarterBand, SprintBand } from "../record/PlacementBand";
+import { QuarterBand, WeekBand } from "../record/PlacementBand";
 import {
   Body,
   GUT,
@@ -428,7 +428,7 @@ export default function CreateRecord({
             rail={
               <>
                 {kind === "project" ? (
-                  <SprintBand
+                  <WeekBand
                     p={{ id: "draft", ...span }}
                     onPlace={(patch) => { setSpan((s) => ({ ...s, ...patch })); setPlaced(true); }}
                     color={accent}

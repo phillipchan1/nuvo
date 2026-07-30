@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { addDays } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { fmtHours, parseDateISO, toDateISO } from "../../lib/dates";
-import { sprintLabel } from "../../lib/sprint";
+import { weekSpan } from "../../lib/week";
 import { fmtMins } from "../../lib/now";
 import type { WeekReport, WeekPriority } from "../../lib/composeWeek";
 import { useWeekSprintRocks } from "../../hooks/useWeekSprintRocks";
@@ -604,7 +604,7 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
       <WeekStory
         report={report}
         state={state}
-        weekLabel={`${sprintLabel(viewedWeekISO)} · ${weekLabel}`}
+        weekLabel={`${weekSpan(viewedWeekISO)} · ${weekLabel}`}
         onClose={onClose}
         onSeeDetail={() => setMode("detail")}
       />
@@ -631,7 +631,7 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="section-label mb-1"><span style={{ color: "var(--accent)" }}>{sprintLabel(viewedWeekISO)}</span> · {eyebrow}</div>
+        <div className="section-label mb-1"><span style={{ color: "var(--accent)" }}>{weekSpan(viewedWeekISO)}</span> · {eyebrow}</div>
         <h1 className="masthead text-display leading-tight text-ink">{weekLabel}</h1>
       </div>
       <button onClick={onClose} className="tap fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">

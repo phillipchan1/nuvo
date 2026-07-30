@@ -53,7 +53,7 @@ import {
   type ProjectStatus,
 } from "../../lib/vertical";
 import { projectReadinessAxes } from "../../lib/lenses";
-import { sprintNumber } from "../../lib/sprint";
+import { weekName } from "../../lib/week";
 import { ProjectShipAssess, type LeftoverVerdict } from "./ShipAssess";
 import { suggestForInitiative, suggestForProject, type Suggestion } from "../../lib/belonging";
 import {
@@ -67,7 +67,7 @@ import {
 import TaskList, { isTypingIn } from "../floors/TaskList";
 import DeckCard, { deckWeight } from "../ondeck/DeckCard";
 import { ProjectActivityBind } from "../floors/ProjectActivityBind";
-import { QuarterBand, SprintBand } from "./PlacementBand";
+import { QuarterBand, WeekBand } from "./PlacementBand";
 import { RecordLog } from "./RecordLog";
 import { AssessLayer, type AssessFinding } from "./AssessLayer";
 import {
@@ -335,7 +335,7 @@ function ProjectRecord({
         rail={
           assessing ? null : (
             <>
-              <SprintBand p={project} store={store} color={accent} bandRef={bandRef} />
+              <WeekBand p={project} store={store} color={accent} bandRef={bandRef} />
               <RailSec label="Ready">
                 <ReadyTicks
                   axes={[
@@ -630,7 +630,7 @@ function InitiativeRecord({
                       eyebrow={pDomain?.name ?? "—"}
                       title={p.name}
                       weight={deckWeight(pOpen.reduce((s, t) => s + (t.durationMins || 0), 0))}
-                      status={p.targetDate ? { label: `Spr ${sprintNumber(new Date(p.targetDate + "T12:00:00"))}`, tone: "muted" } : null}
+                      status={p.targetDate ? { label: weekName(new Date(p.targetDate + "T12:00:00")), tone: "muted" } : null}
                       pips={[pAxes.defined, pAxes.planned, pAxes.fits ?? true]}
                       pipTone="muted"
                       dim={p.status === "complete" || p.status === "cancelled"}

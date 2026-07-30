@@ -431,6 +431,60 @@ draft discarded on `esc` with nothing written, compared side-by-side against a l
 record, and verified at a sub-`lg` width where the rail stacks — zero overflow from the
 sheet. Deliberately not created: a real row, so no test data landed in the account.*
 
+**D-057 · 2026-07-30 · The marketing site speaks to the person's situation, not to a
+segment — and a domain is called a "life" outside the app, "domain" inside, and nothing
+else.**
+
+**The rejected idea first, because it's the one that keeps coming back.** The proposal was
+a rotating identity card in the hero: *"The todo app for Solopreneurs / Business Owners /
+Renaissance / Overemployed."* Three reasons it dies:
+
+1. **"Todo app" caps the claim at the ceiling this product exists to break.** The task
+   minimalist is an *anti-persona* ([`personas.md`](./personas.md) §4 — "Things 3 is better
+   at this and cheaper"), and the category carries a one-time-$50 price expectation against
+   a $29/mo subscription. The whole pitch is altitude: a todo app can't tell you a project
+   is behind.
+2. **The four labels aren't one kind of thing**, so the rotation breaks. Solopreneur and
+   business owner are *business structure* (and half of P1 is employed); Renaissance is
+   aspiration; Overemployed is a **covert** subculture whose members do not want a public
+   brand pillar. A rotating slot only works when the reader perceives interchangeable
+   contents.
+3. **P1 has no name for itself.** "Multi-domain operator" is a doc word nobody has typed
+   into a search box. That absence isn't a gap to paper over with a borrowed label — it
+   means **identity is the wrong axis**, and situation is the right one. People recognize
+   their life faster than their label.
+
+**What shipped instead.** `You live more than one life. One system should hold all of them.`
+Beat one is recognition with no jargon and no label to accept; beat two is the promise.
+*Hold*, deliberately not *keep up* — the itch is an **incomplete** system (a five-tool stack
+that holds the paid work well and everything else badly), not a slow one, and keeping up is
+table stakes every competitor already meets. "System" is insider vocabulary and that is
+*correct here*: this buyer has an Akiflow + Notion + four-calendars stack and calls it "my
+system" out loud. **`Your system should keep up` survives as the OG/social title**, where
+the job is earning a click rather than making a claim — and where it was observed landing.
+
+**The naming consequence, which is the load-bearing half.** "Lives" would have been the
+**third** name for one concept: the site said *worlds*, the app says *domains*. That's
+P11 — an overlapping name — and the collision was one line deep, since the subhead directly
+under the hero read *"every world you run."* Resolved at **two** names, not three:
+
+| Where | Word | Why |
+|---|---|---|
+| Marketing (nuvo.day) | **life / lives** | A cold reader has no word for themselves and doesn't know what a "domain" is. |
+| The app, code, every doc | **domain** | Unchanged. No app surface says "life." |
+| Anywhere | ~~world~~ | Retired. It was a marketing-only invention that was vaguer than both. |
+
+Swept from `marketing/src` **including the identifiers** — `WorldsVisual` → `LivesVisual`,
+`.worlds-*` → `.lives-*`, the row field `world` → `life` — because a stale identifier is
+exactly how a retired word gets back into copy ([[nuvo-banned-vocabulary]]'s lesson, D-053).
+
+*Status: standing — typechecked and driven in the running marketing dev server at 1440×900
+and 375px; hero, the plane diagram, the domain-floor section, the author line and the
+closing CTA all read in the new vocabulary, with no horizontal overflow at 375. Not changed:
+`HOME_TITLE` / `HOME_DESC` in `routes.ts` (already said "life"), and the prerenderer, which
+swaps `<title>`/description/canonical per route but leaves `og:*` at the homepage's values —
+a pre-existing limitation, not a regression.*
+
 ### Tenancy
 
 **D-024 · 2026-07-25 · Nuvo is a multi-tenant product.** Many independent operators, one
@@ -1309,6 +1363,67 @@ against Google** — this container has no Supabase credentials, so the
 round-trip (link actually minted, `conferenceDataVersion` honored, the async
 mint settling within the poll) is unproven until migration 49 and `google-events`
 + `agent` are deployed. **Not yet deployed.***
+
+---
+
+**D-058 · 2026-07-30 · A week is named by distance, not by a number — and "sprint" is
+retired from every user-facing surface.**
+
+**The word.** *Sprint* was agile jargon in a product that is **single-player by design**
+(Principle 12) — it imports a team apparatus (backlog, sprint planning, velocity, a locked
+scope) that doesn't exist here. Worse, in plain English it means *going fast*, which is the
+opposite of the promise to P1: Sunday takes 20 minutes and ends with a week you believe.
+[`personas.md`](./personas.md) already used the word as a thing that gets in the way — *"a
+calendar that doesn't care about your sprint."* This was also **not a new decision**: D-007
+accepted `sprints` as *code* drift with **Week** as the user-facing name, and D-049 logged
+the resulting P11 violation (the pool read "Needs a week" while the columns said "Sprint
+31"). This finishes it.
+
+**The number, which is the half that nearly got missed.** The obvious fix — rename *Sprint
+33* to *Week 33* — was **rejected**. The number is ISO week-of-year, a convention that is
+normal in Germany and Scandinavia and effectively unused in the US: Google Calendar ships
+week numbers off by default and its **mobile apps don't offer them at all**; Apple Calendar
+ships them off, month-view only. The two conventions also disagree (ISO starts Monday, week
+1 holds the first Thursday; the US convention starts Sunday, week 1 holds Jan 1) — and
+Nuvo's grid is **Sunday**-start while `weekNumber` snaps to Thursday for an **ISO** number,
+so a renamed "Week 33" would look authoritative while disagreeing with the user's own
+calendar around New Year. `sprint.ts` claimed the number was *"self-locating"*; it isn't,
+for the same reason [domain coverage](../../CLAUDE.md) can't answer by color alone — nobody
+memorizes the mapping.
+
+**The evidence that settled it was already in the app.** Every surface that printed the
+number printed a date line under it — `Sprint 33` over `This week · Aug 10` in the On Deck
+columns and the phone deck, `33` over `Aug 10` in the record's placement band. The fallback
+existed because the number wasn't enough. So the win was **deleting the headline, not
+translating it.**
+
+→ **What shipped.** `src/lib/sprint.ts` → **`src/lib/week.ts`**, and the label API is now
+distance-first:
+
+| Function | Reads | Where |
+|---|---|---|
+| `weekName` | *This week · Next week · Last week · In 3 weeks · Week of Aug 24* | every headline |
+| `weekSpan` | *Aug 10–16* (*Aug 31–Sep 6* across a month) | the date line under it |
+| `weekTick` | *Now · Next · +2 · −1*, date once off the horizon | tiny scales — the record band, the phone's pager chips |
+| `weekNumber` / `weekYear` / `weeksBetween` | the ISO number, still derived | spans, runway, cross-year identity — **never a label** |
+
+Applied across ~20 user-facing sites: On Deck columns, the phone deck, the record's
+placement band (`SprintBand` → **`WeekBand`**, section label *Sprint* → **Week**), the
+Schedule masthead eyebrow, the terminal skin's status bar, Plan the week (desktop + phone),
+the pool label (*Needs a sprint* → **Needs a week**), runway prose (*"14 sprints left"* →
+*"14 weeks left"*), and the orientation art. Verified in the running dev app on both shells
+(desktop planner + record; phone deck at 375px, no overflow).
+
+→ **Consequence.** The glossary loses the sentence that existed only to defend a second name
+(*"sprint is the cycle's ADD-ON identity that rides alongside week"*). One name per thing
+(P11). **`sprints` / `sprint_id` / `sprintSpanFor` stay in code and in the kernel** — that
+drift is blessed by D-007 and renaming the table would ripple into the edge functions for no
+user-visible gain.
+
+→ **Rejected:** *Week 33* as a straight swap (above); inventing a second noun to separate
+the commitment cycle from the calendar's Day·Week·Month zoom — the zoom is a view control
+and the commitment is a noun phrase we already have (*the week's plan*), so the collision is
+cosmetic, and P11 cuts against minting a word users don't perceive a need for.
 
 ---
 

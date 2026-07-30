@@ -23,7 +23,7 @@
 // every move has a tap path (mobile golden rule #4), 44px targets, safe areas.
 
 import { useMemo, useState } from "react";
-import { addDays, format } from "date-fns";
+import { format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useWeekDraft } from "../../hooks/useWeekDraft";
 import { projectsOnDeck, weekPushes } from "../../lib/priorities";
@@ -31,7 +31,7 @@ import { lensGaps } from "../../lib/lenses";
 import { domainById, taskDomainColor, type Project, type VerticalData } from "../../lib/vertical";
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
 import { bringIntoWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
-import { sprintLabel } from "../../lib/sprint";
+import { weekName, weekSpan } from "../../lib/week";
 import { LANE_QUESTION, REVEALED_BY_LANE, STEP_QUESTION, workBadge } from "../../lib/intake";
 import type { Batch } from "../../lib/batch";
 import type { Placement } from "../../lib/compose";
@@ -61,7 +61,6 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
   const {
     data,
     weekStartISO,
-    planningAhead,
     gridDays,
     byLane,
     intake,
@@ -104,13 +103,13 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
   const busy = useMemo(() => toBusyBlocks(visibleEvents, onCalBlocks), [visibleEvents, onCalBlocks]);
 
   const weekLabel = format(parseDateISO(weekStartISO), "MMMM d");
-  const spanLabel = `${format(parseDateISO(weekStartISO), "MMM d")}–${format(addDays(parseDateISO(weekStartISO), 6), "MMM d")}`;
+  const spanLabel = weekSpan(weekStartISO);
 
   if (committed) {
     return (
       <Overlay>
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center">
-          <div className="section-label">{sprintLabel(weekStartISO)}</div>
+          <div className="section-label">{weekName(weekStartISO)}</div>
           <h1 className="mt-2 text-display masthead leading-tight">The week is set</h1>
           <p className="mono mt-3 text-body text-muted">
             {placements.length} scheduled · {keptTasks.length} committed
@@ -134,8 +133,7 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
         <div className="flex items-start gap-2 pt-2">
           <div className="min-w-0 flex-1">
             <div className="section-label !p-0">
-              <span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> · {spanLabel} ·{" "}
-              {planningAhead ? "the week ahead" : "this week"}
+              <span style={{ color: "var(--accent)" }}>{weekName(weekStartISO)}</span> · {spanLabel}
             </div>
             <h1 className="masthead truncate text-head text-ink">Week of {weekLabel}</h1>
           </div>
@@ -264,7 +262,7 @@ export function PlanWeekCard({ onOpen }: { onOpen: () => void }) {
         ◴
       </span>
       <div className="min-w-0 flex-1">
-        <div className="section-label !p-0">{sprintLabel(weekStartISO)}</div>
+        <div className="section-label !p-0">{weekName(weekStartISO)}</div>
         <div className="masthead truncate text-head text-ink">Plan the week</div>
         <div className="truncate text-caption text-muted">
           {pushes.length === 0

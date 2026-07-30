@@ -13,7 +13,7 @@ import { useState, type ReactNode } from "react";
 import { format, parseISO } from "date-fns";
 import { useVertical } from "../../../hooks/useVertical";
 import { ProjectShipAssess } from "../../record/ShipAssess";
-import { QuarterBand, SprintBand } from "../../record/PlacementBand";
+import { QuarterBand, WeekBand } from "../../record/PlacementBand";
 import {
   domainById,
   faithfulness,
@@ -327,7 +327,7 @@ export function InitiativeScreen({
         </div>
       </Section>
 
-      {/* A bet's "when" is a QUARTER — and its runway is counted in sprints, the
+      {/* A bet's "when" is a QUARTER — and its runway is counted in weeks, the
           unit you actually spend. */}
       <Section label="Quarter">
         <QuarterField i={i} store={store} />
@@ -434,10 +434,10 @@ export function ProjectScreen({
       </Section>
       {shipping && <ProjectShipAssess id={p.id} onClose={() => setShipping(false)} />}
 
-      {/* A project's "when" is a SPRINT, not two dates — the same commitment the
+      {/* A project's "when" is a WEEK, not two dates — the same commitment the
           deck makes when you drop it on a column. Exact dates stay one tap away. */}
-      <Section label="Sprint">
-        <SprintField p={p} store={store} />
+      <Section label="Week">
+        <WeekField p={p} store={store} />
       </Section>
 
       <Section label={tasks.length ? `Tasks · ${doneCount}/${tasks.length} done` : "Tasks"}>
@@ -612,9 +612,9 @@ export function StatusChips({ value, onPick }: { value: ProjectStatus; onPick: (
 // "Exact dates" — on desktop the band is annotation beside the work, so it wears
 // the quiet tone instead.
 
-export function SprintField({ p, store }: { p: Project; store: Store }) {
+export function WeekField({ p, store }: { p: Project; store: Store }) {
   return (
-    <SprintBand
+    <WeekBand
       p={p}
       store={store}
       tone="primary"

@@ -4,10 +4,10 @@
 // page after it, and holding a bet and dropping it on a quarter commits its finish
 // line there.
 //
-// A quarter is a long way off in sprints, which is the honest unit of runway, so
-// every quarter page counts itself out in sprints: thirteen pips, the spent ones
+// A quarter is a long way off in weeks, which is the honest unit of runway, so
+// every quarter page counts itself out in weeks: thirteen pips, the spent ones
 // dimmed, the one you're standing in marked quietly. That is the read the old
-// text list never gave — "this bet has nine sprints left," not "Q3 2026".
+// text list never gave — "this bet has nine weeks left," not "Q3 2026".
 //
 // Cards lead with OKR health, because grooming a bet is about making the outcome
 // measurable: the two-segment meter (Defined · Measured) and one state word. A bet
@@ -26,7 +26,7 @@ import {
   type InitiativeLaneState,
 } from "../../lib/initiativeDeck";
 import { initiativeReadinessAxes } from "../../lib/lenses";
-import { sprintsBetween } from "../../lib/sprint";
+import { weeksBetween } from "../../lib/week";
 import { domainById, type Domain, type Initiative, type VerticalData } from "../../lib/vertical";
 import { DomainPicker } from "../floors/parts";
 import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
@@ -94,8 +94,8 @@ export default function MobileInitiatives({
   }, [board.lanes]);
 
   const columns: DeckColumn[] = board.quarters.map((q) => {
-    const total = sprintsBetween(q.start, q.end) + 1;
-    const spent = q.idx === 0 ? Math.min(total, Math.max(1, sprintsBetween(q.start, now) + 1)) : 0;
+    const total = weeksBetween(q.start, q.end) + 1;
+    const spent = q.idx === 0 ? Math.min(total, Math.max(1, weeksBetween(q.start, now) + 1)) : 0;
     return {
       key: q.key,
       chip: q.shortLabel.split(" ")[0],
@@ -288,7 +288,7 @@ function InitiativeCard({
   );
 }
 
-// ── the quarter, counted out in sprints — the runway you actually spend ────────
+// ── the quarter, counted out in weeks — the runway you actually spend ─────────
 function SprintRunway({ total, spent, current }: { total: number; spent: number; current: boolean }) {
   const left = current ? total - spent : total;
   return (
@@ -310,7 +310,7 @@ function SprintRunway({ total, spent, current }: { total: number; spent: number;
         })}
       </span>
       <span className="mono shrink-0 text-micro tabular-nums text-muted">
-        {left} sprint{left === 1 ? "" : "s"} left
+        {left} week{left === 1 ? "" : "s"} left
       </span>
     </div>
   );

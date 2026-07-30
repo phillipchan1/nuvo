@@ -506,7 +506,7 @@ export function TaskPopover({
           {/* This week star */}
           <button
             onClick={() => toggleTaskSprint(task.id)}
-            title={inWeek ? "In this week's sprint — click to release" : "Commit to this week"}
+            title={inWeek ? "In this week — click to release" : "Commit to this week"}
             className={`fast text-head leading-none ${inWeek ? "text-signal" : "text-muted hover:text-ink"}`}
           >
             {inWeek ? "★" : "☆"}
@@ -1687,8 +1687,10 @@ export function SlotPopover({
   const [title, setTitle] = useState(slot.title);
   const [newTitle, setNewTitle] = useState("");
   const popRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   // Live reorder state: { id: dragged, index: target insertion slot }.
   const [reorder, setReorder] = useState<{ id: string; index: number } | null>(null);
+  const [reorderLineTop, setReorderLineTop] = useState<number | null>(null);
   const { data: vertical } = useVertical();
 
   // Slot children are draggable OUT onto the calendar (or rail → inbox), reusing
@@ -1780,17 +1782,22 @@ export function SlotPopover({
   const doneCount = ordered.filter((t) => t.status === "done").length;
   const totalMins = ordered.reduce((sum, t) => sum + (t.duration_minutes ?? 30), 0);
 
-  // While the grip is dragged, show the list with the dragged row lifted out and
-  // re-inserted at the target slot, so the reorder previews live.
-  const displayOrder = (() => {
-    if (!reorder) return ordered;
-    const moved = ordered.find((t) => t.id === reorder.id);
-    if (!moved) return ordered;
-    const rest = ordered.filter((t) => t.id !== reorder.id);
-    const idx = Math.max(0, Math.min(reorder.index, rest.length));
-    rest.splice(idx, 0, moved);
-    return rest;
-  })();
+  const insertLineTop = (dragId: string, clientY: number) => {
+    const list = listRef.current;
+    if (!list) return null;
+    const others = [...list.querySelectorAll<HTMLElement>("[data-slot-row]")].filter(
+      (r) => r.getAttribute("data-slot-row") !== dragId,
+    );
+    let k = 0;
+    for (const r of others) {
+      const b = r.getBoundingClientRect();
+      if (clientY > b.top + b.height / 2) k++;
+    }
+    const contTop = list.getBoundingClientRect().top;
+    if (!others.length) return 0;
+    if (k < others.length) return others[k].getBoundingClientRect().top - contTop;
+    return others[others.length - 1].getBoundingClientRect().bottom - contTop;
+  };
 
   // The grip is the universal handle: drag within the list to reorder, or out of
   // the popover onto the rail (→ Inbox) or a calendar day (→ planned, un-slotted).
@@ -1812,6 +1819,7 @@ export function SlotPopover({
     let out: null | { kind: "inbox" } | { kind: "day"; date: string } = null;
     const railEl = () => document.querySelector<HTMLElement>("[data-rail-drop]");
     setReorder({ id, index });
+    setReorderLineTop(insertLineTop(id, e.clientY));
     const onMove = (ev: PointerEvent) => {
       const pop = popRef.current?.getBoundingClientRect();
       const inside =
@@ -1829,11 +1837,13 @@ export function SlotPopover({
         });
         if (i !== index) {
           index = i;
-          setReorder({ id, index });
+          setReorder({ id, index: i });
         }
+        setReorderLineTop(insertLineTop(id, ev.clientY));
       } else {
         // Drag-out mode — figure out the destination under the pointer.
         setReorder(null);
+        setReorderLineTop(null);
         const under = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
         if (under?.closest("[data-rail-drop]")) {
           out = { kind: "inbox" };
@@ -1849,6 +1859,7 @@ export function SlotPopover({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       setReorder(null);
+      setReorderLineTop(null);
       railEl()?.classList.remove("rail-drop-active");
       if (out?.kind === "inbox") return void taskMutations.backToInbox(task);
       if (out?.kind === "day") return void taskMutations.planFor(task, out.date);
@@ -2073,8 +2084,11 @@ export function SlotPopover({
         </div>
 
         {/* Child tasks — grip to reorder, body drags out (calendar / inbox) */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
-          {displayOrder.map((t) => {
+        <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
+          {reorderLineTop != null && (
+            <div className="reorder-insert-line" style={{ top: reorderLineTop }} aria-hidden />
+          )}
+          {ordered.map((t) => {
             const done = t.status === "done";
             const dragging = reorder?.id === t.id;
             return (
@@ -2142,7 +2156,7 @@ export function SlotPopover({
               </div>
             );
           })}
-          {displayOrder.length === 0 && (
+          {ordered.length === 0 && (
             <div className="px-2 py-3 text-caption italic text-muted/70">No tasks yet — add one below.</div>
           )}
         </div>

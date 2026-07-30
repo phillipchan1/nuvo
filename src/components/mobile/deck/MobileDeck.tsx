@@ -37,11 +37,11 @@ const GUTTER_PX = 46;
 
 export interface DeckColumn {
   key: string;
-  /** the strip's short identity — "31" (sprint number) / "Q3". */
+  /** the strip's short identity — "Now" / "+2" / "Q3". */
   chip: string;
   /** a hairline note under the chip — "Jul 26" / "2026". */
   chipNote?: string;
-  /** the page's hero — "Sprint 31" / "Q3 2026". */
+  /** the page's hero — "Next week" / "Q3 2026". */
   title: string;
   /** the page's second line — "This week · Jul 26 – Aug 1". */
   when: string;
@@ -107,7 +107,7 @@ export default function MobileDeck({
   addNoun: string;
   addAccent?: string;
   /** name one thing into a column — `domain` is set when the compose started from
-   *  a coverage cell ("start a Church project in Sprint 32"). */
+   *  a coverage cell ("start a Church project next week"). */
   onCreate: (col: number, name: string, domain: Domain | null) => Promise<void>;
   /** a card was dropped: `col` = column index, or null to shelve it in the pool. */
   onMove: (id: string, col: number | null) => void;

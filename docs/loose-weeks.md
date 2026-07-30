@@ -89,7 +89,7 @@ current week's:
 Its intent is right — *"the gate re-decides — nothing strands on a stale sprint_id."*
 But `neq(current)` is a **proxy for "past"**, and it was only ever safe because
 assigning a future week was impossible. The moment it's possible the proxy breaks and
-a deferred task evaporates on the next sprint touch. `for_week` sidesteps this
+a deferred task evaporates on the next week touch. `for_week` sidesteps this
 entirely: `ensureSprint` never sees it, and `t.sprint` stays a clean current-week
 boolean (so `vertical.ts:317`, `LeftRail.tsx:610` and `SlideOver.tsx:119` don't move).
 

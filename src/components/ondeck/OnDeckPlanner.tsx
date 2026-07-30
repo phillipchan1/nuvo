@@ -20,7 +20,7 @@ import { useMaxPerWeek, useCoverageHidden, useCoverageCollapsed } from "../../ho
 import { useRecordContextMenu } from "../RecordContextMenu";
 import { domainById, isOpenStatus, type Domain } from "../../lib/vertical";
 import { readOnDeck, sprintSpanFor, weekIndexIn } from "../../lib/onDeck";
-import { sprintNumber } from "../../lib/sprint";
+import { weekName, weekSpan as weekDates } from "../../lib/week";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
@@ -52,11 +52,10 @@ const HORIZON_WEEKS = 4;
 const WEEK_COL_PX = 216;
 
 const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const fmtWk = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
 
 // Placement geometry (which week a date lands in, and the span a drop writes) is
-// shared with the phone's sprint deck — one rule, in lib/onDeck.ts.
+// shared with the phone's week deck — one rule, in lib/onDeck.ts.
 const weekIndex = weekIndexIn;
 const weekSpan = sprintSpanFor;
 
@@ -345,10 +344,11 @@ export default function OnDeckPlanner() {
                 }
               : null,
         }}
-        poolLabel="Needs a sprint"
+        poolLabel="Needs a week"
         poolCount={inbox.length}
         footLabel="project"
         footTitle="New project"
+        footTeach="project-new"
         onFoot={() => openFloorModal("new-project")}
       >
         {inbox.length === 0 ? (
@@ -428,14 +428,14 @@ export default function OnDeckPlanner() {
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="flex items-center gap-1.5 text-caption font-semibold" style={{ color: w.idx === 0 ? NOW_INK : "var(--ink)" }}>
                         {w.idx === 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: NOW_MARK }} />}
-                        Sprint {sprintNumber(w.weekStart)}
+                        {weekName(w.weekStart)}
                       </span>
                       <span className="mono text-micro tabular-nums" title={`${n} committed · max ${maxPerWeek} — your per-week focus cap`} style={{ color: over ? CAUTION : n > 0 ? "var(--muted)" : "var(--line-strong)" }}>
                         {n}/{maxPerWeek}{over ? " ⚠" : ""}
                       </span>
                     </div>
                     <div className="mono mt-0.5 text-micro text-muted">
-                      {w.idx === 0 ? `This week · ${fmtWk(w.weekStart)}` : w.idx === 1 ? `Next week · ${fmtWk(w.weekStart)}` : `Week of ${fmtWk(w.weekStart)}`}
+                      {weekDates(w.weekStart)}
                     </div>
                   </div>
                 );
@@ -459,7 +459,7 @@ export default function OnDeckPlanner() {
                     key={w.idx}
                     data-week={w.idx}
                     onClick={() => { setComposeDomain(null); setComposeWeek(w.idx); }}
-                    title={composeWeek === w.idx ? undefined : w.idx === 0 ? "New project this week" : w.idx === 1 ? "New project next week" : `New project — week of ${fmtWk(w.weekStart)}`}
+                    title={composeWeek === w.idx ? undefined : `New project — ${weekName(w.weekStart).toLowerCase()}`}
                     className="group/col slot-col relative cursor-pointer border-l border-line transition-colors"
                     style={{ background: cellBg(w.idx) }}
                   >
@@ -550,7 +550,7 @@ export default function OnDeckPlanner() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <span className="text-micro text-muted">Drag onto a sprint to time-box · drag an edge to resize · click to edit</span>
+          <span className="text-micro text-muted">Drag onto a week to time-box · drag an edge to resize · click to edit</span>
           <ShippedStrip rung="project" />
         </div>
       </div>

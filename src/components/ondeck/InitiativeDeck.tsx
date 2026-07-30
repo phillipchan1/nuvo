@@ -20,7 +20,7 @@ import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { useRecordContextMenu } from "../RecordContextMenu";
 import { useMaxPerQuarter, useCoverageHidden, useCoverageCollapsed } from "../../hooks/usePlannerPrefs";
-import { sprintsBetween } from "../../lib/sprint";
+import { weeksBetween } from "../../lib/week";
 import {
   domainById,
   type Domain,
@@ -343,13 +343,13 @@ export default function InitiativeDeck() {
                       {lanes.length}/{maxPerQuarter}{over ? " ⚠" : ""}{risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
                     </span>
                   </div>
-                  {/* month span + sprint scale — each column reads when it starts and
-                      ends, and (for the current quarter) how many sprints deep you are. */}
+                  {/* month span + week scale — each column reads when it starts and
+                      ends, and (for the current quarter) how many weeks deep you are. */}
                   <div className="mono px-1 pb-2 text-micro text-muted">
                     {quarterRangeLabel(q.start, q.end)}
                     {current
-                      ? ` · sprint ${Math.min(sprintsBetween(q.start, q.end) + 1, Math.max(1, sprintsBetween(q.start, new Date()) + 1))}/${sprintsBetween(q.start, q.end) + 1}`
-                      : ` · ${sprintsBetween(q.start, q.end) + 1} sprints`}
+                      ? ` · week ${Math.min(weeksBetween(q.start, q.end) + 1, Math.max(1, weeksBetween(q.start, new Date()) + 1))}/${weeksBetween(q.start, q.end) + 1}`
+                      : ` · ${weeksBetween(q.start, q.end) + 1} weeks`}
                   </div>
 
                   <div className="flex min-h-[60px] flex-1 flex-col gap-2">

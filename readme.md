@@ -154,7 +154,7 @@ npm run dev             # or: npm run build → dist/ static bundle
   drafts, pitfalls — ✦ badge, surfaced at Sunrise, boosted in Now),
   `{narrate:{…}}` (one gain-framed sentence over the measured deltas).
 - **Compose boundaries** — working hours in `user_settings`
-  (`work_start_minutes`/`work_end_minutes`) and per-day contexts on the sprint
+  (`work_start_minutes`/`work_end_minutes`) and per-day contexts on the week
   (`day_contexts`: normal / ◐ light / ✈ travel / — off): travel days get no deep
   blocks, off days get nothing, light days stay half-empty. Both editable inside
   the Sunday flow.

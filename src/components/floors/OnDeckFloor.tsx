@@ -22,7 +22,7 @@ export default function OnDeckFloor() {
       <FloorGuide
         eyebrow="On Deck · Projects · ⌘2"
         title="Plan projects into your weeks."
-        teach="A project is a finishable piece of work. Add one, then drag it onto the week you'll actually tackle it — that's a sprint."
+        teach="A project is a finishable piece of work. Add one, then drag it onto the week you'll actually tackle it."
         Visual={OnDeckVisual}
         actionLabel="Add your first project"
         onAction={() => openFloorModal("new-project")}

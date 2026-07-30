@@ -2,7 +2,7 @@
 // same tokens as the app (never a raw hex — the Appearance step below is the one
 // deliberate exception, see its own comment) so they flip in light/dark automatically,
 // and animated with the shared orientation motion. These aren't decoration — they
-// mirror the REAL app chrome (the Spine's ⌘1–4 rail, On Deck's sprint grid, the
+// mirror the REAL app chrome (the Spine's ⌘1–4 rail, On Deck's week grid, the
 // Schedule, the Domain floor's pulse) so a new user learns WHERE each concept lives,
 // not just what it means.
 //
@@ -147,7 +147,7 @@ export function OnDeckVisual() {
         <FlowArrow i={1} />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div className="orient-stagger flex items-center gap-1" style={at(2)}>
-            <span className="section-label flex-1">Sprint 30</span>
+            <span className="section-label flex-1">This week</span>
             <span className="rounded-full border border-signal px-1 py-0.5 text-micro leading-none" style={{ color: "var(--signal)", background: tint("var(--signal)", 12) }}>full</span>
           </div>
           <div className="grid grid-cols-3 gap-1">

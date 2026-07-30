@@ -36,7 +36,7 @@ import {
   type VerticalData,
 } from "../../lib/vertical";
 import { endOf, fmtHours as hrs, formatHourLabel, parseDateISO } from "../../lib/dates";
-import { sprintLabel } from "../../lib/sprint";
+import { weekName, weekSpan } from "../../lib/week";
 import { CONTEXT_META, type DayContext, type Placement, type UnplacedTask } from "../../lib/compose";
 import { readDay, toBusyBlocks, type Gap } from "../../lib/now";
 import { type Batch } from "../../lib/batch";
@@ -286,7 +286,7 @@ export default function SundayRitual({
         <aside className="flex w-[360px] shrink-0 flex-col border-r border-line">
           <div className="shrink-0 px-5 pt-5">
             <div className="section-label !p-0">
-              <span style={{ color: "var(--accent)" }}>{sprintLabel(weekStartISO)}</span> ·{" "}
+              <span style={{ color: "var(--accent)" }}>{weekSpan(weekStartISO)}</span> ·{" "}
               {planningAhead ? "the week ahead" : "this week"}
             </div>
             <h1 className="mt-1 text-head masthead leading-tight">
@@ -2242,7 +2242,7 @@ function DoneState({ onClose }: { onClose: () => void }) {
       {/* the arrival — the one place in the flow that gets ceremony, because it's
           the one moment that's actually a moment */}
       <div className="moment max-w-[460px] text-center">
-        <div className="mono mb-2 text-micro uppercase tracking-wide" style={{ color: "var(--accent)" }}>{sprintLabel()}</div>
+        <div className="mono mb-2 text-micro uppercase tracking-wide" style={{ color: "var(--accent)" }}>{weekName()}</div>
         <div className="text-display masthead">Your week is set.</div>
         {data.sprintGoal && <div className="mt-2 text-head text-muted">“{data.sprintGoal}”</div>}
         <div className="mono mt-3 text-label text-muted">

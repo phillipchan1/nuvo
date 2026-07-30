@@ -1,7 +1,7 @@
 // Placement — the one control that answers "when does this land", at both
 // altitudes and on both shells. Hoisted out of the phone's detail sheet
 // (mobile/detail/verticalDetail.tsx) so the desktop record stops editing raw
-// dates: D-030 decided a record "opens on a scale of the next four sprints with
+// dates: D-030 decided a record "opens on a scale of the next four weeks with
 // its span lit across them, not two date fields", and only the phone ever got it.
 //
 // Every write goes through `sprintSpanFor` / `quarterEndISO` — the same functions
@@ -24,7 +24,7 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { addQuarters, endOfQuarter, format, parseISO, startOfQuarter } from "date-fns";
 import { useCapacity } from "../../hooks/useCapacity";
-import { sprintNumber, sprintsBetween } from "../../lib/sprint";
+import { weekName, weekSpan, weekTick, weeksBetween } from "../../lib/week";
 import { sprintSpanFor, sprintSpanWeeks } from "../../lib/onDeck";
 import { quarterEndISO, quarterName, quarterRangeLabel } from "../../lib/initiativeDeck";
 import type { useVertical } from "../../hooks/useVertical";
@@ -41,7 +41,7 @@ type PlacePatch = { startDate?: string | null; targetDate?: string | null };
 export type OnPlace = (patch: PlacePatch) => void;
 
 /** How far out either scale reaches. Past the runway there is no week — only
- *  Someday (loose-weeks.md); reaching for sprint 14 isn't scheduling, it's
+ *  Someday (loose-weeks.md); reaching 14 weeks out isn't scheduling, it's
  *  avoiding. */
 const HORIZON = 4;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -85,7 +85,7 @@ function Cell({
       </button>
     );
   }
-  // quiet: a segment of a track. The number labels it, the bar carries the span.
+  // quiet: a segment of a track. The tick labels it, the bar carries the span.
   return (
     <button onClick={onClick} title={title} className="fast group flex-1 py-1 text-center" aria-pressed={lit}>
       <div
@@ -147,7 +147,7 @@ function Stepper({
 }
 
 /** The quiet tone's two trailing acts — shelve, and the escape hatch to raw
- *  dates for the odd finish line that isn't sprint-shaped. Glyphs, not sentences. */
+ *  dates for the odd finish line that isn't week-shaped. Glyphs, not sentences. */
 function TrailActs({ onShelve, onDates, datesOpen }: { onShelve?: () => void; onDates: () => void; datesOpen: boolean }) {
   return (
     <span className="flex items-center gap-0.5">
@@ -161,8 +161,8 @@ function TrailActs({ onShelve, onDates, datesOpen }: { onShelve?: () => void; on
   );
 }
 
-// ── Project → sprints ────────────────────────────────────────────────────────
-export function SprintBand({
+// ── Project → weeks ──────────────────────────────────────────────────────────
+export function WeekBand({
   p,
   store,
   onPlace,
@@ -241,8 +241,8 @@ export function SprintBand({
     <div>
       {tone === "quiet" && (
         <div className="section-label mb-2 flex items-center gap-1.5">
-          <span className="flex-1">Sprint</span>
-          {from >= 0 && <Stepper tone={tone} value={span} unit="sprint" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(HORIZON - from, span + 1))} />}
+          <span className="flex-1">Week</span>
+          {from >= 0 && <Stepper tone={tone} value={span} unit="week" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(HORIZON - from, span + 1))} />}
           <TrailActs onShelve={from >= 0 ? shelve : undefined} onDates={() => setShowDates((v) => !v)} datesOpen={showDates} />
         </div>
       )}
@@ -252,7 +252,7 @@ export function SprintBand({
         tabIndex={0}
         onKeyDown={onKeyDown}
         role="group"
-        aria-label="Sprint placement"
+        aria-label="Week placement"
         className={`flex items-stretch outline-none ${tone === "primary" ? "gap-1.5" : "gap-0.5 rounded-[var(--radius-sm)] focus-visible:[box-shadow:0_0_0_2px_var(--accent-soft)]"}`}
       >
         {weeks.map((w, i) => (
@@ -261,32 +261,32 @@ export function SprintBand({
             tone={tone}
             lit={from >= 0 && i >= from && i <= to}
             now={i === 0}
-            label={String(sprintNumber(w.weekStart))}
+            label={weekTick(w.weekStart)}
             sub={fmtDay(w.weekStart)}
             color={color}
             onClick={() => place(i)}
-            title={`Sprint ${sprintNumber(w.weekStart)} — week of ${fmtDay(w.weekStart)}`}
+            title={`${weekName(w.weekStart)} — ${weekSpan(w.weekStart)}`}
           />
         ))}
       </div>
 
       {tone === "quiet" ? (
         <div className="mono mt-1.5 text-micro text-muted opacity-70">
-          {from >= 0 ? litRange : outside ? `Finish line outside the next ${HORIZON} sprints` : null}
+          {from >= 0 ? litRange : outside ? `Finish line outside the next ${HORIZON} weeks` : null}
         </div>
       ) : (
         <>
           {from >= 0 ? (
             <div className="mt-2.5 flex items-center gap-2">
               <span className="shrink-0 text-caption text-muted">Spans</span>
-              <Stepper tone={tone} value={span} unit="sprint" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(HORIZON - from, span + 1))} />
+              <Stepper tone={tone} value={span} unit="week" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(HORIZON - from, span + 1))} />
               <button onClick={shelve} className="tap fast ml-auto shrink-0 text-caption text-muted active:text-accent">Shelve</button>
             </div>
           ) : (
             <div className="mt-2 text-caption text-muted">
               {outside
-                ? `Finish line ${p.targetDate ? format(parseISO(p.targetDate), "MMM d") : ""} — outside the next ${HORIZON} sprints. Tap one to pull it in.`
-                : "No sprint yet — tap one to commit it."}
+                ? `Finish line ${p.targetDate ? format(parseISO(p.targetDate), "MMM d") : ""} — outside the next ${HORIZON} weeks. Tap one to pull it in.`
+                : "No week yet — tap one to commit it."}
             </div>
           )}
           <button onClick={() => setShowDates((v) => !v)} className="tap fast mt-1 text-micro text-muted active:text-accent">
@@ -333,8 +333,8 @@ export function QuarterBand({
   const targetName = i.targetDate ? quarterName(new Date(i.targetDate + "T12:00:00")) : null;
   const idx = targetName ? quarters.findIndex((q) => q.name === targetName) : -1;
   const chosen = idx >= 0 ? quarters[idx] : null;
-  // runway in sprints — the honest count at this altitude
-  const left = i.targetDate ? sprintsBetween(now, new Date(i.targetDate + "T12:00:00")) + 1 : 0;
+  // runway in weeks — the honest count at this altitude
+  const left = i.targetDate ? weeksBetween(now, new Date(i.targetDate + "T12:00:00")) + 1 : 0;
 
   const write = (patch: PlacePatch, status: Initiative["status"]) => {
     if (onPlace) onPlace(patch);
@@ -394,9 +394,9 @@ export function QuarterBand({
         ))}
       </div>
 
-      {/* the runway — one pip per sprint between now and the finish line. In the
+      {/* the runway — one pip per week between now and the finish line. In the
           quiet tone it loses its caption: the pips and a number say what
-          "14 sprints left" said. */}
+          "14 weeks left" said. */}
       {i.targetDate && left > 0 && (
         <div className={`flex items-center gap-2 ${tone === "primary" ? "mt-2.5" : "mt-2"}`}>
           <span className="flex flex-1 items-center gap-[3px]">
@@ -413,7 +413,7 @@ export function QuarterBand({
             ))}
           </span>
           <span className="mono shrink-0 text-micro tabular-nums text-muted opacity-75">
-            {left}{tone === "primary" ? ` sprint${left === 1 ? "" : "s"} left` : ""}
+            {left}{tone === "primary" ? ` week${left === 1 ? "" : "s"} left` : ""}
           </span>
         </div>
       )}

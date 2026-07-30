@@ -218,7 +218,7 @@ the right, and you drag from one into the other. Only the unit of time changes.
 | Altitude | The pool | The grid | The act | The mode you're in |
 |---|---|---|---|---|
 | Day | Inbox / Today (`LeftRail`) | hours, vertical | block a task | **Operator** — "what now" |
-| Project | "Needs a sprint" (`OnDeckPlanner`) | sprints (weeks), ruled columns | time-box a project | **Foreman** — "can next sprint hold this" |
+| Project | "Needs a week" (`OnDeckPlanner`) | weeks, ruled columns | time-box a project | **Foreman** — "can next week hold this" |
 | Initiative | "Needs a quarter" (`InitiativeDeck`) | quarters, ruled columns | commit a bet | **Strategist** — "are these the right bets" |
 
 The law, so a new planner surface can't drift:

@@ -16,7 +16,7 @@ export default function InlineAdd({
   placeholder: string;
   /** Dot + border tint — usually the destination domain's color. */
   accent?: string;
-  /** The footer line — names the destination on the phone ("⏎ adds it to Sprint 31"). */
+  /** The footer line — names the destination on the phone ("⏎ adds it to next week"). */
   hint?: string;
   /** Persist one entity by name. Awaited so we can re-focus for the next add. */
   onCreate: (name: string) => Promise<void>;
