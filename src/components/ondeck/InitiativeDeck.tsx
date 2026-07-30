@@ -247,6 +247,7 @@ export default function InitiativeDeck() {
         poolCount={board.inbox.length}
         footLabel="initiative"
         footTitle="New initiative"
+        footTeach="initiative-new"
         onFoot={() => openFloorModal("new-initiative")}
       >
         {board.inbox.length === 0 ? (

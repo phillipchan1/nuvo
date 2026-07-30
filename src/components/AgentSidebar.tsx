@@ -216,7 +216,9 @@ export default function AgentSidebar({
         </div>
       )}
 
-      <footer className="shrink-0 border-t border-line p-3">
+      {/* The walkthrough opens this rail and lights the composer — the place you
+          type, not the whole 380px column. */}
+      <footer className="shrink-0 border-t border-line p-3" data-teach="nuvo-panel">
         <AgentChatInput
           value={input}
           onChange={setInput}

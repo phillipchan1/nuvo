@@ -7,7 +7,7 @@ import { useAgentContext } from "../../hooks/useAgentContext";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { Btn } from "../ui";
 import { ORIENTATION_TEACH_STEPS, type OrientationAction, type TeachMilestone } from "./steps";
-import { TEACH_TARGETS } from "./teachTargets";
+import { TEACH_TARGETS, type TeachArm } from "./teachTargets";
 
 // "Walk me through it" — the live door of the first-run walkthrough.
 //
@@ -38,11 +38,12 @@ export default function TeachPanel({
   const { data: accounts = [] } = useCalendarAccounts();
   const { data: allTasks = [] } = useAllTasks();
   const { agent } = useAgentContext();
-  const { goRung, navigate } = useAppNavigation();
+  const { nav, goRung, navigate, setTab, openOverlay, closeOverlay, setSettingsSection } = useAppNavigation();
 
   const [step, setStep] = useState(0);
   const [orbSel, setOrbSel] = useState<string | null>(null);
   const orbRef = useRef<HTMLDivElement | null>(null);
+  const dimRef = useRef<HTMLDivElement | null>(null);
 
   // Does this step reach the real app on THIS shell — either by lighting an
   // element or by bringing a floor forward? Phone-only steps fall through here
@@ -54,6 +55,30 @@ export default function TeachPanel({
     if (!def) return false;
     return mobile ? Boolean(def.mobileSelector) : Boolean(def.selector || def.rung);
   })();
+
+  // Put the app into the state the step is describing. Talking about the chat
+  // while the chat is shut, or about the Inbox while the rail shows Today, is the
+  // fastest way to lose a first-time reader.
+  // Held in a ref, and the pointing effect below depends ONLY on the step.
+  //
+  // This is load-bearing, not tidiness: navigating changes the identity of the nav
+  // helpers, so an effect that lists them as deps re-runs *as a result of its own
+  // navigation*, clears `orbSel`, and cancels the in-flight waitForTarget. The
+  // symptom is precisely the one worth remembering — the steps that stay on the
+  // current floor light up, and every step that travels to another floor silently
+  // doesn't.
+  const drive = useRef({ nav, goRung, navigate, setTab, openOverlay, closeOverlay, setSettingsSection });
+  drive.current = { nav, goRung, navigate, setTab, openOverlay, closeOverlay, setSettingsSection };
+
+  const runArm = (arm: TeachArm) => {
+    const d = drive.current;
+    switch (arm) {
+      case "rail-inbox": d.setTab("inbox"); break;
+      case "rail-today": d.setTab("today"); break;
+      case "open-agent": d.navigate({ agentOpen: true }); break;
+      case "open-calendars": d.setSettingsSection("connections"); d.openOverlay("settings"); break;
+    }
+  };
 
   const s = ORIENTATION_TEACH_STEPS[step];
   const last = ORIENTATION_TEACH_STEPS.length - 1;
@@ -82,15 +107,42 @@ export default function TeachPanel({
   useEffect(() => {
     let cancelled = false;
     const def = s.target ? TEACH_TARGETS[s.target] : null;
+    const d = drive.current;
     setOrbSel(null);
-    if (!def) return;
 
-    // Navigate FIRST, and independently of whether there's an element to light —
-    // a nav-only target (the domain wall) is a step whose whole teach is arriving.
-    if (!mobile && def.rung) {
-      if (def.clearFocus) navigate({ rung: def.rung, focus: { domainId: "", initiativeId: "", projectId: "" } });
-      else goRung(def.rung);
+    // A step with nothing to point at still has to tidy up — otherwise the closing
+    // step ("let's make this week land") delivers you into the Settings modal the
+    // calendars step opened. Land them on the Schedule instead.
+    if (!def) {
+      const home: Record<string, unknown> = {};
+      if (d.nav.overlay !== "none") { home.overlay = "none"; home.overlayId = null; }
+      if (!mobile && d.nav.rung !== "day") home.rung = "day";
+      if (Object.keys(home).length) d.navigate(home);
+      return;
     }
+
+    const arm = mobile ? (def.mobileArm ?? def.arm) : def.arm;
+
+    // ONE synchronous nav patch: close what an earlier step opened, and travel to
+    // this step's floor, together.
+    //
+    // Not two calls. `closeOverlay` prefers `history.back()`, which lands async and
+    // gets clobbered by a `navigate()` issued in the same tick — the same race that
+    // once made ⌘K commands "do nothing". The symptom here was Settings staying up
+    // over the floor the next step was trying to introduce.
+    const patch: Record<string, unknown> = {};
+    if (arm !== "open-calendars" && d.nav.overlay !== "none") {
+      patch.overlay = "none";
+      patch.overlayId = null;
+    }
+    if (!mobile && def.rung) {
+      patch.rung = def.rung;
+      if (def.clearFocus) patch.focus = { domainId: "", initiativeId: "", projectId: "" };
+    }
+    if (Object.keys(patch).length) d.navigate(patch);
+
+    // …then open whatever the step is about to talk about.
+    if (arm) runArm(arm);
 
     const sel = mobile ? def.mobileSelector : def.selector;
     if (!sel) return;
@@ -101,7 +153,9 @@ export default function TeachPanel({
       setOrbSel(sel);
     });
     return () => { cancelled = true; };
-  }, [s.target, mobile, goRung, navigate]);
+    // Deps are the step and the shell — deliberately NOT the nav helpers. See `drive`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, s.target, mobile]);
 
   // Keep the orb pinned as the page scrolls/resizes. If the element leaves the
   // DOM the orb has nothing to sit on, so it goes quiet (the step stays).
@@ -111,14 +165,28 @@ export default function TeachPanel({
     const place = () => {
       const el = document.querySelector(orbSel) as HTMLElement | null;
       const orb = orbRef.current;
+      const dim = dimRef.current;
       if (!orb) return;
-      if (!el) { orb.style.opacity = "0"; return; }
+      if (!el) {
+        orb.style.opacity = "0";
+        if (dim) dim.style.opacity = "0";
+        return;
+      }
       const r = el.getBoundingClientRect();
       orb.style.opacity = "1";
       orb.style.left = `${r.left - pad}px`;
       orb.style.top = `${r.top - pad}px`;
       orb.style.width = `${r.width + pad * 2}px`;
       orb.style.height = `${r.height + pad * 2}px`;
+      // The cut-out rides the same rect. Its huge shadow spread IS the dimming —
+      // one element, so the hole can never drift out of register with the dark.
+      if (dim) {
+        dim.style.opacity = "1";
+        dim.style.left = `${r.left - pad}px`;
+        dim.style.top = `${r.top - pad}px`;
+        dim.style.width = `${r.width + pad * 2}px`;
+        dim.style.height = `${r.height + pad * 2}px`;
+      }
     };
     place();
     const id = window.setInterval(place, 400); // catches layout the events miss
@@ -163,13 +231,19 @@ export default function TeachPanel({
   return createPortal(
     <>
       {orbSel && (
-        <div ref={orbRef} className="marquee-orb" aria-hidden>
-          <div className="marquee-orb-glow" />
-        </div>
+        <>
+          {/* The dim. Everything but the target goes quiet, so a first-time reader
+              has exactly one place to look. Click-through, always — the whole
+              premise is that the app stays usable while it's lit. */}
+          <div ref={dimRef} className="teach-dim" aria-hidden />
+          <div ref={orbRef} className="marquee-orb is-teach" aria-hidden>
+            <div className="marquee-orb-glow" />
+          </div>
+        </>
       )}
 
       <div
-        className={`glass elev-3 fixed z-[61] flex flex-col rounded-2xl border border-line ${
+        className={`glass elev-3 fixed z-[80] flex flex-col rounded-2xl border border-line ${
           mobile
             // Clears the bottom bar AND the two floating actions above it (＋ and
             // ✦) — the panel must never cover the thing its own orb points at.

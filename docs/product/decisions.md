@@ -1486,6 +1486,21 @@ session to drive the tour — it's a single held spotlight that ends the moment 
 self-navigate, the opposite of what a multi-step walkthrough needs (the orb CSS and the
 wait-for-target idea *are* reused).
 
+→ **Revised the same day, after the first real walk-through.** Three things the build got
+wrong, all in the same direction — *not visual enough for someone who has never seen the
+app*: four of nine steps highlighted nothing, the Initiatives step never travelled to the
+Initiatives floor, and the Nuvo step described the chat without opening it. The corrections
+are now design rules in [`orientation.md`](../orientation.md): **every step highlights
+something**, behind a real spotlight (a dim layer with a cut-out at `rgba(0,0,0,.7)`, above
+the modal layer, click-through) rather than a glow alone; **light the thing you can click**,
+never the container (one domain card, not the wall; the composer, not the rail); and a step
+**opens what it is about to talk about**. The honesty rule that produced the art-only
+Initiatives step was over-applied — *don't stage a fake initiative* is right, *don't show
+them where initiatives live* was not, so that step now travels and simply asks for nothing.
+The opening step also became an act rather than a definition (**"Let's add your first
+task"**, then a step that shows the Inbox with their own words already in it), which is
+Phil's own framing of what a beginner needs first.
+
 ---
 
 **D-060 · 2026-07-30 · The Week's Plan shows the week's *projects*, at depth — and D-004

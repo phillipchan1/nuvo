@@ -1,6 +1,7 @@
 # Orientation — two doors into the app
 
-**Status:** shipped 2026-07-30 (desktop + phone, light + dark, driven in the dev app).
+**Status:** shipped 2026-07-30 · revised the same day after a first real walk-through
+(every step now highlights, travels, and opens what it's describing).
 Builds on [`personas.md`](./product/personas.md) §5 rows **O1/O6** and the onboarding
 layers described in [`design-language.md`](./design-language.md).
 
@@ -51,33 +52,62 @@ step ticks from real data.** There are no act components and no mutation paths i
 `TeachPanel.tsx` — capture goes through the rail's real capture form, a project through the
 real create surface. Nothing to keep in sync, nothing taught twice.
 
-| # | Step | Points at | Ticks when |
-|---|---|---|---|
-| 1 | Everything starts in your Inbox | the rail's capture form | an inbox task exists |
-| 2 | Now give it a time | the rail list | a task has `do_date` + `start_time` |
-| 3 | More than one task? That's a Project | the floor's ＋ (its empty-state teacher, or the deck's foot pill) | a project exists |
-| 4 | More than one project? An Initiative | — *(art)* | — |
-| 5 | It all rolls up to a Domain | the Domain wall *(navigation only)* | — |
-| 6 | Ask Nuvo something | the ✦ badge | a user message exists in the thread |
-| 7 | Bring your calendars in | — *(CTA)* | a calendar account exists |
-| 8 | Let's make this week land | — | — |
+| # | Step | Opens | Lights | Ticks when |
+|---|---|---|---|---|
+| 1 | Let's add your first task | Schedule | the rail's capture form | an inbox task exists |
+| 2 | There it is — your Inbox | Schedule, rail on **Inbox** | the Inbox tab | — |
+| 3 | Now give it a time | Schedule, rail back on **Today** | the rail list | a task has `do_date` + `start_time` |
+| 4 | More than one task? A Project | Projects | the floor's ＋ (empty-state teacher, or the deck's foot pill) | a project exists |
+| 5 | More than one project? An Initiative | Initiatives | the floor's ＋ | — |
+| 6 | It all rolls up to a Domain | the Domain wall | the **first domain card** | — |
+| 7 | This is Nuvo. Ask it something | the **agent rail, opened** | the chat composer | a user message exists |
+| 8 | Bring your calendars in | **Settings → Calendars** | that pane | a calendar account exists |
+| 9 | Let's make this week land | back to the Schedule, overlays closed | — | — |
 
-Steps 1/2/3/6/7 are **exactly the five `GettingStarted` milestones, in order, read through
+Steps 1/3/4/7/8 are **exactly the five `GettingStarted` milestones, in order, read through
 the same derivations** — this walkthrough *is* that tracker, performed live. Finishing it
 retires the tracker through the path it already has, and clears the floors' empty states
 because the floors now have data.
 
-### Three rules that keep it honest
+### The rules that keep it clear, and honest
 
-- **Step 4 stays a drawing on purpose.** An initiative is several projects; a day-one
-  account has one. The panel says *"you won't need this today"* rather than staging a fake.
-- **A step whose whole teach is *arriving* gets no orb.** The domain wall is navigation-only
-  — an orb drawn around a whole wall is a rectangle with its edges off-screen, which reads
-  as no spotlight at all. Same reason step 6 lights the ✦ *badge* and not the full-height
-  agent rail: light the thing you can click.
+- **Every step highlights something, and the spotlight is a real spotlight.** A `.teach-dim`
+  layer sits *above* the modal layer with a box-shadow cut-out on the target, so a
+  first-timer's eye has exactly one place to land. It's `pointer-events: none` — the app
+  stays fully usable while it's lit.
+  **The scrim is one token, `--teach-scrim`, and it took three passes to land:** mixing with
+  `--bg` washes out entirely in light mode (a highlight nobody can see is no highlight);
+  pure black at 0.7 brings focus but reads as *overwhelming*, and neutral black over warm
+  paper is colder than anything else in the app. It settled on a **warm** brown-black at
+  **0.45** in light and **0.42** in dark (dark starts dark, so the same alpha lands
+  heavier). The job is to *quiet* the surroundings, not black them out — the target's own
+  ring does the pointing, and the reader should still see the surface being shown to them.
+- **Light the thing you can click, never the container.** An orb around a whole wall, or the
+  full-height agent rail, is a rectangle with its edges off-screen — it reads as nothing.
+  So: one domain card, not the wall; the chat composer, not the 380px rail.
+- **A step opens what it's about to talk about** (`arm`). Describing the chat while the chat
+  is shut, or the Inbox while the rail shows Today, loses the reader instantly.
+- **Step 5 navigates but expects nothing.** They won't create an initiative on day one — an
+  initiative is several projects and a fresh account has one. But *"nothing to do here
+  today"* only lands once you've been shown where it would go, so the step travels like
+  every other one and simply asks for nothing.
 - **Auto-advance only on a real transition.** A milestone already satisfied when the step
   opens shows its tick and *waits* — nobody should watch a step they didn't do fly past.
   The step captures a baseline on entry and only advances on not-done → done.
+
+### Two bugs worth not re-introducing
+
+Both were invisible to typecheck and only showed up by walking the thing:
+
+1. **The pointing effect must not depend on the nav helpers.** Navigating changes their
+   identity, so listing them as deps makes the effect re-run *as a result of its own
+   navigation*, clear `orbSel`, and cancel the in-flight `waitForTarget`. The tell is
+   diagnostic: every step that stays on the current floor lights, and every step that
+   travels silently doesn't. They're held in a `drive` ref; the deps are the step alone.
+2. **Close-then-navigate must be one patch.** `closeOverlay` prefers `history.back()`, which
+   lands async and gets clobbered by a `navigate()` in the same tick (the same race behind
+   the old "⌘K does nothing" bug). Closing Settings and moving to the next floor are issued
+   as a single synchronous `navigate({ overlay: "none", rung })`.
 
 **Nothing gates.** Next is always live, Skip sits on every step, Esc leaves. A user who
 hates walkthroughs is one key from an empty app they can drive.
@@ -85,9 +115,11 @@ hates walkthroughs is one key from an empty app they can drive.
 ## On a phone
 
 The Build floors are desktop-only, so the live path **degrades rather than lies**: a step
-with no phone target falls back to its art (Initiative, Domain) and the panel never
-auto-navigates — it points at the ＋ FAB, the bottom-bar tabs, and the ✦ launcher, and the
-user taps. Everything still ticks from the same derived data.
+with no phone target falls back to its art (Domain) and the panel never auto-navigates — it
+points at the ＋ FAB, the bottom-bar tabs, and the ✦ launcher, and the user taps. Everything
+still ticks from the same derived data. The calendars step deliberately has no phone entry:
+`MobileShell` owns its own settings state rather than the nav overlay, so `open-calendars`
+would be a no-op there — the step's CTA opens it instead.
 
 ## Code map
 
@@ -99,9 +131,10 @@ user taps. Everything still ticks from the same derived data.
 | The docked panel, orb, and step driver | `src/components/orientation/TeachPanel.tsx` |
 | `visible` · `mode` · `teachStep` persistence | `src/hooks/useOrientation.tsx` |
 
-Targets are tagged `data-teach="<key>"` on the real elements (rail capture form, rail list,
-`FloorGuide`'s action, the planner rail's ＋, the ✦ badge, the phone's FAB / tabs). Adding a
-destination is one registry entry plus one tag — the same shape as
+Targets are tagged `data-teach="<key>"` on the real elements (rail capture form, Inbox tab,
+rail list, `FloorGuide`'s action, both planner rails' ＋, the first domain card, the agent
+composer, the Calendars pane, the phone's FAB / tabs). Adding a destination is one registry
+entry plus one tag — the same shape as
 [`marquee.md`](./marquee.md)'s registry, which is where the orb CSS (`.marquee-orb`) and the
 wait-for-target idea come from. **Marquee's *session* is deliberately not reused**: it is a
 single held spotlight that ends the moment you self-navigate, which is the opposite of what

@@ -283,8 +283,16 @@ export default function DomainFloor({
 
       {totalWeek > 0 && <BalanceStrip domains={domains} total={totalWeek} />}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-teach="domain-wall">
-        {domains.map((d) => (
-          <Niche key={d.id} domain={d} focused={d.id === focus.domainId} onEnter={() => enter(d.id)} />
+        {/* The walkthrough lights the FIRST card, not the wall — a named thing they
+            typed themselves reads as "this is yours"; a lit grid reads as nothing. */}
+        {domains.map((d, i) => (
+          <Niche
+            key={d.id}
+            domain={d}
+            focused={d.id === focus.domainId}
+            onEnter={() => enter(d.id)}
+            teach={i === 0 ? "domain-card" : undefined}
+          />
         ))}
       </div>
     </div>
@@ -318,13 +326,14 @@ function BalanceStrip({ domains, total }: { domains: Domain[]; total: number }) 
   );
 }
 
-function Niche({ domain, focused, onEnter }: { domain: Domain; focused: boolean; onEnter: () => void }) {
+function Niche({ domain, focused, onEnter, teach }: { domain: Domain; focused: boolean; onEnter: () => void; teach?: string }) {
   const st = stateOf(domain);
   const lit = st.tone === "lit";
   const spec = domainSigilSpec(domain, domainForm(domain.id));
   return (
     <button
       onClick={onEnter}
+      data-teach={teach}
       className="fast group flex flex-col rounded-xl p-5 text-left hover:-translate-y-1 hover:[box-shadow:var(--shadow-lift)]"
       style={{
         border: "1px solid var(--line)",

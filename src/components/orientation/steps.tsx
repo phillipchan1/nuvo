@@ -161,12 +161,23 @@ export interface TeachStep {
 
 export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
   {
+    // Start with the act, not the concept. "Everything starts in your Inbox" is a
+    // sentence about an abstraction; "add your first task" is a thing to do — and
+    // the next step gets to *show* them the Inbox with their own words in it.
     id: "capture",
     eyebrow: "Schedule · ⌘1",
-    title: "Everything starts in your Inbox.",
+    title: "Let's add your first task.",
     teach: "Type one thing you're actually carrying — plain words, no form. I'll wait.",
     target: "capture",
     milestone: "inbox",
+  },
+  {
+    id: "inbox",
+    eyebrow: "Schedule · ⌘1",
+    title: "There it is — your Inbox.",
+    teach:
+      "Everything you capture lands here first, and nothing else has to be decided yet. This is the one place nothing gets lost.",
+    target: "inbox-tab",
   },
   {
     id: "timeblock",
@@ -185,12 +196,14 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     milestone: "project",
   },
   {
-    // No honest act exists here on day one — an initiative is several projects, and
-    // a fresh account has one. Saying so is better than staging a fake one.
+    // They won't make one today — an initiative is several projects and a fresh
+    // account has one. But "you won't need this yet" only lands once you've been
+    // shown where it would go, so this navigates like every other step.
     id: "initiative",
     eyebrow: "Initiatives · ⌘3",
     title: "More than one project? That's an Initiative.",
-    teach: "Same two acts, sized to a quarter instead of a week. You won't need this today.",
+    teach: "Same two acts, one size up — a quarter instead of a week. Nothing to do here today.",
+    target: "initiative-new",
     Visual: InitiativeVisual,
   },
   {
@@ -198,13 +211,13 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     eyebrow: "Domains · ⌘4",
     title: "It all rolls up to a Domain.",
     teach: "The ones you just named. Always on, never finished, never slotted away.",
-    target: "domain-wall",
+    target: "domain-card",
     Visual: DomainVisual,
   },
   {
     id: "nuvo",
     eyebrow: "Your co-pilot · ⌘J",
-    title: "Ask Nuvo something.",
+    title: "This is Nuvo. Ask it something.",
     teach:
       "Plain words — it grooms your inbox, slots your projects, and plans the week. You always make the call.",
     target: "nuvo",
@@ -215,6 +228,7 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     eyebrow: "Last thing",
     title: "Bring your calendars in.",
     teach: "Nuvo can't tell you what fits until it knows what's already there.",
+    target: "calendars",
     milestone: "calendar",
     cta: { label: "Connect your calendars →", action: "connect-calendars" },
   },

@@ -820,7 +820,11 @@ function ConnectionsPane({
 
   return (
     <div>
-      <PaneHeader title="Calendars" sub="Calendars Nuvo reads from and writes to. Toggle which appear on your board, and set the domain each one's meetings count toward." />
+      {/* The walkthrough opens Settings here and lights this pane's header, so the
+          last step lands on the thing it's asking for instead of the whole modal. */}
+      <div data-teach="calendars">
+        <PaneHeader title="Calendars" sub="Calendars Nuvo reads from and writes to. Toggle which appear on your board, and set the domain each one's meetings count toward." />
+      </div>
       <div className="space-y-5">
         {/* Google's own "add video conferencing automatically" preference only
             applies to events created in *their* web UI — it never reaches an

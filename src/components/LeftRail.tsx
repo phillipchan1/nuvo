@@ -512,7 +512,9 @@ export default function LeftRail({
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                {...(t === "inbox" ? { "data-inbox-tab": "" } : { "data-today-tab": "" })}
+                {...(t === "inbox"
+                  ? { "data-inbox-tab": "", "data-teach": "inbox-tab" }
+                  : { "data-today-tab": "" })}
                 className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
                   tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
                 } ${ready ? "rail-tab-ready" : armed ? "rail-tab-armed" : ""}`}

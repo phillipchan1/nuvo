@@ -743,6 +743,38 @@ body.odp-dragging [data-resize] {
    *persists* — it's a held spotlight, not a flash, cleared only when the user
    acts. The glow uses --signal (the "now" colour) so it reads as the app's own
    light. The return pill names the move Nuvo made and offers one-tap undo. */
+/* The walkthrough scrim, as one knob. Warm rather than pure black — a neutral
+   black over warm paper reads as harsh and colder than anything else in the app;
+   this is the same brown-black the shadow tokens are mixed from. Dark mode needs
+   a lighter hand: it starts dark, so the same alpha lands much heavier.
+   (Declared after the palette blocks so the dark override wins on equal
+   specificity.) */
+:root { --teach-scrim: rgba(38, 26, 12, 0.45); }
+[data-theme="dark"] { --teach-scrim: rgba(0, 0, 0, 0.42); }
+
+/* The walkthrough's dimming cut-out. The element sits exactly on the target and
+   casts a shadow spread wide enough to cover any viewport — so the "hole" and the
+   dark are one box and can never drift apart. Click-through: the walkthrough dims
+   the app, it doesn't disable it. */
+.teach-dim {
+  position: fixed;
+  /* Above the Modal layer (z-70) on purpose: the last step opens Settings, and the
+     spotlight has to reach *inside* it or the step lands on an undifferentiated
+     sheet of chrome. */
+  z-index: 78;
+  pointer-events: none;
+  border-radius: 16px;
+  /* A real scrim, not a tint — mixing with --bg washes out entirely in light mode
+     and the highlight stops reading as a highlight. But only just enough: the job
+     is to *quiet* the surroundings, not to black them out. The target's own ring
+     and glow do the pointing; the scrim only has to stop competing with it, and a
+     reader should still be able to see the surface they're being shown around.
+     One knob, themed — dark mode needs less, since it starts dark. */
+  box-shadow: 0 0 0 100vmax var(--teach-scrim);
+  transition: opacity 200ms var(--ease-out);
+  animation: marquee-in 360ms var(--ease-out) both;
+}
+
 .marquee-orb {
   position: fixed;
   z-index: 60;
@@ -751,6 +783,9 @@ body.odp-dragging [data-resize] {
   animation: marquee-in 360ms var(--ease-out) both;
 }
 .marquee-orb.is-closing { animation: marquee-out 280ms ease-in both; }
+/* The walkthrough's orb rides above the dim (and above any overlay it cuts into).
+   Marquee's own orb keeps its z-60 — it never has to out-rank a modal. */
+.marquee-orb.is-teach { z-index: 79; }
 .marquee-orb-glow {
   position: absolute;
   inset: 0;
