@@ -412,6 +412,14 @@ html.tauri-macos .spine-top {
   min-height: var(--titlebar-inset-top);
 }
 
+/* Left rail — dedicated window-drag strip above the week crown (macOS traffic lights). */
+.rail-titlebar-drag {
+  min-height: 0;
+}
+html.tauri-macos .rail-titlebar-drag {
+  min-height: var(--titlebar-inset-top);
+}
+
 /* Right-side separator for the spine. Runs the full height — the spine is now
    wide enough (188px) that the line sits clear of the macOS traffic lights.
    Railed (64px), the line would cut through them, so it starts below the inset. */

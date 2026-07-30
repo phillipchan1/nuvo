@@ -265,6 +265,7 @@ export default function TaskRow({
 
   return (
     <div
+      {...(draggable ? { "data-tauri-drag-region": "false" as const } : {})}
       data-task-drag={draggable ? task.id : undefined}
       data-task-drag-group={dragGroup}
       data-task-title={task.title}

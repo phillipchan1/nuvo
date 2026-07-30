@@ -348,10 +348,10 @@ export default function LeftRail({
       }}
     >
       {/* Inner keeps its natural width so nothing reflows while the outer clips
-          it shut in focus mode. */}
+          it shut in focus mode. Window drag is scoped to the titlebar strip +
+          crown/tabs — the task list opts out so row drags aren't window drags. */}
       <div
-        data-tauri-drag-region="deep"
-        className="titlebar-pad relative flex h-full flex-col border-r border-line"
+        className="relative flex h-full flex-col border-r border-line"
         style={{
           width: railWidth,
           opacity: collapsed ? 0 : 1,
@@ -362,34 +362,39 @@ export default function LeftRail({
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize sidebar"
+        data-tauri-drag-region="false"
         onPointerDown={startResize}
         className={`absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35 ${collapsed ? "hidden" : ""}`}
       />
-      {/* The week's plan — priorities held in view all week, crowning the rail.
-          Its header is the week door ("Plan the week"). */}
-      <WeekPanel door={weekDoor} />
-      {/* Tabs — Today first (the day is where the rail's lower zone lives);
-          Inbox second. This zone is "work the day," under the week crown. */}
-      {/* The strip carries one continuous baseline so the active underline sits ON
-          a line instead of floating between the crown's divider and nothing. */}
-      <div className="flex border-b border-line">
-        {(["today", "inbox"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            {...(t === "inbox" ? { "data-inbox-tab": "" } : {})}
-            className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
-              tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
-            }`}
-          >
-            {t === "inbox" ? "Inbox" : "Today"}
-            <span className="mono ml-1.5 text-meta text-muted">{tabCount(t)}</span>
-          </button>
-        ))}
+      {/* Clears macOS traffic lights — explicit drag target, not inherited from deep. */}
+      <div data-tauri-drag-region className="rail-titlebar-drag w-full shrink-0" aria-hidden />
+      <div data-tauri-drag-region="deep" className="shrink-0">
+        {/* The week's plan — priorities held in view all week, crowning the rail.
+            Its header is the week door ("Plan the week"). */}
+        <WeekPanel door={weekDoor} />
+        {/* Tabs — Today first (the day is where the rail's lower zone lives);
+            Inbox second. This zone is "work the day," under the week crown. */}
+        {/* The strip carries one continuous baseline so the active underline sits ON
+            a line instead of floating between the crown's divider and nothing. */}
+        <div className="flex border-b border-line">
+          {(["today", "inbox"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              {...(t === "inbox" ? { "data-inbox-tab": "" } : {})}
+              className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
+                tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
+              }`}
+            >
+              {t === "inbox" ? "Inbox" : "Today"}
+              <span className="mono ml-1.5 text-meta text-muted">{tabCount(t)}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* List */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* List — opt out of the titlebar drag region so row drags aren't window drags */}
+      <div className="min-h-0 flex-1 overflow-y-auto" data-tauri-drag-region="false">
         {/* Shown when dragging a calendar task to the rail while on week/today tab */}
         <div className="rail-drop-banner" aria-hidden>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -478,7 +483,7 @@ export default function LeftRail({
           hierarchy: it interrupts every mode, so it isn't a titled section (and
           mirrors the mobile ＋ FAB). Stays a real <input> so iOS dictation works
           (low-data-entry). Press C to focus. */}
-      <form onSubmit={(e) => void submitCapture(e)} className="shrink-0 border-t border-line p-2.5">
+      <form onSubmit={(e) => void submitCapture(e)} className="shrink-0 border-t border-line p-2.5" data-tauri-drag-region="false">
         <div className="relative">
           {/* A quill — capture is organic free text, the front door, not a form. */}
           <svg

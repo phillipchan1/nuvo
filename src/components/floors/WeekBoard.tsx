@@ -279,6 +279,7 @@ export default function WeekBoard({
       if (!task) return;
       const fromBoard = Boolean(boardRef.current?.contains(el));
       const rail = document.querySelector<HTMLElement>("[data-rail-drop]");
+      const fromRail = Boolean(rail?.contains(el));
       const start = { x: e.clientX, y: e.clientY };
       let moved = false;
       let target: DropTarget = null;
@@ -301,7 +302,7 @@ export default function WeekBoard({
         const dayEl = hit?.closest("[data-day]");
         if (dayEl) target = { kind: "day", day: dayEl.getAttribute("data-day") ?? "" };
         else if (hit?.closest("[data-tray]")) target = { kind: "tray" };
-        else if (hit?.closest("[data-rail-drop]")) target = { kind: "inbox" };
+        else if (hit?.closest("[data-rail-drop]") && !fromRail) target = { kind: "inbox" };
         else target = null;
         setDropTarget(target);
         rail?.classList.toggle("rail-drop-active", target?.kind === "inbox");

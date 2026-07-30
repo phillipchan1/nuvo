@@ -571,9 +571,9 @@ export default function CalendarPane({
         const onRail =
           e.clientX >= rr.left && e.clientX <= rr.right && e.clientY >= rr.top && e.clientY <= rr.bottom;
         overRail = onRail && !slotEl;
-        // Any task dragged over the rail — whether from the calendar or from the
-        // rail itself — can drop to inbox. The banner already exists for today/week tabs.
-        rail.classList.toggle("rail-drop-active", overRail && Boolean(dragId));
+        // Calendar → rail returns to inbox; rail-origin drags that cancel over the
+        // list must not (a tiny wobble while holding a Today row used to file it).
+        rail.classList.toggle("rail-drop-active", overRail && Boolean(dragId) && !fromRail);
       }
     };
     const onUp = () => {
@@ -583,8 +583,9 @@ export default function CalendarPane({
       armed = false;
       if (active) {
         active = false;
-        // Any task dropped on the rail → back to the Inbox (removes from slot too).
-        if (overRail && dragId) {
+        // Calendar → rail drop → Inbox (removes from slot too). Rail-origin cancels
+        // release over the list and must not re-file the task.
+        if (overRail && dragId && !fromRail) {
           const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${dragId}"]`);
           const group = dragEl?.getAttribute("data-task-drag-group");
           const ids = group ? group.split(",") : [dragId];
