@@ -1322,6 +1322,23 @@ select.field { appearance: none; -webkit-appearance: none; }
   color: var(--text);
   overflow: hidden;
 }
+/* The schedule host runs an inverse zoom so FullCalendar's pointer math stays
+   correct under ⌘=/⌘− (useUiScale.ts) — which as a side effect freezes
+   EVERYTHING inside it, including event text, at 100% no matter the app-wide
+   zoom. The box staying put is the point (that's what keeps drag/click
+   accurate); the text staying tiny at 150% zoom while the rest of the app
+   reads big is not. Scale the text back up by the same factor the host just
+   canceled — box padding/height still come from real minutes × pxPerHour,
+   untouched, so hit-testing math never sees this. */
+.nuvo-cal-host .fc-event .text-label {
+  font-size: calc(var(--text-label) * var(--ui-scale, 1));
+}
+.nuvo-cal-host .fc-event .text-micro {
+  font-size: calc(var(--text-micro) * var(--ui-scale, 1));
+}
+.nuvo-cal-host .fc-event .text-meta {
+  font-size: calc(var(--text-meta) * var(--ui-scale, 1));
+}
 .fc .fc-timegrid-event { box-shadow: none; }
 .fc .fc-timegrid-event-harness .fc-event:hover {
   box-shadow: var(--shadow-2);
