@@ -2,8 +2,8 @@ import { useState } from "react";
 import type { Label, Task } from "../lib/types";
 import { ENERGY_META } from "../lib/energy";
 import { liveSuggestion } from "../lib/grooming";
-import { fmtDuration, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
-import { PriorityDot, RollBadge } from "./ui";
+import { fmtDuration, fmtLateness, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
+import { PriorityDot } from "./ui";
 
 export interface TaskMeta {
   project?: string | null;
@@ -29,6 +29,7 @@ export default function TaskRow({
   action,
   onAcceptSuggestion,
   onDismissSuggestion,
+  now,
 }: {
   task: Task;
   labels: Label[];
@@ -54,10 +55,13 @@ export default function TaskRow({
   onAcceptSuggestion?: () => void;
   /** Spend the guess without applying it. */
   onDismissSuggestion?: () => void;
+  /** The surface's ticking clock. Passed so a row can never disagree with the
+   *  group it was sorted into — both sides must judge "overdue" off one now. */
+  now?: Date;
 }) {
   const [completing, setCompleting] = useState(false);
   const done = task.status === "done";
-  const overdue = !done && isOverdue(task);
+  const overdue = !done && isOverdue(task, now);
   const taskLabels = (task.task_labels ?? [])
     .map((tl) => labels.find((l) => l.id === tl.label_id))
     .filter((l): l is Label => Boolean(l));
@@ -109,13 +113,92 @@ export default function TaskRow({
     return task.do_date.slice(5).replace("-", "/"); // MM/DD
   })();
 
-  const hasMeta = Boolean(
-    meta?.project || meta?.domain || task.start_time || task.duration_minutes || (dateLabel && !task.start_time) || taskLabels.length > 0,
-  );
+  // ── the three facts a row states ────────────────────────────────────────────
+  // WHERE it belongs, HOW LONG it takes, and — only when abnormal — WHAT STATE
+  // it's in. That's the set; everything else the row used to carry was ours, not
+  // the reader's.
+  //
+  // No clock time. On the Schedule the calendar sits inches away rendering the
+  // very same block, and design-language's own rule kills a list that restates
+  // the calendar.
+  const durText = task.duration_minutes ? fmtDuration(task.duration_minutes) : null;
+  // One chip, and the vertical wins it: a project or domain says where this work
+  // lives. A loose task with no home falls back to its first label, so the slot is
+  // never wasted and an uncategorised row still says something about itself.
+  const areaName = meta?.project ?? meta?.domain ?? taskLabels[0]?.name ?? null;
+  const areaColor = meta?.project || meta?.domain ? meta?.domainColor : taskLabels[0]?.color;
+  const dateText = dateLabel && !task.start_time ? dateLabel : null;
+  const rollText = task.roll_count > 0 ? `↻${task.roll_count}` : task.recurrence_id ? "↻" : null;
+  const rollTitle = task.roll_count > 0 ? `Rolled over ${task.roll_count}×` : "Repeats";
+  const pastDeadline = Boolean(task.deadline && !done && task.deadline < todayISO());
+
+  // AT MOST ONE `--signal` item per row, and it says how far gone the work is
+  // rather than naming a state: "2d late" is the fact you decide on; "overdue" is
+  // a word you already knew from the group it's sitting in.
+  const lateText = overdue ? fmtLateness(task, now) : null;
+  const state: { text: string; signal: boolean; title?: string } | null = lateText
+    ? { text: lateText, signal: true, title: task.start_time ? `Was ${fmtTime(task.start_time)}` : undefined }
+    : pastDeadline && task.deadline
+      ? { text: `⚑${task.deadline.slice(5)}`, signal: true, title: `Deadline passed ${task.deadline}` }
+      : task.deadline && !done
+        ? { text: `⚑${task.deadline.slice(5)}`, signal: false, title: `Deadline ${task.deadline}` }
+        : rollText
+          ? { text: rollText, signal: false, title: rollTitle }
+          : dateText
+            ? { text: dateText, signal: false }
+            : null;
 
   // Passive grooming's guess — surfaced only where the row wired up accept/dismiss
   // (the inbox), and only when fresh and actionable.
   const groom = onAcceptSuggestion ? liveSuggestion(task) : null;
+
+  // ── one line, one height, one order ─────────────────────────────────────────
+  // Calm in a dense list comes from UNIFORMITY, not from showing less. Every row
+  // is one line of the same height: title left, then a narrow band of metadata
+  // right, always in the same order (state · weight · area). Six tasks are six eye
+  // stops. The two-line version was ragged — some rows one line, some two, the
+  // area chip landing at a different x on every row — and eleven eye stops at
+  // three indents is what actually reads as noise, whatever the palette. The
+  // reference list we kept losing to shows MORE metadata than we did and still
+  // reads quieter, because every row of it is identical in shape.
+  //
+  // The title truncates. That is the price, and it's the right price: a title you
+  // can open beats a column you can't scan.
+  const trailing = !groom && (state || durText || areaName) ? (
+    <div className="flex shrink-0 items-center gap-1.5 pl-2">
+      {state && (
+        <span
+          title={state.title}
+          className={`mono text-meta ${state.signal ? "font-medium text-signal" : "text-muted"}`}
+        >
+          {state.text}
+        </span>
+      )}
+      {durText && <span className="mono text-meta text-muted">{durText}</span>}
+      {/* The area chip spends its hue ONCE: a wash for the ground, and the same hue
+          pulled most of the way to --muted for the label. A domain-coloured label
+          on a domain-coloured ground is two colour signals stacked on the row's
+          quietest element, which is how a chip meant to whisper identity ends up
+          dominating the surface. Named, not just tinted — colour alone fails
+          because nobody memorises the palette. */}
+      {areaName && (
+        <span
+          className="max-w-[92px] truncate rounded px-1.5 py-px text-meta"
+          style={
+            areaColor
+              ? {
+                  background: `color-mix(in srgb, ${areaColor} 9%, transparent)`,
+                  color: `color-mix(in srgb, ${areaColor} 45%, var(--muted))`,
+                }
+              : { background: "color-mix(in srgb, var(--muted) 9%, transparent)", color: "var(--muted)" }
+          }
+          title={areaName}
+        >
+          {areaName}
+        </span>
+      )}
+    </div>
+  ) : null;
 
   const bg = multiSelected
     ? "bg-accent-soft"
@@ -164,8 +247,8 @@ export default function TaskRow({
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onContextMenu={onContextMenu}
-      className={`fast group flex min-h-[52px] cursor-pointer select-none gap-2 border-b border-line px-3 py-2 ${
-        groom ? "items-start" : "items-center"
+      className={`fast group flex cursor-pointer select-none gap-2 border-b border-line last:border-b-0 px-3 ${
+        groom ? "min-h-[52px] items-start py-2" : "h-11 items-center py-0"
       } ${completing ? "task-completing" : ""} ${bg}`}
       style={spineColor ? { boxShadow: `inset ${groomPush ? 3 : 2}px 0 0 0 ${spineColor}` } : undefined}
     >
@@ -199,35 +282,21 @@ export default function TaskRow({
             <span className="truncate">{groom.targetLabel}</span>
           </div>
         )}
-        {/* Primary line */}
+        {/* Line 1 — the title, ALONE. The only thing allowed to cross it is the
+            prework mark, because "prep is ready" is the one fact that acts right
+            now. Everything that used to pile up here — the repeat glyph, the roll
+            chip, the word "overdue", the deadline flag — moved to the gutter as a
+            number. And the title keeps its ink when late: red-alert styling for a
+            non-urgent state is exactly what P4 forbids. */}
         <div className="flex min-w-0 items-center gap-1.5">
-          <span
-            className={`min-w-0 flex-1 truncate text-body ${
-              done ? "text-muted line-through" : overdue ? "text-signal" : ""
-            }`}
-          >
+          <span className={`min-w-0 flex-1 truncate text-body ${done ? "text-muted line-through" : ""}`}>
             {task.title}
           </span>
 
           {task.prework_at && task.prework && !done && (
             <span className="mono shrink-0 text-micro text-accent" title="Prework ready">✦</span>
           )}
-          {task.recurrence_id && (
-            <svg width="9" height="9" viewBox="0 0 14 14" fill="none" className="shrink-0 text-muted" aria-label="Repeats">
-              <title>Repeats</title>
-              <path d="M3 5a4 4 0 016.9-2.7M11 9a4 4 0 01-6.9 2.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              <path d="M10 1.5V4H7.5M4 12.5V10h2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          )}
-          <RollBadge count={task.roll_count} />
-          {overdue && (
-            <span className="mono shrink-0 text-micro font-medium text-signal">overdue</span>
-          )}
-          {task.deadline && !done && (
-            <span className="mono shrink-0 text-micro text-signal" title={`Deadline ${task.deadline}`}>
-              ⚑{task.deadline.slice(5)}
-            </span>
-          )}
+          {trailing}
 
           {/* Loose guess (domain / none) stays a compact one-liner: its whole
               identity + weight rides the title row, so it reads as batchable. */}
@@ -257,44 +326,6 @@ export default function TaskRow({
             </>
           )}
         </div>
-
-        {/* Context line — the task's own filed meta (hidden while a guess is
-            still showing its proposed placement below). */}
-        {hasMeta && !groom && (
-          <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-0.5 text-meta text-muted">
-            {/* Project — the domain color survives as a single dot; the name goes
-                quiet gray, so identity reads without the color shouting twice
-                (the row's spine already carries the thread). */}
-            {(meta?.project || meta?.domain) && (
-              <span className="flex min-w-0 items-center gap-1.5">
-                {meta?.domainColor && (
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: meta.domainColor }} aria-hidden />
-                )}
-                <span className="max-w-[140px] truncate font-medium">{meta?.project ?? meta?.domain}</span>
-              </span>
-            )}
-            {/* Start time lives here now, not on the title line — nothing crosses
-                the title but the checkbox. */}
-            {task.start_time && <span className="mono">{fmtTime(task.start_time)}</span>}
-            {task.duration_minutes ? (
-              <span className="mono">{fmtDuration(task.duration_minutes)}</span>
-            ) : null}
-            {dateLabel && !task.start_time && (
-              <span className={`mono ${dateLabel === "today" || overdue ? "text-signal" : ""}`}>
-                {dateLabel}
-              </span>
-            )}
-            {taskLabels.map((l) => (
-              <span
-                key={l.id}
-                className="rounded-sm px-1 py-px text-micro font-medium leading-none"
-                style={{ background: `color-mix(in srgb, ${l.color} 15%, var(--surface))`, color: l.color }}
-              >
-                {l.name}
-              </span>
-            ))}
-          </div>
-        )}
 
         {/* Push weight line — the deep/decide register + estimate in the parent's
             color, so the commitment reads before you accept it. */}

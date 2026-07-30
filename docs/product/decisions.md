@@ -254,6 +254,141 @@ ceremonial *register* — Fraunces, vows as inscriptions — is unchanged; it ju
 after a building any more. *Status: standing — zero occurrences left in `src/`, `docs/`,
 `supabase/`, `marketing/`, or `CLAUDE.md`.*
 
+**D-054 · 2026-07-29 · Late tells once, as a number — and the week's door wears one
+shape.** Held against a real Wednesday, the Schedule rail answered *what's late* louder
+than **D1** (*"what's the one thing today that actually matters?"*), which is the question
+it exists for. A single row could spend `--signal` five times (title tint, the word
+"overdue", the `↻Nd` bordered chip, the `⚑` deadline flag, the date label), and
+`dateLabel === "today"` was tinted **unconditionally** — so a perfectly healthy task
+planned for today wore the same alarm as one three hours late. That is Principle 4's named
+violation verbatim, *"red-alert styling appears for a non-urgent state,"* and it had gone
+unnoticed for the reason the principles file warns about: nobody wrote the rule down at the
+grain where it broke. So, written down:
+
+- **At most one `--signal` item per row, and it is a number, not a word.** An overdue row
+  spends it on the time it was for (`6:15 AM`). The title keeps its ink — a late title is
+  still just a title. The word "overdue" comes off the row entirely: the group label says
+  it once (D-041's "the week is named once", applied to a state instead of a date).
+- **The group earns the label; the label states a fact.** *"Needs you"* → **Overdue**, the
+  glossary's own term. One word, and it addresses the work rather than the reader.
+- **A label must say how far it reaches.** First pass shipped `Overdue` above an
+  *unlabeled* sibling list, and it read as a claim about the whole panel — every row below
+  looked overdue. A label over an unlabeled sibling always over-claims. The fix costs no
+  extra words: the **count** sits beside the label (`OVERDUE 3`) and a single
+  `--line-strong` hairline **closes** the zone (the last row inside gives up its own
+  `border-b` to `last:border-b-0`, so it's one line, not two). That's the rail's second
+  and last zone divider — intent · decide · execute — and the reason it earns `--line-strong`
+  rather than another hairline is that it marks a change in *what the rows want from you*.
+- **`pinned` is overdue-only.** It also caught `roll_count > 0 && !start_time`, which put
+  work that was merely *old* under a label about being *late* — the label lied (Principle
+  6). A rolled task dated today is today's plan; its `↻N` rides the gutter.
+- **Roll count is history, not urgency.** `RollBadge` loses its square `--signal` border
+  and becomes a bare muted `↻N`. It was the loudest thing in the rail, on work whose only
+  crime was being old. So does `PriorityRow`'s `wk N` carry marker.
+- **Calm comes from UNIFORMITY, not from showing less — this is the whole finding.** Three
+  shapes were tried in one day: a two-line row with a right gutter of free text, then a
+  two-line row with chips on line 2, and finally **one line, one height, one order** —
+  `title … state · weight · ⟨area⟩`, every row 44px, no exceptions. Only the third one
+  reads calm, and the reason is measurable rather than aesthetic: the two-line versions put
+  6 tasks at **11 eye stops across 3 different indents** (some rows one line, some two, the
+  area chip landing at x=223 on one row and x=496 on the next). One line is 6 tasks at 6
+  stops in 1 column. **The reference list we kept losing to shows *more* metadata than we
+  did and still reads quieter, because every row of it is identical in shape.** The lesson
+  generalises: before cutting information from a dense surface, check whether the surface is
+  *ragged*. Ragged reads as noise no matter how little is on it, and tidy reads as calm even
+  when it's full.
+- **The title truncates, and that's the right price.** Two-line rows were chosen earlier
+  specifically to protect title width at a 360px rail — and that protection was what blocked
+  the calm. A title you can open beats a column you can't scan; the reference list truncates
+  hard and is liked anyway. `title` attributes and the record carry the full text.
+- **A row states three facts: where it belongs, how long it takes, and — only when
+  abnormal — what state it's in.** Enclosure goes to the one *categorical* fact (the area
+  chip); the numerics stay plain right-aligned text, because a number doesn't need a
+  boundary — it aligns. Chipping the numerics too is how you get the wall of chips this
+  avoids. Cut in the process: user labels off the row (they fall back into the area slot
+  when a task has no project or domain, so nothing uncategorised goes mute), the recurrence
+  glyph, and the second line itself.
+- **A chip spends its hue once.** First chip pass used the domain colour for *both* the
+  ground and the label, at medium weight — two colour signals stacked on the quietest line
+  of the row, which is how a chip meant to whisper identity ended up dominating the surface
+  (the exact complaint that started this). Fixed: the ground carries the hue at a **9%
+  wash**, and the text is that hue **pulled 55% of the way to `--muted`** at normal weight.
+  Still unmistakably Frontier-vs-SCE, at a fraction of the ink — 4.57:1 against the paper,
+  *better* than `--muted`'s own 3.7:1 house baseline. Weight is a neutral chip: the hue on
+  that line means *place*, so a coloured "30m" would claim to be one.
+- **No clock time on the row.** `6:15 AM` was the gutter's first fact, and on the Schedule
+  the calendar sits inches away rendering the very same block — design-language's own rule
+  3 already kills a list that restates the calendar. Overdue rows say **how far gone** they
+  are instead (`fmtLateness` in `lib/dates.ts`, beside `isOverdue`/`endOf` so they can't
+  drift): "2d late" is the fact you decide on, where "10:45 AM" makes you do the
+  subtraction. This is also the competitor's idiom ("48d ago") and it's better than ours was.
+- **`D-050`'s no-chroma rule does not reach here.** It governs the **record modal's**
+  annotation rail, where a scale of four bordered chips with one accent-filled was the
+  loudest thing in the column. It was mis-cited to flatten this row's chips; a single
+  low-wash identity chip on a task row is a different object on a different surface.
+- **The week's plan is a *key* entry, so its door can't be the quietest thing on screen.**
+  In `view` mode it was 9.5px muted `open ▸` while `plan` and `review` got real pills. Now
+  all three modes wear the same accent-soft pill in the same position; only the verb
+  changes (`Plan the week` · `The plan ▸` · `Review`). The state changes the word, never
+  the weight.
+
+Also fixed in the same pass: the **double hairline** under the list (every `TaskRow` had
+`border-b` with no last-child suppression, and the done group added its own `border-t` 4px
+below it), and the tab strip's discontinuous baseline. *Deliberately not done:* the type
+scale. Readability at 10.5/9.5px is a real complaint and it deserves its own pass against
+a running app, not a ride-along. *Status: standing — typechecked, built, driven in the dev
+app at 240 / 360px rail widths and at 375px mobile with no horizontal overflow; verified in
+the DOM that no row title resolves to `--signal` and that healthy rows resolve zero signal
+items.*
+
+**D-055 · 2026-07-29 · Creating a thing wears the same frame as owning it.** A project had
+**three** create surfaces and a fourth appearance once it existed: `QuickCreate` (a bordered
+form — eyebrow + instructional headline, a pill row per domain, a boxed name field with a
+flat 3px focus ring, hardcoded px type), `NewProject` / `NewInitiative` (a "full moment"
+with a borderless composer, dropdown chips and an auto-firing AI draft), a `more options…`
+fork between them, and then `RecordModal` — a document with a Fraunces masthead on one 26px
+spine. **The object changed typeface at birth**, and the fork silently discarded every
+subtask already typed (it carried only domain / initiative / name across).
+
+- **A different *layout* for creating is correct; a different *grammar* is not.** Create is
+  one field and a commit; a record is accumulated state. Nobody good makes create a clone of
+  the record — Linear's new-issue dialog isn't its issue view. But both must be the same
+  object, drawn the same way, or committing hands you a stranger.
+- **So the frame is now shared code, not a convention.** `record/recordFrame.tsx` owns
+  `Sheet · Head · Body · Sec · RailSec · ReadyTicks` + the Escape/Tab/focus contract;
+  `RecordModal` and the new `floors/CreateRecord.tsx` both import it. A convention that
+  lives in two files has already drifted — this is the same reasoning as the planning
+  kernel, applied to layout.
+- **Commit should be visually inert.** Press Create and the sheet you're looking at becomes
+  the record: name in the same place, tasks on the same spine, the draft rows already
+  wearing the unchecked box they'll have a second later. Continuity across birth is the
+  whole point, and it's what makes the create sheet worth building this way.
+- **Create earns exactly three things the record doesn't.** (1) A footer with **one**
+  commit — the record has none because `esc` / `✕` / the scrim all close it, so a "Done"
+  button was the loudest thing on the sheet; here the commit *is* the surface. (2) One
+  placement band, which now drives a **draft** through the same `sprintSpanFor` /
+  `quarterEndISO` kernel (`onPlace`), so a tap here and a drop on On Deck place a thing
+  identically (D-032 holds). (3) Readiness ticks you watch fill in as you type.
+- **The AI scaffold survives, opt-in.** `NewProject` fired `scaffoldDraft` on a 1500ms
+  debounce as you typed — a cold AI list at the front door. It's now a `✦ Draft the first
+  steps` button, disabled until there's a name worth thinking about. The human drives;
+  Nuvo enriches.
+- **Only a placement the human *chose* puts the thing in motion.** An initiative still
+  pre-fills quarter-end (a bet without a finish line is a wish), but a pre-filled default
+  must not claim `in_progress` — that's tracked separately from the dates.
+- **`nuvo-inline-input` now reaches the record's own composers.** A global
+  `input:focus { box-shadow: 0 0 0 3px }` was painting the flat ring the design language
+  forbids onto every borderless field on the spine — including `TaskList`'s, where the card
+  around it already lifts. Fixing create meant either copying the violation or diverging,
+  so it's fixed in both.
+
+*Status: standing — typechecked, built, and driven in the dev app: both variants opened from
+the rail's `＋ project` / `＋ initiative` and the `P` / `I` hotkeys, tasks composed with `⏎`
+(duration token parsed off the title), a draft placed on Sprint 32 through the band, the
+draft discarded on `esc` with nothing written, compared side-by-side against a live project
+record, and verified at a sub-`lg` width where the rail stacks — zero overflow from the
+sheet. Deliberately not created: a real row, so no test data landed in the account.*
+
 ### Tenancy
 
 **D-024 · 2026-07-25 · Nuvo is a multi-tenant product.** Many independent operators, one

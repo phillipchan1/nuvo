@@ -149,14 +149,44 @@ the rule that keeps a dense screen calm.
 3. **Sections earn their label, or they don't get one.** Don't title-and-count a list just
    because it's a list. Merge sub-lists that do one job (the rail's Today work is one flat
    list, not Planned · Scheduled · Done); reserve a `section-label` for a genuinely
-   distinct group ("Needs you"). If the calendar sits right beside a "Scheduled" list, the
-   list is redundant — cut it.
-4. **Altitude reads through type, not chrome.** Serif = intent (the week, a floor's name);
+   distinct group — the rail's **`Overdue`**, whose members need a *decision* while
+   everything below needs execution. The label **states a fact, it doesn't address the
+   reader**: "Needs you" was an imperative aimed at a human (Principle 4), and it cost a
+   word the glossary already owned. And **a label must say how far it reaches** — over an
+   *unlabeled* sibling list it always over-claims, so it carries its **count** and the zone
+   is **closed** by one `--line-strong` hairline (the last row inside gives up its own
+   `border-b`, so it's one line, not two). If the calendar sits right beside a "Scheduled"
+   list, the list is redundant — cut it.
+4. **At most one `--signal` item per row, and it is a number, not a word.** This is rule 2
+   at the grain of a single line, and it's the one that actually broke: a rail row could
+   spend signal five times over (title tint · the word "overdue" · a bordered `↻Nd` chip ·
+   a `⚑` deadline flag · the date label), and "today" was tinted unconditionally, so a
+   *healthy* task wore the alarm of a late one. An overdue row spends its one signal on the
+   **time it was for**; the title keeps its ink, and the group label carries the state.
+   History (`↻N`, `wk N`) is muted — old is not urgent. D-054.
+5. **A list row is ONE line, one height, one order.** `title … state · weight · ⟨area⟩`,
+   right-aligned, `mono` numerics, every row the same height with no exceptions. **Calm in a
+   dense list comes from uniformity, not from showing less** — this is the rule that took
+   three attempts to find. Six tasks on two-line rows are *eleven* eye stops across three
+   indents (some rows one line, some two; the area chip at a different x each time); six
+   one-line rows are six stops in one column. The list we benchmark against shows *more*
+   metadata than ours did and still reads quieter, purely because its rows are identical.
+   **So before you cut information from a crowded surface, check whether it's ragged** —
+   ragged reads as noise however little is on it, and tidy reads as calm even when it's
+   full. The title truncates; that's the price, and a title you can open beats a column you
+   can't scan. Enclosure goes to the one *categorical* fact (the area chip) — numerics don't
+   need a boundary, they align. D-054.
+6. **Altitude reads through type, not chrome.** Serif = intent (the week, a floor's name);
    system = execution (the day, the rows). A change of altitude should feel like a change
    of voice, marked by **one** `--line-strong` divider — not a pile of hairlines.
-5. **Persistent actions float; they don't take a hierarchy slot.** Capture interrupts every
+7. **Persistent actions float; they don't take a hierarchy slot.** Capture interrupts every
    mode, so on the rail it rides low as a pill (mirroring the mobile ＋ FAB), and on mobile
    it's the FAB — never a titled row competing with the content.
+8. **A door to a major surface wears one shape in every state.** The week's plan guides the
+   whole week, so its entry can't be the quietest thing in the crown — it was 9.5px muted
+   `open ▸` in `view` while `plan` and `review` got accent pills. One pill, one position,
+   three verbs (`Plan the week` · `The plan ▸` · `Review`): **the state changes the word,
+   never the weight.**
 
 Reference: the **Schedule rail** (`WeekPanel` crown → one `--line-strong` zone divider →
 flat Today list → floating capture) and the **Projects/Initiatives floors** (`FloorHeader`
@@ -342,6 +372,26 @@ Scope reads as mass — never a different silhouette, a different font, or a dif
 **Composer position follows content:** below the rows once there are rows to read, on top
 (and autofocused) only while the list is empty. A populated surface must not open on an
 empty box; a keystroke (`t` / `k` / `p` / `l`) is cheaper than a slot in the hierarchy.
+
+**Creating a thing wears this same frame (D-055).** The create sheet is not a form — it is
+the record with a draft inside it, so committing is *visually inert*: the name stays in
+place, the rows stay on the spine, the draft rows already wear the unchecked box they'll
+have a second later. The frame is **shared code, not a convention** —
+`record/recordFrame.tsx` exports `Sheet · Head · Body · Sec · RailSec · ReadyTicks` plus the
+Escape/Tab/focus contract, and both `RecordModal` and `floors/CreateRecord.tsx` import it. A
+layout convention that lives in two files has already drifted.
+
+Create earns exactly three additions, and nothing else:
+
+| Addition | Why it earns a slot the record denies it |
+|---|---|
+| A footer with **one** commit | The record has no footer because `esc` / `✕` / the scrim all close it, so a "Done" was the loudest thing on the sheet. Here the commit *is* the surface. No Cancel — the three close paths already exist. |
+| A placement band over a **draft** | Same `sprintSpanFor` / `quarterEndISO` kernel via `onPlace`, so a tap here and a drop on On Deck place a thing identically. A default placement must not imply `in_progress` — only one the human chose. |
+| Readiness ticks | They fill in as you type, which is the one thing a record can show that a form's "required field" asterisk can't. |
+
+Everything with nothing to say pre-creation stays **silent** — no Log, no "Belongs here", no
+Activity. An empty section is worse than an absent one (D-035). And AI is **opt-in**: a
+`✦ Draft the first steps` button, never a cold list that fires as you type.
 - **Grid views go single-plane, full-height.** The collection **Calendar** and **Timeline**
   do *not* wear a `bg-surface` frame — the grid IS the paper (transparent, gridlines carry
   structure), and they **fill the floor** via `flex-1` (Timeline body) / `grid-auto-rows:
@@ -428,6 +478,11 @@ horizontal scroll of larger chips you drag onto the grid.
   shared `Bar`/`FloorHeader`/`StatusPill`: `src/components/floors/parts.tsx`.
 - Calendar event color + focus logic: `src/components/CalendarPane.tsx` (`blockColors`,
   `focusedEventId`).
+- **The record frame — shared by the record AND create:**
+  `src/components/record/recordFrame.tsx` (`Sheet`, `Head`, `Body`, `Sec`, `RailSec`,
+  `ReadyTicks`, `RecordScrim`, `useRecordKeys`, `GUT`). Consumers:
+  `record/RecordModal.tsx` and `floors/CreateRecord.tsx`. Placement for a saved row *or* a
+  draft: `record/PlacementBand.tsx` (`store` vs `onPlace`).
 
 ---
 
@@ -441,6 +496,10 @@ horizontal scroll of larger chips you drag onto the grid.
 - [ ] Floating things rest as glass (`.glass-card`); focus **lifts** (`.glass-lift` /
       `.glass-lift-row` / `.glass-grab`) — no flat outline, no accent ring.
 - [ ] Grid views fill the floor and sit single-plane (no `bg-surface` frame).
+- [ ] **If the surface creates something, it wears that thing's own frame** — import from
+      `recordFrame.tsx`, don't restyle a form to look close (D-055).
+- [ ] Borderless inputs on a spine carry `nuvo-inline-input` — otherwise the global
+      `input:focus` ring paints the flat outline the language forbids.
 - [ ] Holds up on the warm paper *and* in dark mode, and reflows to one column ≤767px.
 
 ---
@@ -451,7 +510,8 @@ Applied: foundation seam fix · portfolios (calm ledger) · floor heroes → mas
 rail · Record modal · Timeline & Calendar (single-plane fill-height) · `Btn` sizing ·
 glass focal system (board, calendar, table, timeline) · Today hero cards → glass ·
 **planner surfaces unified** (shared `PlannerRail` + crown on both decks, ruled quarter
-columns, now → `--signal`, open time → `--slot`, deck cards → glass).
+columns, now → `--signal`, open time → `--slot`, deck cards → glass) · **create unified with
+the record** (three create surfaces → one `CreateRecord` over the shared `recordFrame`).
 
 Not yet done / open questions:
 - The **rails aren't resizable on the decks** — they read the width the Schedule

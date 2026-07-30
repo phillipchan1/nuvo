@@ -289,6 +289,8 @@ export default function LeftRail({
   const rowProps = (t: Task) => ({
     task: t,
     labels,
+    // One clock for the row and the group that sorted it — see TaskRow's `now`.
+    now,
     selected: t.id === selectedId,
     multiSelected: selectedIds.has(t.id),
     draggable: true,
@@ -367,14 +369,16 @@ export default function LeftRail({
       <WeekPanel door={weekDoor} />
       {/* Tabs — Today first (the day is where the rail's lower zone lives);
           Inbox second. This zone is "work the day," under the week crown. */}
-      <div className="flex">
+      {/* The strip carries one continuous baseline so the active underline sits ON
+          a line instead of floating between the crown's divider and nothing. */}
+      <div className="flex border-b border-line">
         {(["today", "inbox"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             {...(t === "inbox" ? { "data-inbox-tab": "" } : {})}
-            className={`fast flex-1 px-3 py-2 text-caption font-semibold ${
-              tab === t ? "border-b-2 border-accent text-ink" : "text-muted hover:text-ink"
+            className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
+              tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
             }`}
           >
             {t === "inbox" ? "Inbox" : "Today"}
@@ -413,14 +417,23 @@ export default function LeftRail({
 
         {tab === "today" && (
           <>
-            {/* Needs you — overdue / rolled work stays the one loud group. */}
+            {/* Overdue — the one group that earns a label, because its members
+                need a *decision* while everything below needs execution. One
+                muted word, the glossary's own term: it states a fact instead of
+                addressing you ("Needs you" was an imperative, P4), and it lets
+                the word come off every individual row.
+                A label above an UNLABELED sibling list over-claims — it reads as
+                covering everything below it. So the zone says how far it reaches
+                twice, without a second word: the count beside the label, and a
+                `--line-strong` closer (the last row inside loses its own hairline
+                to `last:border-b-0`, so this is one line, not two). */}
             {todaySections.pinned.length > 0 && (
-              <>
-                <SectionLabel>Needs you</SectionLabel>
+              <div className="border-b border-line-strong">
+                <SectionLabel count={todaySections.pinned.length}>Overdue</SectionLabel>
                 {todaySections.pinned.map((t) => (
                   <TaskRow key={t.id} {...rowProps(t)} />
                 ))}
-              </>
+              </div>
             )}
             {/* The day's work — planned + calendar-blocked as one flat list. The
                 old split into three titled, counted sections was three headers
@@ -439,7 +452,9 @@ export default function LeftRail({
             )}
             {/* Done — the quiet tail, folded to a single line (Loose-ends pattern). */}
             {todaySections.done.length > 0 && (
-              <div className="mt-1 border-t border-line">
+              // No border-t: the last active row's own border-b is already the
+              // divider. Together they drew the double hairline under the list.
+              <div>
                 <button
                   onClick={() => toggleToday("done")}
                   className="fast tap flex w-full items-center gap-2 px-3 py-2 text-left"
@@ -783,9 +798,12 @@ function TaskContextMenu({
 function buildTodaySections(today: Task[], now: Date) {
   const active = today.filter((t) => t.status !== "done");
   const done = today.filter((t) => t.status === "done");
+  // Overdue ONLY. A rolled task dated today with no time on it isn't late — it's
+  // today's plan, and folding it in here made the group's label lie (P6). Its ↻N
+  // still rides the gutter, so the history survives where it belongs.
   const pinned = active
-    .filter((t) => isOverdue(t, now) || (t.roll_count > 0 && !t.start_time))
-    .sort((a, b) => Number(isOverdue(b, now)) - Number(isOverdue(a, now)) || b.roll_count - a.roll_count);
+    .filter((t) => isOverdue(t, now))
+    .sort((a, b) => b.roll_count - a.roll_count || (a.start_time ?? "").localeCompare(b.start_time ?? ""));
   const pinnedIds = new Set(pinned.map((t) => t.id));
   const unblocked = active.filter((t) => !t.start_time && !pinnedIds.has(t.id));
   const scheduled = active

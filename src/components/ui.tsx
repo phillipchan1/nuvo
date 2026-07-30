@@ -48,7 +48,17 @@ export function SectionLabel({
       </button>
     );
   }
-  return <div className="section-label px-3 pt-3 pb-1.5">{children}</div>;
+  // A static label still takes a count — it's how the label says how far it
+  // reaches. Without one, a label above an unlabeled sibling list reads as
+  // covering everything below it.
+  return (
+    <div className="section-label flex items-center gap-2 px-3 pt-3 pb-1.5">
+      <span>{children}</span>
+      {count != null && count > 0 && (
+        <span className="mono font-normal normal-case tracking-normal text-muted">{count}</span>
+      )}
+    </div>
+  );
 }
 
 export function Modal({
@@ -150,11 +160,14 @@ export function PriorityDot({ priority }: { priority: string }) {
   );
 }
 
+// How many times this rolled over. History, not urgency — so it's a bare number,
+// never a bordered signal chip. (It used to be the loudest thing in the rail: a
+// square `--signal` border on work whose only crime was being old.)
 export function RollBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="mono shrink-0 border border-signal px-1 py-px text-meta leading-none text-signal">
-      ↻ {count}d
+    <span className="mono shrink-0 text-meta leading-none text-muted" title={`Rolled over ${count}×`}>
+      ↻{count}
     </span>
   );
 }

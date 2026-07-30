@@ -94,8 +94,11 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   const mode = door?.mode ?? (composed ? "view" : "plan");
   // The verb the door is offering, right-aligned: identity left, action right.
   // "Plan the week" is the product name for the ritual — keep it spelled out so
-  // the crown CTA reads as the major act it is, not a quiet chip.
-  const action = mode === "review" ? "Review" : mode === "plan" ? "Plan the week" : "open ▸";
+  // the crown CTA reads as the major act it is, not a quiet chip. And `view` gets
+  // the SAME pill: the week's plan is what guides the week, so its door can't be
+  // the quietest thing in the rail (it was 9.5px muted "open ▸"). One door shape,
+  // one position, three verbs — the state changes the word, never the weight.
+  const action = mode === "review" ? "Review" : mode === "plan" ? "Plan the week" : "The plan ▸";
 
   // Open a priority where its work lives: a project-bound one → its Record
   // (manage/close its tasks, complete the project); an aim → the Week's Plan.
@@ -153,21 +156,17 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
             </div>
           )}
         </div>
-        {mode === "view" ? (
-          <span className="mt-0.5 shrink-0 text-micro text-muted transition-colors group-hover:text-accent">{action}</span>
-        ) : (
-          <span
-            className="mt-0.5 flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium"
-            style={
-              mode === "review"
-                ? { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
-                : { color: "var(--accent)", background: "var(--accent-soft)" }
-            }
-          >
-            {door?.glow && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--signal)" }} aria-hidden />}
-            {action}
-          </span>
-        )}
+        <span
+          className="mt-0.5 flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium"
+          style={
+            mode === "review"
+              ? { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
+              : { color: "var(--accent)", background: "var(--accent-soft)" }
+          }
+        >
+          {door?.glow && <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--signal)" }} aria-hidden />}
+          {action}
+        </span>
       </button>
 
       {/* priorities — directly under the crown; the crown states the count, so
@@ -282,8 +281,9 @@ function PriorityRow({
         </button>
       ) : (
         <span className="flex shrink-0 items-center gap-1.5">
+          {/* Carrying isn't *now* — the number tells it, the border shouted it. */}
           {rolls > 0 && (
-            <span className="mono rounded-full px-1.5 py-0.5 text-micro" style={{ border: "1px solid var(--signal)", color: "var(--signal)" }}>
+            <span className="mono text-micro text-muted" title={`Carried into week ${rolls + 1}`}>
               wk {rolls + 1}
             </span>
           )}

@@ -14,7 +14,7 @@
 // Two rules govern the leftovers, and they pull in opposite directions:
 //
 //  1. Shipping CLOSES every open task. A shipped project must never leave live
-//     tasks behind — they'd keep surfacing in Needs You, overdue and the
+//     tasks behind — they'd keep surfacing in the rail's Overdue group and on the
 //     schedule, so the project reads finished while its work still nags. That's
 //     a false signal, and it's the one thing worse than an untidy count.
 //  2. The app never GUESSES what closing meant. "Done" (you did it — it counts
@@ -157,8 +157,8 @@ export default function ShipAssess({
         )}
 
         {/* The leftovers — the warning. Shipping closes them either way (a shipped
-            project can't leave live tasks nagging from Needs You); you say what
-            the closing meant, because only you know. */}
+            project can't leave live tasks nagging from the rail's Overdue group);
+            you say what the closing meant, because only you know. */}
         {!clean && (
           <div className="mt-4">
             <div className="section-label !px-0 !pb-1.5" style={{ color: "var(--signal)" }}>

@@ -52,6 +52,7 @@ export default function MobileTaskList({
   const rowProps = (t: Task, action?: React.ReactNode) => ({
     task: t,
     labels,
+    now,
     selected: false,
     draggable: false,
     accent: taskDomainColor(vertical, t),
@@ -90,7 +91,7 @@ export default function MobileTaskList({
         {nothing && <Empty text="Nothing planned for today. Pull from Week or tap ＋." />}
         {todaySections.pinned.length > 0 && (
           <>
-            <SectionLabel>Needs you</SectionLabel>
+            <SectionLabel count={todaySections.pinned.length}>Overdue</SectionLabel>
             {todaySections.pinned.map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
@@ -206,9 +207,12 @@ function Empty({ text }: { text: string }) {
 function buildTodaySections(today: Task[], now: Date) {
   const active = today.filter((t) => t.status !== "done");
   const done = today.filter((t) => t.status === "done");
+  // Overdue only — keep in step with LeftRail's twin: a rolled task dated today
+  // with no time is today's plan, not a late one, and including it made the
+  // group's label lie. Its ↻N still rides the row's gutter.
   const pinned = active
-    .filter((t) => isOverdue(t, now) || (t.roll_count > 0 && !t.start_time))
-    .sort((a, b) => Number(isOverdue(b, now)) - Number(isOverdue(a, now)) || b.roll_count - a.roll_count);
+    .filter((t) => isOverdue(t, now))
+    .sort((a, b) => b.roll_count - a.roll_count || (a.start_time ?? "").localeCompare(b.start_time ?? ""));
   const pinnedIds = new Set(pinned.map((t) => t.id));
   const unblocked = active.filter((t) => !t.start_time && !pinnedIds.has(t.id));
   const scheduled = active

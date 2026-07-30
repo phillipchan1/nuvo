@@ -73,6 +73,25 @@ export function isOverdue(
   return now.getTime() > end.getTime() + 60 * 60_000;
 }
 
+/** How late a scheduled task is, phrased as a span rather than a clock time.
+ *  "2d late" answers *how far gone is this* — which is the decision you actually
+ *  make about slipped work; "10:45 AM" makes you do the subtraction yourself.
+ *  Measured from the block's END, the same anchor `isOverdue` uses, so the label
+ *  can never read "0m late" on a row this file already calls overdue. Coarse on
+ *  purpose: past an hour, the exact minute is noise. */
+export function fmtLateness(
+  task: { start_time: string | null; duration_minutes: number | null },
+  now: Date = new Date(),
+): string | null {
+  if (!task.start_time) return null;
+  const end = endOf({ start_time: task.start_time, duration_minutes: task.duration_minutes });
+  const mins = Math.floor((now.getTime() - end.getTime()) / 60_000);
+  if (mins < 60) return `${Math.max(mins, 1)}m late`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h late`;
+  return `${Math.floor(hrs / 24)}d late`;
+}
+
 export function fmtTime(iso: string): string {
   return format(new Date(iso), "h:mm a");
 }
