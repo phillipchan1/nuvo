@@ -122,15 +122,32 @@ export const ORIENTATION_TEACH_STEPS: TeachStep[] = [
     cta: { label: "Connect your calendars →", action: "connect-calendars" },
   },
   {
-    // The rules land LAST on purpose. Stated up front they're terms of service —
+    // The rules come after the doing. Stated up front they're terms of service —
     // vocabulary with nothing to attach to. Stated here they consolidate: the
     // reader has just done all three, so this names a pattern they've felt.
-    // Shortest screen in the flow, and it's the one worth remembering.
+    // Shortest screen in the flow.
     id: "rules",
     eyebrow: "You're set",
     title: "Now — the rules that make it sing.",
     teach:
       "You just did all three. Nothing moves down a floor until it's ready for the one below — that's the whole machine, and it's why the week can be trusted.",
     Visual: RulesVisual,
+  },
+  {
+    // …and the ritual comes after the rules, because it's what makes obeying them
+    // easy. The law on its own reads as a constraint; landing here immediately
+    // after reframes it as something handled for you once a week.
+    //
+    // Ending *inside* the ritual is the point: the walkthrough stops with the act
+    // in front of you and your own project sitting in "needs a week", rather than
+    // depositing you on an empty Schedule with a sign-off. It's also why the
+    // calendars step sits two back — the ritual opens by asking what room the week
+    // has, which is only answerable once it can see what's booked.
+    id: "plan",
+    eyebrow: "Every Sunday · 20 minutes",
+    title: "And this is what makes it easy.",
+    teach:
+      "Twenty minutes here turns all of that into a real week. You're in it now — bring your project in.",
+    target: "plan-week",
   },
 ];

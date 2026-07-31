@@ -1748,10 +1748,21 @@ grammar, and makes the card say the same sentence as `ripenessOfProject` and
 [`readiness-model.md`](../readiness-model.md) §3 ("ready for the floor below").
 
 → **Consequence.** The walkthrough closes on the funnel instead of a generic sign-off, and
-**W1** ("can I actually carry this week?") finally gets named during onboarding. Still open:
-the walkthrough shows the *rule* but not **Plan the week**, the ritual where the rule pays
-off — deferred because on a day-one account the ritual has almost nothing to compose, which
-is the same cold-start trap as **N-13**.
+**W1** ("can I actually carry this week?") finally gets named during onboarding.
+
+→ **Follow-up, same day: Plan the week is now the walkthrough's last step — after the law,
+not before it.** It had been deferred on the assumption that the ritual would be an empty
+ceremony on a day-one account; **that was wrong.** By that point the walkthrough has created
+a project, sitting in *needs a week* with its chip ready to click, plus an inbox capture, so
+all three of the ritual's lanes hold exactly one real thing.
+
+**Order matters here and it changed once.** Placed *before* the law it reads as one more
+surface; placed *after* it, it becomes the answer to the constraint the law just set — the
+rules say things must earn their place, and this is the twenty minutes a week that makes
+that easy. It also means the walkthrough **ends inside the act**, with the user's own
+project one click from taking a week, instead of signing off on an empty Schedule.
+Calendars sits two steps back because the ritual opens by asking what room the week has.
+**W1** now has a demonstration, not just a sentence.
 
 ---
 

@@ -1138,6 +1138,7 @@ function OnDeckChips({
     <div className="mt-5">
       <button
         onClick={() => setShowAll((v) => !v)}
+        data-teach="plan-bring-in"
         className="fast mono text-meta text-muted hover:text-accent"
       >
         {showAll ? "− bring one in" : `＋ bring one in (${total})`}

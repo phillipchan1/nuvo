@@ -63,7 +63,8 @@ real create surface. Nothing to keep in sync, nothing taught twice.
 | 6 | It all rolls up to a Domain | the Domain wall | the **first domain card** *+ the Spine rung* | — |
 | 7 | This is Nuvo. Ask it something | the **agent rail, opened** | the chat composer | a user message exists |
 | 8 | Bring your calendars in | **Settings → Calendars** | that pane | a calendar account exists |
-| 9 | **Now — the rules that make it sing** | back to the Schedule, overlays closed | — | — |
+| 9 | **Now — the rules that make it sing** | back to the Schedule, everything closed | — | — |
+| 10 | And this is what makes it easy | **Plan the week**, on its Projects step | *＋ bring one in* | — |
 
 Steps 1/3/4/7/8 are **exactly the five `GettingStarted` milestones, in order, read through
 the same derivations** — this walkthrough *is* that tracker, performed live. Finishing it
@@ -103,6 +104,30 @@ because the floors now have data.
 - **Auto-advance only on a real transition.** A milestone already satisfied when the step
   opens shows its tick and *waits* — nobody should watch a step they didn't do fly past.
   The step captures a baseline on entry and only advances on not-done → done.
+
+- **The panel moves out of its own way.** Its home is bottom-right — and so is the Nuvo
+  composer, so that step used to sit directly on top of the element it was ringing. Rather
+  than special-casing it, `pickCorner` takes the first corner (br → bl → tr → tl) whose
+  panel rect clears the target, and stays home when nothing collides. A target large enough
+  to hit every corner keeps the panel at home rather than jittering.
+
+- **Plan the week goes last, *after* the law — it's what makes obeying it easy.** The law
+  on its own reads as a constraint ("things must earn their place"); landing in the ritual
+  immediately after reframes it as something handled for you in twenty minutes a week. And
+  **ending inside the ritual is the point**: the walkthrough stops with the act in front of
+  you and your own project sitting in *needs a week*, rather than depositing you on an empty
+  Schedule with a sign-off.
+
+  It reads on a day-one account, which is why it's here at all — this was deferred once on
+  the assumption the ritual would be an empty ceremony, and that was wrong: by this point
+  the walkthrough has created a project (chip ready to click) and an inbox capture, so all
+  three lanes hold exactly one real thing. Calendars sits two steps back because the ritual
+  opens by asking *"what room does this week actually have?"*, only answerable once it can
+  see what's booked.
+
+  Mechanically: the arm opens the flow straight onto its Projects lane (`flowStep: 1`), and
+  leaving folds `flow: null` into the same single nav patch as the overlay close —
+  `closeFlow` unwinds history and would hit the same async-vs-sync race.
 
 - **The law comes last, and it's the shortest screen.** Stated up front, rules are terms of
   service — vocabulary with nothing to attach to. Stated after the reader has done all

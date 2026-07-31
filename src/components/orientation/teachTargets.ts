@@ -25,14 +25,16 @@ export type TeachTargetKey =
   | "initiative-new"
   | "domain-card"
   | "nuvo"
-  | "calendars";
+  | "calendars"
+  | "plan-week";
 
 /** A state change to make before hunting for the target element. */
 export type TeachArm =
   | "rail-inbox"   // swing the rail to its Inbox tab
   | "rail-today"   // …and back, so the timing step shows the day
   | "open-agent"   // open the Nuvo chat rail
-  | "open-calendars"; // Settings, on the Calendars section
+  | "open-calendars" // Settings, on the Calendars section
+  | "open-plan";   // the weekly ritual, already on its Projects step
 
 export interface TeachTargetDef {
   /** The element to light. A comma list is fine — first match in the DOM wins. */
@@ -127,5 +129,24 @@ export const TEACH_TARGETS: Record<TeachTargetKey, TeachTargetDef> = {
   calendars: {
     selector: '[data-teach="calendars"]',
     arm: "open-calendars",
+  },
+
+  // 9 · The weekly ritual, opened on its Projects step — "what are you moving
+  // this week?" — with the bring-a-project-in control lit. This is the only place
+  // "a project earns a week" is a thing you *do* rather than a thing we assert,
+  // which is why the law card lands right after it.
+  //
+  // It reads on a day-one account, which is why it's here at all: by this point
+  // the walkthrough has created one project (sitting in "needs a week", so the
+  // chip is there to click) and one inbox capture, so all three lanes of the
+  // ritual have exactly one real thing in them.
+  //
+  // Phone: MobilePlanWeek is local MobileShell state, not nav, so `open-plan`
+  // can't reach it — the step points at the Tasks tab, where the plan card lives
+  // under the Week segment, and says so.
+  "plan-week": {
+    selector: '[data-teach="plan-bring-in"]',
+    arm: "open-plan",
+    mobileSelector: '[data-teach="mtab-tasks"]',
   },
 };
