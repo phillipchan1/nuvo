@@ -150,6 +150,26 @@ disagreed about which week Saturday plans. So:
 - `npm test` (vitest) runs the conformance suite; CI (`.github/workflows/checks.yml`) runs
   typecheck + tests + an edge-function parse on every push.
 
+## The chat is held to a battery — [`docs/agent-conformance.md`](docs/agent-conformance.md)
+
+The chat is the one surface that fails **quietly**: it answers fluently whether it was
+right or not, so nothing but a person noticing catches it. So it has a conformance battery,
+and the same rule as the kernel — **the battery drives the deployed code, never a copy.**
+
+- **The pure half of the agent is importable outside Deno** — `agent/prompt.ts` (the
+  identity + every rule), `agent/toolDefs.ts` (the vocabulary), `agent/contextShape.ts`
+  (the snapshot + its serializer), `agent/turn.ts` (message assembly), `agent/loop.ts`
+  (rounds, tool results, empty-reply rules). `tools.ts` / `context.ts` / `index.ts` keep
+  the service role and the HTTP. **Never put a rule where the battery can't reach it.**
+- **`npm test`** runs the deterministic half: every tool has a handler, every tool the
+  prompt names exists, every context field the prompt reads is actually sent, the loop's
+  failure paths, and the harness itself. Milliseconds, no model, every push.
+- **`npm run eval`** runs the behavioral battery against a live model — scenarios in
+  `tests/agent/scenarios.ts`, weighted `must` (100%) / `should` (80% over repeats).
+  **Run it before shipping a prompt change, a new tool, or a model swap.**
+- **A new chat capability ships with its scenario and its row in the map**, in the same
+  commit. `npm test` fails when the map and the suite disagree.
+
 ## Reuse the logic layer — don't duplicate
 
 - Day shape & availability: `readDay`, `toBusyBlocks`, `fmtMins`, `Gap`, `BusyBlock` in

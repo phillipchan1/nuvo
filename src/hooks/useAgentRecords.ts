@@ -9,10 +9,10 @@
 // which `useRealtime` invalidates and `useTaskMutations` patches optimistically.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { supabase } from "../lib/supabase";
+import { invokeQuiet, supabase } from "../lib/supabase";
 import { useVertical } from "./useVertical";
 import type { AgentAction } from "../lib/agentTypes";
-import type { ExternalEvent, Task } from "../lib/types";
+import type { ExternalEvent, Slot, Task } from "../lib/types";
 
 const TASK_COLS = "*, task_labels(label_id)";
 
@@ -34,6 +34,24 @@ export function useTaskRecord(id: string | undefined) {
     },
   });
   return data?.find((t) => t.id === id);
+}
+
+/** The block an action held or moved, live — same contract as useTaskRecord. */
+export function useSlotRecord(id: string | undefined) {
+  const { data } = useQuery({
+    queryKey: ["slots", "record", id],
+    enabled: Boolean(id),
+    queryFn: async (): Promise<Slot[]> => {
+      const { data, error } = await supabase
+        .from("slots")
+        .select("id, user_id, created_at, updated_at, title, do_date, start_time, duration_minutes, project_id, domain_id, color, google_event_id, recurrence_id, recurrence_date, recurrence_overridden")
+        .eq("id", id!)
+        .limit(1);
+      if (error) throw error;
+      return (data ?? []) as Slot[];
+    },
+  });
+  return data?.find((s) => s.id === id);
 }
 
 export function useEventRecord(id: string | undefined) {
@@ -73,6 +91,33 @@ export function useAgentUndo() {
         return;
       }
 
+      // A slot that moved goes back to where it was; the work inside travels
+      // with it, exactly as it did on the way out.
+      if (undo.kind === "slot") {
+        const id = action.ref?.id;
+        if (!id) throw new Error("Nothing to undo — the action has no record.");
+        const { error } = await supabase.from("slots").update(undo.patch).eq("id", id);
+        if (error) throw error;
+        if (undo.patch.do_date) {
+          await supabase.from("tasks").update({ do_date: undo.patch.do_date }).eq("slot_id", id);
+        }
+        invokeQuiet("slot-mirror", { slotId: id });
+        return;
+      }
+
+      // Undoing "hold this block" releases the time AND takes back the tasks it
+      // created inside it — leaving them loose on the day would be a different
+      // state than the one the user had before they asked.
+      if (undo.kind === "slot-delete") {
+        if (undo.childIds.length) {
+          await supabase.from("tasks").update({ status: "trashed", slot_id: null }).in("id", undo.childIds);
+        }
+        const { error } = await supabase.from("slots").delete().eq("id", undo.id);
+        if (error) throw error;
+        invokeQuiet("slot-mirror", { slotId: undo.id, deleted: true });
+        return;
+      }
+
       // A priority is jsonb on the sprint row, so undo is a whole-rock swap:
       // restore = the rock as it was, or null to lift a created one back out.
       const { id, restore } = undo;
@@ -86,6 +131,7 @@ export function useAgentUndo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["sprint"] });
+      qc.invalidateQueries({ queryKey: ["slots"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't undo that."),
   });

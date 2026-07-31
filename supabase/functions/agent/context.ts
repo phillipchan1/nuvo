@@ -1,4 +1,9 @@
 import { admin } from "../_shared/admin.ts";
+// The snapshot's shape + serializer live apart so the battery can build a
+// fixture world and render it exactly the way this file renders a real one.
+import type { AgentContext, OpenWindow, ScheduleItem, SlateProject, SlotSummary } from "./contextShape.ts";
+export { contextToPrompt } from "./contextShape.ts";
+export type { AgentContext, OpenWindow, ScheduleItem, SlateProject, SlotSummary } from "./contextShape.ts";
 import {
   buildWritableCalendars,
   offerableCalendars,
@@ -31,105 +36,8 @@ function todayIn(tz: string): string {
 }
 const TASK_COLS =
   "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count";
-const MIN_SLOT_MINUTES = 30;
+const MIN_WINDOW_MINUTES = 30;
 
-export interface FreeSlot {
-  startISO: string;
-  endISO: string;
-  /** Pre-formatted in America/Los_Angeles */
-  timeRange: string;
-  minutes: number;
-}
-
-export interface ScheduleItem {
-  kind: "event" | "task";
-  id: string;
-  title: string;
-  localDate: string;
-  /** Pre-formatted in America/Los_Angeles — use this verbatim, never convert ISO yourself. */
-  timeRange: string;
-  past: boolean;
-  ongoing?: boolean;
-  allDay?: boolean;
-}
-
-/** A project committed to the planning week — the app's own definition of a
- *  week priority. Derived from the project's On Deck span, never stored. */
-export interface SlateProject {
-  id: string;
-  name: string;
-  outcome: string | null;
-  status: string;
-  domainId: string | null;
-  startDate: string | null;
-  targetDate: string | null;
-  /** the stored per-week verdict, when one exists (big_rocks joined by project) */
-  priorityId: string | null;
-  landed: boolean;
-  shipped: boolean;
-  /** open work filed under it — what "pull the work" actually pulls from */
-  openTasks: { id: string; title: string; status: string; durationMinutes: number; rollCount: number; scheduled: boolean }[];
-  openTaskCount: number;
-  scheduledTaskCount: number;
-}
-
-export interface AgentContext {
-  today: string;
-  /** Absolute current time, so the model can tell past from upcoming. */
-  nowISO: string;
-  /** Human current time in the user's zone, e.g. "Fri, 2:30 PM". */
-  nowLabel: string;
-  /** UTC offset for America/Los_Angeles right now, e.g. "-07:00". Use this when building start_time ISO strings for tools — user-stated times are always in this zone. */
-  laUtcOffset: string;
-  rangeStart: string;
-  rangeEnd: string;
-  settings: { dayStartHour: number; dayEndHour: number } | null;
-  /** Pre-filtered timed items for today (LA calendar). Primary source for "what's on today". */
-  todaySchedule: ScheduleItem[];
-  /** Pre-computed open windows today (≥30 min, future-only, between real busy blocks). Use this for all availability questions — never count gaps from todaySchedule yourself. */
-  todayFreeSlots: FreeSlot[];
-  inbox: unknown[];
-  /** Tasks with do_date=today but no start_time — not on the calendar. */
-  todayTasks: unknown[];
-  scheduled: unknown[];
-  /** Monday of the planning week (Sundays plan the week ahead). */
-  weekStart: string;
-  /** THE WEEK'S SLATE — the projects committed to this week. This is what the
-   *  app's own week surfaces show as the week's priorities, so it is the honest
-   *  answer to "what am I moving this week", not weekPriorities. */
-  weekSlate: SlateProject[];
-  /** Open projects with no week yet — the candidates to bring in ("needs a sprint"). */
-  needsASprint: { id: string; name: string; outcome: string | null; domainId: string | null; openTaskCount: number }[];
-  /** Projects committed to NEXT week — what's already queued behind this one. */
-  nextWeekSlate: { id: string; name: string; startDate: string | null; targetDate: string | null }[];
-  /** This week's sprint goal, if a sprint row exists. */
-  sprintGoal: string | null;
-  /** The stored per-week VERDICT records (big_rocks). One exists only once a
-   *  push has been checked off or annotated — an empty list does NOT mean the
-   *  week has no priorities. Read weekSlate for that. */
-  weekPriorities: unknown[];
-  /** Tasks committed to this week's sprint and not yet done. */
-  weekPool: unknown[];
-  events: unknown[];
-  /** Writable calendars the agent may create on or move events to (Google +
-   *  iCloud), excluding any the user has hidden from their board. Exactly one
-   *  carries `isDefault` — that's where anything unnamed goes. */
-  writableCalendars: {
-    accountId: string;
-    provider: string;
-    accountEmail: string;
-    calendarId: string;
-    name: string;
-    isDefault?: true;
-  }[];
-  labels: { id: string; name: string }[];
-  /** Life structure — use ids from here when creating/updating vertical entities. */
-  vertical: {
-    domains: unknown[];
-    initiatives: unknown[];
-    projects: unknown[];
-  };
-}
 
 function localDateISO(iso: string, tz: string): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -223,6 +131,7 @@ function fmtEvent(
 function buildTodaySchedule(
   events: ReturnType<typeof fmtEvent>[],
   scheduled: ReturnType<typeof fmtTask>[],
+  slots: SlotSummary[],
   today: string,
 ): ScheduleItem[] {
   const items: ScheduleItem[] = [];
@@ -254,6 +163,20 @@ function buildTodaySchedule(
     });
   }
 
+  // A slot holds the grid exactly like an event does. Leaving them out told the
+  // model an hour was open when the user had already claimed it.
+  for (const s of slots) {
+    if (s.localDate !== today) continue;
+    items.push({
+      kind: "slot",
+      id: s.id,
+      title: s.title,
+      localDate: s.localDate,
+      timeRange: s.timeRange,
+      past: s.past,
+    });
+  }
+
   items.sort((a, b) => {
     const parse = (s: string) => {
       const m = s.match(/^(\d{1,2}):(\d{2})/);
@@ -270,13 +193,14 @@ function buildTodaySchedule(
   return items;
 }
 
-function computeFreeSlots(
+function computeOpenWindows(
   events: ReturnType<typeof fmtEvent>[],
   scheduled: ReturnType<typeof fmtTask>[],
+  slots: SlotSummary[],
   today: string,
   nowMs: number,
   tz: string,
-): FreeSlot[] {
+): OpenWindow[] {
   const busy: Array<{ s: number; e: number }> = [];
 
   for (const ev of events) {
@@ -287,6 +211,13 @@ function computeFreeSlots(
     if (!t.startTime || t.localDate !== today) continue;
     const s = new Date(t.startTime).getTime();
     busy.push({ s, e: s + t.durationMinutes * 60_000 });
+  }
+  // Time the user has already claimed for themselves is busy — the whole point
+  // of holding a slot is that nothing else gets offered that hour.
+  for (const sl of slots) {
+    if (sl.localDate !== today) continue;
+    const s = new Date(sl.startISO).getTime();
+    busy.push({ s, e: s + sl.durationMinutes * 60_000 });
   }
 
   if (busy.length < 2) return [];
@@ -304,17 +235,17 @@ function computeFreeSlots(
   }
 
   // Find gaps between consecutive busy blocks, future-only
-  const slots: FreeSlot[] = [];
+  const windows: OpenWindow[] = [];
   for (let i = 0; i < merged.length - 1; i++) {
     const gapStart = Math.max(merged[i].e, nowMs);
     const gapEnd = merged[i + 1].s;
     const mins = Math.floor((gapEnd - gapStart) / 60_000);
-    if (mins < MIN_SLOT_MINUTES) continue;
+    if (mins < MIN_WINDOW_MINUTES) continue;
     const startISO = new Date(gapStart).toISOString();
     const endISO = new Date(gapEnd).toISOString();
-    slots.push({ startISO, endISO, timeRange: fmtTimeRange(startISO, endISO, tz), minutes: mins });
+    windows.push({ startISO, endISO, timeRange: fmtTimeRange(startISO, endISO, tz), minutes: mins });
   }
-  return slots;
+  return windows;
 }
 
 export async function buildContext(
@@ -344,7 +275,7 @@ export async function buildContext(
   const start = rangeStart ?? new Date(now.getTime() - 7 * 86400_000).toISOString();
   const end = rangeEnd ?? new Date(now.getTime() + 7 * 86400_000).toISOString();
 
-  const [inboxRes, todayRes, scheduledRes, eventsRes, labelsRes, settingsRes, domainsRes, initiativesRes, projectsRes, accountsRes] = await Promise.all([
+  const [inboxRes, todayRes, scheduledRes, eventsRes, labelsRes, settingsRes, domainsRes, initiativesRes, projectsRes, accountsRes, slotsRes] = await Promise.all([
     admin
       .from("tasks")
       .select(TASK_COLS)
@@ -389,6 +320,15 @@ export async function buildContext(
       .from("calendar_accounts")
       .select("id, provider, email, sync_direction, calendars")
       .eq("user_id", userId),
+    // Slots in range, with what's inside them. A slot the agent can't see is
+    // worse than one it can't create: it plans straight over held time.
+    admin
+      .from("slots")
+      .select("id, title, do_date, start_time, duration_minutes, project_id, domain_id")
+      .eq("user_id", userId)
+      .gte("start_time", start)
+      .lt("start_time", end)
+      .order("start_time"),
   ]);
 
   const weekStart = planningWeekStart(today);
@@ -534,8 +474,42 @@ export async function buildContext(
       return fmtEvent(e, today, nowMs, tz, meta);
     });
 
-  const todaySchedule = buildTodaySchedule(events, scheduled, today);
-  const todayFreeSlots = computeFreeSlots(events, scheduled, today, nowMs, tz);
+  // Slot children carry no time of their own — the slot is the block — so they
+  // are read by slot_id, not by start_time.
+  const slotRows = (slotsRes.data ?? []) as Record<string, unknown>[];
+  const slotChildren = slotRows.length
+    ? ((
+        await admin
+          .from("tasks")
+          .select("id, title, status, slot_id")
+          .eq("user_id", userId)
+          .in("slot_id", slotRows.map((r) => r.id as string))
+          .neq("status", "trashed")
+          .order("sort_order")
+      ).data ?? [])
+    : [];
+  const todaySlots: SlotSummary[] = slotRows.map((r) => {
+    const startISO = new Date(r.start_time as string).toISOString();
+    const duration = (r.duration_minutes as number) ?? 60;
+    const endMs = new Date(startISO).getTime() + duration * 60_000;
+    return {
+      id: r.id as string,
+      title: (r.title as string) || "Untitled block",
+      timeRange: fmtTimeRange(startISO, new Date(endMs).toISOString(), tz),
+      startISO,
+      durationMinutes: duration,
+      localDate: localDateISO(startISO, tz),
+      past: endMs <= nowMs,
+      projectId: (r.project_id as string | null) ?? null,
+      domainId: (r.domain_id as string | null) ?? null,
+      tasks: slotChildren
+        .filter((t) => t.slot_id === r.id)
+        .map((t) => ({ id: t.id as string, title: t.title as string, status: t.status as string })),
+    };
+  });
+
+  const todaySchedule = buildTodaySchedule(events, scheduled, todaySlots, today);
+  const todayOpenWindows = computeOpenWindows(events, scheduled, todaySlots, today, nowMs, tz);
 
   const rocks = (sprint?.big_rocks ?? []) as { id: string; project_id?: string | null; done_at: string | null }[];
   const weekSlate: SlateProject[] = slateRows.map((p) => {
@@ -581,7 +555,8 @@ export async function buildContext(
         }
       : null,
     todaySchedule,
-    todayFreeSlots,
+    todayOpenWindows,
+    todaySlots,
     inbox,
     todayTasks,
     scheduled,
@@ -648,10 +623,4 @@ export async function buildContext(
       })),
     },
   };
-}
-
-export function contextToPrompt(ctx: AgentContext): string {
-  return `Internal note for you only: "id" fields are for tool calls — never paste them in user-facing replies.
-
-${JSON.stringify(ctx, null, 2)}`;
 }

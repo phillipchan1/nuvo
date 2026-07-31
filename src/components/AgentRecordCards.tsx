@@ -11,9 +11,10 @@
 // falls back to the summary line it always was.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useAgentUndo, useEventRecord, useTaskRecord } from "../hooks/useAgentRecords";
+import { useAgentUndo, useEventRecord, useSlotRecord, useTaskRecord } from "../hooks/useAgentRecords";
 import { useCalendarAccounts, useExternalEventMutations } from "../hooks/useCalendar";
 import { useSettings } from "../hooks/useSettings";
+import { useSlotTasks } from "../hooks/useSlots";
 import { useVertical } from "../hooks/useVertical";
 import { isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
 import { fmtDayLabel, fmtDuration, fmtTime } from "../lib/dates";
@@ -87,6 +88,7 @@ function Record({ action, variant }: { action: AgentAction; variant: Variant }) 
   if (action.ref?.kind === "task") return <TaskRecord action={action} variant={variant} />;
   if (action.ref?.kind === "event") return <EventRecord action={action} variant={variant} />;
   if (action.ref?.kind === "priority") return <PriorityRecord action={action} variant={variant} />;
+  if (action.ref?.kind === "slot") return <SlotRecord action={action} variant={variant} />;
   return <SummaryFallback action={action} />;
 }
 
@@ -119,6 +121,36 @@ function TaskRecord({ action, variant }: { action: AgentAction; variant: Variant
         task.do_date ? fmtDayLabel(task.do_date) : null,
         task.start_time ? `${fmtTime(task.start_time)} · ${fmtDuration(task.duration_minutes)}` : null,
         !task.start_time && !task.do_date ? restLabel(task) : null,
+        project ? project.name : domain?.name ?? null,
+      ]}
+    />
+  );
+}
+
+/** A block of time the agent held. Its chips say what a block IS — when it
+ *  starts, how long it holds, and how much work is inside — because that is the
+ *  question a user asks about a block, not what the individual items are. */
+function SlotRecord({ action, variant }: { action: AgentAction; variant: Variant }) {
+  const slot = useSlotRecord(action.ref?.id);
+  const { data: vertical } = useVertical();
+  const inside = useSlotTasks(slot ? [slot.id] : []);
+  if (!slot) return <SummaryFallback action={action} />;
+
+  const domain = vertical.domains.find((d) => d.id === slot.domain_id);
+  const project = vertical.projects.find((p) => p.id === slot.project_id);
+  const count = inside.data?.filter((t) => t.status !== "trashed").length ?? 0;
+
+  return (
+    <Shell
+      action={action}
+      variant={variant}
+      tint={slot.color ?? domain?.color ?? null}
+      title={slot.title || "Untitled block"}
+      verb={action.verb}
+      chips={[
+        fmtDayLabel(slot.do_date),
+        `${fmtTime(slot.start_time)} · ${fmtDuration(slot.duration_minutes)}`,
+        count ? `${count} inside` : "empty",
         project ? project.name : domain?.name ?? null,
       ]}
     />
@@ -365,6 +397,9 @@ function canRestore(action: AgentAction): boolean {
   const undo = action.undo;
   if (!undo) return false;
   if (undo.kind === "priority") return Boolean(undo.restore);
+  // Releasing a block is always a real move — there's no "already released"
+  // state a tombstone could be sitting in.
+  if (undo.kind === "slot-delete") return true;
   return undo.patch.status !== "trashed";
 }
 

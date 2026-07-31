@@ -29,6 +29,11 @@ jobs:
         run: npm run typecheck
       - name: Conformance suite (app ↔ agent must agree)
         run: npm test
+      # The chat's behavioral battery is deliberately NOT here: it calls a live
+      # model, so it costs money and its result is sampled. `npm test` already
+      # runs the deterministic half (tools ↔ handlers ↔ prompt ↔ snapshot, and
+      # the turn loop) plus any recorded runs. Run `npm run eval` by hand before
+      # shipping a prompt, a tool or a model change — docs/agent-conformance.md.
       - name: Parse the edge functions
         run: |
           set -e

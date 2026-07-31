@@ -7,7 +7,13 @@ import {
   type RawCalendarAccount,
   type WritableCal,
 } from "./calendars.ts";
-import { executeVerticalTool, isVerticalTool, VERTICAL_TOOL_DEFINITIONS } from "./verticalTools.ts";
+import { executeVerticalTool } from "./verticalTools.ts";
+// The vocabulary lives in toolDefs.ts (pure data, importable outside Deno);
+// this file is the behavior behind it. Re-exported so existing callers and
+// the edge handler keep one import site.
+import { isVerticalTool, type MarqueeDirective } from "./toolDefs.ts";
+export { buildPointAtTool, TOOL_DEFINITIONS } from "./toolDefs.ts";
+export type { MarqueeDirective, MarqueeTargetSpec } from "./toolDefs.ts";
 // The week's rules and the two placement ACTS — shared with the app, so the
 // agent's "bring it into the week" is byte-for-byte the UI's.
 import {
@@ -185,7 +191,7 @@ export type AgentVerb =
  *  itself: the client renders it from its live cache, so a card scrolled back to
  *  an hour later shows what's true NOW, not what was true at reply time. */
 export interface AgentRef {
-  kind: "task" | "event" | "priority";
+  kind: "task" | "event" | "priority" | "slot";
   id: string;
 }
 
@@ -195,7 +201,11 @@ export interface AgentRef {
  *  reverse is one the user learns not to trust with a big batch. */
 export type AgentUndo =
   | { kind: "task"; patch: Record<string, unknown> }
-  | { kind: "priority"; id: string; restore: BigRock | null };
+  | { kind: "priority"; id: string; restore: BigRock | null }
+  // Releasing a block is the inverse of holding one; the tasks it held are
+  // named so undo can put them back inside rather than leaving them loose.
+  | { kind: "slot"; patch: Record<string, unknown> }
+  | { kind: "slot-delete"; id: string; childIds: string[] };
 
 export interface AgentAction {
   tool: string;
@@ -210,52 +220,6 @@ export interface AgentAction {
  *  reply. The edge is generic: it only relays "point at <target>". The client
  *  owns the surface/where-it-lives mapping (src/lib/marqueeRegistry.ts) and sends
  *  the available targets per request, so the edge never changes as targets grow. */
-export interface MarqueeDirective {
-  spotlight?: { target: string; ref?: string; label?: string }[];
-  caption?: string;
-}
-
-export interface MarqueeTargetSpec {
-  key: string;
-  describe: string;
-}
-
-/** Build the `point_at` tool definition from the targets the client sent this
- *  request. The enum + description are derived from live app state, so the
- *  agent's vocabulary is always current — no hardcoded list, no redeploy to add
- *  a target. Falls back to a minimal default when the client sends nothing. */
-export function buildPointAtTool(targets: MarqueeTargetSpec[]) {
-  const list = targets.length ? targets : [{ key: "priorities", describe: "The week's priorities." }];
-  const bullets = list.map((t) => `- "${t.key}": ${t.describe}`).join("\n");
-  return {
-    type: "function" as const,
-    function: {
-      name: "point_at",
-      description:
-        "Show alongside telling. Drive the user's screen: bring the relevant destination forward (a floor, surface, record, or flow) and, where it's a section, hold a spotlight on it — so your answer lands on something visible. **Default to calling this whenever your answer is ABOUT one of the targets below — a data answer counts, not just an explicit 'show me' / 'open'.** Some targets are a specific item (a project, initiative, domain, task) — for those, pass its id as `ref` (use the ids in your context). After calling, answer normally with a real, self-contained reply (the highlight reinforces your words, it doesn't replace them). Skip it only for pure confirmations, chit-chat, or answers with no on-screen home — and don't re-surface the same target twice in a row.\n\nAvailable targets:\n" +
-        bullets,
-      parameters: {
-        type: "object",
-        properties: {
-          target: {
-            type: "string",
-            enum: list.map((t) => t.key),
-            description: "What to bring forward / spotlight.",
-          },
-          ref: {
-            type: "string",
-            description: "For a specific-item target (project/initiative/domain/task), the item's id. Omit for general targets.",
-          },
-          caption: {
-            type: "string",
-            description: "Optional ≤6-word tag pinned to the highlight, e.g. 'your week, in lights'.",
-          },
-        },
-        required: ["target"],
-      },
-    },
-  };
-}
 
 /** Call a sibling edge function. Pass `token` (the user's JWT) for user-scoped
  *  functions like google-events; omit it for internal ones (task-mirror) that
@@ -329,350 +293,6 @@ async function resolveLabelIds(userId: string, names: string[]): Promise<string[
     .filter((id): id is string => Boolean(id));
 }
 
-export const TOOL_DEFINITIONS = [
-  {
-    type: "function" as const,
-    function: {
-      name: "create_task",
-      description:
-        "Create a new task. Use capture for natural language (e.g. 'call David tomorrow 9am 30m #church !high') or explicit fields.",
-      parameters: {
-        type: "object",
-        properties: {
-          capture: { type: "string", description: "Natural language task capture string" },
-          title: { type: "string" },
-          notes: { type: "string" },
-          do_date: { type: "string", description: "YYYY-MM-DD" },
-          start_time: { type: "string", description: "America/Los_Angeles local time: 'YYYY-MM-DDTHH:MM' (24h, no offset). Server converts to UTC." },
-          duration_minutes: { type: "integer" },
-          priority: { type: "string", enum: ["none", "low", "medium", "high"] },
-          label_names: { type: "array", items: { type: "string" } },
-          project_id: { type: "string", description: "Parent project — task lands in backlog" },
-          initiative_id: { type: "string", description: "Parent initiative if no project" },
-          domain_id: { type: "string", description: "Parent domain if no project/initiative" },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "plan_task",
-      description: "Plan a task for a day without a time block.",
-      parameters: {
-        type: "object",
-        properties: {
-          task_id: { type: "string" },
-          task_title: { type: "string", description: "Search by title if id unknown" },
-          do_date: { type: "string", description: "YYYY-MM-DD" },
-        },
-        required: ["do_date"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "schedule_task",
-      description: "Schedule a task as a time block on the calendar.",
-      parameters: {
-        type: "object",
-        properties: {
-          task_id: { type: "string" },
-          task_title: { type: "string" },
-          start_time: { type: "string", description: "America/Los_Angeles local time: 'YYYY-MM-DDTHH:MM' (24h, no offset). Server converts to UTC." },
-          duration_minutes: { type: "integer" },
-        },
-        required: ["start_time"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "unschedule_task",
-      description: "Remove a task from the calendar but keep it planned for its day.",
-      parameters: {
-        type: "object",
-        properties: {
-          task_id: { type: "string" },
-          task_title: { type: "string" },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "reschedule_task",
-      description: "Move a scheduled task to a new start time and/or duration.",
-      parameters: {
-        type: "object",
-        properties: {
-          task_id: { type: "string" },
-          task_title: { type: "string" },
-          start_time: { type: "string", description: "America/Los_Angeles local time: 'YYYY-MM-DDTHH:MM' (24h, no offset). Server converts to UTC." },
-          duration_minutes: { type: "integer" },
-        },
-        required: ["start_time"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "complete_task",
-      description: "Mark a task as done.",
-      parameters: {
-        type: "object",
-        properties: {
-          task_id: { type: "string" },
-          task_title: { type: "string" },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "trash_task",
-      description: "Trash a task.",
-      parameters: {
-        type: "object",
-        properties: {
-          task_id: { type: "string" },
-          task_title: { type: "string" },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "move_to_inbox",
-      description: "Move a task back to inbox, clearing dates and times.",
-      parameters: {
-        type: "object",
-        properties: {
-          task_id: { type: "string" },
-          task_title: { type: "string" },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "update_task",
-      description: "Update task fields (title, notes, priority, deadline).",
-      parameters: {
-        type: "object",
-        properties: {
-          task_id: { type: "string" },
-          task_title: { type: "string" },
-          title: { type: "string" },
-          notes: { type: "string" },
-          priority: { type: "string", enum: ["none", "low", "medium", "high"] },
-          deadline: { type: "string", description: "YYYY-MM-DD or null to clear" },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "move_event",
-      description:
-        "PREFERRED when the user wants an EXISTING event on a different calendar: 'put it on Family', 'apple family', 'switch to Work', 'move to …'. Pass event_id from the event you just created (or event_title). NEVER recreate with create_calendar_event — that duplicates. Cross-account/provider copies then deletes the original.",
-      parameters: {
-        type: "object",
-        properties: {
-          event_id: { type: "string", description: "Event id from context / prior create action when known." },
-          event_title: { type: "string", description: "Search by title if id unknown." },
-          calendar_name: {
-            type: "string",
-            description:
-              "Destination the user named — a calendar from writableCalendars ('Family', 'apple family calendar') or an account ('phil@frontierchurch.com').",
-          },
-        },
-        required: ["calendar_name"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "create_calendar_event",
-      description:
-        "Create a NEW calendar event (Google or Apple/iCloud). Only for first-time adds — NOT for 'put it on X calendar' when the event already exists (use move_event). Pass calendar_name ONLY when the user named a calendar or account; otherwise omit it and the event goes to their default. NEVER infer a calendar from what the event is about or who it's with. Always tell the user which calendar you used.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string", description: "Event title." },
-          start_local: {
-            type: "string",
-            description:
-              "Start in America/Los_Angeles local time — 'YYYY-MM-DDTHH:MM' (24h, no offset). Example: Tuesday Jun 30 at 5pm → '2026-06-30T17:00'. The server handles UTC conversion.",
-          },
-          end_local: {
-            type: "string",
-            description: "End in America/Los_Angeles local time — 'YYYY-MM-DDTHH:MM' (24h, no offset).",
-          },
-          attendees: {
-            type: "array",
-            items: { type: "string" },
-            description: "Email addresses of attendees to invite (optional; Google only).",
-          },
-          calendar_name: {
-            type: "string",
-            description:
-              "Only when the user NAMED where it goes. A calendar display name from writableCalendars ('Family', 'Apple Family', 'Work') or an account ('phil@frontierchurch.com', 'my gmail account'). Match loosely — 'apple family' → Family on iCloud. Omit entirely if they didn't say.",
-          },
-          location: { type: "string", description: "Optional location." },
-          add_meet: {
-            type: "boolean",
-            description:
-              "Attach a Google Meet link. OMIT unless the user said something about it — omitted follows their setting, which by default adds one to any event with guests. Pass true for 'add a Meet link' / 'make it a video call' / 'zoom-style call', false for 'no video' / 'in person'. Google only.",
-          },
-        },
-        required: ["title", "start_local", "end_local"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "reschedule_event",
-      description: "Reschedule a Google calendar event (not a Nuvo task block).",
-      parameters: {
-        type: "object",
-        properties: {
-          event_id: { type: "string" },
-          event_title: { type: "string" },
-          start_at: { type: "string", description: "ISO 8601 timestamp" },
-          end_at: { type: "string", description: "ISO 8601 timestamp" },
-          title: { type: "string" },
-        },
-        required: ["start_at", "end_at"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "cancel_event",
-      description:
-        "Remove a Google calendar event from the user's calendar (cancel it). For meetings the user organizes this cancels for everyone; for an invite it drops off their calendar. Confirm with the user before calling. Only set notify=true if the user explicitly wants attendees told.",
-      parameters: {
-        type: "object",
-        properties: {
-          event_id: { type: "string" },
-          event_title: { type: "string", description: "Search by title if id unknown" },
-          notify: { type: "boolean", description: "Email attendees that it's cancelled. Default false." },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "decline_event",
-      description:
-        "Decline a Google calendar event (RSVP declined) without removing it. Confirm with the user before calling. Only set notify=true if the user wants the organizer told.",
-      parameters: {
-        type: "object",
-        properties: {
-          event_id: { type: "string" },
-          event_title: { type: "string", description: "Search by title if id unknown" },
-          notify: { type: "boolean", description: "Tell the organizer you declined. Default false." },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "list_tasks",
-      description: "Search tasks by title when you need to find an id.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string" },
-        },
-        required: ["query"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "create_priority",
-      description: "Set a priority for this week. A priority IS a project committed to the week, so this brings the project onto this week's slate (writes its sprint span, Mon–Fri) — pass project_id whenever one matches. Without a project it only leaves a note on the week and will not show on the week's plan.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string", description: "The priority's name / outcome statement." },
-          win: { type: "string", description: "What winning looks like — the definition of done in one line." },
-          initiative_id: { type: "string", description: "The initiative this priority serves (optional)." },
-          project_id: { type: "string", description: "The project being committed to this week — use an id from weekSlate / needsASprint / vertical.projects. Strongly preferred: this is what puts the priority on the week." },
-        },
-        required: ["title", "win"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "update_priority",
-      description: "Edit a weekly priority's title or win condition.",
-      parameters: {
-        type: "object",
-        properties: {
-          priority_id: { type: "string", description: "The priority's id from context." },
-          priority_title: { type: "string", description: "Search by title if id unknown." },
-          title: { type: "string", description: "New title." },
-          win: { type: "string", description: "New win condition." },
-          initiative_id: { type: "string", description: "Update the linked initiative (pass null to clear)." },
-          project_id: { type: "string", description: "Update the linked project (pass null to clear)." },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "complete_priority",
-      description: "Mark a weekly priority as landed. Works for a priority that has no stored record yet — pass the project's id or name and it records the verdict for this week.",
-      parameters: {
-        type: "object",
-        properties: {
-          priority_id: { type: "string", description: "The priority's id from weekSlate.priorityId / weekPriorities, when it has one." },
-          priority_title: { type: "string", description: "The priority or project name, if no id." },
-          project_id: { type: "string", description: "The slate project's id — use this when the priority has no stored id." },
-        },
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "delete_priority",
-      description: "Take a priority off this week. Because a priority IS a project committed to the week, this clears that project's week span — the project goes back to \"needs a sprint\" with its work intact. Nothing is deleted.",
-      parameters: {
-        type: "object",
-        properties: {
-          priority_id: { type: "string", description: "The priority's id from weekSlate.priorityId / weekPriorities, when it has one." },
-          priority_title: { type: "string", description: "The priority or project name, if no id." },
-          project_id: { type: "string", description: "The slate project's id — use this when the priority has no stored id." },
-        },
-      },
-    },
-  },
-  // NOTE: `point_at` is intentionally NOT here — it's built per-request from the
-  // targets the client sends (see buildPointAtTool), so its vocabulary is always
-  // current. The handler appends it to this list.
-  ...VERTICAL_TOOL_DEFINITIONS,
-];
 
 type TaskRow = Record<string, unknown> & { id: string; title: string };
 
@@ -714,6 +334,143 @@ function dateInTz(isoUtc: string, tz: string): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(isoUtc));
+}
+
+// ── slots ───────────────────────────────────────────────────────────────────
+
+interface SlotRow {
+  id: string;
+  title: string;
+  do_date: string;
+  start_time: string;
+  duration_minutes: number;
+  google_event_id: string | null;
+}
+
+/** The block an action names. By id when the model read it out of context;
+ *  otherwise by title, and an ambiguous title is an error rather than a guess —
+ *  moving the wrong block silently rearranges someone's morning. */
+async function resolveSlot(
+  userId: string,
+  args: { slot_id?: string; slot_title?: string },
+): Promise<SlotRow> {
+  const cols = "id, title, do_date, start_time, duration_minutes, google_event_id";
+  if (args.slot_id) {
+    const { data, error } = await admin
+      .from("slots")
+      .select(cols)
+      .eq("id", args.slot_id)
+      .eq("user_id", userId)
+      .single();
+    if (error || !data) throw new Error(`Slot not found: ${args.slot_id}`);
+    return data as SlotRow;
+  }
+  if (args.slot_title) {
+    const { data } = await admin
+      .from("slots")
+      .select(cols)
+      .eq("user_id", userId)
+      .ilike("title", `%${args.slot_title}%`)
+      .order("start_time")
+      .limit(5);
+    if (!data?.length) throw new Error(`No block matching "${args.slot_title}"`);
+    if (data.length > 1) {
+      throw new Error(
+        `Multiple blocks match "${args.slot_title}": ${data.map((s) => `"${s.title}"`).join(", ")}. Use slot_id.`,
+      );
+    }
+    return data[0] as SlotRow;
+  }
+  throw new Error("Provide slot_id or slot_title");
+}
+
+interface SlotTaskInput {
+  title: string;
+  duration_minutes?: number;
+  notes?: string;
+}
+
+/** Tolerate the two shapes models actually emit for a list of work: objects,
+ *  or bare strings. A malformed item is dropped, not thrown — the block is
+ *  still the right answer even if one line came through wrong. */
+function normalizeSlotTasks(raw: unknown): SlotTaskInput[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SlotTaskInput[] = [];
+  for (const item of raw) {
+    if (typeof item === "string" && item.trim()) {
+      out.push({ title: item.trim() });
+    } else if (item && typeof item === "object") {
+      const t = String((item as Record<string, unknown>).title ?? "").trim();
+      if (!t) continue;
+      const d = (item as Record<string, unknown>).duration_minutes;
+      const n = (item as Record<string, unknown>).notes;
+      out.push({
+        title: t,
+        duration_minutes: typeof d === "number" ? d : undefined,
+        notes: typeof n === "string" ? n : undefined,
+      });
+    }
+  }
+  return out;
+}
+
+/** How long a block should hold when the model didn't say. A slot exists to
+ *  cover its contents, so an unstated length follows the work rather than
+ *  defaulting to an hour that truncates it. */
+function sizeToContents(count: number): number {
+  const mins = Math.max(count, 1) * DEFAULT_DURATION;
+  return Math.ceil(mins / 30) * 30;
+}
+
+/** Put work inside a block: existing tasks move in, new ones are created there.
+ *  Either way the task loses its own start_time — the block IS the time — and
+ *  takes the block's day. */
+async function fillSlot(
+  userId: string,
+  slotId: string,
+  doDate: string,
+  newTasks: SlotTaskInput[],
+  taskIds: string[],
+): Promise<{ id: string; title: string }[]> {
+  const placed: { id: string; title: string }[] = [];
+
+  if (taskIds.length) {
+    const { data, error } = await admin
+      .from("tasks")
+      .update({ slot_id: slotId, do_date: doDate, start_time: null, status: "planned" })
+      .in("id", taskIds)
+      .eq("user_id", userId)
+      .select("id, title");
+    if (error) throw new Error(error.message);
+    for (const t of data ?? []) {
+      placed.push({ id: t.id as string, title: t.title as string });
+      // The task no longer holds its own block on Google — the slot does.
+      await mirrorTask(t.id as string);
+    }
+  }
+
+  if (newTasks.length) {
+    const { data, error } = await admin
+      .from("tasks")
+      .insert(
+        newTasks.map((t, i) => ({
+          user_id: userId,
+          title: t.title,
+          notes: t.notes ?? "",
+          status: "planned",
+          do_date: doDate,
+          start_time: null,
+          duration_minutes: t.duration_minutes ?? DEFAULT_DURATION,
+          slot_id: slotId,
+          sort_order: i,
+        })),
+      )
+      .select("id, title");
+    if (error) throw new Error(error.message);
+    for (const t of data ?? []) placed.push({ id: t.id as string, title: t.title as string });
+  }
+
+  return placed;
 }
 
 async function resolveEventId(
@@ -1221,6 +978,152 @@ export async function executeTool(
           verb: "slotted",
           ref: { kind: "task", id },
           undo: undoTask(before, "status", "do_date", "start_time", "duration_minutes"),
+        },
+      };
+    }
+
+    // ── Slots: one block of time that owns several tasks ────────────────────
+    // The act the chat was missing. Asked for "a 9am slot where I'll do X, Y
+    // and Z" it had no way to say yes, so it fanned the three out into three
+    // consecutive hour blocks — inventing an order the user never gave and
+    // filling a morning that was supposed to be one held block.
+
+    case "create_slot": {
+      const title = String(args.title ?? "").trim();
+      if (!title) throw new Error("A slot needs a title — name the through-line of the work inside it");
+      const startLocal = String(args.start_local ?? "");
+      if (!startLocal) throw new Error("start_local is required (YYYY-MM-DDTHH:MM in the user's zone)");
+      const startTime = startLocal.includes("Z") || startLocal.includes("+")
+        ? startLocal
+        : localToUtc(startLocal, tz);
+
+      const newTasks = normalizeSlotTasks(args.tasks);
+      const taskIds = (args.task_ids as string[] | undefined)?.filter(Boolean) ?? [];
+
+      // Size the block to what's in it when the model didn't say — a stated
+      // length always wins, but "9am, three things" is not a 30-minute block.
+      const duration = (args.duration_minutes as number | undefined) ?? sizeToContents(newTasks.length + taskIds.length);
+
+      const doDate = dateInTz(startTime, tz);
+      const { data: slot, error } = await admin
+        .from("slots")
+        .insert({
+          user_id: userId,
+          title,
+          do_date: doDate,
+          start_time: startTime,
+          duration_minutes: duration,
+          project_id: (args.project_id as string) ?? null,
+          domain_id: (args.domain_id as string) ?? null,
+        })
+        .select("id, title")
+        .single();
+      if (error) throw new Error(error.message);
+
+      const placed = await fillSlot(userId, slot.id, doDate, newTasks, taskIds);
+
+      // The block itself is what shows on Google — its children are unblocked,
+      // so mirroring them individually would double-book the same hour.
+      await invokeFn("slot-mirror", { slotId: slot.id });
+
+      return {
+        result: JSON.stringify({
+          id: slot.id,
+          title: slot.title,
+          startTime,
+          durationMinutes: duration,
+          tasks: placed.map((t) => ({ id: t.id, title: t.title })),
+        }),
+        action: {
+          tool: name,
+          summary: `Held "${slot.title}" — ${fmtZonedTime(startTime, tz)} (${duration}m), ${placed.length} inside`,
+          verb: "slotted",
+          ref: { kind: "slot", id: slot.id },
+          undo: { kind: "slot-delete", id: slot.id, childIds: placed.map((t) => t.id) },
+        },
+      };
+    }
+
+    case "add_to_slot": {
+      const slot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string });
+      const newTasks = normalizeSlotTasks(args.tasks);
+      const taskIds = (args.task_ids as string[] | undefined)?.filter(Boolean) ?? [];
+      if (!newTasks.length && !taskIds.length) throw new Error("Nothing to add — pass tasks or task_ids");
+
+      const placed = await fillSlot(userId, slot.id, slot.do_date, newTasks, taskIds);
+      return {
+        result: JSON.stringify({ id: slot.id, added: placed.map((t) => ({ id: t.id, title: t.title })) }),
+        action: {
+          tool: name,
+          summary: `Added ${placed.length === 1 ? `"${placed[0].title}"` : `${placed.length} items`} to "${slot.title}"`,
+          verb: "slotted",
+          ref: { kind: "slot", id: slot.id },
+        },
+      };
+    }
+
+    case "reschedule_slot": {
+      const slot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string });
+      const startLocalRaw = args.start_local as string | undefined;
+      const patch: Record<string, unknown> = {};
+      if (startLocalRaw) {
+        const startTime = startLocalRaw.includes("Z") || startLocalRaw.includes("+")
+          ? startLocalRaw
+          : localToUtc(startLocalRaw, tz);
+        patch.start_time = startTime;
+        patch.do_date = dateInTz(startTime, tz);
+      }
+      if (args.duration_minutes != null) patch.duration_minutes = args.duration_minutes;
+      if (!Object.keys(patch).length) throw new Error("Nothing to change — pass start_local or duration_minutes");
+
+      const { error } = await admin.from("slots").update(patch).eq("id", slot.id).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+
+      // The block moved, so its children's day moves with it — they carry no
+      // time of their own, but they do carry a date.
+      if (patch.do_date) {
+        await admin.from("tasks").update({ do_date: patch.do_date }).eq("slot_id", slot.id).eq("user_id", userId);
+      }
+      await invokeFn("slot-mirror", { slotId: slot.id });
+
+      const when = patch.start_time ? fmtZonedTime(patch.start_time as string, tz) : "same time";
+      return {
+        result: JSON.stringify({ id: slot.id, ...patch }),
+        action: {
+          tool: name,
+          summary: `Moved "${slot.title}" to ${when}`,
+          verb: "moved",
+          ref: { kind: "slot", id: slot.id },
+          undo: {
+            kind: "slot",
+            patch: { start_time: slot.start_time, do_date: slot.do_date, duration_minutes: slot.duration_minutes },
+          },
+        },
+      };
+    }
+
+    case "delete_slot": {
+      const slot = await resolveSlot(userId, args as { slot_id?: string; slot_title?: string });
+      const { data: children } = await admin
+        .from("tasks")
+        .select("id")
+        .eq("slot_id", slot.id)
+        .eq("user_id", userId);
+      // The tasks are not the block. Releasing the time keeps the work on the
+      // day, un-blocked — the same thing dropping the slot does in the UI.
+      const { error } = await admin.from("slots").delete().eq("id", slot.id).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+      await invokeFn("slot-mirror", { slotId: slot.id, deleted: true, googleEventId: slot.google_event_id });
+
+      const kept = (children ?? []).length;
+      return {
+        result: JSON.stringify({ id: slot.id, releasedTasks: kept }),
+        action: {
+          tool: name,
+          summary: kept
+            ? `Released "${slot.title}" — ${kept} item${kept === 1 ? "" : "s"} kept on the day, un-blocked`
+            : `Released "${slot.title}"`,
+          verb: "unslotted",
         },
       };
     }
