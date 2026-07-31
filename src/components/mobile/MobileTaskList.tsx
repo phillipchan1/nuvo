@@ -44,6 +44,7 @@ export default function MobileTaskList({
     const domain = domainById(vertical, t.domain_id ?? project?.domainId ?? initiative?.domainId ?? null);
     return {
       project: project?.name ?? null,
+      initiative: initiative?.name ?? null,
       domain: domain?.name ?? null,
       domainColor: domain?.color ?? null,
     };

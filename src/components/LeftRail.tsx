@@ -270,6 +270,7 @@ export default function LeftRail({
     );
     return {
       project: project?.name ?? null,
+      initiative: initiative?.name ?? null,
       domain: domain?.name ?? null,
       domainColor: domain?.color ?? null,
     };

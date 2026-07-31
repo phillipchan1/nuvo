@@ -21,6 +21,7 @@ import { isReadOnlyCalendarId, isWritableAccount, providerLabel, writableCalenda
 import type { useSlotMutations } from "../hooks/useSlots";
 import { HORIZON_DAYS, useRecurrences, type useRecurrenceMutations } from "../hooks/useRecurrence";
 import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftComposer";
+import { RecurMark } from "./ui";
 import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
 import type { EmblemSpec } from "../lib/weekEmblem";
@@ -2412,15 +2413,5 @@ function EventMenuItem({ children, onClick }: { children: React.ReactNode; onCli
     >
       {children}
     </button>
-  );
-}
-
-/** The two-arrow repeat glyph marking a block as part of a series. */
-function RecurMark({ className = "" }: { className?: string }) {
-  return (
-    <svg width="9" height="9" viewBox="0 0 14 14" fill="none" className={className}>
-      <path d="M3 5a4 4 0 016.9-2.7M11 9a4 4 0 01-6.9 2.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M10 1.5V4H7.5M4 12.5V10h2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }

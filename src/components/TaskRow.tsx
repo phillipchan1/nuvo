@@ -1,17 +1,156 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Label, Task } from "../lib/types";
 import { ENERGY_META } from "../lib/energy";
 import { liveSuggestion } from "../lib/grooming";
 import { fmtDuration, fmtLateness, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
-import { PriorityDot } from "./ui";
+import { RecurMark } from "./ui";
 
 /** Row exit + checkbox bloom — keep in sync with `--d-task-complete` in index.css. */
 const COMPLETE_MS = 640;
 
 export interface TaskMeta {
   project?: string | null;
+  initiative?: string | null;
   domain?: string | null;
   domainColor?: string | null;
+}
+
+/** Bottom status bar — domain hue on the strip, name states specificity. */
+type RowIdentity = {
+  barColor: string | null;
+  placeName: string | null;
+  placeHint: string | null;
+  proposal: boolean;
+  proposalColor: string | null;
+};
+
+function resolveRowIdentity(
+  meta: TaskMeta | undefined,
+  taskLabels: Label[],
+  groom: ReturnType<typeof liveSuggestion>,
+  accent: string | null | undefined,
+): RowIdentity {
+  const empty: RowIdentity = {
+    barColor: null,
+    placeName: null,
+    placeHint: null,
+    proposal: false,
+    proposalColor: null,
+  };
+  const domainColor = meta?.domainColor ?? accent ?? null;
+  const domainName = meta?.domain ?? null;
+
+  if (groom) {
+    const bar = groom.domainColor ?? domainColor;
+    const name = groom.targetLabel || domainName;
+    if (!name && !bar) return empty;
+    return {
+      barColor: bar,
+      placeName: name,
+      placeHint: name,
+      proposal: true,
+      proposalColor: groom.domainColor ?? domainColor,
+    };
+  }
+
+  const filedName = meta?.project ?? meta?.initiative ?? null;
+  if (filedName) {
+    return {
+      barColor: domainColor,
+      placeName: filedName,
+      placeHint: domainName ? `${filedName} · ${domainName}` : filedName,
+      proposal: false,
+      proposalColor: null,
+    };
+  }
+
+  if (domainName && domainColor) {
+    return { ...empty, barColor: domainColor, placeName: domainName, placeHint: domainName };
+  }
+
+  const label = taskLabels[0];
+  if (label) {
+    return {
+      barColor: label.color ?? null,
+      placeName: label.name,
+      placeHint: label.name,
+      proposal: false,
+      proposalColor: null,
+    };
+  }
+
+  return empty;
+}
+
+/** Status/meta — two steps below `text-caption` so the title reads as primary. */
+const META = "text-[8px] leading-[1.3]";
+
+function PlaceTag({ identity }: { identity: RowIdentity }) {
+  if (!identity.placeName || !identity.placeHint) return null;
+  const color = identity.proposal ? identity.proposalColor : identity.barColor;
+  const tinted = color
+    ? { color: `color-mix(in srgb, ${color} 55%, var(--muted))` }
+    : undefined;
+
+  if (identity.proposal && color) {
+    return (
+      <span
+        title={identity.placeHint}
+        className={`max-w-full truncate rounded px-1.5 py-px ${META}`}
+        style={{
+          ...tinted,
+          background: `color-mix(in srgb, ${color} 8%, transparent)`,
+        }}
+      >
+        {identity.placeName}
+      </span>
+    );
+  }
+
+  return (
+    <span title={identity.placeHint} className={`min-w-0 truncate ${META} text-muted`} style={tinted}>
+      {identity.placeName}
+    </span>
+  );
+}
+
+function StatsCluster({
+  showDur,
+  showState,
+  recurring,
+  acceptControls,
+}: {
+  showDur: string | null;
+  showState: { text: string; signal: boolean; title?: string } | null;
+  recurring: boolean;
+  acceptControls: ReactNode;
+}) {
+  if (!showDur && !showState && !recurring && !acceptControls) return null;
+
+  return (
+    <span className={`flex shrink-0 items-center gap-2 ${META}`}>
+      {recurring && (
+        <span className="text-muted" title="Repeats">
+          <RecurMark className="opacity-50" />
+        </span>
+      )}
+      {showDur && <span className="mono text-muted">{showDur}</span>}
+      {showDur && showState && (
+        <span className="text-muted/35 select-none" aria-hidden>
+          ·
+        </span>
+      )}
+      {showState && (
+        <span
+          title={showState.title}
+          className={`mono ${showState.signal ? "font-medium text-signal" : "text-muted"}`}
+        >
+          {showState.text}
+        </span>
+      )}
+      {acceptControls}
+    </span>
+  );
 }
 
 export default function TaskRow({
@@ -146,13 +285,8 @@ export default function TaskRow({
   // very same block, and design-language's own rule kills a list that restates
   // the calendar.
   const durText = task.duration_minutes ? fmtDuration(task.duration_minutes) : null;
-  // One chip, and the vertical wins it: a project or domain says where this work
-  // lives. A loose task with no home falls back to its first label, so the slot is
-  // never wasted and an uncategorised row still says something about itself.
-  const areaName = meta?.project ?? meta?.domain ?? taskLabels[0]?.name ?? null;
-  const areaColor = meta?.project || meta?.domain ? meta?.domainColor : taskLabels[0]?.color;
   const dateText = dateLabel && !task.start_time ? dateLabel : null;
-  const rollText = task.roll_count > 0 ? `↻${task.roll_count}` : task.recurrence_id ? "↻" : null;
+  const rollText = task.roll_count > 0 ? `↻${task.roll_count}` : null;
   const rollTitle = task.roll_count > 0 ? `Rolled over ${task.roll_count}×` : "Repeats";
   const pastDeadline = Boolean(task.deadline && !done && task.deadline < todayISO());
 
@@ -193,15 +327,17 @@ export default function TaskRow({
   // 67px — so the inbox mixed 44px and 67px rows and stayed exactly as ragged as
   // the Today list used to be. A guess is still distinguishable, but through the
   // thing that actually differs: it carries Accept / ✕. Not through a different
-  // height. The suggested parent takes the area chip (in its own hue, so a
-  // proposal still reads as a proposal), the estimate takes the weight slot, and
-  // the energy read survives in the row's tooltip rather than a whole line.
-  const showArea = groom ? groom.targetLabel : areaName;
-  const showColor = groom ? groom.domainColor : areaColor;
+  // height. The suggested parent takes a pill (in its own hue, so a proposal
+  // still reads as a proposal), the estimate takes the weight slot, and the
+  // energy read survives in the row's tooltip rather than a whole line.
+  // Title on top; floating meta below — schedule · duration · place, fixed slots.
+  const identity = resolveRowIdentity(meta, taskLabels, groom, accent);
   const showDur = groom
     ? (groom.durationMinutes ? fmtDuration(groom.durationMinutes) : null)
     : durText;
   const showState = groom ? null : state;
+  const hasPlace = Boolean(identity.placeName);
+  const hasMeta = Boolean(showState || showDur || task.recurrence_id || groom);
 
   // Accept / dismiss — the one thing that genuinely distinguishes a guess from a
   // filed fact, so it's what marks the row instead of a taller silhouette.
@@ -209,56 +345,28 @@ export default function TaskRow({
     <span className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
       <button
         onClick={(e) => { e.stopPropagation(); onAcceptSuggestion?.(); }}
-        className="fast rounded px-1.5 py-px text-micro font-medium text-accent hover:bg-accent-soft"
+        className={`fast rounded px-1.5 py-px ${META} font-medium text-accent hover:bg-accent-soft`}
       >
         Accept
       </button>
       <button
         aria-label="Dismiss suggestion"
         onClick={(e) => { e.stopPropagation(); onDismissSuggestion?.(); }}
-        className="fast rounded px-1 py-px text-micro text-muted hover:text-ink"
+        className={`fast rounded px-1 py-px ${META} text-muted hover:text-ink`}
       >
         ✕
       </button>
     </span>
   ) : null;
 
-  const trailing = showState || showDur || showArea || groom ? (
-    <div className="flex shrink-0 items-center gap-1.5 pl-2">
-      {showState && (
-        <span
-          title={showState.title}
-          className={`mono text-meta ${showState.signal ? "font-medium text-signal" : "text-muted"}`}
-        >
-          {showState.text}
-        </span>
-      )}
-      {showDur && <span className="mono text-meta text-muted">{showDur}</span>}
-      {/* The area chip spends its hue ONCE: a wash for the ground, and the same hue
-          pulled most of the way to --muted for the label. A domain-coloured label
-          on a domain-coloured ground is two colour signals stacked on the row's
-          quietest element, which is how a chip meant to whisper identity ends up
-          dominating the surface. Named, not just tinted — colour alone fails
-          because nobody memorises the palette. */}
-      {showArea && (
-        <span
-          className="max-w-[92px] truncate rounded px-1.5 py-px text-meta"
-          style={
-            showColor
-              ? {
-                  background: `color-mix(in srgb, ${showColor} 9%, transparent)`,
-                  color: `color-mix(in srgb, ${showColor} 45%, var(--muted))`,
-                }
-              : { background: "color-mix(in srgb, var(--muted) 9%, transparent)", color: "var(--muted)" }
-          }
-          title={showArea}
-        >
-          {showArea}
-        </span>
-      )}
-      {acceptControls}
-    </div>
-  ) : null;
+  const stats = (
+    <StatsCluster
+      showDur={showDur}
+      showState={showState}
+      recurring={Boolean(task.recurrence_id)}
+      acceptControls={acceptControls}
+    />
+  );
 
   // The rail is transparent, so its rows already sit ON `--bg` — which means the
   // original `hover:bg-bg` / `selected:bg-bg` painted the row the exact colour it
@@ -276,16 +384,11 @@ export default function TaskRow({
       ? "glass-lift-row"
       : "row-hover";
 
-  // A guess that binds a project/initiative is a "push" — it moves a real object
-  // up the vertical, so its spine reads thicker. That's the whole tell now; the
-  // eyebrow and the third line are gone (see the inbox note above).
-  const groomPush =
-    groom != null &&
-    (groom.level === "project" || groom.level === "initiative") &&
-    Boolean(groom.targetLabel);
-  // The push spine borrows the suggested domain color even before the task is
-  // filed; loose rows fall back to the row's own accent (usually none in inbox).
-  const spineColor = groomPush && groom ? (groom.domainColor ?? accent ?? null) : (accent ?? null);
+  const rowHint = groom
+    ? [groom.energy ? `${ENERGY_META[groom.energy].icon} ${ENERGY_META[groom.energy].label}` : null, groom.rationale]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
 
   return (
     <div
@@ -297,79 +400,53 @@ export default function TaskRow({
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onContextMenu={onContextMenu}
-      /* The guess's energy read used to own a whole line; it survives here, where
-         it costs no height. The estimate and the parent already ride the row. */
-      title={
-        groom
-          ? [groom.energy ? `${ENERGY_META[groom.energy].icon} ${ENERGY_META[groom.energy].label}` : null, groom.rationale]
-              .filter(Boolean)
-              .join(" · ")
-          : undefined
-      }
-      className={`fast group flex h-11 cursor-pointer select-none items-center gap-2 border-b border-line last:border-b-0 px-3 ${
+      title={rowHint}
+      className={`fast group cursor-pointer select-none border-b border-line px-3.5 py-2.5 last:border-b-0 ${
         completing ? "task-completing" : ""
       } ${dragging ? "row-dragging" : bg}`}
-      style={spineColor ? { boxShadow: `inset ${groomPush ? 3 : 2}px 0 0 0 ${spineColor}` } : undefined}
     >
-      {/* Checkbox */}
-      <button
-        aria-label={done ? "Mark not done" : "Mark done"}
-        onClick={(e) => { e.stopPropagation(); toggle(); }}
-        /* The empty box wore `border-line` — 1.16:1 against the paper, where the
-           minimum for a non-text UI control is 3:1. It wasn't dim, it was
-           invisible, and an invisible control is most of why a row didn't read as
-           actionable. `--line` is defined as "hairlines at the edge of
-           perception": right for a divider, wrong for the one thing on the row
-           you're meant to click. `--muted` clears the bar at 3.7:1 without
-           becoming an accent (accent would read as already-checked).
-           `--line-strong` was not an option — 1.37:1 still fails. */
-        className={`fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
-          completing ? "bloom" : ""
-        } ${done || completing ? "border-accent bg-accent text-white" : "border-muted hover:border-accent"}`}
-      >
-        {(done || completing) && (
-          <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-            <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" />
-          </svg>
-        )}
-      </button>
-
-      <PriorityDot priority={task.priority} />
-
-      {/* Title + meta */}
-      <div className="min-w-0 flex-1">
-        {/* Line 1 — the title, ALONE. The only thing allowed to cross it is the
-            prework mark, because "prep is ready" is the one fact that acts right
-            now. Everything that used to pile up here — the repeat glyph, the roll
-            chip, the word "overdue", the deadline flag — moved to the gutter as a
-            number. And the title keeps its ink when late: red-alert styling for a
-            non-urgent state is exactly what P4 forbids. */}
-        <div className="flex min-w-0 items-center gap-1.5">
-          {/* WEIGHT carries the hierarchy here, not size. The title used to have a
-              2.5px size gap and a ZERO weight gap over the metadata annotating it
-              — both 400 — while the chips carry fills, so 10.5px chip text had
-              visual mass that unfilled 13px title text didn't. The title barely
-              outranked its own footnotes, which is what read as thin and
-              un-actionable.
-              So the title went the other way from the obvious fix: DOWN a size
-              step (13 → 12, `text-caption`) and UP a weight step (400 → 500).
-              14px and 15px were both driven against real data and were
-              overcompensation — they bought less than the weight step and cost
-              real title characters. 12/500 is calmer than 13/500 *and* truncates
-              less than 13/400 ever did. Contrast was never the lever: ink is
-              already 15.29:1 of a possible 18.62:1 on the paper. */}
-          <span className={`min-w-0 flex-1 truncate text-caption font-medium ${done || completing ? "text-muted line-through" : ""}`}>
-            {task.title}
-          </span>
-
-          {task.prework_at && task.prework && !done && (
-            <span className="mono shrink-0 text-micro text-accent" title="Prework ready">✦</span>
+      <div className="flex min-w-0 items-center gap-3">
+        <button
+          aria-label={done ? "Mark not done" : "Mark done"}
+          onClick={(e) => { e.stopPropagation(); toggle(); }}
+          className={`fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
+            completing ? "bloom" : ""
+          } ${done || completing ? "border-accent bg-accent text-white" : "border-muted hover:border-accent"}`}
+        >
+          {(done || completing) && (
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+              <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" />
+            </svg>
           )}
-          {trailing}
+        </button>
+
+        <div className={`min-w-0 flex-1 ${hasPlace ? "flex flex-col gap-1" : ""}`}>
+          <div className="flex min-w-0 items-center gap-2">
+            <span
+              className={`min-w-0 flex-1 truncate text-caption font-medium leading-snug ${done || completing ? "text-muted line-through" : ""}`}
+            >
+              {task.title}
+            </span>
+
+            {task.prework_at && task.prework && !done && (
+              <span className="mono shrink-0 text-micro text-accent" title="Prework ready">
+                ✦
+              </span>
+            )}
+
+            {!hasPlace && hasMeta && stats}
+
+            {action}
+          </div>
+
+          {hasPlace && (
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <PlaceTag identity={identity} />
+              {stats}
+            </div>
+          )}
         </div>
       </div>
-
-      {action}
     </div>
   );
 }
