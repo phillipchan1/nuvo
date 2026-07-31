@@ -1868,8 +1868,13 @@ kernel has:
   paths (a tool that throws is fed back, not fatal), and one name one meaning. It found a
   live bug in its first minute — the prompt was telling the model to call a tool that
   doesn't exist.
-- **`npm run eval`** runs behavioral scenarios against a live model, weighted `must` (100%)
-  / `should` (80% over repeats), asserting on tools and arguments rather than prose.
+- **`npm run eval`** runs behavioral scenarios against a live model, asserting on tools and
+  arguments rather than prose. **The bar is 100% — every scenario, every run.** It started
+  as 100/80 across two tiers and was raised the same day: the chat is a first-class surface,
+  and a planner you have to double-check is not doing its job. A partial pass is reported as
+  **flaky** and is a bug — the chat drifts there, or the assertion is loose enough to fail a
+  right answer. The only way past the bar is an explicit dated `quarantined:` line, capped
+  at 10% of the suite, so the escape hatch can't quietly become the old 80%.
 - The map of what the chat can do — including what it **can't** — is
   [`docs/agent-conformance.md`](../agent-conformance.md), and `npm test` fails when the map
   and the suite disagree.

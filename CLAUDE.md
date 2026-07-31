@@ -165,8 +165,11 @@ and the same rule as the kernel — **the battery drives the deployed code, neve
   prompt names exists, every context field the prompt reads is actually sent, the loop's
   failure paths, and the harness itself. Milliseconds, no model, every push.
 - **`npm run eval`** runs the behavioral battery against a live model — scenarios in
-  `tests/agent/scenarios.ts`, weighted `must` (100%) / `should` (80% over repeats).
-  **Run it before shipping a prompt change, a new tool, or a model swap.**
+  `tests/agent/scenarios.ts`. **The bar is 100%: every scenario, every run.** The runner
+  calls a partial pass **flaky**, which is a bug (the chat drifts, or the assertion is
+  loose), not a tolerance. **Gate a prompt change, a new tool or a model swap on
+  `npm run eval -- --repeat 5`** — one run is a smoke test. A known-red scenario can be
+  parked only with a dated `quarantined:` line, capped at 10% of the suite.
 - **A new chat capability ships with its scenario and its row in the map**, in the same
   commit. `npm test` fails when the map and the suite disagree.
 

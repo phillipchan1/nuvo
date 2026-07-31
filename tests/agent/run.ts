@@ -1,19 +1,29 @@
 // The battery's runner.
 //
-//   npm run eval                      every scenario, live model, 1 pass each
-//   npm run eval -- --only slot-      just the slot group
-//   npm run eval -- --repeat 5        five runs each, reported as a pass rate
+//   npm run eval                      every scenario, live model
+//   npm run eval -- --only slot-      just the slot scenarios
+//   npm run eval -- --repeat 5        five runs each — the real reliability read
 //   npm run eval -- --group week
 //   npm run eval:replay               recorded runs — deterministic, free
 //
-// Why pass RATE and not pass/fail: the thing under test is a sampled model, so
-// a single green run proves less than it looks like it does and a single red
-// run is not necessarily a regression. `must` scenarios are held to 100% and
-// `should` to 80% — a should that slips is a place to go look, not a stop-ship.
-// Anything below its bar exits non-zero.
+// **The bar is 100%.** Every scenario, every run. The chat is a first-class
+// surface, and a planner you have to double-check is not doing its job — so
+// there is no tier of behaviors it's allowed to get wrong sometimes.
+//
+// That makes FLAKY the failure mode worth naming separately, and this runner
+// does. A scenario that fails every time is a chat that can't do the thing. A
+// scenario that fails one run in five is worse in a way that's easy to miss:
+// the capability is there but it isn't dependable, which is exactly what the
+// user experiences as "I can't trust it". Both are red. They're just fixed
+// differently — one by teaching the chat, one by removing the ambiguity that
+// lets it drift.
+//
+// Because a single green run is weak evidence at a 100% bar, `--repeat 3` or
+// more is what should gate a prompt change. One run is a smoke test.
 
 import { runScenario } from "./harness.ts";
 import { SCENARIOS, type Scenario } from "./scenarios.ts";
+import { blocking, exitCode, verdictFor, type Verdict } from "./verdict.ts";
 
 const argv = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
@@ -26,7 +36,6 @@ const MODE: "live" | "replay" = has("replay") ? "replay" : "live";
 const REPEAT = Number(flag("repeat") ?? 1);
 const ONLY = flag("only");
 const GROUP = flag("group");
-const BAR = { must: 1, should: 0.8 };
 
 const selected = SCENARIOS.filter(
   (s) => (!ONLY || s.id.includes(ONLY)) && (!GROUP || s.group === GROUP),
@@ -40,6 +49,7 @@ if (!selected.length) {
 interface Result {
   scenario: Scenario;
   runs: { passed: boolean; failures: string[] }[];
+  verdict: Verdict;
 }
 
 async function runOnce(s: Scenario): Promise<{ passed: boolean; failures: string[] }> {
@@ -65,16 +75,23 @@ const started = Date.now();
 for (const s of selected) {
   const runs: Result["runs"] = [];
   for (let i = 0; i < REPEAT; i++) runs.push(await runOnce(s));
-  results.push({ scenario: s, runs });
 
-  const rate = runs.filter((r) => r.passed).length / runs.length;
-  const bar = BAR[s.weight ?? "should"];
-  const mark = rate >= bar ? "✓" : "✗";
-  const pct = REPEAT > 1 ? ` ${Math.round(rate * 100)}%` : "";
-  console.log(`${mark} ${s.id}${pct}  — ${s.it}`);
-  if (rate < bar) {
-    // Print each distinct failure once: the same wrong answer five times is one
-    // problem, and five copies of it buries the other four scenarios.
+  const passes = runs.filter((r) => r.passed).length;
+  const verdict: Verdict = verdictFor(passes, runs.length);
+  results.push({ scenario: s, runs, verdict });
+
+  const mark = verdict === "pass" ? "✓" : verdict === "flaky" ? "~" : "✗";
+  const rate = REPEAT > 1 ? ` ${passes}/${REPEAT}` : "";
+  const parked = s.quarantined ? " [quarantined]" : "";
+  console.log(`${mark} ${s.id}${rate}${parked}  — ${s.it}`);
+
+  if (verdict !== "pass") {
+    if (verdict === "flaky") {
+      console.log(`    ⚠ passed ${passes} of ${REPEAT} — the capability is there but not dependable.`);
+      console.log("      Either the chat drifts here, or the expectation is loose enough to fail a right answer.");
+    }
+    // Each distinct failure once: the same wrong answer five times is one
+    // problem, and five copies of it buries the other scenarios.
     const seen = new Set<string>();
     for (const r of runs) {
       for (const f of r.failures) {
@@ -84,22 +101,38 @@ for (const s of selected) {
       }
     }
     if (s.because) console.log(`    (this scenario exists because: ${s.because})`);
+    if (s.quarantined) console.log(`    (parked: ${s.quarantined})`);
   }
 }
 
-const failed = results.filter(({ scenario, runs }) => {
-  const rate = runs.filter((r) => r.passed).length / runs.length;
-  return rate < BAR[scenario.weight ?? "should"];
-});
+const judged = results.map((r) => ({ id: r.scenario.id, verdict: r.verdict, quarantined: r.scenario.quarantined }));
+const red = results.filter((r) => r.verdict !== "pass");
+const parked = red.filter((r) => r.scenario.quarantined);
+const blocked = blocking(judged);
+const flaky = blocked.filter((b) => b.verdict === "flaky");
 
 const secs = ((Date.now() - started) / 1000).toFixed(1);
 console.log(
-  `\n${results.length - failed.length}/${results.length} scenarios at bar` +
-    ` · ${REPEAT} run${REPEAT === 1 ? "" : "s"} each · ${MODE} · ${secs}s`,
+  `\n${results.length - red.length}/${results.length} at 100% · ${REPEAT} run${REPEAT === 1 ? "" : "s"} each · ${MODE} · ${secs}s`,
 );
 
-if (failed.length) {
-  const musts = failed.filter((f) => (f.scenario.weight ?? "should") === "must");
-  if (musts.length) console.log(`\n${musts.length} MUST scenario(s) below bar — this is a broken chat, not a wobble.`);
-  process.exit(1);
+if (parked.length) {
+  console.log(`\n${parked.length} quarantined (not blocking, still red):`);
+  for (const p of parked) console.log(`  · ${p.scenario.id} — ${p.scenario.quarantined}`);
+}
+
+if (blocked.length) {
+  console.log(`\n${blocked.length} scenario(s) below the bar.`);
+  if (flaky.length) {
+    console.log(
+      `${flaky.length} of them are FLAKY — they pass sometimes. At a 100% bar that's the` +
+        ` signal to tighten the rule in the prompt or the assertion, not to re-run until it's green.`,
+    );
+  }
+  if (REPEAT === 1) console.log("Re-run with --repeat 5 before concluding anything: one run can't tell fail from flaky.");
+  process.exit(exitCode(judged));
+}
+
+if (REPEAT === 1 && MODE === "live") {
+  console.log("Smoke pass. Gate a prompt or model change on --repeat 5, not on this.");
 }

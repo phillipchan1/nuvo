@@ -7,9 +7,19 @@
 // can't be written that way it belongs in the docs, not here.
 //
 // Grouped by capability, and the groups mirror docs/agent-conformance.md so the
-// map and the suite can't drift. `weight: "must"` scenarios are the contract —
-// a release with one of them red is a broken chat. `should` scenarios are
-// judgment: a dip is a signal to look, not a stop-ship.
+// map and the suite can't drift.
+//
+// **Every scenario is held to 100%**, on every run. There is no tier of
+// scenarios the chat is allowed to fail sometimes: a chat that gets the week
+// right four times in five is a chat you have to check, and a planner you have
+// to check is not doing its job. A scenario that only passes sometimes is
+// telling you one of two things — the chat is genuinely unreliable there, or
+// the expectation is written loosely enough that a correct answer can fail it.
+// Both are bugs. Neither is fixed by lowering the bar.
+//
+// The one escape hatch is `quarantined`, below: a dated sentence saying this
+// one is known-red and being worked. It still runs, it still reports, it just
+// doesn't hold the exit code hostage — and it is impossible to add silently.
 
 import {
   called, calledTimes, check, isLocalTime, isWrittenTitle, notCalled,
@@ -29,20 +39,24 @@ export interface Scenario {
   world: WorldName;
   turns: (string | { assistant: string })[];
   expect: Check[];
-  weight?: "must" | "should";
+  /** Set ONLY to park a known-failing scenario while it's being fixed. Must
+   *  read "YYYY-MM-DD — why". It still runs and still prints; it just doesn't
+   *  fail the exit code. Anything parked without a date fails `npm test`. */
+  quarantined?: string;
   respond?: ToolResponder;
   navFocus?: { rung: string; projectId?: string };
   /** Why this scenario exists, when it isn't obvious — usually a real bug. */
   because?: string;
 }
 
-const must = (s: Omit<Scenario, "weight">): Scenario => ({ ...s, weight: "must" });
-const should = (s: Omit<Scenario, "weight">): Scenario => ({ ...s, weight: "should" });
+/** Identity — every scenario carries the same weight, so the only thing this
+ *  does is keep the list reading as a list of pinned behaviors. */
+const pin = (s: Scenario): Scenario => s;
 
 export const SCENARIOS: Scenario[] = [
   // ── A · Capture and placement ──────────────────────────────────────────────
 
-  must({
+  pin({
     id: "capture-inbox",
     group: "capture",
     it: "a bare thought lands in the inbox with no date invented",
@@ -57,7 +71,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "capture-no-phantom-date",
     group: "capture",
     it: '"need to work on X" is context, not a date — the golden rule',
@@ -73,7 +87,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "capture-into-project",
     group: "capture",
     it: "items named against a project file under that project, undated",
@@ -91,7 +105,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  should({
+  pin({
     id: "capture-title-hygiene",
     group: "capture",
     it: "a task filed under a project doesn't repeat the project's name in its title",
@@ -105,7 +119,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "capture-timed",
     group: "capture",
     it: "a stated time becomes a local wall-clock string, never a UTC conversion",
@@ -125,7 +139,7 @@ export const SCENARIOS: Scenario[] = [
 
   // ── B · Slots: one block of time that holds several tasks ──────────────────
 
-  must({
+  pin({
     id: "slot-one-window-many-items",
     group: "slots",
     it: "one window + several pieces of work = ONE named block, not one block per item",
@@ -150,7 +164,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "slot-single-item-is-not-a-slot",
     group: "slots",
     it: "one piece of work at a stated time is still a plain time block",
@@ -166,7 +180,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "slot-add-to-existing",
     group: "slots",
     it: "adding to a block the user already holds goes inside it, not beside it",
@@ -183,7 +197,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  should({
+  pin({
     id: "slot-move-carries-its-work",
     group: "slots",
     it: "moving a block moves the block, not each task inside it",
@@ -199,7 +213,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "slot-time-is-busy",
     group: "slots",
     it: "time the user has already held reads as busy, not open",
@@ -213,7 +227,7 @@ export const SCENARIOS: Scenario[] = [
     respond: () => ({ ok: true }),
   }),
 
-  should({
+  pin({
     id: "slot-names-the-throughline",
     group: "slots",
     it: "the block's name is the through-line of the work, in 2–4 words",
@@ -233,7 +247,7 @@ export const SCENARIOS: Scenario[] = [
 
   // ── C · Calendar ───────────────────────────────────────────────────────────
 
-  must({
+  pin({
     id: "cal-named-calendar-wins",
     group: "calendar",
     it: "a calendar the user names beats their stored default",
@@ -247,7 +261,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "cal-never-infers-from-subject",
     group: "calendar",
     it: "the subject of an event never picks a calendar",
@@ -264,7 +278,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "cal-move-not-duplicate",
     group: "calendar",
     it: "re-homing an event it just created is a move, never a second create",
@@ -280,7 +294,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "cal-cancel-asks-first",
     group: "calendar",
     it: "cancelling on other people's calendars asks before it acts",
@@ -292,7 +306,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "cal-confirmed-cancel-executes",
     group: "calendar",
     it: "once confirmed it cancels immediately — no second ask",
@@ -308,7 +322,7 @@ export const SCENARIOS: Scenario[] = [
 
   // ── D · The week ───────────────────────────────────────────────────────────
 
-  must({
+  pin({
     id: "week-slate-is-not-empty",
     group: "week",
     it: "never calls the week unplanned while the slate holds projects",
@@ -324,7 +338,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "week-plan-proposes-first",
     group: "week",
     it: '"plan my week" opens a conversation and writes nothing on the first turn',
@@ -337,7 +351,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  should({
+  pin({
     id: "week-priority-carries-project",
     group: "week",
     it: "bringing a bet onto the week passes the project id, not just a title",
@@ -352,7 +366,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  should({
+  pin({
     id: "week-overload-names-the-cost",
     group: "week",
     it: "on a full week, adding something says what comes off",
@@ -366,7 +380,7 @@ export const SCENARIOS: Scenario[] = [
 
   // ── E · Availability and judgment ──────────────────────────────────────────
 
-  must({
+  pin({
     id: "avail-from-windows-only",
     group: "availability",
     it: "availability answers come from the computed windows, not from counting gaps",
@@ -379,7 +393,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  should({
+  pin({
     id: "judgment-names-the-rollover",
     group: "availability",
     it: "an item that has rolled four times gets named, not silently rescheduled",
@@ -391,7 +405,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "cold-account-invents-nothing",
     group: "availability",
     it: "an empty account gets an honest empty answer, not a fabricated week",
@@ -406,7 +420,7 @@ export const SCENARIOS: Scenario[] = [
 
   // ── F · Structure ──────────────────────────────────────────────────────────
 
-  should({
+  pin({
     id: "structure-routes-by-domain",
     group: "structure",
     it: "a new project lands in the life area its subject belongs to",
@@ -420,7 +434,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "structure-no-phantom-claims",
     group: "structure",
     it: "it never claims to have created something when the write failed",
@@ -435,7 +449,7 @@ export const SCENARIOS: Scenario[] = [
 
   // ── G · Showing alongside telling ──────────────────────────────────────────
 
-  should({
+  pin({
     id: "marquee-points-at-the-answer",
     group: "marquee",
     it: "a data answer brings the surface it's about onto the screen",
@@ -444,7 +458,7 @@ export const SCENARIOS: Scenario[] = [
     expect: [pointedAt("schedule")],
   }),
 
-  should({
+  pin({
     id: "marquee-quiet-on-confirmations",
     group: "marquee",
     it: "a pure confirmation doesn't move the user's screen",
@@ -459,7 +473,7 @@ export const SCENARIOS: Scenario[] = [
 
   // ── H · Guardrails ─────────────────────────────────────────────────────────
 
-  must({
+  pin({
     id: "guard-off-topic",
     group: "guardrails",
     it: "off-topic gets one sentence and no tools",
@@ -473,7 +487,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  must({
+  pin({
     id: "guard-no-ids-in-reply",
     group: "guardrails",
     it: "the user never sees a uuid or a field name",
@@ -485,7 +499,7 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
-  should({
+  pin({
     id: "guard-ambiguity-asks-once",
     group: "guardrails",
     it: "a genuinely ambiguous target asks once, with tappable options",

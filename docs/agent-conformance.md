@@ -82,21 +82,44 @@ Assertions are about tools and arguments, not prose — `create_slot` once, at
 the deliverable ("never say the week is empty"), the assertion is a narrow
 regex over the reply, never a vibe.
 
-**Pass rate, not pass/fail.** The thing under test is a sampled model. Every
-scenario is weighted:
+**The bar is 100% — every scenario, every run.** The chat is a first-class
+surface, not a bonus feature: a planner you have to double-check is not doing
+its job, and "right four times in five" is exactly what being unable to trust
+it feels like. So there is no tier of behaviors the chat is allowed to get
+wrong sometimes.
 
-- **`must`** — the contract. Held to **100%**. One of these red is a broken
-  chat, and a release should not go out over it.
-- **`should`** — judgment. Held to **80%** over repeats. A dip is a place to go
-  look, not a stop-ship.
+The thing under test is still a sampled model, which is why the runner names
+three outcomes rather than two:
+
+| | what it means | how you fix it |
+|---|---|---|
+| **pass** | every run passed | — |
+| **flaky** | passed some runs | the chat drifts here, or the assertion is loose enough to fail a right answer. **Both are bugs.** Tighten the rule in the prompt, or tighten the expectation |
+| **fail** | passed no runs | the chat can't do this |
+
+**Flaky is the verdict that earns its keep.** It's the one that gets waved off
+("it passed on my run"), and it's worse than a clean failure in practice: the
+capability looks present, so nobody investigates, and the user is the one who
+finds the 1-in-5.
+
+Because one green run is weak evidence against a 100% bar, **`--repeat 5` is
+what gates a prompt, tool or model change.** A single run is a smoke test and
+the runner says so.
 
 ```bash
-npm run eval                      # every scenario, once each
+npm run eval                      # smoke: every scenario, once each
+npm run eval -- --repeat 5        # the real reliability read — use this to ship
 npm run eval -- --group slots     # one capability
 npm run eval -- --only slot-one   # one scenario
-npm run eval -- --repeat 5        # five runs each → real pass rates
 npm run eval:replay               # recorded runs: deterministic, free
 ```
+
+**Quarantine is the only exception, and it can't be added quietly.** A
+known-red scenario can be parked with a dated sentence — `quarantined:
+"2026-08-04 — <why>"`. It still runs, still prints, still reports red; it just
+doesn't hold the exit code. `npm test` rejects a park with no date, and caps
+parks at 10% of the suite, so the escape hatch stays embarrassing instead of
+becoming the 80% bar under a new name.
 
 A live run writes a **cassette** per scenario (`tests/agent/cassettes/`).
 `eval:replay` replays them with no model at all. Replay can't catch a judgment
@@ -231,7 +254,9 @@ refusal to act** — "the model should be smart" is not a scenario.
 1. Add it to `tests/agent/scenarios.ts` in the right group. Fill in `because:`
    when it comes from a real bug — the failure output prints it, and six months
    later that sentence is the whole reason the line is defensible.
-2. `must` if a release should stop for it; `should` otherwise.
+2. There is no weighting to choose — every scenario is held to 100%. If you
+   think it can't hold, that's a signal the expectation is too loose or the
+   chat needs the rule stated more sharply; write it tightly instead.
 3. Record a cassette: `npm run eval -- --only <id>`.
 4. Update the map above in the same commit — `npm test` fails when the map and
    the suite disagree about which groups exist.
@@ -255,6 +280,11 @@ scenario and the map row together.
   chat dumber. Only `npm run eval` does, and it costs tokens.
 - **One model.** The battery runs whatever `AGENT_MODEL` points at. A model
   swap needs a full live run at `--repeat 5` before it ships.
+- **100% is a bar, not yet a measurement.** No live run has been recorded, so
+  which scenarios actually hold at 100% is unknown. The first full
+  `--repeat 5` is what turns this section from an intention into a number, and
+  anything that comes back flaky is work — either on the prompt or on the
+  assertion — not a reason to soften the bar.
 - **No multi-turn drift test.** Scenarios are ≤3 turns. Nothing pins behavior
   across a long conversation, where the 24-message history cap starts dropping
   context.

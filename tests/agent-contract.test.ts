@@ -24,6 +24,7 @@ import { runAgentTurn, type ChatClient, type ChatMessage } from "../supabase/fun
 import { MARQUEE_TARGETS, world } from "./agent/world.ts";
 import { GROUPS, SCENARIOS } from "./agent/scenarios.ts";
 import { WRITE_TOOLS } from "./agent/expect.ts";
+import { blocking, exitCode, verdictFor } from "./agent/verdict.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
@@ -311,6 +312,45 @@ describe("the turn loop", () => {
   });
 });
 
+// ── what "green" means ───────────────────────────────────────────────────────
+
+describe("the bar", () => {
+  it("passes only when every run passed", () => {
+    expect(verdictFor(5, 5)).toBe("pass");
+    expect(verdictFor(1, 1)).toBe("pass");
+  });
+
+  it("calls a partial pass FLAKY, not a pass — the whole point of a 100% bar", () => {
+    // 4/5 used to be green under the old 80% rule. It isn't a working chat;
+    // it's a chat that works often enough that nobody investigates.
+    expect(verdictFor(4, 5)).toBe("flaky");
+    expect(verdictFor(1, 2)).toBe("flaky");
+  });
+
+  it("distinguishes never-worked from sometimes-works", () => {
+    expect(verdictFor(0, 5)).toBe("fail");
+    expect(verdictFor(2, 5)).toBe("flaky");
+  });
+
+  it("blocks on anything red that isn't explicitly parked", () => {
+    const results = [
+      { id: "a", verdict: "pass" as const },
+      { id: "b", verdict: "flaky" as const },
+      { id: "c", verdict: "fail" as const, quarantined: "2026-07-31 — being fixed" },
+    ];
+    expect(blocking(results).map((r) => r.id)).toEqual(["b"]);
+    expect(exitCode(results)).toBe(1);
+  });
+
+  it("goes green when the only red is parked — loudly, but green", () => {
+    const results = [
+      { id: "a", verdict: "pass" as const },
+      { id: "b", verdict: "fail" as const, quarantined: "2026-07-31 — being fixed" },
+    ];
+    expect(exitCode(results)).toBe(0);
+  });
+});
+
 // ── the battery's own hygiene ────────────────────────────────────────────────
 
 describe("the battery", () => {
@@ -339,8 +379,30 @@ describe("the battery", () => {
     expect(undocumented, "scenarios exist for a group the map doesn't name").toEqual([]);
   });
 
-  it("keeps every must-scenario asserting something a model could get wrong", () => {
-    const weak = SCENARIOS.filter((s) => s.weight === "must" && s.expect.length === 0);
+  it("has no scenario that asserts nothing", () => {
+    // Every scenario is release-gating now, so an empty one is a green light
+    // that means nothing — the most expensive kind of test there is.
+    const weak = SCENARIOS.filter((s) => s.expect.length === 0);
     expect(weak.map((s) => s.id)).toEqual([]);
+  });
+
+  it("lets nothing be quarantined without a date and a reason", () => {
+    // The bar is 100%, so the only way past it is an explicit, dated park —
+    // "2026-08-04 — <why>". An undated one is a permanently-lowered bar
+    // wearing a temporary label, which is how a suite stops meaning anything.
+    const bad = SCENARIOS.filter(
+      (s) => s.quarantined != null && !/^\d{4}-\d{2}-\d{2}\s+—\s+\S/.test(s.quarantined),
+    );
+    expect(bad.map((s) => s.id), 'quarantine must read "YYYY-MM-DD — why"').toEqual([]);
+  });
+
+  it("keeps quarantine rare enough to stay embarrassing", () => {
+    // No hard rule about which ones — just a ceiling, so parking becomes a
+    // decision someone has to defend rather than the path of least resistance.
+    const parked = SCENARIOS.filter((s) => s.quarantined);
+    expect(
+      parked.length,
+      `${parked.length} of ${SCENARIOS.length} scenarios parked — fix one before parking another`,
+    ).toBeLessThanOrEqual(Math.ceil(SCENARIOS.length * 0.1));
   });
 });
