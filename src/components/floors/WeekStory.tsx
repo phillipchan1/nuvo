@@ -162,7 +162,7 @@ export default function WeekStory({ report, state, weekLabel, onClose, onSeeDeta
 
   return (
     <div
-      className="absolute inset-0 z-30 overflow-hidden"
+      className="atmosphere fixed inset-0 z-50 overflow-hidden"
       style={{
         background: "color-mix(in srgb, var(--bg) 96%, transparent)",
         backdropFilter: "blur(24px)",

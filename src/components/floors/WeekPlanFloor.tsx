@@ -466,7 +466,7 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
 
   return (
     <div
-      className="absolute inset-0 z-[45] overflow-y-auto"
+      className="atmosphere fixed inset-0 z-50 overflow-y-auto"
       style={{
         // Match mobile WeekPlanCard / MobilePlanWeek (96%) — 88% left the
         // Schedule calendar readable through the surface and washed the copy out.
