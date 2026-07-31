@@ -71,6 +71,7 @@ export default function LeftRail({
   weekDoor?: WeekDoor;
 }) {
   const { data: vertical, toggleTaskSprint } = useVertical();
+  const recurrenceMutations = useRecurrenceMutations();
   const { nav } = useAppNavigation();
 
   /** A task's thread back up the vertical: its domain color. */
@@ -216,6 +217,26 @@ export default function LeftRail({
     setCapturing(true);
     try {
       const p = parseCapture(text);
+      if (p.recurrence) {
+        const anchor = p.recurrenceAnchor ?? p.doDate ?? todayISO(now);
+        const startMins = p.startTime
+          ? p.startTime.getHours() * 60 + p.startTime.getMinutes()
+          : null;
+        await recurrenceMutations.createSeries({
+          kind: "task",
+          rule: p.recurrence,
+          anchorISO: anchor,
+          template: {
+            title: captureTitle(p, text),
+            duration_minutes: p.durationMinutes ?? 30,
+            time_of_day_minutes: startMins,
+            priority: p.priority,
+          },
+        });
+        setCapture("");
+        setTab("today");
+        return;
+      }
       const labelIds = p.labels
         .map((name) => labels.find((l) => l.name.toLowerCase() === name.toLowerCase())?.id)
         .filter((id): id is string => Boolean(id));

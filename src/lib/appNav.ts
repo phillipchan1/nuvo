@@ -26,7 +26,8 @@ export type OverlayKind =
   | "task-record"
   // The Week's Plan / Review — slides over the Schedule work area. History-
   // backed so Esc / browser-back / ⌘[ dismiss it like every other overlay.
-  | "week-plan";
+  | "week-plan"
+  | "upkeep";
 
 export type SettingsSection = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "desktop" | "account" | "billing" | "about";
 

@@ -1,4 +1,5 @@
 import * as chrono from "npm:chrono-node@2.7.7";
+import { parseRecurrencePhrase, type RecurrenceRule } from "./recurrence.ts";
 
 export type TaskPriority = "none" | "low" | "medium" | "high";
 
@@ -9,6 +10,8 @@ export interface ParsedCapture {
   durationMinutes: number | null;
   labels: string[];
   priority: TaskPriority;
+  recurrence: RecurrenceRule | null;
+  recurrenceAnchor: string | null;
 }
 
 const DURATION_TOKEN_RE = /\b(\d+h(?:\d+m?)?|\d+\s*h(?:ours?|rs?)?(?:\s*\d+\s*m(?:ins?)?)?|\d+\s*m(?:ins?)?)\b/i;
@@ -48,6 +51,13 @@ function snapMinutes(d: Date, step = 15): Date {
 /** Parse capture syntax: "call David tomorrow 9am 30m #church !high" */
 export function parseCapture(input: string, refDate: Date = new Date()): ParsedCapture {
   let working = input;
+  const refISO = toDateISO(refDate);
+
+  const rec = parseRecurrencePhrase(working, refISO);
+  const recurrence = rec.rule;
+  const recurrenceAnchor = rec.anchorDate;
+  if (rec.rule) working = rec.stripped;
+
   const labels: string[] = [];
   working = working.replace(LABEL_RE, (_, name: string) => {
     labels.push(name);
@@ -70,7 +80,7 @@ export function parseCapture(input: string, refDate: Date = new Date()): ParsedC
     }
   }
 
-  let doDate: string | null = null;
+  let doDate: string | null = recurrenceAnchor;
   let startTime: Date | null = null;
   const results = chrono.parse(working, refDate, { forwardDate: true });
   if (results.length > 0) {
@@ -88,5 +98,5 @@ export function parseCapture(input: string, refDate: Date = new Date()): ParsedC
   }
 
   const title = working.replace(/\s{2,}/g, " ").trim();
-  return { title, doDate, startTime, durationMinutes, labels, priority };
+  return { title, doDate, startTime, durationMinutes, labels, priority, recurrence, recurrenceAnchor };
 }

@@ -1,7 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Label, Task } from "../../lib/types";
+import { ruleOf } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
+import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
 import { todayISO, tomorrowISO, nextWeekISO, fmtDuration } from "../../lib/dates";
+import type { RecurrenceRule } from "../../lib/recurrence";
+import { RepeatControl } from "../RecurrencePicker";
 import Sheet from "./Sheet";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
@@ -26,6 +30,36 @@ export default function MobileTaskSheet({
   const done = task.status === "done";
   const currentLabels = new Set((task.task_labels ?? []).map((tl) => tl.label_id));
   const [showDatePick, setShowDatePick] = useState(false);
+  const { data: recurrences = [] } = useRecurrences();
+  const recurrenceMutations = useRecurrenceMutations();
+  const recurrence = useMemo(
+    () => (task.recurrence_id ? recurrences.find((r) => r.id === task.recurrence_id) ?? null : null),
+    [recurrences, task.recurrence_id],
+  );
+  const anchorISO = task.do_date ?? todayISO();
+  const repeatRule: RecurrenceRule | null = recurrence ? ruleOf(recurrence) : null;
+
+  const onRepeatChange = async (rule: RecurrenceRule | null) => {
+    const template = {
+      title: task.title,
+      duration_minutes: task.duration_minutes ?? 30,
+      time_of_day_minutes: task.start_time
+        ? new Date(task.start_time).getHours() * 60 + new Date(task.start_time).getMinutes()
+        : null,
+      project_id: task.project_id,
+      domain_id: task.domain_id,
+      priority: task.priority,
+    };
+    if (!rule) {
+      if (recurrence) await recurrenceMutations.stopSeries(recurrence, anchorISO);
+      return;
+    }
+    if (recurrence) {
+      await recurrenceMutations.updateSeries(recurrence, rule, template);
+    } else {
+      await recurrenceMutations.convertToSeries("task", task, rule, template);
+    }
+  };
 
   const commitTitle = () => {
     const next = title.trim();
@@ -93,6 +127,15 @@ export default function MobileTaskSheet({
           {showDatePick && (
             <DateTimePicker task={task} mutations={mutations} onDone={onClose} />
           )}
+        </Section>
+
+        <Section label="Repeat">
+          <RepeatControl
+            anchorISO={anchorISO}
+            value={repeatRule}
+            onChange={(r) => void onRepeatChange(r)}
+            variant="block"
+          />
         </Section>
 
         <Section label="Priority">

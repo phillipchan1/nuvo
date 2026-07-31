@@ -1,6 +1,7 @@
 import * as chrono from "chrono-node";
 import type { TaskPriority } from "./types";
 import { snapMinutes, toDateISO } from "./dates";
+import { parseRecurrencePhrase, describeRule, type RecurrenceRule } from "./recurrence";
 
 export interface ParsedCapture {
   title: string;
@@ -14,8 +15,12 @@ export interface ParsedCapture {
   /** The raw `@token` text (a slug), to be resolved against the vertical by the
    *  consumer (the way `labels` are resolved to ids). */
   route: string | null;
+  /** Parsed repeat rule, if the capture names a cadence. */
+  recurrence: RecurrenceRule | null;
+  /** Anchor date for the series when "starting today/tomorrow" is given. */
+  recurrenceAnchor: string | null;
   /** Human-readable fragments for the live preview chips. */
-  chips: { kind: "date" | "time" | "duration" | "label" | "priority" | "note" | "route"; text: string }[];
+  chips: { kind: "date" | "time" | "duration" | "label" | "priority" | "note" | "route" | "repeat"; text: string }[];
 }
 
 const DURATION_RE = /\b(?:(\d+)\s*h(?:r|our)?s?)?\s*(?:(\d+)\s*m(?:in|ins|inutes)?\b)?/i;
@@ -124,6 +129,16 @@ export function resolveRoute(route: string, targets: RouteTarget[]): RouteTarget
 export function parseCapture(input: string, refDate: Date = new Date()): ParsedCapture {
   let working = input;
   const chips: ParsedCapture["chips"] = [];
+  const refISO = toDateISO(refDate);
+
+  // Recurrence — strip cadence phrases before title/date mining.
+  const rec = parseRecurrencePhrase(working, refISO);
+  const recurrence: RecurrenceRule | null = rec.rule;
+  const recurrenceAnchor: string | null = rec.anchorDate;
+  if (rec.rule) {
+    working = rec.stripped;
+    chips.push({ kind: "repeat", text: describeRule(rec.rule, recurrenceAnchor ?? refISO) });
+  }
 
   // // note — pull the freeform tail out FIRST so its text isn't mined for tokens
   // (dates, #labels) that belong to the description, not the task structure.
@@ -203,5 +218,17 @@ export function parseCapture(input: string, refDate: Date = new Date()): ParsedC
   }
 
   const title = working.replace(/\s{2,}/g, " ").trim();
-  return { title, doDate, startTime, durationMinutes, labels, priority, notes, route, chips };
+  return {
+    title,
+    doDate,
+    startTime,
+    durationMinutes,
+    labels,
+    priority,
+    notes,
+    route,
+    recurrence,
+    recurrenceAnchor,
+    chips,
+  };
 }

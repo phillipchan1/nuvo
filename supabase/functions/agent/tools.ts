@@ -17,10 +17,98 @@ import {
   spansWeek,
   takeOffWeekPatch,
   toRowPatch,
+  dayMs,
+  isoOf,
 } from "../_shared/planningRules.ts";
+import {
+  describeRule,
+  expandRule,
+  HORIZON_DAYS,
+  nextOccurrenceDate,
+  type RecurrenceRule,
+} from "../_shared/recurrence.ts";
 
 const DEFAULT_DURATION = 30;
 const MIRROR_FIELDS = new Set(["start_time", "duration_minutes", "title", "status", "do_date"]);
+const DAY_MS = 86_400_000;
+
+function addDaysISO(iso: string, days: number): string {
+  return isoOf(dayMs(iso) + days * DAY_MS);
+}
+
+async function createRecurringTaskSeries(
+  userId: string,
+  opts: {
+    title: string;
+    rule: RecurrenceRule;
+    anchorISO: string;
+    projectId?: string | null;
+    initiativeId?: string | null;
+    domainId?: string | null;
+    duration?: number;
+    priority?: string;
+  },
+) {
+  const {
+    title,
+    rule,
+    anchorISO,
+    projectId,
+    initiativeId,
+    domainId,
+    duration = DEFAULT_DURATION,
+    priority = "none",
+  } = opts;
+
+  const { data: rec, error: recErr } = await admin
+    .from("recurrences")
+    .insert({
+      user_id: userId,
+      kind: "task",
+      freq: rule.freq,
+      interval: Math.max(1, rule.interval || 1),
+      byweekday: rule.byweekday ?? [],
+      bymonthday: rule.bymonthday ?? null,
+      anchor_date: anchorISO,
+      until_date: rule.until ?? null,
+      max_count: rule.count ?? null,
+      title: title.trim(),
+      duration_minutes: duration,
+      time_of_day_minutes: null,
+      project_id: projectId ?? null,
+      domain_id: domainId ?? null,
+      priority,
+    })
+    .select("id")
+    .single();
+  if (recErr) throw new Error(recErr.message);
+
+  const toISO = addDaysISO(anchorISO, HORIZON_DAYS);
+  const dates = expandRule(rule, anchorISO, anchorISO, toISO, []);
+  if (dates.length) {
+    const rows = dates.map((d) => ({
+      user_id: userId,
+      title: title.trim(),
+      status: "planned" as const,
+      do_date: d,
+      start_time: null,
+      duration_minutes: duration,
+      priority,
+      project_id: projectId ?? null,
+      initiative_id: initiativeId ?? null,
+      domain_id: domainId ?? null,
+      recurrence_id: rec.id,
+      recurrence_date: d,
+    }));
+    const { error: taskErr } = await admin.from("tasks").insert(rows);
+    if (taskErr && taskErr.code !== "23505") throw new Error(taskErr.message);
+    await admin.from("recurrences").update({ last_materialized: toISO }).eq("id", rec.id);
+  }
+
+  const cadence = describeRule(rule, anchorISO);
+  const nextDue = nextOccurrenceDate(rule, anchorISO, addDaysISO(anchorISO, 1), []);
+  return { id: rec.id, cadence, nextDue, firstDue: dates[0] ?? anchorISO };
+}
 
 /** The zone to fall back on when the client didn't say where it is. The app's
  *  established home — see APP_TZ in src/lib/dates.ts. */
@@ -350,6 +438,28 @@ export const TOOL_DEFINITIONS = [
           project_id: { type: "string", description: "Parent project — task lands in backlog" },
           initiative_id: { type: "string", description: "Parent initiative if no project" },
           domain_id: { type: "string", description: "Parent domain if no project/initiative" },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_recurring_task",
+      description:
+        "Create a repeating upkeep task series (e.g. every 5 months, weekly). Use when the user names a cadence — NOT create_task.",
+      parameters: {
+        type: "object",
+        properties: {
+          capture: { type: "string", description: "Natural language with repeat phrase" },
+          title: { type: "string" },
+          freq: { type: "string", enum: ["daily", "weekly", "monthly"] },
+          interval: { type: "integer", description: "Every N units (default 1)" },
+          anchor_date: { type: "string", description: "First occurrence YYYY-MM-DD; default today" },
+          duration_minutes: { type: "integer" },
+          priority: { type: "string", enum: ["none", "low", "medium", "high"] },
+          project_id: { type: "string" },
+          domain_id: { type: "string" },
         },
       },
     },
@@ -1166,6 +1276,85 @@ export async function executeTool(
           // Undoing a create trashes it rather than hard-deleting: "trashed" IS
           // deleted app-wide, and it stays recoverable from the tombstone card.
           undo: { kind: "task", patch: { status: "trashed" } },
+        },
+      };
+    }
+
+    case "create_recurring_task": {
+      let title = args.title as string | undefined;
+      let freq = args.freq as RecurrenceRule["freq"] | undefined;
+      let interval = (args.interval as number | undefined) ?? 1;
+      let anchorISO = args.anchor_date as string | undefined;
+      let duration = args.duration_minutes as number | null | undefined;
+      let priority = (args.priority as string) ?? "none";
+
+      if (args.capture) {
+        const parsed = parseCapture(args.capture as string);
+        title = parsed.title || title;
+        if (parsed.recurrence) {
+          freq = parsed.recurrence.freq;
+          interval = parsed.recurrence.interval;
+        }
+        anchorISO = anchorISO ?? parsed.recurrenceAnchor ?? parsed.doDate ?? undefined;
+        duration = duration ?? parsed.durationMinutes;
+        if (parsed.priority !== "none") priority = parsed.priority;
+      }
+
+      if (!title?.trim()) throw new Error("Task title is required");
+      if (!freq) throw new Error("Recurrence freq is required (daily, weekly, or monthly)");
+
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+      anchorISO = anchorISO ?? today;
+
+      const rule: RecurrenceRule = {
+        freq,
+        interval: Math.max(1, interval),
+      };
+      if (freq === "weekly") {
+        rule.byweekday = [new Date(dayMs(anchorISO)).getUTCDay()];
+      }
+
+      let projectId = args.project_id as string | undefined;
+      let initiativeId: string | undefined;
+      let domainId = args.domain_id as string | undefined;
+
+      if (projectId) {
+        const { data: proj } = await admin
+          .from("projects")
+          .select("domain_id, initiative_id")
+          .eq("id", projectId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (!proj) throw new Error(`Project not found: ${projectId}`);
+        initiativeId = proj.initiative_id ?? undefined;
+        domainId = domainId ?? proj.domain_id ?? undefined;
+      }
+
+      const created = await createRecurringTaskSeries(userId, {
+        title,
+        rule,
+        anchorISO,
+        projectId: projectId ?? null,
+        initiativeId: initiativeId ?? null,
+        domainId: domainId ?? null,
+        duration: duration ?? DEFAULT_DURATION,
+        priority,
+      });
+
+      const when = created.firstDue === today ? "today" : created.firstDue;
+      const next = created.nextDue ? ` Next due ${created.nextDue}.` : "";
+      return {
+        result: JSON.stringify(created),
+        action: {
+          tool: name,
+          summary: `Set up "${title.trim()}" — ${created.cadence}, first on ${when}.${next} View in Schedule → Recurring upkeep.`,
+          verb: "created",
+          ref: { kind: "task", id: created.id },
         },
       };
     }

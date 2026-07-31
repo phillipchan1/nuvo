@@ -114,6 +114,7 @@ been used to argue against things it doesn't forbid.
 | **Overdue** | 1 hour past a block's end (start + duration + 60 min grace). Pinned to the top of Today under an **`Overdue`** label — the only group in the rail that earns one. Signal orange appears **once** per row, on the *time* it was for; the title keeps its ink and the word "overdue" is never repeated on the row itself. D-054. |
 | **Mirror calendar** | A Google calendar named **"Nuvo"**, found-or-created on first connect. Every scheduled task is reconciled to it. One-directional — the app always wins. |
 | **Materialized occurrence** | A repeat is a `recurrences` row (rule + template); occurrences are stamped as *ordinary* `tasks`/`slots` rows to a 35-day `HORIZON_DAYS`, so drag/resize need no special-casing. |
+| **Recurring upkeep** | Long-cadence repeating *tasks* (HVAC filter, key rotation) — a `recurrences` row with `kind='task'`. Catalog lives on Schedule → **⋯ → Recurring upkeep**, grouped by cadence (Weekly · Every N months · …). Agent: `create_recurring_task`. |
 | **`needs_reconnect`** | Flag on a calendar account after token/credential failure → surfaces the orange reconnect banner. Sync never fails silently; everything writes to `sync_log`. |
 | **Day contexts** | Per-day markers on the week (`day_contexts`): normal · ◐ light · ✈ travel · — off. They bound the composer. |
 | **Working hours** | `user_settings.work_start_minutes` / `work_end_minutes` (default 480/990). |

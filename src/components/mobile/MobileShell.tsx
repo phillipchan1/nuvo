@@ -25,6 +25,7 @@ import { TrialBanner } from "../billing/TrialBanner";
 import Orientation from "../orientation/Orientation";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
 import MobileCalendar from "./MobileCalendar";
+import RecurringUpkeepPanel from "../RecurringUpkeepPanel";
 import MobileProjects from "./MobileProjects";
 import MobileInitiatives from "./MobileInitiatives";
 import MobileReadiness from "./MobileReadiness";
@@ -131,6 +132,7 @@ export default function MobileShell() {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [upkeepOpen, setUpkeepOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   // A strategic-vertical detail to open in the shared Sheet — from a tab row or a
   // global-search jump. `detailFrame` mirrors the Sheet's current breadcrumb frame
@@ -309,7 +311,7 @@ export default function MobileShell() {
       {/* Content */}
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         {tab === "calendar" ? (
-          <MobileCalendar now={now} onTapEvent={setCalendarTap} />
+          <MobileCalendar now={now} onTapEvent={setCalendarTap} onOpenUpkeep={() => setUpkeepOpen(true)} />
         ) : tab === "projects" ? (
           <MobileProjects onOpenItem={openDetail} />
         ) : tab === "initiatives" ? (
@@ -445,6 +447,7 @@ export default function MobileShell() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+      {upkeepOpen && <RecurringUpkeepPanel onClose={() => setUpkeepOpen(false)} />}
 
       {/* First-run welcome — the Calendars CTA opens Settings (tap through to
           Connections). */}

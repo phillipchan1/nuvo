@@ -72,7 +72,15 @@ function readMode(): Mode {
   return "month";
 }
 
-export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEvent?: (tap: CalendarTap) => void }) {
+export default function MobileCalendar({
+  now,
+  onTapEvent,
+  onOpenUpkeep,
+}: {
+  now: Date;
+  onTapEvent?: (tap: CalendarTap) => void;
+  onOpenUpkeep?: () => void;
+}) {
   const { settings } = useSettings();
 
   // Which day the grid opens a week on — the user's "Week starts on" setting
@@ -196,6 +204,7 @@ export default function MobileCalendar({ now, onTapEvent }: { now: Date; onTapEv
           }}
           onPick={pickDay}
           onOpenSchedule={openSchedule}
+          onOpenUpkeep={onOpenUpkeep}
         />
       ) : mode === "day" ? (
         <MobileDayView
@@ -242,6 +251,7 @@ function MonthView({
   onToday,
   onPick,
   onOpenSchedule,
+  onOpenUpkeep,
 }: {
   monthCursor: Date;
   ctx: DayCtx;
@@ -254,6 +264,7 @@ function MonthView({
   onToday: () => void;
   onPick: (d: Date) => void;
   onOpenSchedule: () => void;
+  onOpenUpkeep?: () => void;
 }) {
   const gridStart = useMemo(
     () => startOfWeek(startOfMonth(monthCursor), { weekStartsOn }),
@@ -321,6 +332,16 @@ function MonthView({
         >
           ›
         </button>
+        {onOpenUpkeep && (
+          <button
+            type="button"
+            onClick={onOpenUpkeep}
+            aria-label="Recurring upkeep"
+            className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-label text-muted active:bg-surface-2"
+          >
+            ···
+          </button>
+        )}
       </div>
 
       {/* Weekday header */}

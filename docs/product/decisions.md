@@ -1854,6 +1854,16 @@ the answer is a help surface, not a second door on first run.
 
 ---
 
+**D-066 · 2026-07-31 · Long-cadence repeating tasks get a Schedule catalog, not a new pool.**
+
+Upkeep chores (key rotation, HVAC filter) need a place between due dates and a path through
+Nuvo chat. A fifth Tasks tab would violate P10; Settings buries something operational.
+→ **Schedule ⋯ → Recurring upkeep**: series grouped by cadence (Weekly · Every N months · …),
+next-due read computed beyond `HORIZON_DAYS`. Agent + capture use `create_recurring_task` /
+`parseRecurrencePhrase`; engine lives in `_shared/recurrence.ts`. *Status: standing.*
+
+---
+
 ## 3 · Open questions (decide these deliberately)
 
 | # | Question | Why it matters | Blocked on |

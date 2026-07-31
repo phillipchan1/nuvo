@@ -190,6 +190,7 @@ export default function CalendarPane({
   focusMode = false,
   onToggleFocus,
   domains = [],
+  onOpenUpkeep,
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
@@ -236,6 +237,7 @@ export default function CalendarPane({
   onToggleFocus?: () => void;
   /** Domains offered on the Slot create dialog (standing "domain slots"). */
   domains?: Array<{ id: string; name: string; color: string }>;
+  onOpenUpkeep?: () => void;
 }) {
   const calRef = useRef<FullCalendar>(null);
   const { scale: uiScale } = useUiScale();
@@ -2106,30 +2108,42 @@ export default function CalendarPane({
             </div>
           )}
 
-          {/* Overflow — refresh + show-hidden. Rare utilities, not peer chrome. */}
-          {(onRefreshCalendars || hiddenKeys.size > 0) && (
-            <div className="relative shrink-0">
-              <button
-                onClick={() => setUtilsOpen((o) => !o)}
-                className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
-                title="More calendar tools"
-                aria-expanded={utilsOpen}
-                aria-haspopup="menu"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden>
-                  <circle cx="3" cy="7" r="1.15" />
-                  <circle cx="7" cy="7" r="1.15" />
-                  <circle cx="11" cy="7" r="1.15" />
-                </svg>
-              </button>
-              {utilsOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setUtilsOpen(false)} />
-                  <div
-                    role="menu"
-                    className="rise elev-2 absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-[var(--radius)] border border-line bg-surface py-1"
-                  >
-                    {onRefreshCalendars && (
+          {/* Overflow — refresh, show-hidden, recurring upkeep. */}
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setUtilsOpen((o) => !o)}
+              className="fast flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
+              title="More calendar tools"
+              aria-expanded={utilsOpen}
+              aria-haspopup="menu"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden>
+                <circle cx="3" cy="7" r="1.15" />
+                <circle cx="7" cy="7" r="1.15" />
+                <circle cx="11" cy="7" r="1.15" />
+              </svg>
+            </button>
+            {utilsOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setUtilsOpen(false)} />
+                <div
+                  role="menu"
+                  className="rise elev-2 absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-[var(--radius)] border border-line bg-surface py-1"
+                >
+                  {onOpenUpkeep && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        onOpenUpkeep();
+                        setUtilsOpen(false);
+                      }}
+                      className="fast flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-label text-ink hover:bg-accent-soft"
+                    >
+                      <span className="mono text-micro">↻</span>
+                      <span>Recurring upkeep</span>
+                    </button>
+                  )}
+                  {onRefreshCalendars && (
                       <button
                         role="menuitem"
                         disabled={refreshingCalendars}
@@ -2190,7 +2204,6 @@ export default function CalendarPane({
                 </>
               )}
             </div>
-          )}
         </div>
       </div>
 

@@ -8,13 +8,11 @@ import {
   type Slot,
   type Task,
 } from "../lib/types";
-import { expandRule, type RecurrenceRule } from "../lib/recurrence";
+import { HORIZON_DAYS, expandRule, type RecurrenceRule } from "../lib/recurrence";
 import { addDays } from "date-fns";
 import { parseDateISO, toDateISO, todayISO } from "../lib/dates";
 
-// How far ahead occurrences are materialized. Topped up on every app open and
-// after rollover, so a series quietly walks forward a day at a time.
-export const HORIZON_DAYS = 35;
+export { HORIZON_DAYS } from "../lib/recurrence";
 
 const REC_COLS =
   "id, user_id, kind, freq, interval, byweekday, bymonthday, anchor_date, until_date, max_count, exdates, title, duration_minutes, time_of_day_minutes, project_id, domain_id, priority, color, active, last_materialized";
@@ -355,15 +353,23 @@ export function useRecurrenceMutations() {
   /** Delete the whole series: retire the rule + drop all non-done occurrences. */
   const deleteSeries = useCallback(
     async (rec: Recurrence) => {
-      await clearFuture(rec.id, "1900-01-01"); // everything not-done
+      await clearFuture(rec.id, "1900-01-01");
       await supabase
         .from(rec.kind === "task" ? "tasks" : "slots")
         .update({ recurrence_id: null, recurrence_date: null })
-        .eq("recurrence_id", rec.id); // detach completed history
+        .eq("recurrence_id", rec.id);
       await supabase.from("recurrences").delete().eq("id", rec.id);
       invalidate();
     },
     [clearFuture, invalidate],
+  );
+
+  const pauseSeries = useCallback(
+    async (recurrenceId: string) => {
+      await supabase.from("recurrences").update({ active: false }).eq("id", recurrenceId);
+      invalidate();
+    },
+    [invalidate],
   );
 
   return {
@@ -376,5 +382,6 @@ export function useRecurrenceMutations() {
     skipOccurrence,
     deleteFollowing,
     deleteSeries,
+    pauseSeries,
   };
 }

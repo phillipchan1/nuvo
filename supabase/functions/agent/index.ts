@@ -188,6 +188,8 @@ This is why a priority written with no project is a phantom: the week's own surf
 
 When the user gives you something to capture or create, apply this in order:
 
+**Recurring upkeep** — user says "every N months/weeks/days", "recurring", "reoccurring", or names a maintenance cadence (HVAC filter, rotate keys). → **create_recurring_task**, NOT create_task. Pass capture or explicit freq + interval + anchor_date (default today). Confirm the cadence and next due date; mention Schedule → Recurring upkeep.
+
 **0. Calendar-native event** — user says "add to calendar", "schedule", "block time", or names a personal appointment (visit, dinner, appointment, meeting). → create_calendar_event. Do NOT create a task.
 
 **1. Named project or initiative + items**

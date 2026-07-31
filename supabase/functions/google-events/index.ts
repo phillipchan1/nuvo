@@ -101,21 +101,30 @@ Deno.serve(async (req) => {
       // caller reports — says the meeting has no way to join, which is exactly
       // the bug this feature exists to fix. Two short reads, then give up and
       // let the next sync fill it in.
+      // This is a best-effort enrichment of an already-created event — Google
+      // has the event and has already mailed the guests by this point, so a
+      // hiccup here (network blip, token refresh failure) must never surface
+      // as "couldn't create the event." Swallow and let the next sync fill
+      // the Meet link in instead.
       if (addMeet && !hasConference(created)) {
-        const calForRead = targetCal || (created.organizer?.email as string) || account.email;
-        for (const waitMs of [700, 1500]) {
-          await new Promise((r) => setTimeout(r, waitMs));
-          const again = await gFetch(
-            account,
-            `/calendars/${encodeURIComponent(calForRead)}/events/${
-              encodeURIComponent(created.id)
-            }?conferenceDataVersion=1`,
-          );
-          if (!again.ok) break;
-          const fresh = await again.json();
-          if (hasConference(fresh)) { created = fresh; break; }
-          // A failed create request never resolves — stop waiting on it.
-          if (fresh?.conferenceData?.createRequest?.status?.statusCode === "failure") break;
+        try {
+          const calForRead = targetCal || (created.organizer?.email as string) || account.email;
+          for (const waitMs of [700, 1500]) {
+            await new Promise((r) => setTimeout(r, waitMs));
+            const again = await gFetch(
+              account,
+              `/calendars/${encodeURIComponent(calForRead)}/events/${
+                encodeURIComponent(created.id)
+              }?conferenceDataVersion=1`,
+            );
+            if (!again.ok) break;
+            const fresh = await again.json();
+            if (hasConference(fresh)) { created = fresh; break; }
+            // A failed create request never resolves — stop waiting on it.
+            if (fresh?.conferenceData?.createRequest?.status?.statusCode === "failure") break;
+          }
+        } catch (e) {
+          await logSync("google", "event-create-meet-poll", "error", String(e), user.id);
         }
       }
 
@@ -126,13 +135,19 @@ Deno.serve(async (req) => {
       const row = mapGoogleEvent(account, calendarId, created);
       let event = null;
       if (row) {
-        const { data } = await admin
+        const { data, error: upsertError } = await admin
           .from("external_events")
           .upsert(row, { onConflict: "account_id,calendar_id,provider_event_id" })
           .select(
             "id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy",
           )
           .single();
+        if (upsertError) {
+          // The event exists on Google and guests are already mailed — a local
+          // storage failure here is not a create failure. Log it; the next
+          // sync pass will pick the event up.
+          await logSync("google", "event-create-upsert", "error", upsertError.message, user.id);
+        }
         event = data;
       }
       await logSync("google", "event-create", "ok", undefined, user.id);
@@ -234,18 +249,24 @@ Deno.serve(async (req) => {
       let updated = await patchRes.json();
 
       // Same asynchronous mint as on create — poll briefly for the entry point.
-      for (const waitMs of [700, 1500]) {
-        if (hasConference(updated)) break;
-        await new Promise((r) => setTimeout(r, waitMs));
-        const again = await gFetch(
-          account,
-          `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
-            encodeURIComponent(evt.provider_event_id)
-          }?conferenceDataVersion=1`,
-        );
-        if (!again.ok) break;
-        updated = await again.json();
-        if (updated?.conferenceData?.createRequest?.status?.statusCode === "failure") break;
+      // The PATCH above already succeeded, so a hiccup in this poll must not
+      // turn a successful add-meet into a reported failure.
+      try {
+        for (const waitMs of [700, 1500]) {
+          if (hasConference(updated)) break;
+          await new Promise((r) => setTimeout(r, waitMs));
+          const again = await gFetch(
+            account,
+            `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${
+              encodeURIComponent(evt.provider_event_id)
+            }?conferenceDataVersion=1`,
+          );
+          if (!again.ok) break;
+          updated = await again.json();
+          if (updated?.conferenceData?.createRequest?.status?.statusCode === "failure") break;
+        }
+      } catch (e) {
+        await logSync("google", "event-add-meet-poll", "error", String(e), user.id);
       }
 
       await admin.from("external_events").update({ raw: updated }).eq("id", eventId);

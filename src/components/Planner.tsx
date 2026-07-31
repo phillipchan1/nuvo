@@ -26,6 +26,7 @@ import {
 } from "../lib/spotlightNav";
 import { deriveSlotTitle } from "../lib/slots";
 import { writeAgentOpen } from "./AgentSidebar";
+import RecurringUpkeepPanel from "./RecurringUpkeepPanel";
 import LeftRail from "./LeftRail";
 import type { FlowName } from "./Spine";
 import CalendarPane from "./CalendarPane";
@@ -355,6 +356,7 @@ export default function Planner({
   const showCmd = overlay === "cmd";
   const showSettings = overlay === "settings";
   const showEvening = overlay === "evening";
+  const showUpkeep = overlay === "upkeep";
 
   const panelRect = panelAnchor ?? fallbackPanelAnchor();
 
@@ -379,7 +381,7 @@ export default function Planner({
   // answered its hotkeys: ↵ opened the *selected task* and navigated straight
   // over the record you were reading.
   const recordOpen = overlay === "project-record" || overlay === "initiative-record";
-  const anyModalOpen = showCmd || showSettings || showEvening || recordOpen || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
+  const anyModalOpen = showCmd || showSettings || showEvening || showUpkeep || recordOpen || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
 
   // The searchable vertical for ⌘K — every task / project / initiative / domain
   // as a SearchHit whose `run` navigates to it. Built from the shared builder
@@ -559,6 +561,7 @@ export default function Planner({
             focusMode={focusMode}
             onToggleFocus={onToggleFocus}
             domains={vertical.domains}
+            onOpenUpkeep={() => openOverlay("upkeep")}
           />
 
           {onSchedule && openTask && taskPanel && (
@@ -666,6 +669,7 @@ export default function Planner({
       {showEvening && (
         <EveningShutdown todayTasks={todayTasks} taskAccent={taskAccent} mutations={mutations} onClose={closeOverlay} />
       )}
+      {showUpkeep && <RecurringUpkeepPanel onClose={closeOverlay} />}
     </div>
   );
 }
