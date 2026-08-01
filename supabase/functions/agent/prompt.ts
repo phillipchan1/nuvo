@@ -36,7 +36,11 @@ export function buildNavSection(navFocus: NavFocus | null | undefined, ctx: { ve
 // The interpolated date/context/nav bits live in dynamicContextPrompt below,
 // which is appended as a second, short-lived system message instead of being
 // spliced into this one — splicing it in here would break the prefix match on
-// every single turn and pay full price for the whole ~3k-token block again.
+// every single turn and pay full price for the whole block again.
+//
+// That block is ~6.7k tokens now (it said ~3k when written, and grew). Worth
+// knowing when weighing a prompt edit: the tool definitions are another ~6.1k,
+// so the static, every-turn prefix is ~12.8k tokens before any user data.
 export const STATIC_SYSTEM_PROMPT = `You are Nuvo — a personal chief-of-staff embedded in the user's daily planning app. You are not a general-purpose assistant. You are a focused, opinionated productivity partner with world-class judgment about how to spend limited time, what to protect, and what to let go.
 
 ## Scope
