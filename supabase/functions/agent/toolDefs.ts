@@ -28,6 +28,7 @@ export interface MarqueeTargetSpec {
  *  a target. Falls back to a minimal default when the client sends nothing. */
 export function buildPointAtTool(targets: MarqueeTargetSpec[]) {
   const list = targets.length ? targets : [{ key: "priorities", describe: "The week's priorities." }];
+  // Built per request, so it is hardened here rather than by hardenToolDefs.
   const bullets = list.map((t) => `- "${t.key}": ${t.describe}`).join("\n");
   return {
     type: "function" as const,
@@ -54,6 +55,7 @@ export function buildPointAtTool(targets: MarqueeTargetSpec[]) {
           },
         },
         required: ["target"],
+        additionalProperties: false,
       },
     },
   };
@@ -349,7 +351,27 @@ export const VERTICAL_TOOL_DEFINITIONS = [
   },
 ];
 
-export const TOOL_DEFINITIONS = [
+// Every tool's parameters get `additionalProperties: false`, applied here in
+// ONE place rather than written into 38 schemas by hand — a new tool is hardened
+// the day it is added, with nothing to remember.
+//
+// This is the portable half of schema strictness. Full `strict: true` also
+// demands that EVERY property appear in `required` (optionals become nullable
+// unions), which does not fit tools whose whole shape is "identify by id or by
+// title, set whichever fields you're changing". The "at least one identifying
+// argument" half is enforced in the handler instead — see REQUIRES_TARGET in
+// tools.ts, where it holds regardless of what the provider's schema dialect
+// supports.
+// deno-lint-ignore no-explicit-any
+export function hardenToolDefs<T extends { function: { parameters?: any } }>(defs: T[]): T[] {
+  return defs.map((d) =>
+    d.function.parameters
+      ? { ...d, function: { ...d.function, parameters: { ...d.function.parameters, additionalProperties: false } } }
+      : d,
+  );
+}
+
+const RAW_TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
@@ -699,6 +721,11 @@ export const TOOL_DEFINITIONS = [
           event_id: { type: "string" },
           event_title: { type: "string", description: "Search by title if id unknown" },
           notify: { type: "boolean", description: "Email attendees that it's cancelled. Default false." },
+          confirm_token: {
+            type: "string",
+            description:
+              "The token from this tool's own previous result. Omit on the first call — that call only PROPOSES and changes nothing. Confirm on a later message, after the user has actually answered.",
+          },
         },
       },
     },
@@ -715,6 +742,11 @@ export const TOOL_DEFINITIONS = [
           event_id: { type: "string" },
           event_title: { type: "string", description: "Search by title if id unknown" },
           notify: { type: "boolean", description: "Tell the organizer you declined. Default false." },
+          confirm_token: {
+            type: "string",
+            description:
+              "The token from this tool's own previous result. Omit on the first call — that call only PROPOSES and changes nothing. Confirm on a later message, after the user has actually answered.",
+          },
         },
       },
     },
@@ -776,7 +808,7 @@ export const TOOL_DEFINITIONS = [
       parameters: {
         type: "object",
         properties: {
-          priority_id: { type: "string", description: "The priority's id from weekSlate.priorityId / weekPriorities, when it has one." },
+          priority_id: { type: "string", description: "The priority's id from weekSlate.priorityId, when it has one." },
           priority_title: { type: "string", description: "The priority or project name, if no id." },
           project_id: { type: "string", description: "The slate project's id — use this when the priority has no stored id." },
         },
@@ -791,7 +823,7 @@ export const TOOL_DEFINITIONS = [
       parameters: {
         type: "object",
         properties: {
-          priority_id: { type: "string", description: "The priority's id from weekSlate.priorityId / weekPriorities, when it has one." },
+          priority_id: { type: "string", description: "The priority's id from weekSlate.priorityId, when it has one." },
           priority_title: { type: "string", description: "The priority or project name, if no id." },
           project_id: { type: "string", description: "The slate project's id — use this when the priority has no stored id." },
         },
@@ -803,3 +835,5 @@ export const TOOL_DEFINITIONS = [
   // current. The handler appends it to this list.
   ...VERTICAL_TOOL_DEFINITIONS,
 ];
+
+export const TOOL_DEFINITIONS = hardenToolDefs(RAW_TOOL_DEFINITIONS);

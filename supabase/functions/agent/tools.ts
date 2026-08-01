@@ -12,6 +12,8 @@ import { executeVerticalTool } from "./verticalTools.ts";
 // this file is the behavior behind it. Re-exported so existing callers and
 // the edge handler keep one import site.
 import { isVerticalTool, type MarqueeDirective } from "./toolDefs.ts";
+import { targetError } from "./toolGuards.ts";
+import { checkConfirmation } from "./confirmDestructive.ts";
 export { buildPointAtTool, TOOL_DEFINITIONS } from "./toolDefs.ts";
 export type { MarqueeDirective, MarqueeTargetSpec } from "./toolDefs.ts";
 // The week's rules and the two placement ACTS — shared with the app, so the
@@ -903,7 +905,24 @@ export async function executeTool(
    *  time we narrate back is written in it. Defaults to the app's home zone when
    *  an older client doesn't send one. */
   tz: string = FALLBACK_TZ,
+  /** Identifies THIS turn. Cancel/decline may only be confirmed by a token
+   *  minted in an earlier turn, which is what forces the round trip through the
+   *  user. Defaults to a fresh id, so a caller that forgets it gets the safe
+   *  behavior (propose, never execute) rather than the unsafe one. */
+  turnId: string = crypto.randomUUID(),
 ): Promise<{ result: string; action?: AgentAction; ui?: MarqueeDirective }> {
+  // Before anything touches the database: does this call name what it acts on?
+  // The schema can't require "id or title" portably, so the guarantee lives
+  // here, where no amount of fluency gets around it. A rejection is an ordinary
+  // tool error — the loop hands it back and the model retries in the same turn.
+  const missingTarget = targetError(name, args);
+  if (missingTarget) return { result: missingTarget };
+
+  // Cancel/decline affect other people. Enforced, not requested — see
+  // confirmDestructive.ts for why the token is turn-scoped.
+  const confirmation = checkConfirmation(name, args, turnId);
+  if (!confirmation.ok) return { result: confirmation.error! };
+
   if (isVerticalTool(name)) return executeVerticalTool(userId, name, args);
 
   switch (name) {

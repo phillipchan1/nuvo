@@ -66,6 +66,16 @@ export default function AgentMessageBubble({
         {message.actions && message.actions.length > 0 && (
           <AgentActions actions={message.actions} />
         )}
+
+        {/* A turn that ran out of steps carries a visible mark. Without it the
+            synthesized "Created X. Scheduled Y." reads exactly like success and
+            the dropped remainder is never noticed. Hairline + --signal, no
+            frame — it's a state of this reply, not a card of its own. */}
+        {message.incomplete && (
+          <p className="text-meta mt-2 border-t border-[--line] pt-2 text-[--signal]">
+            Unfinished — I hit my step limit with work still queued.
+          </p>
+        )}
       </div>
     </div>
   );

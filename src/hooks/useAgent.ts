@@ -139,7 +139,18 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
             const ui = evt.ui as MarqueeDirective | undefined;
             const content = (typeof evt.content === "string" && evt.content) || streamed;
             ensureAssistant();
-            patchAssistant({ content: content || "Done.", actions: finalActions, suggestions: finalSuggestions, ui });
+            // "Done." is only honest when the turn actually finished — an
+            // exhausted turn falls back to saying so instead.
+            const fallback = evt.exhausted
+              ? "I ran out of steps before finishing — nothing further was changed."
+              : "Done.";
+            patchAssistant({
+              content: content || fallback,
+              actions: finalActions,
+              suggestions: finalSuggestions,
+              ui,
+              incomplete: evt.exhausted === true,
+            });
           } else if (evt.t === "e") {
             throw new Error(evt.msg || "Agent error");
           }

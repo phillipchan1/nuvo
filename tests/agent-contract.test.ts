@@ -122,7 +122,7 @@ describe("the snapshot the model reads", () => {
     // the context had stopped emitting it, and nothing failed.
     for (const field of [
       "todaySchedule", "todayOpenWindows", "todaySlots", "weekSlate",
-      "needsASprint", "nextWeekSlate", "weekPriorities", "weekPool",
+      "needsASprint", "nextWeekSlate", "unattachedPriorities", "weekPool",
       "writableCalendars", "vertical", "inbox",
     ]) {
       expect(snapshot, `context stopped sending ${field}`).toContain(`"${field}"`);
@@ -464,9 +464,13 @@ describe("the thin prompt variant", () => {
   // the control must be untouched, and the cut must only remove rules the tool
   // layer still states somewhere.
 
-  it("leaves the shipped prompt byte-identical", () => {
-    // The control cell of the eval matrix is only a control if it is exactly
-    // what production sends today. Baseline captured before the refactor.
+  it("leaves the shipped prompt byte-identical to the recorded baseline", () => {
+    // The control cell of the eval matrix is only a control if the "full"
+    // prompt is exactly what production sends. The baseline is a deliberate
+    // checkpoint, not a freeze: an intentional prompt edit re-records it in the
+    // same commit (that is the review signal). What it exists to catch is the
+    // UNintentional kind — a refactor that quietly reworded the control while
+    // claiming to only remove duplication.
     const baseline = read("tests/agent/fixtures/staticPrompt.baseline.txt");
     expect(STATIC_SYSTEM_PROMPT).toBe(baseline);
   });
@@ -512,7 +516,7 @@ describe("the thin prompt variant", () => {
     const mustSurvive = [
       "do NOT set do_date unless the user explicitly names a date or time",
       "Guided flow: planning the week",
-      "weekSlate is the authoritative answer",
+      "weekSlate is the answer to",
       "Never show UUIDs or field names",
       "One target per write",
       "I'm a focused planning partner",

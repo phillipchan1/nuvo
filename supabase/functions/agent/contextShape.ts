@@ -62,6 +62,11 @@ export interface SlateProject {
   targetDate: string | null;
   /** the stored per-week verdict, when one exists (big_rocks joined by project) */
   priorityId: string | null;
+  /** The whole stored record, when there is one — title, win condition and roll
+   *  count included. It lives HERE, on the project it belongs to, rather than in
+   *  a separate top-level list that reads like a competing answer to "what are
+   *  my priorities this week". */
+  verdict: { id: string; title: string | null; win: string | null; doneAt: string | null; rollCount: number } | null;
   landed: boolean;
   shipped: boolean;
   /** open work filed under it — what "pull the work" actually pulls from */
@@ -103,10 +108,17 @@ export interface AgentContext {
   nextWeekSlate: { id: string; name: string; startDate: string | null; targetDate: string | null }[];
   /** This week's sprint goal, if a sprint row exists. */
   sprintGoal: string | null;
-  /** The stored per-week VERDICT records (big_rocks). One exists only once a
-   *  push has been checked off or annotated — an empty list does NOT mean the
-   *  week has no priorities. Read weekSlate for that. */
-  weekPriorities: unknown[];
+  /** Stored week records that belong to NO project — the "phantom" case: a
+   *  priority written as free text, which none of the app's own week surfaces
+   *  can render. Named for what it is so it can never be mistaken for the
+   *  week's priorities; every real one is a project, and lives in weekSlate.
+   *
+   *  This used to be `weekPriorities`, a top-level sibling of weekSlate holding
+   *  ALL the verdicts. Two fields that both read as "the priorities" meant the
+   *  model had to be TOLD which one was authoritative — ten lines of prompt
+   *  defending a naming choice, and one shipped bug where the chat reported "no
+   *  priorities set" over a full deck. Principle 11: one name, one meaning. */
+  unattachedPriorities: { id: string; title: string | null; win: string | null; doneAt: string | null }[];
   /** Tasks committed to this week's sprint and not yet done. */
   weekPool: unknown[];
   events: unknown[];

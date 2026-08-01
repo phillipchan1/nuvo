@@ -19,6 +19,7 @@ import { llmKey, llmHeaders } from "./llm.ts";
 import { resolveAgentModel } from "./modelChoice.ts";
 import { buildTurnMessages } from "./turn.ts";
 import { readPromptVariant } from "./prompt.ts";
+import { buildTurnTrace, traceIsNoteworthy } from "./trace.ts";
 import { createChatClient, runAgentTurn, type ContentPart } from "./loop.ts";
 
 // AGENT_MODEL overrides just the conversational agent (passive functions use OPENAI_MODEL).
@@ -169,12 +170,13 @@ Deno.serve(async (req) => {
     // Build context before opening the stream so auth/DB errors surface as
     // normal JSON error responses (not mid-stream failures).
     const ctx = await buildContext(user.id, rangeStart, rangeEnd, tz);
+    const promptVariant = readPromptVariant(Deno.env.get("AGENT_PROMPT"));
     const oaiMessages = buildTurnMessages({
       ctx,
       tz,
       navFocus,
       messages,
-      promptVariant: readPromptVariant(Deno.env.get("AGENT_PROMPT")),
+      promptVariant,
     });
 
     // Open the SSE response stream before starting the agent loop so the
@@ -194,6 +196,8 @@ Deno.serve(async (req) => {
         // back to the browser.
         const key = llmKey();
         const choice = MODEL_CHOICE();
+        const turnId = crypto.randomUUID();
+        const startedAt = Date.now();
         const turn = await runAgentTurn({
           messages: oaiMessages,
           tools: reqTools,
@@ -203,9 +207,28 @@ Deno.serve(async (req) => {
             headers: llmHeaders(key),
             reasoningEffort: choice.reasoningEffort,
           }),
-          execute: (name, args) => executeTool(user.id, name, args, userToken, tz),
+          // One id per HTTP turn: a cancel proposed here can only be confirmed by a
+          // later request, i.e. after the user has replied.
+          execute: (name, args) => executeTool(user.id, name, args, userToken, tz, turnId),
           onText: async (chunk) => { await sse({ t: "c", v: chunk }); },
         });
+
+        // One structured line per turn — the only signal that exists between
+        // eval runs. Never allowed to affect the reply.
+        try {
+          const trace = buildTurnTrace({
+            model: choice.model,
+            promptVariant,
+            reasoningEffort: choice.reasoningEffort,
+            rounds: turn.rounds,
+            exhausted: turn.exhausted,
+            calls: turn.calls,
+            actionCount: turn.actions.length,
+            ms: Date.now() - startedAt,
+            historyLength: messages.length,
+          });
+          console[traceIsNoteworthy(trace) ? "warn" : "log"](JSON.stringify(trace));
+        } catch { /* a trace must never break a reply */ }
 
         await sse({
           t: "d",
@@ -213,6 +236,9 @@ Deno.serve(async (req) => {
           actions: turn.actions,
           suggestions: turn.suggestions,
           ui: turn.ui,
+          // Whether the turn finished. The client marks a partial turn so a
+          // half-executed request can never look like a completed one.
+          exhausted: turn.exhausted,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

@@ -116,7 +116,7 @@ function loadedWorld(): AgentContext {
     ],
     nextWeekSlate: [],
     sprintGoal: null,
-    weekPriorities: [],
+    unattachedPriorities: [],
     weekPool: [
       { id: ids.taskSubdomains, title: "Fix Stampede subdomains", status: "backlog", rollCount: 2 },
     ],
@@ -166,7 +166,7 @@ function coldWorld(): AgentContext {
     weekSlate: [],
     needsASprint: [],
     nextWeekSlate: [],
-    weekPriorities: [],
+    unattachedPriorities: [],
     weekPool: [],
     events: [],
     writableCalendars: [],

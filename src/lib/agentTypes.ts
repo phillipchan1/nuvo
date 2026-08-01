@@ -22,6 +22,10 @@ export interface AgentMessage {
   suggestions?: AgentSuggestion[];
   /** Marquee — drive the left canvas (navigate + spotlight) alongside the reply. */
   ui?: MarqueeDirective;
+  /** The turn hit the agent's step limit with work still queued. Rendered as a
+   *  visible "unfinished" mark: a partial turn must never read as a completed
+   *  one, or the user stops checking exactly when they should be checking. */
+  incomplete?: boolean;
 }
 
 export interface AgentSuggestion {
@@ -95,5 +99,13 @@ export interface AgentResponse {
 //   { t: "e", msg }    — a fatal error
 export type AgentStreamEvent =
   | { t: "c"; v: string }
-  | { t: "d"; content: string; actions?: AgentAction[]; suggestions?: AgentSuggestion[]; ui?: unknown }
+  | {
+      t: "d";
+      content: string;
+      actions?: AgentAction[];
+      suggestions?: AgentSuggestion[];
+      ui?: unknown;
+      /** True when the turn ran out of steps mid-execution. */
+      exhausted?: boolean;
+    }
   | { t: "e"; msg: string };

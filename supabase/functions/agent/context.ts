@@ -511,7 +511,14 @@ export async function buildContext(
   const todaySchedule = buildTodaySchedule(events, scheduled, todaySlots, today);
   const todayOpenWindows = computeOpenWindows(events, scheduled, todaySlots, today, nowMs, tz);
 
-  const rocks = (sprint?.big_rocks ?? []) as { id: string; project_id?: string | null; done_at: string | null }[];
+  const rocks = (sprint?.big_rocks ?? []) as {
+    id: string;
+    project_id?: string | null;
+    done_at: string | null;
+    title?: string | null;
+    win?: string | null;
+    roll_count?: number | null;
+  }[];
   const weekSlate: SlateProject[] = slateRows.map((p) => {
     const rock = rocks.find((r) => r.project_id === p.id) ?? null;
     const tasks = tasksByProject.get(p.id) ?? [];
@@ -525,6 +532,17 @@ export async function buildContext(
       startDate: p.start_date,
       targetDate: p.target_date,
       priorityId: rock?.id ?? null,
+      // The verdict rides with its project — see contextShape.ts for why it is
+      // no longer a top-level list.
+      verdict: rock
+        ? {
+          id: rock.id,
+          title: rock.title ?? null,
+          win: rock.win ?? null,
+          doneAt: rock.done_at ?? null,
+          rollCount: rock.roll_count ?? 0,
+        }
+        : null,
       // shipping the project inside the week is the loudest possible verdict
       landed: Boolean(rock?.done_at) || shipped,
       shipped,
@@ -576,7 +594,11 @@ export async function buildContext(
       targetDate: p.target_date,
     })),
     sprintGoal: sprint?.goal ?? null,
-    weekPriorities: (sprint?.big_rocks ?? []) as unknown[],
+    // Only the project-less ones. Everything attached to a project is on that
+    // project's slate entry, so there is exactly one place to read a priority.
+    unattachedPriorities: rocks
+      .filter((r) => !r.project_id)
+      .map((r) => ({ id: r.id, title: r.title ?? null, win: r.win ?? null, doneAt: r.done_at ?? null })),
     weekPool: (weekRes.data ?? []).map((t) => fmtTask(t, today, nowMs, tz)),
     events,
     writableCalendars,

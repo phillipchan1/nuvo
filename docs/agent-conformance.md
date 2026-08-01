@@ -184,6 +184,27 @@ Two cautions when reading a matrix:
   (`gpt-5.6-terra` vs `qwen/qwen3.6-flash`) and the running model depends on
   which API key is set. The harness warns when a run isn't pinned.
 
+### Guarantees that don't depend on the model
+
+Some rules used to live only in the prompt as requests, which means they held
+exactly as long as the model cooperated — and the chat's whole failure mode is
+staying fluent while it stops cooperating. These are now mechanisms, covered by
+`tests/agent-reliability.test.ts` (no live model needed):
+
+| Guarantee | Where it lives | Was |
+|---|---|---|
+| A turn cut off at the step limit says so | `loop.ts` + `incomplete` on the reply | synthesized a confirmation from whatever landed |
+| No tool accepts unknown arguments | `hardenToolDefs` — one place, all tools | nothing |
+| No write without a target | `toolGuards.ts` (`REQUIRES_TARGET`) | 22 of 38 tools accepted an empty call |
+| Cancel/decline need a real user yes | `confirmDestructive.ts` — token is turn-scoped, so it can only be spent on a LATER turn | "Confirm with the user before calling" in a description |
+| The same write twice in one turn happens once | `loop.ts` dedupe by argument fingerprint | "NEVER call create_calendar_event again…" |
+| Every turn leaves a trace | `trace.ts` → one JSON line per turn | nothing between eval runs |
+
+The pattern worth keeping: each one converts a *silent* failure into a *loud*
+one. A guard rejection is an ordinary tool error, so the loop hands it back and
+the model corrects itself in the same turn — being strict costs a round, not a
+request.
+
 ### The seams that made this possible
 
 The agent function used to be one Deno file with the prompt, the loop and the

@@ -18,6 +18,22 @@
 import { parseSuggestions, type AgentSuggestion } from "./suggestions.ts";
 import { sanitizeUserFacingText } from "./sanitizeReply.ts";
 
+/** Tools whose repeat within one turn is legitimate: reads must see the writes
+ *  that happened after them, and point_at is a screen move, not a record. */
+export const REPEATABLE_TOOLS = new Set(["list_tasks", "list_vertical", "point_at"]);
+
+/** Argument fingerprint with key order normalized, so {a,b} and {b,a} are the
+ *  same call. Values are compared as JSON — exact, which is the right bar: two
+ *  creates that differ at all are two different intents. */
+export function stableArgs(args: Record<string, unknown>): string {
+  return JSON.stringify(
+    Object.keys(args).sort().reduce<Record<string, unknown>>((acc, k) => {
+      acc[k] = args[k];
+      return acc;
+    }, {}),
+  );
+}
+
 /** How many times the model may call tools and look at the results before it
  *  has to answer in words. Five is enough for "clear my inbox" (a batch, then a
  *  summary) and short enough that a confused model can't spend a minute. */
@@ -48,6 +64,9 @@ export interface AttemptedCall {
   args: Record<string, unknown>;
   /** The round it was issued in (0 = the first, streaming round). */
   round: number;
+  /** Set when this call repeated an earlier identical write in the same turn —
+   *  it was answered from the first call's result and never re-executed. */
+  deduped?: boolean;
   /** Set when the handler threw; the model saw this as the tool result. */
   error?: string;
 }
@@ -193,6 +212,8 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<TurnResult> {
   const actions: AgentAction[] = [];
   const directives: MarqueeDirectiveLike[] = [];
   const calls: AttemptedCall[] = [];
+  /** fingerprint -> the result the first identical call returned this turn. */
+  const executed = new Map<string, string>();
   let fullText = "";
   let rounds = 1;
   let exhausted = false;
@@ -206,6 +227,25 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<TurnResult> {
     for (const tc of toolCalls) {
       const args = parseArgs(tc.function.arguments);
       const attempt: AttemptedCall = { name: tc.function.name, args, round };
+
+      // The same write, asked for twice in one turn, is the duplicate the prompt
+      // spends paragraphs warning about ("NEVER call create_calendar_event again
+      // for the same title/time"). Enforced here instead: the second identical
+      // call returns the first one's result and never reaches the handler, so
+      // the rule holds even when the model forgets it. Reads are exempt — a
+      // list AFTER a write should see the write.
+      const fingerprint = `${tc.function.name}:${stableArgs(args)}`;
+      if (!REPEATABLE_TOOLS.has(tc.function.name) && executed.has(fingerprint)) {
+        attempt.deduped = true;
+        calls.push(attempt);
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: executed.get(fingerprint)!,
+        });
+        continue;
+      }
+
       let toolResult: string;
       try {
         const { result, action, ui } = await execute(tc.function.name, args);
@@ -218,6 +258,7 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<TurnResult> {
         toolResult = JSON.stringify({ error: msg });
       }
       calls.push(attempt);
+      if (!REPEATABLE_TOOLS.has(tc.function.name)) executed.set(fingerprint, toolResult);
       messages.push({ role: "tool", tool_call_id: tc.id, content: toolResult });
     }
   };
@@ -254,8 +295,20 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<TurnResult> {
 
   // The model acted and said nothing (or ran out of rounds mid-batch). The
   // bubble still has to say what happened, so the actions narrate themselves.
+  //
+  // The `exhausted` half of that used to be indistinguishable from success: a
+  // turn cut off with work still queued got a tidy "Created X. Scheduled Y."
+  // built from whatever landed, and the dropped remainder was never mentioned.
+  // A confirmation is the one thing a half-finished turn must not produce — the
+  // user stops checking precisely because it looks done.
   if (!fullText && actions.length) {
     fullText = actions.map((a) => a.summary).join(". ");
+    if (exhausted) fullText += `. That's as far as I got — I hit my ${maxRounds}-step limit with more still to do. Say "keep going" and I'll pick up from here.`;
+    await onText(fullText);
+  }
+  // Cut off before anything landed at all. Silence would read as "nothing to do".
+  if (!fullText && !actions.length && exhausted) {
+    fullText = `I ran out of steps working on that and didn't get anything done — nothing was changed. Worth trying again in smaller pieces.`;
     await onText(fullText);
   }
   // A point_at-only turn carries a directive but no action and no text — give
