@@ -7,6 +7,14 @@
 // `isSuspectWipe` rather than re-deriving the rule.
 import { admin } from "./admin.ts";
 import { isSuspectWipe } from "./sweepSafety.ts";
+import {
+  type ContactCandidate,
+  type ContactSource,
+  type InviteAmbiguity,
+  type InviteRecipient,
+  dedupeRecipients,
+  pickRecipient,
+} from "./invites.ts";
 
 export interface DirectoryContact {
   email: string;
@@ -105,4 +113,63 @@ export async function writeContacts(
   }
 
   return { upserted: rows.length, removed, sweepSkipped: false };
+}
+
+// ---------------------------------------------------------------------------
+// Reading side — the same ranked list the guest picker shows, for a runtime
+// with no session.
+//
+// `contacts(search)` is security definer over auth.uid(); the agent runs on the
+// service role, where that is null. `contacts_for(uid, search)` (migration 50)
+// is the same body with the id passed in, so the browser and the agent agree
+// about who "Matt" is without a second ranking implementation in Deno.
+// ---------------------------------------------------------------------------
+
+const SOURCES: ContactSource[] = ["google", "apple", "meeting"];
+
+function toCandidate(row: Record<string, unknown>): ContactCandidate {
+  const sources = Array.isArray(row.sources)
+    ? (row.sources as string[]).filter((s): s is ContactSource => (SOURCES as string[]).includes(s))
+    : [];
+  const email = String(row.email ?? "").toLowerCase();
+  const displayName = row.display_name ? String(row.display_name) : null;
+  return {
+    email,
+    displayName: displayName && displayName.toLowerCase() !== email ? displayName : null,
+    freq: Number(row.freq ?? 0),
+    sources,
+  };
+}
+
+/** Ranked candidates for one search string. Empty search returns the people
+ *  they meet most, which is what "who can I invite?" should show. */
+export async function searchContacts(userId: string, query: string): Promise<ContactCandidate[]> {
+  const { data, error } = await admin.rpc("contacts_for", { uid: userId, search: query ?? "" });
+  if (error) throw error;
+  return (data as Record<string, unknown>[] | null ?? []).map(toCandidate);
+}
+
+export interface ResolvedRecipients {
+  recipients: InviteRecipient[];
+  /** Names that matched two people or none. The caller must ask — never pick. */
+  unresolved: InviteAmbiguity[];
+}
+
+/** Resolve everything the user named at once, keeping the two outcomes apart:
+ *  people we're certain of, and questions. A single ambiguous name doesn't
+ *  invalidate the rest of the invite — it just can't be sent until it's answered. */
+export async function resolveRecipients(userId: string, tokens: string[]): Promise<ResolvedRecipients> {
+  const recipients: InviteRecipient[] = [];
+  const unresolved: InviteAmbiguity[] = [];
+
+  for (const raw of tokens) {
+    const token = (raw ?? "").trim();
+    if (!token) continue;
+    const candidates = await searchContacts(userId, token);
+    const pick = pickRecipient(token, candidates);
+    if (pick.status === "resolved") recipients.push(pick.recipient);
+    else unresolved.push({ query: token, candidates: pick.status === "ambiguous" ? pick.candidates : [] });
+  }
+
+  return { recipients: dedupeRecipients(recipients), unresolved };
 }

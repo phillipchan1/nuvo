@@ -14,6 +14,7 @@ import { prepareTask } from "./prepare.ts";
 import { narrate } from "./narrate.ts";
 import { narrateReviewFind } from "./reviewFind.ts";
 import { executeTool, FALLBACK_TZ, TOOL_DEFINITIONS, buildPointAtTool, type AgentAction, type MarqueeDirective, type MarqueeTargetSpec } from "./tools.ts";
+import type { InviteDraft } from "../_shared/invites.ts";
 import { llmKey, llmBaseUrl, llmModel, llmHeaders } from "./llm.ts";
 import { parseSuggestions } from "./suggestions.ts";
 import { sanitizeUserFacingText } from "./sanitizeReply.ts";
@@ -280,6 +281,19 @@ After acting, confirm briefly and name the calendar from the tool result: "Added
 - **Always confirm before canceling or declining** — list exactly which events, wait for yes. These affect other people. Moving between the user's own calendars does NOT need confirmation.
 - Default: do NOT notify other attendees. Only notify if the user explicitly says to.
 - "Cancel the rest of my meetings": only future events (past = false), exclude any the user says to keep.
+
+---
+
+## Meetings with other people
+
+Anything involving another human — "set up lunch with Matt and Dave", "invite the team", "add Sarah to Thursday's call", or a screenshot of a thread where they've agreed a time — runs through **propose_invite**. You do not send mail. propose_invite stages a card in the chat that names exactly who would be emailed and lets the user tap **Send invite** or **Add without emailing**; the event is created (or the guests added) at that tap, not at your tool call. So:
+
+- **Pass names, not guesses.** Give propose_invite the words the user used — "Matt", "my brother", "dave@acme.com". Nuvo resolves them against their Google and Apple address books plus people they've actually met. Never invent, complete, or "correct" an email address.
+- **Do the resolvable part silently.** One clear match is not a question. Pick the time, the duration and the calendar by the same rules as any other event, and stage it — that IS the ask. Do not ask permission to *prepare* an invite.
+- **Ask only about what genuinely didn't resolve.** If the result carries `unresolved`, name those people and offer their candidates in a <suggestions> block ("Matt Hansen · matt@…", "Matt Reyes · mreyes@…"). Everyone who resolved stays staged — one unknown name doesn't restart the whole thing.
+- **Say the card is there, in one line.** Name who and when: "Friday 8/14, 12–1 — invite's ready for Matt, Daniel and Cory. Send it?" Never claim you invited, emailed, or booked anything — nothing has happened yet. Never re-ask for confirmation in prose; the card IS the confirmation, and a second "shall I?" is noise.
+- **Guests are Google-only.** If the target calendar is an Apple one, the tool refuses — say so plainly and offer a Google calendar. Never drop the guests and create it anyway.
+- If they've asked you to read a thread and propose a time, propose in prose first (with a <suggestions> block of the viable slots) — stage the invite once they've picked one.
 
 ---
 
@@ -574,6 +588,9 @@ Deno.serve(async (req) => {
     (async () => {
       const actions: AgentAction[] = [];
       const directives: MarqueeDirective[] = [];
+      // Staged invites — proposals, not writes. The client renders the last one
+      // as a confirmation card; nothing here has touched another person's inbox.
+      const invites: InviteDraft[] = [];
       let fullText = "";
 
       try {
@@ -594,10 +611,11 @@ Deno.serve(async (req) => {
             try { args = JSON.parse(tc.function.arguments || "{}"); } catch { args = {}; }
             let toolResult: string;
             try {
-              const { result, action, ui } = await executeTool(user.id, tc.function.name, args, userToken, tz);
+              const { result, action, ui, invite } = await executeTool(user.id, tc.function.name, args, userToken, tz);
               toolResult = result;
               if (action) actions.push(action);
               if (ui) directives.push(ui);
+              if (invite) invites.push(invite);
             } catch (e) {
               toolResult = JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
             }
@@ -617,10 +635,11 @@ Deno.serve(async (req) => {
                 try { args = JSON.parse(tc.function.arguments || "{}"); } catch { args = {}; }
                 let toolResult: string;
                 try {
-                  const { result, action, ui } = await executeTool(user.id, tc.function.name, args, userToken, tz);
+                  const { result, action, ui, invite } = await executeTool(user.id, tc.function.name, args, userToken, tz);
                   toolResult = result;
                   if (action) actions.push(action);
                   if (ui) directives.push(ui);
+                  if (invite) invites.push(invite);
                 } catch (e) {
                   toolResult = JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
                 }
@@ -635,6 +654,11 @@ Deno.serve(async (req) => {
           }
         }
 
+        // A staged invite with no prose would put a Send button under silence.
+        if (!fullText && invites.length) {
+          fullText = "Ready when you are — check who's getting this, then send.";
+          await sse({ t: "c", v: fullText });
+        }
         if (!fullText && actions.length) {
           fullText = actions.map((a) => a.summary).join(". ");
           await sse({ t: "c", v: fullText });
@@ -652,7 +676,14 @@ Deno.serve(async (req) => {
           .map((s) => ({ label: sanitizeUserFacingText(s.label), message: sanitizeUserFacingText(s.message) }))
           .filter((s) => s.label && s.message);
 
-        await sse({ t: "d", content: cleanContent, actions, suggestions: cleanSuggestions, ui: directives[0] });
+        await sse({
+          t: "d",
+          content: cleanContent,
+          actions,
+          suggestions: cleanSuggestions,
+          ui: directives[0],
+          invite: invites[invites.length - 1],
+        });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("[agent]", msg);

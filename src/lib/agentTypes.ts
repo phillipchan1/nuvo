@@ -1,5 +1,8 @@
 import type { MarqueeDirective } from "./marquee";
 import type { BigRock } from "./types";
+import type { InviteDraft } from "../../supabase/functions/_shared/invites.ts";
+
+export type { InviteDraft };
 
 export interface AgentAttachment {
   id: string;
@@ -22,6 +25,10 @@ export interface AgentMessage {
   suggestions?: AgentSuggestion[];
   /** Marquee — drive the left canvas (navigate + spotlight) alongside the reply. */
   ui?: MarqueeDirective;
+  /** A staged invite awaiting the user's tap. Nothing has been sent or created:
+   *  the agent resolves who and stages it, the card below this message is what
+   *  actually writes (D-046 — nothing emails a human without saying so). */
+  invite?: InviteDraft;
 }
 
 export interface AgentSuggestion {
@@ -90,5 +97,12 @@ export interface AgentResponse {
 //   { t: "e", msg }    — a fatal error
 export type AgentStreamEvent =
   | { t: "c"; v: string }
-  | { t: "d"; content: string; actions?: AgentAction[]; suggestions?: AgentSuggestion[]; ui?: unknown }
+  | {
+      t: "d";
+      content: string;
+      actions?: AgentAction[];
+      suggestions?: AgentSuggestion[];
+      ui?: unknown;
+      invite?: InviteDraft;
+    }
   | { t: "e"; msg: string };

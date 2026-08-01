@@ -12,6 +12,7 @@ import type {
   AgentRequestMessage,
   AgentStreamEvent,
   AgentSuggestion,
+  InviteDraft,
 } from "../lib/agentTypes";
 import type { MarqueeDirective } from "../lib/marquee";
 
@@ -127,6 +128,7 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
 
         let finalActions: AgentAction[] | undefined;
         let finalSuggestions: AgentSuggestion[] | undefined;
+        let finalInvite: InviteDraft | undefined;
 
         const handle = (evt: AgentStreamEvent) => {
           if (evt.t === "c") {
@@ -137,9 +139,16 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
             finalActions = evt.actions?.length ? evt.actions : undefined;
             finalSuggestions = evt.suggestions?.length ? evt.suggestions : undefined;
             const ui = evt.ui as MarqueeDirective | undefined;
+            finalInvite = evt.invite;
             const content = (typeof evt.content === "string" && evt.content) || streamed;
             ensureAssistant();
-            patchAssistant({ content: content || "Done.", actions: finalActions, suggestions: finalSuggestions, ui });
+            patchAssistant({
+              content: content || "Done.",
+              actions: finalActions,
+              suggestions: finalSuggestions,
+              ui,
+              invite: finalInvite,
+            });
           } else if (evt.t === "e") {
             throw new Error(evt.msg || "Agent error");
           }
