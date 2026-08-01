@@ -49,6 +49,23 @@
   --now-mark: color-mix(in srgb, var(--ink) 68%, var(--muted));
 }
 
+/* ── Verdict — ripe vs. stalled ───────────────────────────────────────────
+   `--ok` is the readiness meter's ripe fill and "shipped"; `--warn` is
+   "waiting on something". They used to be raw hexes inside
+   PROJECT_STATUS_COLORS, which meant they were the two colours on screen no
+   skin could answer for — full-saturation amber and teal survived even into
+   e-ink, which is supposed to have no colour at all. As tokens they follow the
+   material, like everything else. */
+:root,
+[data-theme="light"] {
+  --ok: #0d9488;
+  --warn: #d97706;
+}
+[data-theme="dark"] {
+  --ok: #2ab5a5;
+  --warn: #e9960f;
+}
+
 /* ── Daybreak — warm paper (the default mood) ────────────────────────────────
    Accent is a warm mulberry (not blue), the slot a dusty teal, and uncoloured
    events default to warm stone — so the whole surface reads warm, not cold. */
@@ -952,7 +969,7 @@ body.odp-dragging [data-resize] {
   100% { transform: scale(1); }
 }
 @keyframes sealHalo {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, #0d9488 50%, transparent); }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 50%, transparent); }
   100% { box-shadow: 0 0 0 15px transparent; }
 }
 @keyframes sealCheck {
@@ -2000,23 +2017,32 @@ select.field { appearance: none; -webkit-appearance: none; }
       Deliberately the *least* Nuvo-ish material — no ceremony, no frost, no
       editorial serif. Everything that carries voice in paper is traded for the
       things a workhorse app is judged on: a legible rule between regions, one
-      sans in every size, a tinted sidebar against white content, tight radii.
+      sans in every size, a real ground under white sheets, tight radii.
       Keeps the mulberry accent so it still reads as Nuvo, just flattened.
 
-      Three levers do the work (the rest is inherited):
+      Four levers do the work (the rest is inherited):
         · --font-serif → the sans, so every masthead/serif surface flattens for
           free (`.masthead` weight is corrected in the MATERIAL section below).
         · lines a full step darker than paper's — a flat UI has no shadow or
           gradient to separate regions, so the rule has to actually be visible.
-        · --surface-2 as a real grey, not a whisper: it's the sidebar ground. */
+        · --bg is a real GROUND, a step below --surface, restoring the ramp every
+          other material keeps (bg < surface-2 < surface). This block used to set
+          both --bg and --surface to #ffffff, which flattened the ramp: a white
+          card on a white canvas has only its hairline left, and the ~80 places
+          that hover to `bg-bg` had nothing to show. That, not the missing frost,
+          is what read as "cold and dry".
+        · the neutrals carry a few degrees of the accent's own hue. A #ffffff /
+          #f6f6f7 / #e3e3e6 ramp is literally hueless, which is exactly what
+          "cold" describes — these are chosen greys, not default ones.
+      The material language built on top is in FLAT CHROME, below. */
 html[data-skin="flat"][data-theme="light"] {
-  --bg: #ffffff;
+  --bg: #f4f2f7;
   --surface: #ffffff;
-  --surface-2: #f6f6f7;
-  --line: #e3e3e6;
-  --line-strong: #c5c5cb;
-  --text: #18181b;
-  --muted: #74747c;
+  --surface-2: #faf8fc;
+  --line: #e5e1ec;
+  --line-strong: #c7c1d3;
+  --text: #191621;
+  --muted: #6e6879;
   --accent: #92568a;
   --accent-2: #b07fa8;
   --accent-soft: rgba(146, 86, 138, 0.08);
@@ -2027,19 +2053,19 @@ html[data-skin="flat"][data-theme="light"] {
   --radius-sm: 4px;
   --radius: 6px;
   --radius-lg: 8px;
-  --shadow-1: 0 1px 2px rgba(20, 20, 30, 0.05);
-  --shadow-2: 0 2px 8px -2px rgba(20, 20, 30, 0.10), 0 0 0 1px #e3e3e6;
-  --shadow-3: 0 8px 24px -8px rgba(20, 20, 30, 0.14);
-  --shadow-lift: 0 10px 26px -10px rgba(20, 20, 30, 0.20);
+  --shadow-1: 0 1px 2px rgba(28, 20, 40, 0.05);
+  --shadow-2: 0 2px 8px -2px rgba(28, 20, 40, 0.10), 0 0 0 1px var(--line);
+  --shadow-3: 0 8px 24px -8px rgba(28, 20, 40, 0.14);
+  --shadow-lift: 0 10px 26px -10px rgba(28, 20, 40, 0.20);
 }
 html[data-skin="flat"][data-theme="dark"] {
-  --bg: #0c0c0e;
-  --surface: #161619;
-  --surface-2: #202024;
-  --line: #2e2e35;
-  --line-strong: #43434c;
-  --text: #f1f1f4;
-  --muted: #93939c;
+  --bg: #0d0c11;
+  --surface: #18161e;
+  --surface-2: #221f2a;
+  --line: #302c3a;
+  --line-strong: #47414f;
+  --text: #f1eff5;
+  --muted: #918b9d;
   --accent: #c692bf;
   --accent-2: #d6abce;
   --accent-soft: rgba(198, 146, 191, 0.13);
@@ -2051,7 +2077,7 @@ html[data-skin="flat"][data-theme="dark"] {
   --radius: 6px;
   --radius-lg: 8px;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 2px 10px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px #2e2e35;
+  --shadow-2: 0 2px 10px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line);
   --shadow-3: 0 10px 28px -10px rgba(0, 0, 0, 0.6);
   --shadow-lift: 0 12px 30px -12px rgba(0, 0, 0, 0.66);
 }
@@ -2138,7 +2164,15 @@ html[data-skin="blueprint"][data-theme="dark"] {
 
 /* ── E-INK — near-monochrome warm grey (light) / charcoal (dark). No colour but
       a desaturated signal, and NO shadows at all: selection reads by border +
-      the small rise alone, like electronic paper. Restful, anti-glare. */
+      the small rise alone, like electronic paper. Restful, anti-glare.
+
+      This is a READER, and the thing that makes a Kindle look like a Kindle is
+      not the grey — it's that the whole interface is set in a book face. So
+      --font-sans becomes a text serif (Iowan / Palatino / Georgia — never
+      Fraunces, which is a display face and turns to mush at 11px). Fraunces
+      stays on --font-serif for the heroes, exactly as on paper.
+      --ok / --warn are pulled to ink as well: a real e-ink panel has no colour
+      to spend on a status. */
 html[data-skin="eink"][data-theme="light"] {
   --bg: #e9e6de;
   --surface: #f2efe8;
@@ -2155,6 +2189,10 @@ html[data-skin="eink"][data-theme="light"] {
   --signal-soft: rgba(90, 85, 80, 0.12);
   --slot: #6b6660;
   --event-default: #8c877c;
+  /* Derived, not fixed, so every tint (sepia, carta) keeps its own cast. */
+  --ok: color-mix(in srgb, var(--text) 55%, var(--muted));
+  --warn: color-mix(in srgb, var(--muted) 80%, var(--text));
+  --font-sans: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
   --radius-sm: 3px;
   --radius: 5px;
   --radius-lg: 7px;
@@ -2179,6 +2217,10 @@ html[data-skin="eink"][data-theme="dark"] {
   --signal-soft: rgba(176, 169, 158, 0.14);
   --slot: #9a948a;
   --event-default: #8c877c;
+  /* Derived, not fixed, so every tint (sepia, carta) keeps its own cast. */
+  --ok: color-mix(in srgb, var(--text) 55%, var(--muted));
+  --warn: color-mix(in srgb, var(--muted) 80%, var(--text));
+  --font-sans: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
   --radius-sm: 3px;
   --radius: 5px;
   --radius-lg: 7px;
@@ -2216,12 +2258,7 @@ html[data-skin="terminal"][data-palette="crt"] .atmosphere {
     repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 4%, transparent) 0 1px, transparent 1px 3px),
     var(--bg);
 }
-html[data-skin="blueprint"] .atmosphere {
-  /* clean cyanotype ground — a whisper of light from above, no grid */
-  background:
-    radial-gradient(130% 100% at 50% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 55%),
-    var(--bg);
-}
+/* Blueprint's ground is the graph paper itself — see BLUEPRINT CHROME below. */
 
 /* NO FROST outside paper. The .glass-* hooks below cover the shared material
    classes, but frost also arrives as one-off inline `backdropFilter` (the Spine
@@ -2293,10 +2330,29 @@ html[data-skin="eink"] .glass-lift {
   box-shadow: none;
 }
 
-/* ── FLAT — the rest of the conventional-app conversion ───────────────────
-   The token block flattened colour, type and radius; these rules flatten the
-   remaining *behaviours* that read as "designed object" rather than "software":
-   the editorial weights, the borderless sidebar, the lift-on-select. */
+/* ════════════════════════════════════════════════════════════════════════
+   FLAT CHROME — the workspace furniture.
+
+   Flat used to be the only material defined by SUBTRACTION: it took paper's
+   frost, serif, gradient and lift away and put nothing in their place, so it
+   read as paper with the voice removed. Terminal is the counter-example — its
+   tokens make the console *pretty*, but what makes it read as an EDITOR is a
+   status bar, tabs with an active edge, a gutter and a current-line wash. Flat
+   needs the same treatment in its own register, and it comes down to three
+   ideas the token block can't state on its own:
+
+     1. GROUND vs SHEET — grey where work waits (chrome, pools, decks), white
+        where work happens (the calendar grid, cards). Paper runs one gradient
+        under everything; flat can't, so THIS is its structural continuity.
+     2. THE ACCENT CARRIES STATE — what is selected, current or focused is
+        coloured, not grey. Paper's law is "focus lifts, it doesn't outline";
+        flat deliberately inverts it to "focus FILLS", which is the one law
+        every app in this register actually runs on.
+     3. THE SURFACE ANSWERS THE POINTER — paper's aliveness is frost and lift;
+        flat deleted both, so hover has to carry it. Most of this is free now
+        that --bg is a real ground: the ~80 existing `hover:bg-bg` /
+        `hover:bg-surface-2` utilities finally have somewhere to travel to.
+   ════════════════════════════════════════════════════════════════════════ */
 
 /* One sans, all sizes. --font-serif already points at the sans, but Fraunces'
    settings came with it: an optical-sizing axis the sans doesn't have, and a
@@ -2314,35 +2370,124 @@ html[data-skin="flat"] .serif {
   letter-spacing: -0.012em;
 }
 
-/* The sidebar is a REGION, not a pane floating on the canvas. Paper keeps the
-   spine transparent so one gradient reads across the whole window; flat does
-   the opposite — a grey nav ground against white content, which is how every
-   app in this register (Notion, Linear, Slack, Akiflow) states "you are here
-   vs. you are working here". The right rule comes from .spine-separator.
-   The spine pins `background: transparent` inline to enforce paper's law, so
-   the override has to be !important — this material is opting out of it. */
-html[data-skin="flat"] .spine {
-  background: var(--surface-2) !important;
+/* ── 1. GROUND vs SHEET ──────────────────────────────────────────────────
+   The canvas is the ground (set in the MATERIAL section above: .atmosphere →
+   --bg). The chrome and the pools ride it transparently, exactly as they do on
+   paper — so flat no longer needs its old opaque-sidebar hack, which was the
+   "frost seam" the design language forbids, just in grey.
+
+   The calendar is the one surface that is not a pool: it IS the work, so it
+   gets the sheet. `cal-sheet` is set on the CalendarPane root. */
+html[data-skin="flat"] .cal-sheet {
+  background: var(--surface);
 }
-/* The active chapter's inline pill is 72%-translucent glass — over an opaque
-   sidebar that's a barely-there smudge. Make it the solid selected row of a
-   conventional nav: full surface, a real border, no shadow. */
-html[data-skin="flat"] .spine [style*="backdrop-filter"],
-html[data-skin="flat"] .chapter-active {
-  background: var(--surface) !important;
-  border-color: var(--line) !important;
-  box-shadow: none !important;
+/* …and the floor's top band becomes a real HEADER BAR. On paper it's a
+   transparent strip with a hairline under it; over a ground, filling it is what
+   turns "some controls up there" into chrome above the work. */
+html[data-skin="flat"] .app-topbar {
+  background: var(--surface);
 }
 
-/* Selection doesn't levitate here. The glass hooks already went opaque, but the
-   -3px rise + 1.5% scale is a paper gesture; a flat UI shows selection with a
-   border and a fill, in place. (Drag ghosts keep their lift — a thing in your
-   hand should look picked up in any material.) */
+/* The mark is always branded. Paper dims the wordmark to a grey whisper when
+   you are off the Schedule, because its chrome is meant to recede into the
+   paper; a product's logo doesn't grey out because you changed tab.
+   (.wordmark-grad clips a gradient into transparent text — leave that alone.) */
+html[data-skin="flat"] .wordmark:not(.wordmark-grad) {
+  color: var(--accent) !important;
+  opacity: 1 !important;
+}
+
+/* ── 2. THE ACCENT CARRIES STATE ─────────────────────────────────────────
+   The active chapter's inline pill is 72%-translucent glass with a hairline —
+   over a ground, that's a barely-there smudge. A workspace nav fills the
+   selected row with the accent and marks its leading edge; you can find your
+   place in a 200px thumbnail. (The inline style is the documented hook — it
+   has to be beaten with !important.) */
+html[data-skin="flat"] .spine [style*="backdrop-filter"],
+html[data-skin="flat"] .chapter-active {
+  background: var(--accent-soft) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+html[data-skin="flat"] .spine nav button[aria-current="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+}
+/* …and the row's ink comes with it. The glyph and the label are inline-styled
+   (var(--text) / var(--muted)), so they need !important; the pair is targeted
+   precisely so the readiness meter and cue below keep their own colours. */
+html[data-skin="flat"] .spine nav button[aria-current="true"] .spine-rung-n,
+html[data-skin="flat"] .spine nav button[aria-current="true"] .spine-rung-n + span {
+  color: var(--accent) !important;
+}
+
+/* Selection doesn't levitate here — it fills. The -3px rise + 1.5% scale is a
+   paper gesture, and the grey border that replaced it said "disabled" more than
+   "selected". An accent edge over an accent wash is unambiguous, in place, and
+   costs no motion. (Drag ghosts keep their lift — a thing in your hand should
+   look picked up in any material.) */
 html[data-skin="flat"] .glass-lift,
 html[data-skin="flat"] .glass-lift-row {
   transform: none;
-  box-shadow: var(--shadow-1);
-  border-color: var(--line-strong) !important;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Keyboard focus is a RING. Paper never draws one (it lifts instead), but a
+   workspace app is judged on exactly this, and :focus-visible only fires for
+   the keyboard — the pointer never sees it. */
+html[data-skin="flat"] :focus-visible {
+  outline: 2px solid var(--accent-glow);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── 3. THE SURFACE ANSWERS THE POINTER ──────────────────────────────────
+   `.row-hover` is a fraction of --surface, tuned so paper's rows whisper. On a
+   ground with a white sheet above it that fraction is nearly invisible, so flat
+   takes the full raised surface — the register's rows are meant to be obviously
+   pickable. */
+html[data-skin="flat"] .row-hover:hover {
+  background-color: var(--surface-2);
+}
+/* Nav rows light up under the cursor — the chrome's own hover, which paper gets
+   from the frost and flat had nowhere to get. */
+html[data-skin="flat"] .spine nav button:not([aria-current="true"]):hover,
+html[data-skin="flat"] .spine button:hover {
+  background: color-mix(in srgb, var(--line) 55%, transparent);
+}
+
+/* ── 4. VOICE — the eyebrow drops its ceremony ───────────────────────────
+   Tracked micro-caps are an editorial device (and terminal's ▾-prefixed caps
+   are a console one). A workspace labels a group the way it would say it out
+   loud: small, bold, sentence case. */
+html[data-skin="flat"] .section-label {
+  text-transform: none;
+  font-size: 11px;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+/* The toolbar's centre stacks an eyebrow over a 22px dateline — a masthead. A
+   workspace names the current view small and bold, the way a header bar does,
+   and spends the room on the controls instead. */
+html[data-skin="flat"] [data-breadcrumb] .masthead {
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+/* Density: the register's rows are tighter than paper's, which is meant to
+   breathe. Not terminal-tight — just a notch. */
+html[data-skin="flat"] .spine nav button {
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 
 /* Calendar blocks: paper wants tinted glass (the frost above is already gone
@@ -2525,9 +2670,12 @@ html[data-skin="terminal"][data-palette="catppuccin"][data-theme="light"] {
   color-scheme: light;
 }
 
-/* ── FLAT — tones (theme-aware) ──────────────────────────────────────────── */
+/* ── FLAT — tones (theme-aware) ──────────────────────────────────────────
+   Each tone keeps the base block's GROUND-then-SHEET ramp (bg < surface-2 <
+   surface): the tone changes the temperature of the ground, never the fact that
+   the work sits on a sheet above it. */
 html[data-skin="flat"][data-palette="arctic"][data-theme="light"] {
-  --bg: #f6f8fc; --surface: #ffffff; --surface-2: #eef2f9;
+  --bg: #eef2fa; --surface: #ffffff; --surface-2: #f7f9fd;
   --line: #dde4f1; --line-strong: #c2cce1; --text: #1a1f2b; --muted: #656d80;
   --accent: #4f46e5; --accent-2: #6d64f0;
   --accent-soft: rgba(79, 70, 229, 0.08); --accent-glow: rgba(79, 70, 229, 0.16);
@@ -2541,7 +2689,7 @@ html[data-skin="flat"][data-palette="arctic"][data-theme="dark"] {
   --slot: #2dd4bf; --event-default: #7a869c;
 }
 html[data-skin="flat"][data-palette="linen"][data-theme="light"] {
-  --bg: #fdfbf6; --surface: #ffffff; --surface-2: #f6f1e8;
+  --bg: #f7f2e8; --surface: #ffffff; --surface-2: #fdfaf4;
   --line: #e2d9c8; --line-strong: #cfc3ab; --text: #26211a; --muted: #766c5b;
   --accent: #b06a3c; --accent-2: #c9885c;
   --accent-soft: rgba(176, 106, 60, 0.09); --accent-glow: rgba(176, 106, 60, 0.16);
@@ -3000,4 +3148,230 @@ html[data-skin="terminal"] [class*="rounded"] {
 /* — CURSOR: a blueprint is drafted under crosshairs (over the bare canvas). ── */
 html[data-skin="blueprint"] .atmosphere {
   cursor: crosshair;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   E-INK CHROME — the reader.
+
+   The tokens make e-ink grey; grey alone makes it a *desaturated app*, not a
+   device. Two things separate a Kindle from a greyscale screenshot, and neither
+   is colour:
+
+     · IT IS SET IN A BOOK FACE, at book measure and book leading. That is the
+       token block's job (--font-sans → a text serif) and this block's (the
+       ladder loosens: bigger body, longer leading, tracking back to zero —
+       every step above was tuned for a tight UI sans).
+     · THE PANEL HAS A TOOTH. Electronic paper is a pigment suspension under a
+       matte film, so nothing on it is perfectly smooth. One fixed halftone
+       overlay gives every pixel of the app that surface, which no amount of
+       per-component work would.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* — TYPE: a reader's ladder. Serifs at a UI sans's size and tracking read
+     cramped and spindly; they want air. The steps keep their *relationships*
+     (the display is still a hero) — everything just breathes one notch. */
+html[data-skin="eink"] {
+  --text-display: 23px;
+  --text-display--line-height: 1.2;
+  --text-display--letter-spacing: -0.01em;
+
+  --text-lead: 18px;
+  --text-lead--line-height: 1.3;
+  --text-lead--letter-spacing: -0.005em;
+
+  --text-head: 15px;
+  --text-head--line-height: 1.35;
+  --text-head--letter-spacing: 0em;
+
+  --text-body: 14px;
+  --text-body--line-height: 1.55;
+  --text-body--letter-spacing: 0em;
+
+  --text-caption: 13px;
+  --text-caption--line-height: 1.45;
+  --text-caption--letter-spacing: 0em;
+
+  --text-label: 12px;
+  --text-label--line-height: 1.4;
+  --text-label--letter-spacing: 0em;
+
+  --text-meta: 11.5px;
+  --text-meta--line-height: 1.35;
+  --text-meta--letter-spacing: 0em;
+
+  --text-micro: 10.5px;
+  --text-micro--line-height: 1.3;
+  --text-micro--letter-spacing: 0.01em;
+}
+/* Numerals in a book face are often old-style (x-height figures that hang below
+   the baseline) — charming in prose, illegible in a column of durations. Line
+   them up. */
+html[data-skin="eink"] .mono,
+html[data-skin="eink"] .masthead {
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: 0em;
+}
+
+/* — ONE PIGMENT. An e-ink panel holds a single pigment in a clear fluid: it has
+     exactly one hue, and everything on it is a value of that hue. The tokens are
+     already ink-only, but identity colour arrives inline (domain hues on task
+     rings, project spines, board tints) where no token can reach it.
+
+     One fixed pane does both halves of the physics. `backdrop-filter` greys its
+     own backdrop — the whole app at once, including anything added later — and
+     then the pane's own fill is composited back over it in `color` blend mode,
+     which takes hue and saturation from the fill and luminosity from what's
+     underneath. The result is a true duotone in the scheme's pigment, so the
+     Tint axis (warm grey · sepia · cool grey) survives the desaturation instead
+     of being flattened by it.
+
+     Unlike a filter on a root element this creates no containing block, so fixed
+     positioning and popovers are untouched. The universal "no frost outside
+     paper" rule kills backdrop-filter with !important, so this has to shout
+     back; it is the one deliberate exception. */
+html[data-skin="eink"] {
+  --eink-pigment: #7d7566; /* Paperwhite — warm grey */
+}
+html[data-skin="eink"][data-palette="sepia"] {
+  --eink-pigment: #8a6b40;
+}
+html[data-skin="eink"][data-palette="carta"] {
+  --eink-pigment: #6e737c;
+}
+html[data-skin="eink"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  -webkit-backdrop-filter: grayscale(1) !important;
+  backdrop-filter: grayscale(1) !important;
+  background: var(--eink-pigment);
+  mix-blend-mode: color;
+}
+
+/* — THE TOOTH. A fixed halftone over the whole app, multiplied into whatever is
+     beneath, so text, rules and fills all sit *in* the panel instead of on top
+     of a grey background. Kept to a 3px dot pitch at very low alpha: at a normal
+     viewing distance it reads as texture, never as a pattern. Fixed + on <body>
+     so there is exactly ONE of them (`.atmosphere` is mounted twice — the shell
+     lays one down and the floor overlay lays another). */
+html[data-skin="eink"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--text) 26%, transparent) 0.5px,
+    transparent 0.6px
+  );
+  background-size: 3px 3px;
+  opacity: 0.5;
+}
+/* Dark e-ink is ink-on-glass, not pigment-on-white — multiply would just clog
+   it, so the tooth lightens instead. */
+html[data-skin="eink"][data-theme="dark"] body::after {
+  mix-blend-mode: screen;
+  opacity: 0.35;
+}
+
+/* — THE REFRESH. An e-ink panel cannot repaint a region without driving every
+     particle, so changing pages flashes. It is the single most recognisable
+     thing the device does, and Nuvo already has the exact hook: `.floor-enter`,
+     which fires when you move between altitudes. Held to ~110ms so it reads as
+     the panel settling, not as a fault. */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-skin="eink"] .floor-enter {
+    animation: eink-refresh 110ms steps(2, end) both;
+  }
+}
+@keyframes eink-refresh {
+  0% { filter: invert(1) contrast(1.4); }
+  100% { filter: none; }
+}
+
+/* — LINE ART. A reader has no fills to spare: the whole UI is rules and type.
+     Chips, pills and tinted grounds go hollow, and the rule that's left carries
+     the weight (e-ink cannot render a 4%-alpha wash — it dithers it into
+     nothing, which is why every low-contrast fill on this material was simply
+     invisible). */
+html[data-skin="eink"] .glass-card,
+html[data-skin="eink"] .glass-tint {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BLUEPRINT CHROME — the drawing.
+
+   Cyanotype blue with amber ink is a palette; a blueprint is a DOCUMENT. The
+   grid was deliberately removed once for being noisy, but a drafting sheet
+   without its grid is just a dark blue theme — so it comes back properly:
+   two-weight graph paper on the GROUND only, low enough that content always
+   wins, plus the marks a drawing actually carries (dimension ticks down the
+   time gutter, a node marker on every callout).
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Graph paper: 8px minor, 48px major, over the cyanotype wash. The major lines
+   are what make it read as a *sheet* rather than as texture — a single-weight
+   grid reads as noise, which is what got it cut the first time. */
+html[data-skin="blueprint"] .atmosphere {
+  background:
+    radial-gradient(130% 100% at 50% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 55%),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 13%, transparent) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 13%, transparent) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 5.5%, transparent) 0 1px, transparent 1px 8px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 5.5%, transparent) 0 1px, transparent 1px 8px),
+    var(--bg);
+}
+/* The floor overlay mounts a SECOND .atmosphere on top of the shell's, which
+   would double every grid line into a moiré. Its job is only to be opaque
+   during the floor-enter fade, so it takes the plain ground. */
+html[data-skin="blueprint"] .atmosphere .atmosphere {
+  background: var(--bg);
+}
+
+/* The calendar deliberately does NOT mask the paper (flat gives it a sheet; here
+   it stays transparent): a week laid out over ruled graph paper is the closest
+   thing in the app to what a drawing actually is, and the grid is the reason the
+   hour rules stop reading as arbitrary. */
+
+/* — DIMENSION TICKS. A drawing measures its own extents: the hour gutter stops
+     being a list of numbers and becomes a dimension rule, ticked at every hour
+     against a heavier edge. */
+html[data-skin="blueprint"] .fc-timegrid-slot-label {
+  position: relative;
+}
+html[data-skin="blueprint"] .fc-timegrid-slot-label::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
+html[data-skin="blueprint"] .fc-timegrid-axis,
+html[data-skin="blueprint"] .fc-timegrid-slot-label {
+  border-right: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+html[data-skin="blueprint"] .fc-timegrid-slot-label-cushion {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+/* — CALLOUT NODES. Every label on a drawing is tied to the thing it names by a
+     leader with a node at the end. The eyebrow gets that node: a small hollow
+     diamond in ink, which is the drafting mark, not decoration. */
+html[data-skin="blueprint"] .section-label::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-right: 7px;
+  vertical-align: 1px;
+  border: 1px solid var(--accent);
+  transform: rotate(45deg);
 }

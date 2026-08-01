@@ -111,12 +111,18 @@ export const softTint = (c: string, pct: number) => `color-mix(in srgb, ${c} ${p
 
 // ── Shared status vocab (kept here so board/detail/initiative agree) ─────────
 export const PROJECT_STATUS: ProjectStatus[] = ["backlog", "in_progress", "waiting", "cancelled", "complete"];
+// `--ok` / `--warn` are tokens, not hexes, for the same reason every other colour
+// here is: a skin has to be able to answer for every colour on screen. These two
+// were raw amber/teal, so they leaked full saturation into e-ink (which is meant
+// to have none) and into the editor schemes (which publish their own ramp).
+// READY — the readiness meter's ripe fill — is `complete`, so this is also the
+// one place that decides what "done" looks like across the whole app.
 export const PROJECT_STATUS_COLORS: Record<ProjectStatus, string> = {
   backlog: "var(--muted)",
   in_progress: "var(--accent)",
-  waiting: "#D97706",
+  waiting: "var(--warn)",
   cancelled: "var(--signal)",
-  complete: "#0D9488",
+  complete: "var(--ok)",
 };
 export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
   backlog: "Backlog",

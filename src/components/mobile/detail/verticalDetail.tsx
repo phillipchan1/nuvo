@@ -51,12 +51,15 @@ export const STATUS_LABEL: Record<ProjectStatus, string> = {
   cancelled: "Cancelled",
   complete: "Complete",
 };
+// Mirrors PROJECT_STATUS_COLORS (floors/parts.tsx) — the phone must not disagree
+// with the desktop about what "waiting" looks like. Tokens, never hexes, so the
+// active material owns the colour.
 export const STATUS_COLOR: Record<ProjectStatus, string> = {
   backlog: "var(--muted)",
   in_progress: "var(--accent)",
-  waiting: "#D97706",
+  waiting: "var(--warn)",
   cancelled: "var(--signal)",
-  complete: "#0D9488",
+  complete: "var(--ok)",
 };
 // Active work floats to the top of the flat lists; finished/abandoned sinks.
 export const STATUS_RANK: Record<ProjectStatus, number> = {

@@ -1660,7 +1660,10 @@ export default function CalendarPane({
     // reads continuously across the spine, the rail, and the calendar grid —
     // the grid IS the paper. A solid surface here is the "frost" seam that made
     // the calendar read lighter than the rail.
-    <div className="relative flex h-full min-w-0 flex-1 flex-col">
+    // `cal-sheet` is the FLAT skin's hook: that material has no gradient to run
+    // across the window, so it separates ground from work instead — grey chrome
+    // and pools, a white sheet under the grid. Inert on every other material.
+    <div className="cal-sheet relative flex h-full min-w-0 flex-1 flex-col">
       {createError && (
         <div className="flex shrink-0 items-start gap-2 border-b border-signal bg-signal-soft px-3 py-2 text-caption text-signal">
           <span className="mt-px shrink-0">⚠</span>
