@@ -178,15 +178,36 @@ describe("tool schemas", () => {
     }
   });
 
+  // A read-only tool CAN be legitimately argument-free — "show me my most-met
+  // contacts" is a real request. Declaring those explicitly keeps the rule below
+  // strict without forcing a read tool into REQUIRES_TARGET, where a target
+  // error would be nonsense. Anything that writes belongs in REQUIRES_TARGET,
+  // never here.
+  const ARGUMENTLESS_BY_DESIGN = new Set<string>([
+    // e.g. find_contact — an empty query returns the people they meet most.
+  ]);
+
   it("guards every tool whose schema would otherwise accept an empty call", () => {
     // 22 of 38 tools had no `required` at all — "complete_task" with no task,
     // "cancel_event" with no event. Anything still in that state must be
-    // covered by REQUIRES_TARGET, or it can be called with nothing.
+    // covered by REQUIRES_TARGET or declared argument-free on purpose.
     const unguarded = TOOL_DEFINITIONS.filter((t) => {
       const p = t.function.parameters as { required?: string[] } | undefined;
-      return !(p?.required?.length) && !REQUIRES_TARGET[t.function.name];
+      return !(p?.required?.length) &&
+        !REQUIRES_TARGET[t.function.name] &&
+        !ARGUMENTLESS_BY_DESIGN.has(t.function.name);
     }).map((t) => t.function.name);
-    expect(unguarded, "these accept a call with no arguments at all").toEqual([]);
+    expect(
+      unguarded,
+      "these accept a call with no arguments at all — add a target rule, or declare them argument-free on purpose",
+    ).toEqual([]);
+  });
+
+  it("never lets a write be declared argument-free", () => {
+    const writeish = [...ARGUMENTLESS_BY_DESIGN].filter((n) =>
+      /^(create|update|delete|move|schedule|plan|cancel|decline|complete|trash|add|reschedule|unschedule|propose)_/.test(n),
+    );
+    expect(writeish, "a tool that writes must name what it acts on").toEqual([]);
   });
 });
 
