@@ -29,7 +29,7 @@ export type OverlayKind =
   | "week-plan"
   | "upkeep";
 
-export type SettingsSection = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "desktop" | "account" | "billing" | "about";
+export type SettingsSection = "appearance" | "schedule" | "connections" | "labels" | "desktop" | "account" | "billing" | "about";
 
 export type FloorModal = null | "new-initiative" | "new-project";
 
@@ -149,6 +149,10 @@ export function readNavState(raw: unknown): AppNavState | null {
     initiativeView: (["ondeck", "groom", "all", "shipped"] as DetailView[]).includes(s.initiativeView as DetailView)
       ? (s.initiativeView as DetailView)
       : "ondeck",
+    settingsSection:
+      (s.settingsSection as string) === "integrations" || !s.settingsSection
+        ? DEFAULT_NAV.settingsSection
+        : (s.settingsSection as SettingsSection),
     focus: { ...DEFAULT_NAV.focus, ...(s.focus ?? {}) },
   };
 }

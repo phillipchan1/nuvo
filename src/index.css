@@ -524,6 +524,10 @@ html.tauri-macos .spine[data-rail] .spine-separator {
 }
 .inline-edit:hover { background: var(--accent-soft); }
 .inline-edit:focus { background: var(--accent-soft); }
+/* Spine rows (record task list) already carry hover/lift — a second tint on the
+   title field reads as a box inside a box. Caret + row state is enough. */
+.inline-edit-quiet:hover,
+.inline-edit-quiet:focus { background: transparent; }
 .inline-edit:empty::before {
   content: attr(data-placeholder);
   color: var(--muted);

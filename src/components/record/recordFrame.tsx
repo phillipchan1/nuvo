@@ -21,6 +21,7 @@
 import { useEffect, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { InlineText } from "../floors/parts";
+import { READY } from "../floors/ReadinessBanner";
 import { isTypingIn } from "../floors/TaskList";
 
 /** The gutter every control hangs in. One number, so the spine can't drift. */
@@ -130,6 +131,7 @@ export function Head({
   onName,
   namePlaceholder = "Untitled",
   autoFocusName = false,
+  titlePrefix,
   outcome,
   onOutcome,
   outcomePlaceholder,
@@ -141,6 +143,8 @@ export function Head({
   namePlaceholder?: string;
   /** create only: the name is the first thing you'd type, so take the caret. */
   autoFocusName?: boolean;
+  /** Ship / complete control beside the masthead (project records). */
+  titlePrefix?: ReactNode;
   outcome: string;
   onOutcome: (v: string) => void;
   outcomePlaceholder: string;
@@ -153,15 +157,18 @@ export function Head({
         {acts}
       </div>
       {/* the ONE hero. Fraunces carries a name, never a number. */}
-      <h1 className="text-display masthead leading-tight">
-        <InlineText
-          value={name}
-          onChange={onName}
-          placeholder={namePlaceholder}
-          autoFocusEmpty={autoFocusName}
-          live={autoFocusName}
-        />
-      </h1>
+      <div className="flex items-start gap-2.5">
+        {titlePrefix}
+        <h1 className="min-w-0 flex-1 text-display masthead leading-tight">
+          <InlineText
+            value={name}
+            onChange={onName}
+            placeholder={namePlaceholder}
+            autoFocusEmpty={autoFocusName}
+            live={autoFocusName}
+          />
+        </h1>
+      </div>
       {/* No "GOAL" eyebrow: a lead line directly under a name is self-evidently
           the outcome, and the placeholder teaches it when empty (D-041 — a thing
           is named once). Set below the hero, not beside it. */}
@@ -297,27 +304,47 @@ export function RailSec({ label, right, children }: { label: string; right?: Rea
 
 /** Readiness as a checklist you watch fill in, not a sentence and not a dial.
  *  The finish line is deliberately absent — the placement band right above says
- *  whether one is set, and a thing is named once (D-041). */
-export function ReadyTicks({ axes }: { axes: { label: string; met: boolean }[] }) {
+ *  whether one is set, and a thing is named once (D-041). Met axes wear the same
+ *  green check the spine uses at rest; unmet axes stay hollow. */
+function ReadyMark({ met }: { met: boolean }) {
+  const box = "flex h-[11px] w-[11px] shrink-0 items-center justify-center";
+  if (met) {
+    return (
+      <span className={box} style={{ color: `color-mix(in srgb, ${READY} 66%, var(--muted))` }} aria-hidden>
+        <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2.5 6.5 5 9l4.5-5.5" />
+        </svg>
+      </span>
+    );
+  }
   return (
-    <div className="flex flex-col gap-1.5">
-      {axes.map((a) => (
-        <div
-          key={a.label}
-          className={`flex items-center gap-2 text-meta text-muted ${a.met ? "" : "opacity-60"}`}
-          title={a.met ? `${a.label} — set` : `${a.label} — not set yet`}
-        >
-          <span
-            className="h-[5px] w-[5px] shrink-0 rounded-full"
-            style={
-              a.met
-                ? { background: "var(--muted)" }
-                : { boxShadow: "inset 0 0 0 1px var(--line-strong)" }
-            }
-          />
-          {a.label}
-        </div>
-      ))}
-    </div>
+    <span
+      className={`${box} rounded-full`}
+      style={{ boxShadow: "inset 0 0 0 1px var(--line-strong)" }}
+      aria-hidden
+    />
+  );
+}
+
+export function ReadyTicks({ axes }: { axes: { label: string; met: boolean }[] }) {
+  const all = axes.length > 0 && axes.every((a) => a.met);
+  return (
+    <RailSec
+      label="Ready"
+      right={all ? <ReadyMark met /> : undefined}
+    >
+      <div className="flex flex-col gap-1.5">
+        {axes.map((a) => (
+          <div
+            key={a.label}
+            className={`flex items-center gap-2 text-meta text-muted ${a.met ? "" : "opacity-60"}`}
+            title={a.met ? `${a.label} — set` : `${a.label} — not set yet`}
+          >
+            <ReadyMark met={a.met} />
+            {a.label}
+          </div>
+        ))}
+      </div>
+    </RailSec>
   );
 }

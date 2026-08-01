@@ -204,6 +204,7 @@ export function InlineText({
   inputClassName = "",
   autoFocusEmpty = false,
   live = false,
+  quiet = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -217,6 +218,8 @@ export function InlineText({
    *  commit button and the readiness ticks read it live, and clicking the button
    *  blurs this field in the same tick, which is too late. */
   live?: boolean;
+  /** Skip the hover/focus tint — use when the parent row already carries it. */
+  quiet?: boolean;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
 
@@ -261,7 +264,7 @@ export function InlineText({
         const text = e.clipboardData.getData("text/plain");
         document.execCommand("insertText", false, text);
       }}
-      className={`inline-edit ${className} ${inputClassName}`}
+      className={`inline-edit${quiet ? " inline-edit-quiet" : ""} ${className} ${inputClassName}`}
       style={{ caretColor: "var(--accent)" }}
     />
   );
@@ -487,8 +490,8 @@ export function DomainPicker({
       <button
         ref={btnRef}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className={`fast flex items-center rounded-full ${
-          lg ? "gap-2 px-3 py-1 text-caption hover:brightness-95" : "gap-1.5 border px-2 py-0.5 text-meta"
+        className={`fast tap flex items-center rounded-full ${
+          lg ? "gap-2 px-3.5 py-1.5 text-caption hover:brightness-95" : "gap-1.5 border px-2 py-0.5 text-meta"
         }`}
         style={{ color, background: lg ? `${color}1f` : `${color}12`, ...(lg ? {} : { borderColor: `${color}66` }) }}
         title="Change domain"
@@ -497,15 +500,17 @@ export function DomainPicker({
         <span className="font-medium">{cur?.name ?? "Domain"}</span>
         <span className="opacity-40">▾</span>
       </button>
-      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={150} onClose={() => setOpen(false)}>
+      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={lg ? 200 : 170} onClose={() => setOpen(false)}>
         {domains.map((d) => (
           <button
             key={d.id}
             onClick={() => { onChange(d.id); setOpen(false); }}
-            className="fast flex w-full items-center gap-2 px-2.5 py-1 text-left text-label hover:bg-accent-soft"
+            className={`fast tap flex w-full items-center gap-2.5 text-left hover:bg-accent-soft ${
+              lg ? "px-3 py-2.5 text-body" : "px-2.5 py-1.5 text-label"
+            }`}
             style={{ color: d.id === value ? d.color : "var(--text)" }}
           >
-            <span style={{ color: d.color }}>{d.icon}</span>
+            <span className={lg ? "text-body leading-none" : undefined} style={{ color: d.color }}>{d.icon}</span>
             <span className="truncate">{d.name}</span>
             {d.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
           </button>

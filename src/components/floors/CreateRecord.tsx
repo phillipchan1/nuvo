@@ -43,7 +43,6 @@ import {
   GUT,
   Head,
   IconBtn,
-  RailSec,
   ReadyTicks,
   RecordScrim,
   Sec,
@@ -440,14 +439,12 @@ export default function CreateRecord({
                     color={accent}
                   />
                 )}
-                <RailSec label="Ready">
-                  <ReadyTicks
-                    axes={[
-                      { label: kind === "project" ? "Outcome" : "Objective", met: outcome.trim() !== "" },
-                      { label: kind === "project" ? "Steps" : "First step", met: tasks.length > 0 },
-                    ]}
-                  />
-                </RailSec>
+                <ReadyTicks
+                  axes={[
+                    { label: kind === "project" ? "Outcome" : "Objective", met: outcome.trim() !== "" },
+                    { label: kind === "project" ? "Steps" : "First step", met: tasks.length > 0 },
+                  ]}
+                />
               </>
             }
           />

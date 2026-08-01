@@ -147,6 +147,9 @@ export default function TaskList({
         // put the caret at the end rather than selecting the whole title
         const r = document.createRange();
         if (row) { r.selectNodeContents(row); r.collapse(false); const s = getSelection(); s?.removeAllRanges(); s?.addRange(r); }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setSel(-1);
       } else if (e.key === " ") {
         e.preventDefault();
         toggleTask(t.id);
@@ -164,6 +167,31 @@ export default function TaskList({
   useEffect(() => {
     if (sel >= tasks.length) setSel(tasks.length - 1);
   }, [tasks.length, sel]);
+
+  // Click/focus outside the rows → drop the keyboard-nav highlight.
+  useEffect(() => {
+    if (!keyboardNav) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const list = listRef.current;
+      if (!list || list.contains(e.target as Node)) return;
+      setSel(-1);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [keyboardNav]);
+
+  useEffect(() => {
+    if (!keyboardNav) return;
+    const list = listRef.current;
+    if (!list) return;
+    const onFocusOut = (e: FocusEvent) => {
+      const next = e.relatedTarget as Node | null;
+      if (next && list.contains(next)) return;
+      setSel(-1);
+    };
+    list.addEventListener("focusout", onFocusOut);
+    return () => list.removeEventListener("focusout", onFocusOut);
+  }, [keyboardNav, tasks.length]);
 
   const gutter = spine ? "w-[26px]" : "";
 
@@ -211,6 +239,7 @@ export default function TaskList({
               onChange={(v) => updateTask(t.id, { title: v })}
               placeholder="Untitled task"
               autoFocusEmpty
+              quiet={spine}
               className={`min-w-0 flex-1 text-body ${t.status === "done" ? "text-muted line-through" : ""}`}
             />
 

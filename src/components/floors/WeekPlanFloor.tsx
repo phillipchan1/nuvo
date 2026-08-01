@@ -30,7 +30,6 @@ import { useWeekReviewActions, useWeekReviewRow } from "../../hooks/useWeekRevie
 import { ProjectShipAssess } from "../record/ShipAssess";
 import WeekEmblem from "./WeekEmblem";
 import WeekStory from "./WeekStory";
-import { WhatYouBuilt } from "./WhatYouBuilt";
 import { WeekProjectRow } from "./WeekProjectRow";
 import { WeekHoursBreakdown } from "./WeekEvidence";
 import { fmtHours } from "../../lib/dates";
@@ -293,9 +292,6 @@ export function WeekPlanBody({
           )}
         </Col>
         </div>
-
-        {/* What you built — merged PRs as shipped work (self-hides if none). */}
-        {!ahead && <WhatYouBuilt weekStartISO={viewedWeekISO} />}
 
         {/* Day / Domain breakdown at the end — completed tasks, grouped by day or
             domain. Full width so the day spread can read as seven lanes. */}

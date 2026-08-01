@@ -42,9 +42,9 @@ import {
   initiativeById,
   initiativeAttainment,
   isStatusOverride,
+  isProjectComplete,
   projectById,
   projectProgress,
-  projectSprintCount,
   projectsOf,
   tasksOf,
   type KeyResult,
@@ -64,9 +64,9 @@ import {
   InlineText,
   PROJECT_STATUS_COLORS,
 } from "../floors/parts";
+import { READY } from "../floors/ReadinessBanner";
 import TaskList, { isTypingIn } from "../floors/TaskList";
 import DeckCard, { deckWeight } from "../ondeck/DeckCard";
-import { ProjectActivityBind } from "../floors/ProjectActivityBind";
 import { QuarterBand, WeekBand } from "./PlacementBand";
 import { RecordLog } from "./RecordLog";
 import { AssessLayer, type AssessFinding } from "./AssessLayer";
@@ -169,7 +169,7 @@ function ProjectRecord({
   sheetRef: RefObject<HTMLDivElement>;
 }) {
   const store = useVertical();
-  const { data, updateProject, updateTask, deleteProject, routeTask, addProjectReadyToSprint } = store;
+  const { data, updateProject, updateTask, deleteProject, routeTask } = store;
   const project = projectById(data, id);
   const [assessing, setAssessing] = useState(false);
   const [shipping, setShipping] = useState(false);
@@ -181,12 +181,12 @@ function ProjectRecord({
   const logRef = useRef<HTMLTextAreaElement>(null);
   const bandRef = useRef<HTMLDivElement>(null);
 
-  // t = tasks · l = log · s = sprint. Bare letters, gated on "not typing".
+  // t = tasks · c = comments · s = sprint. Bare letters, gated on "not typing".
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
-      const target = k === "t" ? taskRef.current : k === "l" ? logRef.current : k === "s" ? bandRef.current : null;
+      const target = k === "t" ? taskRef.current : k === "c" || k === "l" ? logRef.current : k === "s" ? bandRef.current : null;
       if (!target) return;
       e.preventDefault();
       target.focus();
@@ -215,10 +215,10 @@ function ProjectRecord({
   const tasks = tasksOf(data, project.id);
   const done = tasks.filter((t) => t.status === "done").length;
   const openMins = tasks.filter((t) => t.status !== "done").reduce((s, t) => s + (t.durationMins || 0), 0);
-  const inSprint = projectSprintCount(data, project.id);
   const suggestions = suggestForProject(data, project);
   const axes = projectReadinessAxes(data, project, new Date());
   const manual = isStatusOverride(project.storedStatus);
+  const shipped = isProjectComplete(project.status);
 
   const setStatus = (s: ProjectStatus) => {
     setMenu(false);
@@ -257,12 +257,6 @@ function ProjectRecord({
         }
         acts={
           <span className="flex items-center gap-0.5">
-            <IconBtn
-              glyph="★"
-              label="Slot this project's open tasks into this week"
-              badge={inSprint}
-              onClick={() => addProjectReadyToSprint(project.id)}
-            />
             <IconBtn glyph="✦" label="Assess — have Nuvo review this and show where to sharpen it" onClick={() => setAssessing(true)} />
             <span className="mx-1 h-3.5 w-px bg-line" />
             <IconBtn glyph="···" label="Groom, status, delete" btnRef={menuRef} onClick={() => setMenu((o) => !o)} />
@@ -285,6 +279,26 @@ function ProjectRecord({
         }
         name={project.name}
         onName={(v) => updateProject(project.id, { name: v })}
+        titlePrefix={
+          <button
+            onClick={() => (shipped ? updateProject(project.id, { status: "in_progress" }) : setShipping(true))}
+            aria-label={shipped ? "Reopen project" : "Ship project — mark complete"}
+            title={shipped ? "Shipped — tap to reopen" : "Finished — ship it"}
+            className="group/chk fast mt-[5px] flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
+            style={shipped ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
+          >
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 10 10"
+              fill="none"
+              className={shipped ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"}
+              style={{ color: shipped ? "#fff" : READY }}
+            >
+              <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        }
         outcome={project.outcome}
         onOutcome={(v) => updateProject(project.id, { outcome: v })}
         outcomePlaceholder="What does done look like, in one line?"
@@ -315,7 +329,7 @@ function ProjectRecord({
               </div>
             </Sec>
 
-            <Sec label="Log" spine={accent}>
+            <Sec label="Comments" spine={accent}>
               <RecordLog kind="project" id={project.id} accent={accent} spine composerRef={logRef} />
             </Sec>
           </>
@@ -336,18 +350,13 @@ function ProjectRecord({
           assessing ? null : (
             <>
               <WeekBand p={project} store={store} color={accent} bandRef={bandRef} />
-              <RailSec label="Ready">
-                <ReadyTicks
-                  axes={[
-                    { label: "Outcome", met: project.outcome.trim() !== "" },
-                    { label: "Steps", met: axes.planned },
-                  ]}
-                />
-              </RailSec>
+              <ReadyTicks
+                axes={[
+                  { label: "Outcome", met: project.outcome.trim() !== "" },
+                  { label: "Steps", met: axes.planned },
+                ]}
+              />
               <Suggestions suggestions={suggestions} onFold={(taskId) => routeTask(taskId, { projectId: project.id })} />
-              <RailSec label="Activity">
-                <ProjectActivityBind projectId={project.id} projectName={project.name} compact />
-              </RailSec>
             </>
           )
         }
@@ -455,7 +464,7 @@ function InitiativeRecord({
       if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "k") { e.preventDefault(); addKeyResult(id); setKrFocus((n) => n + 1); return; }
-      const target = k === "p" ? projRef.current : k === "l" ? logRef.current : k === "q" ? bandRef.current : null;
+      const target = k === "p" ? projRef.current : k === "c" || k === "l" ? logRef.current : k === "q" ? bandRef.current : null;
       if (!target) return;
       e.preventDefault();
       target.focus();
@@ -652,7 +661,7 @@ function InitiativeRecord({
               </div>
             </Sec>
 
-            <Sec label="Log" spine={accent}>
+            <Sec label="Comments" spine={accent}>
               <RecordLog kind="initiative" id={initiative.id} accent={accent} spine composerRef={logRef} />
             </Sec>
           </>
@@ -673,14 +682,12 @@ function InitiativeRecord({
           assessing ? null : (
             <>
               <QuarterBand i={initiative} store={store} color={accent} bandRef={bandRef} />
-              <RailSec label="Ready">
-                <ReadyTicks
-                  axes={[
-                    { label: "Objective", met: initiative.outcome.trim() !== "" },
-                    { label: "A number moving", met: initiative.keyResults.length > 0 },
-                  ]}
-                />
-              </RailSec>
+              <ReadyTicks
+                axes={[
+                  { label: "Objective", met: initiative.outcome.trim() !== "" },
+                  { label: "A number moving", met: initiative.keyResults.length > 0 },
+                ]}
+              />
               <Suggestions
                 suggestions={suggestions}
                 onFold={(taskId) => routeTask(taskId, { projectId: null, initiativeId: initiative.id })}

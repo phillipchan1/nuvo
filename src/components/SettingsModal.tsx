@@ -11,7 +11,6 @@ import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
 import { Field, TextInput, Select, Toggle, Stepper, Segmented } from "./form";
-import { GitHubConnect } from "./GitHubConnect";
 import { BillingPane } from "./billing/BillingPane";
 import type { SettingsSection } from "../lib/appNav";
 import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
@@ -31,7 +30,7 @@ const DOWNLOAD_MAC_URL =
   "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "connections" | "integrations" | "labels" | "account" | "billing" | "about";
+type SectionId = "appearance" | "schedule" | "connections" | "labels" | "account" | "billing" | "about";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   {
@@ -62,16 +61,6 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
         <rect x="2.3" y="3.3" width="11.4" height="10.4" rx="1.6" stroke="currentColor" strokeWidth="1.3" />
         <path d="M2.3 6.3h11.4" stroke="currentColor" strokeWidth="1.3" />
         <path d="M5.5 1.8v2.6M10.5 1.8v2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    id: "integrations",
-    label: "Integrations",
-    icon: (
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-        <path d="M6.2 2.5 3 5.7a2.4 2.4 0 0 0 0 3.4l3.7 3.7a2.4 2.4 0 0 0 3.4 0l3.2-3.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M9.8 13.5 13 10.3a2.4 2.4 0 0 0 0-3.4L9.3 3.2a2.4 2.4 0 0 0-3.4 0L2.7 6.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
       </svg>
     ),
   },
@@ -1069,18 +1058,6 @@ function ConnectionsPane({
   );
 }
 
-function IntegrationsPane() {
-  return (
-    <div className="max-w-2xl">
-      <PaneHeader
-        title="Integrations"
-        sub="Feeds of completed work that flow into your projects as actuals — what you shipped, not what's scheduled."
-      />
-      <GitHubConnect />
-    </div>
-  );
-}
-
 // Desktop-only: manually check for an update and, when one is staged, restart
 // into it. Shares state with the bottom-right toast via the update store, so the
 // two never disagree.
@@ -1423,7 +1400,6 @@ export default function SettingsModal({
       {active === "connections" && (
         <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
       )}
-      {active === "integrations" && <IntegrationsPane />}
       {active === "labels" && <LabelsPane />}
       {active === "account" && <AccountPane />}
       {active === "billing" && (
