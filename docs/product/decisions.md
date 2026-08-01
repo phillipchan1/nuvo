@@ -1831,6 +1831,62 @@ art library rather than swept, since the teachers draw from the same family.
 data no longer has a path. The rules card covers most of it; if that turns out to matter,
 the answer is a help surface, not a second door on first run.
 
+**D-066 · 2026-07-31 · The chat gets a conformance battery, and slots become something it
+can say.**
+
+Asked for *"9am slot today where I'll update documentation get day spring deployed get
+stampede subdomains working"*, Nuvo created **three consecutive one-hour tasks** — 9–10,
+10–11, 11–12 — and reported it as done. Nobody asked for an order, a duration, or three
+blocks. The morning that was supposed to be one held block came back tiled.
+
+→ **Why it was legal.** `slots` has been a table since migration 8 — a block of time that
+owns N tasks, mirrored to Google as one busy block, droppable into on the Schedule. The
+agent could not see one (`agent/context.ts` never read the table) and could not make one
+(no slot tool existed). Worse, its prompt already used the word: `todayFreeSlots` meant
+*computed free window*. So "9am slot" had exactly one reading available to the model, and
+it took it. **Principle 11, inside the prompt** — one name, two meanings, and the model
+picked the wrong one every time.
+
+→ **The fix, in three parts.** Slots are in context (`todaySlots`, with what's inside) and
+they now count as **busy** — the agent was offering hours the user had already claimed.
+The computed gaps are renamed `todayOpenWindows` everywhere, so "slot" means one thing.
+And the chat has `create_slot` / `add_to_slot` / `reschedule_slot` / `delete_slot`, with
+the naming rule stated as the job: *the user gave you the contents, not a title — write the
+through-line in 2–4 words.* Card, undo and the "released, work kept" wording included.
+
+→ **The real decision is the second half.** Every other part of Nuvo fails loudly — a
+component throws, a type fails `tsc`, a drifting week rule fails the kernel suite. The chat
+fails **fluently**. Four times in six days it shipped something confidently wrong that no
+gate could have caught: the empty-week claim over a full deck (D-031), the Saturday week
+drift (D-032), the hidden-calendar booking (D-047), and this. So the chat now has what the
+kernel has:
+
+- The agent's pure half is **importable outside Deno** — prompt, tool definitions, snapshot
+  shape, message assembly, turn loop. The battery drives *those*, not copies of them.
+- **`npm test`** pins what needs no model: every tool has a handler, every tool the prompt
+  names exists, every context field the prompt reads is actually sent, the loop's failure
+  paths (a tool that throws is fed back, not fatal), and one name one meaning. It found a
+  live bug in its first minute — the prompt was telling the model to call a tool that
+  doesn't exist.
+- **`npm run eval`** runs behavioral scenarios against a live model, asserting on tools and
+  arguments rather than prose. **The bar is 100% — every scenario, every run.** It started
+  as 100/80 across two tiers and was raised the same day: the chat is a first-class surface,
+  and a planner you have to double-check is not doing its job. A partial pass is reported as
+  **flaky** and is a bug — the chat drifts there, or the assertion is loose enough to fail a
+  right answer. The only way past the bar is an explicit dated `quarantined:` line, capped
+  at 10% of the suite, so the escape hatch can't quietly become the old 80%.
+- The map of what the chat can do — including what it **can't** — is
+  [`docs/agent-conformance.md`](../agent-conformance.md), and `npm test` fails when the map
+  and the suite disagree.
+
+→ **What we gave up, honestly:** the battery asserts what the agent *decided*, not what the
+handler then wrote — that needs a database and is named as the top gap rather than papered
+over. Recorded runs protect the plumbing but can't catch a judgment regression; only the
+live run can, and it costs tokens. Ledger: **D3** ("I have 40 minutes — what fits?") is the
+row this opens a path to; the slot half strains **P10** (a slot is not a fifth pool — it is
+a container for time, and it already existed) and closes nothing on its own until the chat
+proves it in real use.
+
 ---
 
 ## 2 · Things we decided **not** to do

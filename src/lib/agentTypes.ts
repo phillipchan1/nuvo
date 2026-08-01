@@ -44,14 +44,19 @@ export type AgentVerb =
  *  so scrolling back to it an hour later shows what's true now, not a snapshot
  *  that quietly went stale the moment you moved the task somewhere else. */
 export interface AgentRef {
-  kind: "task" | "event" | "priority";
+  kind: "task" | "event" | "priority" | "slot";
   id: string;
 }
 
 /** The inverse of an action — see the same type in supabase/functions/agent/tools.ts. */
 export type AgentUndo =
   | { kind: "task"; patch: Record<string, unknown> }
-  | { kind: "priority"; id: string; restore: BigRock | null };
+  | { kind: "priority"; id: string; restore: BigRock | null }
+  // Slots: a patch reverses a move; a delete reverses holding the block in the
+  // first place, and names the tasks that were created inside it so undo takes
+  // those with it instead of leaving three orphans on the day.
+  | { kind: "slot"; patch: Record<string, unknown> }
+  | { kind: "slot-delete"; id: string; childIds: string[] };
 
 export interface AgentAction {
   tool: string;
