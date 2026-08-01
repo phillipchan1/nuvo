@@ -2166,13 +2166,11 @@ html[data-skin="blueprint"][data-theme="dark"] {
       a desaturated signal, and NO shadows at all: selection reads by border +
       the small rise alone, like electronic paper. Restful, anti-glare.
 
-      This is a READER, and the thing that makes a Kindle look like a Kindle is
-      not the grey — it's that the whole interface is set in a book face. So
-      --font-sans becomes a text serif (Iowan / Palatino / Georgia — never
-      Fraunces, which is a display face and turns to mush at 11px). Fraunces
-      stays on --font-serif for the heroes, exactly as on paper.
-      --ok / --warn are pulled to ink as well: a real e-ink panel has no colour
-      to spend on a status. */
+      This is a READER — but a reader's *interface* is a sans, and the app is
+      all interface, so the identity is in how type is SET rather than which
+      family it is set in: see E-INK CHROME (greyscale rendering, a flat weight
+      band, rank carried by size). --ok / --warn are pulled to ink as well: a
+      real e-ink panel has no colour to spend on a status. */
 html[data-skin="eink"][data-theme="light"] {
   --bg: #e9e6de;
   --surface: #f2efe8;
@@ -2192,7 +2190,11 @@ html[data-skin="eink"][data-theme="light"] {
   /* Derived, not fixed, so every tint (sepia, carta) keeps its own cast. */
   --ok: color-mix(in srgb, var(--text) 55%, var(--muted));
   --warn: color-mix(in srgb, var(--muted) 80%, var(--text));
-  --font-sans: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  /* One face, and it is the sans. A book face was tried here and cut — an
+     e-reader sets the BOOK in a serif and its own interface in a sans, and Nuvo
+     is all interface. --font-serif is pointed at the sans too, so the
+     ceremonial hooks flatten with it and the device has a single voice. */
+  --font-serif: var(--font-sans);
   --radius-sm: 3px;
   --radius: 5px;
   --radius-lg: 7px;
@@ -2220,7 +2222,11 @@ html[data-skin="eink"][data-theme="dark"] {
   /* Derived, not fixed, so every tint (sepia, carta) keeps its own cast. */
   --ok: color-mix(in srgb, var(--text) 55%, var(--muted));
   --warn: color-mix(in srgb, var(--muted) 80%, var(--text));
-  --font-sans: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  /* One face, and it is the sans. A book face was tried here and cut — an
+     e-reader sets the BOOK in a serif and its own interface in a sans, and Nuvo
+     is all interface. --font-serif is pointed at the sans too, so the
+     ceremonial hooks flatten with it and the device has a single voice. */
+  --font-serif: var(--font-sans);
   --radius-sm: 3px;
   --radius: 5px;
   --radius-lg: 7px;
@@ -3154,22 +3160,50 @@ html[data-skin="blueprint"] .atmosphere {
    E-INK CHROME — the reader.
 
    The tokens make e-ink grey; grey alone makes it a *desaturated app*, not a
-   device. Two things separate a Kindle from a greyscale screenshot, and neither
-   is colour:
+   device. What separates a Kindle from a greyscale screenshot is how type sits
+   on the panel, and none of it is the typeface:
 
-     · IT IS SET IN A BOOK FACE, at book measure and book leading. That is the
-       token block's job (--font-sans → a text serif) and this block's (the
-       ladder loosens: bigger body, longer leading, tracking back to zero —
-       every step above was tuned for a tight UI sans).
-     · THE PANEL HAS A TOOTH. Electronic paper is a pigment suspension under a
-       matte film, so nothing on it is perfectly smooth. One fixed halftone
-       overlay gives every pixel of the app that surface, which no amount of
-       per-component work would.
+     · IT IS RENDERED GREYSCALE. An e-ink panel has no RGB subpixels, so it
+       cannot do subpixel antialiasing — every glyph is resolved in shades of
+       the one pigment. Asking the browser for the same thing is not a stylistic
+       choice, it is the actual physics, and it visibly evens out every stroke.
+     · IT SITS IN A NARROW WEIGHT BAND. Electronic paper blooms under heavy
+       weight, so readers keep the whole interface between regular and medium.
+     · SO RANK IS CARRIED BY SIZE, NOT WEIGHT — the exact inverse of terminal,
+       which collapses every size to one cell and ranks by weight and colour.
+       A chapter title on a reader is bigger, never bolder.
    ════════════════════════════════════════════════════════════════════════ */
 
-/* — TYPE: a reader's ladder. Serifs at a UI sans's size and tracking read
-     cramped and spindly; they want air. The steps keep their *relationships*
-     (the display is still a hero) — everything just breathes one notch. */
+/* — RENDERING: greyscale, the way the panel would. */
+html[data-skin="eink"] body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* — WEIGHT: one band, 400–500. Nuvo leans on 600/650 for hierarchy in ~200
+     places, as a UI should; a reader doesn't have that lever, so the top of the
+     ladder is folded down to 500. Both spellings are covered because weight
+     arrives as a Tailwind utility in most surfaces and as an inline style in
+     the chrome (React serialises it as `font-weight: 600;`), and inline can
+     only be beaten with !important. */
+html[data-skin="eink"] .font-semibold,
+html[data-skin="eink"] .font-bold,
+html[data-skin="eink"] [style*="font-weight: 6"],
+html[data-skin="eink"] [style*="font-weight: 7"] {
+  font-weight: 500 !important;
+}
+/* The heroes fold down with everything else and lead on size alone — the
+     masthead is 23px against a 14px body, which is rank enough. */
+html[data-skin="eink"] .masthead,
+html[data-skin="eink"] .serif {
+  font-variation-settings: normal;
+  font-weight: 500;
+  letter-spacing: -0.012em;
+}
+
+/* — TYPE: a reader's ladder. Everything breathes one notch wider than a dense
+     UI's, and the tracking comes back to zero (the base scale's negative
+     tracking tightens a UI up; a panel read at arm's length wants the room). */
 html[data-skin="eink"] {
   --text-display: 23px;
   --text-display--line-height: 1.2;
@@ -3203,11 +3237,7 @@ html[data-skin="eink"] {
   --text-micro--line-height: 1.3;
   --text-micro--letter-spacing: 0.01em;
 }
-/* Numerals in a book face are often old-style (x-height figures that hang below
-   the baseline) — charming in prose, illegible in a column of durations. Line
-   them up. */
-html[data-skin="eink"] .mono,
-html[data-skin="eink"] .masthead {
+html[data-skin="eink"] .mono {
   font-variant-numeric: lining-nums tabular-nums;
   letter-spacing: 0em;
 }
