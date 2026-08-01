@@ -830,6 +830,67 @@ const RAW_TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "find_contact",
+      description:
+        "Look someone up in the user's address books (Google + Apple contacts, plus people they've actually met on synced calendar events). Read-only — sends nothing. Use it to answer \"what's Matt's email\", and to check who a name means BEFORE staging an invite when the user's wording is loose. An empty query returns the people they meet most.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "A name, part of a name, or an address. Omit or pass \"\" for their most-met contacts.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "propose_invite",
+      description:
+        "Stage an invite for the user to approve. Use this for ANY event that involves other people — a new meeting with guests, or adding guests to an event that already exists. You CANNOT send invites yourself and create_calendar_event will refuse a guest list: this puts a confirmation card in the chat naming exactly who would be emailed, and the user taps Send invite or Add without emailing. Nothing reaches another human until they do. Pass attendees as the user said them ('Matt', 'the Hansens', 'dave@acme.com') — names are resolved against their contacts. If the result comes back with unresolved names, ASK the user about those (use a <suggestions> block listing the candidates) instead of guessing. Google calendars only.",
+      parameters: {
+        type: "object",
+        properties: {
+          attendees: {
+            type: "array",
+            items: { type: "string" },
+            description: "Who to invite — names or email addresses, exactly as the user referred to them.",
+          },
+          title: { type: "string", description: "Event title. Required for a new event." },
+          start_local: {
+            type: "string",
+            description: "Start in the user's local time — 'YYYY-MM-DDTHH:MM' (24h, no offset). New events only.",
+          },
+          end_local: {
+            type: "string",
+            description: "End in the user's local time — 'YYYY-MM-DDTHH:MM' (24h, no offset). New events only.",
+          },
+          event_id: {
+            type: "string",
+            description: "Add guests to THIS existing event instead of creating one. Omit for a new event.",
+          },
+          event_title: { type: "string", description: "Find the existing event by title when the id is unknown." },
+          calendar_name: {
+            type: "string",
+            description:
+              "Only when the user NAMED where it goes — same rule as create_calendar_event. Omit and it goes to their default.",
+          },
+          location: { type: "string", description: "Optional location." },
+          add_meet: {
+            type: "boolean",
+            description:
+              "Attach a Google Meet link. OMIT unless the user said something about it — omitted follows their setting, which adds one to any event with guests.",
+          },
+        },
+        required: ["attendees"],
+      },
+    },
+  },
   // NOTE: `point_at` is intentionally NOT here — it's built per-request from the
   // targets the client sends (see buildPointAtTool), so its vocabulary is always
   // current. The handler appends it to this list.

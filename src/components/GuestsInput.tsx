@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+// One vocabulary for where an address came from — the picker and the chat's
+// invite card can't disagree about what "Met before" means.
+import { sourceLabel, type ContactSource } from "../../supabase/functions/_shared/invites.ts";
 
 /** Where an address came from. 'meeting' means we only know this person because
  *  they appeared on a synced calendar event — a weaker claim than an address
- *  book, and worth saying so in the row. */
-export type ContactSource = "google" | "apple" | "meeting";
+ *  book, and worth saying so in the row. Defined once in _shared/invites.ts. */
+export type { ContactSource };
 
 interface Contact {
   email: string;
@@ -12,12 +15,6 @@ interface Contact {
   freq: number;
   sources: ContactSource[];
 }
-
-const SOURCE_LABEL: Record<ContactSource, string> = {
-  google: "Google",
-  apple: "Apple",
-  meeting: "Met before",
-};
 
 function isValidEmail(s: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
@@ -55,7 +52,7 @@ function SourceLabel({ sources }: { sources: ContactSource[] }) {
   if (!sources?.length) return null;
   return (
     <span className="ml-auto shrink-0 pl-2 text-micro text-muted/70">
-      {sources.map((s) => SOURCE_LABEL[s] ?? s).join(" · ")}
+      {sources.map(sourceLabel).join(" · ")}
     </span>
   );
 }

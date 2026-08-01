@@ -11,6 +11,9 @@ import {
   type MeetPreference,
   shouldAddMeet,
 } from "../../supabase/functions/_shared/conferencing.ts";
+// The consent sentence is shared with the chat's invite card: two doors onto
+// outbound mail, one wording, one rule (D-046).
+import { QUIET_HINT, inviteConsentPrompt } from "../../supabase/functions/_shared/invites.ts";
 
 export type CreateKind = "task" | "event" | "slot";
 
@@ -395,8 +398,7 @@ export default function DraftComposer({
           <div className="mt-3.5 flex flex-col gap-3 border-t border-line p-3.5">
             <div>
               <div className="text-body font-medium text-ink">
-                Email {attendees.length === 1 ? "this guest" : `these ${attendees.length} guests`} an invite
-                {addMeet ? " with a Google Meet link" : ""}?
+                {inviteConsentPrompt({ mode: "create", count: attendees.length, addMeet })}
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {attendees.map((email) => (
@@ -416,7 +418,7 @@ export default function DraftComposer({
               <button
                 onClick={() => finish(false)}
                 className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] border border-line px-3 py-2.5 text-body font-medium text-ink hover:bg-bg"
-                title="Add them to the event without sending an email"
+                title={QUIET_HINT}
               >
                 Add without emailing
               </button>

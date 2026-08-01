@@ -184,7 +184,9 @@ describe("tool schemas", () => {
   // error would be nonsense. Anything that writes belongs in REQUIRES_TARGET,
   // never here.
   const ARGUMENTLESS_BY_DESIGN = new Set<string>([
-    // e.g. find_contact — an empty query returns the people they meet most.
+    // An empty query returns the people they meet most — "who do I meet with?"
+    // is a real request, and a target error on it would be nonsense.
+    "find_contact",
   ]);
 
   it("guards every tool whose schema would otherwise accept an empty call", () => {

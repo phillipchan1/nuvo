@@ -35,6 +35,11 @@ import {
   nextOccurrenceDate,
   type RecurrenceRule,
 } from "../_shared/recurrence.ts";
+import { hasConference, shouldAddMeet } from "../_shared/conferencing.ts";
+import { resolveRecipients, searchContacts } from "../_shared/contacts.ts";
+// Staging an invite is the agent's half of D-046: it resolves who, and stops.
+// The send is a tap on the card, through the client's own mutation.
+import { supportsGuests, type InviteDraft } from "../_shared/invites.ts";
 
 const DEFAULT_DURATION = 30;
 const MIRROR_FIELDS = new Set(["start_time", "duration_minutes", "title", "status", "do_date"]);
@@ -896,6 +901,189 @@ function resolvePriority(rocks: BigRock[], args: { priority_id?: string; priorit
   throw new Error("Provide priority_id or priority_title");
 }
 
+/** The account's standing answer to "does a meeting get a video link". */
+async function meetPreference(userId: string): Promise<unknown> {
+  const { data } = await admin
+    .from("user_settings")
+    .select("auto_add_meet")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return data?.auto_add_meet;
+}
+
+type RawAttendee = { email?: string };
+
+/**
+ * Stage an invite — resolve who, work out where and when, send nothing.
+ *
+ * This is the only path in the agent that may involve another human, and it
+ * deliberately dead-ends in a draft. The model gets back a description it can
+ * narrate; the client gets a card with the recipients named and two explicit
+ * ways forward (D-046). If the model never mentions the card, the worst case is
+ * a confirmation the user didn't expect — not mail they didn't authorize.
+ */
+async function stageInvite(
+  userId: string,
+  args: Record<string, unknown>,
+  tz: string,
+): Promise<{ result: string; invite?: InviteDraft }> {
+  const tokens = (args.attendees as string[] | undefined ?? []).map((t) => String(t)).filter(Boolean);
+  if (!tokens.length) throw new Error("Nobody to invite — pass attendees (names or addresses).");
+
+  const { recipients, unresolved } = await resolveRecipients(userId, tokens);
+
+  // Nobody resolved — a card with no recipients is a Send button over an empty
+  // list. Hand the question back instead; the model asks, the user answers, and
+  // we stage on the next turn.
+  if (!recipients.length) {
+    return {
+      result: JSON.stringify({
+        staged: false,
+        unresolved,
+        note:
+          "Nothing staged — none of these names resolved to exactly one person. Ask the user: name each one and offer its candidates in a <suggestions> block, or ask for the address if there are none. Never guess.",
+      }),
+    };
+  }
+
+  // Adding to an event that already exists — named outright, or found sitting at
+  // the time the model was about to book. "Invite Matt to Friday lunch" when
+  // Friday lunch is already on the calendar is one act, not a duplicate event.
+  let existing: EventRow | null = null;
+  if (args.event_id || args.event_title) {
+    const { id } = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+    const { data } = await admin
+      .from("external_events")
+      .select("id, title, start_at, end_at, location, account_id, calendar_id, raw, calendar_accounts(provider)")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+    existing = (data as EventRow | null) ?? null;
+    if (!existing) throw new Error("Event not found");
+  }
+
+  const title = (args.title as string | undefined)?.trim();
+  const startLocal = args.start_local as string | undefined;
+  const endLocal = args.end_local as string | undefined;
+
+  if (!existing && title && startLocal) {
+    existing = await findNearDuplicate(userId, title, localToUtc(startLocal, tz));
+  }
+
+  const writable = await loadWritableCalendars(userId);
+
+  if (existing) {
+    const provider = existing.calendar_accounts?.provider ?? "google";
+    if (!supportsGuests(provider)) {
+      throw new Error(
+        `"${existing.title}" is on an Apple calendar, and Apple calendars can't carry guests — Google only. Offer to move it to a Google calendar first; don't create it without them.`,
+      );
+    }
+    const raw = (existing.raw ?? {}) as { attendees?: RawAttendee[] };
+    const already = new Set((raw.attendees ?? []).map((a) => (a.email ?? "").toLowerCase()).filter(Boolean));
+    const fresh = recipients.filter((r) => !already.has(r.email));
+    const onIt = recipients.filter((r) => already.has(r.email));
+
+    if (!fresh.length) {
+      return {
+        result: JSON.stringify({
+          staged: false,
+          alreadyInvited: onIt.map((r) => r.name ?? r.email),
+          event: existing.title,
+          unresolved,
+          note: "Everyone named is already on this event. Say so — nothing was staged or sent.",
+        }),
+      };
+    }
+
+    const invite: InviteDraft = {
+      mode: "add_guests",
+      eventId: existing.id,
+      title: existing.title,
+      startAt: existing.start_at,
+      endAt: existing.end_at,
+      recipients: fresh,
+      calendarName: calendarLabel(writable, existing.account_id, existing.calendar_id, provider),
+      ...(existing.location ? { location: existing.location } : {}),
+      // Whether the invite carries a link is a fact about the event, not a
+      // choice being made now — say only what's true.
+      addMeet: hasConference(existing.raw as Parameters<typeof hasConference>[0]),
+      ...(unresolved.length ? { unresolved } : {}),
+    };
+
+    return {
+      result: JSON.stringify({
+        staged: true,
+        mode: "add_guests",
+        event: existing.title,
+        when: fmtZonedTime(existing.start_at, tz),
+        recipients: fresh.map((r) => r.name ?? r.email),
+        alreadyOnIt: onIt.map((r) => r.name ?? r.email),
+        unresolved,
+        note:
+          "Nothing has been sent. A confirmation card is now in the chat with Send invite / Add without emailing. Tell them it's there in one line. If unresolved is non-empty, ask which person they meant — offer the candidates as suggestions.",
+      }),
+      invite,
+    };
+  }
+
+  // New event.
+  if (!title) throw new Error("title is required for a new event");
+  if (!startLocal || !endLocal) throw new Error("start_local and end_local are required for a new event");
+
+  const calendarName = (args.calendar_name as string | undefined)?.trim();
+  const target = calendarName ? resolveCalendarByName(writable, calendarName) : pickDefaultCalendar(writable);
+  if (!target) {
+    throw new Error(
+      writable.length
+        ? "Every writable calendar is hidden — ask which one this should go on, then pass calendar_name."
+        : "No writable calendar connected",
+    );
+  }
+  if (!supportsGuests(target.provider)) {
+    throw new Error(
+      `"${target.name}" is an Apple calendar and can't carry guests — Nuvo can only invite people on a Google calendar. Ask which Google calendar to use; don't silently drop the guests.`,
+    );
+  }
+
+  const addMeet =
+    typeof args.add_meet === "boolean"
+      ? (args.add_meet as boolean)
+      : shouldAddMeet(await meetPreference(userId), recipients.length);
+
+  const invite: InviteDraft = {
+    mode: "create",
+    title,
+    startAt: localToUtc(startLocal, tz),
+    endAt: localToUtc(endLocal, tz),
+    recipients,
+    calendarName: target.name,
+    accountEmail: target.accountEmail,
+    accountId: target.accountId,
+    calendarId: target.calendarId,
+    ...(args.location ? { location: String(args.location) } : {}),
+    addMeet,
+    ...(unresolved.length ? { unresolved } : {}),
+  };
+
+  return {
+    result: JSON.stringify({
+      staged: true,
+      mode: "create",
+      title,
+      when: fmtZonedTime(invite.startAt!, tz),
+      calendar: target.name,
+      account: target.accountEmail,
+      addMeet,
+      recipients: recipients.map((r) => r.name ?? r.email),
+      unresolved,
+      note:
+        "Nothing has been created or sent — the event does not exist yet. A confirmation card is now in the chat with Send invite / Add without emailing, and the event is created when they tap. Tell them it's there in one line, naming who and when. If unresolved is non-empty, ask which person they meant — offer the candidates as suggestions.",
+    }),
+    invite,
+  };
+}
+
 export async function executeTool(
   userId: string,
   name: string,
@@ -910,7 +1098,7 @@ export async function executeTool(
    *  user. Defaults to a fresh id, so a caller that forgets it gets the safe
    *  behavior (propose, never execute) rather than the unsafe one. */
   turnId: string = crypto.randomUUID(),
-): Promise<{ result: string; action?: AgentAction; ui?: MarqueeDirective }> {
+): Promise<{ result: string; action?: AgentAction; ui?: MarqueeDirective; invite?: InviteDraft }> {
   // Before anything touches the database: does this call name what it acts on?
   // The schema can't require "id or title" portably, so the guarantee lives
   // here, where no amount of fluency gets around it. A rejection is an ordinary
@@ -1444,9 +1632,41 @@ export async function executeTool(
       };
     }
 
+    case "find_contact": {
+      const query = ((args.query as string | undefined) ?? "").trim();
+      const candidates = await searchContacts(userId, query);
+      return {
+        result: JSON.stringify({
+          query,
+          candidates: candidates.slice(0, 8).map((c) => ({
+            email: c.email,
+            name: c.displayName,
+            // Where we know them from — an address book is a stronger claim than
+            // "turned up on an event", and the user is entitled to that
+            // distinction before mail goes out in their name.
+            sources: c.sources,
+            metCount: c.freq,
+          })),
+          note: candidates.length
+            ? "Read-only. To invite any of them, call propose_invite — you cannot send mail yourself."
+            : "No match in their address books. Ask for the address; never guess one.",
+        }),
+      };
+    }
+
+    case "propose_invite":
+      return await stageInvite(userId, args, tz);
+
     case "create_calendar_event": {
       const title = (args.title as string)?.trim();
       const attendees = (args.attendees as string[] | undefined) ?? [];
+      // Guests make this an outbound-mail act, and this tool has no consent
+      // step. Rather than fail the turn, hand it to the staging path — the user
+      // sees the same card either way, and there is no wording the model can
+      // choose that emails someone straight from a create call.
+      if (attendees.length) {
+        return await stageInvite(userId, { ...args, attendees }, tz);
+      }
       if (!title) throw new Error("title is required");
 
       const startLocal = args.start_local as string;
@@ -1511,7 +1731,8 @@ export async function executeTool(
           start_at,
           end_at,
           ...(location ? { location } : {}),
-          ...(attendees.length && provider === "google" ? { attendees } : {}),
+          // No attendees ever reach here — a guest list is routed to
+          // stageInvite above, so this call can never put mail on the wire.
           // Omitted → the account's auto_add_meet preference decides, the same
           // rule the grid composer starts from, so booking by chat and booking
           // by drag produce the same event.

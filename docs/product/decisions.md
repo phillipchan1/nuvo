@@ -1954,6 +1954,65 @@ not-clean account produces. *Status: standing.*
 
 ---
 
+**D-069 · 2026-08-01 · Nuvo chat can invite people — by resolving who, never by
+sending. The tap that mails a human stays in the user's hand.**
+
+Chat could already create an event with `attendees`, and that was the problem:
+`create_calendar_event` forwarded the list to `google-events`, which defaults
+`notifyGuests` to true, so a model that guessed at a name could put mail in a
+stranger's inbox with no confirmation anywhere in the path. D-046's consent step
+lived in `DraftComposer` — the only door that existed when it was written. A
+second door had quietly opened beside it.
+
+**The split that makes this safe is structural, not a prompt.** The agent
+**resolves and stages**; the client **sends**. `propose_invite` returns an
+`InviteDraft` and writes nothing — no event, no mail — and `create_calendar_event`
+routes any guest list into the same staging path rather than refusing (a refusal
+the model can retry around is not a guard). There is deliberately **no agent tool
+that puts an invite on the wire**, and `tests/invites.test.ts` asserts it: no file
+under `supabase/functions/agent/` may name the `invite` action, forward
+`attendees` to a create call, or mention `notifyGuests`. The send runs through the
+composer's own mutations, so booking by chat and booking by drag produce the same
+event — one act, two doors (root `CLAUDE.md`).
+
+**The card is the confirmation, and it names people, not a count.** Recipients
+render two lines (name over address — at rail width a single line truncates the
+address, which is the half that decides who actually gets mailed), each labelled
+with where we know them from (*Google · Apple · Met before*), each removable. The
+question and the quiet option are `inviteConsentPrompt()` / `QUIET_HINT` in
+`_shared/invites.ts`, imported by **both** the card and the composer, so the two
+doors cannot word the ask differently. **Send invite** and **Add without
+emailing** stay separate buttons; afterwards the card becomes a receipt that says
+which one happened.
+
+**Ambiguity is answered, never guessed.** `pickRecipient()` resolves a name only
+when exactly one contact answers to it — every word of the query has to land, so
+"Matt Hansen" separates the two Matts that "Matt" cannot. Two matches come back
+as a question with candidates; no match comes back as *"I don't have an address"*.
+Never the closest-looking row: that is D-046's fuzzy-match bug wearing a new coat,
+and mail is not undoable. A complete address the user typed is always taken, and
+flagged *not in contacts* when we've never seen it.
+
+**Lookup reuses the picker's ranking instead of copying it.** `contacts(search)`
+is security definer over `auth.uid()` and returns nothing to the service role, so
+migration 50 moves the body to `contacts_for(uid, search)` and leaves
+`contacts(search)` a one-line wrapper — one definition of "who do I mean by Matt",
+two callers. `contacts_for` is granted to `service_role` only; a definer function
+taking a user id as an argument is otherwise a cross-account read.
+
+**What it still won't do:** send an iMessage. The screenshot that started this is
+a group thread, and Nuvo has no business posting there — it reads the thread,
+proposes the time, drafts the reply, and books the calendar half. And guests stay
+**Google-only**: an Apple target now fails loudly with an offer to move it, where
+before the guest list was silently dropped and the event created anyway.
+*Status: standing — typecheck clean, 119 tests green (18 new), edge functions
+parse, `npm run build` green, and every card state driven at 375px and desktop in
+the running dev app via the `?invite` harness (recipient removal, the consent
+sentence re-counting, the failure path). **Not yet deployed** — migration 50 and
+the agent function are pending, and no invite has been staged from a live chat
+turn in a real account. Re-verify there before calling the ledger row ✅.*
+
+---
 ## 3 · Open questions (decide these deliberately)
 
 | # | Question | Why it matters | Blocked on |

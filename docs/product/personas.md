@@ -159,6 +159,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | D5 | Who is waiting on me? | — | ○ *no waiting-on/blocked-by surface; "In the way" lens is spec* |
 | D6 | I just thought of something — where does it go so I stop holding it? | capture (⌘K / ⌥Space / voice) | ✅ |
 | D7 | Did I actually finish, or just move it? | Sundown · completed blocks | ✅ |
+| D8 | Getting this on the calendar means three messages and a guess — can you just set it up with them? | **Nuvo chat → the invite card** (resolve who from contacts, stage, one tap to send) · the composer's guest picker | ◐ *new row 2026-08-01 (D-069). The scheduling half is answered — a name becomes a person, the event and the invite go out on one tap, and two Matts get asked about instead of guessed. Deliberately ◐, not ✅: it is **not yet deployed**, nobody has staged an invite from a live chat turn, and the thread it's usually replying to still has to be pasted or screenshotted in — Nuvo reads it, it doesn't live there.*
 
 ### Weekly — *"am I carrying the right week?"*
 

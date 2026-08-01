@@ -84,7 +84,15 @@ export interface ChatClient {
 export type ToolExecutor = (
   name: string,
   args: Record<string, unknown>,
-) => Promise<{ result: string; action?: AgentAction; ui?: MarqueeDirectiveLike }>;
+) => Promise<{
+  result: string;
+  action?: AgentAction;
+  ui?: MarqueeDirectiveLike;
+  /** Structural, like the rest of this file: tools.ts owns InviteDraft, and
+   *  importing it would drag the service-role client into a pure module. */
+  // deno-lint-ignore no-explicit-any
+  invite?: any;
+}>;
 
 // Structural, not imported: tools.ts owns the real types, and importing them
 // here would drag the service-role client back into a file that must stay pure.
@@ -113,6 +121,11 @@ export interface TurnResult {
   /** True when the model was still calling tools as MAX_ROUNDS ran out — it
    *  never got to answer, and the user got a synthesized line instead. */
   exhausted: boolean;
+  /** A staged invite awaiting the user's tap. NOT a write: the agent resolves
+   *  who and stops, and the card the client renders is what actually sends
+   *  (D-046). The last one wins — a turn stages one card, not a stack. */
+  // deno-lint-ignore no-explicit-any
+  invite?: any;
 }
 
 /**
@@ -212,6 +225,8 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<TurnResult> {
   const actions: AgentAction[] = [];
   const directives: MarqueeDirectiveLike[] = [];
   const calls: AttemptedCall[] = [];
+  // deno-lint-ignore no-explicit-any
+  const invites: any[] = [];
   /** fingerprint -> the result the first identical call returned this turn. */
   const executed = new Map<string, string>();
   let fullText = "";
@@ -248,10 +263,11 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<TurnResult> {
 
       let toolResult: string;
       try {
-        const { result, action, ui } = await execute(tc.function.name, args);
+        const { result, action, ui, invite } = await execute(tc.function.name, args);
         toolResult = result;
         if (action) actions.push(action);
         if (ui) directives.push(ui);
+        if (invite) invites.push(invite);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         attempt.error = msg;
@@ -306,6 +322,11 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<TurnResult> {
     if (exhausted) fullText += `. That's as far as I got — I hit my ${maxRounds}-step limit with more still to do. Say "keep going" and I'll pick up from here.`;
     await onText(fullText);
   }
+  // A staged invite with no prose would put a Send button under silence.
+  if (!fullText && invites.length) {
+    fullText = "Ready when you are — check who's getting this, then send.";
+    await onText(fullText);
+  }
   // Cut off before anything landed at all. Silence would read as "nothing to do".
   if (!fullText && !actions.length && exhausted) {
     fullText = `I ran out of steps working on that and didn't get anything done — nothing was changed. Worth trying again in smaller pieces.`;
@@ -324,7 +345,7 @@ export async function runAgentTurn(opts: RunTurnOptions): Promise<TurnResult> {
     .map((s) => ({ label: sanitizeUserFacingText(s.label), message: sanitizeUserFacingText(s.message) }))
     .filter((s) => s.label && s.message);
 
-  return { content, actions, suggestions, ui: directives[0], calls, rounds, exhausted };
+  return { content, actions, suggestions, ui: directives[0], calls, rounds, exhausted, invite: invites[invites.length - 1] };
 }
 
 // ── the transport, wired by the caller ───────────────────────────────────────

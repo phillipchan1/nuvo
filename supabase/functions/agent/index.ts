@@ -236,6 +236,9 @@ Deno.serve(async (req) => {
           actions: turn.actions,
           suggestions: turn.suggestions,
           ui: turn.ui,
+          // A staged invite — a proposal, not a write. The client renders it as
+          // the card that actually sends.
+          invite: turn.invite,
           // Whether the turn finished. The client marks a partial turn so a
           // half-executed request can never look like a completed one.
           exhausted: turn.exhausted,

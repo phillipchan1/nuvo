@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import AgentActions from "./AgentRecordCards";
+import AgentInviteCard from "./AgentInviteCard";
 import type { AgentMessage } from "../lib/agentTypes";
 import { formatBytes, isImageAttachment } from "../lib/agentAttachments";
 
@@ -15,7 +16,7 @@ export default function AgentMessageBubble({
   // A bubble hugs its text, but record cards are structure, not prose — left to
   // hug, they squeeze into a narrow column with dead space beside them. A reply
   // that carries records takes the full width.
-  const hasRecords = message.actions?.some((a) => a.ref) ?? false;
+  const hasRecords = (message.actions?.some((a) => a.ref) ?? false) || Boolean(message.invite);
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -76,6 +77,8 @@ export default function AgentMessageBubble({
             Unfinished — I hit my step limit with work still queued.
           </p>
         )}
+        {/* A staged invite — the only thing in a reply that hasn't happened yet. */}
+        {message.invite && <AgentInviteCard draft={message.invite} />}
       </div>
     </div>
   );

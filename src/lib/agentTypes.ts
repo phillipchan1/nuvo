@@ -1,5 +1,8 @@
 import type { MarqueeDirective } from "./marquee";
 import type { BigRock } from "./types";
+import type { InviteDraft } from "../../supabase/functions/_shared/invites.ts";
+
+export type { InviteDraft };
 
 export interface AgentAttachment {
   id: string;
@@ -26,6 +29,10 @@ export interface AgentMessage {
    *  visible "unfinished" mark: a partial turn must never read as a completed
    *  one, or the user stops checking exactly when they should be checking. */
   incomplete?: boolean;
+  /** A staged invite awaiting the user's tap. Nothing has been sent or created:
+   *  the agent resolves who and stages it, the card below this message is what
+   *  actually writes (D-046 — nothing emails a human without saying so). */
+  invite?: InviteDraft;
 }
 
 export interface AgentSuggestion {
@@ -107,5 +114,6 @@ export type AgentStreamEvent =
       ui?: unknown;
       /** True when the turn ran out of steps mid-execution. */
       exhausted?: boolean;
+      invite?: InviteDraft;
     }
   | { t: "e"; msg: string };
