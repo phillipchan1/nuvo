@@ -1,8 +1,15 @@
 # The Weekly Review — the "Reflect" surface
 
-Status: **shipped** (Review surface). Week's Plan / Review lives on Schedule; sealed
-`week_reviews` snapshots; completed-task breakdown (by day / by domain). **The Find is
-no longer shown** (D-068) — compose path retained, no UI reader.
+Status: **shipped** (Review surface + the archive gallery, D-070). Week's Plan / Review
+lives on Schedule; sealed `week_reviews` snapshots; completed-task breakdown (by day / by
+domain). **The Find is no longer shown** (D-068) — compose path retained, no UI reader.
+
+**Updated 2026-08-01 (D-070) — the archive gained a door of its own.** 70/30 held the line
+on a new nav destination; it did not need to hold the line on browsing being one week at a
+time. `WeekArchiveGallery` — a grid of past emblems, opened from inside the same Week's Plan
+/ Review floor via a small icon button beside the ‹ › walker — lets you jump to any sealed
+week directly instead of stepping back one at a time. See "The 70/30 doctrine, revised"
+below.
 
 **Updated 2026-08-01 — Find removed from the Review UI (D-068); breakdown is completed
 tasks by day or by domain (task chips, not hour bars).**
@@ -276,6 +283,25 @@ revises the earlier "Reflect section" idea:
   earlier "hang it off Domain"). Instead you reach past weeks by **walking ‹ › backward** —
   the same gesture that already moves the calendar.
 
+## The 70/30 doctrine, revised (D-070, 2026-08-01)
+
+70/30 forbade a **destination** — a `Reflect` rung, a dashboard you navigate to. It was never
+about how you move once you're already behind the one door. Phil's objection, correctly:
+every sealed week is already stored forever (*"Store every week forever; the archive is the
+product,"* below) — nothing about it is temporary — but reaching week 12 meant clicking `‹`
+twelve times, which makes a permanent archive practically unbrowsable. That's a UX gap in the
+walk, not a reason to relitigate the no-new-rung rule.
+
+**What shipped:** `WeekArchiveGallery` — the "wall of weeks" the emblem spec already named as
+its aspirational endpoint (below) — as a grid of past emblems, opened *from inside* the
+Week's Plan / Review floor (a small icon button beside the ‹ › walker, both shells). Tap an
+emblem, jump straight to that sealed week. Still one door, still no Spine rung, still nothing
+in Domain — the gallery is a mode of the existing floor, not a new navigable place. This does
+still nudge the 30% up a notch (a jump-anywhere grid invites more looking back than a forced
+one-at-a-time walk); the mitigation is that the grid still only *reaches* Reviews, each of
+which keeps the forward-folding doctrine intact once you're inside one — no browsing-only
+metric or dashboard was added.
+
 ## The unification — Week's Plan ≡ the Review (one surface, two states)
 
 The keystone simplification: **the Review is just the Week's Plan of a week that has ended.**
@@ -324,5 +350,6 @@ doctrine in [[nuvo-funnel-thesis]] (opportunity/Gain, never debt/shame).
 3. ~~Where Reviews live navigationally~~ — **DECIDED:** the Review is a prompted moment AND
    the sealed state of the Week's Plan, which lives on the **Schedule** rung (the week's
    natural horizon). Entry = a living-emblem "This week" button in the Schedule top bar.
-   Archive = walking ‹ › backward (past = sealed Plans). NOT Domain (timeless, no time axis).
-   No new rung. See "The unification" above.
+   Archive = walking ‹ › backward (past = sealed Plans), **plus jumping via the archive
+   gallery** (D-070) opened from inside the same floor. NOT Domain (timeless, no time axis).
+   No new rung. See "The unification" above and "The 70/30 doctrine, revised" below.

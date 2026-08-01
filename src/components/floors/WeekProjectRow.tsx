@@ -124,7 +124,9 @@ export function WeekProjectRow({
           )}
           {/* What done looks like — the record's lead line, restated where the
               week's judgment is being made (Q3). */}
-          {p.outcome.trim() && <div className="mt-0.5 truncate text-meta text-muted">{p.outcome}</div>}
+          {/* Old sealed snapshots predate this field — `outcome` isn't
+              guaranteed to exist on a stored `week_reviews.report` row. */}
+          {p.outcome?.trim() && <div className="mt-0.5 truncate text-meta text-muted">{p.outcome}</div>}
           {(line || p.total > 0 || rolls > 0) && (
             <div className="mono mt-1 text-micro text-muted">
               {p.total > 0 && <span>{p.done} of {p.total} done</span>}

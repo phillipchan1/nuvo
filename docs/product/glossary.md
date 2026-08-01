@@ -65,7 +65,7 @@ been used to argue against things it doesn't forbid.
 | Name | Cadence | Output |
 |---|---|---|
 | **Sunday** | weekly, forward | A composed, accepted week. Both shells run the same three sources — **Projects · Leftovers · Inbox** (D-034) — over one composer (`useWeekDraft`). On the desktop it is **one screen**: the sources take turns in the planner rail while the week grid holds the right half permanently, so a keep or a drop re-shapes the week beside your cursor (D-035). The phone keeps a fourth step for the day-by-day read and carries the same live consequence in `CapacityMeter`. A switch, not gates: every source is one click away and the week is pre-composed on open. ⚠️ **The UI calls this flow "Plan the week" on both shells; "Sunday" now survives only in these docs and in code (`SundayRitual`, `openFlow("sunday")`).** Renaming the ceremony is a canon call nobody has made — flagged, not taken. |
-| **the Review** | weekly, backward | The closing valve. Evidence receipts, one scored **Find**, Keep, Note to Monday, a sealed `week_reviews` snapshot. [`weekly-review.md`](../weekly-review.md) |
+| **the Review** | weekly, backward | The closing valve. Evidence receipts, one scored **Find**, Keep, Note to Monday, a sealed `week_reviews` snapshot. **Your Reviews** is the archive of every sealed one — stored forever, browsed via a gallery of past emblems opened from inside the same floor (D-070) — never a nav destination of its own. [`weekly-review.md`](../weekly-review.md) |
 | **Sunrise** | daily, morning | The day's plan; pulls from the Week pool, surfaces prepared tasks. |
 | **Sundown** | daily, evening | Leads with the day's gain; "back to week" for leftovers. |
 | **Summit** | quarterly | Quarter's Gain → Vows → Portfolio → Months. |

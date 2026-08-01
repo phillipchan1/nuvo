@@ -65,6 +65,28 @@ export function useWeekReviewRow(weekStartISO: string) {
   });
 }
 
+/** Every sealed week, newest first — the archive gallery's data. A row only
+ *  counts once it carries a full report (the same "emblem" in report" check
+ *  WeekPlanBody uses before treating a snapshot as the historical record);
+ *  `ensureRow` leaves behind empty placeholder rows this must skip. */
+export function useWeekReviewList() {
+  return useQuery({
+    queryKey: [...KEY, "list"],
+    queryFn: async (): Promise<WeekReviewRow[]> => {
+      const { data, error } = await supabase
+        .from("week_reviews")
+        .select("id, week_start, report, find_narration, find_response, find_kept, note_to_monday, note_to_monday_seen_at, sealed_at")
+        .order("week_start", { ascending: false });
+      if (error) throw error;
+      return ((data as WeekReviewRow[] | null) ?? []).filter(
+        (row) => row.report && typeof row.report === "object" && "emblem" in row.report,
+      );
+    },
+    staleTime: 60_000,
+    meta: { silent: true },
+  });
+}
+
 // NOTE: `useNoteToMonday` lived here and was read only by NowFloor's banner. It
 // went with the Today rung. The Review still *writes* `note_to_monday` (see
 // WeekFind) — the note needs a new reader on the Schedule to close the loop.

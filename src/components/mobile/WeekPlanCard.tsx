@@ -11,6 +11,7 @@ import { isRevealReady, isAcknowledged, acknowledge as ackReveal, readRevealConf
 import { WeekPlanBody } from "../floors/WeekPlanFloor";
 import WeekStory from "../floors/WeekStory";
 import WeekEmblem from "../floors/WeekEmblem";
+import WeekArchiveGallery from "../floors/WeekArchiveGallery";
 
 function weekLabelOf(weekISO: string): string {
   const s = new Date(weekISO + "T00:00:00");
@@ -74,6 +75,7 @@ function WeekPlanSheet({
 }) {
   const [viewedWeekISO, setViewedWeekISO] = useState(currentWeekISO);
   const [mode, setMode] = useState<"story" | "detail">(storyFirst ? "story" : "detail");
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const report = useWeekReport(viewedWeekISO, now);
   const isCurrent = viewedWeekISO === currentWeekISO;
   const state = isCurrent ? "forming" : ("sealed" as const);
@@ -110,6 +112,14 @@ function WeekPlanSheet({
         <div className="section-label !p-0">{isCurrent ? "This week" : "The Review"}</div>
         <div className="masthead text-head text-ink">{weekLabelOf(viewedWeekISO)}</div>
       </div>
+      <button onClick={() => setGalleryOpen(true)} className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Browse your Reviews" title="Browse your Reviews">
+        <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
+          <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+          <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+          <rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+          <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+        </svg>
+      </button>
       <button onClick={onClose} className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Close">✕</button>
     </div>
   );
@@ -122,6 +132,17 @@ function WeekPlanSheet({
             `onOpenProject`: MobileShell doesn't mount the record overlay. */}
         <WeekPlanBody report={report} state={state} tense={isCurrent ? "current" : "past"} viewedWeekISO={viewedWeekISO} header={header} />
       </div>
+
+      {galleryOpen && (
+        <WeekArchiveGallery
+          onClose={() => setGalleryOpen(false)}
+          onSelectWeek={(iso) => {
+            setViewedWeekISO(iso);
+            setMode("detail");
+            setGalleryOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

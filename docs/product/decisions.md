@@ -2012,6 +2012,35 @@ sentence re-counting, the failure path). **Not yet deployed** — migration 50 a
 the agent function are pending, and no invite has been staged from a live chat
 turn in a real account. Re-verify there before calling the ledger row ✅.*
 
+**D-070 · 2026-08-01 · The Review archive gets a gallery — inside the existing door, not
+beside it.** Revises the navigation half of the 70/30 doctrine
+([`weekly-review.md`](../weekly-review.md), decided 2026-06-19).
+
+Phil's objection: every sealed week is already stored forever (*"the archive is the
+product"*), so it isn't temporary — but reaching an old one meant walking `‹` one week at a
+time, which makes a permanent archive practically unbrowsable. That's a real gap (**W7** —
+"is this carrying a pattern?" needs looking at more than one week at once; it's also a
+plausible Drift-detector, per brandscript §2). It is not a reason to reopen the part of 70/30
+that's actually load-bearing: no third Spine section, no dashboard destination.
+
+→ **`WeekArchiveGallery`** (`src/components/floors/WeekArchiveGallery.tsx`): a grid of past
+weeks' emblems (`WeekEmblem`, already a pure renderer), newest first, named by distance
+(`weekName`) with `weekSpan` beneath. Tap one, jump straight to that sealed week. Opened from
+a small icon button beside the ‹ › walker **inside** the Week's Plan / Review floor on both
+shells (`WeekPlanFloor.tsx` desktop, `WeekPlanCard.tsx`'s sheet on mobile) — not a new nav
+item, not reachable any other way. `useWeekReviewList` (`hooks/useWeekReview.ts`) queries
+every sealed `week_reviews` row, filtered to ones carrying a full report (skips the empty
+placeholder rows `ensureRow` leaves behind). Degrades honestly on a fresh account: zero
+sealed weeks renders one sentence, not an empty grid (Principle 7).
+
+**Consequence, named rather than hidden:** this does nudge the 30% up slightly — a
+jump-anywhere grid invites more looking-back than a forced one-at-a-time walk. The mitigation
+is that the gallery only *reaches* Reviews; nothing about what a Review does once you're
+inside one changed, so the forward-folding doctrine (every backward element hands something
+forward) still governs the destination, just not the door to it.
+*Status: standing — typechecked, driven in the dev app on desktop and at 375px, opened from
+both the plan/review floor and the mobile sheet, past-week jump verified.*
+
 **D-067 · 2026-07-31 · App-wide undo is two channels — toast for stakes, silent stack for
 drags.** Fat-finger complete (and trash / ambiguous routing) need a discoverable Undo;
 calendar drags must not spam toasts. One stack (`UndoProvider` / `useUndoStack`), two tiers

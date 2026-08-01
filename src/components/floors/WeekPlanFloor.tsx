@@ -29,6 +29,7 @@ import { useWeekVerdicts } from "../../hooks/useWeekVerdicts";
 import { useWeekReviewActions, useWeekReviewRow } from "../../hooks/useWeekReview";
 import { ProjectShipAssess } from "../record/ShipAssess";
 import WeekEmblem from "./WeekEmblem";
+import WeekArchiveGallery from "./WeekArchiveGallery";
 import WeekStory from "./WeekStory";
 import { WeekProjectRow } from "./WeekProjectRow";
 import { WeekHoursBreakdown } from "./WeekEvidence";
@@ -329,12 +330,17 @@ export interface WeekPlanFloorProps {
   /** Play the paced recap animation on open — the Review's reveal moment only.
    *  A check-in / plan view opens straight to the static detail. */
   story?: boolean;
+  /** Jump straight to an arbitrary sealed week (the archive gallery) rather
+   *  than walking ‹ › one week at a time. Omitted where there's no gallery
+   *  mounted above this floor. */
+  onJumpToWeek?: (weekISO: string) => void;
 }
 
 /** The desktop floor — slides over the Schedule work area (full-width, rail hidden).
  *  Opens as a paced story (the received moment); "See the full week" → the detail. */
-export default function WeekPlanFloor({ report, state, tense = "current", weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext, onCompose, composeLabel, story }: WeekPlanFloorProps) {
+export default function WeekPlanFloor({ report, state, tense = "current", weekLabel, viewedWeekISO, onClose, onPrevWeek, onNextWeek, canGoNext, onCompose, composeLabel, story, onJumpToWeek }: WeekPlanFloorProps) {
   const [mode, setMode] = useState<"story" | "detail">(story ? "story" : "detail");
+  const [galleryOpen, setGalleryOpen] = useState(false);
   // Desktop only — a project's definition gets fixed where the project lives.
   const { openRecord } = useAppNavigation();
 
@@ -387,6 +393,22 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
         <div className="section-label mb-1"><span style={{ color: "var(--accent)" }}>{weekSpan(viewedWeekISO)}</span> · {eyebrow}</div>
         <h1 className="masthead text-display leading-tight text-ink">{weekLabel}</h1>
       </div>
+      {onJumpToWeek && (
+        <button
+          onClick={() => setGalleryOpen(true)}
+          className="tap fast flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-label text-muted hover:bg-surface-2 hover:text-ink"
+          aria-label="Browse your Reviews"
+          title="Browse your Reviews"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+            <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+            <rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+            <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" />
+          </svg>
+          <span className="hidden sm:inline">Your Reviews</span>
+        </button>
+      )}
       <button onClick={onClose} className="tap fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -409,6 +431,16 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
       <div className="mx-auto w-full max-w-5xl px-8 py-10 pb-28 md:px-12">
         <WeekPlanBody report={report} state={state} tense={tense} viewedWeekISO={viewedWeekISO} header={header} onCompose={onCompose} composeLabel={composeLabel} onOpenProject={(id) => openRecord("project", id)} />
       </div>
+
+      {galleryOpen && onJumpToWeek && (
+        <WeekArchiveGallery
+          onClose={() => setGalleryOpen(false)}
+          onSelectWeek={(iso) => {
+            onJumpToWeek(iso);
+            setGalleryOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

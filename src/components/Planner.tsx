@@ -629,6 +629,7 @@ export default function Planner({
             }}
             composeLabel={weekPlanned && viewedWeekISO === horizonWeekISO ? "Re-plan the week" : "Plan the week"}
             story={weekPlanStory}
+            onJumpToWeek={(iso) => setViewedWeekISO(iso)}
           />
         )}
       </div>
