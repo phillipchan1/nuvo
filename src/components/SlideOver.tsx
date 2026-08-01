@@ -640,7 +640,7 @@ export function TaskPopover({
                 ? [{
                     label: "→ Inbox",
                     title: "Move back to inbox",
-                    onClick: () => { mutations.backToInbox(task); onClose(); },
+                    onClick: () => { mutations.backToInbox(task, { undo: "toast" }); onClose(); },
                   }]
                 : []),
               ...(onConvertToEvent && task.start_time

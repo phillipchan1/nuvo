@@ -10,7 +10,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
-import { toast } from "sonner";
 import { useVertical } from "../../hooks/useVertical";
 import { useRecordContextMenu } from "../RecordContextMenu";
 import { domainById, tasksOf, type VerticalData } from "../../lib/vertical";
@@ -144,8 +143,7 @@ function GroomCard({ data, lane, onOpen }: { data: VerticalData; lane: OnDeckLan
     if (v && v !== prev) store.updateTask(id, { title: v });
   };
   const delStep = (id: string) => {
-    const prevStatus = store.deleteTask(id);
-    toast("Step removed", prevStatus ? { action: { label: "Undo", onClick: () => store.restoreTask(id, prevStatus) } } : undefined);
+    store.deleteTask(id);
   };
 
   // ⌘⏎ / Ctrl⏎ anywhere in the card commits the batch (Enter alone = next line).

@@ -5,7 +5,7 @@
 // Built for speed: type → Enter → it lands and the field stays focused for the
 // next, Todoist-style. Rows stay quiet — checkbox · title · duration · the Inbox
 // toggle · delete — and energy is set elsewhere (planning), not here. Delete is
-// instant with an Undo toast.
+// instant with an Undo toast (via the app-wide undo stack).
 //
 // ── `spine` — the record's layout ────────────────────────────────────────────
 // The record modal hangs every control in one 26px gutter so the section label,
@@ -70,7 +70,7 @@ export default function TaskList({
   refining?: boolean;
   onRefining?: (v: boolean) => void;
 }) {
-  const { addTask, addTasks, updateTask, deleteTask, restoreTask, toggleTask, toggleTaskInbox } = useVertical();
+  const { addTask, addTasks, updateTask, deleteTask, toggleTask, toggleTaskInbox } = useVertical();
   const [draft, setDraft] = useState("");
   const [refiningLocal, setRefiningLocal] = useState(false);
   const [sel, setSel] = useState(-1);
@@ -114,11 +114,7 @@ export default function TaskList({
   };
 
   const remove = (t: VTask) => {
-    const prev = deleteTask(t.id);
-    toast("Task deleted", {
-      action: { label: "Undo", onClick: () => restoreTask(t.id, prev ?? "backlog") },
-      duration: 6000,
-    });
+    deleteTask(t.id);
   };
 
   const sendToInbox = (t: VTask) => {

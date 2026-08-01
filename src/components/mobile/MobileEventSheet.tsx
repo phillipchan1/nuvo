@@ -22,6 +22,8 @@ export type CalendarTap =
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
+const TRIAGE_UNDO = { undo: "toast" as const };
+
 const at = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const dateFmt = (d: Date) => d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
@@ -208,9 +210,9 @@ export default function MobileEventSheet({
           <div className="flex flex-wrap gap-1.5">
             {(
               [
-                { label: "Today", run: () => { mutations.planFor(task, todayISO()); onClose(); } },
-                { label: "Tomorrow", run: () => { mutations.planFor(task, tomorrowISO()); onClose(); } },
-                { label: "Next week", run: () => { mutations.planFor(task, nextWeekISO()); onClose(); } },
+                { label: "Today", run: () => { mutations.planFor(task, todayISO(), TRIAGE_UNDO); onClose(); } },
+                { label: "Tomorrow", run: () => { mutations.planFor(task, tomorrowISO(), TRIAGE_UNDO); onClose(); } },
+                { label: "Next week", run: () => { mutations.planFor(task, nextWeekISO(), TRIAGE_UNDO); onClose(); } },
               ] as const
             ).map((c) => (
               <Chip key={c.label} onClick={c.run}>{c.label}</Chip>
@@ -284,9 +286,9 @@ function ReschedulePicker({ task, mutations, onDone }: { task: Task; mutations: 
     if (time) {
       const [h, m] = time.split(":").map(Number);
       const [y, mo, d] = date.split("-").map(Number);
-      mutations.block(task, new Date(y, mo - 1, d, h, m));
+      mutations.block(task, new Date(y, mo - 1, d, h, m), undefined, TRIAGE_UNDO);
     } else {
-      mutations.planFor(task, date);
+      mutations.planFor(task, date, TRIAGE_UNDO);
     }
     onDone();
   };

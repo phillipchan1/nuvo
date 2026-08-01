@@ -30,6 +30,7 @@ import WeatherIcon from "./WeatherIcon";
 import WeatherPopover from "./WeatherPopover";
 import TimeZoneChip from "./TimeZoneChip";
 import { fixedCssPx, useUiScale } from "../hooks/useUiScale";
+import { useOptionalUndoStack } from "../hooks/useUndoStack";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
 
@@ -242,6 +243,7 @@ export default function CalendarPane({
 }) {
   const calRef = useRef<FullCalendar>(null);
   const { scale: uiScale } = useUiScale();
+  const { recordUndo } = useOptionalUndoStack();
   const [utilsOpen, setUtilsOpen] = useState(false);
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
@@ -1136,17 +1138,33 @@ export default function CalendarPane({
       const ns = info.event.start;
       const ne = info.event.end;
       if (ns) {
-        slotMutations.updateSlot({
-          id: refId,
-          patch: {
-            start_time: ns.toISOString(),
-            do_date: toDateISO(ns),
-            ...(ne
-              ? { duration_minutes: Math.max(15, Math.round((ne.getTime() - ns.getTime()) / 60_000)) }
-              : {}),
-            ...(findSlot(refId)?.recurrence_id ? { recurrence_overridden: true } : {}),
-          },
-        });
+        const slot = findSlot(refId);
+        const before = slot
+          ? {
+              start_time: slot.start_time,
+              do_date: slot.do_date,
+              duration_minutes: slot.duration_minutes,
+              recurrence_overridden: slot.recurrence_overridden,
+            }
+          : null;
+        const patch = {
+          start_time: ns.toISOString(),
+          do_date: toDateISO(ns),
+          ...(ne
+            ? { duration_minutes: Math.max(15, Math.round((ne.getTime() - ns.getTime()) / 60_000)) }
+            : {}),
+          ...(slot?.recurrence_id ? { recurrence_overridden: true } : {}),
+        };
+        slotMutations.updateSlot({ id: refId, patch });
+        if (before) {
+          recordUndo({
+            label: `Moved — ${slot?.title ?? "slot"}`,
+            shortLabel: "Moved",
+            tier: "silent",
+            coalesceKey: "move",
+            undo: () => slotMutations.updateSlot({ id: refId, patch: before }),
+          });
+        }
       }
       return;
     }
@@ -1158,11 +1176,22 @@ export default function CalendarPane({
       if (!newStart || !newEnd) { info.revert(); return; }
 
       withRecurrenceScope(extProps, () => info.revert(), (scope) => {
+        const ev = eventsRef.current.find((e) => e.id === refId);
+        const before = ev ? { start_at: ev.start_at, end_at: ev.end_at } : null;
         eventMutations.updateEvent({
           id: refId,
           patch: { start_at: newStart.toISOString(), end_at: newEnd.toISOString() },
           scope,
         });
+        if (before && scope === "THIS") {
+          recordUndo({
+            label: `Moved — ${ev?.title ?? "event"}`,
+            shortLabel: "Moved",
+            tier: "silent",
+            coalesceKey: "move",
+            undo: () => eventMutations.updateEvent({ id: refId, patch: before, scope: "THIS" }),
+          });
+        }
       });
       return;
     }
@@ -1178,10 +1207,23 @@ export default function CalendarPane({
       const task = findTask(refId);
       if (task && info.event.start && info.event.end) {
         const mins = Math.round((info.event.end.getTime() - info.event.start.getTime()) / 60_000);
-        mutations.patchTask(task.id, {
-          duration_minutes: Math.max(15, mins),
-          ...(task.recurrence_id && !task.recurrence_overridden ? { recurrence_overridden: true } : {}),
-        });
+        mutations.patchTask(
+          task.id,
+          {
+            duration_minutes: Math.max(15, mins),
+            ...(task.recurrence_id && !task.recurrence_overridden ? { recurrence_overridden: true } : {}),
+          },
+          {
+            undo: "silent",
+            before: {
+              duration_minutes: task.duration_minutes,
+              recurrence_overridden: task.recurrence_overridden,
+            },
+            title: task.title,
+            label: `Resized — ${task.title}`,
+            coalesceKey: "move",
+          },
+        );
       }
       return;
     }
@@ -1190,15 +1232,31 @@ export default function CalendarPane({
       const ns = info.event.start;
       const ne = info.event.end;
       if (ns && ne) {
-        slotMutations.updateSlot({
-          id: refId,
-          patch: {
-            start_time: ns.toISOString(),
-            do_date: toDateISO(ns),
-            duration_minutes: Math.max(15, Math.round((ne.getTime() - ns.getTime()) / 60_000)),
-            ...(findSlot(refId)?.recurrence_id ? { recurrence_overridden: true } : {}),
-          },
-        });
+        const slot = findSlot(refId);
+        const before = slot
+          ? {
+              start_time: slot.start_time,
+              do_date: slot.do_date,
+              duration_minutes: slot.duration_minutes,
+              recurrence_overridden: slot.recurrence_overridden,
+            }
+          : null;
+        const patch = {
+          start_time: ns.toISOString(),
+          do_date: toDateISO(ns),
+          duration_minutes: Math.max(15, Math.round((ne.getTime() - ns.getTime()) / 60_000)),
+          ...(slot?.recurrence_id ? { recurrence_overridden: true } : {}),
+        };
+        slotMutations.updateSlot({ id: refId, patch });
+        if (before) {
+          recordUndo({
+            label: `Resized — ${slot?.title ?? "slot"}`,
+            shortLabel: "Resized",
+            tier: "silent",
+            coalesceKey: "move",
+            undo: () => slotMutations.updateSlot({ id: refId, patch: before }),
+          });
+        }
       }
       return;
     }
@@ -1209,11 +1267,22 @@ export default function CalendarPane({
       if (!newStart || !newEnd) { info.revert(); return; }
 
       withRecurrenceScope(extProps, () => info.revert(), (scope) => {
+        const ev = eventsRef.current.find((e) => e.id === refId);
+        const before = ev ? { start_at: ev.start_at, end_at: ev.end_at } : null;
         eventMutations.updateEvent({
           id: refId,
           patch: { start_at: newStart.toISOString(), end_at: newEnd.toISOString() },
           scope,
         });
+        if (before && scope === "THIS") {
+          recordUndo({
+            label: `Resized — ${ev?.title ?? "event"}`,
+            shortLabel: "Resized",
+            tier: "silent",
+            coalesceKey: "move",
+            undo: () => eventMutations.updateEvent({ id: refId, patch: before, scope: "THIS" }),
+          });
+        }
       });
       return;
     }

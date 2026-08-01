@@ -3,8 +3,8 @@
 // attribution can never disagree with itself. Corrections update the source
 // row (task.domain_id / event_domain_routing) and the ledger regenerates.
 
-import { addDays } from "date-fns";
-import { parseDateISO } from "./dates";
+import { addDays, startOfWeek } from "date-fns";
+import { APP_TZ, parseDateISO, toDateISO } from "./dates";
 import { eventCountsAsActual, eventDomainId, eventKey, eventMins } from "./eventActuals";
 import {
   domainById,
@@ -53,6 +53,76 @@ export interface WeekEvidence {
   receipts: WeekReceipt[];
   /** Prior-week hours by domain id (from Domain.weeks), when available. */
   priorDomainHours: Record<string, number>;
+}
+
+/** One day's worth of attributed work — derived from the flat receipt list. */
+export interface DayEvidence {
+  dayISO: string;
+  /** Total attributed minutes (tasks + meetings; activity is 0). */
+  mins: number;
+  receipts: WeekReceipt[];
+}
+
+/** Calendar date of an instant in a given timezone ('YYYY-MM-DD'). */
+export function instantToDayISO(instant: string | Date, tz: string = APP_TZ): string {
+  const d = typeof instant === "string" ? new Date(instant) : instant;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/**
+ * Group flat receipts into days for a week starting at `weekStartISO`.
+ * By default omits quiet days (no receipts). Pass `includeEmpty: true` for a
+ * full 7-lane spread (Review day board). Activity (0-min) receipts appear in
+ * the day list without inflating mins.
+ *
+ * `weekStartISO` is the first column day — pass a Sunday for Schedule-style
+ * Sun→Sat, or a Monday for planning-week Mon→Sun.
+ */
+export function groupEvidenceByDay(
+  evidence: WeekEvidence,
+  weekStartISO: string,
+  tz: string = APP_TZ,
+  opts?: { includeEmpty?: boolean },
+): DayEvidence[] {
+  const byDay = new Map<string, WeekReceipt[]>();
+  for (let i = 0; i < 7; i++) {
+    byDay.set(toDateISO(addDays(parseDateISO(weekStartISO), i)), []);
+  }
+
+  for (const r of evidence.receipts) {
+    if (!r.at) continue;
+    const dayISO = instantToDayISO(r.at, tz);
+    const list = byDay.get(dayISO);
+    if (!list) continue; // outside the week window
+    list.push(r);
+  }
+
+  const days: DayEvidence[] = [];
+  for (const [dayISO, receipts] of byDay) {
+    if (!opts?.includeEmpty && receipts.length === 0) continue;
+    const sorted = [...receipts].sort(
+      (a, b) => b.mins - a.mins || (b.at ?? "").localeCompare(a.at ?? ""),
+    );
+    const mins = sorted.reduce((sum, r) => sum + (r.kind === "activity" ? 0 : r.mins), 0);
+    days.push({ dayISO, mins, receipts: sorted });
+  }
+  return days;
+}
+
+/**
+ * First column of the day board for a planning week (Monday `planningWeekStartISO`).
+ * Honors the Schedule display preference (`weekStartsOn`: 0 = Sun→Sat, 1 = Mon→Sun)
+ * — same rule as FullCalendar / MobileCalendar. Does not change which planning
+ * week the Review is about; only the lane order / calendar-week snap.
+ */
+export function boardWeekStartISO(planningWeekStartISO: string, weekStartsOn: 0 | 1): string {
+  if (weekStartsOn === 1) return planningWeekStartISO;
+  return toDateISO(startOfWeek(parseDateISO(planningWeekStartISO), { weekStartsOn: 0 }));
 }
 
 export interface BuildWeekEvidenceInput {

@@ -2012,6 +2012,34 @@ sentence re-counting, the failure path). **Not yet deployed** — migration 50 a
 the agent function are pending, and no invite has been staged from a live chat
 turn in a real account. Re-verify there before calling the ledger row ✅.*
 
+**D-067 · 2026-07-31 · App-wide undo is two channels — toast for stakes, silent stack for
+drags.** Fat-finger complete (and trash / ambiguous routing) need a discoverable Undo;
+calendar drags must not spam toasts. One stack (`UndoProvider` / `useUndoStack`), two tiers
+in `undoTiers.ts`:
+
+→ **Tier A (toast + stack):** complete / reopen, trash, keyboard triage (`e`/`t`/`n`/`i`),
+rail tab drops (D-063a destination labels), file-to-project. Coalesce ~1.5s into one toast
+("3 tasks marked done"). Mobile's only recovery path.
+
+→ **Tier B (silent stack):** calendar drag-drop / resize, slot & event moves, rail reorder.
+Desktop recovers with ⌘Z; mobile drags back. No toast.
+
+→ **⌘Z** at the root; stands down in inputs / contenteditable. No redo in v1. Agent card
+undo stays on the transcript for now.
+
+Closes the D7 failure mode (mistaken "finish") without violating P4 (neutral copy, never a
+debt count). Extends D-063a; does not replace the rail-tab chip law.
+*Status: standing.*
+
+**D-068 · 2026-08-01 · The Find leaves the Review surface.** Phil: not valuable in
+practice. The Review already answers W6 via landed projects + the completed-task
+breakdown (by day / by domain). Find cards, story scenes, and the mobile teaser that
+hinged on a Find are gone from the UI. `composeWeekFinds` / `week_reviews` Find fields
+remain in the data path for now (sealed snapshots, optional narration) so we don't break
+history — they just have no reader. Supersedes the "surface The Find" half of D-021's
+product promise; the "at most one, hide when nothing notable" rule is moot while there's
+no surface. *Status: standing.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 

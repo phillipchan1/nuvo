@@ -105,12 +105,24 @@ tray — owes the user **two things at all times**, or it feels lost:
    labelled, costs zero reflow and covers zero rows).
 
 4. **The destination is named when it isn't obvious, and undoable when it's a write**
-   (**D-063a**). If a target can route somewhere *this* surface doesn't render — the Inbox
-   tab sends a **parented** task to its project's backlog, not to the triage inbox — the
-   row will simply vanish. So a **cursor chip** states the real destination before release
-   (the slot-chip idiom, in `--accent` for an act rather than `--slot` for a container),
-   and a **toast with Undo** names it again after. A target may not be labelled one thing
-   and do another.
+   (**D-063a**, extended by the app-wide undo stack). If a target can route somewhere
+   *this* surface doesn't render — the Inbox tab sends a **parented** task to its
+   project's backlog, not to the triage inbox — the row will simply vanish. So a
+   **cursor chip** states the real destination before release (the slot-chip idiom, in
+   `--accent` for an act rather than `--slot` for a container), and a **toast with Undo**
+   names it again after. A target may not be labelled one thing and do another.
+
+   Undo is two channels, not one toast-per-write:
+
+   | Channel | When | Recovery |
+   |---------|------|----------|
+   | **Toast + Undo** (Tier A) | Complete / reopen, trash, keyboard triage, ambiguous routing (rail tab drop), file-to-project | Toast button (mobile's only path) · ⌘Z |
+   | **Silent stack** (Tier B) | Calendar drag-drop, resize, in-rail reorder | ⌘Z on desktop · drag back on mobile |
+
+   Never toast every mutation — calendar drags stay quiet. One coalesce window (~1.5s)
+   merges a rapid family (e.g. three completes → "3 tasks marked done"). ⌘Z stands down
+   in text fields so native edit undo wins. Implementation: `useUndoStack` +
+   `src/lib/undoTiers.ts`; task acts record at `useTaskMutations`.
 
 And when the gesture ends, **it ends** — a drag is a move, not a selection. Nothing may
 stay lifted, armed, `cal-dragging`, or `user-select`-locked after the release, and that

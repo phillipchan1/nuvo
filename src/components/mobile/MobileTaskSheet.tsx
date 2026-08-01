@@ -10,6 +10,9 @@ import Sheet from "./Sheet";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
+/** Explicit triage on phone — toast is the only undo path (no ⌘Z). */
+const TRIAGE_UNDO = { undo: "toast" as const };
+
 // Tapping a task on a list opens this — the mobile stand-in for the desktop's
 // anchored task popover. The handful of actions a thumb actually needs: rename,
 // reschedule, set priority, label, complete, trash.
@@ -67,10 +70,10 @@ export default function MobileTaskSheet({
   };
 
   const planChips: { label: string; run: () => void; active?: boolean }[] = [
-    { label: "Today", run: () => mutations.planFor(task, todayISO()), active: task.do_date === todayISO() },
-    { label: "Tomorrow", run: () => mutations.planFor(task, tomorrowISO()), active: task.do_date === tomorrowISO() },
-    { label: "Next week", run: () => mutations.planFor(task, nextWeekISO()) },
-    { label: "Inbox", run: () => mutations.backToInbox(task), active: task.status === "inbox" },
+    { label: "Today", run: () => mutations.planFor(task, todayISO(), TRIAGE_UNDO), active: task.do_date === todayISO() },
+    { label: "Tomorrow", run: () => mutations.planFor(task, tomorrowISO(), TRIAGE_UNDO), active: task.do_date === tomorrowISO() },
+    { label: "Next week", run: () => mutations.planFor(task, nextWeekISO(), TRIAGE_UNDO) },
+    { label: "Inbox", run: () => mutations.backToInbox(task, TRIAGE_UNDO), active: task.status === "inbox" },
   ];
 
   const priorities: { value: Task["priority"]; label: string; color: string }[] = [
@@ -245,9 +248,9 @@ function DateTimePicker({
     if (time) {
       const [h, m] = time.split(":").map(Number);
       const [y, mo, d] = date.split("-").map(Number);
-      mutations.block(task, new Date(y, mo - 1, d, h, m));
+      mutations.block(task, new Date(y, mo - 1, d, h, m), undefined, TRIAGE_UNDO);
     } else {
-      mutations.planFor(task, date);
+      mutations.planFor(task, date, TRIAGE_UNDO);
     }
     onDone();
   };

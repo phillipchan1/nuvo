@@ -18,11 +18,10 @@
 
 import { useState, useEffect, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { fmtHours } from "../../lib/dates";
 import { weekSpan } from "../../lib/week";
-import { fmtMins } from "../../lib/now";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
+import { useHomeTimezone } from "../../hooks/useHomeTimezone";
 import { projectById } from "../../lib/vertical";
 import { pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import type { WeekReport, WeekPriority } from "../../lib/composeWeek";
@@ -32,60 +31,9 @@ import { ProjectShipAssess } from "../record/ShipAssess";
 import WeekEmblem from "./WeekEmblem";
 import WeekStory from "./WeekStory";
 import { WhatYouBuilt } from "./WhatYouBuilt";
-import { WeekFindCard } from "./WeekFind";
 import { WeekProjectRow } from "./WeekProjectRow";
-import { DomainEvidenceList } from "./WeekEvidence";
-import { Bar } from "./parts";
-
-
-/** Where the hours went — capacity + the per-domain weave, with expandable receipts. */
-function HoursWeave({ report, onCorrected }: { report: WeekReport; onCorrected?: () => void }) {
-  const { capacity, domains, evidence } = report;
-  const [openId, setOpenId] = useState<string | null>(null);
-  const busyPct = capacity.workMins > 0 ? (capacity.busyMins / capacity.workMins) * 100 : 0;
-  const maxH = Math.max(1, ...domains.map((d) => Math.max(d.hours, d.target)));
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <div className="mb-1 flex items-baseline justify-between">
-          <span className="text-meta text-muted">Committed</span>
-          <span className="mono text-meta text-muted">
-            {fmtMins(capacity.busyMins)} of {fmtMins(capacity.workMins)} · {fmtMins(capacity.openMins)} open
-          </span>
-        </div>
-        <Bar pct={busyPct} color="var(--accent)" h={2} />
-      </div>
-      <div className="flex flex-col gap-2.5">
-        {domains.map((d) => {
-          const expanded = openId === d.id;
-          const hasReceipts = (evidence?.domains.find((e) => e.domainId === d.id)?.receipts.length ?? 0) > 0;
-          return (
-            <div key={d.id}>
-              <button
-                type="button"
-                onClick={() => hasReceipts && setOpenId(expanded ? null : d.id)}
-                className={`flex w-full items-center gap-3 text-left ${hasReceipts ? "tap cursor-pointer" : "cursor-default"}`}
-                aria-expanded={expanded}
-              >
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: d.quiet ? "var(--line-strong)" : d.color, opacity: d.quiet ? 0.5 : 1 }} />
-                <span className="w-24 shrink-0 truncate text-meta text-ink">{d.name}</span>
-                <div className="min-w-0 flex-1">
-                  <Bar pct={(d.hours / maxH) * 100} color={d.quiet ? "var(--line-strong)" : d.color} baseline={d.target > 0 ? (d.target / maxH) * 100 : undefined} h={1.5} />
-                </div>
-                <span className="mono w-14 shrink-0 text-right text-micro text-muted">{fmtHours(d.hours * 60)}h</span>
-              </button>
-              {expanded && evidence && (
-                <div className="mb-1 ml-5 mt-1 border-l border-line pl-3">
-                  <DomainEvidenceList evidence={evidence} domainId={d.id} onCorrected={onCorrected} />
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+import { WeekHoursBreakdown } from "./WeekEvidence";
+import { fmtHours } from "../../lib/dates";
 
 /** The conscience read — one sentence, on a week that can still change.
  *
@@ -174,6 +122,7 @@ export function WeekPlanBody({
   const verdicts = useWeekVerdicts(viewedWeekISO);
   const reviewActions = useWeekReviewActions(viewedWeekISO);
   const sealedRow = useWeekReviewRow(viewedWeekISO);
+  const [homeTz] = useHomeTimezone();
   const qc = useQueryClient();
   const [shipId, setShipId] = useState<string | null>(null);
 
@@ -285,32 +234,23 @@ export function WeekPlanBody({
       {/* Forming: the conscience is one sentence, so it rides ABOVE as a band —
           given a column of its own it left half the screen dead, and it made the
           projects (this surface's actual hero) share the stage with a sentence.
-          Sealed: the weave is the moment's content and fills its column. */}
-      {forming && (
+          The full Day / Domain breakdown sits at the foot for any lived week. */}
+      {forming && !ahead && (
         <div className="mb-10 min-w-0" data-marquee="hours">
           <Col label={hoursLabel}>
-            <div className="flex flex-col gap-2">
-              <ConscienceRead report={report} tense={tense} />
-              <details className="group">
-                <summary className="tap fast cursor-pointer list-none text-meta text-muted hover:text-accent">
-                  <span className="mr-1 inline-block transition-transform group-open:rotate-90" aria-hidden>▸</span>
-                  {hoursLabel}
-                </summary>
-                <div className="mt-3 max-w-xl">
-                  <HoursWeave report={report} onCorrected={reseal} />
-                </div>
-              </details>
-            </div>
+            <ConscienceRead report={report} tense={tense} />
           </Col>
         </div>
       )}
 
-      {/* MAIN — the week's projects at depth | (sealed) where the time went */}
+      {/* MAIN — the week's projects at depth. Hours live in The breakdown at
+          the foot (Day / Domain toggle) so the story reads projects → Find →
+          built → where the time went. */}
       {/* `min-w-0` on the grid items is load-bearing: a grid child defaults to
           min-width:auto, so without it the row's long outcome line sets the
           track width and `truncate` never engages — the text just runs off the
           side of a phone. */}
-      <div className={`grid gap-x-14 gap-y-10 ${forming ? "" : "md:grid-cols-2"}`}>
+      <div className="grid gap-y-10">
         <div className="min-w-0" data-marquee="priorities">
         <Col label={forming ? "The week's projects" : "How they landed"}>
           {report.priorities.length > 0 ? (
@@ -354,23 +294,18 @@ export function WeekPlanBody({
         </Col>
         </div>
 
-        {!forming && (
+        {/* What you built — merged PRs as shipped work (self-hides if none). */}
+        {!ahead && <WhatYouBuilt weekStartISO={viewedWeekISO} />}
+
+        {/* Day / Domain breakdown at the end — completed tasks, grouped by day or
+            domain. Full width so the day spread can read as seven lanes. */}
+        {!ahead && (
           <div className="min-w-0" data-marquee="hours">
-            <Col label={hoursLabel}>
-              <HoursWeave report={report} onCorrected={reseal} />
+            <Col label="The breakdown">
+              <WeekHoursBreakdown report={report} onCorrected={reseal} homeTz={homeTz} />
             </Col>
           </div>
         )}
-
-        {/* The Find — one discovery; self-hides when nothing notable / ahead week. */}
-        {!ahead && report.find && (
-          <div className={forming ? "" : "md:col-span-2"}>
-            <WeekFindCard find={report.find} weekStartISO={viewedWeekISO} sealed={state === "sealed"} onReseal={reseal} />
-          </div>
-        )}
-
-        {/* What you built — merged PRs as shipped work (self-hides if none). */}
-        {!ahead && <WhatYouBuilt weekStartISO={viewedWeekISO} />}
       </div>
 
       {shipId && <ProjectShipAssess id={shipId} onClose={() => setShipId(null)} />}

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { toast } from "sonner";
 import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { captureTitle, parseCapture } from "../lib/nlp";
@@ -11,12 +10,17 @@ import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useListReorder } from "../hooks/useListReorder";
 import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
+import { useOptionalUndoStack } from "../hooks/useUndoStack";
 import TaskRow, { type TaskMeta } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import { SectionLabel } from "./ui";
 
 export type RailTab = "inbox" | "today";
 type Mutations = ReturnType<typeof useTaskMutations>;
+
+/** Keyboard / menu / tab-drop triage: destination may vanish from the rail, so
+ *  these plan/return acts take the toast channel (complete/trash already do). */
+const TRIAGE_UNDO = { undo: "toast" as const };
 
 const RAIL_WIDTH_KEY = "nuvo-rail-width";
 const DEFAULT_RAIL_WIDTH = 360;
@@ -71,6 +75,7 @@ export default function LeftRail({
   weekDoor?: WeekDoor;
 }) {
   const { data: vertical, toggleTaskSprint } = useVertical();
+  const { recordUndo } = useOptionalUndoStack();
   const recurrenceMutations = useRecurrenceMutations();
   const { nav } = useAppNavigation();
 
@@ -161,15 +166,15 @@ export default function LeftRail({
           }
           break;
         case "e":
-          targets.forEach((t) => mutations.planFor(t, todayISO()));
+          targets.forEach((t) => mutations.planFor(t, todayISO(), TRIAGE_UNDO));
           break;
         case "t":
-          targets.forEach((t) => mutations.planFor(t, tomorrowISO()));
+          targets.forEach((t) => mutations.planFor(t, tomorrowISO(), TRIAGE_UNDO));
           break;
         // Bare s / w / d / m belong to the Schedule (view switching), so the
         // rail's three colliding triage actions live on n / f / r instead.
         case "n":
-          targets.forEach((t) => mutations.planFor(t, nextWeekISO()));
+          targets.forEach((t) => mutations.planFor(t, nextWeekISO(), TRIAGE_UNDO));
           break;
         case "f":
           targets.forEach((t) =>
@@ -182,7 +187,7 @@ export default function LeftRail({
           setSelectedIds(new Set());
           break;
         case "i":
-          targets.filter((t) => t.status !== "inbox").forEach((t) => mutations.backToInbox(t));
+          targets.filter((t) => t.status !== "inbox").forEach((t) => mutations.backToInbox(t, TRIAGE_UNDO));
           break;
         case "r":
           if (targets.length === 1) setSchedulePickerFor(targets[0]);
@@ -369,11 +374,19 @@ export default function LeftRail({
   const dropActs: Record<string, { label: (t: Task) => string; run: (t: Task) => void }> = {
     inbox: {
       label: (t) => `↩ Back to ${homeOf(t)}`,
-      run: (t) => mutations.backToInbox(t),
+      run: (t) =>
+        mutations.backToInbox(t, {
+          undo: "toast",
+          label: `${t.title} — ${homeOf(t)}`,
+        }),
     },
     today: {
       label: () => "→ Onto today",
-      run: (t) => mutations.planFor(t, todayISO(now)),
+      run: (t) =>
+        mutations.planFor(t, todayISO(now), {
+          undo: "toast",
+          label: `${t.title} — today`,
+        }),
     },
   };
 
@@ -396,18 +409,8 @@ export default function LeftRail({
       const t = byId.get(id);
       const act = dropActs[key];
       if (!t || !act) return;
-      // Snapshot the four fields both acts move, so Undo is exact.
-      const before = {
-        status: t.status,
-        do_date: t.do_date,
-        start_time: t.start_time,
-        slot_id: t.slot_id,
-      };
+      // Mutation layer owns the toast + Undo (D-063a destination label above).
       act.run(t);
-      toast(`${t.title} — ${key === "inbox" ? homeOf(t) : "today"}`, {
-        action: { label: "Undo", onClick: () => mutations.patchTask(t.id, before) },
-        duration: 7000,
-      });
     },
     onPointerDown: () => {
       preDragSelection.current = selectedIdRef.current;
@@ -426,8 +429,22 @@ export default function LeftRail({
       // Ties (every fresh capture lands on the same default) can't express an
       // order — spread them densely from the band's own floor.
       if (new Set(vals).size !== vals.length) vals = vals.map((_, i) => vals[0] + i);
+      const befores = pool.map((t) => ({ id: t.id, sort_order: t.sort_order }));
+      const changed = pool.filter((t, i) => t.sort_order !== vals[i]);
+      if (!changed.length) return;
       pool.forEach((t, i) => {
-        if (t.sort_order !== vals[i]) mutations.patchTask(t.id, { sort_order: vals[i] });
+        if (t.sort_order !== vals[i]) mutations.patchTask(t.id, { sort_order: vals[i] }, { undo: false });
+      });
+      recordUndo({
+        label: "Reordered",
+        shortLabel: "Reordered",
+        tier: "silent",
+        coalesceKey: "reorder",
+        undo: () => {
+          befores.forEach(({ id, sort_order }) =>
+            mutations.patchTask(id, { sort_order }, { undo: false }),
+          );
+        },
       });
     },
   });
@@ -693,7 +710,7 @@ export default function LeftRail({
           <div className="flex-1" />
           <button
             onClick={() => {
-              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.planFor(t, todayISO(now)));
+              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.planFor(t, todayISO(now), TRIAGE_UNDO));
               setSelectedIds(new Set());
             }}
             className="fast rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
@@ -702,7 +719,7 @@ export default function LeftRail({
           </button>
           <button
             onClick={() => {
-              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.backToInbox(t));
+              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.backToInbox(t, TRIAGE_UNDO));
               setSelectedIds(new Set());
             }}
             className="fast rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
@@ -883,11 +900,11 @@ function TaskContextMenu({
       },
     },
     { kind: "sep" },
-    { kind: "action", label: "Today", key: "E", action: () => { mutations.planFor(task, todayISO(now)); onClose(); } },
-    { kind: "action", label: "Tomorrow", key: "T", action: () => { mutations.planFor(task, tomorrowISO()); onClose(); } },
-    { kind: "action", label: "Next week", key: "W", action: () => { mutations.planFor(task, nextWeekISO()); onClose(); } },
+    { kind: "action", label: "Today", key: "E", action: () => { mutations.planFor(task, todayISO(now), TRIAGE_UNDO); onClose(); } },
+    { kind: "action", label: "Tomorrow", key: "T", action: () => { mutations.planFor(task, tomorrowISO(), TRIAGE_UNDO); onClose(); } },
+    { kind: "action", label: "Next week", key: "W", action: () => { mutations.planFor(task, nextWeekISO(), TRIAGE_UNDO); onClose(); } },
     { kind: "action", label: "Schedule…", key: "S", action: onSchedule },
-    ...(task.status !== "inbox" ? [{ kind: "action" as const, label: "Return to inbox", key: "I", action: () => { mutations.backToInbox(task); onClose(); } }] : []),
+    ...(task.status !== "inbox" ? [{ kind: "action" as const, label: "Return to inbox", key: "I", action: () => { mutations.backToInbox(task, TRIAGE_UNDO); onClose(); } }] : []),
     ...(task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id)
       ? [{ kind: "action" as const, label: "File to project", key: "P", action: () => { mutations.fileToProject(task); onClose(); } }]
       : []),
@@ -1042,9 +1059,9 @@ function SchedulePicker({
     if (time) {
       const [h, m] = time.split(":").map(Number);
       const [y, mo, d] = date.split("-").map(Number);
-      mutations.block(task, new Date(y, mo - 1, d, h, m));
+      mutations.block(task, new Date(y, mo - 1, d, h, m), undefined, TRIAGE_UNDO);
     } else {
-      mutations.planFor(task, date);
+      mutations.planFor(task, date, TRIAGE_UNDO);
     }
     onClose();
   };

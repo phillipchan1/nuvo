@@ -4,8 +4,34 @@ import { invokeQuiet, supabase } from "../lib/supabase";
 import { DEFAULT_DURATION_MINUTES, restingStatus, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
+import { useOptionalUndoStack } from "./useUndoStack";
+import {
+  COALESCE,
+  resolveUndoTier,
+  TASK_UNDO_DEFAULT,
+  undoLabel,
+  undoShortLabel,
+  type UndoOpts,
+} from "../lib/undoTiers";
 
 const TASK_COLS = "*, task_labels(label_id)";
+
+/** Fields a place/triage act moves — same four D-063a restores. */
+type PlaceSnapshot = Pick<Task, "status" | "do_date" | "start_time" | "slot_id">;
+type ScheduleSnapshot = PlaceSnapshot & Pick<Task, "duration_minutes">;
+type CompleteSnapshot = Pick<Task, "status" | "completed_at">;
+
+function placeSnap(t: Task): PlaceSnapshot {
+  return { status: t.status, do_date: t.do_date, start_time: t.start_time, slot_id: t.slot_id };
+}
+
+function scheduleSnap(t: Task): ScheduleSnapshot {
+  return { ...placeSnap(t), duration_minutes: t.duration_minutes };
+}
+
+function completeSnap(t: Task): CompleteSnapshot {
+  return { status: t.status, completed_at: t.completed_at };
+}
 
 export function useInboxTasks() {
   return useQuery({
@@ -240,6 +266,7 @@ export interface NewTaskInput {
 
 export function useTaskMutations() {
   const qc = useQueryClient();
+  const { recordUndo } = useOptionalUndoStack();
 
   // In-flight creates keyed by their optimistic temp id. A task can be toggled
   // (or otherwise patched) within the ~150ms before its insert round-trips —
@@ -369,16 +396,68 @@ export function useTaskMutations() {
     return promise;
   };
 
-  const patchTask = (id: string, patch: Partial<Task>) => {
+  const patchTask = (id: string, patch: Partial<Task>, opts?: UndoOpts & {
+    /** When set, record a silent/toast undo that restores these fields. */
+    before?: Partial<Task>;
+    kind?: keyof typeof TASK_UNDO_DEFAULT;
+    title?: string;
+  }) => {
     const pending = pendingCreates.current.get(id);
     if (pending) {
       // Show the change immediately on the optimistic row, but defer the server
       // write until the insert resolves — then patch the real id so it sticks.
       patchCaches(qc, id, patch);
       void pending.then((real) => update.mutate({ id: real.id, patch })).catch(() => {});
-      return;
+    } else {
+      update.mutate({ id, patch });
     }
-    update.mutate({ id, patch });
+
+    // Field edits default to no undo (native input undo wins). Callers that
+    // move/resize pass `before` + `undo` tier.
+    if (opts?.before && opts.undo !== false) {
+      const tier = opts.undo === "toast" || opts.undo === "silent"
+        ? opts.undo
+        : "silent";
+      const before = opts.before;
+      const kind = opts.kind;
+      const title = opts.title ?? "";
+      recordUndo({
+        label: opts.label ?? (kind ? undoLabel(kind, title) : "Change"),
+        shortLabel: kind ? undoShortLabel(kind) : "Change",
+        batchLabel: kind ? (n) => undoLabel(kind, title, n) : undefined,
+        batchShortLabel: kind ? (n) => undoShortLabel(kind, n) : undefined,
+        tier,
+        coalesceKey: opts.coalesceKey,
+        undo: () => patchTask(id, before, { undo: false }),
+      });
+    }
+  };
+
+  const track = (
+    kind: keyof typeof TASK_UNDO_DEFAULT,
+    t: Task,
+    before: Partial<Task>,
+    apply: () => void,
+    opts?: UndoOpts,
+  ) => {
+    const tier = resolveUndoTier(TASK_UNDO_DEFAULT[kind], opts);
+    apply();
+    if (tier === false) return;
+    recordUndo({
+      label: opts?.label ?? undoLabel(kind, t.title),
+      shortLabel: undoShortLabel(kind),
+      batchLabel: (n) => undoLabel(kind, t.title, n),
+      batchShortLabel: (n) => undoShortLabel(kind, n),
+      tier,
+      coalesceKey: opts?.coalesceKey ?? (
+        kind === "complete" || kind === "uncomplete" || kind === "trash"
+          ? COALESCE[kind]
+          : kind === "planFor" || kind === "backToInbox"
+            ? COALESCE.plan
+            : COALESCE.move
+      ),
+      undo: () => patchTask(t.id, before, { undo: false }),
+    });
   };
 
   return {
@@ -386,33 +465,45 @@ export function useTaskMutations() {
     patchTask,
 
     /** Plan a task for a day without a time block (and out of any slot). */
-    planFor: (t: Task, dateISO: string) =>
-      patchTask(t.id, { status: "planned", do_date: dateISO, start_time: null, slot_id: null }),
+    planFor: (t: Task, dateISO: string, opts?: UndoOpts) =>
+      track("planFor", t, placeSnap(t), () =>
+        patchTask(t.id, { status: "planned", do_date: dateISO, start_time: null, slot_id: null }, { undo: false }),
+      opts),
 
     /** Block a task on the calendar at a concrete start (and out of any slot). */
-    block: (t: Task, start: Date, durationMinutes?: number) =>
-      patchTask(t.id, {
-        status: "planned",
-        do_date: todayLocalISO(start),
-        start_time: start.toISOString(),
-        slot_id: null,
-        duration_minutes: durationMinutes ?? t.duration_minutes ?? DEFAULT_DURATION_MINUTES,
-      }),
+    block: (t: Task, start: Date, durationMinutes?: number, opts?: UndoOpts) =>
+      track("block", t, scheduleSnap(t), () =>
+        patchTask(t.id, {
+          status: "planned",
+          do_date: todayLocalISO(start),
+          start_time: start.toISOString(),
+          slot_id: null,
+          duration_minutes: durationMinutes ?? t.duration_minutes ?? DEFAULT_DURATION_MINUTES,
+        }, { undo: false }),
+      opts),
 
     /** Remove from calendar but keep planned for its day. */
-    unblock: (t: Task) => patchTask(t.id, { start_time: null }),
+    unblock: (t: Task, opts?: UndoOpts) =>
+      track("unblock", t, placeSnap(t), () =>
+        patchTask(t.id, { start_time: null }, { undo: false }),
+      opts),
 
     /** Move a task into a slot: it drops its own block and rides the slot's day. */
-    assignToSlot: (t: Task, slot: Slot) =>
-      patchTask(t.id, {
-        slot_id: slot.id,
-        start_time: null,
-        do_date: slot.do_date,
-        status: "planned",
-      }),
+    assignToSlot: (t: Task, slot: Slot, opts?: UndoOpts) =>
+      track("assignToSlot", t, placeSnap(t), () =>
+        patchTask(t.id, {
+          slot_id: slot.id,
+          start_time: null,
+          do_date: slot.do_date,
+          status: "planned",
+        }, { undo: false }),
+      opts),
 
     /** Pull a task out of its slot — keeps its day, still has no time block. */
-    removeFromSlot: (t: Task) => patchTask(t.id, { slot_id: null }),
+    removeFromSlot: (t: Task, opts?: UndoOpts) =>
+      track("removeFromSlot", t, placeSnap(t), () =>
+        patchTask(t.id, { slot_id: null }, { undo: false }),
+      opts),
 
     /** Create a fresh task already inside a slot (no block of its own). */
     createInSlot: (slot: Slot, title: string) =>
@@ -424,12 +515,20 @@ export function useTaskMutations() {
         domain_id: slot.domain_id,
       }),
 
-    complete: (t: Task) =>
-      patchTask(t.id, { status: "done", completed_at: new Date().toISOString() }),
+    complete: (t: Task, opts?: UndoOpts) =>
+      track("complete", t, completeSnap(t), () =>
+        patchTask(t.id, { status: "done", completed_at: new Date().toISOString() }, { undo: false }),
+      opts),
 
-    uncomplete: (t: Task) => patchTask(t.id, { status: restingStatus(t), completed_at: null }),
+    uncomplete: (t: Task, opts?: UndoOpts) =>
+      track("uncomplete", t, completeSnap(t), () =>
+        patchTask(t.id, { status: restingStatus(t), completed_at: null }, { undo: false }),
+      opts),
 
-    trash: (t: Task) => patchTask(t.id, { status: "trashed" }),
+    trash: (t: Task, opts?: UndoOpts) =>
+      track("trash", t, { status: t.status }, () =>
+        patchTask(t.id, { status: "trashed" }, { undo: false }),
+      opts),
 
     /** Release a task from its time. A task inside a PROJECT has a home and rests
      *  there — it must never land in the inbox, which is for captures with no home
@@ -441,26 +540,33 @@ export function useTaskMutations() {
      *  unsorted. Note restingStatus() disagrees — it counts domain/sprint as
      *  parented ("parked on a domain = someday"). That older model hasn't been
      *  reconciled, so don't swap this for restingStatus() without settling it. */
-    backToInbox: (t: Task) =>
-      patchTask(t.id, {
-        status: t.project_id ? "backlog" : "inbox",
-        do_date: null,
-        start_time: null,
-        slot_id: null,
-      }),
+    backToInbox: (t: Task, opts?: UndoOpts) =>
+      track("backToInbox", t, placeSnap(t), () =>
+        patchTask(t.id, {
+          status: t.project_id ? "backlog" : "inbox",
+          do_date: null,
+          start_time: null,
+          slot_id: null,
+        }, { undo: false }),
+      opts),
 
     /** Reverse of backToInbox: file an inbox task back under its project/initiative/domain. */
-    fileToProject: (t: Task) => patchTask(t.id, { status: "backlog" }),
+    fileToProject: (t: Task, opts?: UndoOpts) =>
+      track("fileToProject", t, { status: t.status }, () =>
+        patchTask(t.id, { status: "backlog" }, { undo: false }),
+      opts),
 
     /** An over-planned day degrades into the week pool, not into guilt-rolling:
      *  drop the date (and any slot), keep the sprint commitment. */
-    backToWeek: (t: Task) =>
-      patchTask(t.id, {
-        status: restingStatus({ ...t, do_date: null }),
-        do_date: null,
-        start_time: null,
-        slot_id: null,
-      }),
+    backToWeek: (t: Task, opts?: UndoOpts) =>
+      track("backToWeek", t, placeSnap(t), () =>
+        patchTask(t.id, {
+          status: restingStatus({ ...t, do_date: null }),
+          do_date: null,
+          start_time: null,
+          slot_id: null,
+        }, { undo: false }),
+      opts),
 
     setLabels: async (taskId: string, labelIds: string[]) => {
       await supabase.from("task_labels").delete().eq("task_id", taskId);

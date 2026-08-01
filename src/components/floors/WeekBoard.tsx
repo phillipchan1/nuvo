@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { addDays, format, startOfWeek } from "date-fns";
 import type { Slot, Task, UserSettings } from "../../lib/types";
-import { fmtDuration, isOverdue, toDateISO, todayISO } from "../../lib/dates";
+import { fmtDuration, isOverdue, parseDateISO, toDateISO, todayISO } from "../../lib/dates";
 import { fmtMins, readDay, toBusyBlocks } from "../../lib/now";
 import {
   useInboxTasks,
@@ -25,6 +25,7 @@ import {
 import { useSlotTasks, useSlots } from "../../hooks/useSlots";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useVertical } from "../../hooks/useVertical";
+import { firstDayOfWeek } from "../../hooks/useSettings";
 import { deriveSlotTitle } from "../../lib/slots";
 import { taskDomainColor } from "../../lib/vertical";
 
@@ -62,9 +63,19 @@ export default function WeekBoard({
   onOpenTask: (t: Task, anchor: DOMRect) => void;
 }) {
   const today = todayISO(now);
+  // Same display preference as FullCalendar / MobileCalendar (default Sun→Sat).
+  // Planning week stays Monday in the kernel — this only orders the lanes.
+  const weekStartsOn = firstDayOfWeek(settings);
   const [weekStartISO, setWeekStartISO] = useState(() =>
-    toDateISO(startOfWeek(now, { weekStartsOn: 1 })),
+    toDateISO(startOfWeek(now, { weekStartsOn })),
   );
+  // If the preference flips (Settings), re-anchor so the board doesn't strand
+  // on a Monday-start cursor under a Sunday-start grid (or the reverse).
+  useEffect(() => {
+    setWeekStartISO(toDateISO(startOfWeek(parseDateISO(weekStartISO), { weekStartsOn })));
+    // Only when the preference changes — not on every week walk.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStartsOn]);
   const weekStart = useMemo(() => new Date(weekStartISO + "T00:00:00"), [weekStartISO]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const rangeStart = weekStart.toISOString();
@@ -348,7 +359,8 @@ export default function WeekBoard({
 
   const walk = (delta: number) =>
     setWeekStartISO((iso) => toDateISO(addDays(new Date(iso + "T00:00:00"), delta)));
-  const resetToThisWeek = () => setWeekStartISO(toDateISO(startOfWeek(now, { weekStartsOn: 1 })));
+  const resetToThisWeek = () => setWeekStartISO(toDateISO(startOfWeek(now, { weekStartsOn })));
+  const thisWeekISO = toDateISO(startOfWeek(now, { weekStartsOn }));
 
   const weekLabel = useMemo(() => {
     const s = weekStart;
@@ -384,7 +396,7 @@ export default function WeekBoard({
             </svg>
           </button>
         </div>
-        {weekStartISO !== toDateISO(startOfWeek(now, { weekStartsOn: 1 })) && (
+        {weekStartISO !== thisWeekISO && (
           <button
             onClick={resetToThisWeek}
             className="fast rounded border border-line px-2 py-0.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"

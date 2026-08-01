@@ -46,9 +46,7 @@ export default function WeekPlanCard() {
           <div className="masthead truncate text-head text-ink">{weekLabelOf(currentWeekISO)}</div>
           <div className="truncate text-caption text-muted">
             {reviewReady
-              ? report.find
-                ? "Your week left a pattern"
-                : "Your week is ready to receive"
+              ? "Your week is ready to receive"
               : total > 0
                 ? `${report.landedCount} of ${total} landed`
                 : "Nothing on this week yet"}

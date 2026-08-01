@@ -1,8 +1,16 @@
 # The Weekly Review — the "Reflect" surface
 
-Status: **shipped core + The Find** (2026-07-10). Week's Plan / Review lives on
-Schedule; evidence receipts, one scored Find, source-level correction, sealed
-`week_reviews` snapshots, optional AI narration, Keep, and Note to Monday are in.
+Status: **shipped** (Review surface). Week's Plan / Review lives on Schedule; sealed
+`week_reviews` snapshots; completed-task breakdown (by day / by domain). **The Find is
+no longer shown** (D-068) — compose path retained, no UI reader.
+
+**Updated 2026-08-01 — Find removed from the Review UI (D-068); breakdown is completed
+tasks by day or by domain (task chips, not hour bars).**
+
+**Updated 2026-07-31 — Review breakdown.** Lived weeks end with **The breakdown**:
+Day / Domain toggle. **By day** is a full-width Mon→Sun spread (Schedule Spread
+grammar: hairline lanes, floating receipt chips); **By domain** is domain lanes of
+the same completed-task chips (count in the crown, not hours). Quiet days keep their lane.
 
 **Updated 2026-07-30 (D-060/61/62) — the forming face was rebuilt.** It renders **the week's
 projects** derived from their On Deck spans (it was reading `sprints.big_rocks` as a list,
@@ -28,7 +36,12 @@ on the funnel (we had a forward weekly valve, Sunday, and no backward one).
 - Rejected names: Harvest / any farming or pastoral metaphor (Phil dislikes them, same
   reason he dislikes "tend"). Keep it agile-plain.
 
-## The Find (evidence-backed discovery)
+## The Find (evidence-backed discovery) — **removed from UI (D-068)**
+
+Shipped once as "exactly one Find per Review." In practice it wasn't valuable; the
+Review's landed projects + completed-task breakdown answer the same question more
+honestly. Code (`composeWeekFinds`, sealed Find fields) still runs so old snapshots
+don't break — nothing renders it.
 
 Every Review may surface **exactly one** Find — something the numbers noticed that you
 couldn't see while inside the week. Product rules:
@@ -91,8 +104,10 @@ Reviews over a quarter *is* the long arc the Summit looks back on).
 2. **The line** — Nuvo's one-paragraph first-person letter (the narrative).
 3. **Priorities** — each `big_rock` with a verdict: **landed / carried / open**.
    *(Phil's favorite element.)*
-4. **Where the hours went** — the per-domain hours weave + a gentle conscience note for a
-   quiet domain. *(Phil's other favorite.)*
+4. **Where the hours went** — on a **lived** week this is **The breakdown** at the end:
+   completed tasks only, toggle **By day** (Mon→Sun spread) / **By domain** (lanes of the
+   same chips, count not hours). Forming weeks still lead with the conscience sentence
+   mid-page.
 5. **Note to Monday** — free-text "here's what I'm thinking for Monday," captured here,
    surfaced in **Today** when Monday opens. A letter from Friday-you to Monday-you. The
    qualitative sibling of carry-forward; reuses the Today brief + low-data-entry.

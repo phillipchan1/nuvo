@@ -86,7 +86,7 @@ const INVENTORY = [
       'Ask in plain language',
       'It drafts, you decide',
       'Scaffold a project or a week',
-      'One tap to undo anything',
+      'One-tap undo on every write',
     ],
   },
   {

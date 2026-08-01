@@ -12,6 +12,7 @@ import { SpotlightHost } from "./components/SpotlightWindow";
 import UpdateToast from "./components/UpdateToast";
 import { AppNavigationProvider } from "./hooks/useAppNavigation";
 import { AgentProvider } from "./hooks/useAgentContext";
+import { UndoProvider } from "./hooks/useUndoStack";
 
 /** Right after redirect-back from Stripe Checkout, the webhook usually lands
  *  in well under 2s (the realtime hook in useSubscription flips `entitled`
@@ -224,7 +225,9 @@ function Shell() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Shell />
+      <UndoProvider>
+        <Shell />
+      </UndoProvider>
     </QueryClientProvider>
   );
 }

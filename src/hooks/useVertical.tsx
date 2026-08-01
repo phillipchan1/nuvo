@@ -11,6 +11,7 @@ import { invokeQuiet, supabase } from "../lib/supabase";
 import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
+import { useOptionalUndoStack } from "./useUndoStack";
 import { planningWeekStartISO } from "../lib/dates";
 import { upsertPushVerdict } from "../lib/priorities";
 import {
@@ -283,6 +284,7 @@ function optimisticTask(input: {
 
 export function VerticalProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
+  const { recordUndo } = useOptionalUndoStack();
   const weekStart = planningWeekStartISO();
 
   const domainsQ = useQuery({
@@ -971,8 +973,20 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         void patchTaskRow(id, rowPatch);
       },
       deleteTask: (id) => {
-        const prev = (tasksQ.data ?? []).find((x) => x.id === id)?.status;
+        const row = (tasksQ.data ?? []).find((x) => x.id === id);
+        const prev = row?.status;
         void patchTaskRow(id, { status: "trashed" });
+        if (prev) {
+          recordUndo({
+            label: "Task deleted",
+            shortLabel: "Task deleted",
+            batchLabel: (n) => `${n} tasks deleted`,
+            batchShortLabel: (n) => `${n} deleted`,
+            tier: "toast",
+            coalesceKey: "trash",
+            undo: () => void patchTaskRow(id, { status: prev }),
+          });
+        }
         return prev;
       },
       restoreTask: (id, status) => {
@@ -990,9 +1004,29 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         const row = (tasksQ.data ?? []).find((x) => x.id === id);
         if (!row) return;
         if (row.status === "done") {
+          const before = { status: row.status, completed_at: row.completed_at };
           void patchTaskRow(id, { status: restingStatus(row), completed_at: null });
+          recordUndo({
+            label: `Reopened — ${row.title}`,
+            shortLabel: "Reopened",
+            batchLabel: (n) => `${n} tasks reopened`,
+            batchShortLabel: (n) => `${n} reopened`,
+            tier: "toast",
+            coalesceKey: "uncomplete",
+            undo: () => void patchTaskRow(id, before),
+          });
         } else {
+          const before = { status: row.status, completed_at: row.completed_at };
           void patchTaskRow(id, { status: "done", completed_at: new Date().toISOString() });
+          recordUndo({
+            label: `Marked done — ${row.title}`,
+            shortLabel: "Marked done",
+            batchLabel: (n) => `${n} tasks marked done`,
+            batchShortLabel: (n) => `${n} marked done`,
+            tier: "toast",
+            coalesceKey: "complete",
+            undo: () => void patchTaskRow(id, before),
+          });
         }
       },
 
@@ -1405,7 +1439,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         invalidate(["vertical"]);
       },
     };
-  }, [data, ready, qc, weekStart, domainsQ.data, tasksQ.data]);
+  }, [data, ready, qc, weekStart, domainsQ.data, tasksQ.data, recordUndo]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

@@ -15,6 +15,8 @@ import { SectionLabel } from "../ui";
 type Mutations = ReturnType<typeof useTaskMutations>;
 type Vertical = ReturnType<typeof useVertical>["data"];
 
+const TRIAGE_UNDO = { undo: "toast" as const };
+
 export type MobileTab = "today" | "week" | "inbox";
 
 export default function MobileTaskList({
@@ -169,7 +171,7 @@ export default function MobileTaskList({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    mutations.planFor(t, todayISO(now));
+                    mutations.planFor(t, todayISO(now), TRIAGE_UNDO);
                   }}
                   title="Pull onto today"
                   className="tap fast mono shrink-0 rounded-md border border-line px-2 text-caption text-muted active:border-accent active:text-accent"
