@@ -151,7 +151,7 @@ export const VERTICAL_TOOL_DEFINITIONS = [
     function: {
       name: "create_initiative",
       description:
-        "Create an initiative (a bet with a finish line) under a domain. Always set a clear outcome.",
+        "Create an initiative (a bet with a finish line) under a domain. Always set a clear outcome. If one with this name already exists in the domain, it is returned instead of a second being made (existing: true) — say so rather than claiming a creation.",
       parameters: {
         type: "object",
         properties: {
@@ -163,6 +163,10 @@ export const VERTICAL_TOOL_DEFINITIONS = [
           target_date: { type: "string", description: "YYYY-MM-DD finish line" },
           start_date: { type: "string", description: "YYYY-MM-DD" },
           status: { type: "string", enum: ["backlog", "in_progress", "waiting", "cancelled", "complete"] },
+          allow_duplicate: {
+            type: "boolean",
+            description: "Make a second initiative with this name anyway. Only when the user has said they want another one.",
+          },
         },
         required: ["name"],
       },
@@ -216,7 +220,7 @@ export const VERTICAL_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "create_project",
-      description: "Create a project under a domain (and optionally an initiative). Set a clear outcome.",
+      description: "Create a project under a domain (and optionally an initiative). Set a clear outcome. If one with this name already exists in the domain, it is returned instead of a second being made (existing: true) — say so rather than claiming a creation.",
       parameters: {
         type: "object",
         properties: {
@@ -230,6 +234,10 @@ export const VERTICAL_TOOL_DEFINITIONS = [
           target_date: { type: "string" },
           start_date: { type: "string" },
           status: { type: "string", enum: ["backlog", "in_progress", "waiting", "cancelled", "complete"] },
+          allow_duplicate: {
+            type: "boolean",
+            description: "Make a second project with this name anyway. Only when the user has said they want another one.",
+          },
         },
         required: ["name"],
       },
@@ -239,12 +247,17 @@ export const VERTICAL_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "update_project",
-      description: "Update a project.",
+      description: "Update a project. When project_name matches more than one, the error lists the candidates with their ids — pick one and call again with project_id, or narrow with in_initiative_name.",
       parameters: {
         type: "object",
         properties: {
           project_id: { type: "string" },
           project_name: { type: "string" },
+          in_initiative_id: { type: "string", description: "WHICH project: only consider projects under this initiative" },
+          in_initiative_name: {
+            type: "string",
+            description: "WHICH project: only consider projects under the initiative with this name — use when the user says \"the one under X\"",
+          },
           name: { type: "string" },
           outcome: { type: "string" },
           description: { type: "string" },
@@ -253,8 +266,8 @@ export const VERTICAL_TOOL_DEFINITIONS = [
           status: { type: "string", enum: ["backlog", "in_progress", "waiting", "cancelled", "complete"] },
           domain_id: { type: "string" },
           domain_name: { type: "string" },
-          initiative_id: { type: "string", description: "Set null to unlink from initiative" },
-          initiative_name: { type: "string" },
+          initiative_id: { type: "string", description: "MOVES the project under this initiative. Set null to unlink." },
+          initiative_name: { type: "string", description: "MOVES the project under the initiative with this name. To pick which project, use in_initiative_name." },
         },
       },
     },
@@ -273,6 +286,8 @@ export const VERTICAL_TOOL_DEFINITIONS = [
           project_name: { type: "string" },
           domain_id: { type: "string", description: "Narrow name lookup to this domain" },
           domain_name: { type: "string" },
+          in_initiative_id: { type: "string", description: "Narrow name lookup to projects under this initiative" },
+          in_initiative_name: { type: "string", description: "Narrow name lookup to projects under the initiative with this name" },
           delete_all_matching: {
             type: "boolean",
             description: "Delete every project matching project_name (+ domain). Use after user confirms bulk delete.",
