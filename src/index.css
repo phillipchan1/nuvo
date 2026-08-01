@@ -2258,7 +2258,7 @@ html[data-skin="terminal"][data-palette="crt"] .atmosphere {
     repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 4%, transparent) 0 1px, transparent 1px 3px),
     var(--bg);
 }
-/* Blueprint's ground is the graph paper itself — see BLUEPRINT CHROME below. */
+/* Blueprint's ground is set with the rest of its chrome — see BLUEPRINT CHROME. */
 
 /* NO FROST outside paper. The .glass-* hooks below cover the shared material
    classes, but frost also arrives as one-off inline `backdropFilter` (the Spine
@@ -3250,33 +3250,12 @@ html[data-skin="eink"] body::before {
   mix-blend-mode: color;
 }
 
-/* — THE TOOTH. A fixed halftone over the whole app, multiplied into whatever is
-     beneath, so text, rules and fills all sit *in* the panel instead of on top
-     of a grey background. Kept to a 3px dot pitch at very low alpha: at a normal
-     viewing distance it reads as texture, never as a pattern. Fixed + on <body>
-     so there is exactly ONE of them (`.atmosphere` is mounted twice — the shell
-     lays one down and the floor overlay lays another). */
-html[data-skin="eink"] body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-  mix-blend-mode: multiply;
-  background-image: radial-gradient(
-    circle at 50% 50%,
-    color-mix(in srgb, var(--text) 26%, transparent) 0.5px,
-    transparent 0.6px
-  );
-  background-size: 3px 3px;
-  opacity: 0.5;
-}
-/* Dark e-ink is ink-on-glass, not pigment-on-white — multiply would just clog
-   it, so the tooth lightens instead. */
-html[data-skin="eink"][data-theme="dark"] body::after {
-  mix-blend-mode: screen;
-  opacity: 0.35;
-}
+/* NOTE: a fixed halftone "tooth" (a 3px dot screen multiplied over the app) was
+   tried here to give the panel its matte surface, and cut — REJECTED by eye. A
+   dot screen over live UI reads as a pattern laid on top of the interface, not
+   as the material the interface is printed on, and it fights every hairline in
+   a dense planner. The pigment duotone above already carries the device; the
+   grain in `.atmosphere` is as much texture as this material wants. */
 
 /* — THE REFRESH. An e-ink panel cannot repaint a region without driving every
      particle, so changing pages flashes. It is the single most recognisable
@@ -3308,36 +3287,22 @@ html[data-skin="eink"] .glass-tint {
    BLUEPRINT CHROME — the drawing.
 
    Cyanotype blue with amber ink is a palette; a blueprint is a DOCUMENT. The
-   grid was deliberately removed once for being noisy, but a drafting sheet
-   without its grid is just a dark blue theme — so it comes back properly:
-   two-weight graph paper on the GROUND only, low enough that content always
-   wins, plus the marks a drawing actually carries (dimension ticks down the
-   time gutter, a node marker on every callout).
+   identity comes from the marks a drawing carries — dimension ticks down the
+   time gutter, a node marker on every callout — not from its ground.
+
+   NO GRAPH PAPER. Two-weight graph paper on the ground was tried here and cut
+   — REJECTED by eye, the second time this idea has failed. Ruled paper behind
+   a dense planner competes with every hairline the interface draws with, and
+   the app has a lot of them; the ground has to stay quiet for the drafting
+   marks on top of it to read at all. Don't bring it back a third time.
    ════════════════════════════════════════════════════════════════════════ */
 
-/* Graph paper: 8px minor, 48px major, over the cyanotype wash. The major lines
-   are what make it read as a *sheet* rather than as texture — a single-weight
-   grid reads as noise, which is what got it cut the first time. */
+/* The clean cyanotype ground — a whisper of light from above, nothing else. */
 html[data-skin="blueprint"] .atmosphere {
   background:
     radial-gradient(130% 100% at 50% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 55%),
-    repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 13%, transparent) 0 1px, transparent 1px 40px),
-    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 13%, transparent) 0 1px, transparent 1px 40px),
-    repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 5.5%, transparent) 0 1px, transparent 1px 8px),
-    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 5.5%, transparent) 0 1px, transparent 1px 8px),
     var(--bg);
 }
-/* The floor overlay mounts a SECOND .atmosphere on top of the shell's, which
-   would double every grid line into a moiré. Its job is only to be opaque
-   during the floor-enter fade, so it takes the plain ground. */
-html[data-skin="blueprint"] .atmosphere .atmosphere {
-  background: var(--bg);
-}
-
-/* The calendar deliberately does NOT mask the paper (flat gives it a sheet; here
-   it stays transparent): a week laid out over ruled graph paper is the closest
-   thing in the app to what a drawing actually is, and the grid is the reason the
-   hour rules stop reading as arbitrary. */
 
 /* — DIMENSION TICKS. A drawing measures its own extents: the hour gutter stops
      being a list of numbers and becomes a dimension rule, ticked at every hour
