@@ -233,6 +233,7 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Route a new project to the right life area | `create_project` | ✅ `structure-routes-by-domain` |
 | Never claim a write that failed | — | ✅ `structure-no-phantom-claims` |
 | A name that already exists isn't created twice | `create_project` | ✅ `structure-existing-is-not-a-creation` + handler cases |
+| An id already handed back is reused, not re-looked-up by name | `create_task` | ✅ `structure-reuses-the-id-it-was-given` |
 | Two matches become a tappable choice, not a repeated question | `update_project` | ✅ `structure-ambiguity-shows-the-options` |
 | An answer that narrows the target gets spent | `update_project` | ✅ `structure-spends-the-answer` |
 | One target per write — ambiguity is never resolved by writing to all | `update_project` | ✅ `structure-one-target-per-write` |

@@ -453,6 +453,24 @@ export const SCENARIOS: Scenario[] = [
   }),
 
   pin({
+    id: "structure-reuses-the-id-it-was-given",
+    group: "structure",
+    it: "work that follows a create goes to the id the create returned, not to a fresh name lookup",
+    because:
+      "2026-08-01: one turn after creating the project and being handed its id, the chat asked the database for it by name — and got two. The ambiguity was avoidable by not throwing away what it already had",
+    world: "loaded",
+    turns: ["new project for the Dayspring support work, and add a task to it: draft the FAQ page"],
+    respond: (c) =>
+      c.name === "create_project" ? { id: "99999999-9999-4999-8999-999999999991", name: "Dayspring support" } : { ok: true },
+    expect: [
+      called("create_task", {
+        describe: "carrying the id create_project just returned",
+        ok: (a) => a.project_id === "99999999-9999-4999-8999-999999999991",
+      }),
+    ],
+  }),
+
+  pin({
     id: "structure-ambiguity-shows-the-options",
     group: "structure",
     it: "two projects with one name become a choice the user can tap, not a question repeated back",
