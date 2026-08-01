@@ -435,6 +435,111 @@ export const SCENARIOS: Scenario[] = [
   }),
 
   pin({
+    id: "structure-existing-is-not-a-creation",
+    group: "structure",
+    it: "when a project by that name already exists, the reply says so instead of claiming a new one",
+    because:
+      "the tool layer now returns the existing row (existing: true) rather than making a twin — a reply that still says 'created' turns a no-op into a lie the user has no way to catch",
+    world: "loaded",
+    turns: ["add a project for the Dayspring docs work"],
+    respond: (c) =>
+      c.name === "create_project"
+        ? { id: ID.projDayspringDocs, name: "Dayspring docs", existing: true, status: "planned" }
+        : { ok: true },
+    expect: [
+      replyLacks(/\b(created|new project|set up a project)\b/i, "calls a no-op a creation"),
+      replyMatches(/already|exists|have one|got one/i, "says the project was already there"),
+    ],
+  }),
+
+  pin({
+    id: "structure-ambiguity-shows-the-options",
+    group: "structure",
+    it: "two projects with one name become a choice the user can tap, not a question repeated back",
+    because:
+      "2026-08-01: the chat said 'I need the exact one' four times. The error had only ever told it the count — now it carries the candidates, and the reply has to spend them",
+    world: "loaded",
+    turns: ["update the Dayspring support infrastructure project with a fuller description"],
+    respond: (c) => {
+      if (c.name !== "update_project" || c.args.project_id || c.args.in_initiative_name) return { ok: true };
+      return {
+        error:
+          'Multiple projects match "Dayspring support infrastructure" (2). Show the user these options — the initiative each one sits under is usually what tells them apart — and call again with that project_id, or with in_initiative_name. Do not act on more than one unless the user names each.\n' +
+          `Candidates: [{"project_id":"${ID.projDayspring}","name":"Build Dayspring Support Infrastructure","initiative":"Get Dayspring into the Public","domain":"Work","status":"backlog"},` +
+          `{"project_id":"${ID.projDayspringDocs}","name":"Build Dayspring Support Infrastructure","initiative":"Dayspring v2","domain":"Work","status":"backlog"}]`,
+      };
+    },
+    expect: [
+      replyMatches(/Get Dayspring into the Public/i, "names the first candidate's initiative"),
+      replyMatches(/Dayspring v2/i, "names the second candidate's initiative"),
+      offersSuggestions(2),
+      replyLacks(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i, "shows the user an id"),
+    ],
+  }),
+
+  pin({
+    id: "structure-spends-the-answer",
+    group: "structure",
+    it: "an answer that narrows the target gets used, not asked for again",
+    because:
+      "the user said 'the one tied to Get Dayspring into the Public' and got 'there are still 2 matching projects' — the disambiguator was correct and the tool layer had nowhere to put it",
+    world: "loaded",
+    turns: [
+      "update the Dayspring support infrastructure project with a fuller description",
+      {
+        assistant:
+          "I found two projects by that name — one under **Get Dayspring into the Public**, one under **Dayspring v2**. Which one?",
+      },
+      "the one tied to Get Dayspring into the Public",
+    ],
+    respond: (c) => {
+      if (c.name !== "update_project") return { ok: true };
+      const narrowed = Boolean(c.args.project_id) || /Get Dayspring into the Public/i.test(String(c.args.in_initiative_name ?? ""));
+      return narrowed
+        ? { id: ID.projDayspring, name: "Build Dayspring Support Infrastructure" }
+        : { error: 'Multiple projects match "Dayspring support infrastructure" (2).' };
+    },
+    expect: [
+      called("update_project", {
+        describe: "naming which one, by id or by the initiative the user gave",
+        ok: (a) =>
+          Boolean(a.project_id) || /Get Dayspring into the Public/i.test(String(a.in_initiative_name ?? "")),
+      }),
+      calledTimes("update_project", 1),
+      replyLacks(/which one|need the exact|still \d+ matching/i, "asks again for something already answered"),
+    ],
+  }),
+
+  pin({
+    id: "structure-one-target-per-write",
+    group: "structure",
+    it: "an unclear target is never resolved by writing to every candidate",
+    because:
+      "the transcript's ending: two projects got the same description because 'both' was the only exit the tool layer offered from its own ambiguity",
+    world: "loaded",
+    turns: ["update the Dayspring support infrastructure project with a fuller description"],
+    respond: (c) =>
+      c.name === "update_project" && !c.args.project_id
+        ? {
+            error:
+              'Multiple projects match "Dayspring support infrastructure" (2).\n' +
+              `Candidates: [{"project_id":"${ID.projDayspring}","name":"Build Dayspring Support Infrastructure","initiative":"Get Dayspring into the Public"},` +
+              `{"project_id":"${ID.projDayspringDocs}","name":"Build Dayspring Support Infrastructure","initiative":"Dayspring v2"}]`,
+          }
+        : { ok: true },
+    expect: [
+      check("does not update both candidates", (o) => {
+        const ids = o.calls
+          .filter((c) => c.name === "update_project" && c.args.project_id)
+          .map((c) => String(c.args.project_id));
+        return new Set(ids).size > 1
+          ? `wrote the same update to ${new Set(ids).size} projects: ${[...new Set(ids)].join(", ")}`
+          : null;
+      }),
+    ],
+  }),
+
+  pin({
     id: "structure-no-phantom-claims",
     group: "structure",
     it: "it never claims to have created something when the write failed",

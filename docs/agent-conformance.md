@@ -61,6 +61,13 @@ everything about the chat that isn't judgment:
 - **The battery's own hygiene** — unique ids, no scenario asserting on a tool
   that doesn't exist, and this document and the suite covering the same groups.
 
+`tests/agent-vertical.test.ts` is the same tier, one layer down: what the
+handler *does* with the arguments the model chose. The vertical tools run
+unmodified against an in-memory account, so a create that quietly makes a twin,
+or an error that tells the model a count instead of the choices, fails here
+rather than in a conversation. Every case in it is drawn from the 2026-08-01
+Dayspring transcript.
+
 ### Tier 2 — behavioral (`npm run eval`, live model, costs tokens)
 
 `tests/agent/`. One scenario = a fixture world + what the user says + what a
@@ -225,7 +232,11 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Create domain / initiative / project / key result | `create_*` | ◐ one scenario, one path |
 | Route a new project to the right life area | `create_project` | ✅ `structure-routes-by-domain` |
 | Never claim a write that failed | — | ✅ `structure-no-phantom-claims` |
-| Delete duplicates — ask once, then execute | `delete_project` | ◐ no scenario |
+| A name that already exists isn't created twice | `create_project` | ✅ `structure-existing-is-not-a-creation` + handler cases |
+| Two matches become a tappable choice, not a repeated question | `update_project` | ✅ `structure-ambiguity-shows-the-options` |
+| An answer that narrows the target gets spent | `update_project` | ✅ `structure-spends-the-answer` |
+| One target per write — ambiguity is never resolved by writing to all | `update_project` | ✅ `structure-one-target-per-write` |
+| Delete duplicates — ask once, then execute | `delete_project` | ◐ handler cases, no scenario |
 
 ### G · Showing alongside telling — `marquee`
 
@@ -270,11 +281,15 @@ scenario and the map row together.
 
 ## 5 · Known gaps, named rather than hidden
 
-- **The handlers aren't driven end-to-end.** The battery asserts what the agent
-  decided; nothing yet runs `executeTool` against a real database and checks
-  the rows. A seam over `admin` (or a Supabase test project in CI) is the next
-  real step — it's the difference between "asked for the right thing" and "the
-  right thing happened".
+- **The handlers are driven for the vertical tools only.** `tests/agent-vertical.test.ts`
+  runs `executeVerticalTool` unmodified against a Postgrest-shaped fake
+  (`tests/agent/fakeSupabase.ts`, aliased in at `vitest.config.ts`, so `admin`
+  *is* the fake and the file under test is the shipped file). That closes the
+  gap for structure — where the 2026-08-01 Dayspring failure lived, and where
+  it could never have been caught by asserting on tool calls alone, because
+  every call the model made was reasonable given what it had been told back.
+  The calendar, task and week handlers still have no equivalent; extending the
+  same fixtures to `executeTool` is the next step.
 - **Replay can't catch judgment.** Cassettes freeze one model's answers. They
   protect the plumbing; they say nothing about whether a prompt edit made the
   chat dumber. Only `npm run eval` does, and it costs tokens.

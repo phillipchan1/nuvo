@@ -1889,6 +1889,50 @@ proves it in real use.
 
 ---
 
+**D-067 · 2026-07-31 · Long-cadence repeating tasks get a Schedule catalog, not a new pool.**
+
+Upkeep chores (key rotation, HVAC filter) need a place between due dates and a path through
+Nuvo chat. A fifth Tasks tab would violate P10; Settings buries something operational.
+→ **Schedule ⋯ → Recurring upkeep**: series grouped by cadence (Weekly · Every N months · …),
+next-due read computed beyond `HORIZON_DAYS`. Agent + capture use `create_recurring_task` /
+`parseRecurrencePhrase`; engine lives in `_shared/recurrence.ts`. *Status: standing.*
+
+---
+
+**D-068 · 2026-08-01 · A name that matches two things is a question the tool layer has to
+make answerable.**
+
+A conversation about a Dayspring support project ran four turns of "I need the exact one"
+at a user who had already said which one, and ended by writing the same description over
+two different projects. Read as a model failure it looks like stubbornness; it wasn't. The
+chat had been told `Multiple projects match (2)` and nothing else — no ids, no names, no
+parent — so it could not offer a choice it had not been told the contents of, and the only
+exit the error suggested was `delete_all_matching`.
+
+→ **Three rules, in the handlers rather than the prompt** (a rule with one right answer
+belongs in code — D-066):
+
+- **A create checks for the name first.** There is no unique constraint on `projects.name`,
+  so a blind insert is how one project becomes two — and in that transcript the twin was
+  made one turn before it became unanswerable. A create that finds the name returns the
+  existing row with `existing: true`; `allow_duplicate` is how you mean it.
+- **An ambiguous lookup returns the candidates**, each with the initiative and life area
+  that tell them apart. The model's job is to show a choice, not to guess.
+- **One target per write.** Only the delete path may mention `delete_all_matching`; an
+  update says "do not act on more than one unless the user names each". Plus
+  `in_initiative_name`, deliberately not `initiative_name`, which on `update_project` is
+  the field that *re-parents* a project — one name for both would make "the one under X"
+  silently move it to X.
+
+→ **What this cost, honestly:** a create is now two round-trips against the database in the
+common case, and a user who genuinely wants two same-named projects has to say so. Both are
+cheaper than an account that quietly accumulates twins. Ledger: no new row — this is **O2**
+("can I trust what it says it did?") being repaid, not extended. It strains nothing; the
+duplicate guard is the kind of thing P7 asks for, since ambiguity is exactly what a
+not-clean account produces. *Status: standing.*
+
+---
+
 ## 2 · Things we decided **not** to do
 
 | # | The idea | Why not | Would change if… |
@@ -1907,16 +1951,6 @@ proves it in real use.
 | **N-14** | Hard-gating the week on readiness — refusing a project that has no tasks | It's the version that only works with clean data (P7): an account mid-import, or an operator who really is holding a project in their head, gets blocked from recording something true. It also contradicts P4 and `readiness-model.md` §1 ("never commands, never shames, never auto-acts"), and a refusal in `bringIntoWeekPatch` would make the browser and the agent disagree about what a week can hold. D-064 uses friction with the cost named instead | Evidence that the notice is ignored often enough to matter — and even then, gate at the *ritual*, not in the shared kernel act |
 | **N-13** | Replacing the orientation's rebuilt art with coach marks on the live app | A cold account has nothing to point at. `FirstRun` gates the shell on zero domains, so orientation opens with the domains they just named and **nothing else** — four of five ladder steps would spotlight empty surfaces, and an orb on an empty Inbox teaches less than a drawing of a full one (P7). D-059 forks instead, and the live door teaches by *making the thing exist* | Never as a straight swap. The live door already covers the real want; if it needs more reach, extend it — don't point at emptiness |
 | **N-12** | Pasting the video-call link into the event description | It's the *unstructured* copy of a structured fact (D-056): invisible to every client's Join button, doesn't move when the meeting does, outlives a removed conference, and can't be told apart from a link a human typed. `conferenceData` is the field they all already read | A provider Nuvo writes to has no conference field at all — and even then, say plainly that the link is pasted |
-
----
-
-**D-066 · 2026-07-31 · Long-cadence repeating tasks get a Schedule catalog, not a new pool.**
-
-Upkeep chores (key rotation, HVAC filter) need a place between due dates and a path through
-Nuvo chat. A fifth Tasks tab would violate P10; Settings buries something operational.
-→ **Schedule ⋯ → Recurring upkeep**: series grouped by cadence (Weekly · Every N months · …),
-next-due read computed beyond `HORIZON_DAYS`. Agent + capture use `create_recurring_task` /
-`parseRecurrencePhrase`; engine lives in `_shared/recurrence.ts`. *Status: standing.*
 
 ---
 

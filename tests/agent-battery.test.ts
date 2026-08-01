@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatClient } from "../supabase/functions/agent/loop.ts";
 import { runScenario } from "./agent/harness.ts";
 import { SCENARIOS, scenarioById } from "./agent/scenarios.ts";
-import { TODAY } from "./agent/world.ts";
+import { ID as WORLD_ID, TODAY } from "./agent/world.ts";
 
 /** A model that answers with exactly the calls you hand it. */
 function scripted(rounds: { content?: string; calls?: { name: string; args: unknown }[] }[]): ChatClient {
@@ -118,6 +118,85 @@ describe("the battery harness", () => {
     expect(failures.length).toBeGreaterThan(0);
     expect(failures.join(" ")).toMatch(/expected create_slot/);
     expect(failures.join(" ")).toMatch(/create_task/);
+  });
+
+  // A scenario nobody has watched fail is a scenario that might assert nothing.
+  // These replay the 2026-08-01 Dayspring transcript — the real answers, as
+  // given — against the checks written to catch them, so the checks are known
+  // to be load-bearing before a live run ever gets the credit.
+  it("catches the reply that repeated the question instead of showing the options", async () => {
+    const s = scenarioById("structure-ambiguity-shows-the-options")!;
+    const o = await runScenario({
+      id: s.id,
+      worldName: s.world,
+      turns: s.turns,
+      respond: s.respond,
+      mode: "live",
+      client: scripted([
+        { calls: [{ name: "update_project", args: { project_name: "Dayspring support infrastructure", description: "…" } }] },
+        { content: "I found two matching Dayspring support infrastructure projects, so I need the exact one to update." },
+      ]),
+    });
+    const failures = s.expect.map((c) => c.run(o)).filter((f): f is string => f != null);
+    expect(failures.join(" ")).toMatch(/names the first candidate's initiative/);
+    expect(failures.join(" ")).toMatch(/expected ≥2 suggestions/);
+  });
+
+  it("catches the turn that answered ambiguity by writing to both", async () => {
+    const s = scenarioById("structure-one-target-per-write")!;
+    const o = await runScenario({
+      id: s.id,
+      worldName: s.world,
+      turns: s.turns,
+      respond: s.respond,
+      mode: "live",
+      client: scripted([
+        { calls: [{ name: "update_project", args: { project_name: "Dayspring support infrastructure", description: "…" } }] },
+        {
+          calls: [
+            { name: "update_project", args: { project_id: WORLD_ID.projDayspring, description: "…" } },
+            { name: "update_project", args: { project_id: WORLD_ID.projDayspringDocs, description: "…" } },
+          ],
+        },
+        { content: "Done — I updated both Dayspring support infrastructure projects." },
+      ]),
+    });
+    const failures = s.expect.map((c) => c.run(o)).filter((f): f is string => f != null);
+    expect(failures.join(" ")).toMatch(/wrote the same update to 2 projects/);
+  });
+
+  it("passes that same scenario when the agent picks one and asks", async () => {
+    const s = scenarioById("structure-one-target-per-write")!;
+    const o = await runScenario({
+      id: s.id,
+      worldName: s.world,
+      turns: s.turns,
+      respond: s.respond,
+      mode: "live",
+      client: scripted([
+        { calls: [{ name: "update_project", args: { project_name: "Dayspring support infrastructure", description: "…" } }] },
+        { content: "Two projects carry that name — one under **Get Dayspring into the Public**, one under **Dayspring v2**. Which one?" },
+      ]),
+    });
+    expect(s.expect.map((c) => c.run(o)).filter(Boolean)).toEqual([]);
+  });
+
+  it("catches a no-op reported as a creation", async () => {
+    const s = scenarioById("structure-existing-is-not-a-creation")!;
+    const o = await runScenario({
+      id: s.id,
+      worldName: s.world,
+      turns: s.turns,
+      respond: s.respond,
+      mode: "live",
+      client: scripted([
+        { calls: [{ name: "create_project", args: { name: "Dayspring docs" } }] },
+        { content: "Created project **Dayspring docs** for you." },
+      ]),
+    });
+    const failures = s.expect.map((c) => c.run(o)).filter((f): f is string => f != null);
+    expect(failures.length).toBeGreaterThan(0);
+    expect(failures.join(" ")).toMatch(/calls a no-op a creation/);
   });
 
   it("reads a multi-turn conversation, assistant turns included", async () => {
