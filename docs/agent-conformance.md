@@ -338,6 +338,17 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | A data answer brings its surface forward | `point_at` | ✅ `marquee-points-at-the-answer` |
 | A confirmation doesn't move the screen | — | ✅ `marquee-quiet-on-confirmations` |
 
+### I · Inviting people — `invites`
+
+| Capability | Tool | State |
+|---|---|---|
+| A meeting with another person is staged, never created with guests | `propose_invite` | ✅ `invite-stages-never-sends` |
+| One clear match is staged silently, not asked about | `propose_invite` | ✅ `invite-stages-without-asking-permission` |
+| The reply never claims a send that hasn't happened | — | ✅ `invite-does-not-claim-it-sent` |
+| An unresolved name becomes a tappable choice | `propose_invite` | ✅ `invite-asks-when-a-name-is-two-people` |
+| Looking someone up writes nothing | `find_contact` | ✅ `invite-lookup-is-read-only` |
+| Nothing under `functions/agent/` can put mail on the wire | — | ✅ `tests/invites.test.ts` (tier 1, structural) |
+
 ### H · Guardrails — `guardrails`
 
 | Capability | State |

@@ -382,7 +382,9 @@ describe("the battery", () => {
 
   it("covers every capability group the conformance map claims", () => {
     const doc = read("docs/agent-conformance.md");
-    const documented = [...doc.matchAll(/^###\s+[A-H]\s+·\s+.*`([a-z]+)`/gm)].map((m) => m[1]);
+    // [A-Z], not [A-H]: the range was written when the map ended at H, which
+    // silently made a ninth section invisible to this check.
+    const documented = [...doc.matchAll(/^###\s+[A-Z]\s+·\s+.*`([a-z]+)`/gm)].map((m) => m[1]);
     expect(documented.length, "the map lists no groups").toBeGreaterThan(0);
     const uncovered = documented.filter((g) => !GROUPS.includes(g));
     expect(uncovered, "documented as covered, but no scenario exists").toEqual([]);

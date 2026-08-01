@@ -21,6 +21,10 @@ export const WRITE_TOOLS = [
   "complete_task", "trash_task", "move_to_inbox", "update_task",
   "create_slot", "add_to_slot", "reschedule_slot", "delete_slot",
   "create_calendar_event", "move_event", "reschedule_event", "cancel_event", "decline_event",
+  // propose_invite STAGES — it writes no event and sends no mail. It is listed
+  // as a write anyway so "propose, don't act" scenarios treat staging as an
+  // action, which is how the user experiences a card appearing.
+  "propose_invite",
   "create_priority", "update_priority", "complete_priority", "delete_priority",
   "create_domain", "update_domain", "delete_domain",
   "create_initiative", "update_initiative", "delete_initiative",
