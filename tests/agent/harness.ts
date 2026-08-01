@@ -33,6 +33,7 @@ import {
 } from "../../supabase/functions/agent/loop.ts";
 import { buildPointAtTool, TOOL_DEFINITIONS } from "../../supabase/functions/agent/toolDefs.ts";
 import { buildTurnMessages } from "../../supabase/functions/agent/turn.ts";
+import { describeModelChoice, resolveAgentModel } from "../../supabase/functions/agent/modelChoice.ts";
 import { MARQUEE_TARGETS, tzFor, world, type WorldName } from "./world.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -159,10 +160,20 @@ export function liveModel(): { model: string; client: ChatClient } {
   const orKey = process.env.OPENROUTER_API_KEY;
   const key = orKey ?? process.env.OPENAI_API_KEY;
   if (!key) throw new Error("Set OPENROUTER_API_KEY or OPENAI_API_KEY to run the battery live");
-  // The battery must exercise the model the chat actually ships with; the
-  // fallbacks mirror agent/index.ts.
-  const model = process.env.AGENT_MODEL ?? process.env.OPENAI_MODEL ??
-    (orKey ? "qwen/qwen3.6-flash" : "gpt-5.4-mini");
+  // The battery must exercise the model the chat actually ships with, so the
+  // resolution is IMPORTED from the edge function rather than mirrored here.
+  // The old copy of these defaults could drift from index.ts without any test
+  // noticing — and then the battery certifies a model nobody runs.
+  const choice = resolveAgentModel({
+    AGENT_MODEL: process.env.AGENT_MODEL,
+    OPENAI_MODEL: process.env.OPENAI_MODEL,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  });
+  const model = choice.model;
+  // An unpinned run is not comparable across keys — say so once, loudly, rather
+  // than letting a green matrix hide the fact that two cells ran two families.
+  if (!choice.pinned) console.warn(`  ! ${describeModelChoice(choice)}`);
   const headers: Record<string, string> = {
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
@@ -174,7 +185,7 @@ export function liveModel(): { model: string; client: ChatClient } {
   return {
     model,
     client: createChatClient({
-      baseUrl: orKey ? "https://openrouter.ai/api/v1" : "https://api.openai.com/v1",
+      baseUrl: choice.baseUrl,
       model,
       headers,
       // Pinned low so a scenario's pass rate measures the prompt, not sampling

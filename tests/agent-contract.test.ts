@@ -25,6 +25,11 @@ import { MARQUEE_TARGETS, world } from "./agent/world.ts";
 import { GROUPS, SCENARIOS } from "./agent/scenarios.ts";
 import { WRITE_TOOLS } from "./agent/expect.ts";
 import { blocking, exitCode, verdictFor } from "./agent/verdict.ts";
+import {
+  DEFAULT_AGENT_MODEL_OPENAI,
+  describeModelChoice,
+  resolveAgentModel,
+} from "../supabase/functions/agent/modelChoice.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
@@ -404,5 +409,45 @@ describe("the battery", () => {
       parked.length,
       `${parked.length} of ${SCENARIOS.length} scenarios parked — fix one before parking another`,
     ).toBeLessThanOrEqual(Math.ceil(SCENARIOS.length * 0.1));
+  });
+});
+
+describe("the model under test", () => {
+  // The battery is only evidence about the deployed chat if it runs the same
+  // model. This used to be a promise in a comment ("the fallbacks mirror
+  // agent/index.ts") rather than a mechanism, so these pin the mechanism.
+
+  it("resolves one model for the edge function and the battery", () => {
+    // Both callers pass their own env bag into the SAME function, so there is
+    // no second place for a default to live.
+    const env = { OPENAI_API_KEY: "k" };
+    expect(resolveAgentModel(env).model).toBe(DEFAULT_AGENT_MODEL_OPENAI);
+    expect(resolveAgentModel({ ...env, AGENT_MODEL: "some-flagship" }).model).toBe("some-flagship");
+  });
+
+  it("lets AGENT_MODEL outrank OPENAI_MODEL, so chat moves without the passive endpoints", () => {
+    const c = resolveAgentModel({ OPENAI_API_KEY: "k", OPENAI_MODEL: "enrich-model", AGENT_MODEL: "chat-model" });
+    expect(c.model).toBe("chat-model");
+  });
+
+  it("flags an unpinned run as not comparable across providers", () => {
+    // The two provider defaults are different FAMILIES. Unpinned, the model
+    // depends on which key is set — so an eval matrix could compare a prompt
+    // change against a model change and call it one result.
+    const openai = resolveAgentModel({ OPENAI_API_KEY: "k" });
+    const openrouter = resolveAgentModel({ OPENROUTER_API_KEY: "k" });
+    expect(openai.model).not.toBe(openrouter.model);
+    expect(openai.crossFamilyFallback).toBe(true);
+    expect(openrouter.crossFamilyFallback).toBe(true);
+    expect(describeModelChoice(openai)).toMatch(/AGENT_MODEL/);
+  });
+
+  it("treats a pinned model as reproducible whichever key is set", () => {
+    const a = resolveAgentModel({ OPENAI_API_KEY: "k", AGENT_MODEL: "m" });
+    const b = resolveAgentModel({ OPENROUTER_API_KEY: "k", AGENT_MODEL: "m" });
+    expect(a.model).toBe(b.model);
+    expect(a.pinned && b.pinned).toBe(true);
+    expect(a.crossFamilyFallback || b.crossFamilyFallback).toBe(false);
+    expect(a.baseUrl).not.toBe(b.baseUrl);
   });
 });

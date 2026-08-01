@@ -15,13 +15,22 @@ import { prepareTask } from "./prepare.ts";
 import { narrate } from "./narrate.ts";
 import { narrateReviewFind } from "./reviewFind.ts";
 import { executeTool, FALLBACK_TZ, TOOL_DEFINITIONS, buildPointAtTool, type MarqueeTargetSpec } from "./tools.ts";
-import { llmKey, llmBaseUrl, llmModel, llmHeaders } from "./llm.ts";
+import { llmKey, llmHeaders } from "./llm.ts";
+import { resolveAgentModel } from "./modelChoice.ts";
 import { buildTurnMessages } from "./turn.ts";
 import { createChatClient, runAgentTurn, type ContentPart } from "./loop.ts";
 
 // AGENT_MODEL overrides just the conversational agent (passive functions use OPENAI_MODEL).
 // Useful for picking a faster model for chat without changing enrichment quality.
-const MODEL = () => Deno.env.get("AGENT_MODEL") ?? llmModel("gpt-5.4-mini", "qwen/qwen3.6-flash");
+// The resolution itself lives in modelChoice.ts so the conformance battery reads
+// the same one — it used to keep a hand-copied mirror of these defaults.
+const MODEL_CHOICE = () =>
+  resolveAgentModel({
+    AGENT_MODEL: Deno.env.get("AGENT_MODEL"),
+    OPENAI_MODEL: Deno.env.get("OPENAI_MODEL"),
+    OPENROUTER_API_KEY: Deno.env.get("OPENROUTER_API_KEY"),
+    OPENAI_API_KEY: Deno.env.get("OPENAI_API_KEY"),
+  });
 
 /** Trust the client's zone only if Intl accepts it — the value flows straight
  *  into DateTimeFormat, where a junk id throws and would take the whole reply
@@ -176,10 +185,11 @@ Deno.serve(async (req) => {
         // the model lives, what a tool call actually does, and how bytes get
         // back to the browser.
         const key = llmKey();
+        const choice = MODEL_CHOICE();
         const turn = await runAgentTurn({
           messages: oaiMessages,
           tools: reqTools,
-          llm: createChatClient({ baseUrl: llmBaseUrl(), model: MODEL(), headers: llmHeaders(key) }),
+          llm: createChatClient({ baseUrl: choice.baseUrl, model: choice.model, headers: llmHeaders(key) }),
           execute: (name, args) => executeTool(user.id, name, args, userToken, tz),
           onText: async (chunk) => { await sse({ t: "c", v: chunk }); },
         });
