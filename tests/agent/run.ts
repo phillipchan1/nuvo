@@ -21,7 +21,24 @@
 // Because a single green run is weak evidence at a 100% bar, `--repeat 3` or
 // more is what should gate a prompt change. One run is a smoke test.
 
+import { execSync } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { runScenario } from "./harness.ts";
+import {
+  cellKey,
+  diffRuns,
+  formatDiff,
+  formatMatrix,
+  lastRunForCell,
+  parseHistory,
+  serializeRecord,
+  type RunRecord,
+} from "./history.ts";
+import { resolveAgentModel } from "../../supabase/functions/agent/modelChoice.ts";
+import { readPromptVariant } from "../../supabase/functions/agent/prompt.ts";
 import { SCENARIOS, type Scenario } from "./scenarios.ts";
 import { blocking, exitCode, verdictFor, type Verdict } from "./verdict.ts";
 
@@ -36,6 +53,11 @@ const MODE: "live" | "replay" = has("replay") ? "replay" : "live";
 const REPEAT = Number(flag("repeat") ?? 1);
 const ONLY = flag("only");
 const GROUP = flag("group");
+// A filtered run is not comparable to a full one, so it isn't recorded unless
+// asked for — otherwise `--only slot-` would look like the suite collapsing.
+const RECORD = !has("no-record") && !ONLY && !GROUP;
+
+const HISTORY = join(dirname(fileURLToPath(import.meta.url)), "history", "runs.jsonl");
 
 const selected = SCENARIOS.filter(
   (s) => (!ONLY || s.id.includes(ONLY)) && (!GROUP || s.group === GROUP),
@@ -115,6 +137,65 @@ const secs = ((Date.now() - started) / 1000).toFixed(1);
 console.log(
   `\n${results.length - red.length}/${results.length} at 100% · ${REPEAT} run${REPEAT === 1 ? "" : "s"} each · ${MODE} · ${secs}s`,
 );
+
+// ── write it down ────────────────────────────────────────────────────────────
+//
+// The score is the least useful part of a run: two runs at 35/36 can hide one
+// scenario breaking and another getting fixed. The record keeps every
+// scenario's verdict so that movement is visible, and the diff below is the
+// answer to "is this actually better?".
+
+if (RECORD) {
+  try {
+    const choice = resolveAgentModel({
+      AGENT_MODEL: process.env.AGENT_MODEL,
+      OPENAI_MODEL: process.env.OPENAI_MODEL,
+      AGENT_REASONING: process.env.AGENT_REASONING,
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    });
+    let git: string | undefined;
+    try { git = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim(); } catch { /* not a repo */ }
+
+    const record: RunRecord = {
+      at: new Date().toISOString(),
+      model: MODE === "replay" ? "replay" : choice.model,
+      prompt: readPromptVariant(process.env.AGENT_PROMPT),
+      reasoning: choice.reasoningEffort ?? "default",
+      mode: MODE,
+      repeat: REPEAT,
+      git,
+      scenarios: results.map((r) => ({
+        id: r.scenario.id,
+        verdict: r.verdict,
+        passes: r.runs.filter((x) => x.passed).length,
+        runs: r.runs.length,
+        quarantined: r.scenario.quarantined,
+      })),
+      passed: results.length - red.length,
+      total: results.length,
+      blocked: blocked.length,
+      seconds: Number(secs),
+    };
+
+    const history = existsSync(HISTORY) ? parseHistory(readFileSync(HISTORY, "utf8")) : [];
+    const previous = lastRunForCell(history, cellKey(record));
+
+    mkdirSync(dirname(HISTORY), { recursive: true });
+    appendFileSync(HISTORY, serializeRecord(record) + "\n");
+
+    if (previous) {
+      console.log(formatDiff(previous, record, diffRuns(previous, record)));
+    } else {
+      console.log(`\nFirst recorded run for ${cellKey(record)} — this is the baseline to compare against.`);
+    }
+    console.log(formatMatrix([...history, record]));
+    console.log(`\nrecorded → ${HISTORY.replace(process.cwd() + "/", "")}`);
+  } catch (e) {
+    // Never let bookkeeping change the verdict of a run.
+    console.warn(`(could not record this run: ${e instanceof Error ? e.message : String(e)})`);
+  }
+}
 
 if (parked.length) {
   console.log(`\n${parked.length} quarantined (not blocking, still red):`);

@@ -29,6 +29,15 @@ import {
   mintToken,
 } from "../supabase/functions/agent/confirmDestructive.ts";
 import { buildTurnTrace, traceIsNoteworthy } from "../supabase/functions/agent/trace.ts";
+import {
+  cellKey,
+  diffRuns,
+  isImprovement,
+  lastRunForCell,
+  parseHistory,
+  serializeRecord,
+  type RunRecord,
+} from "./agent/history.ts";
 
 // ── a scripted model, one entry per round ────────────────────────────────────
 
@@ -405,5 +414,77 @@ describe("the per-turn trace", () => {
     expect(traceIsNoteworthy(buildTurnTrace({ ...input, calls: [{ name: "create_task" }] }))).toBe(false);
     expect(traceIsNoteworthy(buildTurnTrace({ ...input, exhausted: true, calls: [] }))).toBe(true);
     expect(traceIsNoteworthy(buildTurnTrace(input))).toBe(true);
+  });
+});
+
+// ── 7. the battery remembers ─────────────────────────────────────────────────
+
+describe("battery history", () => {
+  const scen = (id: string, verdict: "pass" | "flaky" | "fail") => ({ id, verdict, passes: verdict === "pass" ? 5 : 0, runs: 5 });
+  const run = (at: string, scenarios: ReturnType<typeof scen>[], over: Partial<RunRecord> = {}): RunRecord => ({
+    at, model: "gpt-5.6-terra", prompt: "full", reasoning: "default", mode: "live", repeat: 5,
+    scenarios, passed: scenarios.filter((s) => s.verdict === "pass").length, total: scenarios.length,
+    blocked: scenarios.filter((s) => s.verdict !== "pass").length, seconds: 10, ...over,
+  });
+
+  it("only compares runs from the same cell", () => {
+    // Comparing a terra run to a sol run and calling the delta a prompt result
+    // is the exact mistake the matrix exists to prevent.
+    const history = [
+      run("2026-08-01T10:00:00Z", [scen("a", "pass")], { model: "gpt-5.6-sol" }),
+      run("2026-08-01T11:00:00Z", [scen("a", "fail")], { prompt: "thin" }),
+      run("2026-08-01T12:00:00Z", [scen("a", "pass")]),
+    ];
+    const target = cellKey({ model: "gpt-5.6-terra", prompt: "full", reasoning: "default" });
+    expect(lastRunForCell(history, target)?.at).toBe("2026-08-01T12:00:00Z");
+    expect(lastRunForCell(history, "nope · full · default")).toBeNull();
+  });
+
+  it("surfaces a regression even when the score is unchanged", () => {
+    // The reason a score is not enough: 1/2 both times, but one scenario broke
+    // and another got fixed. Scores hide this; per-scenario verdicts don't.
+    const before = run("2026-08-01T10:00:00Z", [scen("a", "pass"), scen("b", "fail")]);
+    const after = run("2026-08-01T11:00:00Z", [scen("a", "fail"), scen("b", "pass")]);
+    expect(after.passed).toBe(before.passed);
+    const d = diffRuns(before, after);
+    expect(d.regressed).toEqual(["a"]);
+    expect(d.fixed).toEqual(["b"]);
+    expect(isImprovement(d)).toBe(false);
+  });
+
+  it("calls it an improvement only when nothing went backwards", () => {
+    const before = run("2026-08-01T10:00:00Z", [scen("a", "fail"), scen("b", "fail")]);
+    expect(isImprovement(diffRuns(before, run("2026-08-01T11:00:00Z", [scen("a", "pass"), scen("b", "fail")])))).toBe(true);
+    expect(isImprovement(diffRuns(before, run("2026-08-01T11:00:00Z", [scen("a", "fail"), scen("b", "fail")])))).toBe(false);
+  });
+
+  it("separates a fail↔flaky move from a fix", () => {
+    const d = diffRuns(
+      run("2026-08-01T10:00:00Z", [scen("a", "fail")]),
+      run("2026-08-01T11:00:00Z", [scen("a", "flaky")]),
+    );
+    expect(d.fixed).toEqual([]);
+    expect(d.shifted).toEqual([{ id: "a", from: "fail", to: "flaky" }]);
+  });
+
+  it("notices scenarios added to or dropped from the suite", () => {
+    const d = diffRuns(
+      run("2026-08-01T10:00:00Z", [scen("a", "pass"), scen("gone", "pass")]),
+      run("2026-08-01T11:00:00Z", [scen("a", "pass"), scen("new", "pass")]),
+    );
+    expect(d.added).toEqual(["new"]);
+    expect(d.removed).toEqual(["gone"]);
+    expect(d.regressed).toEqual([]);
+  });
+
+  it("survives a corrupt line rather than losing the history", () => {
+    const good = serializeRecord(run("2026-08-01T10:00:00Z", [scen("a", "pass")]));
+    const parsed = parseHistory(`${good}\n{ not json\n\n${good}\n`);
+    expect(parsed).toHaveLength(2);
+  });
+
+  it("round-trips a record", () => {
+    const r = run("2026-08-01T10:00:00Z", [scen("a", "pass")], { git: "abc1234" });
+    expect(parseHistory(serializeRecord(r))[0]).toEqual(r);
   });
 });

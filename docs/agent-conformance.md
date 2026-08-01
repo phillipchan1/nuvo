@@ -184,6 +184,28 @@ Two cautions when reading a matrix:
   (`gpt-5.6-terra` vs `qwen/qwen3.6-flash`) and the running model depends on
   which API key is set. The harness warns when a run isn't pinned.
 
+### Tracking results over time
+
+A run used to print a score and exit, so every number the battery ever produced
+was gone when the terminal scrolled. `npm run eval` now appends a record to
+`tests/agent/history/runs.jsonl` (committed) and prints what moved.
+
+The record keeps **every scenario's verdict**, not just the score — two runs at
+35/36 can hide one scenario breaking and another being fixed, and that movement
+is the part worth seeing. Runs are grouped by **cell** (model · prompt ·
+reasoning) and only ever compared within one, so a model change cannot be
+credited to a prompt edit.
+
+```bash
+npm run eval -- --repeat 5   # runs, records, and diffs against this cell's last run
+npm run eval:history         # every recorded run + the matrix; runs nothing, costs nothing
+```
+
+Filtered runs (`--only`, `--group`) are deliberately not recorded — a slice of
+the suite is not comparable to the whole of it. `--no-record` opts out.
+Recording happens *before* the blocking exit, so a red run is recorded too;
+that is the one you most want in the history.
+
 ### Guarantees that don't depend on the model
 
 Some rules used to live only in the prompt as requests, which means they held
