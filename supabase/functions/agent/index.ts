@@ -18,6 +18,7 @@ import { executeTool, FALLBACK_TZ, TOOL_DEFINITIONS, buildPointAtTool, type Marq
 import { llmKey, llmHeaders } from "./llm.ts";
 import { resolveAgentModel } from "./modelChoice.ts";
 import { buildTurnMessages } from "./turn.ts";
+import { readPromptVariant } from "./prompt.ts";
 import { createChatClient, runAgentTurn, type ContentPart } from "./loop.ts";
 
 // AGENT_MODEL overrides just the conversational agent (passive functions use OPENAI_MODEL).
@@ -28,6 +29,7 @@ const MODEL_CHOICE = () =>
   resolveAgentModel({
     AGENT_MODEL: Deno.env.get("AGENT_MODEL"),
     OPENAI_MODEL: Deno.env.get("OPENAI_MODEL"),
+    AGENT_REASONING: Deno.env.get("AGENT_REASONING"),
     OPENROUTER_API_KEY: Deno.env.get("OPENROUTER_API_KEY"),
     OPENAI_API_KEY: Deno.env.get("OPENAI_API_KEY"),
   });
@@ -167,7 +169,13 @@ Deno.serve(async (req) => {
     // Build context before opening the stream so auth/DB errors surface as
     // normal JSON error responses (not mid-stream failures).
     const ctx = await buildContext(user.id, rangeStart, rangeEnd, tz);
-    const oaiMessages = buildTurnMessages({ ctx, tz, navFocus, messages });
+    const oaiMessages = buildTurnMessages({
+      ctx,
+      tz,
+      navFocus,
+      messages,
+      promptVariant: readPromptVariant(Deno.env.get("AGENT_PROMPT")),
+    });
 
     // Open the SSE response stream before starting the agent loop so the
     // client receives text as it's generated rather than waiting for the
@@ -189,7 +197,12 @@ Deno.serve(async (req) => {
         const turn = await runAgentTurn({
           messages: oaiMessages,
           tools: reqTools,
-          llm: createChatClient({ baseUrl: choice.baseUrl, model: choice.model, headers: llmHeaders(key) }),
+          llm: createChatClient({
+            baseUrl: choice.baseUrl,
+            model: choice.model,
+            headers: llmHeaders(key),
+            reasoningEffort: choice.reasoningEffort,
+          }),
           execute: (name, args) => executeTool(user.id, name, args, userToken, tz),
           onText: async (chunk) => { await sse({ t: "c", v: chunk }); },
         });

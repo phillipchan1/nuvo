@@ -34,6 +34,7 @@ import {
 import { buildPointAtTool, TOOL_DEFINITIONS } from "../../supabase/functions/agent/toolDefs.ts";
 import { buildTurnMessages } from "../../supabase/functions/agent/turn.ts";
 import { describeModelChoice, resolveAgentModel } from "../../supabase/functions/agent/modelChoice.ts";
+import { readPromptVariant } from "../../supabase/functions/agent/prompt.ts";
 import { MARQUEE_TARGETS, tzFor, world, type WorldName } from "./world.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -167,6 +168,7 @@ export function liveModel(): { model: string; client: ChatClient } {
   const choice = resolveAgentModel({
     AGENT_MODEL: process.env.AGENT_MODEL,
     OPENAI_MODEL: process.env.OPENAI_MODEL,
+    AGENT_REASONING: process.env.AGENT_REASONING,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   });
@@ -192,7 +194,12 @@ export function liveModel(): { model: string; client: ChatClient } {
       // noise. The shipped chat runs at the provider default — a scenario that
       // only passes at temperature 0 is a scenario that will fail in the app,
       // so this is a floor for judging, never a claim about production.
+      //
+      // NOTE: a reasoning request drops the temperature floor (createChatClient
+      // sends one or the other), so on a 5.6 model with AGENT_REASONING set,
+      // --repeat matters MORE, not less — there is no sampling floor left.
       temperature: 0,
+      reasoningEffort: choice.reasoningEffort,
     }),
   };
 }
@@ -228,7 +235,16 @@ export async function runScenario(opts: RunOptions): Promise<RunOutcome> {
       : { role: "assistant" as const, content: t.assistant },
   );
 
-  const messages = buildTurnMessages({ ctx, tz, navFocus: opts.navFocus, messages: history });
+  const messages = buildTurnMessages({
+    ctx,
+    tz,
+    navFocus: opts.navFocus,
+    messages: history,
+    // The battery must send the prompt the app sends — same env var, same
+    // resolution. This is what makes an AGENT_MODEL x AGENT_PROMPT matrix cell
+    // mean something rather than describing a prompt nobody runs.
+    promptVariant: readPromptVariant(process.env.AGENT_PROMPT),
+  });
   const tools = [...TOOL_DEFINITIONS, buildPointAtTool(MARQUEE_TARGETS)];
 
   const tape: Recorded = { rounds: [] };

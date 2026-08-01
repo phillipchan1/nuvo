@@ -12,7 +12,7 @@
 import type { AgentContext } from "./contextShape.ts";
 import { contextToPrompt } from "./contextShape.ts";
 import type { ChatMessage, ContentPart } from "./loop.ts";
-import { buildNavSection, dynamicContextPrompt, STATIC_SYSTEM_PROMPT, type NavFocus } from "./prompt.ts";
+import { buildNavSection, dynamicContextPrompt, systemPromptFor, type NavFocus, type PromptVariant } from "./prompt.ts";
 
 export interface TurnInput {
   ctx: AgentContext;
@@ -22,13 +22,17 @@ export interface TurnInput {
   navFocus?: NavFocus | null;
   /** The conversation so far, oldest first, ending with the new user message. */
   messages: { role: "user" | "assistant"; content: string | ContentPart[] }[];
+  /** Which system prompt to send. Omitted means "full" — what ships today — so
+   *  the thin variant is only ever reached by opting in. Both runtimes read it
+   *  from the same env var, which is what makes an eval matrix cell honest. */
+  promptVariant?: PromptVariant;
 }
 
 export function buildTurnMessages(input: TurnInput): ChatMessage[] {
-  const { ctx, tz, navFocus, messages } = input;
+  const { ctx, tz, navFocus, messages, promptVariant } = input;
   const navSection = buildNavSection(navFocus, ctx);
   return [
-    { role: "system", content: STATIC_SYSTEM_PROMPT },
+    { role: "system", content: systemPromptFor(promptVariant ?? "full") },
     {
       role: "system",
       content: dynamicContextPrompt(contextToPrompt(ctx), ctx.today, ctx.nowLabel, ctx.nowISO, navSection, tz),

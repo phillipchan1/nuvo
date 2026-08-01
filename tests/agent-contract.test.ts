@@ -30,6 +30,12 @@ import {
   describeModelChoice,
   resolveAgentModel,
 } from "../supabase/functions/agent/modelChoice.ts";
+import {
+  readPromptVariant,
+  systemPromptFor,
+  THIN_SYSTEM_PROMPT,
+  TOOL_CARRIED_BLOCKS,
+} from "../supabase/functions/agent/prompt.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
@@ -449,5 +455,70 @@ describe("the model under test", () => {
     expect(a.pinned && b.pinned).toBe(true);
     expect(a.crossFamilyFallback || b.crossFamilyFallback).toBe(false);
     expect(a.baseUrl).not.toBe(b.baseUrl);
+  });
+});
+
+
+describe("the thin prompt variant", () => {
+  // The thin prompt is an experiment, so these guard the experiment's validity:
+  // the control must be untouched, and the cut must only remove rules the tool
+  // layer still states somewhere.
+
+  it("leaves the shipped prompt byte-identical", () => {
+    // The control cell of the eval matrix is only a control if it is exactly
+    // what production sends today. Baseline captured before the refactor.
+    const baseline = read("tests/agent/fixtures/staticPrompt.baseline.txt");
+    expect(STATIC_SYSTEM_PROMPT).toBe(baseline);
+  });
+
+  it("defaults to the full prompt — thin is opt-in only", () => {
+    expect(readPromptVariant(undefined)).toBe("full");
+    expect(readPromptVariant("")).toBe("full");
+    expect(readPromptVariant("nonsense")).toBe("full");
+    expect(readPromptVariant("thin")).toBe("thin");
+    expect(readPromptVariant(" THIN ")).toBe("thin");
+    expect(systemPromptFor("full")).toBe(STATIC_SYSTEM_PROMPT);
+  });
+
+  it("actually removes every block it claims to", () => {
+    // A reworded prompt would make a cut silently no-op, and the "thin" cell
+    // would quietly become a second copy of the control.
+    for (const b of TOOL_CARRIED_BLOCKS) {
+      expect(STATIC_SYSTEM_PROMPT, `${b.id}: start anchor not found`).toContain(b.from);
+      expect(STATIC_SYSTEM_PROMPT, `${b.id}: end anchor not found`).toContain(b.to);
+      expect(THIN_SYSTEM_PROMPT, `${b.id}: still present after the cut`).not.toContain(b.from);
+    }
+    expect(THIN_SYSTEM_PROMPT.length).toBeLessThan(STATIC_SYSTEM_PROMPT.length);
+  });
+
+  it("only drops rules a real tool still carries", () => {
+    // This is the whole safety argument for the cut: nothing is deleted, it is
+    // stated once instead of twice. If a named tool disappears, the rule went
+    // with it and the block must come back into the prompt.
+    const names = new Set(TOOL_DEFINITIONS.map((t) => t.function.name));
+    names.add(buildPointAtTool([]).function.name);
+    for (const b of TOOL_CARRIED_BLOCKS) {
+      expect(b.carriedBy.length, `${b.id} names no carrying tool`).toBeGreaterThan(0);
+      for (const tool of b.carriedBy) {
+        expect(names, `${b.id} claims ${tool} carries it, but no such tool exists`).toContain(tool);
+      }
+    }
+  });
+
+  it("keeps the rules no tool can hold", () => {
+    // The cut is "remove what the tool layer duplicates" — NOT "remove policy".
+    // These are arbitrary product choices with nothing to derive them from, and
+    // dropping them fails silently, so they must survive into the thin variant.
+    const mustSurvive = [
+      "do NOT set do_date unless the user explicitly names a date or time",
+      "Guided flow: planning the week",
+      "weekSlate is the authoritative answer",
+      "Never show UUIDs or field names",
+      "One target per write",
+      "I'm a focused planning partner",
+    ];
+    for (const rule of mustSurvive) {
+      expect(THIN_SYSTEM_PROMPT, `thin prompt dropped a rule no tool carries: "${rule}"`).toContain(rule);
+    }
   });
 });

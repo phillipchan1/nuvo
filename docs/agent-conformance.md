@@ -135,6 +135,55 @@ prompt change — but it catches the whole plumbing class (a renamed tool, a
 context field that stopped being sent, a loop that stopped feeding results
 back) for free, on every push.
 
+### Changing the model and the prompt at the same time — the matrix
+
+Two levers move the chat: **which model** it runs on and **which system prompt**
+it gets. Moved together, a result is unattributable — a drop of four points
+could be the model, the prompt, or one of each cancelling out. Both are env
+vars, read by the edge function and the battery through the *same* resolution
+(`modelChoice.ts`, `readPromptVariant`), so a cell of the matrix is honest by
+construction rather than by discipline.
+
+| Variable | Values | Default |
+|---|---|---|
+| `AGENT_MODEL` | any model id — `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` | `gpt-5.6-terra` (OpenAI key) |
+| `AGENT_REASONING` | `none` `low` `medium` `high` `xhigh` `max` | unset — provider's own default |
+| `AGENT_PROMPT` | `thin` — anything else is `full` | `full` (what ships) |
+
+```bash
+# the four cells; --repeat 5 because one run is a smoke test
+for m in gpt-5.6-terra gpt-5.6-sol; do
+  for p in full thin; do
+    echo "== $m / $p"
+    AGENT_MODEL=$m AGENT_PROMPT=$p npm run eval -- --repeat 5
+  done
+done
+```
+
+**`AGENT_PROMPT=thin`** removes exactly those blocks of the system prompt that
+the *tool layer already states* — the slot law (`create_slot`), calendar routing
+(`create_calendar_event`), move-vs-create (`move_event`), the local-time format
+(every schema), the priority verbs, the Marquee section (`point_at`). Nothing is
+deleted; it is stated once instead of twice, and it arrives when the tool is in
+play instead of on every turn. Both variants derive from one source string, so
+they cannot drift, and `npm test` fails if a block stops matching or if a tool
+named as carrying a rule disappears.
+
+What it deliberately does **not** cut: arbitrary product policy ("never infer a
+calendar from the subject", "'just finished a call about X' is not a date", the
+guided week flow). Nothing in the schemas implies those, so no amount of model
+intelligence recovers them — and they fail *silently*, which is the failure mode
+this battery exists for. Those are pinned by a test.
+
+Two cautions when reading a matrix:
+
+- **A reasoning request drops the temperature floor.** `createChatClient` sends
+  `reasoning_effort` *or* `temperature`, never both, so with `AGENT_REASONING`
+  set there is no sampling floor left and `--repeat` matters more, not less.
+- **Pin the model.** Unpinned, the two provider defaults are different families
+  (`gpt-5.6-terra` vs `qwen/qwen3.6-flash`) and the running model depends on
+  which API key is set. The harness warns when a run isn't pinned.
+
 ### The seams that made this possible
 
 The agent function used to be one Deno file with the prompt, the loop and the

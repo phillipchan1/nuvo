@@ -282,8 +282,11 @@ export interface ChatClientConfig {
   headers: Record<string, string>;
   /** Passed through to the provider. Left unset for chat (the default sampling
    *  is what ships); the battery pins it so a scenario's pass rate means
-   *  something. */
+   *  something. Ignored when reasoningEffort is set — see below. */
   temperature?: number;
+  /** GPT-5.6's reasoning axis ("none" … "max"). Unset leaves the provider
+   *  default, which is what the chat ran on before this existed. */
+  reasoningEffort?: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -291,13 +294,21 @@ export interface ChatClientConfig {
  *  only in where the key comes from, never in how the request is made. */
 export function createChatClient(cfg: ChatClientConfig): ChatClient {
   const doFetch = cfg.fetchImpl ?? fetch;
+  // Reasoning and temperature are treated as mutually exclusive: providers
+  // commonly reject an explicit temperature on a reasoning request, and a 400
+  // here kills the whole turn rather than degrading it. Conservative until the
+  // first live run says otherwise — if 5.6 accepts both, relax this and the
+  // battery gets its temperature floor back.
+  const reasoning = cfg.reasoningEffort && cfg.reasoningEffort !== "none"
+    ? { reasoning_effort: cfg.reasoningEffort }
+    : null;
   const body = (messages: ChatMessage[], tools: unknown[], stream: boolean) =>
     JSON.stringify({
       model: cfg.model,
       messages,
       tools,
       tool_choice: "auto",
-      ...(cfg.temperature != null ? { temperature: cfg.temperature } : {}),
+      ...(reasoning ?? (cfg.temperature != null ? { temperature: cfg.temperature } : {})),
       ...(stream ? { stream: true } : {}),
     });
 
