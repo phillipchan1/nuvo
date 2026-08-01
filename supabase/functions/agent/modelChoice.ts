@@ -46,7 +46,12 @@ export const DEFAULT_AGENT_MODEL_OPENAI = AGENT_MODELS.terra;
 /** Where the chat lands when nothing is pinned and the key is OpenRouter's. */
 export const DEFAULT_AGENT_MODEL_OPENROUTER = "qwen/qwen3.6-flash";
 
-/** The 5.6 family's reasoning axis. Unset means the provider's own default. */
+/** The 5.6 family's reasoning axis.
+ *
+ *  NOTE: currently inert for the chat. `/v1/chat/completions` rejects
+ *  reasoning_effort alongside function tools, and an agent turn always carries
+ *  tools — createChatClient drops it and warns. Kept because the resolution is
+ *  right and a `/v1/responses` transport would make it live; see loop.ts. */
 export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 export const REASONING_EFFORTS: ReasoningEffort[] = ["none", "low", "medium", "high", "xhigh", "max"];
 

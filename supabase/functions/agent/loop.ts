@@ -368,23 +368,50 @@ export interface ChatClientConfig {
  *  only in where the key comes from, never in how the request is made. */
 export function createChatClient(cfg: ChatClientConfig): ChatClient {
   const doFetch = cfg.fetchImpl ?? fetch;
-  // Reasoning and temperature are treated as mutually exclusive: providers
-  // commonly reject an explicit temperature on a reasoning request, and a 400
-  // here kills the whole turn rather than degrading it. Conservative until the
-  // first live run says otherwise — if 5.6 accepts both, relax this and the
-  // battery gets its temperature floor back.
-  const reasoning = cfg.reasoningEffort && cfg.reasoningEffort !== "none"
-    ? { reasoning_effort: cfg.reasoningEffort }
-    : null;
-  const body = (messages: ChatMessage[], tools: unknown[], stream: boolean) =>
-    JSON.stringify({
+
+  // reasoning_effort and function tools cannot travel together on
+  // /v1/chat/completions. The provider rejects the pair outright:
+  //
+  //   400 — "Function tools with reasoning_effort are not supported for
+  //          gpt-5.6-terra in /v1/chat/completions. To use function tools, use
+  //          /v1/responses or set reasoning_effort to 'none'."
+  //
+  // Nuvo's agent turn ALWAYS carries tools, so honouring AGENT_REASONING here
+  // would 400 every single message — which is exactly what it did the first
+  // time it was set. Reasoning is dropped whenever tools are present rather
+  // than passed through and allowed to fail: a config mistake should cost the
+  // setting, never the chat. Getting reasoning back means moving this
+  // transport to /v1/responses, which is a real port, not a flag.
+  //
+  // Dropping it also means the temperature floor survives, which is what the
+  // battery relies on to measure the prompt instead of sampling noise.
+  const wantsReasoning = Boolean(cfg.reasoningEffort && cfg.reasoningEffort !== "none");
+  let warnedAboutReasoning = false;
+
+  const body = (messages: ChatMessage[], tools: unknown[], stream: boolean) => {
+    const hasTools = Array.isArray(tools) && tools.length > 0;
+    const useReasoning = wantsReasoning && !hasTools;
+    if (wantsReasoning && hasTools && !warnedAboutReasoning) {
+      warnedAboutReasoning = true;
+      console.warn(
+        `[agent] AGENT_REASONING=${cfg.reasoningEffort} ignored: /v1/chat/completions ` +
+          `rejects reasoning_effort alongside function tools. Unset it, or port the ` +
+          `transport to /v1/responses.`,
+      );
+    }
+    return JSON.stringify({
       model: cfg.model,
       messages,
       tools,
       tool_choice: "auto",
-      ...(reasoning ?? (cfg.temperature != null ? { temperature: cfg.temperature } : {})),
+      ...(useReasoning
+        ? { reasoning_effort: cfg.reasoningEffort }
+        : cfg.temperature != null
+        ? { temperature: cfg.temperature }
+        : {}),
       ...(stream ? { stream: true } : {}),
     });
+  };
 
   return {
     async stream(messages, tools) {

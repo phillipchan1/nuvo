@@ -14,6 +14,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createChatClient,
   runAgentTurn,
   stableArgs,
   MAX_ROUNDS,
@@ -440,7 +441,63 @@ describe("the per-turn trace", () => {
   });
 });
 
-// ── 7. the battery remembers ─────────────────────────────────────────────────
+// ── 7. the transport never sends a combination the provider rejects ──────────
+
+describe("reasoning and tools cannot be sent together", () => {
+  /** Capture the request body createChatClient actually builds. */
+  async function bodyFor(opts: { reasoningEffort?: string; temperature?: number }, tools: unknown[]) {
+    let sent: Record<string, unknown> = {};
+    const client = createChatClient({
+      baseUrl: "https://example.invalid/v1",
+      model: "gpt-5.6-terra",
+      headers: {},
+      ...opts,
+      fetchImpl: ((_u: string, init: { body: string }) => {
+        sent = JSON.parse(init.body);
+        return Promise.resolve(
+          new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 }),
+        );
+      }) as unknown as typeof fetch,
+    });
+    await client.complete([{ role: "user", content: "hi" }], tools);
+    return sent;
+  }
+
+  const someTools = [{ type: "function", function: { name: "create_task", parameters: {} } }];
+
+  it("omits reasoning_effort whenever tools are present", async () => {
+    // The live 400 this exists for:
+    //   "Function tools with reasoning_effort are not supported for
+    //    gpt-5.6-terra in /v1/chat/completions."
+    // The agent turn always carries tools, so honouring the setting would fail
+    // every message. A config mistake costs the setting, never the chat.
+    const sent = await bodyFor({ reasoningEffort: "medium" }, someTools);
+    expect(sent.reasoning_effort).toBeUndefined();
+    expect(sent.tools).toBeDefined();
+  });
+
+  it("keeps the temperature floor when reasoning is dropped", async () => {
+    // This is what the battery measures the prompt with, rather than sampling.
+    const sent = await bodyFor({ reasoningEffort: "high", temperature: 0 }, someTools);
+    expect(sent.reasoning_effort).toBeUndefined();
+    expect(sent.temperature).toBe(0);
+  });
+
+  it("still sends reasoning when there are no tools at all", async () => {
+    // Keeps the setting meaningful for a future /v1/responses transport, and
+    // for any tool-less call.
+    const sent = await bodyFor({ reasoningEffort: "medium" }, []);
+    expect(sent.reasoning_effort).toBe("medium");
+  });
+
+  it("treats 'none' as no reasoning at all", async () => {
+    const sent = await bodyFor({ reasoningEffort: "none", temperature: 0 }, []);
+    expect(sent.reasoning_effort).toBeUndefined();
+    expect(sent.temperature).toBe(0);
+  });
+});
+
+// ── 8. the battery remembers ─────────────────────────────────────────────────
 
 describe("battery history", () => {
   const scen = (id: string, verdict: "pass" | "flaky" | "fail") => ({ id, verdict, passes: verdict === "pass" ? 5 : 0, runs: 5 });

@@ -147,7 +147,7 @@ construction rather than by discipline.
 | Variable | Values | Default |
 |---|---|---|
 | `AGENT_MODEL` | any model id — `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` | `gpt-5.6-terra` (OpenAI key) |
-| `AGENT_REASONING` | `none` `low` `medium` `high` `xhigh` `max` | unset — provider's own default |
+| `AGENT_REASONING` | `none` `low` `medium` `high` `xhigh` `max` | unset — **and currently inert, see below** |
 | `AGENT_PROMPT` | `thin` — anything else is `full` | `full` (what ships) |
 
 ```bash
@@ -177,9 +177,16 @@ this battery exists for. Those are pinned by a test.
 
 Two cautions when reading a matrix:
 
-- **A reasoning request drops the temperature floor.** `createChatClient` sends
-  `reasoning_effort` *or* `temperature`, never both, so with `AGENT_REASONING`
-  set there is no sampling floor left and `--repeat` matters more, not less.
+- **Reasoning is not a usable axis today.** `/v1/chat/completions` rejects
+  `reasoning_effort` whenever function tools are present:
+  *"Function tools with reasoning_effort are not supported for gpt-5.6-terra in
+  /v1/chat/completions. To use function tools, use /v1/responses or set
+  reasoning_effort to 'none'."* An agent turn always carries tools, so setting
+  `AGENT_REASONING` used to 400 every message. `createChatClient` now drops it
+  when tools are present and warns once — the setting is lost, never the chat.
+  Reaching the reasoning axis means porting the transport to `/v1/responses`,
+  which is a real port, not a flag. Until then the matrix is 2×2 (model ×
+  prompt), and the temperature floor survives.
 - **Pin the model.** Unpinned, the two provider defaults are different families
   (`gpt-5.6-terra` vs `qwen/qwen3.6-flash`) and the running model depends on
   which API key is set. The harness warns when a run isn't pinned.
