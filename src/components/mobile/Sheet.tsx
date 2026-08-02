@@ -14,12 +14,16 @@ export default function Sheet({
   title,
   tall = false,
   contentClassName = "",
+  onContentScroll,
 }: {
   onClose: () => void;
   children: ReactNode;
   title?: ReactNode;
   tall?: boolean;
   contentClassName?: string;
+  /** so a sheet can react to its own scroll — the record uses it to fade its
+   *  name into the title row only once the hero has left the screen. */
+  onContentScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const scrimRef = useRef<HTMLDivElement>(null);
@@ -135,7 +139,11 @@ export default function Sheet({
             {...handleProps}
             className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2"
           >
-            <div className="text-head font-semibold tracking-tight select-none">{title}</div>
+            {/* min-w-0 flex-1: the title owns the row's spare width, so a long
+                one truncates instead of shoving ✕ off, and a title that lays
+                its own content out absolutely (the record's crumb/name
+                cross-fade) has a width to lay it out in. */}
+            <div className="min-w-0 flex-1 text-head font-semibold tracking-tight select-none">{title}</div>
             <button
               onClick={onClose}
               onPointerDown={(e) => e.stopPropagation()}
@@ -148,7 +156,9 @@ export default function Sheet({
           </div>
         )}
 
-        <div className={`min-h-0 flex-1 ${contentClassName}`}>{children}</div>
+        <div className={`min-h-0 flex-1 ${contentClassName}`} onScroll={onContentScroll}>
+          {children}
+        </div>
       </div>
     </div>,
     document.body,

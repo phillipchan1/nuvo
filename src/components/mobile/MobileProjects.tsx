@@ -95,7 +95,7 @@ export default function MobileProjects({
 
   const columns: DeckColumn[] = board.weeks.map((w) => ({
     key: String(w.idx),
-    chip: weekTick(w.weekStart),
+    chip: weekTick(w.weekStart, { within: HORIZON_SPRINTS }),
     title: weekName(w.weekStart),
     when: weekSpan(w.weekStart),
     load: load[w.idx],
