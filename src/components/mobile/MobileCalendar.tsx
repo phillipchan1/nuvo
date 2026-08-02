@@ -229,6 +229,12 @@ export default function MobileCalendar({
           onTapEvent={onTapEvent}
           onBack={backToMonth}
           onDayLens={(d) => setLens("day", d)}
+          onJumpTo={(d) => {
+            const day = startOfDay(d);
+            setSelected(day);
+            setMonthCursor(startOfMonth(day));
+            setPastDays(0);
+          }}
         />
       )}
     </div>
@@ -505,6 +511,7 @@ export function ScheduleView({
   onTapEvent,
   onBack,
   onDayLens,
+  onJumpTo,
 }: {
   anchor: Date;
   ctx: DayCtx;
@@ -515,6 +522,9 @@ export function ScheduleView({
   onTapEvent?: (tap: CalendarTap) => void;
   onBack: () => void;
   onDayLens: (topDay: Date) => void;
+  /** Jump the schedule's anchor to an arbitrary date (the header's picker).
+   *  Optional so the ?daycal harness keeps working unchanged. */
+  onJumpTo?: (d: Date) => void;
 }) {
   const days = useMemo<DayPlan[]>(() => {
     const start = addDays(startOfDay(anchor), -pastDays);
@@ -625,6 +635,29 @@ export function ScheduleView({
           {format(anchor, "MMMM yyyy")}
         </button>
         <div className="flex-1" />
+        {onJumpTo && (
+          // A date jump — reaching "three Tuesdays ago" used to cost repeated
+          // "Earlier days" taps plus a long scroll. The OS date picker reaches
+          // any date in a couple of taps; the invisible input fills the 44px
+          // button so tapping the glyph IS tapping the picker.
+          <label className="tap fast relative flex items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Jump to date">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <rect x="2.3" y="3.3" width="11.4" height="10.4" rx="1.6" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M2.3 6.3h11.4" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M5.5 1.8v2.6M10.5 1.8v2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
+            <input
+              type="date"
+              value={anchor.toLocaleDateString("en-CA")}
+              onChange={(e) => {
+                const [y, m, d] = e.target.value.split("-").map(Number);
+                if (y && m && d) onJumpTo(new Date(y, m - 1, d));
+              }}
+              aria-label="Jump to date"
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            />
+          </label>
+        )}
         <CalLensPill lens="schedule" onLens={(l) => l === "day" && onDayLens(topDay())} />
         <TimeZoneChip now={ctx.now} />
       </div>

@@ -28,7 +28,7 @@ export function SectionLabel({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="section-label fast tap flex w-full items-center gap-2 px-3 pt-3 pb-1.5 text-left hover:text-ink"
+        className="section-label fast tap-h flex w-full items-center gap-2 px-3 pt-3 pb-1.5 text-left hover:text-ink"
       >
         <span>{children}</span>
         {count != null && count > 0 && (

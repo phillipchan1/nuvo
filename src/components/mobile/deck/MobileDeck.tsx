@@ -131,6 +131,16 @@ export default function MobileDeck({
   // The card being held but not yet picked up — drives the visible arming ramp
   // so the long-press wait reads as "keep holding" instead of a dead delay.
   const [arming, setArming] = useState<string | null>(null);
+  // Where a card just landed — a brief flash on the strip cell, because
+  // navigator.vibrate is a no-op on iOS Safari and a silent drop reads as a
+  // maybe.
+  const [flash, setFlash] = useState<number | "pool" | null>(null);
+  const flashTimer = useRef<number | undefined>(undefined);
+  const flashDrop = (col: number | "pool") => {
+    window.clearTimeout(flashTimer.current);
+    setFlash(col);
+    flashTimer.current = window.setTimeout(() => setFlash(null), 650);
+  };
 
   // Land on the opening page once mounted (the pager starts at scrollLeft 0).
   const landed = useRef(false);
@@ -226,6 +236,7 @@ export default function MobileDeck({
         const col = t === "pool" ? null : t;
         if (col !== from) {
           navigator.vibrate?.(12);
+          flashDrop(t);
           onMove(card.id, col);
         }
       }
@@ -275,6 +286,7 @@ export default function MobileDeck({
         goto={goto}
         dragging={dragging}
         target={target}
+        flash={flash}
       />
 
       {coverage && coverage.rows.length > 0 && (
@@ -402,10 +414,11 @@ export default function MobileDeck({
       />
       </div>
 
-      {/* the thing in your hand — glass, following the finger */}
+      {/* the thing in your hand — glass, following the finger. pop-in is the
+          visible pickup confirmation (iOS has no haptics to lean on). */}
       {drag && (
         <div
-          className="glass-grab pointer-events-none fixed z-[70] w-56 rounded-xl border border-line bg-surface px-3 py-2.5"
+          className="glass-grab pop-in pointer-events-none fixed z-[70] w-56 rounded-xl border border-line bg-surface px-3 py-2.5"
           style={{
             left: Math.min(drag.x - 40, window.innerWidth - 232),
             top: drag.y - 56,
@@ -487,6 +500,7 @@ function ColumnStrip({
   goto,
   dragging,
   target,
+  flash,
 }: {
   columns: DeckColumn[];
   poolLabel: string;
@@ -496,6 +510,8 @@ function ColumnStrip({
   goto: (p: number) => void;
   dragging: boolean;
   target: number | "pool" | null;
+  /** the cell a card just landed on — brief confirmation flash. */
+  flash: number | "pool" | null;
 }) {
   return (
     <div className="flex shrink-0 items-stretch border-b border-line">
@@ -523,7 +539,7 @@ function ColumnStrip({
         style={{ width: GUTTER_PX }}
         className={`fast relative flex shrink-0 flex-col items-center justify-center gap-0.5 border-r border-line py-2 ${
           page === 0 ? "text-accent" : "text-muted"
-        }`}
+        } ${flash === "pool" ? "deck-drop-flash" : ""}`}
       >
         <span
           className="fast flex h-5 w-5 items-center justify-center rounded-md border text-micro"
@@ -552,7 +568,9 @@ function ColumnStrip({
             onClick={() => goto(i + 1)}
             title={c.title}
             aria-label={`${c.title}, ${c.load} of ${c.cap}`}
-            className="fast relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 border-r border-line px-1 py-2 last:border-r-0"
+            className={`fast relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 border-r border-line px-1 py-2 last:border-r-0 ${
+              flash === i ? "deck-drop-flash" : ""
+            }`}
             style={{
               background: isTarget
                 ? "color-mix(in srgb, var(--slot) 16%, transparent)"

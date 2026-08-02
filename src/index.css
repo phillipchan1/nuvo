@@ -2011,9 +2011,13 @@ select.field { appearance: none; -webkit-appearance: none; }
     overscroll-behavior: contain;
   }
 
-  /* Generous tap targets — Apple's 44px minimum — without disturbing the
-     desktop's hairline density. */
-  .tap { min-height: 44px; }
+  /* Generous tap targets — Apple's 44px minimum in BOTH dimensions — without
+     disturbing the desktop's hairline density. A height-only floor let 32px
+     icon buttons wear the class and still fail the guideline. `.tap-h` is the
+     deliberate height-only variant for full-width rows / flex-fill controls
+     where a width floor is meaningless. */
+  .tap { min-height: 44px; min-width: 44px; }
+  .tap-h { min-height: 44px; }
 
   /* Expand a small control's hit area to ≥44px without growing its visuals.
      Padding would inflate the drawn box (border and fill live on the element),
@@ -2030,6 +2034,14 @@ select.field { appearance: none; -webkit-appearance: none; }
     box-shadow: var(--shadow-2);
     transition: transform 450ms var(--ease-out), box-shadow 450ms var(--ease-out);
   }
+
+  /* Where a dropped card landed — the strip cell pulses --slot once. The
+     visual stand-in for the drop haptic iOS never delivers. */
+  @keyframes deck-drop-flash {
+    0% { background-color: color-mix(in srgb, var(--slot) 40%, transparent); }
+    100% { background-color: transparent; }
+  }
+  .deck-drop-flash { animation: deck-drop-flash 650ms var(--ease-out) both; }
 
   /* The toast's Undo action is the only undo path on a phone — thumb-sized. */
   [data-sonner-toast] [data-button] {

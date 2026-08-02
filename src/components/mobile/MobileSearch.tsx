@@ -98,7 +98,7 @@ export default function MobileSearch({
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search projects, initiatives, domains, tasks…"
             aria-label="Search"
-            className="tap min-w-0 flex-1 appearance-none bg-transparent py-2 outline-none [&::-webkit-search-cancel-button]:hidden"
+            className="tap-h min-w-0 flex-1 appearance-none bg-transparent py-2 outline-none [&::-webkit-search-cancel-button]:hidden"
             autoCapitalize="none"
             autoCorrect="off"
           />

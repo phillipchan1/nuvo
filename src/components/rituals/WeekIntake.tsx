@@ -75,7 +75,7 @@ export default function SourceSwitch({
                 onClick={() => onStep(s)}
                 aria-current={active ? "step" : undefined}
                 title={`Step ${i + 1} of ${steps.length} — ${s === "week" ? "The week" : STEP_LABEL[s]}`}
-                className={`tap fast flex min-w-0 flex-1 flex-col items-center gap-1 px-0.5 ${dense ? "min-h-[44px]" : ""}`}
+                className={`tap-h fast flex min-w-0 flex-1 flex-col items-center gap-1 px-0.5 ${dense ? "min-h-[44px]" : ""}`}
               >
                 <span
                   className="mono flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-meta"

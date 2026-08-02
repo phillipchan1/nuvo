@@ -40,7 +40,7 @@ const pwa = VitePWA({
     display_override: ["standalone"],
     // Kept deliberately: installed Android honours it and the phone shell is a
     // portrait design; every other surface ignores it. The landscape-phone fix
-    // is useIsMobile's pointer/orientation query, NOT this — see D-058 in
+    // is useIsMobile's pointer/orientation query, NOT this — see D-069 in
     // docs/product/decisions.md.
     orientation: "portrait",
     theme_color: "#f4f1ea",

@@ -2069,6 +2069,17 @@ history — they just have no reader. Supersedes the "surface The Find" half of 
 product promise; the "at most one, hide when nothing notable" rule is moot while there's
 no surface. *Status: standing.*
 
+**D-069 · 2026-08-01 · Manifest `orientation: "portrait"` stays — and it is not the
+landscape fix.** The mobile a11y pass flagged the PWA manifest's `orientation` field:
+only an *installed Android* app honours it; iOS PWAs, mobile browsers and desktop ignore
+it entirely, so it never addressed the real landscape bug (a sideways iPhone at 844×390
+rendering the three-pane desktop shell). Kept deliberately — installed Android is the
+one surface that can enforce it and the phone shell is a portrait design — while the
+actual landscape fix lives in `useIsMobile`: a `(max-height: 500px) and (orientation:
+landscape) and (pointer: coarse)` media clause that routes short touch viewports to
+MobileShell on every surface. Don't mistake the manifest field for behaviour again.
+*Status: standing.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 
