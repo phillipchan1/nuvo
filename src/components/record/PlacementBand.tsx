@@ -40,9 +40,11 @@ export type PlacementTone = "primary" | "quiet";
 type PlacePatch = { startDate?: string | null; targetDate?: string | null };
 export type OnPlace = (patch: PlacePatch) => void;
 
-/** How far out either scale reaches. Past the runway there is no week — only
- *  Someday (loose-weeks.md); reaching 14 weeks out isn't scheduling, it's
- *  avoiding. */
+/** How far out either scale reaches by default. Past the runway there is no
+ *  week — only Someday (loose-weeks.md); reaching 14 weeks out isn't
+ *  scheduling, it's avoiding. The phone's deck plans six weeks out, so its
+ *  band takes `horizon` to match — a week you can drag onto has to be a week
+ *  you can also tap onto. Omit it and desktop is exactly as it was. */
 const HORIZON = 4;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const fmtDay = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -168,6 +170,7 @@ export function WeekBand({
   onPlace,
   tone = "quiet",
   color = "var(--accent)",
+  horizon = HORIZON,
   renderDates,
   bandRef,
 }: {
@@ -178,6 +181,8 @@ export function WeekBand({
   tone?: PlacementTone;
   /** the record's domain hue — identity, so the lit span reads as *this* record. */
   color?: string;
+  /** how many weeks the scale reaches — defaults to the shared HORIZON. */
+  horizon?: number;
   /** the phone passes its big native date fields; desktop gets the compact pair. */
   renderDates?: (v: { start: string | null; target: string | null; onStart: (s: string | null) => void; onTarget: (s: string | null) => void }) => ReactNode;
   /** so the record can focus the band with `s` and drive it with arrow keys. */
@@ -185,7 +190,7 @@ export function WeekBand({
 }) {
   const { byWeek } = useCapacity();
   const [showDates, setShowDates] = useState(false);
-  const weeks = byWeek.slice(0, HORIZON);
+  const weeks = byWeek.slice(0, horizon);
 
   const idxOf = (iso: string | null): number => {
     if (!iso) return -1;
@@ -196,7 +201,7 @@ export function WeekBand({
   const startIdx = p.startDate ? idxOf(p.startDate) : dueIdx;
   const span = sprintSpanWeeks(p);
   const from = startIdx >= 0 ? startIdx : dueIdx;
-  const to = from >= 0 ? Math.min(HORIZON - 1, from + span - 1) : -1;
+  const to = from >= 0 ? Math.min(horizon - 1, from + span - 1) : -1;
   const outside = Boolean(p.targetDate) && dueIdx < 0 && startIdx < 0;
 
   // The one write. Identical to the deck drag's — `sprintSpanFor` is the kernel.
@@ -218,9 +223,9 @@ export function WeekBand({
     e.preventDefault();
     e.stopPropagation();
     const dir = e.key === "ArrowRight" ? 1 : -1;
-    if (from < 0) { place(Math.max(0, dir > 0 ? 0 : HORIZON - 1), span); return; }
-    if (e.shiftKey) place(from, Math.max(1, Math.min(HORIZON - from, span + dir)));
-    else place(Math.max(0, Math.min(HORIZON - 1, from + dir)), span);
+    if (from < 0) { place(Math.max(0, dir > 0 ? 0 : horizon - 1), span); return; }
+    if (e.shiftKey) place(from, Math.max(1, Math.min(horizon - from, span + dir)));
+    else place(Math.max(0, Math.min(horizon - 1, from + dir)), span);
   };
 
   const onStart = (v: string | null) =>
@@ -242,7 +247,7 @@ export function WeekBand({
       {tone === "quiet" && (
         <div className="section-label mb-2 flex items-center gap-1.5">
           <span className="flex-1">Week</span>
-          {from >= 0 && <Stepper tone={tone} value={span} unit="week" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(HORIZON - from, span + 1))} />}
+          {from >= 0 && <Stepper tone={tone} value={span} unit="week" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(horizon - from, span + 1))} />}
           <TrailActs onShelve={from >= 0 ? shelve : undefined} onDates={() => setShowDates((v) => !v)} datesOpen={showDates} />
         </div>
       )}
@@ -272,20 +277,20 @@ export function WeekBand({
 
       {tone === "quiet" ? (
         <div className="mono mt-1.5 text-micro text-muted opacity-70">
-          {from >= 0 ? litRange : outside ? `Finish line outside the next ${HORIZON} weeks` : null}
+          {from >= 0 ? litRange : outside ? `Finish line outside the next ${horizon} weeks` : null}
         </div>
       ) : (
         <>
           {from >= 0 ? (
             <div className="mt-2.5 flex items-center gap-2">
               <span className="shrink-0 text-caption text-muted">Spans</span>
-              <Stepper tone={tone} value={span} unit="week" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(HORIZON - from, span + 1))} />
+              <Stepper tone={tone} value={span} unit="week" onLess={() => place(from, Math.max(1, span - 1))} onMore={() => place(from, Math.min(horizon - from, span + 1))} />
               <button onClick={shelve} className="tap fast ml-auto shrink-0 text-caption text-muted active:text-accent">Shelve</button>
             </div>
           ) : (
             <div className="mt-2 text-caption text-muted">
               {outside
-                ? `Finish line ${p.targetDate ? format(parseISO(p.targetDate), "MMM d") : ""} — outside the next ${HORIZON} weeks. Tap one to pull it in.`
+                ? `Finish line ${p.targetDate ? format(parseISO(p.targetDate), "MMM d") : ""} — outside the next ${horizon} weeks. Tap one to pull it in.`
                 : "No week yet — tap one to commit it."}
             </div>
           )}

@@ -64,7 +64,7 @@ export default function MobileDetailSheet({
           onClick={back}
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="Back"
-          className="tap fast -ml-1 flex items-center rounded-lg px-1 text-lead text-muted active:bg-surface-2"
+          className="tap-icon fast -ml-1 flex items-center justify-center rounded-lg px-1 text-lead text-muted active:bg-surface-2"
           style={{ cursor: "default" }}
         >
           ‹

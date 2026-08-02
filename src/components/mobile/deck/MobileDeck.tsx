@@ -13,6 +13,9 @@
 //             the cells are the DROP TARGETS while you're holding a card.
 //   pager   — one page per column, snap-scrolled; the page you're on is lifted in
 //             the strip.
+//   ＋       — every page ends in a composer, the pool included. Naming a thing on
+//             a column page dates it there; naming it in the pool creates it with
+//             no week / quarter yet, which is the rail's foot pill on desktop.
 //
 // Gesture: press and hold a card → it becomes `.glass-grab` glass in your hand and
 // every column lights as a target; drag to a strip cell (the pager follows so the
@@ -34,6 +37,10 @@ const CANCEL_PX = 10;
 // The pool cell in the strip doubles as the coverage strip's label gutter, so a
 // lit coverage cell sits directly under its column.
 const GUTTER_PX = 46;
+// The narrowest a column cell may get before the strip starts scrolling instead
+// of squeezing. Past ~4 columns a phone can't give each one a legible chip, so
+// the horizon grew and the strip scrolls — the coverage rows scroll with it.
+const COL_MIN_PX = 68;
 
 export interface DeckColumn {
   key: string;
@@ -93,6 +100,7 @@ export default function MobileDeck({
   poolEmpty,
   addNoun,
   addAccent,
+  poolAddHint,
   onCreate,
   onMove,
   coverage,
@@ -106,9 +114,12 @@ export default function MobileDeck({
   poolEmpty: ReactNode;
   addNoun: string;
   addAccent?: string;
-  /** name one thing into a column — `domain` is set when the compose started from
+  /** the pool composer's footer line — "⏎ adds it with no week yet". */
+  poolAddHint?: string;
+  /** name one thing into a column — `col` is null when it's named into the pool
+   *  (no week / quarter yet), and `domain` is set when the compose started from
    *  a coverage cell ("start a Church project next week"). */
-  onCreate: (col: number, name: string, domain: Domain | null) => Promise<void>;
+  onCreate: (col: number | null, name: string, domain: Domain | null) => Promise<void>;
   /** a card was dropped: `col` = column index, or null to shelve it in the pool. */
   onMove: (id: string, col: number | null) => void;
   coverage?: DeckCoverage | null;
@@ -120,7 +131,8 @@ export default function MobileDeck({
     const nowIdx = columns.findIndex((c) => c.now);
     return nowIdx >= 0 ? nowIdx + 1 : 1;
   });
-  const [compose, setCompose] = useState<{ col: number; domain: Domain | null } | null>(null);
+  // `col: null` composes into the pool — a thing named before it has a week.
+  const [compose, setCompose] = useState<{ col: number | null; domain: Domain | null } | null>(null);
   const [drag, setDrag] = useState<{ id: string; name: string; dot: string; x: number; y: number } | null>(null);
   const [target, setTarget] = useState<number | "pool" | null>(null);
 
@@ -246,6 +258,35 @@ export default function MobileDeck({
   const dragging = drag != null;
   const poolCards = cards.filter((c) => c.col == null);
 
+  // ── the strip and the coverage rows are one grid in two scrollers ───────────
+  // They have to agree about which cell sits under which column, so whichever
+  // one the finger moves drags the other to the same offset.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const covRef = useRef<HTMLDivElement>(null);
+  const syncing = useRef(false);
+  const syncScroll = (from: React.RefObject<HTMLDivElement>, to: React.RefObject<HTMLDivElement>) => () => {
+    if (syncing.current || !from.current || !to.current) return;
+    syncing.current = true;
+    to.current.scrollLeft = from.current.scrollLeft;
+    requestAnimationFrame(() => {
+      syncing.current = false;
+    });
+  };
+
+  // Keep the cell you're standing on in view — with six columns the strip is
+  // wider than the phone, and the map must not lose your place (or, mid-drag,
+  // the target the pager just followed you to). Page 0 is the pool, which lives
+  // in the fixed gutter outside the scroller, so it rewinds instead.
+  useEffect(() => {
+    if (page === 0) {
+      stripRef.current?.scrollTo({ left: 0, behavior: "smooth" });
+      return;
+    }
+    stripRef.current
+      ?.querySelector(`[data-strip-cell="${page}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [page]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <DeckCrownFace crown={crown} />
@@ -258,6 +299,8 @@ export default function MobileDeck({
         goto={goto}
         dragging={dragging}
         target={target}
+        scrollRef={stripRef}
+        onScroll={syncScroll(stripRef, covRef)}
       />
 
       {coverage && coverage.rows.length > 0 && (
@@ -265,6 +308,8 @@ export default function MobileDeck({
           scope={scope}
           rows={coverage.rows}
           columns={columns}
+          scrollRef={covRef}
+          onScroll={syncScroll(covRef, stripRef)}
           onAdd={(domain, col) => {
             setCompose({ col, domain });
             goto(col + 1);
@@ -290,22 +335,41 @@ export default function MobileDeck({
               : undefined
           }
         >
-          <div className="px-4 pb-28 pt-3">
-            <div className="section-label !px-0">{poolLabel} · {poolCards.length}</div>
+          <div className="flex flex-col gap-2 px-4 pb-28 pt-3">
+            <div className="section-label !px-0 !pb-0">{poolLabel} · {poolCards.length}</div>
             {poolCards.length === 0 ? (
-              <div className="mt-2">{poolEmpty}</div>
+              // an empty pool still says what it's for — the composer below is the
+              // way in, so the hint stays a hint, not a dead end
+              <div>{poolEmpty}</div>
             ) : (
-              <div className="mt-2 flex flex-col gap-2">
-                {poolCards.map((c) => (
-                  <CardShell
-                    key={c.id}
-                    card={c}
-                    lifted={drag?.id === c.id}
-                    onPress={startPress}
-                    justDragged={justDragged}
-                  />
-                ))}
-              </div>
+              poolCards.map((c) => (
+                <CardShell
+                  key={c.id}
+                  card={c}
+                  lifted={drag?.id === c.id}
+                  onPress={startPress}
+                  justDragged={justDragged}
+                />
+              ))
+            )}
+            {/* the pool's own ＋ — the rail's foot pill, at phone scale. Naming a
+                thing here gives it no week yet, which is exactly what the pool is
+                for; the columns each have the same composer for a dated one. */}
+            {compose && compose.col === null ? (
+              <InlineAdd
+                placeholder={`Name a ${addNoun}…`}
+                accent={addAccent ?? "var(--accent)"}
+                hint={poolAddHint ?? `⏎ adds it to ${poolLabel}`}
+                onCreate={(name) => onCreate(null, name, null)}
+                onClose={() => setCompose(null)}
+              />
+            ) : (
+              <button
+                onClick={() => setCompose({ col: null, domain: null })}
+                className="slot-open tap fast w-full rounded-xl border border-dashed px-3 py-3 text-center text-caption font-medium text-muted"
+              >
+                ＋ {addNoun}
+              </button>
             )}
           </div>
         </section>
@@ -333,7 +397,10 @@ export default function MobileDeck({
                     onClick={() => setCompose({ col: i, domain: null })}
                     className="slot-open tap fast flex min-h-[96px] w-full items-center justify-center rounded-xl border border-dashed px-3 text-center text-caption text-muted"
                   >
-                    {dragging ? "Release here to commit it" : `Nothing in ${col.title} yet — tap to start one`}
+                    {/* not "Nothing in {title} yet" — the titles read "In 3
+                        weeks", so that printed "Nothing in In 3 weeks". The
+                        hero directly above already names the week. */}
+                    {dragging ? "Release here to commit it" : "Nothing here yet — tap to start one"}
                   </button>
                 )}
                 {mine.map((c) => (
@@ -361,7 +428,7 @@ export default function MobileDeck({
                       onClick={() => setCompose({ col: i, domain: null })}
                       className="slot-open tap fast w-full rounded-xl border border-dashed px-3 py-3 text-center text-caption font-medium text-muted"
                     >
-                      ＋ {addNoun} in {col.title}
+                      ＋ {addNoun}
                     </button>
                   )
                 )}
@@ -392,33 +459,38 @@ export default function MobileDeck({
 }
 
 // ── the crown — readiness, execution voice (PlannerRail's, at phone width) ─────
+// One line, deliberately quiet. The horizon's readiness is CONTEXT for the week
+// you're standing in, not the headline — when it wore a hero's weight (its own
+// eyebrow row, its own bar row, a bordered gap row beneath) it stacked three
+// bands above the strip and the page hero read as the fourth-most important
+// thing on a screen that was mostly chrome.
 function DeckCrownFace({ crown }: { crown: DeckCrown }) {
   const pct = crown.total > 0 ? (crown.done / crown.total) * 100 : 0;
   return (
-    <div className="shrink-0 border-b border-line px-4 pb-2.5 pt-3">
-      <div className="section-label !px-0 !pb-0" style={{ color: "var(--accent)" }}>
-        {crown.eyebrow}
+    <div className="shrink-0 border-b border-line px-4 py-2">
+      <div className="flex items-center gap-2">
+        <span className="section-label shrink-0 !px-0 !pb-0">{crown.eyebrow}</span>
+        {crown.total === 0 ? (
+          <span className="text-caption text-muted">Nothing on the board yet</span>
+        ) : (
+          <>
+            <span className="shrink-0 text-caption">
+              <span className="mono font-medium text-ink">{crown.done}</span>
+              <span className="text-muted">/</span>
+              <span className="mono font-medium text-ink">{crown.total}</span>
+              <span className="text-muted"> {crown.noun}</span>
+            </span>
+            <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+              <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "var(--accent)" }} />
+            </span>
+          </>
+        )}
       </div>
-      {crown.total === 0 ? (
-        <div className="mt-1 text-body text-muted">Nothing on the board yet</div>
-      ) : (
-        <div className="mt-1.5 flex items-center gap-2.5">
-          <span className="shrink-0 text-body">
-            <span className="mono font-medium text-ink">{crown.done}</span>
-            <span className="text-muted"> of </span>
-            <span className="mono font-medium text-ink">{crown.total}</span>
-            <span className="text-muted"> {crown.noun}</span>
-          </span>
-          <span className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-            <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "var(--accent)" }} />
-          </span>
-        </div>
-      )}
       {crown.gap && (
         <button
           onClick={crown.gap.onJump}
           disabled={!crown.gap.onJump}
-          className="tap fast mt-2 flex w-full items-center gap-2 border-t border-line pt-2 text-left"
+          className="fast mt-0.5 flex w-full items-center gap-1.5 py-1 text-left"
         >
           <span className="shrink-0 text-caption text-muted">{crown.gap.label}</span>
           {crown.gap.detail && (
@@ -442,6 +514,8 @@ function ColumnStrip({
   goto,
   dragging,
   target,
+  scrollRef,
+  onScroll,
 }: {
   columns: DeckColumn[];
   poolLabel: string;
@@ -450,10 +524,15 @@ function ColumnStrip({
   goto: (p: number) => void;
   dragging: boolean;
   target: number | "pool" | null;
+  scrollRef: React.RefObject<HTMLDivElement>;
+  onScroll: () => void;
 }) {
   return (
+    // The pool cell is a LABEL GUTTER, not a slice of time, so it sits outside
+    // the scroller — pinned, the way the coverage band's domain icons are. Past
+    // four columns the time cells scroll under it and "shelve this" stays one
+    // tap (or one drag) away no matter how far out you've walked.
     <div className="flex shrink-0 items-stretch border-b border-line">
-      {/* the pool cell — same width as the coverage gutter beneath it */}
       <button
         data-deck-col="pool"
         onClick={() => goto(0)}
@@ -476,6 +555,8 @@ function ColumnStrip({
         <span className="mono text-micro tabular-nums">{poolCount}</span>
       </button>
 
+      <div ref={scrollRef} onScroll={onScroll} className="mobile-scroll min-w-0 flex-1 overflow-x-auto">
+        <div className="flex w-max min-w-full items-stretch">
       {columns.map((c, i) => {
         const on = page === i + 1;
         const isTarget = dragging && target === i;
@@ -485,10 +566,12 @@ function ColumnStrip({
           <button
             key={c.key}
             data-deck-col={i}
+            data-strip-cell={i + 1}
             onClick={() => goto(i + 1)}
             title={c.title}
-            className="fast relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 border-r border-line px-1 py-2 last:border-r-0"
+            className="fast relative flex flex-col items-center justify-center gap-1 border-r border-line px-1 py-2 last:border-r-0"
             style={{
+              flex: `1 0 ${COL_MIN_PX}px`,
               background: isTarget
                 ? "color-mix(in srgb, var(--slot) 16%, transparent)"
                 : on
@@ -521,31 +604,35 @@ function ColumnStrip({
           </button>
         );
       })}
+        </div>
+      </div>
     </div>
   );
 }
 
 // ── the page header — which slice of time you're standing in ──────────────────
+// This is the page's HERO, so it's set in Fraunces like every other floor / day
+// hero (design-language.md), not in the same semibold sans the crown and the
+// section labels use. The load count is dropped unless it's over cap: the strip
+// cell directly above already reads "3", and printing "3/2" here again next to
+// it was two numbers for one fact. Over cap it comes back, because that's the
+// one time the number is telling you something the bar can't.
 function ColumnHead({ col }: { col: DeckColumn }) {
+  const over = col.load > col.cap;
   return (
     <div className="border-b border-line px-4 pb-2.5 pt-3">
       <div className="flex items-baseline justify-between gap-2">
-        <span
-          className="text-head font-semibold"
-          style={{ color: col.now ? NOW_INK : "var(--ink)" }}
-        >
+        <span className="text-lead masthead" style={{ color: col.now ? NOW_INK : "var(--ink)" }}>
           {col.now && (
             <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: NOW_MARK }} />
           )}
           {col.title}
         </span>
-        <span
-          className="mono shrink-0 text-caption tabular-nums"
-          style={{ color: col.load > col.cap ? "#D97706" : "var(--muted)" }}
-        >
-          {col.load}/{col.cap}
-          {col.load > col.cap ? " ⚠" : ""}
-        </span>
+        {over && (
+          <span className="mono shrink-0 text-caption tabular-nums" style={{ color: "#D97706" }}>
+            {col.load}/{col.cap} ⚠
+          </span>
+        )}
       </div>
       <div className="mono mt-0.5 text-micro text-muted">{col.when}</div>
       {col.head}
@@ -610,11 +697,16 @@ function CoverageBand({
   scope,
   rows,
   columns,
+  scrollRef,
+  onScroll,
   onAdd,
 }: {
   scope: string;
   rows: { domain: Domain; cells: number[] }[];
   columns: DeckColumn[];
+  /** the rows scroll sideways with the strip above them — one grid, two scrollers. */
+  scrollRef: React.RefObject<HTMLDivElement>;
+  onScroll: () => void;
   onAdd: (domain: Domain, col: number) => void;
 }) {
   const key = `nuvo.mobile.deck.coverage.${scope}`;
@@ -661,46 +753,55 @@ function CoverageBand({
       </button>
 
       {open && (
-        <div className="pb-1.5">
-          {rows.map((r) => (
-            <div
-              key={r.domain.id}
-              className="grid items-center"
-              style={{ gridTemplateColumns: `${GUTTER_PX}px repeat(${columns.length}, 1fr)` }}
-            >
+        // Same shape as the strip: a pinned icon gutter, and the cells scrolling
+        // beside it in lockstep with the strip's columns.
+        <div className="flex items-stretch pb-1.5">
+          <div className="shrink-0" style={{ width: GUTTER_PX }}>
+            {rows.map((r) => (
               <span
+                key={r.domain.id}
                 className="flex h-6 items-center justify-center text-caption"
                 style={{ color: r.domain.color }}
                 title={r.domain.name}
               >
                 {r.domain.icon}
               </span>
-              {columns.map((c, i) => {
-                const n = r.cells[i] ?? 0;
-                return (
-                  <button
-                    key={c.key}
-                    onClick={() => onAdd(r.domain, i)}
-                    title={n > 0 ? `${n} in ${c.title}` : `Start one in ${c.title}`}
-                    className="fast flex h-6 items-center justify-center gap-0.5 border-l border-line"
-                    style={c.now ? { background: NOW_BAND } : undefined}
-                  >
-                    {n === 0 ? (
-                      <span className="text-micro text-muted/35">+</span>
-                    ) : (
-                      Array.from({ length: Math.min(n, 4) }).map((_, k) => (
-                        <span
-                          key={k}
-                          className="h-2 w-2 rounded-[2px]"
-                          style={{ background: r.domain.color }}
-                        />
-                      ))
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+            ))}
+          </div>
+          <div ref={scrollRef} onScroll={onScroll} className="mobile-scroll min-w-0 flex-1 overflow-x-auto">
+            {rows.map((r) => (
+              <div
+                key={r.domain.id}
+                className="grid w-max min-w-full items-center"
+                style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(${COL_MIN_PX}px, 1fr))` }}
+              >
+                {columns.map((c, i) => {
+                  const n = r.cells[i] ?? 0;
+                  return (
+                    <button
+                      key={c.key}
+                      onClick={() => onAdd(r.domain, i)}
+                      title={n > 0 ? `${n} in ${c.title}` : `Start one in ${c.title}`}
+                      className="fast flex h-6 items-center justify-center gap-0.5 border-l border-line"
+                      style={c.now ? { background: NOW_BAND } : undefined}
+                    >
+                      {n === 0 ? (
+                        <span className="text-micro text-muted/35">+</span>
+                      ) : (
+                        Array.from({ length: Math.min(n, 4) }).map((_, k) => (
+                          <span
+                            key={k}
+                            className="h-2 w-2 rounded-[2px]"
+                            style={{ background: r.domain.color }}
+                          />
+                        ))
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
