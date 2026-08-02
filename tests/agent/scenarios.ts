@@ -26,6 +26,7 @@ import {
   offersSuggestions, pointedAt, readOnly, replyLacks, replyMatches, startsAt,
   type Check,
 } from "./expect.ts";
+import { INVITE_STAGED_NOTE, inviteNote } from "../../supabase/functions/agent/toolNotes.ts";
 import { ID, TODAY } from "./world.ts";
 import type { ToolResponder } from "./harness.ts";
 import type { WorldName } from "./world.ts";
@@ -184,7 +185,10 @@ export const SCENARIOS: Scenario[] = [
     id: "slot-add-to-existing",
     group: "slots",
     it: "adding to a block the user already holds goes inside it, not beside it",
-    world: "loaded",
+    // "already holds" has to be true in the world, not just in the transcript —
+    // `loaded` carries no slots, so the block named in the seeded reply existed
+    // nowhere the chat could see it.
+    world: "holding",
     turns: [
       "block 9 to 11 this morning for the Stampede push — subdomains and the ATC follow-up",
       { assistant: "Held **Stampede push** — 9:00–11:00 AM, two items inside." },
@@ -193,7 +197,11 @@ export const SCENARIOS: Scenario[] = [
     expect: [
       called("add_to_slot"),
       notCalled("schedule_task"),
-      calledTimes("create_slot", 1), // only the first turn's block
+      // ZERO — the first turn's block is a scripted assistant message, so the
+      // only create_slot this turn can make is the duplicate. Asserting 1 meant
+      // the duplicate SATISFIED the check: the wrong expectation was hiding the
+      // exact bug the scenario is named for.
+      calledTimes("create_slot", 0),
     ],
   }),
 
@@ -253,10 +261,21 @@ export const SCENARIOS: Scenario[] = [
     it: "a calendar the user names beats their stored default",
     world: "loaded",
     turns: ["put dinner with Ann on my Family calendar Saturday at 6:30"],
+    // Asserted across both event-writing tools, for the same reason as
+    // cal-never-infers-from-subject: dinner with Ann is dinner with a person,
+    // so the invite doctrine (D-069) routes it to propose_invite, and pinning
+    // create_calendar_event failed turns that were obeying a different correct
+    // rule. What this pin owns is the destination, not the path — a calendar
+    // the user NAMED outranks their stored default, whichever tool carries it.
     expect: [
-      called("create_calendar_event", {
-        describe: "targeting Family",
-        ok: (a) => typeof a.calendar_name === "string" && /family/i.test(a.calendar_name),
+      check("sends it to Family, not the stored default", (o) => {
+        const writes = o.calls.filter((c) => c.name === "create_calendar_event" || c.name === "propose_invite");
+        if (!writes.length) {
+          return `expected create_calendar_event or propose_invite; got ${o.calls.map((c) => c.name).join(", ") || "no tool calls"}`;
+        }
+        return writes.some((c) => typeof c.args.calendar_name === "string" && /family/i.test(c.args.calendar_name))
+          ? null
+          : `named calendar was dropped — args: ${writes.map((c) => JSON.stringify(c.args)).join(" | ")}`;
       }),
     ],
   }),
@@ -270,10 +289,21 @@ export const SCENARIOS: Scenario[] = [
       "Unnamed always means the default — which means omitting calendar_name.",
     world: "loaded",
     turns: ["add a call with Tiffany Souers Thursday at 3pm"],
+    // Asserted across BOTH event-writing tools, because which one runs is a
+    // different rule's call and this pin has no business deciding it: a call
+    // with another human routes through propose_invite (D-069), so pinning
+    // create_calendar_event here made this scenario fail on a turn that obeyed
+    // the invite doctrine perfectly. The invariant that actually belongs to the
+    // 2026-07-28 incident is narrower and holds for either tool — the subject
+    // of an event, and who it is with, never select a calendar.
     expect: [
-      called("create_calendar_event", {
-        describe: "with no calendar named at all",
-        ok: (a) => a.calendar_name == null,
+      check("names no calendar on whichever tool writes the event", (o) => {
+        const writes = o.calls.filter((c) => c.name === "create_calendar_event" || c.name === "propose_invite");
+        if (!writes.length) {
+          return `expected create_calendar_event or propose_invite; got ${o.calls.map((c) => c.name).join(", ") || "no tool calls"}`;
+        }
+        const named = writes.find((c) => c.args.calendar_name != null);
+        return named ? `${named.name} picked a calendar from the subject: ${JSON.stringify(named.args.calendar_name)}` : null;
       }),
     ],
   }),
@@ -290,7 +320,13 @@ export const SCENARIOS: Scenario[] = [
     ],
     expect: [
       called("move_event"),
-      calledTimes("create_calendar_event", 1),
+      // ZERO, not one. The create is a *scripted* prior assistant turn — the
+      // harness only runs the model on the last user message, so the only
+      // create_calendar_event this turn could make is the duplicate the pin
+      // exists to forbid. Asserting 1 asked for a call that cannot happen, so
+      // the scenario failed even on runs where the chat did exactly the right
+      // thing (move_event, nothing else).
+      calledTimes("create_calendar_event", 0),
     ],
   }),
 
@@ -388,8 +424,21 @@ export const SCENARIOS: Scenario[] = [
     turns: ["when's my next open hour today?"],
     expect: [
       readOnly(),
-      replyMatches(/1(:00)?\s*(pm|PM)|3(:00)?\s*(pm|PM)/, "names one of the real open windows"),
-      replyLacks(/\b9(:\d\d)?\s*(am|AM)\b/, "offers a window that is actually booked"),
+      // The windows come pre-formatted as "1:00 PM – 2:30 PM", and a correct
+      // reply renders them as a RANGE — "your next open window is 1:00–2:30 PM".
+      // The old regex demanded "pm" immediately after the hour, so every one of
+      // those correct answers failed. The chat was reading todayOpenWindows
+      // exactly as prompted; the assertion could not see it.
+      replyMatches(
+        /\b1:00\s*(?:pm|PM|[–—-])|\b3:00\s*(?:pm|PM|[–—-])|\b1\s*(?:pm|PM)\b|\b3\s*(?:pm|PM)\b/,
+        "names one of the real open windows",
+      ),
+      // Only fires when 9am is OFFERED. A reply that names 9–12 as the reason
+      // the morning is gone is right, and the blanket version failed it.
+      replyLacks(
+        /\b(open|free|available)\b[^.\n]{0,30}\b9(:\d\d)?\s*(am|AM)\b|\b9(:\d\d)?\s*(am|AM)\b[^.\n]{0,20}\b(open|free|available)\b/,
+        "offers a window that is actually booked",
+      ),
     ],
   }),
 
@@ -476,7 +525,11 @@ export const SCENARIOS: Scenario[] = [
     it: "two projects with one name become a choice the user can tap, not a question repeated back",
     because:
       "2026-08-01: the chat said 'I need the exact one' four times. The error had only ever told it the count — now it carries the candidates, and the reply has to spend them",
-    world: "loaded",
+    // The ambiguous world holds two projects with this exact name. On `loaded`
+    // the chat could read one plausible "Dayspring" project out of context and
+    // update it — which it did, silently picking one of two, and the scripted
+    // ambiguity error below never fired at all.
+    world: "ambiguous",
     turns: ["update the Dayspring support infrastructure project with a fuller description"],
     respond: (c) => {
       if (c.name !== "update_project" || c.args.project_id || c.args.in_initiative_name) return { ok: true };
@@ -501,7 +554,10 @@ export const SCENARIOS: Scenario[] = [
     it: "an answer that narrows the target gets used, not asked for again",
     because:
       "the user said 'the one tied to Get Dayspring into the Public' and got 'there are still 2 matching projects' — the disambiguator was correct and the tool layer had nowhere to put it",
-    world: "loaded",
+    // Needs a world where that initiative exists and the name really is two
+    // projects — otherwise the answer narrows nothing and the chat is right to
+    // stall.
+    world: "ambiguous",
     turns: [
       "update the Dayspring support infrastructure project with a fuller description",
       {
@@ -663,10 +719,19 @@ export const SCENARIOS: Scenario[] = [
       "with the candidates named — never an invented address.",
     world: "loaded",
     turns: ["set up lunch with Matt on Friday at noon"],
+    // The scripted result carries the DEPLOYED note, imported rather than
+    // retyped. Without it the scenario was handing the model a bare
+    // `{unresolved: […]}` and grading it on an instruction that only existed in
+    // the system prompt — which is not what the real tool sends, and not what
+    // the chat was failing at.
     respond: (call) =>
       call.name === "propose_invite"
         ? {
-          staged: [],
+          staged: true,
+          mode: "create",
+          title: "Lunch with Matt",
+          when: "Fri, Aug 7, 12:00 PM",
+          recipients: [],
           unresolved: [{
             query: "Matt",
             candidates: [
@@ -674,6 +739,7 @@ export const SCENARIOS: Scenario[] = [
               { name: "Matt Reyes", email: "mreyes@acme.example" },
             ],
           }],
+          note: inviteNote(INVITE_STAGED_NOTE, 1),
         }
         : undefined,
     expect: [

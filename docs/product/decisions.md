@@ -2150,6 +2150,103 @@ landscape) and (pointer: coarse)` media clause that routes short touch viewports
 MobileShell on every surface. Don't mistake the manifest field for behaviour again.
 *Status: standing.*
 
+**D-076 · 2026-08-02 · In Aurora the app is three planes, and the chat is the one the app
+rests on.** Phil brought a reference chat design and named the reason precisely: *"that
+subtle border that wraps the whole app conveys that this chat fully understands everything
+in the app."*
+
+**First attempt was wrong and is worth recording.** I built *two* planes — a ground, and
+one frame holding spine · work · chat side by side with a hairline between them. Phil
+caught it against the reference: *"the right chat takes that layer while the rest of the
+app is in a higher layer."* Re-reading the screenshot he was right — the backdrop photo is
+visible **through** the chat, and the document pane is an opaque card floating above it.
+Two planes flattens the whole idea; the chat has to be the substrate, not a neighbour.
+
+So: `.app-ground` (deep paper) → `.app-shell` (frosted; **the chat is printed here**) →
+`.app-canvas` (the app, raised, translucent, sliding left to *uncover* the chat). No
+divider between sheet and chat — a divider says "two panes, one plane." `.atmosphere` sits
+on the sheet with a new `--atmosphere-base` so it can go translucent without touching the
+two lights, which is where the airiness comes from. D-019 holds: still painted once, still
+continuous.
+
+**Aurora only.** The other four materials kill `backdrop-filter` wholesale and E-ink zeroes
+every shadow, so layered glass there becomes three flat rectangles pretending — worse than
+the honest edge-to-edge they had. Scoped `html:not([data-skin])`; Flat/Terminal/Blueprint/
+E-ink are untouched.
+
+**Rejected:** (a) chat as a floating glass card in its existing rail slot — contained, but
+no wrapping border, which was the entire point; (b) a true overlay slideout — covers the
+work you're asking about, wrong trade for a planner. **Learned:** deriving `--ground` by
+darkening `--bg` fails on already-dark materials — terminal's `--bg` is `rgb(11,14,10)` and
+30% black gave 0.7/255 of separation. Dark grounds step toward `--line`. *Status: standing.*
+
+**D-077 · 2026-08-02 · Only the user's line gets a bubble.** Nuvo's half of the
+conversation runs free on the paper (`.agent-turn`) — no box, no fill, generous leading.
+A reply boxed in `--surface-2` reads as a quotation from somewhere else and nests a frame
+around the record cards inside it; unboxing is just "dissolve, don't frame" (D-019's
+sibling) applied to the transcript, and it is where most of the reference design's space
+and balance actually came from. What *you* typed keeps its bubble, because a quotation is
+the one thing in the transcript that genuinely came from elsewhere. Per-turn actions
+(copy · try again) rest at `opacity: 0`, come up on hover, and stay visible on touch.
+`retry()` rewinds to just before the newest user turn so the retried answer *replaces*
+the rejected one instead of piling a duplicate question onto the transcript. One
+component, three surfaces (rail · phone `ChatPane` · ⌘K spotlight). *Status: standing.*
+
+**D-078 · 2026-08-02 · When Nuvo has the candidates, the candidates go in the sentence.**
+Any time a tool result or tool error hands the chat an enumeration of what the user might
+have meant — `Candidates:` from an ambiguous project lookup, `unresolved` from
+`propose_invite`, or simply two rows in context the words fit equally — the reply must
+**name the options in prose**, by whatever tells them apart (the initiative a project sits
+under, a person's full name), and *then* repeat them as taps. A bare "Which one?" or
+"Which Matt?" is a **failed turn**: the user is being asked a question Nuvo was already
+holding the answer to. This is what actually shipped when the rule was softer — terra put
+both initiatives in the suggestion buttons and left the message body saying only "Which
+**Build Dayspring Support Infrastructure** project should I update?". Correct buttons, and
+still the 2026-08-01 bug from the user's side. So: the `<suggestions>` block is a shortcut
+for the thumb, **never where the information lives** — it doesn't survive being read back,
+read aloud, or rendered on a surface that doesn't draw buttons. The mirror half of the rule:
+when the user answers ("the one tied to Get Dayspring into the Public"), that is a
+disambiguator, not a new topic — call the tool again with the narrowing, and never end that
+turn without it. *Status: standing.* Pinned by `structure-ambiguity-shows-the-options`,
+`structure-spends-the-answer`, `invite-asks-when-a-name-is-two-people`.
+
+**D-079 · 2026-08-02 · A tool result's instruction is a shipped constant, not prose the
+battery retypes.** `supabase/functions/agent/toolNotes.ts` (pure, zero imports) owns the
+`note` strings a tool result carries; `tools.ts` sends them and `tests/agent/scenarios.ts`
+imports the same constants for its scripted results. The invite-disambiguation scenario had
+been scripting a bare `{unresolved: […]}` while the deployed tool sent a `note` telling the
+model what to do with it — so the battery was grading the chat against a *weaker*
+instruction than production, and the pin failed for a reason production didn't have. Same
+law as the planning kernel and `prompt.ts`, one layer down: **never put a rule where the
+battery can't reach it, and never let the battery test a copy.** *Status: standing.*
+
+**D-080 · 2026-08-02 · Who an event is with never picks a calendar — and never picks the
+tool either.** The 2026-07-28 incident (a call with Tiffany Souers landing on a long-hidden
+"Women's" calendar) is pinned as an invariant over *whichever* tool writes the event, not as
+`create_calendar_event`. An event with another human routes through `propose_invite`
+(D-069/D-046), so a pin that demanded `create_calendar_event` for "add a call with Tiffany
+Souers Thursday at 3pm" was failing turns that obeyed the invite doctrine perfectly — two
+correct rules, one scenario asserting their collision. The rule that belongs to the incident
+is narrower and holds either way: **the subject of an event, and who it is with, never
+select a calendar.** A pin should assert the invariant it was born from, not the code path
+that happened to carry it that week. Applies equally to `cal-named-calendar-wins` — a
+calendar the user *named* outranks their stored default, whichever tool carries it.
+*Status: standing.*
+
+**D-081 · 2026-08-02 · A conformance expectation that a correct chat cannot satisfy is a
+bug in the battery, and it can hide the bug it was written to catch.** Four of the six
+scenarios in this pass were not chat failures at all. `avail-from-windows-only` demanded
+`pm` immediately after the hour, so every correct "1:00–2:30 PM" failed while the chat read
+`todayOpenWindows` exactly as prompted. Three more asserted `calledTimes(<tool>, 1)` for a
+call made in a **seeded `{assistant}` turn** — the harness only runs the model on the last
+user message, so that call cannot happen. On `slot-add-to-existing` that mistake was
+actively harmful: the count of 1 was satisfied *by the duplicate slot*, so the wrong number
+concealed the exact bug the scenario is named for, and it read green. The rule: when a
+scenario goes red, **establish whether the chat or the assertion is wrong before touching
+the prompt** — a prose fix aimed at a broken assertion makes the prompt worse and the score
+no better. For a "don't do it twice" pin after a seeded turn, the number is 0.
+*Status: standing.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 

@@ -27,10 +27,14 @@ const ids = {
   domHealth: "11111111-1111-4111-8111-111111111113",
   initStampede: "22222222-2222-4222-8222-222222222221",
   initDayspring: "22222222-2222-4222-8222-222222222222",
+  initDayspringPublic: "22222222-2222-4222-8222-222222222223",
+  initDayspringV2: "22222222-2222-4222-8222-222222222224",
   projStampede: "33333333-3333-4333-8333-333333333331",
   projDayspring: "33333333-3333-4333-8333-333333333332",
   projDayspringDocs: "33333333-3333-4333-8333-333333333333",
   projSermon: "33333333-3333-4333-8333-333333333334",
+  projSupportPublic: "33333333-3333-4333-8333-333333333335",
+  projSupportV2: "33333333-3333-4333-8333-333333333336",
   taskSubdomains: "44444444-4444-4444-8444-444444444441",
   taskDeploy: "44444444-4444-4444-8444-444444444442",
   taskRolled: "44444444-4444-4444-8444-444444444443",
@@ -220,13 +224,75 @@ function overloadedWorld(): AgentContext {
   };
 }
 
-export type WorldName = "loaded" | "cold" | "traveling" | "overloaded";
+/** The morning block already held — 9:00–11:00, two items inside.
+ *
+ *  `loaded` deliberately has `todaySlots: []`, which is right for the scenarios
+ *  that start from a day with none. It is wrong for the ones whose transcript
+ *  opens with "Held **Stampede push** — two items inside", because the chat is
+ *  then asked to put a third item in a block that does not exist anywhere in
+ *  its context. It creates a second block, which is the correct move given what
+ *  it can see, and the scenario reads it as the bug it was written to catch. */
+function holdingWorld(): AgentContext {
+  const w = loadedWorld();
+  return {
+    ...w,
+    todaySlots: [{
+      id: ids.slotMorning,
+      title: "Stampede push",
+      timeRange: "9:00 AM – 11:00 AM",
+      startISO: "2026-07-31T16:00:00.000Z",
+      durationMinutes: 120,
+      localDate: TODAY,
+      past: false,
+      projectId: ids.projStampede,
+      domainId: ids.domWork,
+      tasks: [
+        { id: ids.taskSubdomains, title: "Fix Stampede subdomains", status: "backlog" },
+        { id: ids.taskRolled, title: "Follow up with the ATC reviewer", status: "inbox" },
+      ],
+    }],
+  };
+}
+
+/** Two projects with the SAME name, under two initiatives — the account state
+ *  behind the 2026-08-01 "I need the exact one" conversation.
+ *
+ *  It is its own world rather than a couple of extra rows on `loaded` because
+ *  the ambiguity has to be UNRESOLVABLE from context: on `loaded` the model can
+ *  read `vertical.projects`, find one plausible "Dayspring" project and act,
+ *  which is exactly what it did — the scenario's scripted ambiguity error never
+ *  fired, and a scenario that can't reach its own failure mode is green for the
+ *  wrong reason. Here the name genuinely picks out two rows, so the chat has to
+ *  do the thing the pin is about: show the choice. */
+function ambiguousWorld(): AgentContext {
+  const w = loadedWorld();
+  return {
+    ...w,
+    vertical: {
+      ...w.vertical,
+      initiatives: [
+        ...w.vertical.initiatives,
+        { id: ids.initDayspringPublic, name: "Get Dayspring into the Public", domainId: ids.domWork, outcome: "Dayspring is public", status: "active" },
+        { id: ids.initDayspringV2, name: "Dayspring v2", domainId: ids.domWork, outcome: "v2 shipped", status: "active" },
+      ],
+      projects: [
+        ...w.vertical.projects,
+        { id: ids.projSupportPublic, name: "Build Dayspring Support Infrastructure", domainId: ids.domWork, initiativeId: ids.initDayspringPublic, outcome: "Support ready for launch", status: "backlog" },
+        { id: ids.projSupportV2, name: "Build Dayspring Support Infrastructure", domainId: ids.domWork, initiativeId: ids.initDayspringV2, outcome: "Support ready for v2", status: "backlog" },
+      ],
+    },
+  };
+}
+
+export type WorldName = "loaded" | "cold" | "traveling" | "overloaded" | "ambiguous" | "holding";
 
 const BUILDERS: Record<WorldName, () => AgentContext> = {
   loaded: loadedWorld,
   cold: coldWorld,
   traveling: travelingWorld,
   overloaded: overloadedWorld,
+  ambiguous: ambiguousWorld,
+  holding: holdingWorld,
 };
 
 /** A fresh copy every time — a scenario that mutated a shared world would make

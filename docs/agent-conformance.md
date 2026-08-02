@@ -75,11 +75,31 @@ correct agent does about it. It runs the **real** system prompt, the **real**
 message assembly, the **real** tool definitions and the **real** turn loop.
 Two things are swapped:
 
-- **The database is a fixture** (`world.ts`). Four worlds — `loaded`, `cold`,
-  `traveling`, `overloaded` — each frozen at one instant so "today" and "this
-  week" mean the same thing on every run. Fixtures rather than a live account
-  on purpose: an account-shaped test passes for reasons nobody chose
-  (Principle 16).
+- **The database is a fixture** (`world.ts`). Six worlds — `loaded`, `cold`,
+  `traveling`, `overloaded`, `ambiguous`, `holding` — each frozen at one instant
+  so "today" and "this week" mean the same thing on every run. Fixtures rather
+  than a live account on purpose: an account-shaped test passes for reasons
+  nobody chose (Principle 16).
+
+  **A scenario has to be able to reach its own failure mode, and the world has
+  to agree with the transcript.** Both extra worlds exist because it didn't.
+  `ambiguous` (two projects with one name, under two initiatives): the
+  disambiguation pins ran on `loaded`, where the chat could read one plausible
+  project out of context and just act, so the scripted ambiguity error never
+  fired. `holding` (the 9–11 block already on the day): `slot-add-to-existing`
+  opened with a seeded reply saying a block was held, on a world whose
+  `todaySlots` is empty — the chat was asked to add to a block that existed
+  nowhere it could see. If a scenario scripts an error, check the world can
+  produce it. If a seeded assistant turn claims something exists, check it does.
+
+- **A seeded `{assistant}` turn is not a tool call.** The harness runs the model
+  on the LAST user message only, so anything the earlier turns "did" happened in
+  prose. Three scenarios asserted `calledTimes(<the tool the seeded turn used>, 1)`
+  and so demanded a call that could not happen. Two of them (`cal-move-not-duplicate`,
+  `avail`-adjacent) simply failed correct behavior; the third
+  (`slot-add-to-existing`) was worse — the count of 1 was *satisfied by the
+  duplicate*, so the wrong expectation hid the exact bug the scenario is named
+  for. For a "don't do it twice" pin the number is **0**.
 - **Tool calls are recorded, not executed.** A scenario asserts on what the
   agent *decided to do*, which is where chat bugs live. The handlers are
   ordinary code and are tested as ordinary code.

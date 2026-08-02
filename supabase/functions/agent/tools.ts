@@ -13,6 +13,7 @@ import { executeVerticalTool } from "./verticalTools.ts";
 // the edge handler keep one import site.
 import { isVerticalTool, type MarqueeDirective } from "./toolDefs.ts";
 import { targetError } from "./toolGuards.ts";
+import { INVITE_GUESTS_STAGED_NOTE, INVITE_STAGED_NOTE, inviteNote } from "./toolNotes.ts";
 import { checkConfirmation } from "./confirmDestructive.ts";
 export { buildPointAtTool, TOOL_DEFINITIONS } from "./toolDefs.ts";
 export type { MarqueeDirective, MarqueeTargetSpec } from "./toolDefs.ts";
@@ -1020,8 +1021,7 @@ async function stageInvite(
         recipients: fresh.map((r) => r.name ?? r.email),
         alreadyOnIt: onIt.map((r) => r.name ?? r.email),
         unresolved,
-        note:
-          "Nothing has been sent. A confirmation card is now in the chat with Send invite / Add without emailing. Tell them it's there in one line. If unresolved is non-empty, ask which person they meant — offer the candidates as suggestions.",
+        note: inviteNote(INVITE_GUESTS_STAGED_NOTE, unresolved.length),
       }),
       invite,
     };
@@ -1077,8 +1077,7 @@ async function stageInvite(
       addMeet,
       recipients: recipients.map((r) => r.name ?? r.email),
       unresolved,
-      note:
-        "Nothing has been created or sent — the event does not exist yet. A confirmation card is now in the chat with Send invite / Add without emailing, and the event is created when they tap. Tell them it's there in one line, naming who and when. If unresolved is non-empty, ask which person they meant — offer the candidates as suggestions.",
+      note: inviteNote(INVITE_STAGED_NOTE, unresolved.length),
     }),
     invite,
   };

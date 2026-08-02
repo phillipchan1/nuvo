@@ -376,27 +376,46 @@ export function createChatClient(cfg: ChatClientConfig): ChatClient {
   //          gpt-5.6-terra in /v1/chat/completions. To use function tools, use
   //          /v1/responses or set reasoning_effort to 'none'."
   //
-  // Nuvo's agent turn ALWAYS carries tools, so honouring AGENT_REASONING here
-  // would 400 every single message — which is exactly what it did the first
-  // time it was set. Reasoning is dropped whenever tools are present rather
-  // than passed through and allowed to fail: a config mistake should cost the
-  // setting, never the chat. Getting reasoning back means moving this
-  // transport to /v1/responses, which is a real port, not a flag.
+  // The trap, and it cost a fully-broken chat once already: **omitting the
+  // parameter is not the same as switching it off.** gpt-5.6 reasons BY
+  // DEFAULT, so a request that simply leaves reasoning_effort out still arrives
+  // with reasoning on, and still 400s. The first fix here dropped the param
+  // whenever tools were present and looked right in every unit test — the
+  // deployed chat kept failing on every single message, because the model's own
+  // default was the thing colliding, not our setting.
   //
-  // Dropping it also means the temperature floor survives, which is what the
-  // battery relies on to measure the prompt instead of sampling noise.
+  // Read the provider's remediation literally: *set* it to "none". Verified
+  // against the live API (gpt-5.6-terra, /v1/chat/completions):
+  //
+  //   tools + omitted             → 400
+  //   tools + "none"              → 200
+  //   tools + "none" + temperature → 200   (the battery's floor survives)
+  //   no tools + "high"           → 200   (real reasoning is still reachable)
+  //
+  // So: with tools, send "none" explicitly. Without tools, AGENT_REASONING is
+  // honoured for real. Getting reasoning back *alongside* tools means moving
+  // this transport to /v1/responses, which is a real port, not a flag.
+  //
+  // Gated on the model, not the base URL: this is a property of the gpt-5
+  // family (it reasons unless told not to), so it follows that model through
+  // whichever host serves it, and never gets bolted onto a Qwen turn that has
+  // no such parameter.
   const wantsReasoning = Boolean(cfg.reasoningEffort && cfg.reasoningEffort !== "none");
+  const reasonsByDefault = /^gpt-5/i.test(cfg.model);
   let warnedAboutReasoning = false;
 
   const body = (messages: ChatMessage[], tools: unknown[], stream: boolean) => {
     const hasTools = Array.isArray(tools) && tools.length > 0;
-    const useReasoning = wantsReasoning && !hasTools;
+    // Real reasoning is only reachable on a turn that carries no tools.
+    const realReasoning = wantsReasoning && !hasTools ? cfg.reasoningEffort : undefined;
+    // With tools, the default has to be switched off out loud.
+    const effort = realReasoning ?? (hasTools && reasonsByDefault ? "none" : undefined);
     if (wantsReasoning && hasTools && !warnedAboutReasoning) {
       warnedAboutReasoning = true;
       console.warn(
         `[agent] AGENT_REASONING=${cfg.reasoningEffort} ignored: /v1/chat/completions ` +
-          `rejects reasoning_effort alongside function tools. Unset it, or port the ` +
-          `transport to /v1/responses.`,
+          `rejects reasoning_effort alongside function tools, so this turn is sent ` +
+          `with reasoning_effort="none". Unset it, or port the transport to /v1/responses.`,
       );
     }
     return JSON.stringify({
@@ -404,11 +423,9 @@ export function createChatClient(cfg: ChatClientConfig): ChatClient {
       messages,
       tools,
       tool_choice: "auto",
-      ...(useReasoning
-        ? { reasoning_effort: cfg.reasoningEffort }
-        : cfg.temperature != null
-        ? { temperature: cfg.temperature }
-        : {}),
+      ...(effort ? { reasoning_effort: effort } : {}),
+      // Temperature travels except when real reasoning is doing the sampling.
+      ...(!realReasoning && cfg.temperature != null ? { temperature: cfg.temperature } : {}),
       ...(stream ? { stream: true } : {}),
     });
   };
