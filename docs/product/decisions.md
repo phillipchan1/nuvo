@@ -2129,6 +2129,16 @@ takes-its-projects-with-it cascade for initiatives. The record no longer links *
 domain screen (desktop doesn't either); domain records stay reachable from global search.
 Head height above the hero fell from ~135px to 81px. *Status: standing.*
 
+**D-074 · 2026-08-02 · A bet is measurable from the phone.** Auditing D-073 across both
+altitudes: the project record could be worked (tasks add / toggle / delete) but the
+initiative record's **key results were read-only, and the section vanished when there
+were none** — so a bet could never be made measurable from a phone, and "Measured" was a
+readiness axis only a desktop could satisfy. The KR section is now always present with a
+composer, and each result edits in place: name, current, target, unit, delete. Attainment
+rides the section rule, matching the desktop record's `Sec`. Every section on all three
+mobile records now uses one grammar — label · optional meter · the rule that doubles as
+progress — instead of counts baked into the label text. *Status: standing.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 

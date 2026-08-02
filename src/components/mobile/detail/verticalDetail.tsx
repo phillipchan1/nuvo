@@ -20,6 +20,7 @@ import {
   domainById,
   faithfulness,
   initiativeById,
+  initiativeAttainment,
   initiativeProgress,
   initiativesOf,
   looseProjectsOf,
@@ -29,6 +30,7 @@ import {
   projectsOf,
   tasksOf,
   type Initiative,
+  type KeyResult,
   type Momentum,
   type Project,
   type ProjectStatus,
@@ -239,7 +241,7 @@ export function DomainScreen({
         </div>
       </Section>
 
-      <Section label={`Initiatives · ${inits.length}`}>
+      <Section label="Initiatives" meter={inits.length ? String(inits.length) : null}>
         {inits.length === 0 ? (
           <Hint>No initiatives in this domain.</Hint>
         ) : (
@@ -252,7 +254,7 @@ export function DomainScreen({
       </Section>
 
       {loose.length > 0 && (
-        <Section label={`Projects (no initiative) · ${loose.length}`}>
+        <Section label="Projects (no initiative)" meter={String(loose.length)}>
           <CardList>
             {loose.map((p) => (
               <ProjectRow key={p.id} d={d} p={p} onClick={() => onOpenProject(p.id)} />
@@ -261,7 +263,7 @@ export function DomainScreen({
         </Section>
       )}
 
-      <Section label={looseTasks.length ? `Parked here · ${looseTasks.length}` : "Parked here"}>
+      <Section label="Parked here" meter={looseTasks.length ? String(looseTasks.length) : null}>
         {looseTasks.length > 0 && (
           <CardList>
             {looseTasks.map((t) => (
@@ -303,6 +305,7 @@ export function InitiativeScreen({
   const accent = dom?.color ?? "var(--accent)";
   const projects = projectsOf(d, i.id);
   const looseTasks = looseTasksOfInitiative(d, i.id);
+  const attainment = i.keyResults.length ? initiativeAttainment(d, i) : null;
 
   return (
     <div className="px-4 pt-1">
@@ -321,27 +324,36 @@ export function InitiativeScreen({
         <QuarterField i={i} store={store} />
       </Section>
 
-      {i.keyResults.length > 0 && (
-        <Section label="Key results">
+      {/* A bet with no key results can never read as measured, so the section
+          is always here with a way in — the phone's twin of the desktop
+          record's KR list, which has had a composer all along. */}
+      <Section
+        label="Key results"
+        meter={attainment != null ? `${attainment}%` : null}
+        fill={attainment}
+        accent={accent}
+      >
+        {i.keyResults.length > 0 && (
           <CardList>
-            {i.keyResults.map((kr) => {
-              const span = kr.target - kr.baseline;
-              const krPct = span === 0 ? 0 : Math.round(((kr.current - kr.baseline) / span) * 100);
-              return (
-                <div key={kr.id} className="px-3 py-2.5">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-body font-medium">{kr.name}</span>
-                    <span className="mono shrink-0 text-caption text-muted">
-                      {kr.current}/{kr.target} {kr.unit}
-                    </span>
-                  </div>
-                  <ProgressBar pct={krPct} color={accent} />
-                </div>
-              );
-            })}
+            {i.keyResults.map((kr) => (
+              <KeyResultRow
+                key={kr.id}
+                kr={kr}
+                accent={accent}
+                onPatch={(patch) => store.updateKeyResult(i.id, kr.id, patch)}
+                onDelete={() => store.deleteKeyResult(i.id, kr.id)}
+              />
+            ))}
           </CardList>
-        </Section>
-      )}
+        )}
+        <button
+          onClick={() => store.addKeyResult(i.id)}
+          className="tap fast mt-2 flex w-full items-center gap-3 rounded-xl border border-dashed border-line px-3 text-left"
+        >
+          <span className="shrink-0 text-body" style={{ color: accent }}>＋</span>
+          <span className="flex-1 py-2.5 text-body text-muted">Add a key result…</span>
+        </button>
+      </Section>
 
       <Section
         label="Projects"
@@ -360,7 +372,7 @@ export function InitiativeScreen({
         )}
       </Section>
 
-      <Section label={looseTasks.length ? `Loose tasks · ${looseTasks.length}` : "Loose tasks"}>
+      <Section label="Loose tasks" meter={looseTasks.length ? String(looseTasks.length) : null}>
         {looseTasks.length > 0 && (
           <CardList>
             {looseTasks.map((t) => (
@@ -599,6 +611,79 @@ export function TaskComposer({
   );
 }
 
+/** One key result, editable on a phone: the name, the number that moved, the
+ *  number you're chasing, and the unit. `current` is the field you actually come
+ *  back to, so it carries the accent and sits first. */
+export function KeyResultRow({
+  kr,
+  accent,
+  onPatch,
+  onDelete,
+}: {
+  kr: KeyResult;
+  accent: string;
+  onPatch: (patch: Partial<KeyResult>) => void;
+  onDelete: () => void;
+}) {
+  const span = kr.target - kr.baseline;
+  const pct = span === 0 ? 0 : Math.round(((kr.current - kr.baseline) / span) * 100);
+  return (
+    <div className="px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <TextField
+          className="min-w-0 flex-1 text-body font-medium"
+          value={kr.name}
+          onCommit={(v) => onPatch({ name: v })}
+        />
+        <button
+          onClick={onDelete}
+          aria-label={`Delete ${kr.name || "key result"}`}
+          className="tap-icon fast flex shrink-0 items-center justify-center text-caption text-muted active:text-signal"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="mono mt-1.5 flex items-center gap-1.5 text-caption text-muted">
+        <KrNumber value={kr.current} accent={accent} onCommit={(v) => onPatch({ current: v })} />
+        <span className="opacity-50">/</span>
+        <KrNumber value={kr.target} onCommit={(v) => onPatch({ target: v })} />
+        <input
+          defaultValue={kr.unit}
+          key={kr.unit}
+          placeholder="unit"
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v !== kr.unit) onPatch({ unit: v });
+          }}
+          // takes the slack rather than a fixed width — "sessions" was clipped
+          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted/50"
+        />
+        <span className="ml-auto shrink-0 tabular-nums" style={{ color: accent }}>{pct}%</span>
+      </div>
+      <ProgressBar pct={pct} color={accent} />
+    </div>
+  );
+}
+
+/** A number you can actually hit with a thumb — `inputMode` opens the numeric
+ *  keypad instead of the full keyboard. */
+function KrNumber({ value, accent, onCommit }: { value: number; accent?: string; onCommit: (v: number) => void }) {
+  return (
+    <input
+      key={value}
+      type="number"
+      inputMode="decimal"
+      defaultValue={value}
+      onBlur={(e) => {
+        const next = Number(e.target.value);
+        if (!Number.isNaN(next) && next !== value) onCommit(next);
+      }}
+      className="w-12 shrink-0 bg-transparent tabular-nums outline-none"
+      style={accent ? { color: accent } : undefined}
+    />
+  );
+}
+
 export function Row({
   leading,
   title,
@@ -669,19 +754,6 @@ export function ProgressBar({ pct, color }: { pct: number; color: string }) {
         className="fast absolute inset-y-0 left-0 rounded-full"
         style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }}
       />
-    </div>
-  );
-}
-
-export function StatusChips({ value, onPick }: { value: ProjectStatus; onPick: (s: ProjectStatus) => void }) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {STATUS.map((s) => (
-        <Chip key={s} on={value === s} onClick={() => onPick(s)}>
-          <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: STATUS_COLOR[s] }} />
-          {STATUS_LABEL[s]}
-        </Chip>
-      ))}
     </div>
   );
 }
@@ -994,17 +1066,6 @@ export function ParentCrumb({ children, onClick }: { children: ReactNode; onClic
   );
 }
 
-export function Card({ children, accent }: { children: ReactNode; accent?: string }) {
-  return (
-    <div
-      className="rounded-xl border border-line bg-surface-2 p-3"
-      style={accent ? { boxShadow: `inset 3px 0 0 0 ${accent}` } : undefined}
-    >
-      {children}
-    </div>
-  );
-}
-
 export function CardList({ children }: { children: ReactNode }) {
   return <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface-2">{children}</div>;
 }
@@ -1064,17 +1125,4 @@ export function Hint({ children }: { children: ReactNode }) {
 
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="px-4 py-16 text-center text-body text-muted">{children}</div>;
-}
-
-export function Breadcrumb({ children }: { children: ReactNode }) {
-  return <div className="mono mb-2 flex flex-wrap items-center gap-1.5 text-caption text-muted">{children}</div>;
-}
-
-// A tappable breadcrumb segment — climb up the hierarchy on demand.
-export function Crumb({ children, onClick }: { children: ReactNode; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="tap fast -my-1 truncate py-1 active:text-accent">
-      {children}
-    </button>
-  );
 }
