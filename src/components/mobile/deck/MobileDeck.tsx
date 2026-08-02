@@ -30,8 +30,12 @@ import InlineAdd from "../../ondeck/InlineAdd";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "../../ondeck/plannerNow";
 import { EDGE_GUARD_PX } from "../swipe";
 
-const LONG_PRESS_MS = 260;
-const CANCEL_PX = 10;
+// 260ms/10px picked up cards during ordinary scroll starts — a flick's first
+// frames often sit still longer than 260ms with <10px of travel. 450ms with a
+// wider wobble allowance only fires on a deliberate hold, and the arming ramp
+// (CardShell) makes the wait legible.
+const LONG_PRESS_MS = 450;
+const CANCEL_PX = 14;
 // The pool cell in the strip doubles as the coverage strip's label gutter, so a
 // lit coverage cell sits directly under its column.
 const GUTTER_PX = 46;
@@ -124,6 +128,9 @@ export default function MobileDeck({
   const [compose, setCompose] = useState<{ col: number; domain: Domain | null } | null>(null);
   const [drag, setDrag] = useState<{ id: string; name: string; dot: string; x: number; y: number } | null>(null);
   const [target, setTarget] = useState<number | "pool" | null>(null);
+  // The card being held but not yet picked up — drives the visible arming ramp
+  // so the long-press wait reads as "keep holding" instead of a dead delay.
+  const [arming, setArming] = useState<string | null>(null);
 
   // Land on the opening page once mounted (the pager starts at scrollLeft 0).
   const landed = useRef(false);
@@ -177,6 +184,7 @@ export default function MobileDeck({
       window.removeEventListener("pointercancel", up);
       window.removeEventListener("touchmove", blockScroll);
       document.body.classList.remove("deck-dragging");
+      setArming(null);
     };
 
     const hitTest = (x: number, y: number): number | "pool" | null => {
@@ -234,11 +242,13 @@ export default function MobileDeck({
       document.body.classList.add("deck-dragging");
       window.addEventListener("touchmove", blockScroll, { passive: false });
       navigator.vibrate?.(8);
+      setArming(null);
       setDrag({ id: card.id, name: card.name, dot: card.dot, x: origin.x, y: origin.y });
       setTarget(card.col ?? "pool");
       targetRef.current = card.col ?? "pool";
     }, LONG_PRESS_MS);
 
+    setArming(card.id);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
@@ -249,6 +259,11 @@ export default function MobileDeck({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/* Where the pager landed, for screen readers — the visual strip alone
+          is silent about page changes. */}
+      <span className="sr-only" aria-live="polite">
+        {page === 0 ? poolLabel : columns[page - 1]?.title}
+      </span>
       <DeckCrownFace crown={crown} />
 
       <ColumnStrip
@@ -304,6 +319,7 @@ export default function MobileDeck({
                     key={c.id}
                     card={c}
                     lifted={drag?.id === c.id}
+                    arming={arming === c.id}
                     onPress={startPress}
                     justDragged={justDragged}
                   />
@@ -344,6 +360,7 @@ export default function MobileDeck({
                     key={`${c.id}:${i}`}
                     card={c}
                     lifted={drag?.id === c.id}
+                    arming={arming === c.id}
                     onPress={startPress}
                     justDragged={justDragged}
                   />
@@ -406,33 +423,46 @@ export default function MobileDeck({
 }
 
 // ── the crown — readiness, execution voice (PlannerRail's, at phone width) ─────
+// One line by default: an 812px screen was spending ~600px on chrome before the
+// first card, so the read collapses to a single tappable summary and the
+// progress bar + "needs shaping" jump live behind it.
 function DeckCrownFace({ crown }: { crown: DeckCrown }) {
+  const [open, setOpen] = useState(false);
   const pct = crown.total > 0 ? (crown.done / crown.total) * 100 : 0;
   return (
-    <div className="shrink-0 border-b border-line px-4 pb-2.5 pt-3">
-      <div className="section-label !px-0 !pb-0" style={{ color: "var(--accent)" }}>
-        {crown.eyebrow}
-      </div>
-      {crown.total === 0 ? (
-        <div className="mt-1 text-body text-muted">Nothing on the board yet</div>
-      ) : (
-        <div className="mt-1.5 flex items-center gap-2.5">
-          <span className="shrink-0 text-body">
-            <span className="mono font-medium text-ink">{crown.done}</span>
-            <span className="text-muted"> of </span>
-            <span className="mono font-medium text-ink">{crown.total}</span>
-            <span className="text-muted"> {crown.noun}</span>
+    <div className="shrink-0 border-b border-line px-4 pb-2 pt-2">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="tap fast flex w-full items-center gap-2 text-left"
+      >
+        <span className="section-label !p-0" style={{ color: "var(--accent)" }}>
+          {crown.eyebrow}
+        </span>
+        {crown.total === 0 ? (
+          <span className="text-caption text-muted">nothing on the board yet</span>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-caption text-muted">
+            <span className="mono font-medium text-ink">{crown.done}</span>/
+            <span className="mono">{crown.total}</span> {crown.noun}
+            {crown.gap ? ` · ${crown.gap.label}` : ""}
           </span>
+        )}
+        <span className="mono ml-auto shrink-0 text-micro text-muted">{open ? "▾" : "▸"}</span>
+      </button>
+
+      {open && crown.total > 0 && (
+        <div className="mt-1.5 flex items-center gap-2.5">
           <span className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
             <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "var(--accent)" }} />
           </span>
         </div>
       )}
-      {crown.gap && (
+      {open && crown.gap && (
         <button
           onClick={crown.gap.onJump}
           disabled={!crown.gap.onJump}
-          className="tap fast mt-2 flex w-full items-center gap-2 border-t border-line pt-2 text-left"
+          className="tap fast mt-1.5 flex w-full items-center gap-2 border-t border-line pt-1.5 text-left"
         >
           <span className="shrink-0 text-caption text-muted">{crown.gap.label}</span>
           {crown.gap.detail && (
@@ -481,11 +511,15 @@ function ColumnStrip({
       >
         ‹
       </button>
+      <div role="tablist" aria-label="Deck pages" className="flex min-w-0 flex-1 items-stretch">
       {/* the pool cell — same width as the coverage gutter beneath it */}
       <button
         data-deck-col="pool"
+        role="tab"
+        aria-selected={page === 0}
         onClick={() => goto(0)}
         title={poolLabel}
+        aria-label={poolLabel}
         style={{ width: GUTTER_PX }}
         className={`fast relative flex shrink-0 flex-col items-center justify-center gap-0.5 border-r border-line py-2 ${
           page === 0 ? "text-accent" : "text-muted"
@@ -513,8 +547,11 @@ function ColumnStrip({
           <button
             key={c.key}
             data-deck-col={i}
+            role="tab"
+            aria-selected={on}
             onClick={() => goto(i + 1)}
             title={c.title}
+            aria-label={`${c.title}, ${c.load} of ${c.cap}`}
             className="fast relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 border-r border-line px-1 py-2 last:border-r-0"
             style={{
               background: isTarget
@@ -549,6 +586,7 @@ function ColumnStrip({
           </button>
         );
       })}
+      </div>
       <button
         type="button"
         onClick={() => goto(Math.min(pageCount - 1, page + 1))}
@@ -595,11 +633,14 @@ function ColumnHead({ col }: { col: DeckColumn }) {
 function CardShell({
   card,
   lifted,
+  arming,
   onPress,
   justDragged,
 }: {
   card: DeckCard;
   lifted: boolean;
+  /** held but not yet picked up — the visible arming ramp. */
+  arming: boolean;
   onPress: (e: React.PointerEvent, card: DeckCard) => void;
   justDragged: React.MutableRefObject<number>;
 }) {
@@ -612,7 +653,7 @@ function CardShell({
           e.stopPropagation();
         }
       }}
-      className="fast relative select-none"
+      className={`relative select-none ${arming ? "deck-arming" : "fast"}`}
       style={lifted ? { opacity: 0.35 } : undefined}
     >
       {card.node}
@@ -674,25 +715,30 @@ function CoverageBand({
   };
   const covered = rows.filter((r) => r.cells.some((c) => c > 0)).length;
 
+  // Plain language, not palette knowledge: a collapsed row of coloured dots
+  // only reads if you've memorised which hue is which domain. Name the first
+  // couple of domains with a status word instead; the rest sit behind the
+  // count expander.
+  const statusOf = (r: { cells: number[] }): string => {
+    const first = r.cells.findIndex((c) => c > 0);
+    if (first === -1) return "idle";
+    if (columns[first]?.now) return "now";
+    return columns[first]?.chip ?? "later";
+  };
+
   return (
     <div className="shrink-0 border-b border-line">
       <button onClick={toggle} className="tap fast flex w-full items-center gap-2 px-4 py-1.5 text-left">
         <span className="section-label !px-0 !pb-0">Coverage</span>
-        {/* the summary IS the read when collapsed: a dot per tracked domain, lit
-            where that domain carries work somewhere in the horizon */}
-        <span className="flex items-center gap-1">
-          {rows.map((r) => {
-            const lit = r.cells.some((c) => c > 0);
-            return (
-              <span
-                key={r.domain.id}
-                className="h-1.5 w-1.5 rounded-full"
-                style={lit ? { background: r.domain.color } : { background: "var(--line-strong)", opacity: 0.45 }}
-              />
-            );
-          })}
+        <span className="min-w-0 flex-1 truncate text-micro text-muted">
+          {rows.slice(0, 2).map((r, i) => (
+            <span key={r.domain.id}>
+              {i > 0 && " · "}
+              <span style={{ color: r.domain.color }}>{r.domain.name}</span> {statusOf(r)}
+            </span>
+          ))}
         </span>
-        <span className="mono ml-auto text-micro text-muted">
+        <span className="mono ml-auto shrink-0 text-micro text-muted">
           {covered}/{rows.length} {open ? "▾" : "▸"}
         </span>
       </button>

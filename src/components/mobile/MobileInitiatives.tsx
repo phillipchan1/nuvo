@@ -30,6 +30,7 @@ import { weeksBetween } from "../../lib/week";
 import { domainById, type Domain, type Initiative, type VerticalData } from "../../lib/vertical";
 import { DomainPicker } from "../floors/parts";
 import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
+import SkeletonRows from "./Skeleton";
 // One card across both shells — the phone must not invent its own grammar (D-048).
 import PlannerCard, { type DeckTone } from "../ondeck/DeckCard";
 import { initiativeCardStatus, initiativeWeight } from "../ondeck/deckStatus";
@@ -50,7 +51,7 @@ export default function MobileInitiatives({
 }: {
   onOpenItem: (kind: "project" | "initiative" | "domain", id: string) => void;
 }) {
-  const { data: d, updateInitiative, updateProject, addInitiative } = useVertical();
+  const { data: d, ready, updateInitiative, updateProject, addInitiative } = useVertical();
   const [maxPerQuarter] = useMaxPerQuarter();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readInitiativeDeck(d, now, HORIZON_QUARTERS), [d, now]);
@@ -190,7 +191,9 @@ export default function MobileInitiatives({
     <div className="flex h-full min-h-0 flex-col">
       <SegHeader seg={seg} setSeg={setSeg} />
 
-      {seg === "all" ? (
+      {!ready ? (
+        <SkeletonRows rows={4} />
+      ) : seg === "all" ? (
         <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto fab-clear">
           <VerticalList
             d={d}

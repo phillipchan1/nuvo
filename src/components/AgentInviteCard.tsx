@@ -183,7 +183,7 @@ export default function AgentInviteCard({ draft }: { draft: InviteDraft }) {
             type="button"
             onClick={() => run(true)}
             disabled={busy || !recipients.length}
-            className="fast tap inline-flex flex-1 items-center justify-center rounded-[var(--radius)] bg-accent px-3 py-2.5 text-caption font-semibold text-on-accent shadow-[var(--shadow-1)] transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="fast tap inline-flex flex-1 items-center justify-center rounded-[var(--radius)] bg-accent px-3 py-2.5 text-caption font-semibold text-on-accent shadow-[var(--shadow-1)] transition-opacity hover:opacity-90 disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
           >
             {busy ? "Sending…" : recipients.length > 1 ? `Send to ${recipients.length}` : "Send invite"}
           </button>

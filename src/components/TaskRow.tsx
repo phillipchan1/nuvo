@@ -174,6 +174,7 @@ export default function TaskRow({
   onAcceptSuggestion,
   onDismissSuggestion,
   now,
+  swipeActions,
 }: {
   task: Task;
   labels: Label[];
@@ -205,6 +206,11 @@ export default function TaskRow({
   /** The surface's ticking clock. Passed so a row can never disagree with the
    *  group it was sorted into — both sides must judge "overdue" off one now. */
   now?: Date;
+  /** Mobile-only: horizontal swipe actions — right completes (the same bloom
+   *  path as the checkbox), left defers via this handler (snooze, with its own
+   *  undo toast). Pointer events, never HTML5 DnD (Tauri swallows it). Omitted
+   *  on desktop, where the row is byte-identical to before. */
+  swipeActions?: { onDefer: () => void };
 }) {
   const [completing, setCompleting] = useState(false);
   const completeTimer = useRef<number | null>(null);
@@ -264,8 +270,71 @@ export default function TaskRow({
       e.stopPropagation();
       return;
     }
+    // The release that ended a swipe must not also open the task.
+    if (Date.now() - justSwiped.current < 400) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     onOpen(e.currentTarget.getBoundingClientRect());
   };
+
+  // ── mobile swipe actions ──────────────────────────────────────────────────
+  // Engages only once travel is clearly horizontal (2:1, >12px) — a vertical
+  // wobble hands the touch back to the list scroll — and never from the 24px
+  // left edge that belongs to the iOS back gesture. Below SWIPE_FIRE_PX the
+  // row snaps back and nothing fires.
+  const SWIPE_FIRE_PX = 60;
+  const swipe = useRef<{ x: number; y: number; id: number; engaged: boolean } | null>(null);
+  const [swipeX, setSwipeX] = useState(0);
+  const [swipeSnap, setSwipeSnap] = useState(false);
+  const justSwiped = useRef(0);
+
+  const onSwipeDown = (e: React.PointerEvent) => {
+    if (!swipeActions || e.pointerType === "mouse") return;
+    if (e.clientX < 24) return;
+    swipe.current = { x: e.clientX, y: e.clientY, id: e.pointerId, engaged: false };
+    setSwipeSnap(false);
+  };
+  const onSwipeMove = (e: React.PointerEvent) => {
+    const s = swipe.current;
+    if (!s) return;
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    if (!s.engaged) {
+      if (Math.abs(dy) > 14) {
+        swipe.current = null;
+        return;
+      }
+      if (Math.abs(dx) > 12 && Math.abs(dx) > 2 * Math.abs(dy)) {
+        s.engaged = true;
+        e.currentTarget.setPointerCapture(s.id);
+      } else {
+        return;
+      }
+    }
+    setSwipeX(Math.max(-120, Math.min(120, dx)));
+  };
+  const onSwipeUp = (e: React.PointerEvent) => {
+    const s = swipe.current;
+    swipe.current = null;
+    if (!s?.engaged) return;
+    const dx = e.clientX - s.x;
+    setSwipeSnap(true);
+    setSwipeX(0);
+    if (Math.abs(dx) < SWIPE_FIRE_PX) return;
+    justSwiped.current = Date.now();
+    if (dx > 0) toggle();
+    else swipeActions?.onDefer();
+  };
+  const swipeHandlers = swipeActions
+    ? {
+        onPointerDown: onSwipeDown,
+        onPointerMove: onSwipeMove,
+        onPointerUp: onSwipeUp,
+        onPointerCancel: onSwipeUp,
+      }
+    : {};
 
   // Format do_date relative
   const dateLabel = (() => {
@@ -401,12 +470,39 @@ export default function TaskRow({
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onContextMenu={onContextMenu}
+      {...swipeHandlers}
       title={rowHint}
       className={`fast group cursor-pointer select-none border-b border-line px-3.5 py-2.5 last:border-b-0 ${
         completing ? "task-completing" : ""
-      } ${dragging ? "row-dragging" : bg}`}
+      } ${dragging ? "row-dragging" : bg} ${swipeActions ? "relative overflow-hidden" : ""}`}
+      style={swipeActions ? { touchAction: "pan-y" } : undefined}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      {swipeActions && swipeX !== 0 && (
+        <div
+          aria-hidden
+          className="absolute inset-0 flex items-center justify-between px-4 text-caption font-medium"
+          style={{
+            background:
+              swipeX > 0
+                ? "color-mix(in srgb, var(--ok) 16%, transparent)"
+                : "color-mix(in srgb, var(--accent) 12%, transparent)",
+          }}
+        >
+          <span style={{ color: "var(--ok)", opacity: swipeX > 0 ? 1 : 0 }}>✓ done</span>
+          <span style={{ color: "var(--accent)", opacity: swipeX < 0 ? 1 : 0 }}>tomorrow ↷</span>
+        </div>
+      )}
+      <div
+        className="flex min-w-0 items-center gap-3"
+        style={
+          swipeActions
+            ? {
+                transform: `translateX(${swipeX}px)`,
+                transition: swipeSnap ? "transform 180ms var(--ease-out)" : undefined,
+              }
+            : undefined
+        }
+      >
         <button
           aria-label={done ? "Mark not done" : "Mark done"}
           onClick={(e) => { e.stopPropagation(); toggle(); }}

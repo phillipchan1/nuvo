@@ -60,7 +60,7 @@ export function PlanChooser({ cta = "Continue to checkout" }: { cta?: string }) 
         type="button"
         disabled={busy}
         onClick={go}
-        className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-4 py-3 text-body font-medium text-on-accent shadow-sm hover:brightness-110 active:translate-y-px disabled:opacity-50"
+        className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-4 py-3 text-body font-medium text-on-accent shadow-sm hover:brightness-110 active:translate-y-px disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
       >
         {busy ? "Taking you to checkout…" : cta}
       </button>

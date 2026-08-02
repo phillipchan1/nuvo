@@ -9,6 +9,7 @@ import { toDateISO } from "../../lib/dates";
 import { useWeekReport } from "../../hooks/useWeekReport";
 import { isRevealReady, isAcknowledged, acknowledge as ackReveal, readRevealConfig } from "../../lib/weekReveal";
 import { WeekPlanBody } from "../floors/WeekPlanFloor";
+import { PlanWeekCard } from "./MobilePlanWeek";
 import WeekStory from "../floors/WeekStory";
 import WeekEmblem from "../floors/WeekEmblem";
 import WeekArchiveGallery from "../floors/WeekArchiveGallery";
@@ -19,7 +20,7 @@ function weekLabelOf(weekISO: string): string {
   return `${format(s, "MMM d")} – ${format(e, s.getMonth() === e.getMonth() ? "d" : "MMM d")}`;
 }
 
-export default function WeekPlanCard() {
+export default function WeekPlanCard({ variant = "card" }: { variant?: "card" | "link" }) {
   const now = useMemo(() => new Date(), []);
   const currentWeekISO = useMemo(() => toDateISO(startOfWeek(now, { weekStartsOn: 1 })), [now]);
   const report = useWeekReport(currentWeekISO, now);
@@ -31,6 +32,22 @@ export default function WeekPlanCard() {
     if (reviewReady) ackReveal(currentWeekISO);
     setOpen(true);
   };
+
+  if (variant === "link") {
+    return (
+      <div>
+        <button
+          onClick={openSheet}
+          className="tap fast -my-1 px-1 text-left text-caption font-medium text-accent underline-offset-2 active:underline"
+        >
+          {total > 0 ? `This week — ${report.landedCount} of ${total} landed ›` : "See the week's plan ›"}
+        </button>
+        {open && (
+          <WeekPlanSheet currentWeekISO={currentWeekISO} now={now} onClose={() => setOpen(false)} storyFirst={reviewReady} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -59,6 +76,36 @@ export default function WeekPlanCard() {
 
       {open && <WeekPlanSheet currentWeekISO={currentWeekISO} now={now} onClose={() => setOpen(false)} storyFirst={reviewReady} />}
     </div>
+  );
+}
+
+/**
+ * The Week segment's companion pair with ONE primary per state (three identical
+ * chevron cards used to fight the FAB for the same eye):
+ *   review ready        → the Review card leads, planning demotes to a link;
+ *   week not yet planned → Plan the week leads, the plan view is a link;
+ *   week planned         → the week's plan card leads, adjusting is a link.
+ */
+export function WeekCompanions({ onOpenPlan }: { onOpenPlan: () => void }) {
+  const now = useMemo(() => new Date(), []);
+  const currentWeekISO = useMemo(() => toDateISO(startOfWeek(now, { weekStartsOn: 1 })), [now]);
+  const report = useWeekReport(currentWeekISO, now);
+  const reviewReady = isRevealReady(now, currentWeekISO, readRevealConfig()) && !isAcknowledged(currentWeekISO);
+  const planned = report.priorityTotal > 0;
+
+  if (reviewReady || planned) {
+    return (
+      <>
+        <WeekPlanCard />
+        <PlanWeekCard onOpen={onOpenPlan} variant="link" />
+      </>
+    );
+  }
+  return (
+    <>
+      <PlanWeekCard onOpen={onOpenPlan} />
+      <WeekPlanCard variant="link" />
+    </>
   );
 }
 

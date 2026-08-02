@@ -373,6 +373,18 @@ function MonthView({
         ))}
       </div>
 
+      {/* What the density dots mean — colour alone is not a legend. */}
+      <div aria-hidden className="flex items-center justify-center gap-3 px-4 pt-1.5">
+        <span className="flex items-center gap-1 text-micro text-muted">
+          <span className="h-1 w-1 rounded-full" style={{ background: "var(--accent)" }} />
+          tasks
+        </span>
+        <span className="flex items-center gap-1 text-micro text-muted">
+          <span className="h-1 w-1 rounded-full" style={{ background: "var(--line-strong)" }} />
+          events
+        </span>
+      </div>
+
       {/* The availability of the selected day — a one-line answer under the grid
           so the month view still says "are you free?". Only while the selected
           day is in view, so the readout can't disagree with the month on screen. */}
@@ -396,7 +408,7 @@ function MonthCell({
   wx: { wmo: number } | undefined;
   onPick: (d: Date) => void;
 }) {
-  const { date, isToday, timed, allDay } = day;
+  const { date, isToday, timed, allDay, openMins, isPast } = day;
   const blkCount = timed.filter((t) => t.kind === "block").length;
   const evCount = timed.filter((t) => t.kind === "event").length + allDay.length;
   // Up to 3 density dots — tasks (accent) first, then events (neutral).
@@ -405,9 +417,20 @@ function MonthCell({
     ...Array(evCount).fill("event"),
   ].slice(0, 3) as ("block" | "event")[];
 
+  // The visible cell is a bare number; the accessible name carries the date
+  // and its load so a VoiceOver swipe across the grid actually says something.
+  const busy = blkCount + evCount;
+  const load =
+    busy === 0
+      ? "free"
+      : `${busy} commitment${busy === 1 ? "" : "s"}${!isPast && openMins > 0 ? `, ${fmtMins(openMins)} free` : ""}`;
+
   return (
     <button
       onClick={() => onPick(date)}
+      aria-label={`${format(date, "EEEE, MMMM d")} — ${load}`}
+      aria-current={isToday ? "date" : undefined}
+      aria-pressed={isSelected}
       className={`tap fast relative flex aspect-square flex-col items-center justify-start gap-1 rounded-xl py-1.5 ${
         isSelected ? "glass-lift" : "active:bg-surface-2"
       }`}

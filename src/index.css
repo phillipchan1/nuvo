@@ -1998,6 +1998,12 @@ select.field { appearance: none; -webkit-appearance: none; }
 }
 .sheet-up { animation: sheet-up var(--d-base) var(--ease-out) both; }
 
+/* Sheet heights — dvh (the *visible* viewport, toolbars accounted for) with a
+   vh fallback for engines without dvh. A 92vh sheet ran off the bottom of iOS
+   Safari whenever the toolbars were showing. */
+.sheet-h-tall { height: 92vh; height: 92dvh; }
+.sheet-h-max { max-height: 88vh; max-height: 88dvh; }
+
 @media (max-width: 767px), ((max-height: 500px) and (orientation: landscape) and (pointer: coarse)) {
   /* Comfortable momentum scrolling inside the column. */
   .mobile-scroll {
@@ -2016,11 +2022,40 @@ select.field { appearance: none; -webkit-appearance: none; }
   .tap-bloom { position: relative; }
   .tap-bloom::before { content: ""; position: absolute; inset: -15px; }
 
+  /* A deck card being held but not yet picked up — the ramp makes the
+     long-press wait legible: keep holding and it visibly arms. Duration
+     matches LONG_PRESS_MS in MobileDeck. */
+  .deck-arming {
+    transform: scale(1.02);
+    box-shadow: var(--shadow-2);
+    transition: transform 450ms var(--ease-out), box-shadow 450ms var(--ease-out);
+  }
+
   /* The toast's Undo action is the only undo path on a phone — thumb-sized. */
   [data-sonner-toast] [data-button] {
     min-height: 44px;
     padding-inline: 14px;
     font-size: 13px;
+  }
+
+  /* Overlay entrances on a phone: the 540ms .moment spring rendered Settings
+     as a see-through ghost for half a second. Mobile overlays snap open with
+     the fast plain ease instead (prefers-reduced-motion still zeroes both). */
+  .moment { animation: pop-in var(--d-fast) var(--ease-out) both; }
+
+  /* And the scrim dims harder so whatever translucency remains in the panel
+     can't read page content through it. */
+  .scrim {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* While a Sheet is open the page behind must not scroll. body overflow is a
+     no-op (the app scrolls in <main>), so freeze the real scrollers. */
+  body.sheet-open .mobile-scroll,
+  body.sheet-open main {
+    overflow: hidden !important;
   }
 
   /* Hide the thin desktop scrollbars; touch surfaces don't need them. */

@@ -30,12 +30,18 @@ const pwa = VitePWA({
   injectRegister: false,
   includeAssets: ["apple-touch-icon.png", "favicon.png"],
   manifest: {
+    id: "/",
     name: "Nuvo",
     short_name: "Nuvo",
     description: "Your day, on one surface.",
     start_url: "/",
     scope: "/",
     display: "standalone",
+    display_override: ["standalone"],
+    // Kept deliberately: installed Android honours it and the phone shell is a
+    // portrait design; every other surface ignores it. The landscape-phone fix
+    // is useIsMobile's pointer/orientation query, NOT this — see D-058 in
+    // docs/product/decisions.md.
     orientation: "portrait",
     theme_color: "#f4f1ea",
     background_color: "#f4f1ea",
@@ -43,6 +49,20 @@ const pwa = VitePWA({
       { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
       { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },
       { src: "/pwa-maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+    shortcuts: [
+      {
+        name: "Capture a task",
+        short_name: "Capture",
+        url: "/?shortcut=capture",
+        icons: [{ src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" }],
+      },
+      {
+        name: "Today",
+        short_name: "Today",
+        url: "/?shortcut=today",
+        icons: [{ src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" }],
+      },
     ],
   },
   workbox: {

@@ -243,11 +243,30 @@ export default function MobilePlanWeek({ onClose }: { onClose: () => void }) {
 /** The Week segment's entry to the flow — a live read of what's committed, then
  *  the act. Sits above the week's plan/review card: you set the week here, you
  *  watch it land there. */
-export function PlanWeekCard({ onOpen }: { onOpen: () => void }) {
+export function PlanWeekCard({
+  onOpen,
+  variant = "card",
+}: {
+  onOpen: () => void;
+  /** "link" demotes the card to a quiet text row — the Week segment shows ONE
+   *  primary card per state (see WeekCompanions), never three rivals. */
+  variant?: "card" | "link";
+}) {
   const { data } = useVertical();
   const weekStartISO = planningWeekStartISO();
   const pushes = useMemo(() => weekPushes(data, weekStartISO), [data, weekStartISO]);
   const ready = pushes.filter(({ project }) => lensGaps(data, "project", project, new Date()).length === 0).length;
+
+  if (variant === "link") {
+    return (
+      <button
+        onClick={onOpen}
+        className="tap fast -my-1 px-1 text-left text-caption font-medium text-accent underline-offset-2 active:underline"
+      >
+        Adjust the week's plan ›
+      </button>
+    );
+  }
 
   return (
     <button
@@ -321,7 +340,7 @@ function PrimaryButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`tap fast flex min-h-[44px] items-center justify-center rounded-xl bg-accent px-5 text-body font-medium text-on-accent active:scale-[0.98] disabled:opacity-50 ${
+      className={`tap fast flex min-h-[44px] items-center justify-center rounded-xl bg-accent px-5 text-body font-medium text-on-accent active:scale-[0.98] disabled:bg-surface-2 disabled:text-muted disabled:shadow-none ${
         compact ? "shrink-0" : "w-full"
       }`}
     >

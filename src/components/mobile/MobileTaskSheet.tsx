@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Label, Task } from "../../lib/types";
 import { ruleOf } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
@@ -64,10 +64,37 @@ export default function MobileTaskSheet({
     }
   };
 
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const commitRef = useRef<() => void>(() => {});
+
   const commitTitle = () => {
     const next = title.trim();
     if (next && next !== task.title) mutations.patchTask(task.id, { title: next });
   };
+  commitRef.current = commitTitle;
+
+  // A long title grows the box instead of scrolling inside one hidden line.
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [title]);
+
+  // Backgrounding the app mid-edit (home swipe, app switch) never fires blur on
+  // iOS — commit on the way out so the edit isn't lost.
+  useEffect(() => {
+    const commit = () => commitRef.current();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") commit();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", commit);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", commit);
+    };
+  }, []);
 
   const planChips: { label: string; run: () => void; active?: boolean }[] = [
     { label: "Today", run: () => mutations.planFor(task, todayISO(), TRIAGE_UNDO), active: task.do_date === todayISO() },
@@ -88,6 +115,7 @@ export default function MobileTaskSheet({
       <div className="mobile-scroll max-h-[78vh] overflow-y-auto px-4 pb-4">
         <div className="rounded-xl border border-line bg-surface-2 p-3" style={accent ? { boxShadow: `inset 3px 0 0 0 ${accent}` } : undefined}>
           <textarea
+            ref={titleRef}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={commitTitle}
@@ -259,29 +287,34 @@ function DateTimePicker({
     onDone();
   };
 
+  // Set sits ABOVE the pickers: the iOS wheel rises from the screen bottom and
+  // covers the lower half of this bottom sheet, so a trailing button could
+  // never be reached while a wheel was open.
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2">
-      <input
-        type="date"
-        value={date}
-        aria-label="Date"
-        onChange={(e) => setDate(e.target.value)}
-        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 outline-none focus:border-accent"
-      />
-      <input
-        type="time"
-        value={time}
-        step={900}
-        aria-label="Time"
-        onChange={(e) => setTime(e.target.value)}
-        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 outline-none focus:border-accent"
-      />
+    <div className="mt-2 flex flex-col gap-2">
       <button
         onClick={apply}
-        className="tap fast rounded-lg border border-accent bg-accent px-4 py-2 text-head font-medium text-on-accent"
+        className="tap fast w-full rounded-lg border border-accent bg-accent px-4 py-2 text-head font-medium text-on-accent"
       >
-        Set
+        Set date{time ? " & time" : ""}
       </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="date"
+          value={date}
+          aria-label="Date"
+          onChange={(e) => setDate(e.target.value)}
+          className="mono rounded-lg border border-line bg-surface px-2.5 py-2 outline-none focus:border-accent"
+        />
+        <input
+          type="time"
+          value={time}
+          step={900}
+          aria-label="Time"
+          onChange={(e) => setTime(e.target.value)}
+          className="mono rounded-lg border border-line bg-surface px-2.5 py-2 outline-none focus:border-accent"
+        />
+      </div>
     </div>
   );
 }

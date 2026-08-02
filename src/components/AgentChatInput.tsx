@@ -157,7 +157,7 @@ export default function AgentChatInput({
           onClick={onSubmit}
           disabled={!canSend}
           aria-label="Send"
-          className={`agent-send-btn fast shrink-0 flex items-center justify-center rounded-lg bg-accent font-medium text-on-accent shadow-sm transition-[transform,filter,box-shadow] hover:brightness-110 hover:shadow-[0_4px_12px_-4px_var(--accent-glow)] active:translate-y-px disabled:opacity-30 disabled:shadow-none ${
+          className={`agent-send-btn fast shrink-0 flex items-center justify-center rounded-lg bg-accent font-medium text-on-accent shadow-sm transition-[transform,filter,box-shadow] hover:brightness-110 hover:shadow-[0_4px_12px_-4px_var(--accent-glow)] active:translate-y-px disabled:bg-surface-2 disabled:text-muted disabled:shadow-none disabled:shadow-none ${
             compact ? "mb-0.5 h-8 w-8 text-head" : "mb-1 h-6 w-6 text-caption"
           }`}
         >

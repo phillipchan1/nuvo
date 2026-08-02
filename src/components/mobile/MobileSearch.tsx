@@ -92,15 +92,22 @@ export default function MobileSearch({
           <SearchGlyph />
           <input
             ref={inputRef}
+            type="search"
+            enterKeyHint="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search projects, initiatives, domains, tasks…"
-            className="tap min-w-0 flex-1 bg-transparent py-2 outline-none"
+            aria-label="Search"
+            className="tap min-w-0 flex-1 appearance-none bg-transparent py-2 outline-none [&::-webkit-search-cancel-button]:hidden"
             autoCapitalize="none"
             autoCorrect="off"
           />
           {q && (
-            <button onClick={() => setQ("")} aria-label="Clear" className="fast shrink-0 text-lead text-muted active:text-ink">
+            <button
+              onClick={() => setQ("")}
+              aria-label="Clear search"
+              className="fast flex h-11 w-11 shrink-0 items-center justify-center text-lead text-muted active:text-ink"
+            >
               ✕
             </button>
           )}

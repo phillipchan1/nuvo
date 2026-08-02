@@ -1453,7 +1453,7 @@ export function EventPopover({
                                 setInviting(false);
                               }
                             }}
-                            className="fast tap rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
+                            className="fast tap rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-on-accent hover:opacity-90 disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
                           >
                             {inviting
                               ? "Sending…"

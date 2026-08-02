@@ -3,6 +3,13 @@ import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { linkGoogleIdentity } from "../lib/googleAuth";
+import {
+  canPromptInstall,
+  isIOS,
+  isStandaloneDisplay,
+  onInstallAvailabilityChange,
+  promptInstall,
+} from "../lib/installPrompt";
 import { formatHourLabel } from "../lib/dates";
 import { readRevealConfig, writeRevealConfig, type RevealConfig } from "../lib/weekReveal";
 import type { CalendarAccount, UserSettings } from "../lib/types";
@@ -10,6 +17,7 @@ import { firstDayOfWeek } from "../hooks/useSettings";
 import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
+import Sheet from "./mobile/Sheet";
 import { Field, TextInput, Select, Toggle, Stepper, Segmented } from "./form";
 import { BillingPane } from "./billing/BillingPane";
 import type { SettingsSection } from "../lib/appNav";
@@ -1316,6 +1324,42 @@ function AccountPane() {
 }
 
 // ── About: what Nuvo is + replay the welcome tour ─────────────────────────
+// "Install Nuvo" — discoverable install from inside the app. Android/desktop
+// Chrome gets the captured beforeinstallprompt; iOS Safari (no such event) gets
+// the Share → Add to Home Screen instructions. Hidden once already installed.
+function InstallRow() {
+  const [, forceRender] = useState(0);
+  useEffect(() => onInstallAvailabilityChange(() => forceRender((n) => n + 1)), []);
+  if (isStandaloneDisplay()) return null;
+
+  if (canPromptInstall()) {
+    return (
+      <Row title="Install Nuvo" desc="Add it to your home screen — full screen, its own icon, works offline.">
+        <Btn kind="primary" onClick={() => void promptInstall()}>
+          Install
+        </Btn>
+      </Row>
+    );
+  }
+  if (isIOS()) {
+    return (
+      <Row
+        title="Install on this iPhone"
+        desc={
+          <>
+            In Safari, tap <span className="text-ink">Share</span> →{" "}
+            <span className="text-ink">Add to Home Screen</span>. Nuvo opens full screen with its
+            own icon.
+          </>
+        }
+      >
+        {null}
+      </Row>
+    );
+  }
+  return null;
+}
+
 function AboutPane({ onClose }: { onClose: () => void }) {
   const { open: openOrientation } = useOrientation();
   const desktop = isDesktopTauri();
@@ -1344,6 +1388,8 @@ function AboutPane({ onClose }: { onClose: () => void }) {
           </a>
         </Row>
       )}
+
+      {!desktop && <InstallRow />}
 
       <ReleaseHistory />
 
@@ -1411,59 +1457,53 @@ export default function SettingsModal({
     </>
   );
 
-  // ── Mobile: full-height master-detail (iOS-style list → drill into pane) ──
+  // ── Mobile: a bottom Sheet (the house overlay — CLAUDE.md's golden rule),
+  //    iOS-style list → drill into pane, swipe-down dismissible. ──
   if (isMobile) {
+    const titleNode = drilled ? (
+      <div className="flex min-w-0 items-center gap-1">
+        <button
+          onClick={() => setDrilled(false)}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Back to settings sections"
+          className="tap fast -ml-1 flex items-center rounded-lg px-1 text-lead text-muted active:bg-surface-2"
+          style={{ cursor: "default" }}
+        >
+          ‹
+        </button>
+        <span className="min-w-0 flex-1 truncate">
+          {SECTIONS.find((s) => s.id === active)?.label ?? "Settings"}
+        </span>
+      </div>
+    ) : (
+      "Settings"
+    );
     return (
-      <Modal onClose={onClose} width="max-w-md">
-        <div className="flex h-[85vh] flex-col">
-          <div className="flex items-center gap-1 border-b border-line px-2 py-2.5">
-            {drilled ? (
-              <button onClick={() => setDrilled(false)} className="tap flex items-center gap-1 pr-2 text-body font-medium text-accent">
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                  <path d="M11 4l-5 5 5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                Settings
-              </button>
-            ) : (
-              <div className="px-1 text-head font-semibold">Settings</div>
-            )}
-            <div className="flex-1" />
-            <button
-              onClick={onClose}
-              aria-label="Close settings"
-              className="tap flex h-10 w-10 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path d="M5 5l8 8M13 5l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-            </button>
+      <Sheet tall title={titleNode} onClose={onClose} contentClassName="mobile-scroll overflow-y-auto">
+        {drilled ? (
+          <div key={active} className="floor-enter px-5 pb-8 pt-2">
+            {pane}
           </div>
-
-          {drilled ? (
-            <div key={active} className="floor-enter flex-1 overflow-y-auto px-5 pb-safe pt-5">
-              {pane}
-            </div>
-          ) : (
-            <div className="flex-1 space-y-0.5 overflow-y-auto p-3 pb-safe">
-              {SECTIONS.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => select(s.id)}
-                  className="tap fast flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-left text-body font-medium text-ink hover:bg-surface-2"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-2 text-muted">
-                    {s.icon}
-                  </span>
-                  <span className="flex-1">{s.label}</span>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted">
-                    <path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </Modal>
+        ) : (
+          <div className="space-y-0.5 p-3 pb-8">
+            {SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => select(s.id)}
+                className="tap fast flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-left text-body font-medium text-ink hover:bg-surface-2"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-2 text-muted">
+                  {s.icon}
+                </span>
+                <span className="flex-1">{s.label}</span>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted">
+                  <path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        )}
+      </Sheet>
     );
   }
 

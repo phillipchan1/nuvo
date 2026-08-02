@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { todayISO } from "../../lib/dates";
 import { useMobileOverlayHistory } from "../../hooks/useMobileOverlayHistory";
 import { useOnline } from "../../hooks/useOnline";
+import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useSettings } from "../../hooks/useSettings";
 import { useVertical } from "../../hooks/useVertical";
 import {
@@ -31,9 +32,10 @@ import RecurringUpkeepPanel from "../RecurringUpkeepPanel";
 import MobileProjects from "./MobileProjects";
 import MobileInitiatives from "./MobileInitiatives";
 import MobileReadiness from "./MobileReadiness";
-import WeekPlanCard from "./WeekPlanCard";
-import MobilePlanWeek, { PlanWeekCard } from "./MobilePlanWeek";
+import { WeekCompanions } from "./WeekPlanCard";
+import MobilePlanWeek from "./MobilePlanWeek";
 import MobileSearch, { type JumpKind } from "./MobileSearch";
+import PullIndicator from "./PullIndicator";
 import MobileDetailSheet from "./detail/MobileDetailSheet";
 import type { DetailTarget, Frame } from "./detail/verticalDetail";
 import QuickTaskSheet from "./QuickTaskSheet";
@@ -189,6 +191,24 @@ export default function MobileShell() {
     return () => window.clearInterval(t);
   }, []);
 
+  // Manifest shortcuts (long-press the installed app's icon): land directly in
+  // capture or on Today. Consumed once, then stripped from the URL.
+  const shortcutDone = useRef(false);
+  useEffect(() => {
+    if (shortcutDone.current) return;
+    shortcutDone.current = true;
+    const url = new URL(window.location.href);
+    const shortcut = url.searchParams.get("shortcut");
+    if (!shortcut) return;
+    url.searchParams.delete("shortcut");
+    window.history.replaceState(history.state, "", url);
+    if (shortcut === "capture") setQuickOpen(true);
+    else if (shortcut === "today") {
+      setTabState("tasks");
+      setSubState("today");
+    }
+  }, []);
+
   const today = todayISO(now);
   const range = useMemo(() => {
     const start = new Date(now);
@@ -197,10 +217,10 @@ export default function MobileShell() {
   }, [today]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { settings, update: updateSettings } = useSettings();
-  const { data: vertical } = useVertical();
-  const { data: inbox = [] } = useInboxTasks();
-  const { data: todayTasks = [] } = useDayTasks(today);
-  const { data: weekTasks = [] } = useSprintTasks(vertical.sprint?.id ?? null);
+  const { data: vertical, ready: verticalReady } = useVertical();
+  const { data: inbox = [], isPending: inboxPending } = useInboxTasks();
+  const { data: todayTasks = [], isPending: todayPending } = useDayTasks(today);
+  const { data: weekTasks = [], isPending: weekPending } = useSprintTasks(vertical.sprint?.id ?? null);
   const { data: allTasks = [] } = useAllTasks();
   const { labels } = useLabels();
   const { data: accounts = [] } = useCalendarAccounts();
@@ -222,20 +242,32 @@ export default function MobileShell() {
 
   // Keep data fresh the way the desktop Planner does: roll overdue tasks forward
   // and materialize recurrences on load and whenever the app returns to focus.
+  // Debounced: every foreground already triggers a full TanStack refetch and a
+  // Realtime reconnect, so re-running the heavy resume work on each of several
+  // quick app switches was pure waste — rollover runs at most once a minute,
+  // materializeAll at most once per day.
   const rollover = useRolloverGuard(settings?.last_rollover_date);
   const settingsLoaded = Boolean(settings);
+  const lastResume = useRef(0);
+  const lastMaterializeDay = useRef<string | null>(null);
   useEffect(() => {
     if (!settingsLoaded) return;
-    void (async () => {
-      await rollover();
-      await recurrenceMutations.materializeAll();
-    })();
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
+    const resume = () => {
+      const nowMs = Date.now();
+      if (nowMs - lastResume.current < 60_000) return;
+      lastResume.current = nowMs;
+      const day = todayISO(new Date());
+      const materialize = lastMaterializeDay.current !== day;
+      lastMaterializeDay.current = day;
       void (async () => {
         await rollover();
-        await recurrenceMutations.materializeAll();
+        if (materialize) await recurrenceMutations.materializeAll();
       })();
+    };
+    resume();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      resume();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
@@ -258,10 +290,48 @@ export default function MobileShell() {
         ? weekTasks.filter((x) => x.status !== "done").length
         : todayTasks.filter((x) => x.status !== "done").length;
 
+  // Per-tab scroll restoration: leaving a tab remembers your place; returning
+  // restores it. Only re-tapping the ACTIVE tab scrolls to top (the platform
+  // idiom). Keyed by tab+sub so the three Tasks segments hold separate places.
+  // The offset is recorded live on scroll — reading it at switch time could
+  // only see a value already clamped to the next tab's content height.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollOffsets = useRef<Record<string, number>>({});
+  // While a restore is in flight the remounting tab's content is still growing
+  // (queries resolving), so the browser clamps the scroll to 0 — that clamp
+  // must neither stick nor overwrite the saved offset. Retry for a beat and
+  // ignore recorded values inside the window.
+  const restoringUntil = useRef(0);
+  const recordScroll = () => {
+    const el = scrollRef.current;
+    if (!el || Date.now() < restoringUntil.current) return;
+    scrollOffsets.current[`${tab}:${sub}`] = el.scrollTop;
+  };
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0 });
+    const el = scrollRef.current;
+    if (!el) return;
+    const target = scrollOffsets.current[`${tab}:${sub}`] ?? 0;
+    restoringUntil.current = Date.now() + 600;
+    let raf = 0;
+    const attempt = () => {
+      el.scrollTop = target;
+      if (Math.abs(el.scrollTop - target) > 1 && Date.now() < restoringUntil.current) {
+        raf = requestAnimationFrame(attempt);
+      } else {
+        restoringUntil.current = 0;
+      }
+    };
+    attempt();
+    return () => cancelAnimationFrame(raf);
   }, [tab, sub]);
+  const scrollToTop = () => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
+  // Pull down from the top of any tab to refetch. The deck tabs scroll inside
+  // their own pages, so the touch's nearest scroller is consulted, not <main>.
+  const { pulling, refreshing } = usePullToRefresh(
+    scrollRef,
+    "[data-deck-col], .mobile-scroll",
+  );
 
   // Open the Nuvo chat overlay, optionally seeding a first message — e.g. "Ask
   // Nuvo" from the Now view. The shared agent means the conversation is already
@@ -365,7 +435,8 @@ export default function MobileShell() {
       )}
 
       {/* Content */}
-      <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
+      <main ref={scrollRef} onScroll={recordScroll} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
+        <PullIndicator pulling={pulling} refreshing={refreshing} />
         {tab === "calendar" ? (
           <MobileCalendar now={now} onTapEvent={setCalendarTap} onOpenUpkeep={() => setUpkeepOpen(true)} />
         ) : tab === "projects" ? (
@@ -378,12 +449,12 @@ export default function MobileShell() {
             {/* The week's read, above the week's list — both are week-scoped, so
                 they sit at the top of the Week segment rather than on an
                 execution screen. */}
-            {sub === "week" && (
+            {sub === "week" && verticalReady && (
               <div className="flex flex-col gap-4 px-4 pt-4">
                 <MobileReadiness data={vertical} onAskNuvo={openChat} onReview={reviewFloor} />
-                {/* Set the week (the ritual), then watch it land (the plan/review). */}
-                <PlanWeekCard onOpen={() => setPlanOpen(true)} />
-                <WeekPlanCard />
+                {/* One primary card per state (plan vs review), the other a
+                    quiet link — see WeekCompanions. */}
+                <WeekCompanions onOpenPlan={() => setPlanOpen(true)} />
               </div>
             )}
             <MobileTaskList
@@ -396,6 +467,9 @@ export default function MobileShell() {
               mutations={mutations}
               now={now}
               onTapTask={(t) => setTaskId(t.id)}
+              pending={
+                sub === "inbox" ? inboxPending : sub === "week" ? weekPending || !verticalReady : todayPending
+              }
             />
           </div>
         )}
@@ -434,7 +508,7 @@ export default function MobileShell() {
             key={t.id}
             tab={t}
             active={tab === t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => (tab === t.id ? scrollToTop() : setTab(t.id))}
             badge={t.id === "tasks" ? inbox.length : 0}
           />
         ))}
@@ -584,10 +658,15 @@ function NavTab({
     <button
       onClick={onClick}
       data-teach={`mtab-${tab.id}`}
+      aria-current={active ? "page" : undefined}
       className={`tap fast relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 ${
         active ? "text-accent" : "text-muted"
       }`}
     >
+      {/* Non-colour active cue (WCAG 1.4.1) — a 2px indicator bar. */}
+      {active && (
+        <span aria-hidden className="absolute inset-x-[22%] top-0 h-0.5 rounded-full bg-accent" />
+      )}
       <span className="flex h-7 items-center leading-none">
         <AltitudeIcon kind={tab.kind} size={22} />
       </span>

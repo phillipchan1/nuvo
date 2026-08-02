@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { Label, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import type { useVertical } from "../../hooks/useVertical";
-import { isOverdue, todayISO } from "../../lib/dates";
+import { isOverdue, todayISO, tomorrowISO } from "../../lib/dates";
 import {
   domainById,
   initiativeById,
@@ -11,6 +11,7 @@ import {
 } from "../../lib/vertical";
 import TaskRow, { type TaskMeta } from "../TaskRow";
 import { SectionLabel } from "../ui";
+import SkeletonRows from "./Skeleton";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 type Vertical = ReturnType<typeof useVertical>["data"];
@@ -29,6 +30,7 @@ export default function MobileTaskList({
   mutations,
   now,
   onTapTask,
+  pending = false,
 }: {
   tab: MobileTab;
   inbox: Task[];
@@ -39,6 +41,8 @@ export default function MobileTaskList({
   mutations: Mutations;
   now: Date;
   onTapTask: (t: Task) => void;
+  /** the active tab's query hasn't resolved yet — never claim "nothing here". */
+  pending?: boolean;
 }) {
   const metaOf = (t: Task): TaskMeta => {
     const project = projectById(vertical, t.project_id);
@@ -63,6 +67,8 @@ export default function MobileTaskList({
     onSelect: () => {},
     onOpen: () => onTapTask(t),
     onToggleDone: () => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t)),
+    // Swipe right completes; swipe left snoozes to tomorrow (undo via toast).
+    swipeActions: { onDefer: () => mutations.planFor(t, tomorrowISO(), TRIAGE_UNDO) },
     action,
   });
 
@@ -73,6 +79,7 @@ export default function MobileTaskList({
     setTodayOpen((s) => ({ ...s, [key]: !s[key] }));
 
   if (tab === "inbox") {
+    if (pending && inbox.length === 0) return <SkeletonRows />;
     return (
       <div>
         {inbox.length === 0 && <Empty text="Inbox zero. Tap ＋ to capture." />}
@@ -89,6 +96,7 @@ export default function MobileTaskList({
       todaySections.unblocked.length === 0 &&
       todaySections.scheduled.length === 0 &&
       todaySections.done.length === 0;
+    if (pending && nothing) return <SkeletonRows />;
     return (
       <div>
         {nothing && <Empty text="Nothing planned for today. Pull from Week or tap ＋." />}
@@ -151,6 +159,7 @@ export default function MobileTaskList({
 
   // ── Week ──
   const empty = weekPool.unplaced.length === 0 && weekPool.placed.length === 0 && weekPool.done.length === 0;
+  if (pending && empty) return <SkeletonRows />;
   return (
     <div>
       {vertical.sprintGoal && (

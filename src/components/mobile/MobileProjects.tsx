@@ -23,6 +23,7 @@ import { readOnDeck, sprintSpanFor, weekIndexIn, type OnDeckLane } from "../../l
 import { weekName, weekSpan, weekTick } from "../../lib/week";
 import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
 import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
+import SkeletonRows from "./Skeleton";
 import { Hint, VerticalList } from "./detail/verticalDetail";
 // One card across both shells — the phone must not invent its own grammar (D-048).
 import PlannerCard, { deckWeight } from "../ondeck/DeckCard";
@@ -41,7 +42,7 @@ export default function MobileProjects({
 }: {
   onOpenItem: (kind: "project" | "initiative" | "domain", id: string) => void;
 }) {
-  const { data: d, updateProject, addProject } = useVertical();
+  const { data: d, ready, updateProject, addProject } = useVertical();
   const { byWeek, weeklyAvgMins } = useCapacity();
   const [maxPerWeek] = useMaxPerWeek();
   const now = useMemo(() => new Date(), []);
@@ -186,7 +187,9 @@ export default function MobileProjects({
     <div className="flex h-full min-h-0 flex-col">
       <SegHeader seg={seg} setSeg={setSeg} />
 
-      {seg === "all" ? (
+      {!ready ? (
+        <SkeletonRows rows={4} />
+      ) : seg === "all" ? (
         <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto fab-clear">
           <VerticalList
             d={d}
