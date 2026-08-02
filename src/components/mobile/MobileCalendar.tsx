@@ -409,7 +409,7 @@ function MonthCell({
     >
       <span
         className={`flex h-7 w-7 items-center justify-center rounded-full text-body leading-none ${
-          isToday ? "bg-accent font-semibold text-white" : isSelected ? "font-semibold text-ink" : ""
+          isToday ? "bg-accent font-semibold text-on-accent" : isSelected ? "font-semibold text-ink" : ""
         } ${!inMonth ? "text-muted/50" : isToday ? "" : "text-ink"}`}
       >
         {date.getDate()}

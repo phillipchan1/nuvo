@@ -1031,7 +1031,7 @@ export function Timeline({
               key={z.id}
               onClick={() => choose(z.id)}
               className="fast rounded-md px-3 py-1.5 text-label font-medium"
-              style={{ background: zoom === z.id ? "var(--accent)" : "transparent", color: zoom === z.id ? "#fff" : "var(--muted)" }}
+              style={{ background: zoom === z.id ? "var(--accent)" : "transparent", color: zoom === z.id ? "var(--on-accent)" : "var(--muted)" }}
             >
               {z.label}
             </button>

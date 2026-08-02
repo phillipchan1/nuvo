@@ -94,7 +94,7 @@ function UpkeepBody({ onClose }: { onClose: () => void }) {
               type="button"
               disabled={!draftTitle.trim() || !draftRule || adding}
               onClick={() => void addUpkeep()}
-              className="tap fast ml-auto rounded-full border border-accent bg-accent px-4 py-2 text-label font-medium text-white disabled:opacity-40"
+              className="tap fast ml-auto rounded-full border border-accent bg-accent px-4 py-2 text-label font-medium text-on-accent disabled:opacity-40"
             >
               Add
             </button>

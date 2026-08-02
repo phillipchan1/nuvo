@@ -317,7 +317,7 @@ export default function RecurrencePicker({
 
   const seg = (active: boolean) =>
     `fast flex-1 rounded-[var(--radius-sm)] px-2 py-1 text-label font-medium transition-colors ${
-      active ? "bg-accent text-white" : "text-muted hover:text-ink"
+      active ? "bg-accent text-on-accent" : "text-muted hover:text-ink"
     }`;
 
   return createPortal(
@@ -392,7 +392,7 @@ export default function RecurrencePicker({
                       key={d}
                       onClick={() => toggleWeekday(d)}
                       className={`fast grid h-7 w-7 place-items-center rounded-full text-meta font-semibold transition-colors ${
-                        on ? "bg-accent text-white" : "bg-bg text-muted hover:text-ink"
+                        on ? "bg-accent text-on-accent" : "bg-bg text-muted hover:text-ink"
                       }`}
                     >
                       {lbl[0]}
@@ -443,7 +443,7 @@ export default function RecurrencePicker({
               <span className="truncate text-meta text-muted">{describeRule(buildCustom(), anchorISO)}</span>
               <button
                 onClick={() => onPick(buildCustom())}
-                className="fast shrink-0 rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-white hover:opacity-90"
+                className="fast shrink-0 rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-on-accent hover:opacity-90"
               >
                 Done
               </button>

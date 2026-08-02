@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { useVertical } from "../../../hooks/useVertical";
+import { useMobileSheetStackHistory } from "../../../hooks/useMobileOverlayHistory";
 import Sheet from "../Sheet";
 import {
   DomainScreen,
@@ -35,8 +36,21 @@ export default function MobileDetailSheet({
 
   const frame = stack[stack.length - 1];
   const push = (f: Frame) => setStack((s) => [...s, f]);
-  const back = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
   const atRoot = stack.length <= 1;
+
+  // History-backed breadcrumbs: the sheet holds a base entry plus one per
+  // pushed frame, so hardware back pops one frame at a time before closing the
+  // sheet itself. Frame pops flow history → state, so the ‹ button just walks
+  // history and popstate does the slicing.
+  useMobileSheetStackHistory(
+    stack.length - 1,
+    (d) => setStack((s) => (s.length > d + 1 ? s.slice(0, d + 1) : s)),
+    onClose,
+    "detail",
+  );
+  const back = () => {
+    if (!atRoot) history.back();
+  };
 
   // Let the shell mirror the open frame into the agent's screen context.
   useEffect(() => {

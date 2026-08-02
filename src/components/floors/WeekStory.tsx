@@ -203,7 +203,7 @@ export default function WeekStory({ report, state, weekLabel, onClose, onSeeDeta
                   {carry} still open — {carry === 1 ? "it'll" : "they'll"} be waiting on Monday.
                 </p>
               )}
-              <button onClick={onSeeDetail} className="fast rounded-full bg-accent px-6 py-2.5 text-label font-medium text-white hover:opacity-90">
+              <button onClick={onSeeDetail} className="fast rounded-full bg-accent px-6 py-2.5 text-label font-medium text-on-accent hover:opacity-90">
                 See the full week →
               </button>
             </div>

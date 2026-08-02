@@ -95,7 +95,7 @@ export default function MobileSearch({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search projects, initiatives, domains, tasks…"
-            className="tap min-w-0 flex-1 bg-transparent py-2 text-head outline-none"
+            className="tap min-w-0 flex-1 bg-transparent py-2 outline-none"
             autoCapitalize="none"
             autoCorrect="off"
           />

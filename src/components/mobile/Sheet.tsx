@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useKeyboardInset } from "../../hooks/useKeyboardInset";
 
 // A bottom sheet — the mobile equivalent of the desktop's anchored popovers and
 // modals. Rises from the bottom edge, dims the world behind it, and respects the
@@ -24,6 +25,10 @@ export default function Sheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   const scrimRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ startY: number } | null>(null);
+  // iOS never resizes the layout viewport for the keyboard, so a fixed sheet's
+  // lower content (composer, submit button) would sit under the keys without
+  // this pad.
+  const kbInset = useKeyboardInset();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -124,6 +129,7 @@ export default function Sheet({
         className={`sheet-up glass flex ${
           tall ? "h-[92vh] pt-safe" : "max-h-[88vh]"
         } flex-col rounded-t-2xl border-t border-line pb-safe`}
+        style={kbInset ? { paddingBottom: kbInset } : undefined}
       >
         {/* Grab pill — primary swipe target */}
         <div {...handleProps} className="flex shrink-0 flex-col items-center py-2.5">

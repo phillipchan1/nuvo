@@ -424,7 +424,7 @@ export default function DraftComposer({
               </button>
               <button
                 onClick={() => finish(true)}
-                className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] bg-accent px-4 py-2.5 text-body font-semibold text-white shadow-[var(--shadow-1)] transition-opacity hover:opacity-90"
+                className="fast tap inline-flex items-center justify-center rounded-[var(--radius)] bg-accent px-4 py-2.5 text-body font-semibold text-on-accent shadow-[var(--shadow-1)] transition-opacity hover:opacity-90"
               >
                 Send invites
               </button>
@@ -441,7 +441,7 @@ export default function DraftComposer({
             <button
               onClick={submit}
               disabled={!canCreate}
-              className="fast tap inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-accent px-6 py-2.5 text-body font-semibold text-white shadow-[var(--shadow-1)] transition-opacity hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
+              className="fast tap inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-accent px-6 py-2.5 text-body font-semibold text-on-accent shadow-[var(--shadow-1)] transition-opacity hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
             >
               {sendsInvites ? "Create & invite…" : "Create"}
               <span className="text-meta font-normal text-white/65">⌘↵</span>

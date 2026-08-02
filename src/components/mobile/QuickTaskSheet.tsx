@@ -94,7 +94,11 @@ export default function QuickTaskSheet({
             }}
             enterKeyHint="done"
             placeholder="What needs doing?"
-            className="min-w-0 flex-1 bg-transparent text-head outline-none placeholder:text-muted/70"
+            aria-label="New task"
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            spellCheck
+            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted/70"
           />
         </div>
 
@@ -128,7 +132,7 @@ export default function QuickTaskSheet({
                     onClick={() => setDay(c.value)}
                     className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
                       on
-                        ? "border-accent bg-accent text-white"
+                        ? "border-accent bg-accent text-on-accent"
                         : "border-line text-muted hover:border-accent hover:text-accent"
                     }`}
                   >
@@ -147,7 +151,7 @@ export default function QuickTaskSheet({
         <button
           onClick={() => void submit()}
           disabled={!text.trim() || saving}
-          className="tap fast mt-4 w-full rounded-xl bg-accent py-3 text-head font-semibold text-white shadow-sm active:translate-y-px disabled:opacity-40"
+          className="tap fast mt-4 w-full rounded-xl py-3 text-head font-semibold shadow-sm active:translate-y-px disabled:shadow-none bg-accent text-on-accent disabled:border disabled:border-line disabled:bg-surface-2 disabled:text-muted"
         >
           {saving ? "Saving…" : "Add task"}
         </button>

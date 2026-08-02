@@ -7,6 +7,7 @@ import { useSubscription, useSubscriptionLiveSync } from "./hooks/useSubscriptio
 import { useSkin, useScheme } from "./hooks/useSkin";
 import Login from "./components/Login";
 import AppShell from "./components/AppShell";
+import ErrorBoundary from "./components/ErrorBoundary";
 import LockedScreen from "./components/billing/LockedScreen";
 import { SpotlightHost } from "./components/SpotlightWindow";
 import UpdateToast from "./components/UpdateToast";
@@ -226,7 +227,9 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <UndoProvider>
-        <Shell />
+        <ErrorBoundary>
+          <Shell />
+        </ErrorBoundary>
       </UndoProvider>
     </QueryClientProvider>
   );

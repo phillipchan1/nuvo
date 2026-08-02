@@ -456,7 +456,7 @@ export function WeekHoursBreakdown({
               type="button"
               onClick={() => setLens(t.id)}
               className={`tap fast flex flex-1 items-center justify-center rounded-md py-2.5 text-body font-medium ${
-                on ? "bg-accent text-white" : "text-muted active:bg-surface-2"
+                on ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
               }`}
             >
               {t.label}

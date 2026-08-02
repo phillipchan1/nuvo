@@ -321,7 +321,7 @@ function PrimaryButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`tap fast flex min-h-[44px] items-center justify-center rounded-xl bg-accent px-5 text-body font-medium text-white active:scale-[0.98] disabled:opacity-50 ${
+      className={`tap fast flex min-h-[44px] items-center justify-center rounded-xl bg-accent px-5 text-body font-medium text-on-accent active:scale-[0.98] disabled:opacity-50 ${
         compact ? "shrink-0" : "w-full"
       }`}
     >

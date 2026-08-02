@@ -6,7 +6,12 @@ import { useEffect, useState } from "react";
 // and laptops keep the full experience.
 export const MOBILE_BREAKPOINT = 768;
 
-const QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`;
+// Width alone misses a phone held sideways: an 844×390 iPhone landscape would
+// render the three-pane desktop shell. The second clause catches any short
+// landscape *touch* viewport (pointer: coarse), while a 1024×768 landscape
+// iPad (taller than 500px) and a squat desktop window (fine pointer) both stay
+// on the desktop shell.
+const QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px), ((max-height: 500px) and (orientation: landscape) and (pointer: coarse))`;
 
 function read(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;

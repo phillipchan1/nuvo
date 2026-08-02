@@ -854,7 +854,7 @@ function CalendarPicker({
                     setPending(null);
                     setOpen(false);
                   }}
-                  className="fast flex-1 rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-caption font-medium text-white hover:opacity-90"
+                  className="fast flex-1 rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-caption font-medium text-on-accent hover:opacity-90"
                 >
                   Move
                 </button>
@@ -1288,7 +1288,7 @@ export function EventPopover({
                 href={joinLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="fast inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-1.5 text-caption font-medium text-accent hover:bg-accent hover:text-white"
+                className="fast inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-1.5 text-caption font-medium text-accent hover:bg-accent hover:text-on-accent"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0">
                   <path d="M2 6h8M6 2l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -1453,7 +1453,7 @@ export function EventPopover({
                                 setInviting(false);
                               }
                             }}
-                            className="fast tap rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-white hover:opacity-90 disabled:opacity-40"
+                            className="fast tap rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-on-accent hover:opacity-90 disabled:opacity-40"
                           >
                             {inviting
                               ? "Sending…"
@@ -2136,7 +2136,7 @@ export function SlotPopover({
                     onClick={() => (done ? taskMutations.uncomplete(t) : taskMutations.complete(t))}
                     onPointerDown={(e) => e.stopPropagation()}
                     className={`fast flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[3px] border ${
-                      done ? "border-accent bg-accent text-white" : "border-line-strong bg-surface"
+                      done ? "border-accent bg-accent text-on-accent" : "border-line-strong bg-surface"
                     }`}
                   >
                     {done && (

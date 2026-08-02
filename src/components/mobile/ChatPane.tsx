@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useKeyboardInset } from "../../hooks/useKeyboardInset";
 import type { AgentAttachment } from "../../lib/agentTypes";
 import type { AgentHandle } from "../../hooks/useAgent";
 import { useFileDrop } from "../../hooks/useFileDrop";
@@ -31,6 +32,7 @@ export default function ChatPane({
   const [otherMode, setOtherMode] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const kbInset = useKeyboardInset();
 
   const addFiles = useCallback(async (files: File[]) => {
     const { attachments: next } = await filesToAttachments(files);
@@ -135,7 +137,12 @@ export default function ChatPane({
         </div>
       )}
 
-      <div className="shrink-0 border-t border-line p-3 pb-safe">
+      <div
+        className="shrink-0 border-t border-line p-3 pb-safe"
+        // Keep the composer above the iOS keyboard (the layout viewport never
+        // shrinks for it); the class pb-safe still applies when no keyboard.
+        style={kbInset ? { paddingBottom: kbInset + 12 } : undefined}
+      >
         <AgentChatInput
           value={input}
           onChange={setInput}

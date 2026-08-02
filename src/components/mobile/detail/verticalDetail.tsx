@@ -509,7 +509,7 @@ export function TaskRow({ t, onToggle }: { t: VTask; onToggle: () => void }) {
         className={`tap fast flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-caption ${
           // border-muted, not border-line-strong: 3.7:1 vs 1.37:1 on the paper,
           // and a control the finger aims at has to be visible. See D-054a.
-          done ? "border-accent bg-accent text-white" : "border-muted text-transparent active:border-accent"
+          done ? "border-accent bg-accent text-on-accent" : "border-muted text-transparent active:border-accent"
         }`}
       >
         ✓
@@ -754,7 +754,7 @@ export function Chip({ children, on, onClick }: { children: ReactNode; on?: bool
     <button
       onClick={onClick}
       className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
-        on ? "border-accent bg-accent text-white" : "border-line text-muted active:border-accent active:text-accent"
+        on ? "border-accent bg-accent text-on-accent" : "border-line text-muted active:border-accent active:text-accent"
       }`}
     >
       {children}

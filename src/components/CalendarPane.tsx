@@ -145,7 +145,7 @@ function RecurrenceDialog({
             </button>
             <button
               onClick={() => onConfirm(scope)}
-              className="fast px-3 py-1.5 text-caption font-medium bg-accent text-white rounded-[var(--radius-sm)] hover:opacity-90"
+              className="fast px-3 py-1.5 text-caption font-medium bg-accent text-on-accent rounded-[var(--radius-sm)] hover:opacity-90"
             >
               Done
             </button>
@@ -1618,7 +1618,7 @@ export default function CalendarPane({
             aria-label="toggle done"
             data-done-toggle
             className={`fast mt-[1px] flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border ${
-              done ? "border-accent bg-accent text-white" : "bg-surface"
+              done ? "border-accent bg-accent text-on-accent" : "bg-surface"
             }`}
             style={done ? undefined : { borderColor: bar }}
             onMouseDown={(e) => {
@@ -1747,7 +1747,7 @@ export default function CalendarPane({
                           });
                           setEventMenu(null);
                         }}
-                        className="fast flex-1 rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-center text-caption font-medium text-white hover:opacity-90"
+                        className="fast flex-1 rounded-[var(--radius-sm)] bg-accent px-2 py-1 text-center text-caption font-medium text-on-accent hover:opacity-90"
                       >
                         Move
                       </button>

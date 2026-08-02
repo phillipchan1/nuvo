@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { todayISO } from "../../lib/dates";
+import { useMobileOverlayHistory } from "../../hooks/useMobileOverlayHistory";
 import { useSettings } from "../../hooks/useSettings";
 import { useVertical } from "../../hooks/useVertical";
 import {
@@ -107,7 +108,15 @@ function readSub(): MobileTab {
 export default function MobileShell() {
   const [tab, setTabState] = useState<Tab>(readTab);
   const [sub, setSubState] = useState<MobileTab>(readSub);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+  // The tab the session opened on — what the root history entry (which carries
+  // no nuvoTab payload) means when back walks all the way down.
+  const launchTab = useRef(tab);
   const setTab = (t: Tab) => {
+    // Each destination change gets a history entry, so hardware back walks the
+    // tab trail before it can leave the app.
+    if (t !== tabRef.current) history.pushState({ nuvoTab: t }, "");
     setTabState(t);
     try {
       localStorage.setItem(TAB_KEY, t);
@@ -115,6 +124,26 @@ export default function MobileShell() {
       /* ignore */
     }
   };
+
+  // Restore the tab a popped history entry names. Overlay-level entries are
+  // owned by useMobileOverlayHistory; entries with neither payload are the root.
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const s = e.state as { nuvoTab?: string; nuvoOverlay?: string } | null;
+      if (s?.nuvoOverlay) return;
+      const t = isTab(s?.nuvoTab ?? null) ? (s!.nuvoTab as Tab) : launchTab.current;
+      if (t !== tabRef.current) {
+        setTabState(t);
+        try {
+          localStorage.setItem(TAB_KEY, t);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const setSub = (s: MobileTab) => {
     setSubState(s);
     try {
@@ -139,6 +168,19 @@ export default function MobileShell() {
   // so the agent's screen context follows you into the item.
   const [detailTarget, setDetailTarget] = useState<DetailTarget | null>(null);
   const [detailFrame, setDetailFrame] = useState<Frame | null>(null);
+
+  // Every overlay is history-backed: Android hardware-back and the iOS
+  // standalone back-swipe close the top overlay instead of exiting the app.
+  // (detailTarget is handled inside MobileDetailSheet, which also gives each
+  // breadcrumb frame its own entry via useMobileSheetStackHistory.)
+  useMobileOverlayHistory(chatOpen, () => setChatOpen(false), "chat");
+  useMobileOverlayHistory(planOpen, () => setPlanOpen(false), "plan");
+  useMobileOverlayHistory(quickOpen, () => setQuickOpen(false), "quick");
+  useMobileOverlayHistory(Boolean(taskId), () => setTaskId(null), "task");
+  useMobileOverlayHistory(Boolean(calendarTap), () => setCalendarTap(null), "event");
+  useMobileOverlayHistory(settingsOpen, () => setSettingsOpen(false), "settings");
+  useMobileOverlayHistory(upkeepOpen, () => setUpkeepOpen(false), "upkeep");
+  useMobileOverlayHistory(searchOpen, () => setSearchOpen(false), "search");
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -366,7 +408,7 @@ export default function MobileShell() {
               onClick={() => setQuickOpen(true)}
               aria-label="Quick task"
               data-teach="capture"
-              className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-white active:scale-95"
+              className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-on-accent active:scale-95"
             >
               ＋
             </button>
@@ -537,13 +579,16 @@ function NavTab({
       </span>
       <span className="text-meta font-medium leading-none">{tab.label}</span>
       {badge > 0 && (
+        // Inactive counts sit as inked pills on a real surface — the old
+        // line-strong fill left the number at ~1.5:1 in both themes.
         <span
-          className="mono absolute right-[24%] top-1 rounded-full px-1 text-micro font-semibold leading-[14px]"
+          className="mono absolute right-[24%] top-1 rounded-full px-1 text-micro font-semibold leading-[13px]"
           style={{
-            minWidth: 14,
-            height: 14,
-            background: active ? "var(--accent)" : "var(--line-strong)",
-            color: active ? "#fff" : "var(--surface)",
+            minWidth: 15,
+            height: 15,
+            background: active ? "var(--accent)" : "var(--surface-2)",
+            color: active ? "var(--on-accent)" : "var(--ink)",
+            border: active ? "1px solid var(--accent)" : "1px solid var(--line-strong)",
           }}
         >
           {badge}
@@ -573,18 +618,22 @@ function TaskSubtabs({
             key={t.id}
             onClick={() => setSub(t.id)}
             className={`tap fast flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-body font-medium ${
-              on ? "bg-accent text-white" : "text-muted active:bg-surface-2"
+              on ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
             }`}
           >
             {t.label}
             {c > 0 && (
+              // Active: an inverted pill (on-accent ground, accent numeral) —
+              // the translucent white fill hid the count. Inactive: an inked
+              // pill on surface-2, same as the nav badge.
               <span
-                className="mono rounded-full px-1 text-micro font-semibold leading-[14px]"
+                className="mono rounded-full px-1 text-micro font-semibold leading-[13px]"
                 style={{
-                  minWidth: 14,
-                  height: 14,
-                  background: on ? "rgba(255,255,255,0.25)" : "var(--line-strong)",
-                  color: on ? "#fff" : "var(--surface)",
+                  minWidth: 15,
+                  height: 15,
+                  background: on ? "var(--on-accent)" : "var(--surface-2)",
+                  color: on ? "var(--accent)" : "var(--ink)",
+                  border: on ? "none" : "1px solid var(--line-strong)",
                 }}
               >
                 {c}

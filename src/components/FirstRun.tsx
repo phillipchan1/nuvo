@@ -215,7 +215,7 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
             type="button"
             disabled={!chosen.length || busy}
             onClick={create}
-            className="tap fast min-h-[44px] rounded-md bg-accent px-4 py-2.5 text-body font-medium text-white disabled:opacity-40"
+            className="tap fast min-h-[44px] rounded-md bg-accent px-4 py-2.5 text-body font-medium text-on-accent disabled:opacity-40"
           >
             {busy
               ? "Setting up…"

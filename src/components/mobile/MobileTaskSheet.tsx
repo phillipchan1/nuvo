@@ -92,7 +92,11 @@ export default function MobileTaskSheet({
             onChange={(e) => setTitle(e.target.value)}
             onBlur={commitTitle}
             rows={1}
-            className="w-full resize-none bg-transparent text-head font-medium outline-none"
+            aria-label="Task title"
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            spellCheck
+            className="w-full resize-none bg-transparent font-medium outline-none"
           />
           {(task.duration_minutes || task.start_time) && (
             <div className="mono mt-1 text-caption text-muted">
@@ -110,7 +114,7 @@ export default function MobileTaskSheet({
           className={`tap fast mt-3 w-full rounded-xl border py-3 text-head font-semibold active:translate-y-px ${
             done
               ? "border-line text-muted"
-              : "border-accent bg-accent text-white"
+              : "border-accent bg-accent text-on-accent"
           }`}
         >
           {done ? "↩ Reopen" : "✓ Mark done"}
@@ -223,7 +227,7 @@ function Chip({
       onClick={onClick}
       className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
         on
-          ? "border-accent bg-accent text-white"
+          ? "border-accent bg-accent text-on-accent"
           : "border-line text-muted hover:border-accent hover:text-accent"
       }`}
     >
@@ -260,19 +264,21 @@ function DateTimePicker({
       <input
         type="date"
         value={date}
+        aria-label="Date"
         onChange={(e) => setDate(e.target.value)}
-        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-head outline-none focus:border-accent"
+        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 outline-none focus:border-accent"
       />
       <input
         type="time"
         value={time}
         step={900}
+        aria-label="Time"
         onChange={(e) => setTime(e.target.value)}
-        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-head outline-none focus:border-accent"
+        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 outline-none focus:border-accent"
       />
       <button
         onClick={apply}
-        className="tap fast rounded-lg border border-accent bg-accent px-4 py-2 text-head font-medium text-white"
+        className="tap fast rounded-lg border border-accent bg-accent px-4 py-2 text-head font-medium text-on-accent"
       >
         Set
       </button>

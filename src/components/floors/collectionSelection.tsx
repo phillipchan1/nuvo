@@ -88,7 +88,7 @@ export function SelectCheckbox({
       aria-label={checked ? "Deselect" : preview ? "Will select" : "Select"}
       className={`fast flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
         checked
-          ? "border-accent bg-accent text-white"
+          ? "border-accent bg-accent text-on-accent"
           : preview
             ? "border-accent/70 bg-accent-soft text-accent"
             : "border-line bg-surface hover:border-accent"

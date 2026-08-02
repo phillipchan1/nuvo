@@ -10,6 +10,7 @@ import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useEventRouter } from "../hooks/useEventRouter";
 import MobileShell from "./mobile/MobileShell";
+import ErrorBoundary from "./ErrorBoundary";
 import FirstRun from "./FirstRun";
 import Planner from "./Planner";
 import Spine from "./Spine";
@@ -86,7 +87,15 @@ function ResponsiveShell() {
     return <FirstRun onSkip={() => setSkippedFirstRun(true)} />;
   }
 
-  return isMobile ? <MobileShell /> : <AppShellInner />;
+  // MobileShell gets its own boundary so a crash inside one floor surfaces the
+  // recovery card without also unmounting the app-level providers above it.
+  return isMobile ? (
+    <ErrorBoundary label="mobile shell">
+      <MobileShell />
+    </ErrorBoundary>
+  ) : (
+    <AppShellInner />
+  );
 }
 
 function AppShellInner() {

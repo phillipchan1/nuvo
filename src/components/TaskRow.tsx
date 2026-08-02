@@ -411,7 +411,7 @@ export default function TaskRow({
           onClick={(e) => { e.stopPropagation(); toggle(); }}
           className={`fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
             completing ? "bloom" : ""
-          } ${done || completing ? "border-accent bg-accent text-white" : "border-muted hover:border-accent"}`}
+          } ${done || completing ? "border-accent bg-accent text-on-accent" : "border-muted hover:border-accent"}`}
         >
           {(done || completing) && (
             <svg width="9" height="9" viewBox="0 0 10 10" fill="none">

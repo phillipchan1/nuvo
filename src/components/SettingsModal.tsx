@@ -187,7 +187,7 @@ function ThemeCard({
         <span className="text-caption font-medium capitalize text-ink">{theme}</span>
         <span
           className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
-            active ? "border-accent bg-accent text-white" : "border-line-strong"
+            active ? "border-accent bg-accent text-on-accent" : "border-line-strong"
           }`}
         >
           {active && (
@@ -243,7 +243,7 @@ function SchemeCard({
         </span>
         <span
           className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
-            active ? "border-accent bg-accent text-white" : "border-line-strong"
+            active ? "border-accent bg-accent text-on-accent" : "border-line-strong"
           }`}
         >
           {active && (
@@ -304,7 +304,7 @@ function SkinCard({
         </span>
         <span
           className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
-            active ? "border-accent bg-accent text-white" : "border-line-strong"
+            active ? "border-accent bg-accent text-on-accent" : "border-line-strong"
           }`}
         >
           {active && (
@@ -1089,7 +1089,7 @@ function UpdateControls() {
           {state.status === "ready" ? (
             <button
               onClick={restart}
-              className="fast rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
+              className="fast rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-on-accent shadow-sm hover:brightness-110 active:translate-y-px"
             >
               Restart to update
             </button>
@@ -1338,7 +1338,7 @@ function AboutPane({ onClose }: { onClose: () => void }) {
         <Row title="Download for Mac" desc="Native app — Apple Silicon & Intel, updates itself in the background.">
           <a
             href={DOWNLOAD_MAC_URL}
-            className="fast inline-block rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
+            className="fast inline-block rounded-md border border-accent bg-accent px-3 py-1.5 text-caption font-medium text-on-accent shadow-sm hover:brightness-110 active:translate-y-px"
           >
             Download
           </a>

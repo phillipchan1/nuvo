@@ -224,7 +224,7 @@ function RockChip({ rock, data, onToggle }: { rock: BigRock; data: VerticalData;
     >
       <span
         className="mono flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-micro"
-        style={{ borderColor: done ? "var(--accent)" : "var(--line)", background: done ? "var(--accent)" : "transparent", color: "#fff" }}
+        style={{ borderColor: done ? "var(--accent)" : "var(--line)", background: done ? "var(--accent)" : "transparent", color: "var(--on-accent)" }}
       >
         {done ? "✓" : ""}
       </span>

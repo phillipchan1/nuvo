@@ -330,7 +330,7 @@ function SegHeader({ seg, setSeg }: { seg: Seg; setSeg: (s: Seg) => void }) {
             key={t.id}
             onClick={() => setSeg(t.id)}
             className={`tap fast flex flex-1 items-center justify-center rounded-lg py-1.5 text-body font-medium ${
-              on ? "bg-accent text-white" : "text-muted active:bg-surface-2"
+              on ? "bg-accent text-on-accent" : "text-muted active:bg-surface-2"
             }`}
           >
             {t.label}

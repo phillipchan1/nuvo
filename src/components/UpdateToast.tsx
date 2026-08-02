@@ -42,7 +42,7 @@ export default function UpdateToast() {
           <div className="pt-1">
             <button
               onClick={restart}
-              className="fast rounded-md border border-accent bg-accent px-3 py-1 text-label font-medium text-white shadow-sm hover:brightness-110 active:translate-y-px"
+              className="fast rounded-md border border-accent bg-accent px-3 py-1 text-label font-medium text-on-accent shadow-sm hover:brightness-110 active:translate-y-px"
             >
               Restart to update
             </button>

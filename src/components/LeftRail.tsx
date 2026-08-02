@@ -1082,7 +1082,7 @@ function SchedulePicker({
           onChange={(e) => setTime(e.target.value)}
           className="mono border border-line bg-bg px-2 py-1 text-caption outline-none focus:border-accent"
         />
-        <button onClick={apply} className="fast border border-accent bg-accent px-2.5 py-1 text-caption text-white">
+        <button onClick={apply} className="fast border border-accent bg-accent px-2.5 py-1 text-caption text-on-accent">
           Set
         </button>
       </div>

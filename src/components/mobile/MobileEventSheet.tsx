@@ -121,7 +121,7 @@ export default function MobileEventSheet({
               target="_blank"
               rel="noreferrer"
               onClick={onClose}
-              className="tap fast mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3.5 text-head font-semibold text-white active:translate-y-px"
+              className="tap fast mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3.5 text-head font-semibold text-on-accent active:translate-y-px"
             >
               <svg width="16" height="16" viewBox="0 0 12 12" fill="none" className="shrink-0">
                 <rect x="1" y="3" width="6.5" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.2" />
@@ -146,7 +146,7 @@ export default function MobileEventSheet({
                         active
                           ? isDecline
                             ? "border-signal bg-signal/10 text-signal"
-                            : "border-accent bg-accent text-white"
+                            : "border-accent bg-accent text-on-accent"
                           : "border-line text-muted"
                       }`}
                     >
@@ -200,7 +200,7 @@ export default function MobileEventSheet({
             onClose();
           }}
           className={`tap fast w-full rounded-xl border py-3 text-head font-semibold active:translate-y-px ${
-            done ? "border-line text-muted" : "border-accent bg-accent text-white"
+            done ? "border-line text-muted" : "border-accent bg-accent text-on-accent"
           }`}
         >
           {done ? "↩ Reopen" : "✓ Mark done"}
@@ -270,7 +270,7 @@ function Chip({ children, on, onClick }: { children: React.ReactNode; on?: boole
     <button
       onClick={onClick}
       className={`tap fast rounded-full border px-3.5 py-2 text-body font-medium ${
-        on ? "border-accent bg-accent text-white" : "border-line text-muted"
+        on ? "border-accent bg-accent text-on-accent" : "border-line text-muted"
       }`}
     >
       {children}
@@ -310,7 +310,7 @@ function ReschedulePicker({ task, mutations, onDone }: { task: Task; mutations: 
       />
       <button
         onClick={apply}
-        className="tap fast rounded-lg border border-accent bg-accent px-4 py-2 text-head font-medium text-white"
+        className="tap fast rounded-lg border border-accent bg-accent px-4 py-2 text-head font-medium text-on-accent"
       >
         Set
       </button>

@@ -215,7 +215,7 @@ export function WeekFindCard({
 
         {!response && (
           <div className="mt-4 flex flex-wrap gap-2">
-            <button onClick={() => void respond("confirmed")} className="tap fast rounded-full bg-accent px-4 py-2 text-label font-medium text-white">
+            <button onClick={() => void respond("confirmed")} className="tap fast rounded-full bg-accent px-4 py-2 text-label font-medium text-on-accent">
               That's true
             </button>
             <button onClick={() => setOpenReceipts(true)} className="tap fast rounded-full border border-line px-4 py-2 text-label text-ink hover:border-line-strong">
@@ -257,7 +257,7 @@ export function WeekFindCard({
               className="w-full resize-none rounded-md border border-line bg-transparent px-3 py-2 text-body text-ink placeholder:text-muted focus:border-accent focus:outline-none"
             />
             <div className="mt-2 flex gap-2">
-              <button onClick={() => void saveMonday()} className="tap fast rounded-full bg-accent px-4 py-2 text-label font-medium text-white">
+              <button onClick={() => void saveMonday()} className="tap fast rounded-full bg-accent px-4 py-2 text-label font-medium text-on-accent">
                 Save for Monday
               </button>
               <button onClick={() => setShowMonday(false)} className="tap fast rounded-full px-3 py-2 text-label text-muted">

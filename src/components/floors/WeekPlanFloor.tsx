@@ -220,7 +220,7 @@ export function WeekPlanBody({
             <div className="mt-5">
               <button
                 onClick={onCompose}
-                className="fast inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-label font-medium text-white shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
+                className="fast inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-label font-medium text-on-accent shadow-sm hover:brightness-110 hover:shadow-[0_6px_16px_-6px_var(--accent-glow)] active:translate-y-px"
               >
                 {composeLabel ?? "Plan the week"}
                 <span aria-hidden>→</span>
