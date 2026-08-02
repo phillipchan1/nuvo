@@ -2069,7 +2069,77 @@ history — they just have no reader. Supersedes the "surface The Find" half of 
 product promise; the "at most one, hide when nothing notable" rule is moot while there's
 no surface. *Status: standing.*
 
-**D-069 · 2026-08-01 · Manifest `orientation: "portrait"` stays — and it is not the
+**D-069 · 2026-08-02 · The phone's record is the desktop record, and status is not the
+headline.** Phil, on the mobile project/initiative record: "status is not important and
+there's no way for me to add tasks which is problematic… I also don't see comments? This
+should hopefully be a replica of what's on desktop." So the phone's detail sheet now
+leads with the work and files the bookkeeping at the foot: **Week/Quarter → Tasks →
+Comments → Momentum → Status**, where it used to be Status → Week → a read-only task
+list and no thread at all. Tasks are editable on the phone (add via one free-text line
+through `parseCapture`, toggle, delete-with-undo) — "scaffold it on the desktop" is not
+an answer for a surface you carry. Comments are the *same* `RecordLog` the desktop
+record mounts, not a phone copy. Status drops from five always-on chips to one native
+`<select>` row; shipping still routes through `ProjectShipAssess`. *Status: standing.*
+
+**D-070 · 2026-08-02 · The phone plans six weeks out, and the strip scrolls.** Phil:
+four weeks is not enough runway — "not this month" had nowhere to land. The phone's
+projects deck now reaches **six** weeks (`PHONE_WEEK_HORIZON`), which is more columns
+than a 375px strip can show legibly, so the strip scrolls horizontally and the coverage
+rows scroll in lockstep with it (one grid, two scrollers). The pool cell and the domain
+icons are a pinned label gutter outside both scrollers, so "shelve it" stays reachable
+from any column. The record's week picker takes the same horizon — a week you can drag
+onto has to be a week you can tap onto. **Desktop is unchanged**: `OnDeckPlanner` and
+the record rail's quiet band both keep the shared `HORIZON = 4` default, which is now a
+prop rather than a constant. *Status: standing.*
+
+**D-071 · 2026-08-02 · One hero per phone screen — the week you're standing in.** Phil,
+on the mobile deck: "functionality is great but I find myself a little confused." The
+deck stacked four full-weight bands (crown eyebrow · crown bar · the shaping line ·
+strip · coverage) above a column head set in the same semibold sans as the section
+labels, so the page's actual subject was the least prominent thing on it. The crown
+collapses to one quiet line, and the column title becomes the hero in Fraunces
+(`text-lead masthead`) like every other floor / day hero. The column head no longer
+reprints `load/cap` — the strip cell directly above already carries that number — except
+when over cap, where the warning is the point. *Status: standing.*
+
+**D-072 · 2026-08-02 · Icon-only tap targets get a 44px hit box, not a 44px circle.**
+Phil: "the close buttons for these things need to be larger overall on mobile, hard to
+press." `.tap` only ever set `min-height`, so every ✕ / ‹ / ⋯ drawn at 32px stayed a
+32px-wide thumb target. `.tap-icon` grows the *hit area* to 44×44 from the centre with a
+transparent `::after` and leaves the drawn control exactly its old size — bigger target,
+zero layout shift, nothing to re-tune per surface. Scoped inside the ≤767px block, so
+desktop hit boxes are untouched. Applied to the bottom `Sheet` (which every mobile sheet
+goes through), the detail sheet's back arrow, the chat close, search clear, the three
+top-bar buttons, the trial banner's dismiss, task check/delete and the comment ⋯ menu.
+*Status: standing.*
+
+**D-073 · 2026-08-02 · The phone record's head is the desktop `Head`, and the sheet's
+title row earns its keep.** Phil: "why are we showing the project card, we have title
+there twice… top is a lot of misappropriated space." The name was printed in the sheet's
+title row *and* again inside a bordered card below it, with the outcome and a progress
+bar — three bands before the first section. Now there is **one hero**, named once (D-041):
+the record body opens with the name in Fraunces (`text-display masthead`, editable) and
+the outcome as the lead line under it, no frame — the sheet is already the card. The
+title row, which has to exist anyway for Back / ✕ / the drag handle, carries the crumb
+row at rest and cross-fades to the name once the hero scrolls past (iOS's large-title
+collapse). Progress moved onto the section rules, where the desktop's `Sec` already draws
+it. **The domain is now changeable on the phone** — the same `DomainPicker` the desktop
+record wears, with the same cross-domain detach for projects and the same
+takes-its-projects-with-it cascade for initiatives. The record no longer links *to* a
+domain screen (desktop doesn't either); domain records stay reachable from global search.
+Head height above the hero fell from ~135px to 81px. *Status: standing.*
+
+**D-074 · 2026-08-02 · A bet is measurable from the phone.** Auditing D-073 across both
+altitudes: the project record could be worked (tasks add / toggle / delete) but the
+initiative record's **key results were read-only, and the section vanished when there
+were none** — so a bet could never be made measurable from a phone, and "Measured" was a
+readiness axis only a desktop could satisfy. The KR section is now always present with a
+composer, and each result edits in place: name, current, target, unit, delete. Attainment
+rides the section rule, matching the desktop record's `Sec`. Every section on all three
+mobile records now uses one grammar — label · optional meter · the rule that doubles as
+progress — instead of counts baked into the label text. *Status: standing.*
+
+**D-075 · 2026-08-01 · Manifest `orientation: "portrait"` stays — and it is not the
 landscape fix.** The mobile a11y pass flagged the PWA manifest's `orientation` field:
 only an *installed Android* app honours it; iOS PWAs, mobile browsers and desktop ignore
 it entirely, so it never addressed the real landscape bug (a sideways iPhone at 844×390

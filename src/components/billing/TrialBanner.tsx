@@ -49,7 +49,7 @@ export function TrialBanner() {
             type="button"
             aria-label="Dismiss"
             onClick={() => setDismissed(true)}
-            className="tap fast shrink-0 text-signal/70 hover:text-signal"
+            className="tap-icon fast flex shrink-0 items-center justify-center text-signal/70 hover:text-signal"
           >
             ✕
           </button>

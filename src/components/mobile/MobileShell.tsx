@@ -394,7 +394,7 @@ export default function MobileShell() {
         <button
           onClick={() => setSearchOpen(true)}
           aria-label="Search"
-          className="fast flex h-11 w-11 items-center justify-center rounded-full border border-line text-muted active:scale-95"
+          className="tap-icon fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-muted active:scale-95"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <circle cx="11" cy="11" r="7" />
@@ -408,14 +408,14 @@ export default function MobileShell() {
             })
           }
           aria-label="Toggle theme"
-          className="fast flex h-11 w-11 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
+          className="tap-icon fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
           ☾
         </button>
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
-          className="fast flex h-11 w-11 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
+          className="tap-icon fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
           ⚙
         </button>

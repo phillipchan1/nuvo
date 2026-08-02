@@ -99,7 +99,7 @@ export default function ChatPane({
             <button
               onClick={onClose}
               aria-label="Close chat"
-              className="tap fast flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted active:bg-surface-2"
+              className="tap-icon fast flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted active:bg-surface-2"
             >
               ✕
             </button>

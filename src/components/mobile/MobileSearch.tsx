@@ -106,7 +106,7 @@ export default function MobileSearch({
             <button
               onClick={() => setQ("")}
               aria-label="Clear search"
-              className="fast flex h-11 w-11 shrink-0 items-center justify-center text-lead text-muted active:text-ink"
+              className="tap-icon fast flex shrink-0 items-center justify-center text-lead text-muted active:text-ink"
             >
               ✕
             </button>

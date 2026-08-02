@@ -2070,6 +2070,23 @@ select.field { appearance: none; -webkit-appearance: none; }
     overflow: hidden !important;
   }
 
+  /* Icon-only controls (✕, ‹, ⋯, ☾, ⚙) — `.tap` only guarantees HEIGHT, so a
+     32px round ✕ stayed a 32px-wide thumb target and every sheet was hard to
+     close. This grows the HIT AREA to 44×44 from the centre with a transparent
+     ::after, leaving the drawn circle exactly the size it was — bigger target,
+     zero layout shift, and nothing to re-tune per surface. Desktop never sees
+     it (this whole block is ≤767px). */
+  .tap-icon { position: relative; }
+  .tap-icon::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
   /* Hide the thin desktop scrollbars; touch surfaces don't need them. */
   .mobile-scroll::-webkit-scrollbar { width: 0; height: 0; }
 
