@@ -380,11 +380,159 @@ html.spotlight-window .glass-card {
 /* The atmosphere: a whisper of dawn (top-left) and dusk (bottom-right) light,
    laid over the base surface. Used on the big full-bleed surfaces — the panels
    that sit on top stay clean. Subtle on purpose; it should be felt, not seen. */
+/* --atmosphere-base is the paper the two lights are laid over. It stays --bg
+   everywhere except Aurora's raised sheet, which makes it translucent so the
+   shell diffuses through — same gradient, thinner ground. */
 .atmosphere {
   background:
     radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--signal) 7%, transparent), transparent 42%),
     radial-gradient(130% 100% at 100% 100%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 46%),
-    var(--bg);
+    var(--atmosphere-base, var(--bg));
+}
+
+/* ── The three planes — AURORA ONLY ────────────────────────────────────────
+   Aurora (`paper`, the skin that sets no data-skin attribute) is the glass
+   material. There the app is three real planes:
+
+     ground  — the deep paper the whole thing rests on
+     shell   — a frosted pane; THE CHAT LIVES HERE, it is not a panel on top
+     sheet   — the app itself (spine · rail · calendar), raised off the shell
+
+   Opening Nuvo slides the SHEET left to uncover a chat that was underneath the
+   whole time. That is the point: the app sits ON the conversation.
+
+   Deliberately not shared with the other materials. Flat, Terminal, Blueprint
+   and E-ink kill `backdrop-filter` wholesale and Eink zeroes every shadow, so
+   "a floating glass sheet" there degrades into three flat rectangles pretending
+   to be layered — worse than the honest edge-to-edge they already had. They get
+   the plain full-bleed canvas and nothing else.
+
+   The cardinal rule holds: `.atmosphere` lives on the SHEET, still painted
+   exactly once, still continuous across spine · rail · calendar. */
+:root {
+  --ground: color-mix(in srgb, black 5%, var(--bg));
+  /* The middle plane, derived to land between the two it separates. */
+  --shell: color-mix(in srgb, var(--ground) 55%, var(--bg));
+}
+/* A dark ground has no room left to darken — mixing black into a near-black is
+   still that near-black. Step toward --line instead. */
+[data-theme="dark"] {
+  --ground: color-mix(in srgb, var(--line) 42%, var(--bg));
+}
+
+/* Structure only, every material — no paint, so the DOM stays meaningful. */
+.app-ground {
+  position: relative;
+}
+.app-shell {
+  position: relative;
+  overflow: hidden;
+}
+/* The reveal: the SHEET moves, the chat was always there. Width (not transform)
+   so the sheet genuinely re-lays-out and the calendar reflows into the space.
+   `display: flex` is load-bearing: without it the <aside> inside is a block at
+   content height, the chat stops being full-height, and its composer floats in
+   the middle of the panel instead of sitting at the foot. */
+.app-chat-slot {
+  display: flex;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width var(--d-slow) var(--ease-out);
+}
+.app-titlebar-drag {
+  display: none;
+}
+
+/* ── Aurora's glass ─────────────────────────────────────────────────────── */
+html:not([data-skin]) .app-ground {
+  background: var(--ground);
+  padding: 10px;
+}
+
+html:not([data-skin]) .app-shell {
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, white 30%, var(--line));
+  box-shadow: var(--shadow-3);
+  /* Frosted, and thin enough that the ground genuinely reads through it —
+     this is the plane the chat is printed on. */
+  background:
+    linear-gradient(155deg, color-mix(in srgb, white 22%, transparent), transparent 62%),
+    color-mix(in srgb, var(--shell) 72%, transparent);
+  -webkit-backdrop-filter: blur(26px) saturate(1.35);
+  backdrop-filter: blur(26px) saturate(1.35);
+}
+
+/* The sheet is glass too — airy, not a solid slab. --atmosphere-base lets the
+   warm-paper gradient stay exactly as it is while its base goes translucent, so
+   the shell diffuses through the app instead of being hidden by it. */
+html:not([data-skin]) .app-canvas {
+  --atmosphere-base: color-mix(in srgb, var(--bg) 82%, transparent);
+  margin: 7px;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, white 46%, var(--line));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 40%, transparent),
+    var(--shadow-2);
+  overflow: hidden;
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  backdrop-filter: blur(20px) saturate(1.25);
+}
+
+/* Aurora's chat furniture is glass too. The chat is printed on the shell, so a
+   filled `--surface-2` field and a 3px accent ring read as UI bolted onto the
+   pane — the reference is a hairline on frost, and focus that warms rather than
+   rings. Scoped to the rail: the phone sheet and the ⌘K panel keep solid fields,
+   because neither of them sits on a frosted shell. */
+html:not([data-skin]) .agent-rail .agent-compose-box {
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+  border-color: color-mix(in srgb, white 42%, var(--line));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 32%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  backdrop-filter: blur(12px) saturate(1.2);
+}
+/* Focus lifts, it doesn't outline — no ring, no accent edge, just a touch more
+   glass and a shadow. The hairline stays exactly where it was. */
+html:not([data-skin]) .agent-rail .agent-compose-box:focus-within {
+  border-color: color-mix(in srgb, white 52%, var(--line));
+  background: color-mix(in srgb, var(--surface) 56%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    var(--shadow-2);
+}
+html:not([data-skin]) .agent-rail .agent-suggestion-chip {
+  background: color-mix(in srgb, var(--surface) 38%, transparent);
+  border-color: color-mix(in srgb, white 38%, var(--line));
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+  backdrop-filter: blur(10px) saturate(1.15);
+}
+html:not([data-skin]) .agent-rail .agent-suggestion-chip:hover {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+
+/* Below Nuvo's own collapse threshold there is no width to spend on a gutter —
+   everything goes flush and the app fills the window. */
+@media (max-width: 1279px) {
+  html:not([data-skin]) .app-ground {
+    padding: 0;
+    background: none;
+  }
+  html:not([data-skin]) .app-shell,
+  html:not([data-skin]) .app-canvas {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html:not([data-skin]) .app-canvas {
+    --atmosphere-base: var(--bg);
+    background:
+      radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--signal) 7%, transparent), transparent 42%),
+      radial-gradient(130% 100% at 100% 100%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 46%),
+      var(--bg);
+  }
 }
 
 /* macOS overlay titlebar — room for traffic lights (set in main.tsx) */
@@ -392,6 +540,39 @@ html.tauri-macos {
   --titlebar-inset-left: 78px;
   --titlebar-inset-top: 28px;
   --spine-width: 188px;
+  /* Preserved copies. The insets above are zeroed INSIDE the frame (see below);
+     anything that covers the whole window instead of living in the sheet must
+     still clear the real traffic lights, and reads these. */
+  --titlebar-h: 28px;
+  --titlebar-x: 78px;
+}
+
+/* The traffic lights float at fixed window coordinates, so a 10px top gutter
+   would collide them with the frame's rounded corner. Give the ground a full
+   titlebar band instead and put the lights in it, above the sheet.
+
+   Then zero the insets on the frame. Every consumer reads
+   var(--titlebar-inset-top/-left), so .spine-top, .rail-titlebar-drag,
+   .app-topbar, .trial-banner, .titlebar-pad and .spine-separator all collapse
+   through the cascade — no edits to those rules. Nothing inside the sheet
+   reserves for lights that are no longer over it. */
+/* Aurora only, because only Aurora has a gutter for the lights to sit in. On a
+   flat material the app is edge to edge, the lights are over the app itself,
+   and the insets below must keep their real values. */
+html.tauri-macos:not([data-skin]) .app-ground {
+  padding-top: var(--titlebar-h);
+}
+html.tauri-macos:not([data-skin]) .app-titlebar-drag {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-h);
+}
+html.tauri-macos:not([data-skin]) .app-shell {
+  --titlebar-inset-top: 0px;
+  --titlebar-inset-left: 0px;
 }
 
 /* Floor headers (Today / Project / Initiative / Domain) keep a chrome bar, so
@@ -403,9 +584,12 @@ html.tauri-macos .app-topbar {
 
 /* Full-screen ritual overlays (FlowShell) have no spine, so they need both top
    AND left padding to clear the macOS traffic lights. */
+/* FlowShell is `fixed inset-0` — it covers the whole WINDOW, ground and all,
+   even though it renders inside the frame. So it reads the preserved values,
+   not the in-frame insets (which are zeroed): the lights really are over it. */
 html.tauri-macos .flow-topbar {
-  padding-top: var(--titlebar-inset-top);
-  padding-left: var(--titlebar-inset-left);
+  padding-top: var(--titlebar-h, var(--titlebar-inset-top));
+  padding-left: var(--titlebar-x, var(--titlebar-inset-left));
 }
 
 /* The trial banner sits above the Spine, at the true top of the window, so it
@@ -1878,9 +2062,21 @@ select.field { appearance: none; -webkit-appearance: none; }
   border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
   border-bottom-right-radius: var(--radius-sm);
 }
-.agent-bubble-assistant {
-  background: var(--surface-2);
-  border-bottom-left-radius: var(--radius-sm);
+
+/* Nuvo's half of the conversation has no bubble — it IS the page. Only the
+   user's line keeps a frame, because a quotation is the one thing here that
+   came from somewhere else. Carries the entrance the bubble used to own. */
+.agent-turn {
+  animation: rise var(--d-base) var(--ease-out) both;
+}
+/* Quiet until wanted. Mobile keeps them visible (the compact branch drops the
+   opacity-0 class outright) — there is no hover to reveal them with. */
+.agent-turn-actions {
+  transition: opacity var(--d-fast) var(--ease-out);
+}
+.agent-turn:hover .agent-turn-actions,
+.agent-turn:focus-within .agent-turn-actions {
+  opacity: 1;
 }
 
 .agent-markdown > :first-child {

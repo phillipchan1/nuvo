@@ -6,6 +6,7 @@ import type { AgentHandle } from "../hooks/useAgent";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import AgentMessageBubble from "./AgentMessageBubble";
 import AgentSuggestionChips from "./AgentSuggestionChips";
+import AgentThinking from "./AgentThinking";
 import { Keycap, Modal } from "./ui";
 import { AltitudeIcon, type AltitudeKind } from "./icons";
 
@@ -628,15 +629,11 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
                 />
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {messages.map((m) => (
                   <AgentMessageBubble key={m.id} message={m} compact />
                 ))}
-                {loading && (
-                  <div className="agent-bubble agent-bubble-assistant w-fit">
-                    <span className="mono shimmer text-label">Thinking…</span>
-                  </div>
-                )}
+                {loading && <AgentThinking compact />}
                 {activeSuggestions && (
                   <AgentSuggestionChips
                     suggestions={activeSuggestions}

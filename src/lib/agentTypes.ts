@@ -19,6 +19,10 @@ export interface AgentMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** When the message was composed, epoch ms. Client-side only — the edge never
+   *  sees it. Rendered under the user's line so a long-running conversation has
+   *  somewhere to read its own age. */
+  at?: number;
   attachments?: AgentAttachment[];
   actions?: AgentAction[];
   /** Clickable quick replies rendered below this message. */

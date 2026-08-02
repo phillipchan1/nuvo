@@ -63,6 +63,12 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The history a turn is sent with is read from here, not from the `messages`
+  // closure: `retry` has to rewind the transcript and send in the same tick, and
+  // a closure would still be holding the un-rewound array.
+  const messagesRef = useRef<AgentMessage[]>(messages);
+  messagesRef.current = messages;
+
   const sendMessage = useCallback(
     async (text: string, attachments: AgentAttachment[] = []) => {
       const trimmed = text.trim();
@@ -73,6 +79,7 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
         id: uid(),
         role: "user",
         content: trimmed,
+        at: Date.now(),
         attachments: hasAttachments ? attachments : undefined,
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -94,7 +101,9 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
       };
 
       try {
-        const history = [...messages, userMsg].slice(-MAX_HISTORY_MESSAGES).map(toApiMessage);
+        const history = [...messagesRef.current, userMsg]
+          .slice(-MAX_HISTORY_MESSAGES)
+          .map(toApiMessage);
 
         // The agent replies over SSE; `functions.invoke` can't consume a stream,
         // so call the function endpoint directly and read the body ourselves.
@@ -212,7 +221,7 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
         setLoading(false);
       }
     },
-    [loading, messages, qc, range.end, range.start],
+    [loading, qc, range.end, range.start],
   );
 
   const clear = useCallback(() => {
@@ -220,7 +229,25 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
     setError(null);
   }, []);
 
-  return { messages, loading, error, sendMessage, clear };
+  /** Ask the last question again. Rewinds to just before the newest user turn
+   *  and re-sends it, so the retried answer REPLACES the one you rejected
+   *  instead of piling a duplicate question onto the transcript. */
+  const retry = useCallback(() => {
+    if (loading) return;
+    const msgs = messagesRef.current;
+    let i = msgs.length - 1;
+    while (i >= 0 && msgs[i].role !== "user") i--;
+    if (i < 0) return;
+    const target = msgs[i];
+    const rewound = msgs.slice(0, i);
+    // Set the ref too — sendMessage reads history from it in this same tick.
+    messagesRef.current = rewound;
+    setMessages(rewound);
+    setError(null);
+    void sendMessage(target.content, target.attachments ?? []);
+  }, [loading, sendMessage]);
+
+  return { messages, loading, error, sendMessage, clear, retry };
 }
 
 export type AgentHandle = ReturnType<typeof useAgent>;

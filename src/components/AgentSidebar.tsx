@@ -11,6 +11,7 @@ import { ASSISTANT_NAME } from "../lib/assistant";
 import AgentChatInput from "./AgentChatInput";
 import AgentMessageBubble from "./AgentMessageBubble";
 import AgentSuggestionChips from "./AgentSuggestionChips";
+import AgentThinking from "./AgentThinking";
 import { Keycap } from "./ui";
 
 const STORAGE_KEY = "nuvo-agent-open";
@@ -58,7 +59,7 @@ export default function AgentSidebar({
     [data, focus.domainId, focus.initiativeId, focus.projectId, initiativeView, projectView, rung, tab],
   );
 
-  const { messages, loading, error, sendMessage, clear } = agent;
+  const { messages, loading, error, sendMessage, clear, retry } = agent;
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [otherMode, setOtherMode] = useState(false);
@@ -94,6 +95,9 @@ export default function AgentSidebar({
   };
 
   const last = messages[messages.length - 1];
+  // Only the newest reply offers "try again" — retrying an older one would
+  // silently discard every exchange after it.
+  const retryableId = !loading && last?.role === "assistant" ? last.id : null;
   const activeSuggestions =
     !loading && last?.role === "assistant" && last.suggestions?.length ? last.suggestions : null;
 
@@ -110,7 +114,7 @@ export default function AgentSidebar({
 
   if (!open) {
     return (
-      <aside className="agent-rail-collapsed flex w-11 shrink-0 flex-col items-center border-l border-line">
+      <aside className="agent-rail-collapsed flex w-11 shrink-0 flex-col items-center">
         <button
           onClick={onToggle}
           title={`Open ${ASSISTANT_NAME} (⌘J)`}
@@ -137,6 +141,10 @@ export default function AgentSidebar({
 
   return (
     <aside
+      // No border and no fill: this is not a pane beside the app, it is the
+      // shell the app is resting on. A divider here would flatten the two
+      // planes back into one. The width is fixed so the slot can clip it
+      // during the slide instead of squashing the content.
       className="agent-rail relative flex w-[380px] shrink-0 flex-col"
       {...dropHandlers}
     >
@@ -186,15 +194,17 @@ export default function AgentSidebar({
             </div>
           </div>
         ) : (
-          <div className="mt-auto space-y-3">
+          // Unboxed turns need air — without the bubble edge, 12px reads as one
+          // run-on paragraph from two different speakers.
+          <div className="mt-auto space-y-5">
             {messages.map((m) => (
-              <AgentMessageBubble key={m.id} message={m} />
+              <AgentMessageBubble
+                key={m.id}
+                message={m}
+                onRetry={m.id === retryableId ? retry : undefined}
+              />
             ))}
-            {loading && last?.role !== "assistant" && (
-              <div className="agent-bubble agent-bubble-assistant w-fit">
-                <span className="mono shimmer text-label">Thinking…</span>
-              </div>
-            )}
+            {loading && last?.role !== "assistant" && <AgentThinking />}
             {activeSuggestions && (
               <div className="pl-0.5">
                 <AgentSuggestionChips

@@ -445,7 +445,10 @@ describe("the per-turn trace", () => {
 
 describe("reasoning and tools cannot be sent together", () => {
   /** Capture the request body createChatClient actually builds. */
-  async function bodyFor(opts: { reasoningEffort?: string; temperature?: number }, tools: unknown[]) {
+  async function bodyFor(
+    opts: { reasoningEffort?: string; temperature?: number; model?: string },
+    tools: unknown[],
+  ) {
     let sent: Record<string, unknown> = {};
     const client = createChatClient({
       baseUrl: "https://example.invalid/v1",
@@ -465,20 +468,43 @@ describe("reasoning and tools cannot be sent together", () => {
 
   const someTools = [{ type: "function", function: { name: "create_task", parameters: {} } }];
 
-  it("omits reasoning_effort whenever tools are present", async () => {
+  it("sends reasoning_effort:none — not nothing — when tools are present", async () => {
     // The live 400 this exists for:
     //   "Function tools with reasoning_effort are not supported for
-    //    gpt-5.6-terra in /v1/chat/completions."
-    // The agent turn always carries tools, so honouring the setting would fail
-    // every message. A config mistake costs the setting, never the chat.
+    //    gpt-5.6-terra in /v1/chat/completions. To use function tools, use
+    //    /v1/responses or set reasoning_effort to 'none'."
+    //
+    // THE REGRESSION THIS LOCKS: omitting the parameter is NOT switching it
+    // off. gpt-5.6 reasons by default, so a request that merely leaves
+    // reasoning_effort out still arrives with reasoning on and still 400s.
+    // The previous version of this test asserted `toBeUndefined()` and passed
+    // green while every deployed message failed. Verified against the live
+    // API: omitted → 400, "none" → 200.
     const sent = await bodyFor({ reasoningEffort: "medium" }, someTools);
-    expect(sent.reasoning_effort).toBeUndefined();
+    expect(sent.reasoning_effort).toBe("none");
     expect(sent.tools).toBeDefined();
   });
 
-  it("keeps the temperature floor when reasoning is dropped", async () => {
+  it("switches reasoning off with tools even when nothing was configured", async () => {
+    // The default path — AGENT_REASONING unset is the normal deployment, and
+    // it is exactly the case that was 400ing in production.
+    const sent = await bodyFor({}, someTools);
+    expect(sent.reasoning_effort).toBe("none");
+  });
+
+  it("keeps the temperature floor alongside reasoning_effort:none", async () => {
     // This is what the battery measures the prompt with, rather than sampling.
+    // Verified live: tools + "none" + temperature → 200.
     const sent = await bodyFor({ reasoningEffort: "high", temperature: 0 }, someTools);
+    expect(sent.reasoning_effort).toBe("none");
+    expect(sent.temperature).toBe(0);
+  });
+
+  it("leaves reasoning_effort off models that don't reason by default", async () => {
+    // The constraint belongs to the gpt-5 family, so it follows that model
+    // through whichever host serves it — and never gets bolted onto a Qwen
+    // turn, which has no such parameter.
+    const sent = await bodyFor({ model: "qwen/qwen3.6-flash", temperature: 0 }, someTools);
     expect(sent.reasoning_effort).toBeUndefined();
     expect(sent.temperature).toBe(0);
   });

@@ -315,7 +315,22 @@ function AppShellInner() {
   }, [nav.overlay, nav.flow, nav.floorModal, openFloorModal, openOverlay]);
 
   return (
-    <div className="atmosphere flex h-full flex-col">
+    // The app is one sheet on a ground: a single hairline wraps spine · work ·
+    // Nuvo, so the chat reads as part of the app rather than a column stuck to
+    // its side. `.atmosphere` lives on the frame now, not here — it still paints
+    // exactly once and still runs continuously across everything inside.
+    // Desktop only; MobileShell is the other branch of ResponsiveShell.
+    <div className="app-ground h-full">
+      {/* macOS only: the ground's top band holds the traffic lights, so it has
+          to drag the window. Collapsed to nothing everywhere else. */}
+      <div data-tauri-drag-region className="app-titlebar-drag" />
+      <div className="app-shell flex h-full">
+      {/* The app proper — a raised, opaque sheet RESTING ON the shell. It is
+          the thing that moves: opening Nuvo slides it left to uncover the chat
+          that was underneath all along. `.atmosphere` lives here, on the sheet,
+          so it still paints once and still runs continuously across spine ·
+          rail · calendar — the cardinal rule is untouched. */}
+      <div className="app-canvas atmosphere flex min-w-0 flex-1 flex-col">
       <TrialBanner />
       <div className="flex min-h-0 flex-1">
       <Spine
@@ -352,13 +367,26 @@ function AppShellInner() {
           )}
 
         </div>
-
-        <AgentSidebar agent={agent} open={effectiveAgentOpen} onToggle={toggleAgent} />
       </div>
       </div>
 
       {/* The terminal skin's status bar — renders null on every other material. */}
       <StatusBar />
+      </div>
+
+      {/* Nuvo is NOT on the sheet — it is the shell the sheet rests on. No card,
+          no border, no fill of its own: it shows the shell's own material, and
+          the sheet slides off it to reveal it. The slot animates the width so
+          the reveal reads as the sheet moving, not the chat appearing; the
+          content inside keeps its natural width and gets clipped (the LeftRail
+          pattern) so nothing squashes mid-slide. */}
+      <div
+        className="app-chat-slot"
+        style={{ width: effectiveAgentOpen ? 380 : 44 }}
+        aria-hidden={false}
+      >
+        <AgentSidebar agent={agent} open={effectiveAgentOpen} onToggle={toggleAgent} />
+      </div>
 
       {/* the plan's step rides nav history, so browser/mouse back-forward walks
           the sources instead of dropping out of the flow */}
@@ -422,6 +450,7 @@ function AppShellInner() {
           }
         }}
       />
+      </div>
     </div>
   );
 }

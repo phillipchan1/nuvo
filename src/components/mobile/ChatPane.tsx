@@ -9,6 +9,7 @@ import { ASSISTANT_NAME } from "../../lib/assistant";
 import AgentChatInput from "../AgentChatInput";
 import AgentMessageBubble from "../AgentMessageBubble";
 import AgentSuggestionChips from "../AgentSuggestionChips";
+import AgentThinking from "../AgentThinking";
 
 // The Nuvo chat body. It rides inside a full-screen overlay summoned by the
 // floating ✦ launcher — a permanent action reachable from any screen, not a
@@ -67,6 +68,8 @@ export default function ChatPane({
   };
 
   const last = messages[messages.length - 1];
+  // Only the newest reply offers "try again" — see AgentSidebar.
+  const retryableId = !loading && last?.role === "assistant" ? last.id : null;
   const activeSuggestions =
     !loading && last?.role === "assistant" && last.suggestions?.length ? last.suggestions : null;
 
@@ -120,15 +123,16 @@ export default function ChatPane({
             </div>
           </div>
         ) : (
-          <div className="mt-auto space-y-3">
+          <div className="mt-auto space-y-5">
             {messages.map((m) => (
-              <AgentMessageBubble key={m.id} message={m} compact />
+              <AgentMessageBubble
+                key={m.id}
+                message={m}
+                compact
+                onRetry={m.id === retryableId ? agent.retry : undefined}
+              />
             ))}
-            {loading && last?.role !== "assistant" && (
-              <div className="agent-bubble agent-bubble-assistant w-fit">
-                <span className="mono shimmer text-caption">Thinking…</span>
-              </div>
-            )}
+            {loading && last?.role !== "assistant" && <AgentThinking compact />}
             {activeSuggestions && (
               <AgentSuggestionChips
                 suggestions={activeSuggestions}

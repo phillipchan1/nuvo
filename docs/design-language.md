@@ -38,9 +38,9 @@ doubt, go look at those.
 ## The material — the atmosphere is sacred
 
 The warm paper is `--bg`; the **`.atmosphere`** class lays a whisper of dawn (top-left)
-+ dusk (bottom-right) light over it. It is applied **once**, high in the shell
-(`AppShellInner`), and must read continuously across spine · rail · calendar · floors ·
-Nuvo rail.
++ dusk (bottom-right) light over it. It is applied **once**, high in the shell — on
+**`.app-frame`** (see *The frame* below) — and must read continuously across spine ·
+rail · calendar · floors · Nuvo rail.
 
 > **Cardinal rule: never paint an opaque background over `.atmosphere`.** `bg-bg` /
 > `bg-surface` on a full-bleed container is the "funky seam" — it covers the one canvas
@@ -48,6 +48,54 @@ Nuvo rail.
 > was lighter than the rail). Full-bleed structural containers (floor wrappers, the
 > calendar pane, the agent rail) stay **transparent** and separate with a `border-l/-r`
 > hairline only.
+
+---
+
+## The three planes — Aurora only
+
+In **Aurora** (the `paper` skin — the one that sets no `data-skin` attribute) the desktop
+app is three real planes, and **the chat is one of them**:
+
+| Plane | Class | What it is |
+|---|---|---|
+| ground | `.app-ground` | the deep paper everything rests on; a 10px gutter, `--ground` |
+| **shell** | `.app-shell` | a frosted pane — **the chat is printed on this**, it is not a panel on top of it |
+| sheet | `.app-canvas` | the app itself (spine · rail · calendar), raised off the shell |
+
+**Opening Nuvo slides the *sheet* left to uncover a chat that was underneath the whole
+time.** That is the entire argument: the app sits **on** the conversation, so the chat
+visibly holds everything rather than sitting beside it. `.app-chat-slot` animates the
+width (not a transform) so the calendar genuinely reflows into the space.
+
+> **A hairline divider between the sheet and the chat defeats this.** A divider says
+> "two panes, one plane." The chat has no border and no fill of its own — what you see
+> behind it is the shell's own material.
+
+**The cardinal rule holds:** `.atmosphere` lives on the **sheet**, still painted exactly
+once, still continuous across spine · rail · calendar. `--atmosphere-base` lets the sheet
+go translucent (`--bg` at 82%) without touching the two lights, so the shell diffuses up
+through the app instead of being sealed off by it — that translucency is where the airiness
+comes from.
+
+- **`--ground` is derived, never bespoke,** and `--shell` lands between it and `--bg`.
+  Light grounds darken (`black 5%`); dark ones step toward `--line` instead, because
+  mixing black into a near-black yields nothing (measured: 0.7/255 of separation).
+- **Below 1280px all three flatten** — no gutter, no radius, no border, and the sheet's
+  atmosphere goes fully opaque again. Same threshold at which the Nuvo rail auto-collapses.
+- **macOS (Tauri):** the traffic lights live in the ground's top band, *above* the shell,
+  so `--titlebar-inset-top/-left` are zeroed on `.app-shell` and every consumer
+  (`.spine-top`, `.trial-banner`, `.app-topbar`, `.titlebar-pad`, `.spine-separator`)
+  collapses through the cascade. Anything `fixed inset-0` covers the whole *window*, not
+  the sheet, so it reads the preserved `--titlebar-h` / `--titlebar-x` — `.flow-topbar`
+  is the one such case.
+
+### Why the other four materials don't get this
+
+Flat, Terminal, Blueprint and E-ink stay **edge to edge, exactly as before.** They kill
+`backdrop-filter` wholesale and E-ink zeroes every shadow, so a "floating glass sheet"
+there degrades into three flat rectangles pretending to be layered — worse than the honest
+full-bleed canvas they already had. Glass is an Aurora idea; the whole block is scoped
+`html:not([data-skin])`.
 
 ---
 
@@ -499,8 +547,17 @@ horizontal scroll of larger chips you drag onto the grid.
 ## Layout signatures
 
 - **Spine left, Nuvo right, work between** — all the same paper, divided only by
-  `border-l/-r` hairlines. The Nuvo agent rail (`AgentSidebar`) is the one home for chat
-  on desktop (⌘J); it stays transparent like the spine.
+  `border-l/-r` hairlines, and all of it inside the one sheet (see *The frame*). The Nuvo
+  agent rail (`AgentSidebar`) is the one home for chat on desktop (⌘J); it stays
+  transparent like the spine and separates with a single `border-l`.
+- **Only the user's line gets a bubble.** Nuvo's half of the conversation is *the page* —
+  no box, no fill, generous leading, straight on the paper (`.agent-turn`). A reply boxed
+  in `--surface-2` reads as a quotation from somewhere else, and it nests a frame around
+  the record cards that follow it. What you typed keeps `.agent-bubble-user`, because a
+  quotation is the one thing in the transcript that genuinely came from elsewhere. Per-turn
+  actions (copy · try again) rest at `opacity: 0` and come up on hover — always visible on
+  touch, where there is no hover to reveal them with. Shared by all three chat surfaces:
+  the rail, the phone's `ChatPane`, and the ⌘K spotlight.
 - **The spine has two widths, and one vocabulary.** 188px named, 64px railed (⌘\ or the
   footer control, persisted in `nuvo-spine-rail`); focus mode (⌘.) is a third state that
   shuts it entirely. Railed, the glyph *is* the row — readiness survives the narrowing as
