@@ -9,11 +9,13 @@
 // vow + weekly target. No new data layer: every read is a pure selector over the
 // live VerticalData snapshot, every write goes through useVertical()'s mutations.
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { format, parseISO } from "date-fns";
-import { useVertical } from "../../../hooks/useVertical";
+import { useVertical, type TaskParent } from "../../../hooks/useVertical";
+import { parseCapture } from "../../../lib/nlp";
 import { ProjectShipAssess } from "../../record/ShipAssess";
 import { QuarterBand, WeekBand } from "../../record/PlacementBand";
+import { RecordLog } from "../../record/RecordLog";
 import {
   domainById,
   faithfulness,
@@ -263,15 +265,26 @@ export function DomainScreen({
         </Section>
       )}
 
-      {looseTasks.length > 0 && (
-        <Section label={`Parked here · ${looseTasks.length}`}>
+      <Section label={looseTasks.length ? `Parked here · ${looseTasks.length}` : "Parked here"}>
+        {looseTasks.length > 0 && (
           <CardList>
             {looseTasks.map((t) => (
-              <TaskRow key={t.id} t={t} onToggle={() => store.toggleTask(t.id)} />
+              <TaskRow
+                key={t.id}
+                t={t}
+                onToggle={() => store.toggleTask(t.id)}
+                onDelete={() => store.deleteTask(t.id)}
+              />
             ))}
           </CardList>
-        </Section>
-      )}
+        )}
+        <TaskComposer
+          parent={{ domainId: dom.id }}
+          store={store}
+          accent={dom.color}
+          placeholder="A task parked in this area…"
+        />
+      </Section>
     </div>
   );
 }
@@ -315,21 +328,6 @@ export function InitiativeScreen({
         <ProgressBar pct={initiativeProgress(d, i)} color={accent} />
       </Card>
 
-      <Section label="Status">
-        <StatusChips value={i.status} onPick={(s) => store.updateInitiative(i.id, { status: s })} />
-      </Section>
-
-      <Section label="Momentum">
-        <div className="flex flex-wrap gap-1.5">
-          {MOMENTUM.map((m) => (
-            <Chip key={m.value} on={i.momentum === m.value} onClick={() => store.updateInitiative(i.id, { momentum: m.value })}>
-              <span className="mono mr-1">{m.glyph}</span>
-              {m.label}
-            </Chip>
-          ))}
-        </div>
-      </Section>
-
       {/* A bet's "when" is a QUARTER — and its runway is counted in weeks, the
           unit you actually spend. */}
       <Section label="Quarter">
@@ -370,15 +368,47 @@ export function InitiativeScreen({
         )}
       </Section>
 
-      {looseTasks.length > 0 && (
-        <Section label={`Loose tasks · ${looseTasks.length}`}>
+      <Section label={looseTasks.length ? `Loose tasks · ${looseTasks.length}` : "Loose tasks"}>
+        {looseTasks.length > 0 && (
           <CardList>
             {looseTasks.map((t) => (
-              <TaskRow key={t.id} t={t} onToggle={() => store.toggleTask(t.id)} />
+              <TaskRow
+                key={t.id}
+                t={t}
+                onToggle={() => store.toggleTask(t.id)}
+                onDelete={() => store.deleteTask(t.id)}
+              />
             ))}
           </CardList>
-        </Section>
-      )}
+        )}
+        <TaskComposer
+          parent={{ initiativeId: i.id, domainId: i.domainId }}
+          store={store}
+          accent={accent}
+          placeholder="A task that belongs to the bet itself…"
+        />
+      </Section>
+
+      <Section label="Comments">
+        <RecordLog kind="initiative" id={i.id} accent={accent} />
+      </Section>
+
+      {/* Bookkeeping at the foot — momentum and status are how the bet is
+          filed, not what it is. */}
+      <Section label="Momentum">
+        <div className="flex flex-wrap gap-1.5">
+          {MOMENTUM.map((m) => (
+            <Chip key={m.value} on={i.momentum === m.value} onClick={() => store.updateInitiative(i.id, { momentum: m.value })}>
+              <span className="mono mr-1">{m.glyph}</span>
+              {m.label}
+            </Chip>
+          ))}
+        </div>
+      </Section>
+
+      <Section label="Status">
+        <StatusSelect value={i.status} onPick={(s) => store.updateInitiative(i.id, { status: s })} />
+      </Section>
     </div>
   );
 }
@@ -430,30 +460,49 @@ export function ProjectScreen({
         <ProgressBar pct={projectProgress(d, p)} color={accent} />
       </Card>
 
-      {/* Shipping asks first on the phone too — same moment, same rule: it closes
-          the open tasks, and you say whether they were done or dropped. */}
-      <Section label="Status">
-        <StatusChips value={p.status} onPick={(s) => (s === "complete" ? setShipping(true) : store.updateProject(p.id, { status: s }))} />
-      </Section>
-      {shipping && <ProjectShipAssess id={p.id} onClose={() => setShipping(false)} />}
-
       {/* A project's "when" is a WEEK, not two dates — the same commitment the
           deck makes when you drop it on a column. Exact dates stay one tap away. */}
       <Section label="Week">
         <WeekField p={p} store={store} />
       </Section>
 
+      {/* Tasks are the work, so they come before the admin — and they're
+          editable here, not "scaffold it on the desktop". */}
       <Section label={tasks.length ? `Tasks · ${doneCount}/${tasks.length} done` : "Tasks"}>
-        {tasks.length === 0 ? (
-          <Hint>No tasks yet. Capture them with ＋ or scaffold on the desktop.</Hint>
-        ) : (
+        {tasks.length > 0 && (
           <CardList>
             {tasks.map((t) => (
-              <TaskRow key={t.id} t={t} onToggle={() => store.toggleTask(t.id)} />
+              <TaskRow
+                key={t.id}
+                t={t}
+                onToggle={() => store.toggleTask(t.id)}
+                onDelete={() => store.deleteTask(t.id)}
+              />
             ))}
           </CardList>
         )}
+        <TaskComposer
+          parent={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
+          store={store}
+          accent={accent}
+          placeholder={tasks.length ? "Add a task…" : "First step…"}
+        />
       </Section>
+
+      {/* The same thread the desktop record carries — one component, both
+          shells, so a note written on the phone is the note you read at a desk. */}
+      <Section label="Comments">
+        <RecordLog kind="project" id={p.id} accent={accent} />
+      </Section>
+
+      {/* Status is bookkeeping, not the point of the record — it sits at the
+          foot as one line, the way the desktop keeps it behind the ⋯ menu.
+          Shipping still asks first: it closes the open tasks, and you say
+          whether they were done or dropped. */}
+      <Section label="Status">
+        <StatusSelect value={p.status} onPick={(s) => (s === "complete" ? setShipping(true) : store.updateProject(p.id, { status: s }))} />
+      </Section>
+      {shipping && <ProjectShipAssess id={p.id} onClose={() => setShipping(false)} />}
     </div>
   );
 }
@@ -499,14 +548,14 @@ export function ProjectRow({ d, p, onClick }: { d: VerticalData; p: Project; onC
   );
 }
 
-export function TaskRow({ t, onToggle }: { t: VTask; onToggle: () => void }) {
+export function TaskRow({ t, onToggle, onDelete }: { t: VTask; onToggle: () => void; onDelete?: () => void }) {
   const done = t.status === "done";
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
       <button
         onClick={onToggle}
         aria-label={done ? "Reopen" : "Mark done"}
-        className={`tap fast flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-caption ${
+        className={`tap-icon fast flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-caption ${
           // border-muted, not border-line-strong: 3.7:1 vs 1.37:1 on the paper,
           // and a control the finger aims at has to be visible. See D-054a.
           done ? "border-accent bg-accent text-white" : "border-muted text-transparent active:border-accent"
@@ -516,6 +565,65 @@ export function TaskRow({ t, onToggle }: { t: VTask; onToggle: () => void }) {
       </button>
       <span className={`min-w-0 flex-1 truncate text-body ${done ? "text-muted line-through" : ""}`}>{t.title}</span>
       {t.durationMins ? <span className="mono shrink-0 text-meta text-muted">{t.durationMins}m</span> : null}
+      {/* desktop deletes on hover; a phone has no hover, so the ✕ is always
+          there. `deleteTask` files its own Undo, same as the record. */}
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          aria-label={`Delete ${t.title}`}
+          className="tap-icon fast flex shrink-0 items-center justify-center text-caption text-muted active:text-signal"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Naming a task on the phone — the composer the record was missing ──────────
+// Free text in, structure out (`parseCapture` strips a trailing "30m"), a plain
+// `<input>` so iOS dictation works, and ⏎ keeps the caret for the next one —
+// the same low-data-entry act as the desktop TaskList composer, at thumb scale.
+export function TaskComposer({
+  parent,
+  store,
+  accent,
+  placeholder = "Add a task…",
+}: {
+  parent: TaskParent;
+  store: Store;
+  accent: string;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+
+  const submit = () => {
+    const text = draft.trim();
+    if (!text) return;
+    const parsed = parseCapture(text);
+    store.addTask(parent, { title: parsed.title || text, durationMins: parsed.durationMinutes ?? undefined });
+    setDraft("");
+    ref.current?.focus();
+  };
+
+  return (
+    <div className="tap mt-2 flex items-center gap-3 rounded-xl border border-dashed border-line px-3">
+      <span className="shrink-0 text-body" style={{ color: accent }}>＋</span>
+      <input
+        ref={ref}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        onBlur={submit}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 bg-transparent py-2.5 text-body outline-none placeholder:text-muted/60"
+      />
     </div>
   );
 }
@@ -607,6 +715,30 @@ export function StatusChips({ value, onPick }: { value: ProjectStatus; onPick: (
   );
 }
 
+/** Status as ONE line instead of five chips. Five always-on chips gave a filing
+ *  field the visual weight of the work itself; a native `<select>` is one 44px
+ *  row, opens iOS's own wheel, and reads its current value at a glance. */
+export function StatusSelect({ value, onPick }: { value: ProjectStatus; onPick: (s: ProjectStatus) => void }) {
+  return (
+    <div className="tap flex items-center gap-2.5 rounded-xl border border-line bg-surface-2 px-3">
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[value] }} />
+      <select
+        value={value}
+        onChange={(e) => onPick(e.target.value as ProjectStatus)}
+        aria-label="Status"
+        className="min-w-0 flex-1 appearance-none bg-transparent py-2.5 text-body text-ink outline-none"
+      >
+        {STATUS.map((s) => (
+          <option key={s} value={s}>
+            {STATUS_LABEL[s]}
+          </option>
+        ))}
+      </select>
+      <span className="shrink-0 text-caption text-muted">▾</span>
+    </div>
+  );
+}
+
 // ── Sprint-centric placement — the deck's move, without the gesture ───────────
 // The scales themselves now live in `record/PlacementBand.tsx` so the desktop
 // record wears the SAME control (D-030 finally kept on both shells, one
@@ -615,11 +747,16 @@ export function StatusChips({ value, onPick }: { value: ProjectStatus; onPick: (
 // "Exact dates" — on desktop the band is annotation beside the work, so it wears
 // the quiet tone instead.
 
+/** The phone plans six weeks out on the deck (MobileProjects), so the record's
+ *  tap path reaches the same six — otherwise weeks 5 and 6 were drag-only. */
+export const PHONE_WEEK_HORIZON = 6;
+
 export function WeekField({ p, store }: { p: Project; store: Store }) {
   return (
     <WeekBand
       p={p}
       store={store}
+      horizon={PHONE_WEEK_HORIZON}
       tone="primary"
       renderDates={(d) => <DateRow start={d.start} target={d.target} onStart={d.onStart} onTarget={d.onTarget} />}
     />

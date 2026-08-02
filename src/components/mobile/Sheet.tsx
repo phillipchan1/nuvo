@@ -140,7 +140,7 @@ export default function Sheet({
               onClick={onClose}
               onPointerDown={(e) => e.stopPropagation()}
               aria-label="Close"
-              className="fast -mr-1 flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted hover:bg-bg hover:text-ink"
+              className="tap-icon fast -mr-1 flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted hover:bg-bg hover:text-ink"
               style={{ cursor: "default" }}
             >
               ✕

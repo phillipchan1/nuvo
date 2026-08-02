@@ -24,13 +24,16 @@ import { readOnDeck, sprintSpanFor, weekIndexIn, type OnDeckLane } from "../../l
 import { weekName, weekSpan, weekTick } from "../../lib/week";
 import { domainById, isOpenStatus, type Domain, type Project } from "../../lib/vertical";
 import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
-import { Hint, VerticalList } from "./detail/verticalDetail";
+import { Hint, PHONE_WEEK_HORIZON, VerticalList } from "./detail/verticalDetail";
 // One card across both shells — the phone must not invent its own grammar (D-048).
 import PlannerCard, { deckWeight } from "../ondeck/DeckCard";
 import { PIP_TONE, projectCardStatus } from "../ondeck/deckStatus";
 
-// The same near-term horizon the desktop deck plans over.
-const HORIZON_SPRINTS = 4;
+// How far out the phone plans. Six weeks is a month and a half — far enough
+// that "not this month" still has somewhere to land, which four weeks didn't
+// give you. Past what fits on a phone, so the strip scrolls (MobileDeck). The
+// record's week picker reaches the same six (PHONE_WEEK_HORIZON).
+const HORIZON_SPRINTS = PHONE_WEEK_HORIZON;
 
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
 

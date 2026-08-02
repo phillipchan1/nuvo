@@ -100,7 +100,7 @@ export default function MobileSearch({
             autoCorrect="off"
           />
           {q && (
-            <button onClick={() => setQ("")} aria-label="Clear" className="fast shrink-0 text-lead text-muted active:text-ink">
+            <button onClick={() => setQ("")} aria-label="Clear" className="tap-icon fast flex shrink-0 items-center justify-center text-lead text-muted active:text-ink">
               ✕
             </button>
           )}

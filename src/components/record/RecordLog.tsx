@@ -136,7 +136,7 @@ function CommentRow({
               <button
                 ref={menuRef}
                 onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
-                className="tap fast flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-meta text-muted opacity-50 hover:bg-surface hover:text-ink hover:opacity-100 group-hover:opacity-100"
+                className="tap-icon fast flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-meta text-muted opacity-50 hover:bg-surface hover:text-ink hover:opacity-100 group-hover:opacity-100"
                 title="Comment options"
                 aria-label="Comment options"
               >
