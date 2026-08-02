@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Label, Task } from "../../lib/types";
 import { ruleOf } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
+import type { useVertical } from "../../hooks/useVertical";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
 import { todayISO, tomorrowISO, nextWeekISO, fmtDuration } from "../../lib/dates";
 import type { RecurrenceRule } from "../../lib/recurrence";
@@ -9,6 +10,7 @@ import { RepeatControl } from "../RecurrencePicker";
 import Sheet from "./Sheet";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
+type Vertical = ReturnType<typeof useVertical>["data"];
 
 /** Explicit triage on phone — toast is the only undo path (no ⌘Z). */
 const TRIAGE_UNDO = { undo: "toast" as const };
@@ -19,12 +21,14 @@ const TRIAGE_UNDO = { undo: "toast" as const };
 export default function MobileTaskSheet({
   task,
   labels,
+  vertical,
   mutations,
   accent,
   onClose,
 }: {
   task: Task;
   labels: Label[];
+  vertical: Vertical;
   mutations: Mutations;
   accent?: string | null;
   onClose: () => void;
@@ -103,6 +107,10 @@ export default function MobileTaskSheet({
     { label: "Inbox", run: () => mutations.backToInbox(task, TRIAGE_UNDO), active: task.status === "inbox" },
   ];
 
+  const setDomain = (domainId: string) => {
+    mutations.patchTask(task.id, { domain_id: domainId || null });
+  };
+
   const priorities: { value: Task["priority"]; label: string; color: string }[] = [
     { value: "high", label: "High", color: "var(--signal)" },
     { value: "medium", label: "Medium", color: "var(--accent)" },
@@ -171,6 +179,22 @@ export default function MobileTaskSheet({
             onChange={(r) => void onRepeatChange(r)}
             variant="block"
           />
+        </Section>
+
+        <Section label="Domain">
+          <div className="flex flex-wrap gap-1.5">
+            <Chip on={!task.domain_id} onClick={() => setDomain("")}>
+              None
+            </Chip>
+            {vertical.domains.map((d) => (
+              <Chip key={d.id} on={task.domain_id === d.id} onClick={() => setDomain(d.id)}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span>{d.icon}</span>
+                  {d.name}
+                </span>
+              </Chip>
+            ))}
+          </div>
         </Section>
 
         <Section label="Priority">

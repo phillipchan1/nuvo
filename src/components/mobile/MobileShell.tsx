@@ -544,6 +544,7 @@ export default function MobileShell() {
         <MobileTaskSheet
           task={openTask}
           labels={labels}
+          vertical={vertical}
           mutations={mutations}
           accent={taskDomainColor(vertical, openTask)}
           onClose={() => setTaskId(null)}
