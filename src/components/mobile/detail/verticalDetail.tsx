@@ -20,6 +20,7 @@ import {
   domainById,
   faithfulness,
   initiativeById,
+  initiativeAttainment,
   initiativeProgress,
   initiativesOf,
   looseProjectsOf,
@@ -29,6 +30,7 @@ import {
   projectsOf,
   tasksOf,
   type Initiative,
+  type KeyResult,
   type Momentum,
   type Project,
   type ProjectStatus,
@@ -36,7 +38,7 @@ import {
   type VerticalData,
 } from "../../../lib/vertical";
 import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../../lib/tending";
-import { RipenessPip } from "../../floors/parts";
+import { DomainPicker, RipenessPip } from "../../floors/parts";
 
 export type Store = ReturnType<typeof useVertical>;
 
@@ -211,19 +213,15 @@ export function DomainScreen({
   const looseTasks = looseTasksOfDomain(d, dom.id);
 
   return (
-    <div className="px-4 pt-4" style={{ ["--accent" as string]: dom.color }}>
-      <Card accent={dom.color}>
-        <div className="flex items-center gap-2">
-          <span className="text-lead" style={{ color: dom.color }}>{dom.icon}</span>
-          <TextField className="text-head font-semibold" value={dom.name} onCommit={(v) => store.updateDomain(dom.id, { name: v })} />
-        </div>
-        <AreaField
-          className="mt-2 text-body text-ink/90"
-          value={dom.intention}
-          placeholder="The standing vow — what faithfulness here means…"
-          onCommit={(v) => store.updateDomain(dom.id, { intention: v })}
-        />
-      </Card>
+    <div className="px-4 pt-1" style={{ ["--accent" as string]: dom.color }}>
+      <RecordHead
+        accent={dom.color}
+        name={dom.name}
+        onName={(v) => store.updateDomain(dom.id, { name: v })}
+        outcome={dom.intention}
+        onOutcome={(v) => store.updateDomain(dom.id, { intention: v })}
+        outcomePlaceholder="The standing vow — what faithfulness here means…"
+      />
 
       <Section label="Faithfulness">
         <div className="rounded-xl border border-line bg-surface-2 p-3">
@@ -243,7 +241,7 @@ export function DomainScreen({
         </div>
       </Section>
 
-      <Section label={`Initiatives · ${inits.length}`}>
+      <Section label="Initiatives" meter={inits.length ? String(inits.length) : null}>
         {inits.length === 0 ? (
           <Hint>No initiatives in this domain.</Hint>
         ) : (
@@ -256,7 +254,7 @@ export function DomainScreen({
       </Section>
 
       {loose.length > 0 && (
-        <Section label={`Projects (no initiative) · ${loose.length}`}>
+        <Section label="Projects (no initiative)" meter={String(loose.length)}>
           <CardList>
             {loose.map((p) => (
               <ProjectRow key={p.id} d={d} p={p} onClick={() => onOpenProject(p.id)} />
@@ -265,7 +263,7 @@ export function DomainScreen({
         </Section>
       )}
 
-      <Section label={looseTasks.length ? `Parked here · ${looseTasks.length}` : "Parked here"}>
+      <Section label="Parked here" meter={looseTasks.length ? String(looseTasks.length) : null}>
         {looseTasks.length > 0 && (
           <CardList>
             {looseTasks.map((t) => (
@@ -295,13 +293,11 @@ export function InitiativeScreen({
   store,
   id,
   onOpenProject,
-  onOpenDomain,
 }: {
   d: VerticalData;
   store: Store;
   id: string;
   onOpenProject: (id: string) => void;
-  onOpenDomain: (id: string) => void;
 }) {
   const i = d.initiatives.find((x) => x.id === id);
   if (!i) return <Empty>This initiative is gone.</Empty>;
@@ -309,24 +305,18 @@ export function InitiativeScreen({
   const accent = dom?.color ?? "var(--accent)";
   const projects = projectsOf(d, i.id);
   const looseTasks = looseTasksOfInitiative(d, i.id);
+  const attainment = i.keyResults.length ? initiativeAttainment(d, i) : null;
 
   return (
-    <div className="px-4 pt-4">
-      {dom && (
-        <Breadcrumb>
-          <Crumb onClick={() => onOpenDomain(dom.id)}>{dom.icon} {dom.name}</Crumb>
-        </Breadcrumb>
-      )}
-      <Card accent={accent}>
-        <TextField className="text-head font-semibold" value={i.name} onCommit={(v) => store.updateInitiative(i.id, { name: v })} />
-        <AreaField
-          className="mt-1.5 text-body text-ink/90"
-          value={i.outcome}
-          placeholder="The goal — what 'done' looks like in one line…"
-          onCommit={(v) => store.updateInitiative(i.id, { outcome: v })}
-        />
-        <ProgressBar pct={initiativeProgress(d, i)} color={accent} />
-      </Card>
+    <div className="px-4 pt-1">
+      <RecordHead
+        accent={accent}
+        name={i.name}
+        onName={(v) => store.updateInitiative(i.id, { name: v })}
+        outcome={i.outcome}
+        onOutcome={(v) => store.updateInitiative(i.id, { outcome: v })}
+        outcomePlaceholder="What does done look like, in one line?"
+      />
 
       {/* A bet's "when" is a QUARTER — and its runway is counted in weeks, the
           unit you actually spend. */}
@@ -334,29 +324,43 @@ export function InitiativeScreen({
         <QuarterField i={i} store={store} />
       </Section>
 
-      {i.keyResults.length > 0 && (
-        <Section label="Key results">
+      {/* A bet with no key results can never read as measured, so the section
+          is always here with a way in — the phone's twin of the desktop
+          record's KR list, which has had a composer all along. */}
+      <Section
+        label="Key results"
+        meter={attainment != null ? `${attainment}%` : null}
+        fill={attainment}
+        accent={accent}
+      >
+        {i.keyResults.length > 0 && (
           <CardList>
-            {i.keyResults.map((kr) => {
-              const span = kr.target - kr.baseline;
-              const krPct = span === 0 ? 0 : Math.round(((kr.current - kr.baseline) / span) * 100);
-              return (
-                <div key={kr.id} className="px-3 py-2.5">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-body font-medium">{kr.name}</span>
-                    <span className="mono shrink-0 text-caption text-muted">
-                      {kr.current}/{kr.target} {kr.unit}
-                    </span>
-                  </div>
-                  <ProgressBar pct={krPct} color={accent} />
-                </div>
-              );
-            })}
+            {i.keyResults.map((kr) => (
+              <KeyResultRow
+                key={kr.id}
+                kr={kr}
+                accent={accent}
+                onPatch={(patch) => store.updateKeyResult(i.id, kr.id, patch)}
+                onDelete={() => store.deleteKeyResult(i.id, kr.id)}
+              />
+            ))}
           </CardList>
-        </Section>
-      )}
+        )}
+        <button
+          onClick={() => store.addKeyResult(i.id)}
+          className="tap fast mt-2 flex w-full items-center gap-3 rounded-xl border border-dashed border-line px-3 text-left"
+        >
+          <span className="shrink-0 text-body" style={{ color: accent }}>＋</span>
+          <span className="flex-1 py-2.5 text-body text-muted">Add a key result…</span>
+        </button>
+      </Section>
 
-      <Section label={`Projects · ${projects.length}`}>
+      <Section
+        label="Projects"
+        meter={projects.length ? String(projects.length) : null}
+        fill={projects.length ? initiativeProgress(d, i) : null}
+        accent={accent}
+      >
         {projects.length === 0 ? (
           <Hint>No projects under this initiative.</Hint>
         ) : (
@@ -368,7 +372,7 @@ export function InitiativeScreen({
         )}
       </Section>
 
-      <Section label={looseTasks.length ? `Loose tasks · ${looseTasks.length}` : "Loose tasks"}>
+      <Section label="Loose tasks" meter={looseTasks.length ? String(looseTasks.length) : null}>
         {looseTasks.length > 0 && (
           <CardList>
             {looseTasks.map((t) => (
@@ -414,51 +418,25 @@ export function InitiativeScreen({
 }
 
 // ── A single project ─────────────────────────────────────────────────────────
-export function ProjectScreen({
-  d,
-  store,
-  id,
-  onOpenInitiative,
-  onOpenDomain,
-}: {
-  d: VerticalData;
-  store: Store;
-  id: string;
-  onOpenInitiative: (id: string) => void;
-  onOpenDomain: (id: string) => void;
-}) {
+export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store; id: string }) {
   const [shipping, setShipping] = useState(false);
   const p = d.projects.find((x) => x.id === id);
   if (!p) return <Empty>This project is gone.</Empty>;
   const dom = d.domains.find((x) => x.id === p.domainId);
-  const init = p.initiativeId ? d.initiatives.find((x) => x.id === p.initiativeId) : null;
   const accent = dom?.color ?? "var(--accent)";
   const tasks = tasksOf(d, p.id);
   const doneCount = tasks.filter((t) => t.status === "done").length;
 
   return (
-    <div className="px-4 pt-4">
-      {(dom || init) && (
-        <Breadcrumb>
-          {dom && <Crumb onClick={() => onOpenDomain(dom.id)}>{dom.icon} {dom.name}</Crumb>}
-          {init && (
-            <>
-              <span className="text-muted/60">›</span>
-              <Crumb onClick={() => onOpenInitiative(init.id)}>{init.name}</Crumb>
-            </>
-          )}
-        </Breadcrumb>
-      )}
-      <Card accent={accent}>
-        <TextField className="text-head font-semibold" value={p.name} onCommit={(v) => store.updateProject(p.id, { name: v })} />
-        <AreaField
-          className="mt-1.5 text-body text-ink/90"
-          value={p.outcome}
-          placeholder="The goal in one line…"
-          onCommit={(v) => store.updateProject(p.id, { outcome: v })}
-        />
-        <ProgressBar pct={projectProgress(d, p)} color={accent} />
-      </Card>
+    <div className="px-4 pt-1">
+      <RecordHead
+        accent={accent}
+        name={p.name}
+        onName={(v) => store.updateProject(p.id, { name: v })}
+        outcome={p.outcome}
+        onOutcome={(v) => store.updateProject(p.id, { outcome: v })}
+        outcomePlaceholder="What does done look like, in one line?"
+      />
 
       {/* A project's "when" is a WEEK, not two dates — the same commitment the
           deck makes when you drop it on a column. Exact dates stay one tap away. */}
@@ -468,7 +446,12 @@ export function ProjectScreen({
 
       {/* Tasks are the work, so they come before the admin — and they're
           editable here, not "scaffold it on the desktop". */}
-      <Section label={tasks.length ? `Tasks · ${doneCount}/${tasks.length} done` : "Tasks"}>
+      <Section
+        label="Tasks"
+        meter={tasks.length ? `${doneCount}/${tasks.length}` : null}
+        fill={tasks.length ? projectProgress(d, p) : null}
+        accent={accent}
+      >
         {tasks.length > 0 && (
           <CardList>
             {tasks.map((t) => (
@@ -628,6 +611,79 @@ export function TaskComposer({
   );
 }
 
+/** One key result, editable on a phone: the name, the number that moved, the
+ *  number you're chasing, and the unit. `current` is the field you actually come
+ *  back to, so it carries the accent and sits first. */
+export function KeyResultRow({
+  kr,
+  accent,
+  onPatch,
+  onDelete,
+}: {
+  kr: KeyResult;
+  accent: string;
+  onPatch: (patch: Partial<KeyResult>) => void;
+  onDelete: () => void;
+}) {
+  const span = kr.target - kr.baseline;
+  const pct = span === 0 ? 0 : Math.round(((kr.current - kr.baseline) / span) * 100);
+  return (
+    <div className="px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <TextField
+          className="min-w-0 flex-1 text-body font-medium"
+          value={kr.name}
+          onCommit={(v) => onPatch({ name: v })}
+        />
+        <button
+          onClick={onDelete}
+          aria-label={`Delete ${kr.name || "key result"}`}
+          className="tap-icon fast flex shrink-0 items-center justify-center text-caption text-muted active:text-signal"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="mono mt-1.5 flex items-center gap-1.5 text-caption text-muted">
+        <KrNumber value={kr.current} accent={accent} onCommit={(v) => onPatch({ current: v })} />
+        <span className="opacity-50">/</span>
+        <KrNumber value={kr.target} onCommit={(v) => onPatch({ target: v })} />
+        <input
+          defaultValue={kr.unit}
+          key={kr.unit}
+          placeholder="unit"
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v !== kr.unit) onPatch({ unit: v });
+          }}
+          // takes the slack rather than a fixed width — "sessions" was clipped
+          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted/50"
+        />
+        <span className="ml-auto shrink-0 tabular-nums" style={{ color: accent }}>{pct}%</span>
+      </div>
+      <ProgressBar pct={pct} color={accent} />
+    </div>
+  );
+}
+
+/** A number you can actually hit with a thumb — `inputMode` opens the numeric
+ *  keypad instead of the full keyboard. */
+function KrNumber({ value, accent, onCommit }: { value: number; accent?: string; onCommit: (v: number) => void }) {
+  return (
+    <input
+      key={value}
+      type="number"
+      inputMode="decimal"
+      defaultValue={value}
+      onBlur={(e) => {
+        const next = Number(e.target.value);
+        if (!Number.isNaN(next) && next !== value) onCommit(next);
+      }}
+      className="w-12 shrink-0 bg-transparent tabular-nums outline-none"
+      style={accent ? { color: accent } : undefined}
+    />
+  );
+}
+
 export function Row({
   leading,
   title,
@@ -698,19 +754,6 @@ export function ProgressBar({ pct, color }: { pct: number; color: string }) {
         className="fast absolute inset-y-0 left-0 rounded-full"
         style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }}
       />
-    </div>
-  );
-}
-
-export function StatusChips({ value, onPick }: { value: ProjectStatus; onPick: (s: ProjectStatus) => void }) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {STATUS.map((s) => (
-        <Chip key={s} on={value === s} onClick={() => onPick(s)}>
-          <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: STATUS_COLOR[s] }} />
-          {STATUS_LABEL[s]}
-        </Chip>
-      ))}
     </div>
   );
 }
@@ -808,15 +851,29 @@ export function DateField({ label, value, onCommit }: { label: string; value: st
   );
 }
 
-export function TextField({ value, onCommit, className = "" }: { value: string; onCommit: (v: string) => void; className?: string }) {
+export function TextField({
+  value,
+  onCommit,
+  className = "",
+  style,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
   return (
     <input
+      // keyed on the value so a rename made elsewhere (the agent, another
+      // surface) reaches an uncontrolled field that is not being typed in
+      key={value}
       defaultValue={value}
       onBlur={(e) => {
         const next = e.target.value.trim();
         if (next && next !== value) onCommit(next);
       }}
       className={`w-full bg-transparent outline-none ${className}`}
+      style={style}
     />
   );
 }
@@ -826,22 +883,39 @@ export function AreaField({
   onCommit,
   placeholder,
   className = "",
+  style,
 }: {
   value: string;
   onCommit: (v: string) => void;
   placeholder?: string;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <textarea
+      key={value}
       defaultValue={value}
       placeholder={placeholder}
       rows={1}
+      // grow with the text — a one-line box that hides the second line of an
+      // outcome is why the outcome went unread
+      ref={(el) => {
+        if (el) {
+          el.style.height = "auto";
+          el.style.height = `${el.scrollHeight}px`;
+        }
+      }}
+      onInput={(e) => {
+        const el = e.currentTarget;
+        el.style.height = "auto";
+        el.style.height = `${el.scrollHeight}px`;
+      }}
       onBlur={(e) => {
         const next = e.target.value.trim();
         if (next !== value) onCommit(next);
       }}
       className={`w-full resize-none bg-transparent leading-relaxed outline-none placeholder:text-muted/60 ${className}`}
+      style={style}
     />
   );
 }
@@ -862,14 +936,133 @@ export function NumberField({ value, onCommit }: { value: number; onCommit: (v: 
   );
 }
 
-export function Card({ children, accent }: { children: ReactNode; accent?: string }) {
+// ── The record's head — the desktop `Head`, at phone width ───────────────────
+// One hero, named once (D-041). It used to be a bordered card holding the name
+// AGAIN under the sheet's title row, which spent the top third of the screen
+// saying the same words twice and left no room for the acts. Now: a crumb row
+// that ROUTES (the domain picker is a control, not a label — desktop's call),
+// the name in Fraunces, and the outcome as the lead line under it. No frame —
+// the sheet is already the card.
+export function RecordHead({
+  name,
+  onName,
+  outcome,
+  onOutcome,
+  outcomePlaceholder,
+  accent,
+}: {
+  name: string;
+  onName: (v: string) => void;
+  outcome: string;
+  onOutcome: (v: string) => void;
+  outcomePlaceholder: string;
+  accent: string;
+}) {
   return (
-    <div
-      className="rounded-xl border border-line bg-surface-2 p-3"
-      style={accent ? { boxShadow: `inset 3px 0 0 0 ${accent}` } : undefined}
-    >
-      {children}
+    <div className="pb-1">
+      <TextField
+        className="text-display masthead leading-tight"
+        value={name}
+        onCommit={onName}
+        style={{ caretColor: accent }}
+      />
+      <AreaField
+        className="mt-1 text-head leading-snug"
+        style={{ color: "color-mix(in srgb, var(--ink) 72%, var(--muted))", caretColor: accent }}
+        value={outcome}
+        placeholder={outcomePlaceholder}
+        onCommit={onOutcome}
+      />
     </div>
+  );
+}
+
+/** The record's crumb row, hoisted OUT of the screen so the sheet's title row
+ *  can wear it. That row already had to exist (Back, ✕, the drag handle) and was
+ *  otherwise blank until you scrolled — one bar of pure chrome above a screen
+ *  the user said was mostly chrome. Now it carries the routing at rest and the
+ *  name once the hero scrolls past, and the record body starts at the name. */
+export function RecordCrumbs({
+  d,
+  store,
+  frame,
+  onOpenInitiative,
+}: {
+  d: VerticalData;
+  store: Store;
+  frame: Frame;
+  onOpenInitiative: (id: string) => void;
+}) {
+  const domains = [...d.domains].sort((a, b) => a.sort - b.sort);
+
+  if (frame.level === "project") {
+    const p = d.projects.find((x) => x.id === frame.id);
+    if (!p) return null;
+    const init = p.initiativeId ? d.initiatives.find((x) => x.id === p.initiativeId) : null;
+    return (
+      <>
+        {/* Routing this to the right area is a primary act, not a crumb — the
+            desktop record's call (RecordModal), kept here. */}
+        <DomainPicker
+          domains={domains}
+          value={p.domainId}
+          size="lg"
+          onChange={(domainId) => {
+            // An initiative lives in one domain — crossing domains detaches the
+            // project rather than leaving it nested under the old bet.
+            const crossDomain = Boolean(init && init.domainId !== domainId);
+            store.updateProject(p.id, { domainId, ...(crossDomain ? { initiativeId: null, keyResultId: null } : {}) });
+          }}
+        />
+        {init && <ParentCrumb onClick={() => onOpenInitiative(init.id)}>{init.name}</ParentCrumb>}
+      </>
+    );
+  }
+
+  if (frame.level === "initiative") {
+    const i = d.initiatives.find((x) => x.id === frame.id);
+    if (!i) return null;
+    return (
+      <DomainPicker
+        domains={domains}
+        value={i.domainId}
+        size="lg"
+        // Re-homing a bet takes its projects with it — the desktop cascade.
+        onChange={(domainId) => {
+          store.updateInitiative(i.id, { domainId });
+          projectsOf(d, i.id).forEach((pr) => store.updateProject(pr.id, { domainId }));
+        }}
+      />
+    );
+  }
+
+  if (frame.level === "domain") {
+    const dom = d.domains.find((x) => x.id === frame.id);
+    if (!dom) return null;
+    return (
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-head"
+        style={{ background: `color-mix(in srgb, ${dom.color} 16%, var(--surface))`, color: dom.color }}
+      >
+        {dom.icon}
+      </span>
+    );
+  }
+  return null;
+}
+
+/** The crumb that only navigates — a parent you can climb to, beside the picker
+ *  that actually re-routes the record. */
+export function ParentCrumb({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return (
+    <>
+      {/* font-normal: this can render inside the sheet's title row, which is
+          semibold — a crumb is not a heading. */}
+      <span className="text-caption font-normal text-muted/60">›</span>
+      <button onClick={onClick} className="tap fast min-w-0 truncate text-caption font-normal text-muted active:text-accent">
+        {children}
+      </button>
+    </>
   );
 }
 
@@ -877,10 +1070,37 @@ export function CardList({ children }: { children: ReactNode }) {
   return <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface-2">{children}</div>;
 }
 
-export function Section({ label, children }: { label: string; children: ReactNode }) {
+/** The desktop `Sec`, at phone width: a label, an optional right-hand meter,
+ *  and the hairline rule that doubles as the section's progress. Same grammar
+ *  on both shells, so "how far along" is read in the same place. */
+export function Section({
+  label,
+  meter,
+  fill,
+  accent,
+  children,
+}: {
+  label: string;
+  meter?: string | null;
+  /** 0–100, or omitted for a section with nothing to measure. */
+  fill?: number | null;
+  accent?: string;
+  children: ReactNode;
+}) {
   return (
     <div className="mt-5">
-      <div className="section-label mb-1.5 !p-0">{label}</div>
+      <div className="flex items-baseline gap-3">
+        <span className="section-label flex-1 !p-0">{label}</span>
+        {meter && <span className="mono text-meta text-muted">{meter}</span>}
+      </div>
+      <div className="relative mb-2 mt-1.5 h-0.5 rounded-full" style={{ background: "var(--line)" }}>
+        {fill != null && (
+          <div
+            className="fast absolute inset-y-0 left-0 rounded-full"
+            style={{ width: `${Math.max(0, Math.min(100, fill))}%`, background: accent ?? "var(--accent)" }}
+          />
+        )}
+      </div>
       {children}
     </div>
   );
@@ -905,17 +1125,4 @@ export function Hint({ children }: { children: ReactNode }) {
 
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="px-4 py-16 text-center text-body text-muted">{children}</div>;
-}
-
-export function Breadcrumb({ children }: { children: ReactNode }) {
-  return <div className="mono mb-2 flex flex-wrap items-center gap-1.5 text-caption text-muted">{children}</div>;
-}
-
-// A tappable breadcrumb segment — climb up the hierarchy on demand.
-export function Crumb({ children, onClick }: { children: ReactNode; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="tap fast -my-1 truncate py-1 active:text-accent">
-      {children}
-    </button>
-  );
 }

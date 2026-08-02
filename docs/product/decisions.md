@@ -2113,6 +2113,32 @@ goes through), the detail sheet's back arrow, the chat close, search clear, the 
 top-bar buttons, the trial banner's dismiss, task check/delete and the comment ⋯ menu.
 *Status: standing.*
 
+**D-073 · 2026-08-02 · The phone record's head is the desktop `Head`, and the sheet's
+title row earns its keep.** Phil: "why are we showing the project card, we have title
+there twice… top is a lot of misappropriated space." The name was printed in the sheet's
+title row *and* again inside a bordered card below it, with the outcome and a progress
+bar — three bands before the first section. Now there is **one hero**, named once (D-041):
+the record body opens with the name in Fraunces (`text-display masthead`, editable) and
+the outcome as the lead line under it, no frame — the sheet is already the card. The
+title row, which has to exist anyway for Back / ✕ / the drag handle, carries the crumb
+row at rest and cross-fades to the name once the hero scrolls past (iOS's large-title
+collapse). Progress moved onto the section rules, where the desktop's `Sec` already draws
+it. **The domain is now changeable on the phone** — the same `DomainPicker` the desktop
+record wears, with the same cross-domain detach for projects and the same
+takes-its-projects-with-it cascade for initiatives. The record no longer links *to* a
+domain screen (desktop doesn't either); domain records stay reachable from global search.
+Head height above the hero fell from ~135px to 81px. *Status: standing.*
+
+**D-074 · 2026-08-02 · A bet is measurable from the phone.** Auditing D-073 across both
+altitudes: the project record could be worked (tasks add / toggle / delete) but the
+initiative record's **key results were read-only, and the section vanished when there
+were none** — so a bet could never be made measurable from a phone, and "Measured" was a
+readiness axis only a desktop could satisfy. The KR section is now always present with a
+composer, and each result edits in place: name, current, target, unit, delete. Attainment
+rides the section rule, matching the desktop record's `Sec`. Every section on all three
+mobile records now uses one grammar — label · optional meter · the rule that doubles as
+progress — instead of counts baked into the label text. *Status: standing.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 
