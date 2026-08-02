@@ -71,6 +71,9 @@ const pwa = VitePWA({
     // navigateFallback never intercepts them.
     navigateFallback: "/index.html",
     globPatterns: ["**/*.{js,css,html,woff,woff2,png,svg,ico}"],
+    // Startup images are fetched once by iOS at install time — precaching all
+    // twenty into every visitor's SW cache is pure weight.
+    globIgnores: ["splash/**"],
     cleanupOutdatedCaches: true,
   },
 });
