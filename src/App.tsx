@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 import { useAuth } from "./hooks/useAuth";
+import { useIsMobile } from "./hooks/useIsMobile";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
 import { useSubscription, useSubscriptionLiveSync } from "./hooks/useSubscription";
 import { useSkin, useScheme } from "./hooks/useSkin";
@@ -57,6 +58,22 @@ function errMsg(e: unknown) {
   return e instanceof Error ? e.message : "Something went wrong";
 }
 
+// One Toaster for every shell state. On a phone the bottom-right corner is
+// where the ＋ FAB and ✦ launcher live, and the toast is the only undo path
+// (no ⌘Z) — so it rides top-center under the safe area and stays up longer.
+function AppToaster() {
+  const isMobile = useIsMobile();
+  return (
+    <Toaster
+      position={isMobile ? "top-center" : "bottom-right"}
+      offset={isMobile ? "calc(env(safe-area-inset-top, 0px) + 12px)" : undefined}
+      duration={isMobile ? 9000 : undefined}
+      richColors
+      closeButton
+    />
+  );
+}
+
 // A write that fails the instant you come back from offline (cold connection, or
 // a JWT that went stale while the tab slept) is transient — the mutation never
 // reached Postgres, so re-attempting is safe and lands it. We retry ONLY these:
@@ -106,6 +123,9 @@ const queryClient = new QueryClient({
       if (query.state.data !== undefined) return;
       // Queries flagged silent (e.g. decorative weather) never raise a toast.
       if (query.meta?.silent) return;
+      // Offline is announced once by the shell's strip — a red toast per
+      // failing query on top of it is pure noise.
+      if (typeof navigator !== "undefined" && !navigator.onLine) return;
       toast.error(errMsg(e));
     },
   }),
@@ -145,7 +165,7 @@ function Shell() {
     return (
       <>
         <SpotlightHost signedIn={Boolean(session) && !loading} loading={loading} />
-        <Toaster position="bottom-right" richColors closeButton />
+        <AppToaster />
       </>
     );
   }
@@ -163,7 +183,7 @@ function Shell() {
       <>
         <Login />
         <UpdateToast />
-        <Toaster position="bottom-right" richColors closeButton />
+        <AppToaster />
       </>
     );
   }
@@ -205,7 +225,7 @@ function Shell() {
       <>
         <LockedScreen subscription={subscription} />
         <UpdateToast />
-        <Toaster position="bottom-right" richColors closeButton />
+        <AppToaster />
       </>
     );
   }
@@ -218,7 +238,7 @@ function Shell() {
         </AgentProvider>
       </AppNavigationProvider>
       <UpdateToast />
-      <Toaster position="bottom-right" richColors closeButton />
+      <AppToaster />
     </>
   );
 }

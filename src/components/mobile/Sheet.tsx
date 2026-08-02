@@ -1,5 +1,6 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 import { useKeyboardInset } from "../../hooks/useKeyboardInset";
 
 // A bottom sheet — the mobile equivalent of the desktop's anchored popovers and
@@ -29,6 +30,10 @@ export default function Sheet({
   // lower content (composer, submit button) would sit under the keys without
   // this pad.
   const kbInset = useKeyboardInset();
+  const titleId = useId();
+  // Dialog semantics: focus moves in on open, Tab stays inside, and the
+  // trigger gets focus back on close.
+  useDialogFocus(sheetRef);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -126,9 +131,13 @@ export default function Sheet({
     >
       <div
         ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title != null ? titleId : undefined}
+        tabIndex={-1}
         className={`sheet-up glass flex ${
           tall ? "h-[92vh] pt-safe" : "max-h-[88vh]"
-        } flex-col rounded-t-2xl border-t border-line pb-safe`}
+        } flex-col rounded-t-2xl border-t border-line pb-safe outline-none`}
         style={kbInset ? { paddingBottom: kbInset } : undefined}
       >
         {/* Grab pill — primary swipe target */}
@@ -141,7 +150,7 @@ export default function Sheet({
             {...handleProps}
             className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2"
           >
-            <div className="text-head font-semibold tracking-tight select-none">{title}</div>
+            <div id={titleId} className="text-head font-semibold tracking-tight select-none">{title}</div>
             <button
               onClick={onClose}
               onPointerDown={(e) => e.stopPropagation()}

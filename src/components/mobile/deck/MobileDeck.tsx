@@ -28,6 +28,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Domain } from "../../../lib/vertical";
 import InlineAdd from "../../ondeck/InlineAdd";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "../../ondeck/plannerNow";
+import { EDGE_GUARD_PX } from "../swipe";
 
 const LONG_PRESS_MS = 260;
 const CANCEL_PX = 10;
@@ -255,6 +256,7 @@ export default function MobileDeck({
         poolLabel={poolLabel}
         poolCount={poolCards.length}
         page={page}
+        pageCount={columns.length + 1}
         goto={goto}
         dragging={dragging}
         target={target}
@@ -273,11 +275,12 @@ export default function MobileDeck({
       )}
 
       {/* ── the pager — the pool, then time ─────────────────────────────────── */}
+      <div className="relative min-h-0 flex-1">
       <div
         ref={pagerRef}
         data-deck-pager
         onScroll={onPagerScroll}
-        className="mobile-scroll flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden"
+        className="mobile-scroll flex h-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden"
       >
         {/* page 0 — the pool. Dropping here RELEASES the commitment, so it washes
             `--slot` (open, unclaimed) exactly like the desktop rail. */}
@@ -290,7 +293,7 @@ export default function MobileDeck({
               : undefined
           }
         >
-          <div className="px-4 pb-28 pt-3">
+          <div className="px-4 fab-clear pt-3">
             <div className="section-label !px-0">{poolLabel} · {poolCards.length}</div>
             {poolCards.length === 0 ? (
               <div className="mt-2">{poolEmpty}</div>
@@ -327,7 +330,7 @@ export default function MobileDeck({
               }
             >
               <ColumnHead col={col} />
-              <div className="flex flex-col gap-2 px-4 pb-28 pt-3">
+              <div className="flex flex-col gap-2 px-4 fab-clear pt-3">
                 {mine.length === 0 && compose?.col !== i && (
                   <button
                     onClick={() => setCompose({ col: i, domain: null })}
@@ -369,6 +372,17 @@ export default function MobileDeck({
             </section>
           );
         })}
+      </div>
+
+      {/* Left edge-guard: touches starting here belong to the OS back gesture,
+          so they must never begin a horizontal pager pan (touch-action: pan-y
+          alone doesn't stop Safari's edge-back from colliding with a half-
+          committed page change). Vertical scrolling stays native. */}
+      <div
+        aria-hidden
+        className="absolute inset-y-0 left-0 z-10"
+        style={{ width: EDGE_GUARD_PX, touchAction: "pan-y" }}
+      />
       </div>
 
       {/* the thing in your hand — glass, following the finger */}
@@ -439,6 +453,7 @@ function ColumnStrip({
   poolLabel,
   poolCount,
   page,
+  pageCount,
   goto,
   dragging,
   target,
@@ -447,12 +462,25 @@ function ColumnStrip({
   poolLabel: string;
   poolCount: number;
   page: number;
+  pageCount: number;
   goto: (p: number) => void;
   dragging: boolean;
   target: number | "pool" | null;
 }) {
   return (
     <div className="flex shrink-0 items-stretch border-b border-line">
+      {/* Explicit prev/next — the tap path for page traversal, so the swipe
+          (which yields to the iOS edge-back near the bezel) is never the only
+          way to move. */}
+      <button
+        type="button"
+        onClick={() => goto(Math.max(0, page - 1))}
+        disabled={page <= 0}
+        aria-label="Previous page"
+        className="fast flex w-9 shrink-0 items-center justify-center border-r border-line text-head text-muted active:bg-surface-2 disabled:opacity-30"
+      >
+        ‹
+      </button>
       {/* the pool cell — same width as the coverage gutter beneath it */}
       <button
         data-deck-col="pool"
@@ -521,6 +549,15 @@ function ColumnStrip({
           </button>
         );
       })}
+      <button
+        type="button"
+        onClick={() => goto(Math.min(pageCount - 1, page + 1))}
+        disabled={page >= pageCount - 1}
+        aria-label="Next page"
+        className="fast flex w-9 shrink-0 items-center justify-center border-l border-line text-head text-muted active:bg-surface-2 disabled:opacity-30"
+      >
+        ›
+      </button>
     </div>
   );
 }

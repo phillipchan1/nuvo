@@ -82,8 +82,9 @@ function resolveRowIdentity(
   return empty;
 }
 
-/** Status/meta — two steps below `text-caption` so the title reads as primary. */
-const META = "text-[8px] leading-[1.3]";
+/** Status/meta — two steps below the title so it reads as primary. 8px is a
+ *  desktop-density size; under 768px it rises to a legible 12px (WCAG floor). */
+const META = "text-[12px] md:text-[8px] leading-[1.3]";
 
 function PlaceTag({ identity }: { identity: RowIdentity }) {
   if (!identity.placeName || !identity.placeHint) return null;
@@ -345,14 +346,14 @@ export default function TaskRow({
     <span className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
       <button
         onClick={(e) => { e.stopPropagation(); onAcceptSuggestion?.(); }}
-        className={`fast rounded px-1.5 py-px ${META} font-medium text-accent hover:bg-accent-soft`}
+        className={`fast min-h-[44px] rounded px-3 md:min-h-0 md:px-1.5 md:py-px ${META} font-medium text-accent hover:bg-accent-soft`}
       >
         Accept
       </button>
       <button
         aria-label="Dismiss suggestion"
         onClick={(e) => { e.stopPropagation(); onDismissSuggestion?.(); }}
-        className={`fast rounded px-1 py-px ${META} text-muted hover:text-ink`}
+        className={`fast min-h-[44px] rounded px-3 md:min-h-0 md:px-1 md:py-px ${META} text-muted hover:text-ink`}
       >
         ✕
       </button>
@@ -409,7 +410,7 @@ export default function TaskRow({
         <button
           aria-label={done ? "Mark not done" : "Mark done"}
           onClick={(e) => { e.stopPropagation(); toggle(); }}
-          className={`fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
+          className={`tap-bloom fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
             completing ? "bloom" : ""
           } ${done || completing ? "border-accent bg-accent text-on-accent" : "border-muted hover:border-accent"}`}
         >
@@ -423,7 +424,7 @@ export default function TaskRow({
         <div className={`min-w-0 flex-1 ${hasPlace ? "flex flex-col gap-1" : ""}`}>
           <div className="flex min-w-0 items-center gap-2">
             <span
-              className={`min-w-0 flex-1 truncate text-caption font-medium leading-snug ${done || completing ? "text-muted line-through" : ""}`}
+              className={`min-w-0 flex-1 text-[15px] leading-snug line-clamp-2 md:line-clamp-none md:truncate md:text-caption font-medium ${done || completing ? "text-muted line-through" : ""}`}
             >
               {task.title}
             </span>

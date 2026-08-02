@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { todayISO } from "../../lib/dates";
 import { useMobileOverlayHistory } from "../../hooks/useMobileOverlayHistory";
+import { useOnline } from "../../hooks/useOnline";
 import { useSettings } from "../../hooks/useSettings";
 import { useVertical } from "../../hooks/useVertical";
 import {
@@ -306,6 +307,8 @@ export default function MobileShell() {
     [tab, sub, detailFrame, vertical],
   );
 
+  const online = useOnline();
+
   return (
     // Pin to the layout viewport with `fixed inset-0` rather than a percentage/
     // dvh height: on iOS standalone PWAs `100dvh`/`innerHeight` can resolve to the
@@ -321,7 +324,7 @@ export default function MobileShell() {
         <button
           onClick={() => setSearchOpen(true)}
           aria-label="Search"
-          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-muted active:scale-95"
+          className="fast flex h-11 w-11 items-center justify-center rounded-full border border-line text-muted active:scale-95"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <circle cx="11" cy="11" r="7" />
@@ -335,20 +338,31 @@ export default function MobileShell() {
             })
           }
           aria-label="Toggle theme"
-          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
+          className="fast flex h-11 w-11 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
           ☾
         </button>
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
-          className="fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
+          className="fast flex h-11 w-11 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
           ⚙
         </button>
       </header>
 
       <TrialBanner />
+
+      {/* Offline — say it once, quietly, instead of raining error toasts.
+          TanStack refetches on reconnect, so the strip clearing IS the resync. */}
+      {!online && (
+        <div
+          role="status"
+          className="shrink-0 border-b border-line bg-surface-2 px-4 py-1.5 text-center text-caption text-muted"
+        >
+          You're offline — showing your last synced day.
+        </div>
+      )}
 
       {/* Content */}
       <main ref={scrollRef} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
@@ -359,7 +373,7 @@ export default function MobileShell() {
         ) : tab === "initiatives" ? (
           <MobileInitiatives onOpenItem={openDetail} />
         ) : (
-          <div className="pb-24">
+          <div className="fab-clear">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
             {/* The week's read, above the week's list — both are week-scoped, so
                 they sit at the top of the Week segment rather than on an

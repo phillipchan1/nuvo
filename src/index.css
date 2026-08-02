@@ -31,7 +31,10 @@
 /* ── Signal — the one constant: warm ember in light, coral in dark ───────── */
 :root,
 [data-theme="light"] {
-  --signal: #e0620f;
+  /* #e0620f measured 3.1–3.5:1 on the light grounds — under AA for the text
+     roles signal plays (overdue, at-risk). Darkened in-hue to clear 4.5 on
+     --bg, --surface and --surface-2 alike (tests/token-contrast.test.ts). */
+  --signal: #b54808;
   --signal-soft: rgba(224, 98, 15, 0.11);
 }
 [data-theme="dark"] {
@@ -78,7 +81,7 @@
   --line: #e7e0d2;
   --line-strong: #d8cfbc;
   --text: #1f1a16;
-  --muted: #847b6b;
+  --muted: #6f6656;
   --accent: #92568a;
   --accent-2: #b07fa8;
   --accent-soft: rgba(146, 86, 138, 0.11);
@@ -86,9 +89,9 @@
   /* Ink that sits ON an accent fill (buttons, pills, the FAB). Every block that
      redefines --accent must pick its own --on-accent so filled controls clear
      4.5:1 — dark accents carry white, light accents carry a near-bg ink.
-     Checked by tests/tokenContrast.test.ts. */
+     Checked by tests/token-contrast.test.ts. */
   --on-accent: #ffffff;
-  --slot: #2f8d86;
+  --slot: #25706b;
   --event-default: #a98a6f;
   --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(60, 42, 20, 0.13), 0 1px 2px rgba(60, 42, 20, 0.06);
@@ -125,13 +128,13 @@
   --line: #e4e6ef;
   --line-strong: #d3d7e3;
   --text: #1b1c24;
-  --muted: #6b6f7e;
+  --muted: #5f636f;
   --accent: #5a4be2;
   --accent-2: #8a6cf0;
   --accent-soft: rgba(90, 75, 226, 0.11);
   --accent-glow: rgba(90, 75, 226, 0.18);
   --on-accent: #ffffff;
-  --slot: #0d8f9c;
+  --slot: #0b747e;
   --event-default: #6b7bb0;
   --shadow-1: 0 1px 2px rgba(40, 38, 70, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(40, 38, 70, 0.12), 0 1px 2px rgba(40, 38, 70, 0.05);
@@ -163,13 +166,13 @@
   --line: #e6e4ec;
   --line-strong: #d6d3df;
   --text: #1c1b22;
-  --muted: #6f6c7b;
+  --muted: #63606f;
   --accent: #6d54c0;
   --accent-2: #8a72e6;
   --accent-soft: rgba(109, 84, 192, 0.10);
   --accent-glow: rgba(109, 84, 192, 0.17);
   --on-accent: #ffffff;
-  --slot: #1b9099;
+  --slot: #16747c;
   --event-default: #8a8499;
   --shadow-1: 0 1px 2px rgba(45, 40, 60, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(45, 40, 60, 0.12), 0 1px 2px rgba(45, 40, 60, 0.05);
@@ -1203,6 +1206,13 @@ textarea:focus {
   --field-h: 2.5rem; /* 40px — desktop */
   --field-px: 0.75rem;
 }
+/* Clearance for the floating capture (＋) and Nuvo (✦) buttons: FAB height
+   (56px) + its 12px gap above the nav + breathing room. Every mobile scroll
+   surface ends with `.fab-clear` so no interactive element can rest under the
+   floating pair at either scroll extreme — never hand-roll a pb-24 for this. */
+:root { --fab-clearance: 7rem; }
+.fab-clear { padding-bottom: var(--fab-clearance); }
+
 /* Phone-sized in either orientation — the second clause is a landscape phone
    (short + coarse pointer), matching useIsMobile's QUERY. */
 @media (max-width: 767px), ((max-height: 500px) and (orientation: landscape) and (pointer: coarse)) {
@@ -1999,6 +2009,20 @@ select.field { appearance: none; -webkit-appearance: none; }
      desktop's hairline density. */
   .tap { min-height: 44px; }
 
+  /* Expand a small control's hit area to ≥44px without growing its visuals.
+     Padding would inflate the drawn box (border and fill live on the element),
+     so the extra area is an invisible ::before. Scoped to phones on purpose:
+     on desktop the bloom would swallow clicks meant for the row around it. */
+  .tap-bloom { position: relative; }
+  .tap-bloom::before { content: ""; position: absolute; inset: -15px; }
+
+  /* The toast's Undo action is the only undo path on a phone — thumb-sized. */
+  [data-sonner-toast] [data-button] {
+    min-height: 44px;
+    padding-inline: 14px;
+    font-size: 13px;
+  }
+
   /* Hide the thin desktop scrollbars; touch surfaces don't need them. */
   .mobile-scroll::-webkit-scrollbar { width: 0; height: 0; }
 
@@ -2074,7 +2098,7 @@ html[data-skin="flat"][data-theme="light"] {
   --accent-soft: rgba(146, 86, 138, 0.08);
   --accent-glow: rgba(146, 86, 138, 0.16);
   --on-accent: #ffffff;
-  --slot: #0d8f9c;
+  --slot: #0b747e;
   --event-default: #9aa0ac;
   --font-serif: var(--font-sans);
   --radius-sm: 4px;
@@ -2717,7 +2741,7 @@ html[data-skin="flat"][data-palette="arctic"][data-theme="light"] {
   --line: #dde4f1; --line-strong: #c2cce1; --text: #1a1f2b; --muted: #656d80;
   --accent: #4f46e5; --accent-2: #6d64f0; --on-accent: #ffffff;
   --accent-soft: rgba(79, 70, 229, 0.08); --accent-glow: rgba(79, 70, 229, 0.16);
-  --slot: #0d9488; --event-default: #94a3b8;
+  --slot: #0b7568; --event-default: #94a3b8;
 }
 html[data-skin="flat"][data-palette="arctic"][data-theme="dark"] {
   --bg: #0b0d13; --surface: #141720; --surface-2: #1b1f2b;
@@ -2731,7 +2755,7 @@ html[data-skin="flat"][data-palette="linen"][data-theme="light"] {
   --line: #e2d9c8; --line-strong: #cfc3ab; --text: #26211a; --muted: #766c5b;
   --accent: #b06a3c; --accent-2: #c9885c; --on-accent: #0d0602;
   --accent-soft: rgba(176, 106, 60, 0.09); --accent-glow: rgba(176, 106, 60, 0.16);
-  --slot: #2f8d86; --event-default: #a98a6f;
+  --slot: #25706b; --event-default: #a98a6f;
 }
 html[data-skin="flat"][data-palette="linen"][data-theme="dark"] {
   --bg: #100f0b; --surface: #1a1714; --surface-2: #221e18;
@@ -2744,11 +2768,11 @@ html[data-skin="flat"][data-palette="linen"][data-theme="dark"] {
 /* ── BLUEPRINT — prints (theme-independent) ──────────────────────────────── */
 html[data-skin="blueprint"][data-palette="whiteprint"][data-theme] {
   --bg: #eef3f8; --surface: #ffffff; --surface-2: #f5f8fb;
-  --line: #ccdcea; --line-strong: #b0c8de; --text: #143a52; --muted: #5b7a92;
+  --line: #ccdcea; --line-strong: #b0c8de; --text: #143a52; --muted: #4d6b82;
   --accent: #1c5a8a; --accent-2: #2b74ab; --on-accent: #ffffff;
   --accent-soft: rgba(28, 90, 138, 0.09); --accent-glow: rgba(28, 90, 138, 0.16);
   --signal: #c1440e; --signal-soft: rgba(193, 68, 14, 0.14);
-  --slot: #2a8c86; --event-default: #4a7ba8;
+  --slot: #1f716c; --event-default: #4a7ba8;
   --shadow-1: 0 1px 2px rgba(20, 50, 80, 0.05);
   --shadow-2: 0 6px 20px -6px rgba(20, 50, 80, 0.12), 0 1px 2px rgba(20, 50, 80, 0.05);
   --shadow-3: 0 24px 60px -16px rgba(20, 50, 80, 0.20);

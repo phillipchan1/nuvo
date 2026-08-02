@@ -29,6 +29,7 @@ import {
   type DayCtx,
   type DayPlan,
 } from "./dayPlan";
+import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
 import MobileDayView, { CalLensPill, type CalLens } from "./MobileDayView";
 
 // The mobile Calendar — three lenses on the same live day-shape math:
@@ -52,7 +53,6 @@ const PAST_STEP = 14; // days of history the "earlier" control reveals per tap
 // just under the two sticky bars (back header + date strip). Matches DayCard's
 // scroll-mt so tap-to-jump and this reveal agree.
 const REVEAL_OFFSET = 112;
-const SWIPE_PX = 48; // horizontal travel that counts as a month swipe
 const MODE_KEY = "nuvo-mobile-cal-mode";
 // How far the Day lens fetches around the selected day's week. Anchoring the
 // window to the week (not the day) keeps the query key stable while you swipe
@@ -187,7 +187,7 @@ export default function MobileCalendar({
   };
 
   return (
-    <div className="pb-24">
+    <div className="fab-clear">
       {mode === "month" ? (
         <MonthView
           monthCursor={monthCursor}
@@ -287,22 +287,21 @@ function MonthView({
   const isCurrentMonth = isSameMonth(monthCursor, now);
 
   // Lightweight swipe (no HTML5 DnD — Tauri swallows it): horizontal changes
-  // months, an upward swipe drops into the schedule (the "expand" gesture).
-  const touch = useRef<{ x: number; y: number } | null>(null);
+  // months, an upward flick drops into the schedule (the "expand" gesture).
+  // Classified by swipe.ts: fast, axis-dominant, not a page scroll, and never
+  // starting in the left edge-guard strip that belongs to iOS back.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const touch = useRef<SwipeTracker | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    touch.current = t ? { x: t.clientX, y: t.clientY } : null;
+    touch.current = startSwipe(e, scrollParent(gridRef.current));
   };
+  const onTouchMove = () => trackSwipe(touch.current);
   const onTouchEnd = (e: React.TouchEvent) => {
-    if (!touch.current) return;
-    const t = e.changedTouches[0];
-    const dx = (t?.clientX ?? touch.current.x) - touch.current.x;
-    const dy = (t?.clientY ?? touch.current.y) - touch.current.y;
+    const dir = endSwipe(touch.current, e);
     touch.current = null;
-    if (Math.abs(dy) > Math.abs(dx)) {
-      if (dy <= -SWIPE_PX) onOpenSchedule(); // swipe up → expand into the schedule
-    } else if (dx <= -SWIPE_PX) onNext();
-    else if (dx >= SWIPE_PX) onPrev();
+    if (dir === "up") onOpenSchedule(); // deliberate flick up → the schedule
+    else if (dir === "left") onNext();
+    else if (dir === "right") onPrev();
   };
 
   return (
@@ -354,8 +353,14 @@ function MonthView({
       </div>
 
       {/* The grid — the paper itself, single-plane and transparent. touch-pan-y
-          keeps horizontal swipes for month nav (not the browser's back gesture). */}
-      <div className="grid touch-pan-y grid-cols-7 px-2" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          keeps vertical scrolling native while we classify the flicks. */}
+      <div
+        ref={gridRef}
+        className="grid touch-pan-y grid-cols-7 px-2"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
         {cells.map((d) => (
           <MonthCell
             key={dayKey(d.date)}

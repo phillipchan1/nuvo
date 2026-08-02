@@ -191,7 +191,7 @@ export default function MobileInitiatives({
       <SegHeader seg={seg} setSeg={setSeg} />
 
       {seg === "all" ? (
-        <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto pb-24">
+        <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto fab-clear">
           <VerticalList
             d={d}
             lens="initiatives"

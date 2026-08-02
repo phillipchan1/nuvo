@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 
 export function Keycap({ children }: { children: ReactNode }) {
   return <kbd className="keycap">{children}</kbd>;
@@ -75,6 +76,9 @@ export function Modal({
   // full-height sheet keeps even margins and never spills off the bottom.
   align?: "top" | "center";
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Dialog semantics — focus in, Tab trapped, focus restored to the trigger.
+  useDialogFocus(panelRef);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -105,7 +109,11 @@ export function Modal({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className={`moment glass elev-3 w-full ${width} max-h-[90vh] overflow-y-auto rounded-lg border border-line ${heightCap} sm:overflow-hidden`}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        className={`moment glass elev-3 w-full ${width} max-h-[90vh] overflow-y-auto rounded-lg border border-line ${heightCap} outline-none sm:overflow-hidden`}
       >
         {children}
       </div>

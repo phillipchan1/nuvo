@@ -1,10 +1,27 @@
 import { useState } from "react";
-import { supabaseConfigured } from "../lib/supabase";
+import { supabase, supabaseConfigured } from "../lib/supabase";
 import { signInWithGoogle } from "../lib/googleAuth";
+
+/** True in an installed iOS/Android PWA. In iOS standalone mode a cross-origin
+ *  OAuth redirect can strand the session in Safari (the standalone app and the
+ *  browser keep separate storage), so an in-window sign-in path must exist. */
+function isStandalone(): boolean {
+  return (
+    (navigator as { standalone?: boolean }).standalone === true ||
+    (typeof matchMedia !== "undefined" && matchMedia("(display-mode: standalone)").matches)
+  );
+}
 
 export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The email-code fallback: never leaves this window, so the session always
+  // lands in the standalone app. Offered up-front when installed; reachable
+  // from the browser too (it's a link, not a mode).
+  const [emailMode, setEmailMode] = useState(false);
+  const [email, setEmail] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const [code, setCode] = useState("");
 
   const withGoogle = async () => {
     setBusy(true);
@@ -15,6 +32,28 @@ export default function Login() {
       setBusy(false);
     }
     // On success the browser redirects to Google — leave busy true.
+  };
+
+  const sendCode = async () => {
+    const addr = email.trim();
+    if (!addr) return;
+    setBusy(true);
+    setError(null);
+    const { error } = await supabase.auth.signInWithOtp({ email: addr });
+    setBusy(false);
+    if (error) setError(error.message);
+    else setCodeSent(true);
+  };
+
+  const verifyCode = async () => {
+    const token = code.trim();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token, type: "email" });
+    setBusy(false);
+    if (error) setError(error.message);
+    // On success useAuth's onAuthStateChange takes over.
   };
 
   return (
@@ -32,15 +71,103 @@ export default function Login() {
           </div>
         )}
 
-        <button
-          type="button"
-          disabled={busy || !supabaseConfigured}
-          onClick={withGoogle}
-          className="tap fast flex w-full items-center justify-center gap-2.5 rounded-md border border-line bg-surface-2 px-3 py-3 text-body font-medium text-ink hover:bg-surface active:translate-y-px disabled:opacity-50"
-        >
-          <GoogleMark />
-          {busy ? "Redirecting…" : "Continue with Google"}
-        </button>
+        {!emailMode ? (
+          <>
+            <button
+              type="button"
+              disabled={busy || !supabaseConfigured}
+              onClick={withGoogle}
+              className="tap fast flex w-full items-center justify-center gap-2.5 rounded-md border border-line bg-surface-2 px-3 py-3 text-body font-medium text-ink hover:bg-surface active:translate-y-px disabled:opacity-50"
+            >
+              <GoogleMark />
+              {busy ? "Redirecting…" : "Continue with Google"}
+            </button>
+            {isStandalone() && (
+              <button
+                type="button"
+                disabled={!supabaseConfigured}
+                onClick={() => {
+                  setEmailMode(true);
+                  setError(null);
+                }}
+                className="tap fast mt-3 w-full text-center text-caption text-muted underline-offset-2 hover:text-ink hover:underline"
+              >
+                Sign in with an email code instead
+              </button>
+            )}
+          </>
+        ) : !codeSent ? (
+          <>
+            <label className="mb-1.5 block text-caption text-muted" htmlFor="login-email">
+              Your email
+            </label>
+            <input
+              id="login-email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              enterKeyHint="send"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void sendCode()}
+              placeholder="you@example.com"
+              className="field w-full"
+            />
+            <button
+              type="button"
+              disabled={busy || !email.trim()}
+              onClick={() => void sendCode()}
+              className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
+            >
+              {busy ? "Sending…" : "Email me a code"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEmailMode(false)}
+              className="tap fast mt-2 w-full text-center text-caption text-muted hover:text-ink"
+            >
+              ‹ Back
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="mb-2 text-caption leading-relaxed text-muted">
+              We sent a 6-digit code to <span className="text-ink">{email.trim()}</span>. It signs
+              you in right here — no need to leave the app.
+            </div>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              enterKeyHint="done"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void verifyCode()}
+              placeholder="123456"
+              aria-label="Sign-in code"
+              className="field mono w-full text-center tracking-[0.3em]"
+            />
+            <button
+              type="button"
+              disabled={busy || code.trim().length < 6}
+              onClick={() => void verifyCode()}
+              className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
+            >
+              {busy ? "Checking…" : "Sign in"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCodeSent(false);
+                setCode("");
+              }}
+              className="tap fast mt-2 w-full text-center text-caption text-muted hover:text-ink"
+            >
+              ‹ Different email
+            </button>
+          </>
+        )}
 
         {error && <div className="mt-3 text-caption text-signal">{error}</div>}
       </div>

@@ -28,6 +28,7 @@ import {
   type DayCtx,
   type TimedItem,
 } from "./dayPlan";
+import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
 
 /** The two drill-in lenses of the mobile Calendar. */
 export type CalLens = "schedule" | "day";
@@ -35,7 +36,6 @@ export type CalLens = "schedule" | "day";
 const HOUR_PX = 88; // 30 min = 44px — a half-hour block IS a tap target
 const MIN_ITEM_PX = 22; // a 15-min item stays readable without lying much
 const GUTTER = 56; // hour-label column
-const SWIPE_PX = 48; // horizontal travel that counts as a day swipe
 // The strip is anchored to the selected day's week — the user's "Week starts
 // on" setting, passed down so it matches the Day fetch window in
 // MobileCalendar — so its chips hold still while you swipe within a week
@@ -181,20 +181,16 @@ export default function MobileDayView({
     setSlide(target > selected ? "fwd" : "back");
     onSelect(target);
   };
-  const touch = useRef<{ x: number; y: number } | null>(null);
+  const touch = useRef<SwipeTracker | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    touch.current = t ? { x: t.clientX, y: t.clientY } : null;
+    touch.current = startSwipe(e, scrollParent(rootRef.current));
   };
+  const onTouchMove = () => trackSwipe(touch.current);
   const onTouchEnd = (e: React.TouchEvent) => {
-    if (!touch.current) return;
-    const t = e.changedTouches[0];
-    const dx = (t?.clientX ?? touch.current.x) - touch.current.x;
-    const dy = (t?.clientY ?? touch.current.y) - touch.current.y;
+    const dir = endSwipe(touch.current, e);
     touch.current = null;
-    if (Math.abs(dx) <= Math.abs(dy)) return; // a vertical scroll, not traversal
-    if (dx <= -SWIPE_PX) go(addDays(selected, 1));
-    else if (dx >= SWIPE_PX) go(addDays(selected, -1));
+    if (dir === "left") go(addDays(selected, 1));
+    else if (dir === "right") go(addDays(selected, -1));
   };
 
   // The strip — the same chips as the List lens, but here they *select* the
@@ -309,8 +305,9 @@ export default function MobileDayView({
       </div>
 
       {/* The day itself — swipe left/right to traverse. touch-pan-y keeps the
-          vertical scroll native while we watch for the horizontal gesture. */}
-      <div className="touch-pan-y" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          vertical scroll native while we watch for the horizontal gesture;
+          swipe.ts ignores edge starts (iOS back) and anything that scrolled. */}
+      <div className="touch-pan-y" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
         {/* Don't claim a day is open before the calendar has answered. */}
         {loading && plan.timed.length === 0 && plan.allDay.length === 0 ? (
           <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>

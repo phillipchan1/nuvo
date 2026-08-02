@@ -126,7 +126,7 @@ function WeekPlanSheet({
 
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto" style={{ background: "color-mix(in srgb, var(--bg) 96%, transparent)", backdropFilter: "blur(20px)" }}>
-      <div className="px-4 pb-24 pt-3">
+      <div className="px-4 fab-clear pt-3">
         {/* `tense` was never passed, so walking back to a sealed week still read
             "Where the hours are going" over a week that had finished. No
             `onOpenProject`: MobileShell doesn't mount the record overlay. */}
