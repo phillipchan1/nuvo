@@ -14,6 +14,7 @@
 // with no domain still gets its one-tap auto-link, exactly like the desktop card.
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { NOW_MARK } from "../ondeck/plannerNow";
 import { useVertical } from "../../hooks/useVertical";
 import { useMaxPerQuarter } from "../../hooks/usePlannerPrefs";
@@ -164,10 +165,19 @@ export default function MobileInitiatives({
     updateInitiative(id, { targetDate: quarterEndISO(q.start), status: "in_progress" });
   };
 
-  const create = async (col: number, name: string, domain: Domain | null) => {
-    const q = board.quarters[col];
+  const create = async (col: number | null, name: string, domain: Domain | null) => {
     const dom = domain ?? defaultDomain;
-    if (!q || !dom) return;
+    if (!dom) {
+      toast.error("Add an area first — a bet has to live somewhere.");
+      return;
+    }
+    // named into the pool: a bet with no finish line yet, which is where most start
+    if (col == null) {
+      await addInitiative(dom.id, { name, status: "backlog" });
+      return;
+    }
+    const q = board.quarters[col];
+    if (!q) return;
     await addInitiative(dom.id, { name, targetDate: quarterEndISO(q.start), status: "in_progress" });
   };
 
@@ -219,9 +229,12 @@ export default function MobileInitiatives({
           columns={columns}
           cards={cards}
           poolLabel="Needs a quarter"
-          poolEmpty={<Hint>Every bet has a quarter. Hold one and drop it here to shelve it.</Hint>}
+          poolEmpty={
+            <Hint>Nothing waiting for a quarter. Hold a bet and drop it here to shelve it, or start one below.</Hint>
+          }
           addNoun="initiative"
           addAccent={defaultDomain?.color}
+          poolAddHint="⏎ adds it with no quarter yet"
           onCreate={create}
           onMove={move}
           coverage={{ rows: coverageRows }}

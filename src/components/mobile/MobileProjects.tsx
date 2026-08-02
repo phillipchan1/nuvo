@@ -16,6 +16,7 @@
 // the deck (in-flight only) leaves out.
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useVertical } from "../../hooks/useVertical";
 import { useCapacity } from "../../hooks/useCapacity";
 import { useMaxPerWeek } from "../../hooks/usePlannerPrefs";
@@ -157,10 +158,19 @@ export default function MobileProjects({
     updateProject(id, { ...sprintSpanFor(p, ws), status: "in_progress" });
   };
 
-  const create = async (col: number, name: string, domain: Domain | null) => {
-    const ws = board.weeks[col]?.weekStart;
+  const create = async (col: number | null, name: string, domain: Domain | null) => {
     const dom = domain ?? defaultDomain;
-    if (!ws || !dom) return;
+    if (!dom) {
+      toast.error("Add an area first — a project has to live somewhere.");
+      return;
+    }
+    // named into the pool: it exists, it just hasn't been given a week yet
+    if (col == null) {
+      await addProject(dom.id, null, { name, status: "backlog" });
+      return;
+    }
+    const ws = board.weeks[col]?.weekStart;
+    if (!ws) return;
     await addProject(dom.id, null, {
       name,
       ...sprintSpanFor({ startDate: null, targetDate: null }, ws),
@@ -216,10 +226,11 @@ export default function MobileProjects({
           cards={cards}
           poolLabel="Needs a week"
           poolEmpty={
-            <Hint>Every project has a week. Hold one and drop it here to shelve it.</Hint>
+            <Hint>Nothing waiting for a week. Hold a project and drop it here to shelve it, or start one below.</Hint>
           }
           addNoun="project"
           addAccent={defaultDomain?.color}
+          poolAddHint="⏎ adds it with no week yet"
           onCreate={create}
           onMove={move}
           coverage={{ rows: coverageRows }}

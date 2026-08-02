@@ -13,6 +13,9 @@
 //             the cells are the DROP TARGETS while you're holding a card.
 //   pager   — one page per column, snap-scrolled; the page you're on is lifted in
 //             the strip.
+//   ＋       — every page ends in a composer, the pool included. Naming a thing on
+//             a column page dates it there; naming it in the pool creates it with
+//             no week / quarter yet, which is the rail's foot pill on desktop.
 //
 // Gesture: press and hold a card → it becomes `.glass-grab` glass in your hand and
 // every column lights as a target; drag to a strip cell (the pager follows so the
@@ -93,6 +96,7 @@ export default function MobileDeck({
   poolEmpty,
   addNoun,
   addAccent,
+  poolAddHint,
   onCreate,
   onMove,
   coverage,
@@ -106,9 +110,12 @@ export default function MobileDeck({
   poolEmpty: ReactNode;
   addNoun: string;
   addAccent?: string;
-  /** name one thing into a column — `domain` is set when the compose started from
+  /** the pool composer's footer line — "⏎ adds it with no week yet". */
+  poolAddHint?: string;
+  /** name one thing into a column — `col` is null when it's named into the pool
+   *  (no week / quarter yet), and `domain` is set when the compose started from
    *  a coverage cell ("start a Church project next week"). */
-  onCreate: (col: number, name: string, domain: Domain | null) => Promise<void>;
+  onCreate: (col: number | null, name: string, domain: Domain | null) => Promise<void>;
   /** a card was dropped: `col` = column index, or null to shelve it in the pool. */
   onMove: (id: string, col: number | null) => void;
   coverage?: DeckCoverage | null;
@@ -120,7 +127,8 @@ export default function MobileDeck({
     const nowIdx = columns.findIndex((c) => c.now);
     return nowIdx >= 0 ? nowIdx + 1 : 1;
   });
-  const [compose, setCompose] = useState<{ col: number; domain: Domain | null } | null>(null);
+  // `col: null` composes into the pool — a thing named before it has a week.
+  const [compose, setCompose] = useState<{ col: number | null; domain: Domain | null } | null>(null);
   const [drag, setDrag] = useState<{ id: string; name: string; dot: string; x: number; y: number } | null>(null);
   const [target, setTarget] = useState<number | "pool" | null>(null);
 
@@ -290,22 +298,41 @@ export default function MobileDeck({
               : undefined
           }
         >
-          <div className="px-4 pb-28 pt-3">
-            <div className="section-label !px-0">{poolLabel} · {poolCards.length}</div>
+          <div className="flex flex-col gap-2 px-4 pb-28 pt-3">
+            <div className="section-label !px-0 !pb-0">{poolLabel} · {poolCards.length}</div>
             {poolCards.length === 0 ? (
-              <div className="mt-2">{poolEmpty}</div>
+              // an empty pool still says what it's for — the composer below is the
+              // way in, so the hint stays a hint, not a dead end
+              <div>{poolEmpty}</div>
             ) : (
-              <div className="mt-2 flex flex-col gap-2">
-                {poolCards.map((c) => (
-                  <CardShell
-                    key={c.id}
-                    card={c}
-                    lifted={drag?.id === c.id}
-                    onPress={startPress}
-                    justDragged={justDragged}
-                  />
-                ))}
-              </div>
+              poolCards.map((c) => (
+                <CardShell
+                  key={c.id}
+                  card={c}
+                  lifted={drag?.id === c.id}
+                  onPress={startPress}
+                  justDragged={justDragged}
+                />
+              ))
+            )}
+            {/* the pool's own ＋ — the rail's foot pill, at phone scale. Naming a
+                thing here gives it no week yet, which is exactly what the pool is
+                for; the columns each have the same composer for a dated one. */}
+            {compose && compose.col === null ? (
+              <InlineAdd
+                placeholder={`Name a ${addNoun}…`}
+                accent={addAccent ?? "var(--accent)"}
+                hint={poolAddHint ?? `⏎ adds it to ${poolLabel}`}
+                onCreate={(name) => onCreate(null, name, null)}
+                onClose={() => setCompose(null)}
+              />
+            ) : (
+              <button
+                onClick={() => setCompose({ col: null, domain: null })}
+                className="slot-open tap fast w-full rounded-xl border border-dashed px-3 py-3 text-center text-caption font-medium text-muted"
+              >
+                ＋ {addNoun}
+              </button>
             )}
           </div>
         </section>
