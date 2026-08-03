@@ -471,6 +471,14 @@ html:not([data-skin]) .app-shell {
 html:not([data-skin]) .app-chat-slot {
   margin-block: 7px;
 }
+/* --atmosphere-base INHERITS, and the floor overlay (Projects · Initiatives ·
+   Domains) is a nested .atmosphere inside the sheet whose whole job is to hide
+   the Schedule underneath it. Left to inherit the sheet's translucency it goes
+   82% opaque and the calendar reads straight through the deck. Only the SHEET
+   is glass; every atmosphere inside it is solid. */
+.app-canvas .atmosphere {
+  --atmosphere-base: var(--bg);
+}
 html:not([data-skin]) .app-canvas {
   --atmosphere-base: color-mix(in srgb, var(--bg) 82%, transparent);
   margin: 7px;
