@@ -170,6 +170,24 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             install_spotlight_panel(app.handle());
 
+            // Put the traffic lights where the spine reserves room for them.
+            // `trafficLightPosition` in tauri.conf.json does NOT survive here:
+            // the config feeds tao's window builder, but wry then installs its
+            // own parent view over the window and macOS re-lays the titlebar,
+            // which resets the buttons. So we place them ourselves, once the
+            // window really exists, and again on resize (AppKit re-lays the
+            // titlebar container every time the window changes size).
+            #[cfg(target_os = "macos")]
+            if let Some(main) = app.get_webview_window("main") {
+                place_traffic_lights(&main);
+                let w = main.clone();
+                main.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::Resized(_)) {
+                        place_traffic_lights(&w);
+                    }
+                });
+            }
+
             // ⌘W on the main window must HIDE it, not destroy it — otherwise the
             // window is gone for good and the dock icon can never bring Nuvo back
             // (Tauri's default close destroys the webview). Hidden, it's restored
@@ -304,6 +322,73 @@ pub fn run() {
 // tao's center() puts it on the panel's assigned screen (often the wrong
 // monitor), so we set the frame origin ourselves via AppKit.
 #[cfg(target_os = "macos")]
+/// Where the buttons sit, in window points.
+///
+/// NOTE the y is not the distance from the top edge: AppKit keeps the button at
+/// y=9 inside the titlebar container, so the gap above it is `y - 9`. Verified
+/// against a running window — x=24/47/70, top 9.0pt below the window edge,
+/// which centres the cluster in the 32pt band the spine reserves.
+/// x lines the cluster up with the Nuvo wordmark's glyphs; y centres it in the
+/// band the spine reserves. Points, not CSS px — the buttons are drawn by
+/// AppKit and cannot follow the app's `--ui-scale` zoom, which is exactly why
+/// the spine sizes its reserve in points too (see index.css).
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_X: f64 = 24.0;
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_Y: f64 = 18.0;
+
+/// Move the standard window buttons. Same math wry uses internally — grow the
+/// titlebar container to `button height + y` and pin it to the top of the
+/// window, then lay the buttons out from `x` at their existing spacing — but
+/// run at a point nothing overwrites it afterwards.
+#[cfg(target_os = "macos")]
+fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
+    use objc2_app_kit::{NSWindow, NSWindowButton};
+
+    let Ok(ptr) = win.ns_window() else { return };
+    if ptr.is_null() {
+        return;
+    }
+    // AppKit is main-thread only; window events can arrive elsewhere.
+    let win = win.clone();
+    let _ = win.clone().run_on_main_thread(move || {
+        let Ok(ptr) = win.ns_window() else { return };
+        let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+        unsafe {
+            let (Some(close), Some(mini)) = (
+                ns_window.standardWindowButton(NSWindowButton::CloseButton),
+                ns_window.standardWindowButton(NSWindowButton::MiniaturizeButton),
+            ) else {
+                return;
+            };
+            let zoom = ns_window.standardWindowButton(NSWindowButton::ZoomButton);
+
+            let close_frame = close.frame();
+            let spacing = mini.frame().origin.x - close_frame.origin.x;
+
+            // The buttons' grandparent is the titlebar container.
+            let Some(container) = close.superview().and_then(|v| v.superview()) else {
+                return;
+            };
+            let mut rect = container.frame();
+            let height = close_frame.size.height + TRAFFIC_LIGHT_Y;
+            rect.size.height = height;
+            rect.origin.y = ns_window.frame().size.height - height;
+            container.setFrame(rect);
+
+            let mut buttons = vec![close, mini];
+            if let Some(zoom) = zoom {
+                buttons.push(zoom);
+            }
+            for (i, button) in buttons.into_iter().enumerate() {
+                let mut frame = button.frame();
+                frame.origin.x = TRAFFIC_LIGHT_X + (i as f64) * spacing;
+                button.setFrameOrigin(frame.origin);
+            }
+        }
+    });
+}
+
 fn position_spotlight<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
     use tauri_nspanel::objc2_app_kit::{NSEvent, NSScreen, NSWindow};
     use tauri_nspanel::objc2_foundation::{MainThreadMarker, NSPoint};

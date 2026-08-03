@@ -29,6 +29,10 @@ tauri-plugin-global-shortcut = "2"
 # feel. macOS-only; other desktops fall back to a plain focused window.
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+# We place the traffic lights ourselves (place_traffic_lights in lib.rs) —
+# tauri.conf.json's value is clobbered when wry re-lays out the titlebar.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSView", "NSResponder"] }
 
 [profile.release]
 panic = "abort"
