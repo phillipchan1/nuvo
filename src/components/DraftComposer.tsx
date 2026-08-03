@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Icon } from "./Icon";
 import { createPortal } from "react-dom";
 import { addDays, format } from "date-fns";
 import { fmtDuration, parseDateISO, toDateISO } from "../lib/dates";
@@ -246,10 +247,7 @@ export default function DraftComposer({
         {/* ── When — tonal info row ── */}
         <div className="px-3.5 pt-3">
           <div className="flex items-center gap-2.5 rounded-[var(--radius)] bg-surface-2 px-3.5 py-2.5 text-body">
-            <svg width="13" height="13" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/70">
-              <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2" />
-              <path d="M6 3v3l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            </svg>
+            <Icon name="clock" size={13} className="shrink-0 text-muted/70" />
             <span className="font-medium text-ink">{format(start, "EEE, MMM d")}</span>
             <span className="text-muted/40">·</span>
             {allDay ? (
@@ -314,9 +312,7 @@ export default function DraftComposer({
         {kind === "slot" && domains.length > 0 && (
           <div className="px-3.5 pt-2.5">
             <div className="mb-1.5 flex items-center gap-1.5 text-label font-semibold uppercase tracking-wider text-muted">
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                <path d="M6 1l4.5 2.5v5L6 11 1.5 8.5v-5L6 1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-              </svg>
+              <Icon name="package" size={11} />
               Domain
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -350,10 +346,7 @@ export default function DraftComposer({
         {kind === "event" && writableAccounts.length > 1 && (
           <div className="px-3.5 pt-2.5">
             <div className="mb-1.5 flex items-center gap-1.5 text-label font-semibold uppercase tracking-wider text-muted">
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                <rect x="1" y="2" width="10" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
-                <path d="M4 1v2M8 1v2M1 5h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              </svg>
+              <Icon name="calendar" size={11} />
               Calendar
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -379,11 +372,7 @@ export default function DraftComposer({
         {kind === "event" && (
           <div className="px-3.5 pt-3.5">
             <div className="mb-2 flex items-center gap-1.5 text-label font-semibold uppercase tracking-wider text-muted">
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                <circle cx="5" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.2" />
-                <path d="M1 10.5c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                <path d="M9 5.5v3M7.5 7H10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              </svg>
+              <Icon name="user-plus" size={11} />
               Guests
             </div>
             <GuestsInput value={attendees} onChange={setAttendees} />
@@ -404,10 +393,7 @@ export default function DraftComposer({
                 addMeet ? "border-accent/40 bg-accent-soft" : "border-line bg-surface-2 hover:border-line-strong"
               }`}
             >
-              <svg width="13" height="13" viewBox="0 0 12 12" fill="none" className={`shrink-0 ${addMeet ? "text-accent" : "text-muted/70"}`}>
-                <rect x="1" y="3" width="6.5" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.2" />
-                <path d="M7.5 5.5L10.8 3.8v4.4L7.5 6.5v-1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-              </svg>
+              <Icon name="video" size={13} className={`shrink-0 ${addMeet ? "text-accent" : "text-muted/70"}`} />
               <span className={`flex-1 text-body font-medium ${addMeet ? "text-accent" : "text-muted"}`}>
                 Google Meet
               </span>

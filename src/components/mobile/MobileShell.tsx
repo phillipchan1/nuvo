@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../Icon";
 import { format } from "date-fns";
 import { todayISO } from "../../lib/dates";
 import { useMobileOverlayHistory } from "../../hooks/useMobileOverlayHistory";
@@ -396,10 +397,7 @@ export default function MobileShell() {
           aria-label="Search"
           className="tap-icon fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-muted active:scale-95"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.4-3.4" />
-          </svg>
+          <Icon name="search" size={16} />
         </button>
         <button
           onClick={() =>

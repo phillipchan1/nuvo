@@ -16,6 +16,7 @@
 //   · Nuvo's read       — one warm synthesis sentence
 
 import { useMemo, useState } from "react";
+import { Icon } from "../Icon";
 import { readPeriodGain, type PeriodGain, type ShippedRung } from "../../lib/shipped";
 import type { VerticalData } from "../../lib/vertical";
 import WeekEmblem from "./WeekEmblem";
@@ -123,9 +124,7 @@ function StepButton({ dir, disabled, onClick }: { dir: "back" | "fwd"; disabled:
       aria-label={dir === "back" ? "Earlier period" : "Later period"}
       className="tap flex h-6 w-6 items-center justify-center rounded-full border border-line text-muted transition disabled:opacity-30 enabled:hover:text-ink"
     >
-      <svg width="7" height="11" viewBox="0 0 7 11" fill="none" style={{ transform: dir === "fwd" ? "scaleX(-1)" : undefined }}>
-        <path d="M5.5 1L1.5 5.5L5.5 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <Icon name="chevron-left" size={7} style={{ transform: dir === "fwd" ? "scaleX(-1)" : undefined }} />
     </button>
   );
 }

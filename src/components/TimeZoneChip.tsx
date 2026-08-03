@@ -1,4 +1,5 @@
 import { useHomeTimezone } from "../hooks/useHomeTimezone";
+import { Icon } from "./Icon";
 import { detectDeviceTz, tzCity, tzStatus } from "../lib/timezone";
 
 // The schedule's clock label. Always compact in the toolbar — glyph (at home) or
@@ -9,10 +10,7 @@ import { detectDeviceTz, tzCity, tzStatus } from "../lib/timezone";
 
 function GlobeGlyph({ size = 12 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden>
-      <circle cx="8" cy="8" r="5.6" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M2.4 8h11.2M8 2.4v11.2M4.4 4.4c1.2 1.4 1.9 3.1 1.9 3.6 0 .5-.7 2.2-1.9 3.6M11.6 4.4c-1.2 1.4-1.9 3.1-1.9 3.6 0 .5.7 2.2 1.9 3.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-    </svg>
+    <Icon name="globe" size={size} />
   );
 }
 

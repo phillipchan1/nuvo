@@ -10,6 +10,7 @@
 // Drag is pointer-based (HTML5 DnD is swallowed by the Tauri webview).
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../Icon";
 import { createPortal } from "react-dom";
 import { addDays, format, startOfWeek } from "date-fns";
 import type { Slot, Task, UserSettings } from "../../lib/types";
@@ -381,9 +382,7 @@ export default function WeekBoard({
             title="Previous week"
             aria-label="Previous week"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="chevron-left" size={14} />
           </button>
           <button
             onClick={() => walk(7)}
@@ -391,9 +390,7 @@ export default function WeekBoard({
             title="Next week"
             aria-label="Next week"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="chevron-right" size={14} />
           </button>
         </div>
         {weekStartISO !== thisWeekISO && (

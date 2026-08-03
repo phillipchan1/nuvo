@@ -5,6 +5,7 @@
 // Renders nothing when nothing has shipped — it never nags an empty state.
 
 import { useMemo } from "react";
+import { Icon } from "../Icon";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { readShipped } from "../../lib/shipped";
@@ -31,9 +32,7 @@ export default function ShippedStrip({ rung }: { rung: "project" | "initiative" 
         className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full"
         style={{ background: `color-mix(in srgb, ${READY} 15%, transparent)` }}
       >
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ color: READY }}>
-          <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <Icon name="check" size={10} style={{ color: READY }} />
       </span>
       <span className="text-caption text-ink">
         {n > 0 ? (

@@ -19,6 +19,7 @@
 //   · FOCUS LIFTS, IT DOESN'T OUTLINE.
 
 import { useEffect, type ReactNode, type RefObject } from "react";
+import { Icon } from "../Icon";
 import { createPortal } from "react-dom";
 import { InlineText } from "../floors/parts";
 import { READY } from "../floors/ReadinessBanner";
@@ -311,9 +312,7 @@ function ReadyMark({ met }: { met: boolean }) {
   if (met) {
     return (
       <span className={box} style={{ color: `color-mix(in srgb, ${READY} 66%, var(--muted))` }} aria-hidden>
-        <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2.5 6.5 5 9l4.5-5.5" />
-        </svg>
+        <Icon name="check" size={11} />
       </span>
     );
   }

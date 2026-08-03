@@ -17,6 +17,7 @@
 // receipts behind that list now expand under each domain in the weave.
 
 import { useState, useEffect, type ReactNode } from "react";
+import { Icon } from "../Icon";
 import { useQueryClient } from "@tanstack/react-query";
 import { weekSpan } from "../../lib/week";
 import { useVertical } from "../../hooks/useVertical";
@@ -376,16 +377,12 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
       <div className="flex items-center gap-1.5 pt-1">
         {onPrevWeek && (
           <button onClick={onPrevWeek} className="fast flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink" aria-label="Previous week">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="chevron-left" size={14} />
           </button>
         )}
         {onNextWeek && (
           <button onClick={canGoNext ? onNextWeek : undefined} disabled={!canGoNext} className="fast flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-30" aria-label="Next week">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="chevron-right" size={14} />
           </button>
         )}
       </div>
@@ -410,9 +407,7 @@ export default function WeekPlanFloor({ report, state, tense = "current", weekLa
         </button>
       )}
       <button onClick={onClose} className="tap fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        </svg>
+        <Icon name="close" size={16} />
       </button>
     </div>
   );

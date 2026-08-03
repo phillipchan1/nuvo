@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "../Icon";
 import { startCheckout, openBillingUrl, type Plan } from "../../lib/subscription";
 import { INCLUDED, PLANS } from "./plans";
 
@@ -85,21 +86,6 @@ export function PlanChooser({ cta = "Continue to checkout" }: { cta?: string }) 
 
 function Check() {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden
-      className="mt-0.5 shrink-0 text-accent"
-    >
-      <path
-        d="M3.5 8.5l3 3 6-7"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <Icon name="check" size={14} className="mt-0.5 shrink-0 text-accent" />
   );
 }

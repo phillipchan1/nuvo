@@ -15,6 +15,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { SCHEMES } from "../src/hooks/useSkin";
 
 // ── WCAG relative-luminance ratio ──────────────────────────────────────────
 function hexToRgb(hex: string): [number, number, number] | null {
@@ -153,12 +154,15 @@ describe("token contrast (WCAG AA)", () => {
     for (const skin of ["flat", "terminal", "blueprint", "eink"]) {
       for (const theme of THEMES) combos.push({ "data-skin": skin, "data-theme": theme });
     }
-    const schemePalettes: Record<string, string[]> = {
-      terminal: ["crt", "ayu", "ocean", "dracula", "nord", "gruvbox", "one", "tokyonight", "monokai", "solarized", "catppuccin"],
-      flat: ["arctic", "linen"],
-      blueprint: ["whiteprint", "sepia"],
-      eink: ["sepia", "carta"],
-    };
+    // Derived from the real catalogue, never a copy of it. This list used to be
+    // hardcoded here, which meant a newly added scheme was silently exempt from
+    // the one check that stops it shipping unreadable — the drift this whole
+    // file exists to prevent. Paper is excluded: its palettes are covered above.
+    const schemePalettes: Record<string, string[]> = Object.fromEntries(
+      Object.entries(SCHEMES)
+        .filter(([skin]) => skin !== "paper")
+        .map(([skin, schemes]) => [skin, schemes.map((s) => s.id)]),
+    );
     for (const [skin, palettes] of Object.entries(schemePalettes)) {
       for (const palette of palettes) {
         for (const theme of THEMES) {

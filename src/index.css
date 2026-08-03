@@ -3,6 +3,25 @@
    font so the type recedes across every panel. */
 @import "@fontsource/plus-jakarta-sans/600.css";
 @import "@fontsource/plus-jakarta-sans/700.css";
+/* Inter — the FLAT material's voice only (see the flat skin block). Paper keeps
+   the native system font; a workspace-register skin is judged on having the
+   neutral grotesque every app in that register wears, and the system stack is
+   the one thing that reads as "not that app" at a glance.
+
+   Declared by hand rather than via the package's index.css, which pulls all
+   SEVEN subsets (218 KiB). unicode-range means a browser only ever downloads
+   latin — but the PWA precaches whatever is in the bundle, so the other six
+   would be 170 KiB of cyrillic/greek/vietnamese shipped into the service worker
+   and the desktop app to be downloaded by everyone and used by no one.
+   Out-of-range glyphs simply fall through to the system stack after it. */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 /* Fraunces — the editorial serif, reserved for ceremonial surfaces (the Domain   floor). Variable: optical sizing + a touch of SOFT warms the terminals. */
 @import "@fontsource-variable/fraunces/full.css";
 @import "@fontsource-variable/fraunces/full-italic.css";
@@ -2411,6 +2430,7 @@ html[data-skin="flat"][data-theme="light"] {
   --on-accent: #ffffff;
   --slot: #0b747e;
   --event-default: #9aa0ac;
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-serif: var(--font-sans);
   --radius-sm: 4px;
   --radius: 6px;
@@ -2435,6 +2455,7 @@ html[data-skin="flat"][data-theme="dark"] {
   --on-accent: #0d0c11;
   --slot: #37b1a4;
   --event-default: #7a7f8c;
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-serif: var(--font-sans);
   --radius-sm: 4px;
   --radius: 6px;
@@ -2825,16 +2846,21 @@ html[data-skin="flat"] :focus-visible {
 /* ── 3. THE SURFACE ANSWERS THE POINTER ──────────────────────────────────
    `.row-hover` is a fraction of --surface, tuned so paper's rows whisper. On a
    ground with a white sheet above it that fraction is nearly invisible, so flat
-   takes the full raised surface — the register's rows are meant to be obviously
-   pickable. */
+   takes a wash of its own INK instead — which is what the register actually
+   runs on, and the only formulation that survives every tone. --surface-2 was
+   the old answer and it fails on a neutral ground: a #fbfbfa row over a #f7f7f5
+   pool is a 1.5% step, i.e. no hover at all. A wash darkens whatever it lands
+   on, so it reads identically on the ground, on the sheet, and in dark. */
 html[data-skin="flat"] .row-hover:hover {
-  background-color: var(--surface-2);
+  background-color: color-mix(in srgb, var(--text) 6%, transparent);
 }
 /* Nav rows light up under the cursor — the chrome's own hover, which paper gets
-   from the frost and flat had nowhere to get. */
+   from the frost and flat had nowhere to get. Same wash, a touch lighter: the
+   chrome should answer the pointer without competing with the filled active
+   row sitting next to it. */
 html[data-skin="flat"] .spine nav button:not([aria-current="true"]):hover,
 html[data-skin="flat"] .spine button:hover {
-  background: color-mix(in srgb, var(--line) 55%, transparent);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 
 /* ── 4. VOICE — the eyebrow drops its ceremony ───────────────────────────
@@ -3074,6 +3100,47 @@ html[data-skin="flat"][data-palette="linen"][data-theme="dark"] {
   --accent: #d69b6a; --accent-2: #e3b489; --on-accent: #100f0b;
   --accent-soft: rgba(214, 155, 106, 0.14); --accent-glow: rgba(214, 155, 106, 0.24);
   --slot: #37b1a4; --event-default: #b89a7e;
+}
+
+/* CHALK — the tone that takes flat all the way into the workspace register the
+   base block only gestures at. Two things separate it from the other tones:
+
+     · The greys are HUELESS. Snow/Arctic/Linen each carry a few degrees of
+       their accent's hue, because a tinted neutral is what stops a flat UI
+       reading as default-CSS cold. Chalk gives that up on purpose — the
+       register it's imitating runs on a warm near-black ink (#37352f) over
+       genuinely neutral paper, and the warmth lives in the INK, not the walls.
+     · The accent is azure and it is doing a different job. Mulberry is Nuvo's
+       identity colour; here the accent is pure UI state — what is selected,
+       linked, focused — which is why it can be the one saturated thing on
+       screen without the app looking branded-blue.
+
+   The ground→sheet ramp is the base block's and is untouched: chrome and pools
+   ride the ground (#f7f7f5), work happens on the white sheet. */
+html[data-skin="flat"][data-palette="chalk"][data-theme="light"] {
+  --bg: #f7f7f5; --surface: #ffffff; --surface-2: #fbfbfa;
+  --line: #eae9e7; --line-strong: #dcdbd8; --text: #37352f; --muted: #787774;
+  /* One step deeper than the azure this tone is modelled on. That azure is
+     #2383e2, and white on it is 3.88:1 — under AA, which the token-contrast
+     test caught the moment the scheme was added. It survives as --accent-2
+     (the lighter step, used for hovers and gradients, never under text);
+     --accent carries the ink and the fills, so it has to clear 4.5. */
+  --accent: #1b72c9; --accent-2: #2383e2; --on-accent: #ffffff;
+  --accent-soft: rgba(27, 114, 201, 0.09); --accent-glow: rgba(27, 114, 201, 0.18);
+  --slot: #0f7b6c; --event-default: #9b9a97;
+}
+/* Dark keeps the ramp's DIRECTION (ground below sheet) rather than the
+   reference's inversion, where the sidebar is lighter than the page. Flat's
+   chrome is transparent over the ground, so lifting the ground above the sheet
+   would put the pools in front of the work — the one structural idea this
+   material has. Ink is a soft off-white, never #fff: full white on near-black
+   is the classic dark-mode glare. */
+html[data-skin="flat"][data-palette="chalk"][data-theme="dark"] {
+  --bg: #191919; --surface: #202020; --surface-2: #252525;
+  --line: #2f2f2f; --line-strong: #414141; --text: #d4d4d4; --muted: #979797;
+  --accent: #529cca; --accent-2: #6fb3dd; --on-accent: #191919;
+  --accent-soft: rgba(82, 156, 202, 0.14); --accent-glow: rgba(82, 156, 202, 0.26);
+  --slot: #4dab9a; --event-default: #7f7f7f;
 }
 
 /* ── BLUEPRINT — prints (theme-independent) ──────────────────────────────── */

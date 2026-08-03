@@ -11,6 +11,7 @@
 // only arranges them into a wall.
 
 import { useRef, useState } from "react";
+import { Icon } from "../Icon";
 import { startOfQuarter } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useRecordContextMenu } from "../RecordContextMenu";
@@ -194,9 +195,7 @@ function InitiativeGroomCard({
             className={`group/chk fast mt-[1px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border ${completing ? "bloom" : ""}`}
             style={completing ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
           >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={completing ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: completing ? "#fff" : READY }}>
-              <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="check" size={10} className={completing ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: completing ? "#fff" : READY }} />
           </button>
           <span className="mt-[5px] h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent }} />
           <button

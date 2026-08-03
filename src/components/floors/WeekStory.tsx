@@ -8,6 +8,7 @@
 // All copy is derived from the real WeekReport (deterministic).
 
 import { useMemo, useState, type ReactNode } from "react";
+import { Icon } from "../Icon";
 import { fmtHours } from "../../lib/dates";
 import { fmtMins } from "../../lib/now";
 import type { WeekReport } from "../../lib/composeWeek";
@@ -178,9 +179,7 @@ export default function WeekStory({ report, state, weekLabel, onClose, onSeeDeta
 
       {/* close */}
       <button onClick={onClose} className="pointer-events-auto absolute right-6 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        </svg>
+        <Icon name="close" size={16} />
       </button>
 
       {/* The persistent emblem (accretes layers per scene) + the per-scene caption.

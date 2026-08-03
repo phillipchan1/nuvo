@@ -4,6 +4,7 @@
 // the filter stores the HIDDEN set so a new domain is watched by default.
 
 import type { Domain } from "../../lib/vertical";
+import { Icon } from "../Icon";
 
 export default function CoverageControls({
   collapsed,
@@ -74,9 +75,7 @@ export default function CoverageControls({
                       style={on ? { background: d.color, borderColor: d.color } : { borderColor: "var(--line-strong)" }}
                     >
                       {on && (
-                        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" style={{ color: "#fff" }}>
-                          <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
+                        <Icon name="check" size={9} style={{ color: "#fff" }} />
                       )}
                     </span>
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: d.color }} />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "./Icon";
 import { supabase } from "../lib/supabase";
 // One vocabulary for where an address came from — the picker and the chat's
 // invite card can't disagree about what "Met before" means.
@@ -191,9 +192,7 @@ export function GuestsInput({
       {/* Input row */}
       <div className="relative">
         <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 focus-within:border-accent">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/60">
-            <path d="M5.5 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm-4 3a4 4 0 1 1 7.02 2.62l1.98 1.98-.7.7-1.98-1.98A4 4 0 0 1 1.5 5z" fill="currentColor" />
-          </svg>
+          <Icon name="users" size={12} className="shrink-0 text-muted/60" />
           <input
             ref={inputRef}
             value={input}
@@ -231,9 +230,7 @@ export function GuestsInput({
                       }`}
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-muted/30 text-muted">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                        </svg>
+                        <Icon name="plus" size={12} />
                       </span>
                       <div className="flex min-w-0 flex-col">
                         <span className={`truncate text-body ${active ? "text-accent" : "text-ink"}`}>

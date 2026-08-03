@@ -36,6 +36,7 @@
 // live in the ··· overflow, where a destructive act belongs.
 
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { Icon } from "../Icon";
 import { useVertical } from "../../hooks/useVertical";
 import {
   domainById,
@@ -287,16 +288,7 @@ function ProjectRecord({
             className="group/chk fast mt-[5px] flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
             style={shipped ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
           >
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 10 10"
-              fill="none"
-              className={shipped ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"}
-              style={{ color: shipped ? "#fff" : READY }}
-            >
-              <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="check" size={11} className={shipped ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: shipped ? "#fff" : READY }} />
           </button>
         }
         outcome={project.outcome}

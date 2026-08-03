@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../Icon";
 import {
   addDays,
   addMonths,
@@ -641,11 +642,7 @@ export function ScheduleView({
           // any date in a couple of taps; the invisible input fills the 44px
           // button so tapping the glyph IS tapping the picker.
           <label className="tap fast relative flex items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Jump to date">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <rect x="2.3" y="3.3" width="11.4" height="10.4" rx="1.6" stroke="currentColor" strokeWidth="1.3" />
-              <path d="M2.3 6.3h11.4" stroke="currentColor" strokeWidth="1.3" />
-              <path d="M5.5 1.8v2.6M10.5 1.8v2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-            </svg>
+            <Icon name="calendar" size={16} />
             <input
               type="date"
               value={anchor.toLocaleDateString("en-CA")}

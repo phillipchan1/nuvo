@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "./Icon";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 import { signInWithGoogle } from "../lib/googleAuth";
 
@@ -205,11 +206,7 @@ function TwilightMark() {
       className="flex h-8 w-8 items-center justify-center rounded-lg"
       style={{ background: "linear-gradient(140deg, var(--accent), var(--accent-2) 70%, var(--signal))" }}
     >
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-        <circle cx="9" cy="10" r="3.4" stroke="#fff" strokeWidth="1.5" />
-        <path d="M2.5 13.5h13" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M9 3.2v1.6M14 5l-1.1 1.1M4 5l1.1 1.1" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
+      <Icon name="sun" size={18} />
     </span>
   );
 }

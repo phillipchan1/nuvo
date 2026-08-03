@@ -13,6 +13,7 @@
 // initiatives by quarter).
 
 import { useMemo, useState } from "react";
+import { Icon } from "../Icon";
 import { useVertical } from "../../hooks/useVertical";
 import { useAppNavigation } from "../../hooks/useAppNavigation";
 import { readShipped, type ShippedItem } from "../../lib/shipped";
@@ -243,8 +244,6 @@ function fmtWhen(targetDate: string | null): string | null {
 
 function Seal({ color }: { color: string }) {
   return (
-    <svg width="12" height="12" viewBox="0 0 10 10" fill="none" style={{ color }}>
-      <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <Icon name="check" size={12} style={{ color }} />
   );
 }

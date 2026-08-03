@@ -3,6 +3,7 @@
 // Everything is keyboard-friendly and uses the Twilight tokens.
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { Icon } from "../Icon";
 import { createPortal } from "react-dom";
 import {
   addDays,
@@ -1313,19 +1314,7 @@ const REFINED_INK = `color-mix(in srgb, ${RIPE_GREEN} 55%, var(--muted))`;
 
 function Check({ size = 11, pathClassName }: { size?: number; pathClassName?: string }) {
   return (
-    <svg
-      viewBox="0 0 12 12"
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path className={pathClassName} d="M2.5 6.5 5 9l4.5-5.5" />
-    </svg>
+    <Icon name="check" size={size} className={pathClassName} />
   );
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Icon } from "./Icon";
 import type { Label, Task } from "../lib/types";
 import { ENERGY_META } from "../lib/energy";
 import { liveSuggestion } from "../lib/grooming";
@@ -511,9 +512,7 @@ export default function TaskRow({
           } ${done || completing ? "border-accent bg-accent text-on-accent" : "border-muted hover:border-accent"}`}
         >
           {(done || completing) && (
-            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-              <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.6" />
-            </svg>
+            <Icon name="check" size={9} />
           )}
         </button>
 

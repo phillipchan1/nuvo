@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Icon } from "../Icon";
 import { createPortal } from "react-dom";
 import { useVertical } from "../../hooks/useVertical";
 import { useCalendarAccounts } from "../../hooks/useCalendar";
@@ -398,9 +399,7 @@ function Tick({ done }: { done: boolean }) {
   if (!done) return <span className="h-4 w-4 shrink-0 rounded-full border border-line-strong" />;
   return (
     <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--accent)" }}>
-      <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-        <path d="M2.5 6.5L5 9l4.5-5.5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <Icon name="check" size={10} />
     </span>
   );
 }

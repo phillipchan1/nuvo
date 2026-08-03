@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { Icon } from "./Icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -1646,9 +1647,7 @@ export default function CalendarPane({
             }}
           >
             {done && (
-              <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
-                <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.8" />
-              </svg>
+              <Icon name="check" size={8} />
             )}
           </button>
           <div className="min-w-0 flex-1">
@@ -1691,9 +1690,7 @@ export default function CalendarPane({
             className="fast shrink-0 rounded p-0.5 hover:opacity-70"
             aria-label="Dismiss"
           >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <Icon name="close" size={12} />
           </button>
         </div>
       )}
@@ -2117,18 +2114,14 @@ export default function CalendarPane({
                 className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
                 title="Previous (Alt+←)"
               >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M9 11L5 7l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+                <Icon name="chevron-left" size={14} />
               </button>
               <button
                 onClick={() => calRef.current?.getApi().next()}
                 className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
                 title="Next (Alt+→)"
               >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+                <Icon name="chevron-right" size={14} />
               </button>
               <button
                 onClick={() => calRef.current?.getApi().today()}
@@ -2245,21 +2238,7 @@ export default function CalendarPane({
                         }}
                         className="fast flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-label text-ink hover:bg-accent-soft disabled:opacity-40"
                       >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 14 14"
-                          fill="none"
-                          className={refreshingCalendars ? "animate-spin" : undefined}
-                        >
-                          <path
-                            d="M11.5 7A4.5 4.5 0 107.8 2.3M11.5 2.3v2.8H8.7"
-                            stroke="currentColor"
-                            strokeWidth="1.4"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                        <Icon name="refresh" size={14} className={refreshingCalendars ? "animate-spin" : undefined} />
                         <span className="flex-1">Refresh calendars</span>
                         <span className="text-micro text-muted">⇧ full</span>
                       </button>
@@ -2275,14 +2254,9 @@ export default function CalendarPane({
                         style={showHidden ? { color: "var(--accent)" } : undefined}
                       >
                         {showHidden ? (
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                            <path d="M1.5 8S3.8 3.5 8 3.5 14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
-                            <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3"/>
-                          </svg>
+                          <Icon name="eye" size={14} />
                         ) : (
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                            <path d="M6.3 3.8A6 6 0 018 3.5C12.2 3.5 14.5 8 14.5 8a11 11 0 01-1.9 2.4M3.4 5.6A11 11 0 001.5 8s2.3 4.5 6.5 4.5a6 6 0 002-.35M2 2l12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
+                          <Icon name="eye-off" size={14} />
                         )}
                         <span>
                           {showHidden

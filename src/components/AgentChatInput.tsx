@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { Icon } from "./Icon";
 import type { AgentAttachment } from "../lib/agentTypes";
 import { filesToAttachments, formatBytes, isImageAttachment } from "../lib/agentAttachments";
 
@@ -121,9 +122,7 @@ export default function AgentChatInput({
             title="Attach files"
             className="agent-attach-btn fast mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-head text-muted transition-colors hover:bg-surface hover:text-accent disabled:opacity-40"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-            </svg>
+            <Icon name="paperclip" size={16} />
           </button>
         )}
         <input
@@ -174,9 +173,7 @@ export default function AgentChatInput({
             title="Attach files"
             className="agent-attach-btn fast flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-accent disabled:opacity-40"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-            </svg>
+            <Icon name="paperclip" size={14} />
           </button>
           <span className="mono text-meta text-muted">
             Enter to send · Shift+Enter newline · drag files anywhere

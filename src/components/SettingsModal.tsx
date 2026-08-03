@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Icon } from "./Icon";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
@@ -45,73 +46,49 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
     id: "appearance",
     label: "Appearance",
     icon: (
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M8 2.5a5.5 5.5 0 000 11z" fill="currentColor" />
-      </svg>
+      <Icon name="moon" size={15} />
     ),
   },
   {
     id: "schedule",
     label: "Schedule",
     icon: (
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M8 4.8V8l2.2 1.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <Icon name="clock" size={15} />
     ),
   },
   {
     id: "connections",
     label: "Calendars",
     icon: (
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-        <rect x="2.3" y="3.3" width="11.4" height="10.4" rx="1.6" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M2.3 6.3h11.4" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M5.5 1.8v2.6M10.5 1.8v2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
+      <Icon name="calendar" size={15} />
     ),
   },
   {
     id: "labels",
     label: "Labels",
     icon: (
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-        <path d="M2.5 2.5h4.7l6.3 6.3a1 1 0 010 1.4l-3.3 3.3a1 1 0 01-1.4 0L2.5 7.2z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-        <circle cx="5.4" cy="5.4" r="0.95" fill="currentColor" />
-      </svg>
+      <Icon name="tag" size={15} />
     ),
   },
   {
     id: "account",
     label: "Account",
     icon: (
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="5.5" r="2.6" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M3.2 13.4c0-2.5 2.1-4.1 4.8-4.1s4.8 1.6 4.8 4.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
+      <Icon name="user" size={15} />
     ),
   },
   {
     id: "billing",
     label: "Billing",
     icon: (
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-        <rect x="1.8" y="3.8" width="12.4" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M1.8 6.6h12.4" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M4 10h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
+      <Icon name="card" size={15} />
     ),
   },
   {
     id: "about",
     label: "About",
     icon: (
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M8 7.2v3.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-        <circle cx="8" cy="5.2" r="0.9" fill="currentColor" />
-      </svg>
+      <Icon name="info" size={15} />
     ),
   },
 ];
@@ -199,9 +176,7 @@ function ThemeCard({
           }`}
         >
           {active && (
-            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-              <path d="M2 5l2 2 4-4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="check" size={9} />
           )}
         </span>
       </div>
@@ -255,9 +230,7 @@ function SchemeCard({
           }`}
         >
           {active && (
-            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-              <path d="M2 5l2 2 4-4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="check" size={9} />
           )}
         </span>
       </div>
@@ -316,9 +289,7 @@ function SkinCard({
           }`}
         >
           {active && (
-            <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-              <path d="M2 5l2 2 4-4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="check" size={9} />
           )}
         </span>
       </div>
@@ -1216,9 +1187,7 @@ function LabelsPane() {
               title="Delete label"
               className="fast tap flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] text-muted hover:bg-signal-soft hover:text-signal sm:opacity-0 sm:group-hover:opacity-100"
             >
-              <svg width="15" height="15" viewBox="0 0 14 14" fill="none">
-                <path d="M3 4h8M5.5 4V3h3v1M4 4l.5 7h5L10 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <Icon name="trash" size={15} />
             </button>
           </div>
         ))}
@@ -1496,9 +1465,7 @@ export default function SettingsModal({
                   {s.icon}
                 </span>
                 <span className="flex-1">{s.label}</span>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted">
-                  <path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <Icon name="chevron-right" size={16} className="text-muted" />
               </button>
             ))}
           </div>

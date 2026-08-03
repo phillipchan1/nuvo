@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "./Icon";
 import { createPortal } from "react-dom";
 import {
   describeRule,
@@ -148,10 +149,7 @@ export function SlotDeleteButton({
 /** A small repeat icon shared by the chip and the picker header. */
 function RepeatGlyph({ className = "" }: { className?: string }) {
   return (
-    <svg width="11" height="11" viewBox="0 0 14 14" fill="none" className={className}>
-      <path d="M3 5a4 4 0 016.9-2.7M11 9a4 4 0 01-6.9 2.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      <path d="M10 1.5V4H7.5M4 12.5V10h2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <Icon name="repeat" size={11} className={className} />
   );
 }
 
@@ -195,9 +193,7 @@ export function RepeatControl({
           <RepeatGlyph className="shrink-0" />
           <span className={`flex-1 truncate text-left ${on ? "font-medium" : ""}`}>{label}</span>
           {!on && <span className="shrink-0 text-meta text-muted">Does not repeat</span>}
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="shrink-0 text-muted">
-            <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <Icon name="chevron-right" size={14} className="shrink-0 text-muted" />
         </button>
       ) : (
         <button
@@ -329,10 +325,7 @@ export default function RecurrencePicker({
         style={{ top: pos.top, left: pos.left, width: POP_W, boxShadow: "var(--shadow-3)" }}
       >
         <div className="flex items-center gap-1.5 px-3.5 pt-3 pb-2">
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" className="text-accent">
-            <path d="M3 5a4 4 0 016.9-2.7M11 9a4 4 0 01-6.9 2.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            <path d="M10 1.5V4H7.5M4 12.5V10h2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <Icon name="repeat" size={13} className="text-accent" />
           <span className="text-caption font-semibold text-text">Repeat</span>
         </div>
 

@@ -6,6 +6,7 @@
 // emblem gallery lives *behind* the one door, not beside it.
 
 import { weekName, weekSpan } from "../../lib/week";
+import { Icon } from "../Icon";
 import { useWeekReviewList } from "../../hooks/useWeekReview";
 import WeekEmblem from "./WeekEmblem";
 
@@ -38,9 +39,7 @@ export default function WeekArchiveGallery({ onSelectWeek, onClose }: WeekArchiv
             className="tap fast flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-ink"
             aria-label="Close"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
+            <Icon name="close" size={16} />
           </button>
         </div>
 

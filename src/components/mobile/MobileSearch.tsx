@@ -5,6 +5,7 @@
 // hunting. Pure read: it searches the live VerticalData snapshot + task rows.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Icon } from "../Icon";
 import { domainById, initiativeById, projectById, taskDomainColor, type VerticalData } from "../../lib/vertical";
 import type { Task } from "../../lib/types";
 import Sheet from "./Sheet";
@@ -237,9 +238,6 @@ function Note({ children }: { children: ReactNode }) {
 
 function SearchGlyph() {
   return (
-    <svg className="shrink-0 text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.4-3.4" />
-    </svg>
+    <Icon name="search" size={16} className="shrink-0 text-muted" />
   );
 }

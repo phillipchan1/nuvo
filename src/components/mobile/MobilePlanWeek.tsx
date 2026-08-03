@@ -23,6 +23,7 @@
 // every move has a tap path (mobile golden rule #4), 44px targets, safe areas.
 
 import { useMemo, useState } from "react";
+import { Icon } from "../Icon";
 import { format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useWeekDraft } from "../../hooks/useWeekDraft";
@@ -727,9 +728,7 @@ function WorkRow({
         className="mt-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
         style={on ? { background: color, borderColor: color } : { borderColor: "var(--line-strong)" }}
       >
-        <svg width="11" height="11" viewBox="0 0 10 10" fill="none" className={on ? "opacity-100" : "opacity-0"} style={{ color: "#fff" }}>
-          <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <Icon name="check" size={11} className={on ? "opacity-100" : "opacity-0"} style={{ color: "#fff" }} />
       </span>
       <span className="min-w-0 flex-1">
         <span className={`block truncate text-body ${on ? "text-ink" : "text-muted"}`}>{s.task.title}</span>

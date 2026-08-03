@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "../Icon";
 import { createPortal } from "react-dom";
 import { useVertical } from "../../hooks/useVertical";
 import { useCalendarAccounts } from "../../hooks/useCalendar";
@@ -151,9 +152,7 @@ function GettingStartedInner({ compact, onGone }: { compact: boolean; onGone: ()
                 <span className="section-label flex-1">Getting started</span>
                 {!celebrate && <span className="mono text-micro text-muted">{doneCount} of {steps.length}</span>}
                 <button onClick={dismiss} className="tap fast text-muted hover:text-ink" aria-label="Dismiss for good">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <path d="M4 4l6 6M10 4l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                  </svg>
+                  <Icon name="close" size={14} />
                 </button>
               </div>
 
@@ -215,9 +214,7 @@ function Tick({ done }: { done: boolean }) {
   if (done) {
     return (
       <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--accent)" }}>
-        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-          <path d="M2.5 6.5L5 9l4.5-5.5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <Icon name="check" size={10} />
       </span>
     );
   }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "./Icon";
 import ReactMarkdown from "react-markdown";
 import AgentActions from "./AgentRecordCards";
 import AgentInviteCard from "./AgentInviteCard";
@@ -9,13 +10,6 @@ function fmtTime(at: number) {
   return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-const ICON = {
-  strokeWidth: 1.5,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-  fill: "none",
-  stroke: "currentColor",
-};
 
 /** Quiet per-turn actions. Hover-revealed on desktop; always visible on touch,
  *  where there is no hover to reveal them with (golden rule 4). */
@@ -49,22 +43,14 @@ function AgentTurnActions({
     >
       <button onClick={copy} className={btn} title={copied ? "Copied" : "Copy reply"} aria-label="Copy reply">
         {copied ? (
-          <svg viewBox="0 0 16 16" width="13" height="13" {...ICON} aria-hidden>
-            <path d="M3.5 8.5 6.5 11.5 12.5 5" />
-          </svg>
+          <Icon name="check" size={13} />
         ) : (
-          <svg viewBox="0 0 16 16" width="13" height="13" {...ICON} aria-hidden>
-            <rect x="5.75" y="5.75" width="7.5" height="7.5" rx="1.75" />
-            <path d="M10.25 3.75a2 2 0 0 0-2-2H4.5a2.75 2.75 0 0 0-2.75 2.75V8.25a2 2 0 0 0 2 2" />
-          </svg>
+          <Icon name="copy" size={13} />
         )}
       </button>
       {onRetry && (
         <button onClick={onRetry} className={btn} title="Try again" aria-label="Try again">
-          <svg viewBox="0 0 16 16" width="13" height="13" {...ICON} aria-hidden>
-            <path d="M13.25 8a5.25 5.25 0 1 1-1.6-3.78" />
-            <path d="M13.4 2.4v2.9h-2.9" />
-          </svg>
+          <Icon name="refresh" size={13} />
         </button>
       )}
     </div>

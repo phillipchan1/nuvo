@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "./Icon";
 import { createPortal } from "react-dom";
 import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
@@ -665,16 +666,7 @@ export default function LeftRail({
       <form onSubmit={(e) => void submitCapture(e)} className="shrink-0 border-t border-line p-2.5" data-tauri-drag-region="false" data-teach="capture">
         <div className="relative">
           {/* A quill — capture is organic free text, the front door, not a form. */}
-          <svg
-            aria-hidden
-            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-accent"
-            width="15" height="15" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
-          >
-            <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
-            <line x1="16" y1="8" x2="2" y2="22" />
-            <line x1="17.5" y1="15" x2="9" y2="15" />
-          </svg>
+          <Icon name="pen" size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-accent" />
           <input
             ref={captureRef}
             value={capture}

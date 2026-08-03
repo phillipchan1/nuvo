@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GuestsInput } from "./GuestsInput";
+import { Icon } from "./Icon";
 import ReactMarkdown from "react-markdown";
 import { createPortal } from "react-dom";
 import { Draggable } from "@fullcalendar/interaction";
@@ -52,11 +53,7 @@ function PopoverMoreMenu({
         title="More actions"
         className="fast flex h-9 w-9 items-center justify-center rounded-md border border-line text-muted hover:border-line-strong hover:bg-surface-2 hover:text-ink"
       >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden>
-          <circle cx="3" cy="7" r="1.25" />
-          <circle cx="7" cy="7" r="1.25" />
-          <circle cx="11" cy="7" r="1.25" />
-        </svg>
+        <Icon name="more" size={14} />
       </button>
       {open && (
         <>
@@ -340,9 +337,7 @@ export function TaskPopover({
             className="fast mt-0.5 shrink-0 rounded p-0.5 text-muted hover:bg-bg hover:text-ink"
             aria-label="Close"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
+            <Icon name="close" size={14} />
           </button>
         </div>
 
@@ -422,11 +417,7 @@ export function TaskPopover({
         <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-line px-3 py-2.5">
           {/* Date chip */}
           <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/70">
-              <rect x="1" y="2" width="10" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
-              <path d="M1 5h10" stroke="currentColor" strokeWidth="1.2"/>
-              <path d="M4 1v2M8 1v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-            </svg>
+            <Icon name="calendar" size={10} className="shrink-0 text-muted/70" />
             <span className={task.do_date ? "text-ink" : "text-muted"}>{doDateLabel ?? "no date"}</span>
             <input
               type="date"
@@ -444,10 +435,7 @@ export function TaskPopover({
 
           {/* Time chip */}
           <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/70">
-              <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2"/>
-              <path d="M6 3v3l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-            </svg>
+            <Icon name="clock" size={10} className="shrink-0 text-muted/70" />
             <span className={task.start_time ? "text-ink" : "text-muted"}>
               {task.start_time ? format(new Date(task.start_time), "h:mm a") : "no time"}
             </span>
@@ -462,14 +450,9 @@ export function TaskPopover({
 
           {/* Duration chip */}
           <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0 text-muted/70">
-              <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2"/>
-              <path d="M6 4v2.5h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-            </svg>
+            <Icon name="duration" size={10} className="shrink-0 text-muted/70" />
             <span className="text-ink">{fmtDuration(task.duration_minutes ?? 30)}</span>
-            <svg width="7" height="7" viewBox="0 0 8 8" fill="none" className="text-muted/50">
-              <path d="M1 3l3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-            </svg>
+            <Icon name="chevron-down" size={7} className="text-muted/50" />
             <select
               value={task.duration_minutes ?? DEFAULT_DURATION_MINUTES}
               onChange={(e) => mutations.patchTask(task.id, { duration_minutes: Number(e.target.value) })}
@@ -829,9 +812,7 @@ function CalendarPicker({
       >
         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: currentColor ?? "var(--muted)" }} />
         <span className="min-w-0 flex-1 truncate text-body text-ink">{currentLabel ?? "Calendar"}</span>
-        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" className="shrink-0 text-muted">
-          <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <Icon name="chevron-down" size={9} className="shrink-0 text-muted" />
       </button>
       {accountEmail && !open && (
         <div className="truncate pl-[18px] text-meta text-muted/60">{accountEmail}</div>
@@ -884,9 +865,7 @@ function CalendarPicker({
                       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color ?? "var(--muted)" }} />
                       <span className="min-w-0 flex-1 truncate text-caption text-ink">{c.summary}</span>
                       {active && (
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0 text-accent">
-                          <path d="M2.5 6.5L4.8 8.8L9.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
+                        <Icon name="check" size={12} className="shrink-0 text-accent" />
                       )}
                     </button>
                   );
@@ -1189,9 +1168,7 @@ export function EventPopover({
             className="fast mt-0.5 shrink-0 rounded p-0.5 text-muted hover:bg-bg hover:text-ink"
             aria-label="Close"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
+            <Icon name="close" size={14} />
           </button>
         </div>
 
@@ -1203,11 +1180,7 @@ export function EventPopover({
                 what the popover is most often opened to change). */}
             <div className="flex items-center gap-2.5">
               <span className="flex w-3.5 shrink-0 justify-center text-muted/70">
-                <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-                  <rect x="1" y="2" width="10" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
-                  <path d="M1 5h10" stroke="currentColor" strokeWidth="1.2"/>
-                  <path d="M4 1v2M8 1v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                </svg>
+                <Icon name="calendar" size={13} />
               </span>
               {editable ? (
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1 text-body text-ink">
@@ -1337,10 +1310,7 @@ export function EventPopover({
             {editable ? (
               <div className="flex items-center gap-2.5">
                 <span className="flex w-3.5 shrink-0 justify-center text-muted/70">
-                  <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-                    <path d="M6 1C4.067 1 2.5 2.567 2.5 4.5c0 2.917 3.5 6.5 3.5 6.5s3.5-3.583 3.5-6.5C9.5 2.567 7.933 1 6 1z" stroke="currentColor" strokeWidth="1.2"/>
-                    <circle cx="6" cy="4.5" r="1.2" stroke="currentColor" strokeWidth="1.1"/>
-                  </svg>
+                  <Icon name="pin" size={13} />
                 </span>
                 <input
                   value={location}
@@ -1358,10 +1328,7 @@ export function EventPopover({
             ) : event.location ? (
               <div className="flex items-start gap-2.5 text-body text-ink">
                 <span className="mt-[3px] flex w-3.5 shrink-0 justify-center text-muted/70">
-                  <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-                    <path d="M6 1C4.067 1 2.5 2.567 2.5 4.5c0 2.917 3.5 6.5 3.5 6.5s3.5-3.583 3.5-6.5C9.5 2.567 7.933 1 6 1z" stroke="currentColor" strokeWidth="1.2"/>
-                    <circle cx="6" cy="4.5" r="1.2" stroke="currentColor" strokeWidth="1.1"/>
-                  </svg>
+                  <Icon name="pin" size={13} />
                 </span>
                 <span className="leading-snug">{event.location}</span>
               </div>
@@ -1375,9 +1342,7 @@ export function EventPopover({
                 rel="noopener noreferrer"
                 className="fast inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-1.5 text-caption font-medium text-accent hover:bg-accent hover:text-on-accent"
               >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0">
-                  <path d="M2 6h8M6 2l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+                <Icon name="arrow-right" size={12} className="shrink-0" />
                 Join {conferenceName(raw)}
               </a>
             )}
@@ -1404,10 +1369,7 @@ export function EventPopover({
                   disabled={addingMeet}
                   className="fast inline-flex items-center gap-2 rounded-md border border-line px-3 py-1.5 text-caption font-medium text-muted hover:border-line-strong hover:text-ink disabled:opacity-50"
                 >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0">
-                    <rect x="1" y="3" width="6.5" height="6" rx="1.3" stroke="currentColor" strokeWidth="1.2" />
-                    <path d="M7.5 5.5L10.8 3.8v4.4L7.5 6.5v-1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-                  </svg>
+                  <Icon name="video" size={12} className="shrink-0" />
                   {addingMeet ? "Adding…" : "Add Google Meet"}
                 </button>
                 {otherGuests.length > 0 && !addingMeet && (
@@ -1507,9 +1469,7 @@ export function EventPopover({
                         onClick={() => setAddingGuests(true)}
                         className="fast flex items-center gap-1.5 text-meta text-accent hover:opacity-80"
                       >
-                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                          <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                        </svg>
+                        <Icon name="plus" size={11} />
                         Add guest
                       </button>
                     ) : (
@@ -2076,9 +2036,7 @@ export function SlotPopover({
             className="fast mt-0.5 shrink-0 rounded p-0.5 text-muted hover:bg-bg hover:text-ink"
             aria-label="Close"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <Icon name="close" size={14} />
           </button>
         </div>
 
@@ -2225,9 +2183,7 @@ export function SlotPopover({
                     }`}
                   >
                     {done && (
-                      <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                        <path d="M1.5 5.5L4 8L8.5 2" stroke="currentColor" strokeWidth="1.8" />
-                      </svg>
+                      <Icon name="check" size={9} />
                     )}
                   </button>
                   <button
@@ -2245,9 +2201,7 @@ export function SlotPopover({
                   onClick={() => taskMutations.removeFromSlot(t)}
                   className="fast shrink-0 rounded p-0.5 text-muted opacity-0 group-hover:opacity-100 hover:bg-surface-2 hover:text-ink"
                 >
-                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-                    <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
+                  <Icon name="close" size={12} />
                 </button>
               </div>
             );

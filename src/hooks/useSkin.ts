@@ -73,6 +73,12 @@ export const SCHEMES: Record<Skin, Scheme[]> = {
     { id: "snow", name: "Snow", hint: "Mulberry grey",
       light: { bg: "#f4f2f7", surface: "#ffffff", line: "#e5e1ec", accent: "#92568a" },
       dark:  { bg: "#0d0c11", surface: "#18161e", line: "#302c3a", accent: "#c692bf" } },
+    // Hueless greys + an azure that reads as UI state rather than identity.
+    // Second, not first: the first scheme of a material is the one its base CSS
+    // already paints, and flat's base is mulberry Snow.
+    { id: "chalk", name: "Chalk", hint: "Neutral azure",
+      light: { bg: "#f7f7f5", surface: "#ffffff", line: "#eae9e7", accent: "#1b72c9" },
+      dark:  { bg: "#191919", surface: "#202020", line: "#2f2f2f", accent: "#529cca" } },
     { id: "arctic", name: "Arctic", hint: "Cool indigo",
       light: { bg: "#eef2fa", surface: "#ffffff", line: "#dde4f1", accent: "#4f46e5" },
       dark:  { bg: "#0b0d13", surface: "#141720", line: "#232936", accent: "#8b93ff" } },

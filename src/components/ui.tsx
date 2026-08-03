@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Icon } from "./Icon";
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useDialogFocus } from "../hooks/useDialogFocus";
@@ -183,17 +184,6 @@ export function RollBadge({ count }: { count: number }) {
 /** Two-arrow repeat glyph — same mark on calendar blocks and task rows. */
 export function RecurMark({ className = "", title = "Repeats" }: { className?: string; title?: string }) {
   return (
-    <svg
-      width="9"
-      height="9"
-      viewBox="0 0 14 14"
-      fill="none"
-      className={className}
-      aria-hidden={title ? undefined : true}
-    >
-      {title ? <title>{title}</title> : null}
-      <path d="M3 5a4 4 0 016.9-2.7M11 9a4 4 0 01-6.9 2.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M10 1.5V4H7.5M4 12.5V10h2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <Icon name="repeat" size={9} className={className} title={title} />
   );
 }
