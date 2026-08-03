@@ -194,13 +194,14 @@ function RungTabs({
 }) {
   return (
     <span className="flex shrink-0 items-center gap-2.5">
-      <span className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
+      <span data-tabs="floor" className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
         {tabs.map((t, i) => {
           const on = active === t.id;
           return (
             <button
               key={t.id}
               onClick={t.on}
+              data-on={on}
               className="fast rounded-full px-2 py-0.5 text-label leading-none"
               style={{
                 background: on ? "var(--surface)" : "transparent",

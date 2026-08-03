@@ -53,7 +53,7 @@ export function CalLensPill({ lens, onLens }: { lens: CalLens; onLens: (l: CalLe
     { id: "day", label: "Day" },
   ];
   return (
-    <div className="flex shrink-0 rounded-full bg-surface-2 p-0.5">
+    <div data-tabs="day" className="flex shrink-0 rounded-full bg-surface-2 p-0.5">
       {faces.map((f) => {
         const on = lens === f.id;
         return (
@@ -61,6 +61,7 @@ export function CalLensPill({ lens, onLens }: { lens: CalLens; onLens: (l: CalLe
             key={f.id}
             onClick={() => !on && onLens(f.id)}
             aria-pressed={on}
+            data-on={on}
             className={`fast relative rounded-full px-3 py-1 text-label font-medium after:absolute after:-inset-2 after:content-[''] ${
               on ? "bg-surface text-accent" : "text-muted"
             }`}

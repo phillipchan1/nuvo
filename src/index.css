@@ -2668,6 +2668,27 @@ html[data-skin] *::after {
   backdrop-filter: none !important;
 }
 
+/* …and the debt that rule creates. Killing the blur is only half the job: an
+   element that outsourced its OPACITY to the blur is left translucent with
+   nothing behind it doing the hiding.
+
+   The full-bleed ritual overlays (the week's plan, the week's story, Your
+   Reviews, and their three phone equivalents) are all `fixed inset-0` painted
+   `color-mix(var(--bg) 96%, transparent)` + `blur(20px)` INLINE. At 96% over a
+   heavy blur that reads as solid paper; at 96% over nothing, the floor
+   underneath ghosts straight through the archive — which is exactly what it
+   did. `.glass`/`.glass-card` already get an opaque fallback below, but those
+   are classes, and a class rule cannot reach an inline background.
+
+   Keyed on the inline backdrop-filter itself, because that IS the signal that
+   the element delegated its opacity to a filter this material has removed.
+   (The same `[style*="backdrop-filter"]` hook is used for the spine's active
+   chapter further down.) Deliberately scoped to full-bleed overlays: the
+   decorative tints — a crest, a coverage chip — are bounded and keep theirs. */
+html[data-skin] [style*="backdrop-filter"].fixed.inset-0 {
+  background: var(--bg) !important;
+}
+
 /* Resting glass → opaque token surface, no blur (all flat skins share this). */
 html[data-skin="flat"] .glass,
 html[data-skin="terminal"] .glass,
@@ -2919,12 +2940,15 @@ html[data-skin="flat"] .fc .fc-timegrid-slot-minor {
    Deliberately geometry only: none of these rules touch a colour token. The
    accent still carries state (§2) and the ink still carries hover (§3). */
 
-/* The segmented view switcher. Two structural problems: the container is
-   `rounded-full` + `bg-surface-2`, and on a neutral tone surface-2 (#fbfbfa)
-   over the white topbar is a 1.5% step — the trough is invisible, so the
-   segments read as loose floating words rather than one control. --bg IS the
-   ground, which is exactly what a recessed trough should be, on every tone. */
-html[data-skin="flat"] [data-tabs="views"] {
+/* EVERY segmented control, not just the calendar's — `[data-tabs]` is on the
+   view switcher, the floor tabs (On Deck · Groom · Table · Shipped) and the
+   phone's day switcher, which are the same control three times and were
+   drifting apart. Two structural problems: the container is `rounded-full` +
+   `bg-surface-2`, and on a neutral tone surface-2 (#fbfbfa) over the white
+   topbar is a 1.5% step — the trough is invisible, so the segments read as
+   loose floating words rather than one control. --bg IS the ground, which is
+   exactly what a recessed trough should be, on every tone. */
+html[data-skin="flat"] [data-tabs] {
   border-radius: var(--radius);
   background: var(--bg);
   /* border:none, not a transparent border — a transparent 1px still occupies
@@ -2933,7 +2957,7 @@ html[data-skin="flat"] [data-tabs="views"] {
   border: none;
   padding: 2px;
 }
-html[data-skin="flat"] [data-tabs="views"] button {
+html[data-skin="flat"] [data-tabs] button {
   border-radius: calc(var(--radius) - 2px);
   padding: 0 10px;
   min-height: 24px;
@@ -2942,7 +2966,7 @@ html[data-skin="flat"] [data-tabs="views"] button {
 }
 /* The raised segment is a real sheet lifted off the trough, not a tint. The
    inline style sets box-shadow, so this has to be !important to land. */
-html[data-skin="flat"] [data-tabs="views"] button[data-on="true"] {
+html[data-skin="flat"] [data-tabs] button[data-on="true"] {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px color-mix(in srgb, var(--text) 7%, transparent) !important;
 }
 
@@ -2966,6 +2990,37 @@ html[data-skin="flat"] .app-topbar button.fast.border {
   min-height: 28px;
   padding-inline: 10px;
   border-radius: var(--radius);
+}
+
+/* The spine's rows are 14px-radius PILLS — the roundest thing in the app and
+   the loudest non-workspace tell left in the chrome. Every workspace sidebar
+   in this register uses a soft rectangle at the same radius as everything
+   else, so the nav reads as a list of rows rather than a stack of lozenges. */
+html[data-skin="flat"] .spine button {
+  border-radius: var(--radius);
+}
+
+/* Group labels ("Execute", "Build") sit flush against their first row with no
+   space at all, so the label reads as part of the row beneath it instead of as
+   a heading over the group. A workspace gives it a little air below and none
+   above — the gap belongs BETWEEN groups, not inside one. */
+html[data-skin="flat"] .spine .section-label {
+  margin-bottom: 4px;
+}
+
+/* MODALS ARE SHEETS. The record and create frames paint themselves `bg-bg`,
+   which on paper is harmless — the atmosphere gradient runs under everything
+   and --bg is simply "the paper". Under §1 it is not harmless at all: --bg is
+   specifically the GROUND, the grey where work waits, and --surface is the
+   SHEET, the white where work happens. A modal is the most unambiguously
+   floating sheet in the app, so painting it the ground colour makes an open
+   record read as an empty grey panel instead of a page — with its own white
+   cards sitting on it looking like they belong to something else.
+
+   Scoped to flat rather than fixed in the component, because on paper the
+   class is correct. */
+html[data-skin="flat"] .moment.elev-3 {
+  background: var(--surface);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
