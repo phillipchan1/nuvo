@@ -116,3 +116,34 @@ export function fmtDayLabel(iso: string): string {
   if (iso === tomorrowISO()) return "Tomorrow";
   return format(parseDateISO(iso), "EEE MMM d");
 }
+
+/** Local calendar date as YYYY-MM-DD from an ISO timestamp. */
+export function dateISOFromInstant(iso: string): string {
+  return toDateISO(new Date(iso));
+}
+
+/** Local midnight for a calendar day. */
+export function localMidnight(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** All-day events span whole calendar days; provider end dates are exclusive. */
+export function allDayRangeFromStart(startDay: Date, inclusiveEndDay?: Date): { start_at: string; end_at: string } {
+  const start = localMidnight(startDay);
+  const last = localMidnight(inclusiveEndDay && inclusiveEndDay >= startDay ? inclusiveEndDay : startDay);
+  return { start_at: start.toISOString(), end_at: addDays(last, 1).toISOString() };
+}
+
+/** Inclusive last day for an all-day event whose stored end_at is exclusive. */
+export function allDayInclusiveEnd(isoEnd: string): Date {
+  return addDays(localMidnight(new Date(isoEnd)), -1);
+}
+
+/** Default timed block when flipping an all-day event to a specific time. */
+export function defaultTimedRange(day: Date): { start_at: string; end_at: string } {
+  const start = localMidnight(day);
+  start.setHours(9, 0, 0, 0);
+  const end = new Date(start);
+  end.setHours(10, 0, 0, 0);
+  return { start_at: start.toISOString(), end_at: end.toISOString() };
+}

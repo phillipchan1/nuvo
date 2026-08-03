@@ -30,6 +30,8 @@ export interface CreateDraft {
   notifyGuests: boolean;
   /** Attach a Google Meet link (events only). */
   addMeet: boolean;
+  /** Whole-day calendar event (events only). */
+  allDay: boolean;
 }
 
 const KINDS: { value: CreateKind; label: string; hint: string }[] = [
@@ -76,6 +78,7 @@ export default function DraftComposer({
   const [kind, setKind] = useState<CreateKind>(
     initialKind === "event" && !googleAvailable ? "task" : initialKind,
   );
+  const [eventAllDay, setEventAllDay] = useState(false);
   const [title, setTitle] = useState("");
   const [repeat, setRepeat] = useState<RecurrenceRule | null>(null);
   const [attendees, setAttendees] = useState<string[]>([]);
@@ -164,7 +167,7 @@ export default function DraftComposer({
   /** An event with guests is an outbound email, so it gets a confirm step. */
   const sendsInvites = kind === "event" && attendees.length > 0;
 
-  const addMeet = kind === "event" && (meetChoice ?? shouldAddMeet(meetPreference, attendees.length));
+  const addMeet = kind === "event" && !eventAllDay && (meetChoice ?? shouldAddMeet(meetPreference, attendees.length));
 
   const finish = (notifyGuests: boolean) => {
     onCreate({
@@ -176,6 +179,7 @@ export default function DraftComposer({
       domainId: kind === "slot" ? domainId : null,
       notifyGuests,
       addMeet,
+      allDay: kind === "event" && eventAllDay,
     });
   };
 
@@ -250,6 +254,8 @@ export default function DraftComposer({
             <span className="text-muted/40">·</span>
             {allDay ? (
               <span className="text-muted">anytime</span>
+            ) : kind === "event" && eventAllDay ? (
+              <span className="text-muted">All day</span>
             ) : (
               <>
                 <span className="text-muted">{format(start, "h:mm")}–{format(end, "h:mm a")}</span>
@@ -260,6 +266,38 @@ export default function DraftComposer({
             )}
           </div>
         </div>
+
+        {/* ── All day — calendar events only ── */}
+        {kind === "event" && (
+          <div className="px-3.5 pt-2.5">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={eventAllDay}
+              onClick={() => setEventAllDay(!eventAllDay)}
+              className={`fast tap flex w-full items-center gap-2.5 rounded-[var(--radius)] border px-3.5 py-2.5 text-left transition-colors ${
+                eventAllDay ? "border-accent/40 bg-accent-soft" : "border-line bg-surface-2 hover:border-line-strong"
+              }`}
+            >
+              <svg width="13" height="13" viewBox="0 0 12 12" fill="none" className={`shrink-0 ${eventAllDay ? "text-accent" : "text-muted/70"}`}>
+                <rect x="1" y="2" width="10" height="8" rx="1.3" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M1 5h10" stroke="currentColor" strokeWidth="1.2" />
+              </svg>
+              <span className={`flex-1 text-body font-medium ${eventAllDay ? "text-accent" : "text-muted"}`}>
+                All day
+              </span>
+              <span
+                className={`fast relative h-5 w-9 shrink-0 rounded-full ${eventAllDay ? "bg-accent" : "bg-line-strong"}`}
+              >
+                <span
+                  className={`fast absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[var(--shadow-1)] transition-[left] ${
+                    eventAllDay ? "left-[18px]" : "left-0.5"
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* ── Repeat ── */}
         <div className="flex flex-col gap-1.5 px-3.5 pt-2.5">
@@ -355,7 +393,7 @@ export default function DraftComposer({
         {/* ── Google Meet — Google never adds one to an event created through
               the API, so this toggle is the only thing that puts a way to meet
               digitally on the invite ── */}
-        {kind === "event" && (
+        {kind === "event" && !eventAllDay && (
           <div className="px-3.5 pt-3">
             <button
               type="button"

@@ -9,7 +9,7 @@ import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopAr
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
-import { endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
+import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
 import { weekName } from "../lib/week";
 import { addDays } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
@@ -1376,6 +1376,7 @@ export default function CalendarPane({
     domainId,
     notifyGuests,
     addMeet,
+    allDay: eventAllDay,
   }: CreateDraft) => {
     if (!draft) return;
     const { start, end, point, allDay: draftAllDay } = draft;
@@ -1413,10 +1414,13 @@ export default function CalendarPane({
           });
         }
       } else if (kind === "event") {
+        const range = eventAllDay
+          ? allDayRangeFromStart(start)
+          : { start_at: start.toISOString(), end_at: end.toISOString() };
         await eventMutations.createEvent({
           title,
-          start_at: start.toISOString(),
-          end_at: end.toISOString(),
+          ...range,
+          all_day: eventAllDay,
           ...(recurrence ? { recurrence: toGoogleRRULE(recurrence) } : {}),
           ...(attendees.length ? { attendees, notifyGuests } : {}),
           ...(calendarAccountId ? { accountId: calendarAccountId } : {}),

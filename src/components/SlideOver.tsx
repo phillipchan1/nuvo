@@ -17,7 +17,7 @@ import { eventSeriesKey } from "../lib/now";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, isProjectComplete, projectById } from "../lib/vertical";
-import { fmtDuration, todayISO } from "../lib/dates";
+import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { deriveSlotTitle } from "../lib/slots";
 import { rulesEqual, type RecurrenceRule } from "../lib/recurrence";
 import { ASSISTANT_NAME } from "../lib/assistant";
@@ -933,6 +933,7 @@ export function EventPopover({
   const [title, setTitle] = useState(event.title);
   const [startAt, setStartAt] = useState(event.start_at);
   const [endAt, setEndAt] = useState(event.end_at);
+  const [allDay, setAllDay] = useState(event.all_day);
   const [location, setLocation] = useState(event.location ?? "");
   const [notes, setNotes] = useState("");
   const [notify, setNotify] = useState(true);
@@ -969,12 +970,13 @@ export function EventPopover({
     setTitle(event.title);
     setStartAt(event.start_at);
     setEndAt(event.end_at);
+    setAllDay(event.all_day);
     setLocation(event.location ?? "");
     setPendingRsvp(null);
     setConfirmDelete(false);
     setHideMode(false);
     setMeetError(null);
-  }, [event.id, event.title, event.start_at, event.end_at, event.location]);
+  }, [event.id, event.title, event.start_at, event.end_at, event.all_day, event.location]);
 
   // Seed the notes field once the raw payload (with the description) arrives.
   // Notes edit as plain text — matching Apple Calendar / Fantastical — so a
@@ -1077,20 +1079,51 @@ export function EventPopover({
     const d = new Date(iso);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
+  const commitSchedule = (patch: { all_day?: boolean; start_at: string; end_at: string }) => {
+    setStartAt(patch.start_at);
+    setEndAt(patch.end_at);
+    if (patch.all_day !== undefined) setAllDay(patch.all_day);
+    eventMutations.updateEvent({
+      id: event.id,
+      patch: {
+        all_day: patch.all_day ?? allDay,
+        start_at: patch.start_at,
+        end_at: patch.end_at,
+      },
+    });
+  };
   // Move the event to a new day, preserving time-of-day and duration (shift both
   // ends by the same delta). Commits on change — a date input has no natural blur.
   const commitDate = (ymd: string) => {
     const [y, mo, d] = ymd.split("-").map(Number);
     if (!y || !mo || !d) return;
+    if (allDay) {
+      const startDay = parseDateISO(ymd);
+      const inclusiveEnd = allDayInclusiveEnd(endAt);
+      const range = allDayRangeFromStart(startDay, inclusiveEnd >= startDay ? inclusiveEnd : startDay);
+      commitSchedule({ start_at: range.start_at, end_at: range.end_at });
+      return;
+    }
     const ns = new Date(startAt);
     ns.setFullYear(y, mo - 1, d);
     const deltaMs = ns.getTime() - new Date(startAt).getTime();
     if (!deltaMs) return;
-    const newStart = ns.toISOString();
-    const newEnd = new Date(new Date(endAt).getTime() + deltaMs).toISOString();
-    setStartAt(newStart);
-    setEndAt(newEnd);
-    eventMutations.updateEvent({ id: event.id, patch: { start_at: newStart, end_at: newEnd } });
+    commitSchedule({ start_at: ns.toISOString(), end_at: new Date(new Date(endAt).getTime() + deltaMs).toISOString() });
+  };
+  const commitAllDayEnd = (ymd: string) => {
+    const startDay = parseDateISO(toDateInput(startAt));
+    const endDay = parseDateISO(ymd);
+    const range = allDayRangeFromStart(startDay, endDay >= startDay ? endDay : startDay);
+    commitSchedule({ start_at: range.start_at, end_at: range.end_at });
+  };
+  const toggleAllDay = (next: boolean) => {
+    if (next === allDay) return;
+    if (next) {
+      const range = allDayRangeFromStart(parseDateISO(toDateInput(startAt)));
+      commitSchedule({ all_day: true, ...range });
+      return;
+    }
+    commitSchedule({ all_day: false, ...defaultTimedRange(parseDateISO(toDateInput(startAt))) });
   };
 
   return createPortal(
@@ -1184,22 +1217,51 @@ export function EventPopover({
                     onChange={(e) => commitDate(e.target.value)}
                     className="fast rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
                   />
-                  <input
-                    type="time"
-                    value={toTimeInput(startAt)}
-                    onChange={(e) => setStartAt(applyTime(startAt, e.target.value))}
-                    onBlur={() => startAt !== event.start_at && eventMutations.updateEvent({ id: event.id, patch: { start_at: startAt } })}
-                    className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
-                  />
-                  <span className="text-muted">–</span>
-                  <input
-                    type="time"
-                    value={toTimeInput(endAt)}
-                    onChange={(e) => setEndAt(applyTime(endAt, e.target.value))}
-                    onBlur={() => endAt !== event.end_at && eventMutations.updateEvent({ id: event.id, patch: { end_at: endAt } })}
-                    className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
-                  />
+                  {allDay ? (
+                    <>
+                      <span className="text-muted">–</span>
+                      <input
+                        type="date"
+                        value={toDateInput(allDayInclusiveEnd(endAt).toISOString())}
+                        onChange={(e) => commitAllDayEnd(e.target.value)}
+                        className="fast rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+                      />
+                      <span className="text-muted">· All day</span>
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        type="time"
+                        value={toTimeInput(startAt)}
+                        onChange={(e) => setStartAt(applyTime(startAt, e.target.value))}
+                        onBlur={() =>
+                          (startAt !== event.start_at || allDay !== event.all_day) &&
+                          eventMutations.updateEvent({ id: event.id, patch: { start_at: startAt, all_day: false } })
+                        }
+                        className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+                      />
+                      <span className="text-muted">–</span>
+                      <input
+                        type="time"
+                        value={toTimeInput(endAt)}
+                        onChange={(e) => setEndAt(applyTime(endAt, e.target.value))}
+                        onBlur={() =>
+                          (endAt !== event.end_at || allDay !== event.all_day) &&
+                          eventMutations.updateEvent({ id: event.id, patch: { end_at: endAt, all_day: false } })
+                        }
+                        className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+                      />
+                    </>
+                  )}
                 </div>
+              ) : event.all_day ? (
+                <span className="text-body text-ink">
+                  {format(new Date(event.start_at), "EEE MMM d")}
+                  {toDateISO(new Date(event.start_at)) !== toDateISO(allDayInclusiveEnd(event.end_at)) && (
+                    <> – {format(allDayInclusiveEnd(event.end_at), "EEE MMM d")}</>
+                  )}
+                  {" · All day"}
+                </span>
               ) : (
                 <span className="text-body text-ink">
                   {format(new Date(event.start_at), "EEE MMM d · h:mm a")}
@@ -1208,6 +1270,29 @@ export function EventPopover({
                 </span>
               )}
             </div>
+
+            {editable && (
+              <div className="flex items-center gap-2.5 pl-[22px]">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={allDay}
+                  onClick={() => toggleAllDay(!allDay)}
+                  className={`fast tap flex flex-1 items-center gap-2 rounded-[var(--radius)] border px-3 py-2 text-left transition-colors ${
+                    allDay ? "border-accent/40 bg-accent-soft" : "border-line bg-surface-2 hover:border-line-strong"
+                  }`}
+                >
+                  <span className={`text-body font-medium ${allDay ? "text-accent" : "text-muted"}`}>All day</span>
+                  <span className={`fast relative ml-auto h-5 w-9 shrink-0 rounded-full ${allDay ? "bg-accent" : "bg-line-strong"}`}>
+                    <span
+                      className={`fast absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[var(--shadow-1)] transition-[left] ${
+                        allDay ? "left-[18px]" : "left-0.5"
+                      }`}
+                    />
+                  </span>
+                </button>
+              </div>
+            )}
 
             {/* Calendar / account — one field. The picker moves the event to any
                 writable calendar in any account (native within an account, a

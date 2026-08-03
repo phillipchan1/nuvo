@@ -17,18 +17,31 @@ export function toIcalUtc(iso: string): string {
   );
 }
 
+/** ISO string → iCalendar DATE value, YYYYMMDD (local calendar day). */
+export function toIcalDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+}
+
 /** A brand-new single or recurring event as a full VCALENDAR. */
 export function buildEvent(opts: {
   uid: string;
   title: string;
   startISO: string;
   endISO: string;
+  allDay?: boolean;
   location?: string | null;
   description?: string | null;
   /** RRULE bodies, e.g. ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"]. */
   recurrence?: string[];
 }): string {
   const now = toIcalUtc(new Date().toISOString());
+  const dtStart = opts.allDay
+    ? `DTSTART;VALUE=DATE:${toIcalDate(opts.startISO)}`
+    : `DTSTART:${toIcalUtc(opts.startISO)}`;
+  const dtEnd = opts.allDay
+    ? `DTEND;VALUE=DATE:${toIcalDate(opts.endISO)}`
+    : `DTEND:${toIcalUtc(opts.endISO)}`;
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -37,8 +50,8 @@ export function buildEvent(opts: {
     "BEGIN:VEVENT",
     `UID:${opts.uid}`,
     `DTSTAMP:${now}`,
-    `DTSTART:${toIcalUtc(opts.startISO)}`,
-    `DTEND:${toIcalUtc(opts.endISO)}`,
+    dtStart,
+    dtEnd,
     `SUMMARY:${escapeText(opts.title)}`,
     ...(opts.location ? [`LOCATION:${escapeText(opts.location)}`] : []),
     ...(opts.description ? [`DESCRIPTION:${escapeText(opts.description)}`] : []),
@@ -78,6 +91,15 @@ function setProp(vevent: string, name: string, value: string | null): string {
   return vevent.replace(/^(UID:.*|DTSTAMP:.*)$/im, `$&\r\n${name}:${value}`);
 }
 
+/** Swap DTSTART/DTEND between VALUE=DATE and UTC date-time forms. */
+function setDateTimeProp(vevent: string, kind: "DTSTART" | "DTEND", iso: string, allDay: boolean): string {
+  let v = vevent.replace(new RegExp(`^${kind}(;[^:\\r\\n]*)?:.*\\r?\\n`, "im"), "");
+  const line = allDay
+    ? `${kind};VALUE=DATE:${toIcalDate(iso)}`
+    : `${kind}:${toIcalUtc(iso)}`;
+  return v.replace(/^(UID:.*|DTSTAMP:.*)$/im, `$&\r\n${line}`);
+}
+
 /** Patch the master event's title / start / end / location / notes in place.
  *  A null or empty location/description removes the property line. */
 export function patchMaster(
@@ -86,6 +108,7 @@ export function patchMaster(
     title?: string;
     startISO?: string;
     endISO?: string;
+    allDay?: boolean;
     location?: string | null;
     description?: string | null;
   },
@@ -95,8 +118,9 @@ export function patchMaster(
     if (!isMaster(ve)) return ve;
     let v = ve;
     if (patch.title !== undefined) v = setProp(v, "SUMMARY", escapeText(patch.title));
-    if (patch.startISO !== undefined) v = setProp(v, "DTSTART", toIcalUtc(patch.startISO));
-    if (patch.endISO !== undefined) v = setProp(v, "DTEND", toIcalUtc(patch.endISO));
+    const allDay = patch.allDay ?? /\bDTSTART;VALUE=DATE\b/i.test(v);
+    if (patch.startISO !== undefined) v = setDateTimeProp(v, "DTSTART", patch.startISO, allDay);
+    if (patch.endISO !== undefined) v = setDateTimeProp(v, "DTEND", patch.endISO, allDay);
     if (patch.location !== undefined) v = setProp(v, "LOCATION", patch.location ? escapeText(patch.location) : null);
     if (patch.description !== undefined) v = setProp(v, "DESCRIPTION", patch.description ? escapeText(patch.description) : null);
     return v;

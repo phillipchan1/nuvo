@@ -39,6 +39,7 @@ Deno.serve(async (req) => {
       const title = (body.title as string)?.trim() || "(no title)";
       const start_at = body.start_at as string;
       const end_at = body.end_at as string;
+      const all_day = Boolean(body.all_day);
       const recurrence = Array.isArray(body.recurrence) ? (body.recurrence as string[]) : undefined;
       if (!start_at || !end_at) return json({ error: "start_at and end_at required" }, 400);
 
@@ -63,7 +64,7 @@ Deno.serve(async (req) => {
       const location = (body.location as string | undefined) ?? null;
       const description = (body.description as string | undefined) ?? null;
       const uid = `nuvo-${crypto.randomUUID()}`;
-      const ics = buildEvent({ uid, title, startISO: start_at, endISO: end_at, location, description, recurrence });
+      const ics = buildEvent({ uid, title, startISO: start_at, endISO: end_at, allDay: all_day, location, description, recurrence });
       const href = `${calendarUrl.replace(/\/$/, "")}/${uid}.ics`;
       const etag = await putEvent(href, ics, account.email, password);
 
@@ -78,7 +79,7 @@ Deno.serve(async (req) => {
             title,
             start_at: new Date(start_at).toISOString(),
             end_at: new Date(end_at).toISOString(),
-            all_day: false,
+            all_day,
             location,
             busy: true,
             raw: { caldav_href: href, caldav_etag: etag },
@@ -190,6 +191,7 @@ Deno.serve(async (req) => {
       title?: string;
       start_at?: string;
       end_at?: string;
+      all_day?: boolean;
       location?: string | null;
       description?: string | null;
     };
@@ -215,6 +217,7 @@ Deno.serve(async (req) => {
         title: p.title,
         startISO: p.start_at,
         endISO: p.end_at,
+        allDay: p.all_day,
         location: p.location,
         description: p.description,
       });
@@ -230,6 +233,7 @@ Deno.serve(async (req) => {
       if (p.title !== undefined) rowPatch.title = p.title;
       if (p.start_at !== undefined) rowPatch.start_at = new Date(p.start_at).toISOString();
       if (p.end_at !== undefined) rowPatch.end_at = new Date(p.end_at).toISOString();
+      if (p.all_day !== undefined) rowPatch.all_day = p.all_day;
       if (p.location !== undefined) rowPatch.location = p.location;
       if (Object.keys(rowPatch).length) {
         await admin.from("external_events").update(rowPatch).eq("id", eventId);

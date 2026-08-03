@@ -9,6 +9,17 @@ import { admin, handleOptions, json, logSync, requireUser } from "../_shared/adm
 import { type GoogleAccount, gFetch, loadGoogleAccounts, mapGoogleEvent } from "../_shared/google.ts";
 import { hasConference, joinUrl, meetCreateRequest, shouldAddMeet } from "../_shared/conferencing.ts";
 
+function googleDate(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+function googleStartEnd(isoStart: string, isoEnd: string, allDay: boolean): { start: Record<string, string>; end: Record<string, string> } {
+  if (allDay) {
+    return { start: { date: googleDate(isoStart) }, end: { date: googleDate(isoEnd) } };
+  }
+  return { start: { dateTime: new Date(isoStart).toISOString() }, end: { dateTime: new Date(isoEnd).toISOString() } };
+}
+
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
@@ -23,6 +34,7 @@ Deno.serve(async (req) => {
       const title = (body.title as string)?.trim() || "(no title)";
       const start_at = body.start_at as string;
       const end_at = body.end_at as string;
+      const all_day = Boolean(body.all_day);
       // Optional Google RRULE lines for a repeating event — Google expands the
       // series natively; the read-sync pulls the instances back.
       const recurrence = Array.isArray(body.recurrence) ? (body.recurrence as string[]) : undefined;
@@ -73,17 +85,19 @@ Deno.serve(async (req) => {
         addMeet = shouldAddMeet(prefs?.auto_add_meet, attendees.length);
       }
 
+      const { start, end } = googleStartEnd(start_at, end_at, all_day);
+
       const res = await gFetch(
         account,
         `/calendars/${encodeURIComponent(targetCal || "primary")}/events?sendUpdates=${
           notifyGuests ? "all" : "none"
-        }${addMeet ? "&conferenceDataVersion=1" : ""}`,
+        }${addMeet && !all_day ? "&conferenceDataVersion=1" : ""}`,
         {
           method: "POST",
           body: JSON.stringify({
             summary: title,
-            start: { dateTime: new Date(start_at).toISOString() },
-            end: { dateTime: new Date(end_at).toISOString() },
+            start,
+            end,
             ...(location ? { location } : {}),
             ...(description ? { description } : {}),
             ...(recurrence?.length ? { recurrence } : {}),
@@ -451,8 +465,12 @@ Deno.serve(async (req) => {
     // scope="THIS" (or ALL fallback when recurringEventId is missing)
     const gPatch: Record<string, unknown> = {};
     if (patch.title) gPatch.summary = patch.title;
-    if (patch.start_at) gPatch.start = { dateTime: patch.start_at };
-    if (patch.end_at) gPatch.end = { dateTime: patch.end_at };
+    const allDay = patch.all_day !== undefined ? Boolean(patch.all_day) : Boolean(evt.all_day);
+    if (patch.start_at || patch.end_at || patch.all_day !== undefined) {
+      const startISO = (patch.start_at as string | undefined) ?? evt.start_at;
+      const endISO = (patch.end_at as string | undefined) ?? evt.end_at;
+      Object.assign(gPatch, googleStartEnd(startISO, endISO, allDay));
+    }
     // location / description are nullable — send "" to clear the field in Google.
     if (patch.location !== undefined) gPatch.location = patch.location ?? "";
     if (patch.description !== undefined) gPatch.description = patch.description ?? "";
@@ -468,10 +486,12 @@ Deno.serve(async (req) => {
     // notes/location reflect the write without waiting for the next sync.
     const updated = await res.json().catch(() => null);
     if (updated) {
+      const mapped = mapGoogleEvent(account, evt.calendar_id, updated);
       await admin
         .from("external_events")
         .update({
           raw: updated,
+          ...(mapped ? { all_day: mapped.all_day, start_at: mapped.start_at, end_at: mapped.end_at } : {}),
           ...(patch.location !== undefined ? { location: patch.location ?? null } : {}),
         })
         .eq("id", eventId);

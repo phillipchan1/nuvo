@@ -160,7 +160,7 @@ export function useExternalEventMutations() {
       // `description` isn't a column on external_events (it lives in `raw`), so
       // it rides along to the edge fn / provider but is stripped before the row
       // write. Everything else maps to a real column.
-      patch: Partial<Pick<ExternalEvent, "title" | "start_at" | "end_at" | "location">> & {
+      patch: Partial<Pick<ExternalEvent, "title" | "start_at" | "end_at" | "location" | "all_day">> & {
         description?: string;
       };
       scope?: RecurrenceScope;
@@ -338,6 +338,7 @@ export function useExternalEventMutations() {
       description,
       notifyGuests,
       addMeet,
+      all_day,
     }: {
       title: string;
       start_at: string;
@@ -361,15 +362,16 @@ export function useExternalEventMutations() {
        *  never applies its own auto-conferencing setting to API-created events,
        *  so nobody asking means no link at all. Google only. */
       addMeet?: boolean;
+      all_day?: boolean;
     }) => {
       const provider = providerForAccount(accountId) ?? "google";
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
-        body: { action: "create", title, start_at, end_at, recurrence, attendees, accountId, calendarId, location, description, notifyGuests, ...(provider === "google" ? { addMeet } : {}) },
+        body: { action: "create", title, start_at, end_at, all_day, recurrence, attendees, accountId, calendarId, location, description, notifyGuests, ...(provider === "google" ? { addMeet } : {}) },
       });
       if (error) throw error;
       return data;
     },
-    onMutate: async ({ title, start_at, end_at }) => {
+    onMutate: async ({ title, start_at, end_at, all_day }) => {
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const tempId = crypto.randomUUID();
       const optimistic: ExternalEvent = {
@@ -380,7 +382,7 @@ export function useExternalEventMutations() {
         title,
         start_at,
         end_at,
-        all_day: false,
+        all_day: Boolean(all_day),
         location: null,
         busy: true,
         self_rsvp: null,
