@@ -408,14 +408,14 @@ export default function MobileShell() {
           aria-label="Toggle theme"
           className="tap-icon fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
-          ☾
+          <Icon name="moon" size={16} />
         </button>
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
           className="tap-icon fast flex h-9 w-9 items-center justify-center rounded-full border border-line text-head text-muted active:scale-95"
         >
-          ⚙
+          <Icon name="settings" size={16} />
         </button>
       </header>
 

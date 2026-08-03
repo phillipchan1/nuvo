@@ -2895,6 +2895,79 @@ html[data-skin="flat"] .fc .fc-event {
   border-radius: 4px;
 }
 
+/* The hour guides. Paper draws them at 34% of --line because it has a gradient
+   underneath doing the structural work and a strong rule would fight it. Flat
+   has no gradient — §1's whole idea is that a visible rule IS the structure —
+   so at 34% over a white sheet the grid nearly vanishes and the day reads as
+   floating chips on nothing. Full --line is what a calendar app draws.
+   (The 15-minute minors stay invisible; only the hour is a real guide.) */
+html[data-skin="flat"] .fc .fc-timegrid-slot {
+  border-top-color: var(--line);
+}
+html[data-skin="flat"] .fc .fc-timegrid-slot-minor {
+  border-top-color: transparent;
+}
+
+/* ── 5. THE CHROME HAS GEOMETRY ──────────────────────────────────────────
+   Everything above is colour, weight and voice. What was still missing is the
+   SHAPE of the furniture, which is most of what makes a workspace toolbar read
+   as one: a control in this register is a ~28px rounded-RECTANGLE with real
+   padding, sitting in a recessed grey trough. Paper's toolbar is a row of 24px
+   pills that float on the gradient and are meant to barely exist — correct for
+   paper, and the thing that reads as "unfinished" here.
+
+   Deliberately geometry only: none of these rules touch a colour token. The
+   accent still carries state (§2) and the ink still carries hover (§3). */
+
+/* The segmented view switcher. Two structural problems: the container is
+   `rounded-full` + `bg-surface-2`, and on a neutral tone surface-2 (#fbfbfa)
+   over the white topbar is a 1.5% step — the trough is invisible, so the
+   segments read as loose floating words rather than one control. --bg IS the
+   ground, which is exactly what a recessed trough should be, on every tone. */
+html[data-skin="flat"] [data-tabs="views"] {
+  border-radius: var(--radius);
+  background: var(--bg);
+  /* border:none, not a transparent border — a transparent 1px still occupies
+     2px of height and leaves the trough sitting 2px taller than every other
+     control in the bar, which is exactly the half-step this section removes. */
+  border: none;
+  padding: 2px;
+}
+html[data-skin="flat"] [data-tabs="views"] button {
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0 10px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+/* The raised segment is a real sheet lifted off the trough, not a tint. The
+   inline style sets box-shadow, so this has to be !important to land. */
+html[data-skin="flat"] [data-tabs="views"] button[data-on="true"] {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px color-mix(in srgb, var(--text) 7%, transparent) !important;
+}
+
+/* The paging arrows and Today sit at 24px and 21px beside a 30px control — the
+   kind of half-step that reads as misalignment rather than hierarchy. One
+   height for every control in the bar.
+
+   `.titlebar-pad` is the calendar toolbar's own row (the grid that reserves the
+   macOS traffic-light inset); `.app-topbar` is the FLOOR header above the other
+   surfaces. Both are chrome and both get the same geometry. */
+html[data-skin="flat"] .titlebar-pad button.fast.h-6,
+html[data-skin="flat"] .app-topbar button.fast.h-6 {
+  height: 28px;
+  width: 28px;
+  border-radius: var(--radius);
+}
+/* Today is bordered, so it needs padding to match the height it just gained,
+   or it reads as a tall thin sliver. */
+html[data-skin="flat"] .titlebar-pad button.fast.border,
+html[data-skin="flat"] .app-topbar button.fast.border {
+  min-height: 28px;
+  padding-inline: 10px;
+  border-radius: var(--radius);
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    SCHEMES — each material's own colour sets (data-palette, keyed per skin in
    useSkin.ts). Only COLOUR tokens here; radius/shadow/font come from the base
