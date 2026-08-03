@@ -382,10 +382,24 @@ export default function CalendarPane({
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setAvailH(el.clientHeight));
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      setAvailH(el.clientHeight);
+      // FullCalendar caches its own width and only reflows on a WINDOW resize,
+      // so a container that changes width on its own — the Nuvo panel sliding
+      // open or shut — leaves the grid stranded at its old width, with a blank
+      // strip where the days should be, until something else nudges it. This
+      // observer already fires for that; it just never told FC. Coalesced to
+      // one call per frame so the slide reflows smoothly instead of thrashing.
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => calRef.current?.getApi()?.updateSize());
+    });
     ro.observe(el);
     setAvailH(el.clientHeight);
-    return () => ro.disconnect();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
   }, []);
 
   const showWeather = settings?.show_weather ?? false;

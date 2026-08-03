@@ -248,8 +248,11 @@ function AppShellInner() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "j") return;
-      const el = e.target as HTMLElement;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+      // Deliberately NO text-field guard. ⌘J is a chord, not a character, so it
+      // can never be something the user is mid-way through typing — and the
+      // guard swallowed it exactly when the panel was open, because opening
+      // Nuvo autofocuses the composer, so the event target was always a
+      // TEXTAREA. ⌘J could open the panel and never close it.
       e.preventDefault();
       toggleAgent();
     };

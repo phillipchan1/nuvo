@@ -465,6 +465,12 @@ html:not([data-skin]) .app-shell {
 /* The sheet is glass too — airy, not a solid slab. --atmosphere-base lets the
    warm-paper gradient stay exactly as it is while its base goes translucent, so
    the shell diffuses through the app instead of being hidden by it. */
+/* The chat shares the sheet's top and bottom line — it runs to the shell's
+   right edge (it IS the shell), but a chat starting 7px above the app it sits
+   beside reads as a misalignment, not as a second plane. */
+html:not([data-skin]) .app-chat-slot {
+  margin-block: 7px;
+}
 html:not([data-skin]) .app-canvas {
   --atmosphere-base: color-mix(in srgb, var(--bg) 82%, transparent);
   margin: 7px;
@@ -572,30 +578,24 @@ html.tauri:not([data-skin]) .app-shell {
   box-shadow: none;
 }
 
-/* macOS: the traffic lights float on the shell's own frosted band, and the
-   sheet starts BELOW them — the band is the titlebar. That is why the insets
-   are zeroed on the shell: every consumer reads var(--titlebar-inset-top/-left)
-   (.spine-top, .rail-titlebar-drag, .app-topbar, .trial-banner, .titlebar-pad,
-   .spine-separator), and nothing inside the sheet ever sits under the lights,
-   so none of them should reserve a second band. */
-html.tauri-macos:not([data-skin]) .app-canvas,
-html.tauri-macos:not([data-skin]) .app-chat-slot {
-  margin-top: var(--titlebar-h);
-}
+/* macOS: the lights live INSIDE the sheet, in the spine, above the wordmark.
+   A full-width titlebar band across the top reads as a stripe of dead chrome
+   and makes the top inset look nothing like the other three; the sheet keeps
+   its uniform 7px on all four sides instead.
+
+   The lights only ever land over the spine (x≈14–74, and the spine is 188
+   wide), so the spine is the only thing that should reserve for them. The
+   insets stay zeroed on the shell — otherwise .app-topbar, .trial-banner and
+   .titlebar-pad each pad for a light that is nowhere near them — and the spine
+   alone re-declares the real value, which .spine-top and .spine-separator pick
+   up by inheritance. .spine-top already carries data-tauri-drag-region, so the
+   band above the wordmark is what drags the window. */
 html.tauri-macos:not([data-skin]) .app-shell {
   --titlebar-inset-top: 0px;
   --titlebar-inset-left: 0px;
 }
-/* Above the shell, or the shell swallows the mousedown and the band can't drag
-   the window (the strip is earlier in the DOM than the shell). */
-html.tauri-macos:not([data-skin]) .app-titlebar-drag {
-  display: block;
-  position: absolute;
-  z-index: 60;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--titlebar-h);
+html.tauri-macos:not([data-skin]) .spine {
+  --titlebar-inset-top: var(--titlebar-h);
 }
 
 /* Floor headers (Today / Project / Initiative / Domain) keep a chrome bar, so
