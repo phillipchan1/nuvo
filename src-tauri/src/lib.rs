@@ -151,6 +151,31 @@ fn surface_main(app: tauri::AppHandle) {
     }
 }
 
+/// Left-align the traffic lights with the wordmark. `x` is in WINDOW POINTS —
+/// the frontend measures the glyphs in css px and multiplies by --ui-scale,
+/// because the buttons live outside the zoomed document.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn align_traffic_lights(app: tauri::AppHandle, x: f64) {
+    // Ignore nonsense rather than flinging the buttons off the titlebar.
+    if !(0.0..=400.0).contains(&x) {
+        return;
+    }
+    if let Ok(mut slot) = TRAFFIC_LIGHT_X.lock() {
+        if (*slot - x).abs() < 0.5 {
+            return;
+        }
+        *slot = x;
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        place_traffic_lights(&win, true);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn align_traffic_lights(_x: f64) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -164,7 +189,7 @@ pub fn run() {
     }
 
     builder
-        .invoke_handler(tauri::generate_handler![open_devtools, hide_spotlight, surface_main])
+        .invoke_handler(tauri::generate_handler![open_devtools, hide_spotlight, surface_main, align_traffic_lights])
         .setup(|app| {
             // Reskin the spotlight window into a non-activating NSPanel.
             #[cfg(target_os = "macos")]
@@ -332,8 +357,12 @@ pub fn run() {
 /// band the spine reserves. Points, not CSS px — the buttons are drawn by
 /// AppKit and cannot follow the app's `--ui-scale` zoom, which is exactly why
 /// the spine sizes its reserve in points too (see index.css).
+/// Set by the frontend, which measures the wordmark and converts to window
+/// points (css * --ui-scale). Buttons are drawn by AppKit and can't follow the
+/// document zoom on their own, so the app tells us where the logo actually is.
+/// The default matches the wordmark's resting position at 100%.
 #[cfg(target_os = "macos")]
-const TRAFFIC_LIGHT_X: f64 = 24.0;
+static TRAFFIC_LIGHT_X: Mutex<f64> = Mutex::new(24.0);
 #[cfg(target_os = "macos")]
 const TRAFFIC_LIGHT_Y: f64 = 24.0;
 
@@ -354,6 +383,7 @@ fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, log: b
     let _ = win.clone().run_on_main_thread(move || {
         let Ok(ptr) = win.ns_window() else { return };
         let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+        let x = TRAFFIC_LIGHT_X.lock().map(|v| *v).unwrap_or(24.0);
         unsafe {
             let (Some(close), Some(mini)) = (
                 ns_window.standardWindowButton(NSWindowButton::CloseButton),
@@ -382,7 +412,7 @@ fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, log: b
             }
             for (i, button) in buttons.into_iter().enumerate() {
                 let mut frame = button.frame();
-                frame.origin.x = TRAFFIC_LIGHT_X + (i as f64) * spacing;
+                frame.origin.x = x + (i as f64) * spacing;
                 button.setFrameOrigin(frame.origin);
                 // Dev-only, and only on the first placement — a window drag
                 // would otherwise spam this on every resize tick. Keeps the

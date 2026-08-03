@@ -1,6 +1,7 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LADDER, type Rung } from "./AppShell";
+import { useUiScale } from "../hooks/useUiScale";
 import { useVertical } from "../hooks/useVertical";
 import { readSpine, type SpineState } from "../lib/readiness";
 import { READY, toneColor } from "./floors/ReadinessBanner";
@@ -89,6 +90,13 @@ export default function Spine({
   /** Focus mode: slide the whole spine closed (the calendar takes the room). */
   collapsed?: boolean;
 }) {
+  // The macOS traffic lights are drawn by AppKit, outside the zoomed document,
+  // so they can't left-align themselves to the wordmark — nothing native knows
+  // where it is. Measure it here and hand Rust the answer in WINDOW POINTS
+  // (css × --ui-scale). Re-runs when the spine rails, focus mode closes it, or
+  // the zoom changes, i.e. every time the mark actually moves.
+  const wordmarkRef = useRef<HTMLButtonElement>(null);
+  const { scale: uiScale } = useUiScale();
   // Reads from the same cached vertical snapshot the floors use — no extra
   // fetch. Until it's loaded the rail stays a plain table of contents (no
   // half-empty meters flashing during the first paint).
@@ -124,6 +132,30 @@ export default function Spine({
   useEffect(() => {
     document.documentElement.style.setProperty("--spine-width", `${railed ? RAIL_W : FULL_W}px`);
   }, [railed]);
+
+  // Tell the native titlebar where the wordmark's glyphs start, so the traffic
+  // lights can share its left edge. `getBoundingClientRect()` is post-zoom, and
+  // the buttons live in unzoomed window points — hence the × uiScale. Measured
+  // after paint so the rail's width transition has settled.
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in globalThis)) return;
+    const el = wordmarkRef.current;
+    if (!el || collapsed) return;
+    const t = window.setTimeout(() => {
+      // Measure the GLYPHS, not the button: the button is full-width, and
+      // railed it centres a single "N" instead of left-padding "Nuvo". A Range
+      // over the text gets the real ink box in both states.
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const left = range.getBoundingClientRect().left;
+      range.detach();
+      if (!left) return;
+      void import("@tauri-apps/api/core")
+        .then(({ invoke }) => invoke("align_traffic_lights", { x: left * uiScale }))
+        .catch(() => { /* non-macOS, or the command isn't there — leave the default */ });
+    }, 360); // just past --d-slow, the rail's width transition
+    return () => window.clearTimeout(t);
+  }, [railed, collapsed, uiScale]);
 
   const width = railed ? RAIL_W : FULL_W;
 
@@ -339,6 +371,7 @@ export default function Spine({
       {/* Wordmark home — brand + a tap back to the Schedule, the surface the
           day actually runs on. Railed, the mark keeps its place as the initial. */}
       <button
+        ref={wordmarkRef}
         onClick={() => setRung("day")}
         title="Home"
         className={`fast wordmark select-none py-3 text-[15px] leading-none ${railed ? "text-center" : "px-4 text-left"} ${rung === "day" ? "wordmark-grad" : ""}`}
