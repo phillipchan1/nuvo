@@ -602,8 +602,28 @@ html.tauri-macos:not([data-skin]) .app-shell {
   --titlebar-inset-top: 0px;
   --titlebar-inset-left: 0px;
 }
+/* The lights are laid out by macOS in WINDOW POINTS, and there is no runtime
+   setter in Tauri 2.11 (set_traffic_light_position exists only in the mock
+   runtime), so their position is fixed and cannot follow anything we do. The
+   app, meanwhile, CSS-zooms by --ui-scale (0.8–1.6, user-adjustable). A reserve
+   written in CSS px therefore shrinks in real points exactly when the user
+   zooms out, and the wordmark slides up under the buttons.
+
+   So size the reserve in POINTS and convert: css = points / scale. 32pt clears
+   the buttons; the -7px removes the sheet's own top inset, which is already
+   part of the distance from the window edge. max() guards the far end of the
+   zoom range, where the formula would otherwise go to nothing. */
 html.tauri-macos:not([data-skin]) .spine {
-  --titlebar-inset-top: var(--titlebar-h);
+  --titlebar-inset-top: max(12px, calc(32px / var(--ui-scale, 1) - 7px));
+}
+
+/* Square just this corner. The lights sit over the sheet's top-left, and a
+   14px arc there means they straddle the edge — part on the sheet, part on the
+   shell — which is what read as "wedged into the corner". Square, they always
+   land cleanly on the spine no matter where macOS puts them or how the app is
+   zoomed. */
+html.tauri-macos:not([data-skin]) .app-canvas {
+  border-top-left-radius: 0;
 }
 
 /* Floor headers (Today / Project / Initiative / Domain) keep a chrome bar, so
