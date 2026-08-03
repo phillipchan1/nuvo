@@ -2086,7 +2086,14 @@ export default function CalendarPane({
             overlay the title. Also fills the macOS titlebar zone (titlebar-pad). */}
       <div
         data-tauri-drag-region="deep"
-        className="titlebar-pad grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 py-1.5"
+        // Columns size to their CONTENT, with the centre as the only flexible
+        // one. It used to be `1fr auto 1fr`: the two control clusters got equal
+        // fixed shares regardless of what they actually held, so once the right
+        // cluster outgrew its share it overflowed — and because its contents are
+        // `shrink-0` inside a `justify-end` box, the overflow went LEFT, parking
+        // the timezone chip on top of the dateline. The centre already truncates
+        // and is capped at 220px, so it is the right thing to squeeze.
+        className="titlebar-pad grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5"
       >
         {/* Left — Show panels (focus exit only) + period nav */}
         <div className="flex min-w-0 items-center gap-1">

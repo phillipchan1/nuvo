@@ -2928,6 +2928,54 @@ html[data-skin="flat"] .fc .fc-timegrid-slot {
 html[data-skin="flat"] .fc .fc-timegrid-slot-minor {
   border-top-color: transparent;
 }
+/* …and the DAY columns, which were at 22% — so the week read as a set of
+   horizontal rules with the days only implied by where the events happened to
+   sit. A week grid is a grid in both axes; the column rule is what says
+   "Tuesday ends here". Same weight as the hour guide. */
+html[data-skin="flat"] .fc .fc-timegrid-col {
+  border-left-color: var(--line);
+}
+
+/* Type in the grid. The axis ran at 10px and events at 10.2px, which is where
+   the surface stopped reading as a calendar app and started reading as a dense
+   dashboard — the reference sets both a size larger and lets the grid breathe.
+   The events' own colour still comes from the identity token; only the size
+   and weight change. */
+html[data-skin="flat"] .fc .fc-timegrid-slot-label,
+html[data-skin="flat"] .fc .fc-timegrid-axis-cushion {
+  font-size: 11px;
+}
+html[data-skin="flat"] .fc .fc-event {
+  font-size: 11.5px;
+}
+html[data-skin="flat"] .fc .fc-col-header-cell {
+  font-size: 12px;
+}
+
+/* Event chips composite to a SOLID pastel. `blockColors` paints them
+   `color-mix(hue 23%, transparent)` — translucent on purpose, so that on paper
+   the block is a pane of tinted glass with the gridlines reading through it,
+   frosted by the .fc-event backdrop blur. Flat deletes that blur, and what's
+   left is a 23% wash sitting directly on the sheet with the hour rules striping
+   straight through every event: pale, and busy in exactly the way a calendar
+   app must not be.
+
+   The fill is INLINE, so it can't be recoloured from here — but backing it with
+   an opaque layer composites to the same colour it would have had if it were
+   mixed with --surface instead of transparent. A calendar chip in this register
+   is a solid tint, not glass.
+
+   The opaque layer goes on the HARNESS, the wrapper FullCalendar positions each
+   event with — not on a ::before inside the event. A negative-z-index pseudo
+   paints above its own parent's background (painting order puts the element's
+   background first, then negative-z children), so backing the fill from inside
+   just covers it: the events went white. Only a real ancestor can sit under an
+   inline background. */
+html[data-skin="flat"] .fc .fc-timegrid-event-harness,
+html[data-skin="flat"] .fc .fc-daygrid-event-harness {
+  background: var(--surface);
+  border-radius: 4px;
+}
 
 /* ── 5. THE CHROME HAS GEOMETRY ──────────────────────────────────────────
    Everything above is colour, weight and voice. What was still missing is the
@@ -2950,24 +2998,34 @@ html[data-skin="flat"] .fc .fc-timegrid-slot-minor {
    exactly what a recessed trough should be, on every tone. */
 html[data-skin="flat"] [data-tabs] {
   border-radius: var(--radius);
-  background: var(--bg);
-  /* border:none, not a transparent border — a transparent 1px still occupies
-     2px of height and leaves the trough sitting 2px taller than every other
-     control in the bar, which is exactly the half-step this section removes. */
-  border: none;
+  /* A WHITE SHEET WITH A HAIRLINE, not a recessed grey trough. The trough is
+     the register's other segmented idiom and it is the wrong one here: the
+     reference calendar's controls are all one family — white, 1px rule, ~30px,
+     6px radius — and a grey well reads as a different kind of object sitting
+     next to them. */
+  background: var(--surface);
+  border: 1px solid var(--line);
   padding: 2px;
 }
 html[data-skin="flat"] [data-tabs] button {
   border-radius: calc(var(--radius) - 2px);
   padding: 0 10px;
   min-height: 24px;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
 }
-/* The raised segment is a real sheet lifted off the trough, not a tint. The
-   inline style sets box-shadow, so this has to be !important to land. */
+/* The active segment is a quiet INK wash, not an accent-coloured raised chip.
+   This is the one place flat's §2 ("the accent carries state") is deliberately
+   set aside: in this register the accent belongs to navigation and links, and a
+   view switcher marks its current segment with a neutral fill. Colouring it
+   here is what made the cluster read as an app-specific control rather than
+   standard toolbar furniture. The inline style sets background, colour and
+   box-shadow, so all three have to be beaten. */
 html[data-skin="flat"] [data-tabs] button[data-on="true"] {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px color-mix(in srgb, var(--text) 7%, transparent) !important;
+  background: color-mix(in srgb, var(--text) 8%, transparent) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
 }
 
 /* The paging arrows and Today sit at 24px and 21px beside a 30px control — the
@@ -2979,17 +3037,21 @@ html[data-skin="flat"] [data-tabs] button[data-on="true"] {
    surfaces. Both are chrome and both get the same geometry. */
 html[data-skin="flat"] .titlebar-pad button.fast.h-6,
 html[data-skin="flat"] .app-topbar button.fast.h-6 {
-  height: 28px;
-  width: 28px;
+  height: 30px;
+  width: 30px;
   border-radius: var(--radius);
 }
 /* Today is bordered, so it needs padding to match the height it just gained,
-   or it reads as a tall thin sliver. */
+   or it reads as a tall thin sliver. 13px to sit with the switcher — the
+   reference's toolbar text is a full size larger than the 11px `text-label`
+   these controls inherited, which is most of why they read as "small app
+   chrome" rather than as buttons. */
 html[data-skin="flat"] .titlebar-pad button.fast.border,
 html[data-skin="flat"] .app-topbar button.fast.border {
-  min-height: 28px;
+  min-height: 30px;
   padding-inline: 10px;
   border-radius: var(--radius);
+  font-size: 13px;
 }
 
 /* The spine's rows are 14px-radius PILLS — the roundest thing in the app and
