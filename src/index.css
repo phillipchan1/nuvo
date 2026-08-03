@@ -556,23 +556,46 @@ html.tauri-macos {
    .app-topbar, .trial-banner, .titlebar-pad and .spine-separator all collapse
    through the cascade — no edits to those rules. Nothing inside the sheet
    reserves for lights that are no longer over it. */
-/* Aurora only, because only Aurora has a gutter for the lights to sit in. On a
-   flat material the app is edge to edge, the lights are over the app itself,
-   and the insets below must keep their real values. */
-html.tauri-macos:not([data-skin]) .app-ground {
-  padding-top: var(--titlebar-h);
+/* ── Tauri: the OS WINDOW is the ground ────────────────────────────────────
+   The desktop window already draws a rounded frame and a drop shadow, so
+   painting our own ground inside it stacks two identical frames one pixel
+   apart — which reads on screen as "two app shells". In Tauri the shell fills
+   the window edge to edge and only the SHEET is inset, leaving exactly two
+   planes inside the window, same as the web gets with the ground. */
+html.tauri:not([data-skin]) .app-ground {
+  padding: 0;
+  background: none;
 }
-html.tauri-macos:not([data-skin]) .app-titlebar-drag {
-  display: block;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--titlebar-h);
+html.tauri:not([data-skin]) .app-shell {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* macOS: the traffic lights float on the shell's own frosted band, and the
+   sheet starts BELOW them — the band is the titlebar. That is why the insets
+   are zeroed on the shell: every consumer reads var(--titlebar-inset-top/-left)
+   (.spine-top, .rail-titlebar-drag, .app-topbar, .trial-banner, .titlebar-pad,
+   .spine-separator), and nothing inside the sheet ever sits under the lights,
+   so none of them should reserve a second band. */
+html.tauri-macos:not([data-skin]) .app-canvas,
+html.tauri-macos:not([data-skin]) .app-chat-slot {
+  margin-top: var(--titlebar-h);
 }
 html.tauri-macos:not([data-skin]) .app-shell {
   --titlebar-inset-top: 0px;
   --titlebar-inset-left: 0px;
+}
+/* Above the shell, or the shell swallows the mousedown and the band can't drag
+   the window (the strip is earlier in the DOM than the shell). */
+html.tauri-macos:not([data-skin]) .app-titlebar-drag {
+  display: block;
+  position: absolute;
+  z-index: 60;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-h);
 }
 
 /* Floor headers (Today / Project / Initiative / Domain) keep a chrome bar, so
