@@ -1,19 +1,7 @@
 name: Release
 
-# Builds, signs, notarizes, and publishes the macOS desktop app.
-#
-# The repo is public (Actions are free), but releases are THROTTLED so pushing
-# code doesn't ship on every commit. A release fires when:
-#   • a commit message contains [release]   → push freely; ship intentionally
-#   • a version tag vX.Y.Z is pushed          → that exact version
-#   • push/cron: scripts/should-release.mjs says SHIP for commits since the
-#     last published build (heuristic for fix/data-quality touching src/, else
-#     a cheap OpenAI call; SKIP on doubt / AI failure)
-#   • you run it on demand                     → Actions "Run workflow", or a
-#     Claude session running `gh workflow run release.yml` when you say "cut a
-#     release" / "rebuild this"
-#
-# Docs/marketing/CI-only pushes still skip. On-demand + tags always build.
+# Builds, signs, notarizes, and publishes the macOS desktop app on every push to
+# master (and on version tags / manual dispatch).
 #
 # Publishes a UNIVERSAL (Apple Silicon + Intel) DMG + the updater artifacts
 # (.app.tar.gz + .sig) + latest.json to the PUBLIC releases repo
@@ -25,8 +13,6 @@ on:
   push:
     branches: [master]
     tags: ["v*"]
-  schedule:
-    - cron: "0 9 * * *"
   workflow_dispatch:
 
 permissions:
@@ -36,68 +22,8 @@ env:
   RELEASES_REPO: phillipchan1/nuvo-releases
 
 jobs:
-  # Cheap gate on the expensive macOS build. Tags and manual dispatch always
-  # build; [release] in the commit message always builds; otherwise push + the
-  # daily cron ask scripts/should-release.mjs (commits since last-built-sha.txt
-  # in the releases repo) whether a desktop user would notice.
-  gate:
-    runs-on: ubuntu-latest
-    outputs:
-      go: ${{ steps.decide.outputs.go }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Decide whether to build
-        id: decide
-        env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          MSG: ${{ github.event.head_commit.message }}
-        run: |
-          set -euo pipefail
-          EVENT="${{ github.event_name }}"
-          REF_TYPE="${{ github.ref_type }}"
-          GO=false
-          REASON="default skip"
-
-          if [ "$EVENT" = "workflow_dispatch" ] || [ "$REF_TYPE" = "tag" ]; then
-            GO=true
-            REASON="dispatch/tag always builds"
-          elif [ "$EVENT" = "push" ] && [[ "$MSG" == *"[release]"* ]]; then
-            GO=true
-            REASON="commit message contains [release]"
-          elif [ "$EVENT" = "push" ] || [ "$EVENT" = "schedule" ]; then
-            LAST_SHA=$(gh api "repos/${RELEASES_REPO}/contents/last-built-sha.txt" \
-              --jq '.content' 2>/dev/null | base64 -d | tr -d '[:space:]' || echo "")
-            if [ -z "$LAST_SHA" ]; then
-              GO=true
-              REASON="no last-built-sha yet — first release"
-            elif [ "$LAST_SHA" = "${{ github.sha }}" ]; then
-              GO=false
-              REASON="HEAD already published"
-            else
-              VERDICT=$(node scripts/should-release.mjs "$LAST_SHA" | tee /dev/stderr | awk '{print $1; exit}')
-              if [ "$VERDICT" = "SHIP" ]; then
-                GO=true
-              else
-                GO=false
-              fi
-              REASON="should-release → ${VERDICT:-SKIP}"
-            fi
-          fi
-
-          echo "go=$GO" >> "$GITHUB_OUTPUT"
-          echo "event=$EVENT ref_type=$REF_TYPE → build=$GO ($REASON)"
-
   release:
-    needs: gate
-    if: needs.gate.outputs.go == 'true'
-    # Concurrency lives on the BUILD job only — the cheap gate job is not in this
-    # group, so a plain push (gate runs, then skips) can never cancel an
-    # in-flight build. Real builds still collapse: a newer one supersedes an
-    # older one.
+    # If two pushes land close together, the newer build wins.
     concurrency:
       group: release-build
       cancel-in-progress: true
@@ -127,11 +53,11 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Compute version
-        # Tag push (vX.Y.Z) → that exact version. Manual dispatch → <major>.<minor>
-        # from package.json + the run number as a monotonic patch. Written into
-        # BOTH tauri.conf.json (the app's real version, what the updater compares)
-        # and package.json (what the __APP_VERSION__ Vite define bakes in for
-        # display) — CI working tree only, never committed.
+        # Tag push (vX.Y.Z) → that exact version. Push / manual dispatch →
+        # <major>.<minor> from package.json + the run number as a monotonic patch.
+        # Written into BOTH tauri.conf.json (the app's real version, what the
+        # updater compares) and package.json (what the __APP_VERSION__ Vite define
+        # bakes in for display) — CI working tree only, never committed.
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
@@ -269,7 +195,6 @@ jobs:
             "$DMG" "$STABLE_DMG" "$APPTAR" latest.json
 
       - name: Record built SHA
-        # Lets the daily cron skip when master hasn't changed since this release.
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |

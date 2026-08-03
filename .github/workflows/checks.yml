@@ -1,9 +1,8 @@
 # The cheap gate: typecheck, the conformance suite, and a parse of the edge
 # functions (which `tsc` can't see — they're Deno, with remote imports).
 #
-# Deliberately small. Releases stay manual (release.yml) so routine commits don't
-# spend runner minutes; this one runs in about a minute and is what keeps the
-# app and the agent from drifting apart — see docs/planning-kernel.md.
+# Deliberately small (~1 min). The desktop release (release.yml) runs in parallel
+# on every push to master — see docs/desktop-releases.md.
 name: checks
 
 on:
