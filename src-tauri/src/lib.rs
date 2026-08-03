@@ -179,11 +179,11 @@ pub fn run() {
             // titlebar container every time the window changes size).
             #[cfg(target_os = "macos")]
             if let Some(main) = app.get_webview_window("main") {
-                place_traffic_lights(&main);
+                place_traffic_lights(&main, true);
                 let w = main.clone();
                 main.on_window_event(move |event| {
                     if matches!(event, tauri::WindowEvent::Resized(_)) {
-                        place_traffic_lights(&w);
+                        place_traffic_lights(&w, false);
                     }
                 });
             }
@@ -335,14 +335,14 @@ pub fn run() {
 #[cfg(target_os = "macos")]
 const TRAFFIC_LIGHT_X: f64 = 24.0;
 #[cfg(target_os = "macos")]
-const TRAFFIC_LIGHT_Y: f64 = 18.0;
+const TRAFFIC_LIGHT_Y: f64 = 24.0;
 
 /// Move the standard window buttons. Same math wry uses internally — grow the
 /// titlebar container to `button height + y` and pin it to the top of the
 /// window, then lay the buttons out from `x` at their existing spacing — but
 /// run at a point nothing overwrites it afterwards.
 #[cfg(target_os = "macos")]
-fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
+fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, log: bool) {
     use objc2_app_kit::{NSWindow, NSWindowButton};
 
     let Ok(ptr) = win.ns_window() else { return };
@@ -384,6 +384,18 @@ fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
                 let mut frame = button.frame();
                 frame.origin.x = TRAFFIC_LIGHT_X + (i as f64) * spacing;
                 button.setFrameOrigin(frame.origin);
+                // Dev-only, and only on the first placement — a window drag
+                // would otherwise spam this on every resize tick. Keeps the
+                // geometry checkable instead of inferred from a screenshot.
+                #[cfg(debug_assertions)]
+                if log {
+                    let after = button.frame();
+                    eprintln!(
+                        "[traffic-lights] button {i}: x={:.1}, top {:.1}pt below the window edge",
+                        after.origin.x,
+                        height - (after.origin.y + after.size.height)
+                    );
+                }
             }
         }
     });
