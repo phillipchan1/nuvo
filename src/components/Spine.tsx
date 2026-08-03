@@ -96,6 +96,9 @@ export default function Spine({
   // (css × --ui-scale). Re-runs when the spine rails, focus mode closes it, or
   // the zoom changes, i.e. every time the mark actually moves.
   const wordmarkRef = useRef<HTMLButtonElement>(null);
+  // Kept in CSS px, not points: on a zoom change the layout is unchanged, so
+  // the same measurement just gets re-scaled rather than re-measured.
+  const wordmarkCssLeft = useRef<number | null>(null);
   const { scale: uiScale } = useUiScale();
   // Reads from the same cached vertical snapshot the floors use — no extra
   // fetch. Until it's loaded the rail stays a plain table of contents (no
@@ -139,22 +142,35 @@ export default function Spine({
   // after paint so the rail's width transition has settled.
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in globalThis)) return;
-    const el = wordmarkRef.current;
-    if (!el || collapsed) return;
-    const t = window.setTimeout(() => {
-      // Measure the GLYPHS, not the button: the button is full-width, and
-      // railed it centres a single "N" instead of left-padding "Nuvo". A Range
-      // over the text gets the real ink box in both states.
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      const left = range.getBoundingClientRect().left;
-      range.detach();
-      if (!left) return;
+    const send = (cssLeft: number) => {
       void import("@tauri-apps/api/core")
-        .then(({ invoke }) => invoke("align_traffic_lights", { x: left * uiScale }))
-        .catch(() => { /* non-macOS, or the command isn't there — leave the default */ });
-    }, 360); // just past --d-slow, the rail's width transition
-    return () => window.clearTimeout(t);
+        .then(({ invoke }) => invoke("align_traffic_lights", { x: cssLeft * uiScale }))
+        .catch(() => { /* non-macOS, or the command isn't there — keep the default */ });
+    };
+
+    // Measure ONLY in the mark's expanded home. Railed, it centres a single "N"
+    // — following that shoves the cluster right, past the 64px rail and over
+    // the task list. Focus mode removes the mark entirely. And even where it
+    // could be followed, it shouldn't be: window buttons that wander when you
+    // collapse a sidebar are something no Mac app does.
+    if (!collapsed && !railed && wordmarkRef.current) {
+      const el = wordmarkRef.current;
+      const t = window.setTimeout(() => {
+        // The glyphs, not the button — the button is full-width.
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const left = range.getBoundingClientRect().left;
+        range.detach();
+        if (!left) return;
+        wordmarkCssLeft.current = left;
+        send(left);
+      }, 360); // just past --d-slow, the rail's width transition
+      return () => window.clearTimeout(t);
+    }
+
+    // Railed or in focus mode: hold the last known spot, re-scaled for the
+    // current zoom, so the buttons stay exactly where they were.
+    if (wordmarkCssLeft.current != null) send(wordmarkCssLeft.current);
   }, [railed, collapsed, uiScale]);
 
   const width = railed ? RAIL_W : FULL_W;

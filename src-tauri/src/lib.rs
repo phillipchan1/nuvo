@@ -360,9 +360,11 @@ pub fn run() {
 /// Set by the frontend, which measures the wordmark and converts to window
 /// points (css * --ui-scale). Buttons are drawn by AppKit and can't follow the
 /// document zoom on their own, so the app tells us where the logo actually is.
-/// The default matches the wordmark's resting position at 100%.
+/// The default is the wordmark's measured resting position at 100% zoom, so a
+/// cold start with the spine already railed — where the mark can't be measured
+/// — still puts the buttons in the right place.
 #[cfg(target_os = "macos")]
-static TRAFFIC_LIGHT_X: Mutex<f64> = Mutex::new(24.0);
+static TRAFFIC_LIGHT_X: Mutex<f64> = Mutex::new(16.0);
 #[cfg(target_os = "macos")]
 const TRAFFIC_LIGHT_Y: f64 = 24.0;
 
