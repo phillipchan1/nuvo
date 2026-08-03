@@ -2247,6 +2247,36 @@ the prompt** — a prose fix aimed at a broken assertion makes the prompt worse 
 no better. For a "don't do it twice" pin after a seeded turn, the number is 0.
 *Status: standing.*
 
+**D-082 · 2026-08-02 · A suggestion's `message` is a tool argument, not prose — it carries
+whatever actually resolves.** Live, the same day D-078 shipped: *"9am friday Stampede
+Meeting with ryan weeks"*. That contact is a **Met before** row — harvested from calendar
+attendance, so it has no display name, only `ryancweeks@gmail.com`. `pickRecipient` matches
+words against handles (the name's words + the address's local part), so with no name the
+only handle is `ryancweeks`: `ryan` prefixes it, `weeks` does not, and it fell through to
+the fuzzy branch — which is deliberately never auto-taken, so a typo can't invite a
+stranger. Result: `ambiguous` **with a single candidate**. Nuvo asked. Phil tapped *"Use Ryan
+Weeks"*. The agent re-called with that same name, ran the identical failing match, and asked
+again. **The question was unanswerable in the terms it was asked** — only pasting the
+address ever worked. Two rules follow. (1) The human sentence stays human, but the tappable
+`message` must contain the exact resolving token (the address), because words that just
+failed to resolve will fail again — and D-078's "no email addresses in the prose" was being
+read as covering the button too, which is what produced a dead-end tap. (2) **One candidate
+is a confirmation, not a choice**: say who you have and that it's the only match, rather
+than staging a "which one?" over a list of one. Pinned by
+`invite-one-candidate-is-a-confirmation` and the new `suggestionsResolve` assertion — a
+check that reads suggestion *messages*, because counting suggestions and reading prose both
+saw this turn as perfect. *Status: standing.*
+
+**D-083 · 2026-08-02 · The people the user works with are in scope.** Chasing the above,
+`invite-lookup-is-read-only` was flaky at 8/10 — *"what's Matt's email?"* was sometimes met
+with "I'm a focused planning partner — ask me about your schedule, tasks, or goals." The
+Scope block listed planning, scheduling, structure and review, and **never mentioned
+people**, so a contact question read as off-topic against the prompt's own definition —
+while `find_contact` sat in the tool list built to answer exactly it. A shipped tool the
+prompt gives no permission to use is a coin flip. Meetings are made of people: "who was on
+that call?", "have I met her before?" are planning questions. Look them up; never turn one
+away, and never answer one from memory. *Status: standing.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 

@@ -19,9 +19,20 @@
  *  said nothing. Saying it AT the result is what made it stick. */
 export const UNRESOLVED_RECIPIENTS_NOTE =
   "Some names did not resolve. Do NOT ask a bare question like \"Which Matt?\" — you already have the answer to it. " +
-  "Name each candidate in the reply (first and last name, no email addresses in the prose), and end the message with a " +
-  "<suggestions> block containing ONE suggestion per candidate, so the user taps instead of typing. Everyone who DID " +
-  "resolve stays staged — one unknown name does not restart the invite.";
+  "Name each candidate in the reply (first and last name where there is one, no email addresses in the prose), and end " +
+  "the message with a <suggestions> block containing ONE suggestion per candidate, so the user taps instead of typing. " +
+  "Everyone who DID resolve stays staged — one unknown name does not restart the invite.\n" +
+  // The loop this closes, 2026-08-02: a contact known only from a past meeting
+  // has no display name, so "ryan weeks" fuzzy-matched ryancweeks@gmail.com and
+  // came back unresolved. The chat asked, the user tapped "Use Ryan Weeks", the
+  // agent re-called with that same name — which runs the identical failing
+  // match — and asked again. The question was unanswerable in the terms it was
+  // asked; only pasting the address ever worked.
+  "CRITICAL — each suggestion's \"message\" must contain the candidate's EXACT email address, because a name that just " +
+  "failed to resolve will fail again on the retry. \"Use Matt Reyes\" is a dead end; \"Use mreyes@acme.example\" resolves. " +
+  "The address belongs in the tappable message (it is a tool argument, not prose); the sentence above it stays human.\n" +
+  "A query with exactly ONE candidate is not a choice — it is a confirmation. Say who you have and that it is the only " +
+  "match, rather than asking \"which one\", and offer the single tap that confirms them by address.";
 
 /** The standing half of a `propose_invite` result: nothing has happened yet. */
 export const INVITE_STAGED_NOTE =

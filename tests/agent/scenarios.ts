@@ -24,6 +24,7 @@
 import {
   called, calledTimes, check, isLocalTime, isWrittenTitle, notCalled,
   offersSuggestions, pointedAt, readOnly, replyLacks, replyMatches, startsAt,
+  suggestionsResolve,
   type Check,
 } from "./expect.ts";
 import { INVITE_STAGED_NOTE, inviteNote } from "../../supabase/functions/agent/toolNotes.ts";
@@ -746,6 +747,43 @@ export const SCENARIOS: Scenario[] = [
       offersSuggestions(2),
       replyMatches(/Hansen|Reyes/, "names the actual candidates"),
       replyLacks(/@hansen\.example.*@acme\.example/s, "should not dump raw addresses as prose"),
+      suggestionsResolve(["matt@hansen.example", "mreyes@acme.example"]),
+    ],
+  }),
+
+  pin({
+    id: "invite-one-candidate-is-a-confirmation",
+    group: "invites",
+    it: "a single fuzzy match is confirmed by address, not asked about twice",
+    because:
+      "2026-08-02, live: a contact known only from a past meeting has no display name, so " +
+      '"ryan weeks" fuzzy-matched ryancweeks@gmail.com and came back unresolved with ONE ' +
+      'candidate. The chat asked; the user tapped "Use Ryan Weeks"; the agent re-called with ' +
+      "that same name, which runs the identical failing match, and asked again. The question " +
+      "was unanswerable in the terms it was asked — only pasting the address ever worked.",
+    world: "loaded",
+    turns: ["9am friday Stampede Meeting with ryan weeks"],
+    respond: (call) =>
+      call.name === "propose_invite"
+        ? {
+          staged: true,
+          mode: "create",
+          title: "Stampede Meeting",
+          when: "Fri, Aug 7, 9:00 AM",
+          recipients: [],
+          unresolved: [{
+            query: "ryan weeks",
+            // No displayName — that is the whole point. This is what a
+            // "met before" contact actually looks like.
+            candidates: [{ name: null, email: "ryancweeks@gmail.com" }],
+          }],
+          note: inviteNote(INVITE_STAGED_NOTE, 1),
+        }
+        : undefined,
+    expect: [
+      // The tap has to carry the address: it is the only token that resolves.
+      suggestionsResolve(["ryancweeks@gmail.com"]),
+      replyLacks(/which (one|address|person|matt)\b/i, "asks to choose between one option"),
     ],
   }),
 

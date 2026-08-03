@@ -106,6 +106,29 @@ export function offersSuggestions(min = 2): Check {
   };
 }
 
+/** Every listed token appears in some suggestion's `message`.
+ *
+ *  A suggestion's label is prose, but its message is what gets sent back and
+ *  handed to a tool — so when the user is choosing between things a name lookup
+ *  could not tell apart, the message has to carry the thing that actually
+ *  resolves (the address, the id-bearing phrase). A button that replays the
+ *  words which just failed asks the same question forever; that is the
+ *  2026-08-02 "Use Ryan Weeks" loop, and it is invisible to any check that only
+ *  counts suggestions or reads the prose. */
+export function suggestionsResolve(tokens: string[]): Check {
+  return {
+    describe: `each choice is tappable into something that resolves (${tokens.join(", ")})`,
+    run: (o) => {
+      const messages = o.turn.suggestions.map((s) => s.message.toLowerCase());
+      if (!messages.length) return "expected suggestions carrying the resolving token, got none";
+      const missing = tokens.filter((t) => !messages.some((m) => m.includes(t.toLowerCase())));
+      return missing.length
+        ? `no suggestion message carries ${missing.join(" / ")} — messages: ${JSON.stringify(o.turn.suggestions.map((s) => s.message))}`
+        : null;
+    },
+  };
+}
+
 export function pointedAt(target: string): Check {
   return {
     describe: `points the screen at "${target}"`,

@@ -373,6 +373,7 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | One clear match is staged silently, not asked about | `propose_invite` | ✅ `invite-stages-without-asking-permission` |
 | The reply never claims a send that hasn't happened | — | ✅ `invite-does-not-claim-it-sent` |
 | An unresolved name becomes a tappable choice | `propose_invite` | ✅ `invite-asks-when-a-name-is-two-people` |
+| A single fuzzy match is confirmed by address, not asked about twice | `propose_invite` | ✅ `invite-one-candidate-is-a-confirmation` |
 | Looking someone up writes nothing | `find_contact` | ✅ `invite-lookup-is-read-only` |
 | Nothing under `functions/agent/` can put mail on the wire | — | ✅ `tests/invites.test.ts` (tier 1, structural) |
 
