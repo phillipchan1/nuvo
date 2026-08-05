@@ -740,7 +740,7 @@ function DescriptionHtml({ html }: { html: string }) {
 }
 
 /** Flatten an event description (Google can store HTML) to editable plain text. */
-function plainTextFromHtml(s: string): string {
+export function plainTextFromHtml(s: string): string {
   if (!s) return "";
   if (!/[<&]/.test(s)) return s; // already plain
   const doc = new DOMParser().parseFromString(

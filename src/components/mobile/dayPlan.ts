@@ -40,6 +40,8 @@ export interface TimedItem {
   // For tapping:
   eventId?: string;
   self_rsvp?: AttendeeStatus | null;
+  accountId?: string;
+  calendarId?: string;
   taskId?: string;
   /** Project-backed block — renders as a "project slot" (significant work). */
   projectBacked?: boolean;
@@ -101,6 +103,8 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
       done: false,
       eventId: e.id,
       self_rsvp: e.self_rsvp ?? null,
+      accountId: e.account_id,
+      calendarId: e.calendar_id,
     })),
     ...dayBlocks
       .filter((t: Task) => t.start_time)
