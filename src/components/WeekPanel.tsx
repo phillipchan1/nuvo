@@ -373,7 +373,15 @@ function PriorityRow({
         `data-task-week` marks them as week work: the drop commits them to the
         sprint too, so placing one never writes a day without a week (P2). */}
     {expanded && canExpand && (
-      <div className="mb-1 ml-6 border-l border-line pl-2">
+      <div
+        className="mb-1 ml-6 border-l border-line pl-2"
+        // The crown sits inside the rail's `data-tauri-drag-region="deep"` zone,
+        // so without this opt-out dragging one of these rows drags the macOS
+        // WINDOW and the task never moves — the row looks draggable and does
+        // nothing. Same guard `TaskRow` and the rail's own task list already
+        // carry; the crown never needed it until it started offering rows to drag.
+        data-tauri-drag-region="false"
+      >
         {/* What HAS a time, and when. Not draggable: these are already on the
             grid, and the calendar is where you move a block — a second place to
             drag the same thing is a second answer to one question (P8). */}

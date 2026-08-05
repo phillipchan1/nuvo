@@ -350,6 +350,17 @@ export default function Planner({
 
   const allTasksArray = useMemo(() => [...allKnownTasks.values()], [allKnownTasks]);
 
+  // Anything droppable that the render set doesn't hold. The week crown offers a
+  // project's loose work for drag, and that work is deliberately outside all six
+  // task queries above — no `do_date`, no `start_time`, no `sprint_id` — so
+  // without this the drop found nothing and reverted. Deliberately NOT merged
+  // into `allTasksArray`: that set also feeds `fcEvents`, and widening it would
+  // put untimed work on the grid.
+  const resolveDropTask = useCallback(
+    (id: string) => allKnownTasks.get(id) ?? allTasks.find((t) => t.id === id),
+    [allKnownTasks, allTasks],
+  );
+
   const taskPanel = overlay === "task" && overlayId ? { id: overlayId } : null;
   const eventPanel = overlay === "event" && overlayId ? { id: overlayId } : null;
   const slotPanel = overlay === "slot" && overlayId ? { id: overlayId } : null;
@@ -552,6 +563,7 @@ export default function Planner({
             onRangeChange={syncRange}
             railRef={railRef}
             onWeekWorkPlaced={commitTasksToSprint}
+            resolveDropTask={resolveDropTask}
             onConvertTaskToEvent={handleConvertTaskToEvent}
             onConvertEventToTask={handleConvertEventToTask}
             weekGlyph={onSchedule && focusMode ? glyphReport.emblem : null}

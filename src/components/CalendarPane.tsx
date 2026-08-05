@@ -182,6 +182,7 @@ export default function CalendarPane({
   onRangeChange,
   railRef,
   onWeekWorkPlaced,
+  resolveDropTask,
   onConvertTaskToEvent,
   onConvertEventToTask,
   onViewChange,
@@ -237,6 +238,16 @@ export default function CalendarPane({
    *  hand. Commit them to the week alongside the block, or the placement writes a
    *  `do_date` with no `sprint_id` and slips past the Week gate (P2). */
   onWeekWorkPlaced?: (taskIds: string[]) => void;
+  /** Last-resort lookup for a dropped row that isn't in `tasks`.
+   *
+   *  `tasks` is the RENDER set — inbox · today · sprint · scheduled · anytime ·
+   *  slot children. A project's backlog work is in none of those (no `do_date`,
+   *  no `start_time`, no `sprint_id`), so when the week crown started offering it
+   *  for drag, every drop resolved to nothing and silently reverted: the row
+   *  looked draggable and could not be scheduled. Kept separate from `tasks`
+   *  rather than folded into it, because that set also drives `fcEvents` — widening
+   *  it to fix a lookup would start rendering work that has no time yet. */
+  resolveDropTask?: (id: string) => Task | undefined;
   onConvertTaskToEvent?: (task: Task) => void;
   onConvertEventToTask?: (event: ExternalEvent) => void;
   /** Focus mode is on — toolbar shows a slim "Show panels" exit (⌘. still toggles). */
@@ -1055,7 +1066,12 @@ export default function CalendarPane({
     // just its own id. Resolve to the list of tasks being dropped.
     const group = el.getAttribute("data-task-drag-group");
     const ids = group ? group.split(",") : [el.getAttribute("data-task-drag") ?? ""];
-    const tasks = ids.map((id) => findTask(id)).filter((t): t is Task => Boolean(t));
+    // Fall back to the resolver for rows outside the render set — project
+    // backlog work dragged out of the week crown lives in none of the six task
+    // queries this pane is given.
+    const tasks = ids
+      .map((id) => findTask(id) ?? resolveDropTask?.(id))
+      .filter((t): t is Task => Boolean(t));
     if (!tasks.length || !start) {
       // Unknown item — revert as a safety fallback.
       info.revert();
@@ -2299,6 +2315,7 @@ export default function CalendarPane({
           taskAccent={taskAccent}
           mutations={mutations}
           onOpenTask={onOpenTask}
+          resolveDropTask={resolveDropTask}
         />
       )}
 

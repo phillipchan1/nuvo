@@ -9,7 +9,7 @@
 // Desktop-only: it renders inside CalendarPane, which never mounts on mobile.
 // Drag is pointer-based (HTML5 DnD is swallowed by the Tauri webview).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { createPortal } from "react-dom";
 import { addDays, format, startOfWeek } from "date-fns";
@@ -56,12 +56,15 @@ export default function WeekBoard({
   taskAccent,
   mutations,
   onOpenTask,
+  resolveDropTask,
 }: {
   now: Date;
   settings: UserSettings | undefined;
   taskAccent: (t: Task) => string | null;
   mutations: Mutations;
   onOpenTask: (t: Task, anchor: DOMRect) => void;
+  /** Rows the board's own pools don't hold — see `taskById` below. */
+  resolveDropTask?: (id: string) => Task | undefined;
 }) {
   const today = todayISO(now);
   // Same display preference as FullCalendar / MobileCalendar (default Sun→Sat).
@@ -277,9 +280,18 @@ export default function WeekBoard({
     return m;
   }, [inbox, sprintTasks, scheduled, anytime, slotChildren]);
 
+  // The board grabs ANY `[data-task-drag]` row in the rail, including the week
+  // crown's loose project work — which is in none of the pools above (no
+  // `do_date`, no `start_time`, no `sprint_id`). Without the fallback the
+  // gesture bailed at `if (!task) return` and the row simply refused to move.
+  const resolve = useCallback(
+    (id: string) => taskById.get(id) ?? resolveDropTask?.(id),
+    [taskById, resolveDropTask],
+  );
+
   // Latest values for the (mount-once) document listener to read without resubscribing.
-  const live = useRef({ taskById, mutations, toggleTaskSprint, sprintId, onOpenTask });
-  live.current = { taskById, mutations, toggleTaskSprint, sprintId, onOpenTask };
+  const live = useRef({ resolve, mutations, toggleTaskSprint, sprintId, onOpenTask });
+  live.current = { resolve, mutations, toggleTaskSprint, sprintId, onOpenTask };
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
@@ -287,7 +299,7 @@ export default function WeekBoard({
       const el = (e.target as HTMLElement)?.closest?.("[data-task-drag]") as HTMLElement | null;
       if (!el) return;
       const id = el.getAttribute("data-task-drag");
-      const task = id ? live.current.taskById.get(id) : null;
+      const task = id ? live.current.resolve(id) : null;
       if (!task) return;
       const fromBoard = Boolean(boardRef.current?.contains(el));
       const rail = document.querySelector<HTMLElement>("[data-rail-drop]");

@@ -2371,6 +2371,30 @@ affordance that does not exist. The comment is corrected. **Whether the split sh
 is left open on purpose** — that's a product call, not something to settle inside a fix.
 (Mobile still keeps its "On the clock" header, where no grid sits beside the list.)
 
+→ **Correction 2026-08-05 · the crown's drag never worked. Three blockers, all shipped.**
+The rows carried `data-task-drag` and the ghost followed the pointer, so it *looked* built —
+but nothing could land. Recorded rather than quietly patched, because each one is a trap the
+next draggable surface will walk into:
+
+1. **The drop couldn't find the task.** `CalendarPane`'s `tasks` prop is the **render set**
+   (inbox · today · sprint · scheduled · anytime · slot children). A project's loose work is
+   deliberately in none of them — no `do_date`, no `start_time`, no `sprint_id` — so
+   `findTask` missed and `onReceive` called `info.revert()`. Fixed with `resolveDropTask`,
+   kept **separate** from `tasks` on purpose: that set also feeds `fcEvents`, so widening it
+   to fix a lookup would start drawing untimed work on the grid.
+2. **`WeekBoard` had the identical gap** in the Spread view (`taskById` over the same five
+   pools, bailing at `if (!task) return`). Same resolver threaded through. Its sprint stamp
+   was already correct.
+3. **On macOS the drag moved the WINDOW.** The crown lives inside the rail's
+   `data-tauri-drag-region="deep"` zone, so a row drag was a window drag. `TaskRow` and the
+   rail's task list already carry `data-tauri-drag-region="false"` for exactly this; the
+   crown had never needed it because it had never offered anything to drag.
+
+**The lesson worth keeping:** a drag affordance is four things — the source attribute, the
+drop resolving the id, the write, and the platform not stealing the gesture — and a
+typecheck proves none of them. This is precisely the class of defect the "verify in the
+running app" rule exists to catch, and it shipped because that step was skipped.
+
 *Status: standing — typecheck clean, 376 tests green (3 new: the shared placed/loose
 predicate and its partition), web + desktop builds green. **Not driven in a running app:**
 this remote container has no Supabase credentials (`.env.local` is gitignored), so the dev
