@@ -133,10 +133,24 @@ export function weekPlacement(
   for (const t of work.tasks) {
     if (t.status === "done") continue;
     openCount++;
-    if (weekBlockTaskIds.has(t.id) || (t.slotId != null && weekSlotIds.has(t.slotId))) placedMins += t.durationMins;
+    if (isPlacedInWeek(t.id, t.slotId, weekBlockTaskIds, weekSlotIds)) placedMins += t.durationMins;
     else looseMins += t.durationMins;
   }
   return { placedMins, looseMins, openCount };
+}
+
+/** The placed/loose rule itself, on ids rather than a shape — so the surface that
+ *  LISTS the loose work (the week crown's disclosure, `useFindTime.looseFor`) and
+ *  the one that COUNTS it (`weekPlacement`, the row's "Xh loose") can never
+ *  disagree about a task. They ran off two copies of this predicate for exactly
+ *  one commit, which is one longer than it takes to drift. */
+export function isPlacedInWeek(
+  taskId: string,
+  slotId: string | null | undefined,
+  weekBlockTaskIds: Set<string>,
+  weekSlotIds: Set<string>,
+): boolean {
+  return weekBlockTaskIds.has(taskId) || (slotId != null && weekSlotIds.has(slotId));
 }
 
 /** What a row on the week IS — shared by the rail crown and the Week's Plan so

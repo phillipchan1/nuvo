@@ -37,7 +37,7 @@ import { supabase } from "../lib/supabase";
 import { calibrate, confidence, weeklyBudgetMins } from "../lib/calibration";
 import { laneOf, readIntake, type WeekLane } from "../lib/intake";
 import { suggestPull } from "../lib/pull";
-import type { ExternalEvent, Task } from "../lib/types";
+import type { ExternalEvent, Slot, Task } from "../lib/types";
 
 /** One board block's identity. A split overdue task yields several blocks that
  *  share a task id, so the BLOCK — not the task — is what you move and resize. */
@@ -526,14 +526,30 @@ export function useWeekDraft() {
     };
     // A project slot commits as a real Slot holding its tasks; loose work commits
     // as its own block. Both ride the same paths the rest of the app already uses.
-    const slotSpecs: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; taskIds: string[] }[] = [];
+    const slotSpecs: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; projectId: string | null; existingSlotId: string | null; taskIds: string[] }[] = [];
+    // A project's sitting already on this week's calendar. Re-planning mid-week
+    // recomposes only the work that has no time yet (`keptTasks` drops anything
+    // with a slot_id or a start_time), so without this lookup the fresh batch
+    // became a SECOND slot with the same project title sitting beside the first.
+    // Standing slots are excluded: those are dedications the routing pass owns,
+    // not sittings this commit created.
+    const sittingByProject = new Map<string, Slot>();
+    for (const s of weekSlots) {
+      if (!s.project_id || isStandingSlot(s)) continue;
+      if (!sittingByProject.has(s.project_id)) sittingByProject.set(s.project_id, s);
+    }
     const taskPlacements: { id: string; doDateISO: string; startISO: string; durationMins: number; splitChild?: { title: string } }[] = [];
     for (const p of placements) {
       const slot = slotById.get(p.task.id);
       if (slot) {
+        // Already has a sitting this week → grow that one and file the new work
+        // into it, rather than standing a twin next to it.
+        const sitting = slot.projectId ? sittingByProject.get(slot.projectId) ?? null : null;
         // a one-task block IS its own time block — schedule the task directly,
-        // no slot wrapper; only a genuine multi-task sitting becomes a container
-        if (slot.taskIds.length === 1) {
+        // no slot wrapper; only a genuine multi-task sitting becomes a container.
+        // Unless the project already HAS a sitting: then the lone new task is
+        // one more piece of that sitting, not a second block for the same work.
+        if (slot.taskIds.length === 1 && !sitting) {
           taskPlacements.push({
             id: slot.taskIds[0],
             doDateISO: p.dayISO,
@@ -544,11 +560,15 @@ export function useWeekDraft() {
         }
         slotSpecs.push({
           title: slot.name,
-          doDateISO: p.dayISO,
-          startISO: startISOof(p),
-          durationMins: p.durationMin,
+          doDateISO: sitting?.do_date ?? p.dayISO,
+          startISO: sitting?.start_time ?? startISOof(p),
+          durationMins: sitting ? (sitting.duration_minutes ?? 0) + p.durationMin : p.durationMin,
           domainId: slot.domainId,
           color: slot.color,
+          // `Batch.projectId` is set when every member belongs to one project —
+          // exactly when this sitting IS that project's. Carry it onto the row.
+          projectId: slot.projectId,
+          existingSlotId: sitting?.id ?? null,
           taskIds: slot.taskIds,
         });
         continue;

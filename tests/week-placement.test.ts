@@ -5,7 +5,7 @@
 // time in some OTHER week.
 
 import { describe, expect, it } from "vitest";
-import { pushState, upsertPushVerdict, weekPlacement } from "../src/lib/priorities";
+import { isPlacedInWeek, pushState, upsertPushVerdict, weekPlacement } from "../src/lib/priorities";
 import type { RockWork } from "../src/lib/priorities";
 import type { VTask } from "../src/lib/vertical";
 import type { BigRock } from "../src/lib/types";
@@ -81,6 +81,35 @@ describe("weekPlacement", () => {
   it("is silent on a project with nothing open", () => {
     const w = work([task({ id: "a", status: "done" })]);
     expect(weekPlacement(w, new Set(), new Set())).toEqual({ placedMins: 0, looseMins: 0, openCount: 0 });
+  });
+});
+
+// The same predicate now answers two questions that must never diverge: how much
+// is loose (the row's number) and WHICH tasks those are (the week crown's
+// disclosure, and what "Find it time this week" hands the composer). A surface
+// that listed three pieces under a row reading "2 loose" would make both liars.
+describe("isPlacedInWeek — one rule for the count and the list", () => {
+  const blocked = new Set(["a"]);
+  const weekSlots = new Set(["s1"]);
+
+  it("agrees with weekPlacement on every case it scores", () => {
+    const tasks = [
+      task({ id: "a", durationMins: 90 }),                       // own block this week
+      task({ id: "b", slotId: "s1", durationMins: 45 }),         // parked in a sitting
+      task({ id: "c", slotId: "s-next-week", durationMins: 60 }), // timed elsewhere
+      task({ id: "d", durationMins: 30 }),                       // nothing at all
+    ];
+    const loose = tasks.filter((t) => !isPlacedInWeek(t.id, t.slotId, blocked, weekSlots));
+    const counted = weekPlacement(work(tasks), blocked, weekSlots);
+
+    expect(loose.map((t) => t.id)).toEqual(["c", "d"]);
+    // the list and the number describe the same set of minutes
+    expect(loose.reduce((s, t) => s + t.durationMins, 0)).toBe(counted.looseMins);
+  });
+
+  it("treats a null slot as unplaced rather than matching a null slot id", () => {
+    expect(isPlacedInWeek("z", null, new Set(), weekSlots)).toBe(false);
+    expect(isPlacedInWeek("z", undefined, new Set(), weekSlots)).toBe(false);
   });
 });
 

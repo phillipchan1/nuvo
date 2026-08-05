@@ -2277,6 +2277,69 @@ prompt gives no permission to use is a coin flip. Meetings are made of people: "
 that call?", "have I met her before?" are planning questions. Look them up; never turn one
 away, and never answer one from memory. *Status: standing.*
 
+**D-084 · 2026-08-05 · Work that has no time gets an act that gives it one — not only
+three ways to give up on it.**
+
+A project on this week's slate grew a task on a Wednesday, which is what projects do. It
+landed in dead space: on a project the week claims to be moving, while itself off the week,
+off the calendar, and outside the project's own sitting. The origin ⓞ: *"it actually
+technically goes dead space… it just lives in the shadows within this new project."*
+
+**The cause was an altitude mismatch, not a missing screen.** Bringing a *project* into a
+week has been manual for a long time — On Deck's drag, the ritual's Projects step, the
+phone — all writing `bringIntoWeekPatch`. One altitude down, `suggestPull` is the only
+function that knows a week's on-deck projects' open work IS the point of the week, and it
+had **exactly one caller in the repo**: the plan draft. So the act of giving project work a
+time existed *only inside the automation*. **We had built the automated version of a flow
+with no manual version** — the inversion of our own rule that AI automates a proven flow.
+
+The app already saw it. `weekPlacement().looseMins` counted the orphan, and the Week's Plan
+row said *"1.5h of what's left has no time this week"* mid-week (D-060). But every act
+offered was a deferral — another week, next week, off the week. D-039 built the remedies
+for *"it doesn't fit."* Nothing answered *"it fits — find it time."* So:
+
+- **"Find it time this week"** now sits **first** on that row's panel, above the three
+  deferrals. It composes with `composeWeek` (`lib/compose`) over the week's real remaining
+  open time — the same composer the ritual uses, so the manual act and the automated one
+  place work identically. It proposes and waits for a press (P3), and states what still
+  won't fit rather than dropping it (P6). Reaches the phone for free: the panel already
+  renders in the mobile Week's Plan sheet.
+- **The Schedule's week crown opens.** Each project row in `WeekPanel` discloses its loose
+  pieces, stamped `data-task-drag` — the attribute CalendarPane's FullCalendar `Draggable`
+  already watches across the whole rail. No new drag machinery, and the manual gesture now
+  exists at the altitude that was missing it.
+
+**Rejected: a third rail tab (Projects, beside Inbox and Today).** It was the proposal on
+the table. It is a fourth pool on the rail, and P10's bar — a new abstraction needs a second
+instance — isn't met by a pool whose contents were *already on the rail*, read-only, in the
+crown. Giving the existing pool depth costs no new noun and no new destination. Kept the
+word already on screen, **loose**, so nothing entered the glossary.
+
+**Two silent defects surfaced with it, both fixed.** (a) `applySlots` never wrote
+`slots.project_id`, so nothing could ask whether a project already had a sitting this week —
+which is *why* a top-up was impossible. (b) Consequently, re-planning mid-week INSERTed a
+**second slot with the same project title** beside the first (`keptTasks` drops already-placed
+siblings, and `commit()` only ever inserted). A sitting is now topped up in place: it keeps
+the day and time it already holds, and only grows to cover what's being added.
+
+**The gate held.** `block()` and `assignToSlot()` don't stamp `sprint_id`, so a naive drop
+would have written a `do_date` with no week behind it (P2). Crown rows carry
+`data-task-week`, and the drop commits them to the sprint in the same gesture; the composer
+path ensures the week via `ensureWeek()` before writing. Placing project work is a
+deliberate act, not the same-day reactive capture P2 exempts.
+
+**Out of scope by decision:** whether Plan the Week's *placement* step is redundant with the
+Schedule. It is a real question — the ritual decides *which projects* and *which loose work*,
+and then places in a second grid — but Phil's call was to leave the ritual alone. Not logged
+as an open question; recorded here only so the omission is deliberate.
+
+*Status: standing — typecheck clean, 375 tests green (2 new for the shared placed/loose
+predicate), web + desktop builds green. **Not driven in a running app:** this remote
+container has no Supabase credentials (`.env.local` is gitignored), so the dev server
+serves the login wall. Everything below the UI is covered by tests; the three things that
+need eyes are the crown disclosure and its drag, the proposal panel, and a mid-week
+re-plan producing one sitting rather than two.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 

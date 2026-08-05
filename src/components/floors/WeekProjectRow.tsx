@@ -16,9 +16,11 @@
 // A sealed week renders this read-only: the verdict is history, and history has
 // no acts.
 
+import { useState } from "react";
 import { pushState, type PushState } from "../../lib/priorities";
 import { fmtHours } from "../../lib/dates";
 import { RemedyPanel } from "./RemedyPanel";
+import { FindTimeProposal } from "./FindTimeProposal";
 import type { WeekPriority } from "../../lib/composeWeek";
 
 /** "2h has a time · 4h loose" — the row's whole reason for existing. Silent when
@@ -83,6 +85,7 @@ export function WeekProjectRow({
   onPushOut,
   onTakeOff,
   onOpenProject,
+  weekStartISO,
 }: {
   p: WeekPriority;
   /** a sealed week is history — no acts */
@@ -92,6 +95,8 @@ export function WeekProjectRow({
   onSpan: () => void;
   onPushOut: () => void;
   onTakeOff: () => void;
+  /** the week the row belongs to — the placement act needs a week to search */
+  weekStartISO: string;
   /** desktop only — the phone's shell doesn't mount the record overlay, so the
    *  gap sentence stands alone there rather than offering a dead button. */
   onOpenProject?: () => void;
@@ -99,6 +104,10 @@ export function WeekProjectRow({
   const state = pushState({ shipped: p.shipped, doneAt: p.rock.done_at, done: p.done, total: p.total });
   const line = editable ? placementLine(p) : null;
   const rolls = p.rock.roll_count ?? 0;
+  // The placement act opens in place, under the row that named the problem —
+  // not in a modal. This surface is already an overlay (a Sheet on the phone),
+  // and a second layer over it is where tap paths go to die.
+  const [finding, setFinding] = useState(false);
 
   // At most ONE panel, gaps first: a project that isn't defined can't be
   // sensibly given another week — fix what it means before you move it in time.
@@ -171,11 +180,36 @@ export function WeekProjectRow({
         </div>
       )}
 
-      {showLoose && (
+      {showLoose && finding && p.projectId && (
+        <div className="mt-2">
+          <FindTimeProposal
+            projectId={p.projectId}
+            weekStartISO={weekStartISO}
+            looseMins={p.looseMins}
+            onClose={() => setFinding(false)}
+          />
+        </div>
+      )}
+
+      {showLoose && !finding && (
         <div className="mt-2">
           <RemedyPanel
             problem={`${fmtHours(p.looseMins)}h of what's left has no time this week.`}
             acts={[
+              // Placement first. The three acts below are all ways to give up on
+              // the work; until now they were the only answers offered to "it has
+              // no time" — which meant a project that simply needed an hour found
+              // on Thursday could only be deferred. (D-039/D-060 built the
+              // remedies for "it doesn't fit"; this is the one for "it fits".)
+              ...(p.projectId
+                ? [
+                    {
+                      label: "Find it time this week",
+                      title: "Look at what's left of the week and propose blocks for this work — nothing moves until you place them.",
+                      onPress: () => setFinding(true),
+                    },
+                  ]
+                : []),
               ...(p.placedMins > 0
                 ? [
                     {

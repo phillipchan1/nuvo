@@ -181,6 +181,7 @@ export default function CalendarPane({
   onOpenSlot,
   onRangeChange,
   railRef,
+  onWeekWorkPlaced,
   onConvertTaskToEvent,
   onConvertEventToTask,
   onViewChange,
@@ -232,6 +233,10 @@ export default function CalendarPane({
   onOpenSlot: (s: Slot, anchor: DOMRect) => void;
   onRangeChange: (startISO: string, endISO: string) => void;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
+  /** Rows carrying `data-task-week` are this week's project work being placed by
+   *  hand. Commit them to the week alongside the block, or the placement writes a
+   *  `do_date` with no `sprint_id` and slips past the Week gate (P2). */
+  onWeekWorkPlaced?: (taskIds: string[]) => void;
   onConvertTaskToEvent?: (task: Task) => void;
   onConvertEventToTask?: (event: ExternalEvent) => void;
   /** Focus mode is on — toolbar shows a slim "Show panels" exit (⌘. still toggles). */
@@ -1064,6 +1069,13 @@ export default function CalendarPane({
     // Silently remove it (no snap-back animation) and let each task appear via
     // fcEvents once the optimistic cache patches land.
     if (group) info.event.remove();
+
+    // The Week gate (P2): a `do_date` written on something with no `sprint_id`
+    // walks work past the week you committed to, and the Sunday number stops
+    // meaning anything. Rows dragged out of the week crown are project work
+    // being deliberately placed — not reactive same-day capture — so they join
+    // the week in the same gesture that gives them a time.
+    if (el.getAttribute("data-task-week")) onWeekWorkPlaced?.(tasks.map((t) => t.id));
 
     // Dropped on the all-day row → planned for that day, time TBD (no block).
     if (allDay) {

@@ -91,7 +91,7 @@ export default function Planner({
 
   const today = todayISO(now);
   const { settings, update: updateSettings } = useSettings();
-  const { data: vertical } = useVertical();
+  const { data: vertical, commitTasksToSprint } = useVertical();
 
   const contextLabel = useMemo(() => {
     if (!navFocus) return undefined;
@@ -551,6 +551,7 @@ export default function Planner({
             onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
             onRangeChange={syncRange}
             railRef={railRef}
+            onWeekWorkPlaced={commitTasksToSprint}
             onConvertTaskToEvent={handleConvertTaskToEvent}
             onConvertEventToTask={handleConvertEventToTask}
             weekGlyph={onSchedule && focusMode ? glyphReport.emblem : null}
