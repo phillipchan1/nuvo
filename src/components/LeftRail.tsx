@@ -623,8 +623,19 @@ export default function LeftRail({
             )}
             {/* The day's work — planned + calendar-blocked as one flat list. The
                 old split into three titled, counted sections was three headers
-                doing one job; a blocked task already shows its time, and the
-                calendar sits right beside the rail. */}
+                doing one job, and the calendar sits right beside the rail
+                rendering the blocks in their real positions.
+                ⚠️ This comment used to also claim "a blocked task already shows
+                its time." It does not: `TaskRow` deliberately renders no clock
+                (see its note above `durText`), and in fact SUPPRESSES the date
+                label once `start_time` is set — a scheduled row shows strictly
+                less than an unscheduled one. So the flat list rests on the
+                adjacent calendar alone, which is a real argument; it just isn't
+                the one that was written down. Whether the split should come back
+                is a live product question, deliberately left open (D-084) rather
+                than settled by a comment that wasn't true. Mobile still keeps an
+                "On the clock" header (`MobileTaskList`), where no grid is beside
+                the list to carry it. */}
             {[...todaySections.unblocked, ...todaySections.scheduled].map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}

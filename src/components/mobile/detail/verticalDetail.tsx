@@ -39,6 +39,7 @@ import {
 } from "../../../lib/vertical";
 import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../../lib/tending";
 import { DomainPicker, RipenessPip } from "../../floors/parts";
+import { whenText } from "../../floors/TaskList";
 
 export type Store = ReturnType<typeof useVertical>;
 
@@ -547,6 +548,13 @@ export function TaskRow({ t, onToggle, onDelete }: { t: VTask; onToggle: () => v
         ✓
       </button>
       <span className={`min-w-0 flex-1 truncate text-body ${done ? "text-muted line-through" : ""}`}>{t.title}</span>
+      {/* Same read as the desktop record, same helper — a project that can say
+          which work has a time on one shell and not the other is the drift the
+          golden rule exists to stop. The title truncates, so this never pushes
+          the row past 375px. */}
+      {!done && whenText(t) && (
+        <span className="mono shrink-0 whitespace-nowrap text-micro text-muted">{whenText(t)}</span>
+      )}
       {t.durationMins ? <span className="mono shrink-0 text-meta text-muted">{t.durationMins}m</span> : null}
       {/* desktop deletes on hover; a phone has no hover, so the ✕ is always
           there. `deleteTask` files its own Undo, same as the record. */}

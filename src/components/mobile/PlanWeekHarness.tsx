@@ -33,7 +33,7 @@ const project = (id: string, name: string, domainId: string, o: Partial<Project>
 const task = (id: string, title: string, projectId: string | null, domainId: string, o: Partial<VTask> = {}): VTask => ({
   id, projectId, initiativeId: null, domainId, keyResultId: null, bigRockId: null, title,
   energy: null, durationMins: 60, deadlineDaysAway: null, status: "ready", doDate: null,
-  slotId: null, createdAt: null, completedAt: null, assignee: "me", rollCount: 0, ...o,
+  startTime: null, slotId: null, createdAt: null, completedAt: null, assignee: "me", rollCount: 0, ...o,
 });
 
 const DOMAINS = [domain("d1", "Work", "#7a6cc4"), domain("d2", "Church", "#6f8fb0"), domain("d3", "Family", "#c6708f")];

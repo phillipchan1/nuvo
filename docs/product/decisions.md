@@ -2333,12 +2333,50 @@ Schedule. It is a real question — the ritual decides *which projects* and *whi
 and then places in a second grid — but Phil's call was to leave the ritual alone. Not logged
 as an open question; recorded here only so the omission is deliberate.
 
-*Status: standing — typecheck clean, 375 tests green (2 new for the shared placed/loose
-predicate), web + desktop builds green. **Not driven in a running app:** this remote
-container has no Supabase credentials (`.env.local` is gitignored), so the dev server
-serves the login wall. Everything below the UI is covered by tests; the three things that
-need eyes are the crown disclosure and its drag, the proposal panel, and a mid-week
-re-plan producing one sitting rather than two.*
+→ **Extended 2026-08-05 · the other half: what HAS a time.** Shipping the loose half alone
+left a lopsided app — you could see by name everything homeless and still nothing that was
+placed. Asked directly ("does this show which tasks have a time block?") the answer was
+*no, it shows the inverse*, and the gap ran deeper than the crown: **the project Record was
+silent about time entirely.** `floors/TaskList.tsx` rendered checkbox · title · duration ·
+KR chip · delete, and a grep of `src/components/record/**` for
+`start_time|do_date|slot_id|scheduled` returned **zero matches** — while the row's own
+`VTask` prop already carried `doDate`, `slotId` and a derived `status: "scheduled"`. The
+data was in the props, unread. So "which piece of this project has a Thursday block" was
+answerable only by opening every task's SlideOver in turn.
+
+- **The crown discloses both halves** — *has a time* (day + start, not draggable: they're
+  on the grid, and a second place to drag one thing is a second answer to one question, P8)
+  and *loose* (unchanged, still draggable). The pill states the split (`3 of 5 placed`), and
+  goes grey rather than amber once nothing is homeless (P9).
+- **One pass, not two filters.** `splitFor` partitions in a single loop over
+  `isPlacedInWeek`. Two independently-written predicates showing lists side by side is
+  exactly how a task ends up in both or neither; a test now asserts the partition.
+- **Both records say when.** `whenText` distinguishes three genuinely different
+  commitments — a block (`Thu 9:00am`), a sitting (`Thu · in a sitting`, since the slot
+  holds the clock), and a day with no block (`Thu`) — and is shared by the desktop record
+  and the phone's, so one shell can't answer what the other can't. `VTask` gained a
+  `startTime` pass-through it had always dropped.
+- **Silent when there's no time.** Backlog work is *deliberately* undated, so stamping "no
+  time" on every row would dress a decision up as a debt (P4, P9).
+- **`TaskRow` untouched.** Its no-clock rule — *"the calendar sits inches away rendering the
+  very same block"* — is correct **for the rail**. A record has no grid on screen to
+  restate.
+
+→ **A comment in `LeftRail` was simply false.** It justified merging the planned and
+scheduled sections with *"a blocked task already shows its time."* `TaskRow` never shows
+it, and in fact **suppresses** the date label once `start_time` is set — a scheduled row
+renders strictly *less* than an unscheduled one. So the desktop Today list lost the
+scheduled/unscheduled distinction in both the grouping and the row, on the strength of an
+affordance that does not exist. The comment is corrected. **Whether the split should return
+is left open on purpose** — that's a product call, not something to settle inside a fix.
+(Mobile still keeps its "On the clock" header, where no grid sits beside the list.)
+
+*Status: standing — typecheck clean, 376 tests green (3 new: the shared placed/loose
+predicate and its partition), web + desktop builds green. **Not driven in a running app:**
+this remote container has no Supabase credentials (`.env.local` is gitignored), so the dev
+server serves the login wall — confirmed, not assumed. Everything below the UI is covered
+by tests; what needs eyes is the crown's two groups and its drag, the proposal panel, the
+per-row time in both records, and a mid-week re-plan producing one sitting rather than two.*
 
 ---
 ## 3 · Open questions (decide these deliberately)

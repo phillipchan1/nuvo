@@ -40,6 +40,15 @@ export interface FindTimeProposal {
   considered: Task[];
 }
 
+/** A piece of a project that HAS a time this week, and when. */
+export interface PlacedPiece {
+  task: Task;
+  /** when it happens — its own block, or the sitting it rides */
+  startISO: string;
+  /** set when it has no block of its own: the sitting holding it */
+  slotTitle: string | null;
+}
+
 /** Just the reading half — which of a project's pieces have no time this week.
  *
  *  Split out from `useFindTime` because the Schedule's rail crown lists loose
@@ -60,26 +69,51 @@ export function useLooseWork(weekStartISO: string) {
   // new work on top of a sitting that is already spoken for.
   const { data: slots = [] } = useSlots(range.start, range.end);
 
-  /** A project's open work that has no time this week — the very tasks behind the
-   *  Week's Plan row's "Xh loose". Shares `isPlacedInWeek` with `weekPlacement`
-   *  so the list and the number are the same claim. Note what this deliberately
-   *  counts as loose: work blocked into ANOTHER week. It isn't happening here. */
-  const looseFor = useCallback(
-    (projectId: string): Task[] => {
+  /** A project's open work, cut in two by the one question that matters this
+   *  week: does it have a time, or not?
+   *
+   *  Deliberately ONE pass rather than two filters. The two halves are shown side
+   *  by side, so a task appearing in both — or in neither — is a visible lie, and
+   *  two independently-written predicates is exactly how that happens. Shares
+   *  `isPlacedInWeek` with `weekPlacement`, so the lists and the row's
+   *  "Xh has a time · Xh loose" are the same claim.
+   *
+   *  Note what counts as loose: work blocked into ANOTHER week. It isn't
+   *  happening here. */
+  const splitFor = useCallback(
+    (projectId: string): { placed: PlacedPiece[]; loose: Task[] } => {
       const weekSlotIds = new Set(slots.map((s) => s.id));
       const weekBlockTaskIds = new Set(blocks.map((b) => b.id));
-      return allTasks.filter(
-        (t) =>
-          t.project_id === projectId &&
-          t.status !== "done" &&
-          t.status !== "trashed" &&
-          !isPlacedInWeek(t.id, t.slot_id, weekBlockTaskIds, weekSlotIds),
-      );
+      const slotById = new Map(slots.map((s) => [s.id, s]));
+      const placed: PlacedPiece[] = [];
+      const loose: Task[] = [];
+
+      for (const t of allTasks) {
+        if (t.project_id !== projectId) continue;
+        if (t.status === "done" || t.status === "trashed") continue;
+        if (!isPlacedInWeek(t.id, t.slot_id, weekBlockTaskIds, weekSlotIds)) {
+          loose.push(t);
+          continue;
+        }
+        // Where it actually happens. A slot child carries no `start_time` of its
+        // own — it rides the sitting's block — so the sitting is the honest
+        // answer to "when", and naming it explains why the task has no time of
+        // its own without making that read like a fault.
+        const sitting = t.slot_id ? slotById.get(t.slot_id) ?? null : null;
+        const startISO = t.start_time ?? sitting?.start_time ?? null;
+        if (!startISO) continue; // placed but unreadable — say nothing rather than guess
+        placed.push({ task: t, startISO, slotTitle: t.start_time ? null : sitting?.title ?? null });
+      }
+
+      placed.sort((a, b) => a.startISO.localeCompare(b.startISO));
+      return { placed, loose };
     },
     [allTasks, slots, blocks],
   );
 
-  return { looseFor, blocks, range };
+  const looseFor = useCallback((projectId: string) => splitFor(projectId).loose, [splitFor]);
+
+  return { splitFor, looseFor, blocks, range };
 }
 
 export function useFindTime(weekStartISO: string) {

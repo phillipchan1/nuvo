@@ -81,6 +81,7 @@ function task(partial: Partial<VTask> & Pick<VTask, "id" | "title">): VTask {
     deadlineDaysAway: null,
     status: "done",
     doDate: null,
+    startTime: null,
     slotId: null,
     createdAt: null,
     completedAt: "2026-07-08T10:00:00.000Z",

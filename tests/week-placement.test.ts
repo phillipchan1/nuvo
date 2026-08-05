@@ -111,6 +111,31 @@ describe("isPlacedInWeek — one rule for the count and the list", () => {
     expect(isPlacedInWeek("z", null, new Set(), weekSlots)).toBe(false);
     expect(isPlacedInWeek("z", undefined, new Set(), weekSlots)).toBe(false);
   });
+
+  // The crown now shows both halves side by side, so the predicate has to
+  // PARTITION: every open piece lands in exactly one list. A task in both would
+  // read as duplicated work; a task in neither would vanish from a project that
+  // still owns it — the exact failure this whole change exists to fix.
+  it("partitions the open set — nothing in both lists, nothing dropped", () => {
+    const tasks = [
+      task({ id: "a" }),                        // own block this week
+      task({ id: "b", slotId: "s1" }),          // in a sitting this week
+      task({ id: "c", slotId: "s-next-week" }), // timed into another week
+      task({ id: "d" }),                        // no time at all
+      task({ id: "e", slotId: "s1" }),          // second child of the same sitting
+    ];
+    const placed = tasks.filter((t) => isPlacedInWeek(t.id, t.slotId, blocked, weekSlots));
+    const loose = tasks.filter((t) => !isPlacedInWeek(t.id, t.slotId, blocked, weekSlots));
+
+    expect(placed.map((t) => t.id)).toEqual(["a", "b", "e"]);
+    expect(loose.map((t) => t.id)).toEqual(["c", "d"]);
+    // no overlap…
+    expect(placed.filter((p) => loose.some((l) => l.id === p.id))).toEqual([]);
+    // …and nothing lost between them
+    expect(placed.length + loose.length).toBe(tasks.length);
+    // and the pill's arithmetic ("3 of 5 placed") is the same set
+    expect(weekPlacement(work(tasks), blocked, weekSlots).openCount).toBe(tasks.length);
+  });
 });
 
 describe("pushState", () => {
