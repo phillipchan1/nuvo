@@ -7,6 +7,8 @@ import { expandRule, type RecurrenceRule } from "../lib/recurrence";
 import { fixedCssPx, getUiScale } from "../hooks/useUiScale";
 import { RepeatControl } from "./RecurrencePicker";
 import { GuestsInput } from "./GuestsInput";
+import { providerMeta } from "../lib/calendarWrite";
+import type { CalendarProvider } from "../lib/types";
 import {
   DEFAULT_MEET_PREFERENCE,
   type MeetPreference,
@@ -63,7 +65,7 @@ export default function DraftComposer({
   initialKind: CreateKind;
   allDay?: boolean;
   googleAvailable: boolean;
-  writableAccounts?: Array<{ id: string; email: string }>;
+  writableAccounts?: Array<{ id: string; email: string; provider: CalendarProvider }>;
   /** Domains offered on the Slot tab — pick one to make a "domain slot" the
    *  weekly plan routes matching work into (docs/standing-slots.md). */
   domains?: Array<{ id: string; name: string; color: string }>;
@@ -350,20 +352,32 @@ export default function DraftComposer({
               Calendar
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {writableAccounts.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => setCalendarAccountId(a.id)}
-                  className={`fast rounded-full border px-3 py-1 text-caption font-medium transition-colors ${
-                    calendarAccountId === a.id
-                      ? "border-accent bg-accent/10 text-accent"
-                      : "border-line bg-surface-2 text-muted hover:text-ink"
-                  }`}
-                >
-                  {a.email}
-                </button>
-              ))}
+              {writableAccounts.map((a) => {
+                const meta = providerMeta(a.provider);
+                // Two accounts can share an email (e.g. Google + iCloud both
+                // added under the same address) — the provider badge is the
+                // only thing that still tells them apart, so always show it.
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => setCalendarAccountId(a.id)}
+                    className={`fast flex items-center gap-1.5 rounded-full border px-3 py-1 text-caption font-medium transition-colors ${
+                      calendarAccountId === a.id
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "border-line bg-surface-2 text-muted hover:text-ink"
+                    }`}
+                  >
+                    <span
+                      className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none text-white"
+                      style={{ background: meta.color }}
+                    >
+                      {meta.letter}
+                    </span>
+                    {meta.name} · {a.email}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

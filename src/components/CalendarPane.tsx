@@ -11,7 +11,6 @@ import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserS
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
 import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
-import { weekName } from "../lib/week";
 import { addDays } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
@@ -258,10 +257,6 @@ export default function CalendarPane({
   const overSlotIdRef = useRef<string | null>(null);
   const mutationsRef = useRef(mutations);
   mutationsRef.current = mutations;
-
-  const [viewTitle, setViewTitle] = useState("");
-  // The date the view is anchored on — drives the ambient week label.
-  const [viewDate, setViewDate] = useState<Date>(() => new Date());
 
   // Hidden events (Fantastical-style): kept off the board + out of the busy math.
   // `showHidden` reveals them dimmed so you can bring one back. The context menu /
@@ -1668,8 +1663,6 @@ export default function CalendarPane({
 
   const handleDatesSet = (arg: DatesSetArg) => {
     onRangeChange(arg.start.toISOString(), arg.end.toISOString());
-    setViewTitle(calRef.current?.getApi().view.title ?? "");
-    setViewDate(calRef.current?.getApi().getDate() ?? arg.start);
   };
 
   return (
@@ -2081,18 +2074,10 @@ export default function CalendarPane({
         />
       )}
 
-      {/* ── Navigation bar — three grid zones (nav · masthead · altitude/door).
-            Equal side columns keep the masthead truly centered; sides never
-            overlay the title. Also fills the macOS titlebar zone (titlebar-pad). */}
+      {/* ── Navigation bar — two clusters (nav · altitude/door) with a flexible
+            drag-region gap between. Also fills the macOS titlebar zone (titlebar-pad). */}
       <div
         data-tauri-drag-region="deep"
-        // Columns size to their CONTENT, with the centre as the only flexible
-        // one. It used to be `1fr auto 1fr`: the two control clusters got equal
-        // fixed shares regardless of what they actually held, so once the right
-        // cluster outgrew its share it overflowed — and because its contents are
-        // `shrink-0` inside a `justify-end` box, the overflow went LEFT, parking
-        // the timezone chip on top of the dateline. The centre already truncates
-        // and is capped at 220px, so it is the right thing to squeeze.
         className="titlebar-pad grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5"
       >
         {/* Left — Show panels (focus exit only) + period nav */}
@@ -2142,17 +2127,8 @@ export default function CalendarPane({
           <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
         </div>
 
-        {/* Center — orientation masthead (its own column; cannot be overpainted) */}
-        {view !== "board" ? (
-          <div data-breadcrumb className="pointer-events-none flex max-w-[220px] select-none flex-col items-center truncate leading-none">
-            {(view === "timeGridWeek" || view === "timeGridDay") && (
-              <span className="mono mb-0.5 text-micro uppercase tracking-wide text-muted">{weekName(viewDate)}</span>
-            )}
-            <span className="masthead truncate text-lead leading-none text-text">{viewTitle}</span>
-          </div>
-        ) : (
-          <div className="w-0" data-tauri-drag-region />
-        )}
+        {/* Center — flexible drag region between the two control clusters. */}
+        <div className="w-0" data-tauri-drag-region />
 
         {/* Right — quiet clock · week door · altitude · overflow. No overflow-hidden
             here — the ··· menu drops below and must be allowed to paint. */}

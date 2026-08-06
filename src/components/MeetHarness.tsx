@@ -48,7 +48,7 @@ export default function MeetHarness() {
         point={{ x: 24, y: 120 }}
         initialKind="event"
         googleAvailable
-        writableAccounts={[{ id: "acct-1", email: "you@example.com" }]}
+        writableAccounts={[{ id: "acct-1", email: "you@example.com", provider: "google" }]}
         meetPreference={pref}
         onCreate={setLast}
         onCancel={() => setNonce((n) => n + 1)}

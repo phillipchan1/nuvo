@@ -12,6 +12,7 @@ import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { useOptionalUndoStack } from "./useUndoStack";
+import { patchCaches } from "./useTasks";
 import { planningWeekStartISO } from "../lib/dates";
 import { upsertPushVerdict } from "../lib/priorities";
 import {
@@ -511,7 +512,10 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
     };
 
     const patchTaskRow = async (id: string, rowPatch: Partial<Task>) => {
-      patchRows<Task>(["tasks", "all"], id, rowPatch);
+      // Same fragmented ["tasks", ...] cache space useTasks.ts owns — patch every
+      // membership-sensitive fragment (inbox/day/anytime/scheduled/slot/all/sprint),
+      // not just ["tasks","all"], or the other views go stale until their own refetch.
+      patchCaches(qc, id, rowPatch);
       await writeTable("tasks", id, rowPatch);
       // keep the Google "Nuvo" mirror in sync, same contract as useTasks
       if (MIRROR_FIELDS.some((f) => f in rowPatch)) invokeQuiet("task-mirror", { taskId: id });

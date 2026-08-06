@@ -14,6 +14,7 @@ import {
 import { formatHourLabel } from "../lib/dates";
 import { readRevealConfig, writeRevealConfig, type RevealConfig } from "../lib/weekReveal";
 import type { CalendarAccount, UserSettings } from "../lib/types";
+import { providerMeta } from "../lib/calendarWrite";
 import { firstDayOfWeek } from "../hooks/useSettings";
 import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
@@ -708,15 +709,6 @@ function ConnectionsPane({
     setShowIcloud(false);
     qc.invalidateQueries({ queryKey: ["calendar_accounts"] });
   };
-
-  const providerMeta = (p: CalendarAccount["provider"]) =>
-    p === "google"
-      ? { letter: "G", name: "Google", color: "#4285F4" }
-      : p === "m365"
-        ? { letter: "M", name: "Microsoft 365", color: "#2563EB" }
-        : p === "icloud"
-          ? { letter: "", name: "Apple Calendar", color: "#111111" }
-          : { letter: "↻", name: "Subscribed calendar", color: "#0EA5E9" };
 
   const hidden = new Set(settings?.hidden_calendar_ids ?? []);
   const toggleCalendar = (calId: string) => {

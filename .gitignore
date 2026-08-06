@@ -24,3 +24,8 @@ src-tauri/*.key.pub
 # Release pipeline build artifacts (generated in CI / dev, not source)
 public/changelog.json
 RELEASE_NOTES.md
+
+# Eval artifacts: `npm run eval` writes cassettes that `npm test` then replays
+# and asserts on. A run with any failing scenario would otherwise arm a CI break
+# for whoever commits next. The run history (runs.jsonl) IS tracked on purpose.
+tests/agent/cassettes/

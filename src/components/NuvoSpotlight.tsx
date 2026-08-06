@@ -352,8 +352,12 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
         labelIds,
       }).catch(() => {});
       // Linger on a "Captured" beat, then dismiss — same in ⌘K and ⌥Space.
+      // Just past the .moment entrance (540ms) so the beat isn't cut off
+      // mid-spring; the task itself is already in the Inbox by now (onCreate's
+      // onMutate wrote the cache synchronously above), so this is purely the
+      // acknowledgment's own runway, not a wait for anything to finish.
       setCaptured(title);
-      window.setTimeout(onClose, 900);
+      window.setTimeout(onClose, 650);
     }
   };
 

@@ -18,6 +18,19 @@ export function eventsFunctionFor(provider: CalendarProvider): "google-events" |
   return provider === "icloud" ? "icloud-events" : "google-events";
 }
 
+/** Badge letter/name/color for a connected account's provider — the only thing
+ *  that tells two accounts apart when they share an email (e.g. Google + iCloud
+ *  both added under the same address). */
+export function providerMeta(p: CalendarProvider): { letter: string; name: string; color: string } {
+  return p === "google"
+    ? { letter: "G", name: "Google", color: "#4285F4" }
+    : p === "m365"
+      ? { letter: "M", name: "Microsoft 365", color: "#2563EB" }
+      : p === "icloud"
+        ? { letter: "", name: "Apple Calendar", color: "#111111" }
+        : { letter: "↻", name: "Subscribed calendar", color: "#0EA5E9" };
+}
+
 /** Human label for a provider — disambiguates accounts that share an email. */
 export function providerLabel(provider: CalendarProvider): string {
   switch (provider) {

@@ -23,12 +23,18 @@ type RowIdentity = {
   placeHint: string | null;
   proposal: boolean;
   proposalColor: string | null;
+  /** The task's already-committed home, shown struck through alongside a live
+   *  suggestion so accepting isn't a leap of faith about what it's replacing —
+   *  a domain tag is deliberately NOT a home, so a suggestion can disagree with
+   *  one that's already set. Null when there's nothing to contrast against, or
+   *  the suggestion agrees with the current place. */
+  currentName: string | null;
 };
 
-function resolveRowIdentity(
+/** The task's real, already-filed place — ignoring any live suggestion. */
+function filedIdentity(
   meta: TaskMeta | undefined,
   taskLabels: Label[],
-  groom: ReturnType<typeof liveSuggestion>,
   accent: string | null | undefined,
 ): RowIdentity {
   const empty: RowIdentity = {
@@ -37,31 +43,18 @@ function resolveRowIdentity(
     placeHint: null,
     proposal: false,
     proposalColor: null,
+    currentName: null,
   };
   const domainColor = meta?.domainColor ?? accent ?? null;
   const domainName = meta?.domain ?? null;
 
-  if (groom) {
-    const bar = groom.domainColor ?? domainColor;
-    const name = groom.targetLabel || domainName;
-    if (!name && !bar) return empty;
-    return {
-      barColor: bar,
-      placeName: name,
-      placeHint: name,
-      proposal: true,
-      proposalColor: groom.domainColor ?? domainColor,
-    };
-  }
-
   const filedName = meta?.project ?? meta?.initiative ?? null;
   if (filedName) {
     return {
+      ...empty,
       barColor: domainColor,
       placeName: filedName,
       placeHint: domainName ? `${filedName} · ${domainName}` : filedName,
-      proposal: false,
-      proposalColor: null,
     };
   }
 
@@ -71,16 +64,34 @@ function resolveRowIdentity(
 
   const label = taskLabels[0];
   if (label) {
-    return {
-      barColor: label.color ?? null,
-      placeName: label.name,
-      placeHint: label.name,
-      proposal: false,
-      proposalColor: null,
-    };
+    return { ...empty, barColor: label.color ?? null, placeName: label.name, placeHint: label.name };
   }
 
   return empty;
+}
+
+function resolveRowIdentity(
+  meta: TaskMeta | undefined,
+  taskLabels: Label[],
+  groom: ReturnType<typeof liveSuggestion>,
+  accent: string | null | undefined,
+): RowIdentity {
+  const filed = filedIdentity(meta, taskLabels, accent);
+  if (!groom) return filed;
+
+  const domainColor = meta?.domainColor ?? accent ?? null;
+  const bar = groom.domainColor ?? domainColor;
+  const name = groom.targetLabel || filed.placeName;
+  if (!name && !bar) return { ...filed, proposal: false, proposalColor: null };
+
+  return {
+    barColor: bar,
+    placeName: name,
+    placeHint: name,
+    proposal: true,
+    proposalColor: groom.domainColor ?? domainColor,
+    currentName: filed.placeName && filed.placeName !== name ? filed.placeName : null,
+  };
 }
 
 /** Status/meta — two steps below the title so it reads as primary. 8px is a
@@ -95,16 +106,23 @@ function PlaceTag({ identity }: { identity: RowIdentity }) {
     : undefined;
 
   if (identity.proposal && color) {
+    const hint = identity.currentName
+      ? `${identity.currentName} → ${identity.placeHint}`
+      : identity.placeHint;
     return (
-      <span
-        title={identity.placeHint}
-        className={`max-w-full truncate rounded px-1.5 py-px ${META}`}
-        style={{
-          ...tinted,
-          background: `color-mix(in srgb, ${color} 8%, transparent)`,
-        }}
-      >
-        {identity.placeName}
+      <span title={hint} className={`flex min-w-0 max-w-full items-center gap-1 truncate ${META}`}>
+        {identity.currentName && (
+          <span className="shrink-0 text-muted/50 line-through">{identity.currentName}</span>
+        )}
+        <span
+          className="min-w-0 truncate rounded px-1.5 py-px"
+          style={{
+            ...tinted,
+            background: `color-mix(in srgb, ${color} 8%, transparent)`,
+          }}
+        >
+          {identity.placeName}
+        </span>
       </span>
     );
   }

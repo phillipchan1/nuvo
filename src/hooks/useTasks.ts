@@ -157,7 +157,7 @@ export function useSprintTasks(sprintId: string | null) {
  * ghost with the slot-children fetch → duplicate rows. Drop or insert so each
  * cache matches what its queryFn would return.
  */
-function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
+export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
   // Resolve the post-patch row from any cache that already has it — needed when
   // inserting into a list the task is newly joining (slot children, etc.).
   let resolved: Task | null = null;
