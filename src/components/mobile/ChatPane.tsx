@@ -7,6 +7,7 @@ import { filesToAttachments } from "../../lib/agentAttachments";
 import { agentHints, type AgentHintContext } from "../../lib/agentHints";
 import { ASSISTANT_NAME } from "../../lib/assistant";
 import AgentChatInput from "../AgentChatInput";
+import AgentDropOverlay from "../AgentDropOverlay";
 import AgentMessageBubble from "../AgentMessageBubble";
 import AgentSuggestionChips from "../AgentSuggestionChips";
 import AgentThinking from "../AgentThinking";
@@ -80,15 +81,12 @@ export default function ChatPane({
   };
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col" {...dropHandlers}>
-      {dragging && (
-        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-accent-soft/75 backdrop-blur-[2px]">
-          <div className="rounded-2xl border-2 border-dashed border-accent bg-surface px-6 py-5 text-center shadow-lg">
-            <span className="text-display">↓</span>
-            <p className="mt-1 text-body font-medium text-accent">Drop to attach</p>
-          </div>
-        </div>
-      )}
+    <div
+      className="relative flex min-h-0 flex-1 flex-col"
+      data-agent-drop=""
+      {...dropHandlers}
+    >
+      {dragging && <AgentDropOverlay compact />}
 
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1 pt-2">
         <span className="mono text-label text-muted">{ASSISTANT_NAME} · your planner</span>

@@ -3,12 +3,13 @@ import type { AgentAttachment } from "../lib/agentTypes";
 import type { AgentHandle } from "../hooks/useAgent";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useVertical } from "../hooks/useVertical";
-import { useFileDrop } from "../hooks/useFileDrop";
+import { useFileDrop, isFileDrag } from "../hooks/useFileDrop";
 import { filesToAttachments } from "../lib/agentAttachments";
 import { domainById, initiativeById, projectById } from "../lib/vertical";
 import { agentHints } from "../lib/agentHints";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import AgentChatInput from "./AgentChatInput";
+import AgentDropOverlay from "./AgentDropOverlay";
 import AgentMessageBubble from "./AgentMessageBubble";
 import AgentSuggestionChips from "./AgentSuggestionChips";
 import AgentThinking from "./AgentThinking";
@@ -114,7 +115,18 @@ export default function AgentSidebar({
 
   if (!open) {
     return (
-      <aside className="agent-rail-collapsed flex w-11 shrink-0 flex-col items-center">
+      <aside
+        className="agent-rail-collapsed flex h-full w-11 shrink-0 flex-col items-center"
+        onDragEnter={(e) => {
+          if (isFileDrag(e)) {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        onDragOver={(e) => {
+          if (isFileDrag(e)) e.preventDefault();
+        }}
+      >
         <button
           onClick={onToggle}
           title={`Open ${ASSISTANT_NAME} (⌘J)`}
@@ -145,18 +157,11 @@ export default function AgentSidebar({
       // shell the app is resting on. A divider here would flatten the two
       // planes back into one. The width is fixed so the slot can clip it
       // during the slide instead of squashing the content.
-      className="agent-rail relative flex w-[380px] shrink-0 flex-col"
+      className="agent-rail relative flex h-full min-h-0 w-[380px] shrink-0 flex-col"
+      data-agent-drop=""
       {...dropHandlers}
     >
-      {dragging && (
-        <div className="agent-drop-overlay pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-2 bg-accent-soft/75 backdrop-blur-[3px]">
-          <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-accent bg-surface/90 px-8 py-6 shadow-lg">
-            <span className="text-[28px] opacity-80">↓</span>
-            <span className="text-body font-medium text-accent">Drop files to attach</span>
-            <span className="mono text-meta text-muted">Images, PDFs, text files</span>
-          </div>
-        </div>
-      )}
+      {dragging && <AgentDropOverlay />}
 
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3.5">
         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-soft text-caption text-accent">✦</span>
