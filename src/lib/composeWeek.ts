@@ -281,6 +281,10 @@ export function composeWeek(input: ComposeWeekInput): WeekReport {
     events,
     calendarDomainMap: input.calendarDomainMap,
     eventRouting: input.eventRouting,
+    actualsFilter: {
+      hiddenCalendarIds: new Set(input.hiddenCalendarIds ?? []),
+      hiddenEventKeys: new Set(input.hiddenEventKeys ?? []),
+    },
     activityUnits: input.activityUnits,
     weeksBack: input.weeksBack ?? 0,
     domainHoursOverride: input.domainHours,

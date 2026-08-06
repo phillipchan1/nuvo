@@ -105,6 +105,7 @@ been used to argue against things it doesn't forbid.
 | **List · Day** (mobile Calendar lenses) | The phone Calendar's two drill-in lenses, switched by the header pill (`nuvo-mobile-cal-mode`; the month grid stays home). **List** (`ScheduleView`) = the 14-day agenda with Free chips; **Day** (`MobileDayView`) = one day as a proportional time grid — blocks to scale, open windows as `--slot` brackets, now as the `--signal` line. Both render one `buildDayPlan` (`dayPlan.ts`), so they can't disagree about a day. Swipe or tap the date strip to traverse days. D-044. |
 | **Floor** | An altitude's screen (Domain / Initiative / Project floors). |
 | **Wall · Open domain** | The Domain floor's two halves — the wall of all domains, and one domain entered — the reference screens for Warm Paper alongside the Schedule. |
+| **This week's shape** | The strip at the head of the domain **wall**: seven day columns, each a stack of the domains that got those hours, on an absolute scale (an 8h day is the floor) — so a light week reads light and *when* is visible, not just the split. Today is `--signal`; days still ahead are open `--slot` track. Replaced the 100%-stacked share bar, which could not tell a 40-hour week from a 4-hour one (D-085). |
 | **the Vertical** | Spine + floors: *what matters and why.* |
 | **the Planner** | Day · Week · Schedule: *what am I doing.* |
 

@@ -372,6 +372,17 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
   const calendarDomainMap = settings?.calendar_domain_map ?? EMPTY_MAP;
   const eventRouting = useEventRouting();
 
+  // What the user took out of the busy math stays out of the hours ledger too —
+  // a hidden calendar is usually a duplicate import of one already mapped to a
+  // domain, so counting both would double every meeting in it.
+  const actualsFilter = useMemo(
+    () => ({
+      hiddenCalendarIds: new Set(settings?.hidden_calendar_ids ?? []),
+      hiddenEventKeys: new Set((settings?.hidden_events ?? []).map((h) => h.key)),
+    }),
+    [settings?.hidden_calendar_ids, settings?.hidden_events],
+  );
+
   // Activity actuals (merged PRs, …) → last-touched per project, so Motion reads
   // a project as moving even with no completed tasks. Recent window is enough.
   const activityQ = useQuery({
@@ -413,8 +424,9 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         calendarDomainMap,
         eventRouting,
         lastActivityByProject,
+        actualsFilter,
       ),
-    [domainsQ.data, initiativesQ.data, projectsQ.data, tasksQ.data, sprintQ.data, eventsQ.data, calendarDomainMap, eventRouting, lastActivityByProject],
+    [domainsQ.data, initiativesQ.data, projectsQ.data, tasksQ.data, sprintQ.data, eventsQ.data, calendarDomainMap, eventRouting, lastActivityByProject, actualsFilter],
   );
 
   const store = useMemo<VerticalStore>(() => {
@@ -551,7 +563,8 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           id: row.id, name: row.name, color: row.color, icon: row.icon,
           intention: row.intention, charter: row.charter ?? "", context: row.context ?? null,
           weeklyTargetHours: row.weekly_target_hours ?? 0,
-          investedThisWeek: 0, meetingHoursThisWeek: 0, quarterHours: 0, lastTouchedDays: 99, weeks: new Array(13).fill(0), sort,
+          investedThisWeek: 0, meetingHoursThisWeek: 0, quarterHours: 0, lastTouchedDays: 99,
+          weeks: new Array(13).fill(0), days: new Array(7).fill(0), sort,
         };
       },
       // Signup seeds no domains (migration 42) — the first-run picker calls this

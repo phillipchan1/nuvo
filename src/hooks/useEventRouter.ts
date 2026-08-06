@@ -66,19 +66,24 @@ export function useEventRouter() {
   const attempted = useRef<Set<string>>(new Set());
   const map = settings?.calendar_domain_map;
   const hiddenIds = settings?.hidden_calendar_ids;
+  const hiddenEvents = settings?.hidden_events;
 
   useEffect(() => {
     const events = eventsQ.data;
     const routed = routedQ.data;
     if (!events || !map || !routed || inFlight.current) return;
 
-    const hidden = new Set(hiddenIds ?? []);
+    // Same filter the ledger applies — never spend a completion on time that
+    // wouldn't be counted anyway.
+    const filter = {
+      hiddenCalendarIds: new Set(hiddenIds ?? []),
+      hiddenEventKeys: new Set((hiddenEvents ?? []).map((h) => h.key)),
+    };
     const candidates = events
       .filter(
         (e) =>
-          eventCountsAsActual(e) && // past, busy, attended
+          eventCountsAsActual(e, undefined, filter) && // past, busy, attended, not hidden
           !map[calendarKey(e)] && // not deterministically mapped
-          !hidden.has(e.calendar_id) && // user didn't hide this calendar
           !routed.has(eventKey(e)) && // not already judged
           !attempted.current.has(eventKey(e)), // never spend twice in one session
       )
@@ -108,5 +113,5 @@ export function useEventRouter() {
       .catch(() => {
         inFlight.current = false;
       });
-  }, [eventsQ.data, routedQ.data, map, hiddenIds, accountsQ.data, qc]);
+  }, [eventsQ.data, routedQ.data, map, hiddenIds, hiddenEvents, accountsQ.data, qc]);
 }

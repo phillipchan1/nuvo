@@ -49,17 +49,33 @@ export function useCalendarAccounts() {
   });
 }
 
+/** Every event overlapping the range — PAGED.
+ *
+ *  PostgREST caps an unbounded select at 1000 rows and returns them in physical
+ *  (insert) order, so a wide window silently comes back as the OLDEST 1000: the
+ *  13-week window the domain ledger asks for lost this week entirely, and every
+ *  meeting read as zero hours. Page with a stable order so the set is complete. */
 export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
   return useQuery({
     queryKey: ["external_events", rangeStartISO, rangeEndISO],
     queryFn: async (): Promise<ExternalEvent[]> => {
-      const { data, error } = await supabase
-        .from("external_events")
-        .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id")
-        .lt("start_at", rangeEndISO)
-        .gt("end_at", rangeStartISO);
-      if (error) throw error;
-      return data as ExternalEvent[];
+      const PAGE = 1000;
+      const all: ExternalEvent[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from("external_events")
+          .select("id, account_id, provider_event_id, calendar_id, title, start_at, end_at, all_day, location, busy, self_rsvp, recurring_event_id")
+          .lt("start_at", rangeEndISO)
+          .gt("end_at", rangeStartISO)
+          .order("start_at")
+          .order("id")
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const rows = (data ?? []) as ExternalEvent[];
+        all.push(...rows);
+        if (rows.length < PAGE) break;
+      }
+      return all;
     },
   });
 }

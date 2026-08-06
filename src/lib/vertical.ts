@@ -19,7 +19,7 @@ import {
   type Task,
 } from "./types";
 import { parseDateISO, todayISO } from "./dates";
-import { eventCountsAsActual, eventDomainId, eventMins } from "./eventActuals";
+import { eventCountsAsActual, eventDomainId, eventMins, type ActualsFilter } from "./eventActuals";
 
 export type Momentum = "up" | "flat" | "down";
 
@@ -49,6 +49,7 @@ export interface Domain {
   quarterHours: number; // derived: the long arc (Gain), last 90 days
   lastTouchedDays: number; // derived: days since last completed task → faithfulness
   weeks: number[]; // derived: invested hours per week, last 13 weeks (oldest → now) — the faithfulness pulse
+  days: number[]; // derived: invested hours per day of THIS week (index 0 = weekStart) — the week's shape
   sort: number;
 }
 
@@ -367,6 +368,7 @@ export function buildVertical(
   calendarDomainMap: Record<string, string> = {},
   eventRouting: Record<string, string> = {},
   lastActivityByProject: Record<string, string> = {},
+  actualsFilter: ActualsFilter = {},
 ): VerticalData {
   const today = todayISO(now);
   // calendar-week boundary in the app timezone, not the machine clock
@@ -501,11 +503,24 @@ export function buildVertical(
   const seriesStart = weekStart.getTime() - 12 * WEEK_MS;
   const ledger = new Map<string, { week: number; quarter: number; last: number | null }>();
   const weekly = new Map<string, number[]>();
+  // …and into one of THIS week's seven days, so the wall can show the *shape* of
+  // the week (which days a domain actually got) and not just its share. Calendar
+  // days, not fixed 24h steps — a DST week still has seven columns.
+  const daily = new Map<string, number[]>();
+  const addDay = (domainId: string, at: number, mins: number) => {
+    if (at < weekStart.getTime()) return;
+    const i = differenceInCalendarDays(new Date(at), weekStart);
+    if (i < 0 || i > 6) return;
+    const arr = daily.get(domainId) ?? new Array(7).fill(0);
+    arr[i] += mins;
+    daily.set(domainId, arr);
+  };
   for (const t of tasks) {
     if (t.status !== "done" || !t.completedAt || !t.domainId) continue;
     const at = new Date(t.completedAt).getTime();
     const entry = ledger.get(t.domainId) ?? { week: 0, quarter: 0, last: null };
     if (at >= weekStart.getTime()) entry.week += t.durationMins;
+    addDay(t.domainId, at, t.durationMins);
     if (at >= quarterStart.getTime()) entry.quarter += t.durationMins;
     if (entry.last == null || at > entry.last) entry.last = at;
     ledger.set(t.domainId, entry);
@@ -527,7 +542,7 @@ export function buildVertical(
   const validDomain = new Set(domainRows.map((d) => d.id));
   const meetingWeek = new Map<string, number>();
   for (const e of events) {
-    if (!eventCountsAsActual(e, now)) continue;
+    if (!eventCountsAsActual(e, now, actualsFilter)) continue;
     const domainId = eventDomainId(e, calendarDomainMap, eventRouting);
     if (!domainId || !validDomain.has(domainId)) continue;
     const mins = eventMins(e);
@@ -537,6 +552,9 @@ export function buildVertical(
       entry.week += mins;
       meetingWeek.set(domainId, (meetingWeek.get(domainId) ?? 0) + mins);
     }
+    // day bucket anchors on the START — a meeting that runs past midnight
+    // belongs to the day you sat down for it
+    addDay(domainId, new Date(e.start_at).getTime(), mins);
     if (at >= quarterStart.getTime()) entry.quarter += mins;
     if (entry.last == null || at > entry.last) entry.last = at;
     ledger.set(domainId, entry);
@@ -571,6 +589,7 @@ export function buildVertical(
           ? Math.max(0, Math.floor((now.getTime() - led.last) / 86_400_000))
           : 99,
         weeks: (weekly.get(d.id) ?? new Array(13).fill(0)).map((m: number) => m / 60),
+        days: (daily.get(d.id) ?? new Array(7).fill(0)).map((m: number) => m / 60),
         sort: d.sort_order ?? idx,
       };
     });

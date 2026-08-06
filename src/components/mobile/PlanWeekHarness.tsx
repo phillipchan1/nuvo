@@ -19,7 +19,7 @@ const dayISO = (i: number) => toDateISO(addDays(new Date(weekISO + "T00:00:00"),
 const domain = (id: string, name: string, color: string): Domain => ({
   id, name, color, icon: "◆", intention: "", charter: "", context: null,
   weeklyTargetHours: 6, investedThisWeek: 2, meetingHoursThisWeek: 0, quarterHours: 40,
-  lastTouchedDays: 1, weeks: [], sort: 0,
+  lastTouchedDays: 1, weeks: [], days: [0, 0, 0, 0, 0, 0, 0], sort: 0,
 });
 
 const project = (id: string, name: string, domainId: string, o: Partial<Project> = {}): Project => ({

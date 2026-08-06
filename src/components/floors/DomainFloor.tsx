@@ -9,6 +9,8 @@
 // they ask to be kept.
 
 import { useEffect, useMemo, useState } from "react";
+import { differenceInCalendarDays, startOfWeek } from "date-fns";
+import { parseDateISO, todayISO } from "../../lib/dates";
 import { useVertical } from "../../hooks/useVertical";
 import { supabase } from "../../lib/supabase";
 import { FloorGuide } from "../orientation/FloorGuide";
@@ -281,7 +283,7 @@ export default function DomainFloor({
         </p>
       </FloorHeader>
 
-      {totalWeek > 0 && <BalanceStrip domains={domains} total={totalWeek} />}
+      {totalWeek > 0 && <WeekShape domains={domains} total={totalWeek} />}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-teach="domain-wall">
         {/* The walkthrough lights the FIRST card, not the wall — a named thing they
             typed themselves reads as "this is yours"; a lit grid reads as nothing. */}
@@ -299,26 +301,93 @@ export default function DomainFloor({
   );
 }
 
-// This week's hours across domains — the "am I in balance?" read the old wall
-// couldn't give. Only the domains that got any time appear.
-function BalanceStrip({ domains, total }: { domains: Domain[]; total: number }) {
-  const active = domains.filter((d) => d.investedThisWeek > 0).sort((a, b) => b.investedThisWeek - a.investedThisWeek);
+// This week's SHAPE — seven days, each a stack of the domains that got the hours.
+//
+// The old read was a 100%-stacked share bar, which hides the two things you
+// actually ask of it: how much, and *when*. A share can't tell a 40-hour week
+// from a 4-hour one, and it flattens "Tuesday was entirely SCE and Family got
+// nothing after Monday" into a percentage. Columns are on an absolute scale
+// (floor of an 8h day) so a light week reads light; today carries `--signal`,
+// days still ahead sit as open `--slot` track.
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_FLOOR_HOURS = 8; // the reference day — keeps a 2h Tuesday from filling the frame
+
+function WeekShape({ domains, total }: { domains: Domain[]; total: number }) {
+  // Same week boundary the ledger buckets into (Monday, app timezone), so the
+  // columns and the cards can never disagree about which days are "this week".
+  const weekStart = useMemo(() => startOfWeek(parseDateISO(todayISO(new Date())), { weekStartsOn: 1 }), []);
+  const todayIdx = differenceInCalendarDays(parseDateISO(todayISO(new Date())), weekStart);
+
+  // One stable domain order for every column — a segment that jumps position
+  // between days is unreadable.
+  const active = useMemo(
+    () => domains.filter((d) => d.investedThisWeek > 0).sort((a, b) => b.investedThisWeek - a.investedThisWeek),
+    [domains],
+  );
+  const dayTotals = useMemo(
+    () => DAY_LABELS.map((_, i) => active.reduce((s, d) => s + (d.days[i] ?? 0), 0)),
+    [active],
+  );
+  const scale = Math.max(DAY_FLOOR_HOURS, ...dayTotals);
+
   return (
     <div
-      className="mb-5 flex flex-col gap-3 rounded-xl border border-line px-4 py-3.5 sm:flex-row sm:items-center sm:gap-5"
+      className="mb-5 rounded-xl border border-line px-4 py-3.5"
       style={{ background: "color-mix(in srgb, var(--surface) 60%, transparent)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
     >
-      <span className="section-label whitespace-nowrap">This week's hours</span>
-      <div className="flex h-3 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-        {active.map((d) => (
-          <span key={d.id} title={`${d.name} · ${fmtH(d.investedThisWeek)}`} style={{ width: `${(d.investedThisWeek / total) * 100}%`, background: d.color }} />
-        ))}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <span className="section-label whitespace-nowrap">This week's shape</span>
+        <span className="text-meta text-muted">
+          <span className="mono">{fmtH(total)}</span> across {active.length} {active.length === 1 ? "domain" : "domains"}
+        </span>
       </div>
-      <div className="flex flex-wrap gap-x-3.5 gap-y-1">
+
+      <div className="mt-3 flex items-end gap-1.5">
+        {DAY_LABELS.map((label, i) => {
+          const dayTotal = dayTotals[i];
+          const ahead = i > todayIdx;
+          const isToday = i === todayIdx;
+          return (
+            <div key={label} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+              <div
+                className="flex w-full flex-col-reverse overflow-hidden rounded-[4px]"
+                style={{
+                  height: 64,
+                  // days still ahead are open, not empty — the faintest --slot wash
+                  background: ahead ? "color-mix(in srgb, var(--slot) 14%, transparent)" : "var(--line)",
+                }}
+              >
+                {active.map((d) => {
+                  const h = d.days[i] ?? 0;
+                  if (h <= 0) return null;
+                  return (
+                    <span
+                      key={d.id}
+                      title={`${label} · ${d.name} · ${fmtH(h)}`}
+                      style={{ height: `${Math.min(100, (h / scale) * 100)}%`, background: d.color }}
+                    />
+                  );
+                })}
+              </div>
+              <span
+                className="text-micro uppercase"
+                style={{ letterSpacing: "0.07em", color: isToday ? "var(--signal)" : "var(--muted)" }}
+              >
+                {label}
+              </span>
+              <span className="mono text-micro" style={{ color: dayTotal > 0 ? "var(--muted)" : "color-mix(in srgb, var(--muted) 45%, transparent)" }}>
+                {dayTotal > 0 ? fmtH(dayTotal) : "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-x-3.5 gap-y-1 border-t border-line pt-2.5">
         {active.map((d) => (
           <span key={d.id} className="flex items-center gap-1.5 text-meta text-muted">
             <i className="inline-block h-2 w-2 rounded-[2px]" style={{ background: d.color }} />
-            {d.name} <span className="mono">{Math.round((d.investedThisWeek / total) * 100)}%</span>
+            {d.name} <span className="mono">{fmtH(d.investedThisWeek)}</span>
           </span>
         ))}
       </div>

@@ -23,6 +23,37 @@ export function calendarKey(e: Pick<ExternalEvent, "account_id" | "calendar_id">
   return `${e.account_id}:${e.calendar_id}`;
 }
 
+/** Alias of `eventKey` — the same string, named for the hidden-set call sites. */
+export const eventInstanceKey = eventKey;
+
+/** Stable key shared by every instance of a recurring series, or null if the
+ *  event isn't part of one (or the master id isn't synced yet). */
+export function eventSeriesKey(e: { account_id: string; recurring_event_id?: string | null }): string | null {
+  return e.recurring_event_id ? `${e.account_id}:series:${e.recurring_event_id}` : null;
+}
+
+/** Is this event hidden — directly, or because its whole series is? */
+export function isEventHidden(
+  e: { account_id: string; provider_event_id: string; recurring_event_id?: string | null },
+  hiddenKeys: Set<string>,
+): boolean {
+  if (hiddenKeys.size === 0) return false;
+  if (hiddenKeys.has(eventInstanceKey(e))) return true;
+  const seriesKey = eventSeriesKey(e);
+  return seriesKey ? hiddenKeys.has(seriesKey) : false;
+}
+
+/**
+ * What the user has taken out of the busy math — and therefore out of the
+ * actuals ledger too. A hidden calendar is usually a *duplicate* import of one
+ * already mapped to a domain (the work calendar mirrored into a personal
+ * account); counting both would double every meeting.
+ */
+export interface ActualsFilter {
+  hiddenCalendarIds?: Set<string>;
+  hiddenEventKeys?: Set<string>;
+}
+
 /** Minutes of wall-clock the event occupied. */
 export function eventMins(e: Pick<ExternalEvent, "start_at" | "end_at">): number {
   const ms = new Date(e.end_at).getTime() - new Date(e.start_at).getTime();
@@ -35,9 +66,15 @@ export function eventMins(e: Pick<ExternalEvent, "start_at" | "end_at">): number
  * my own block → counts.
  */
 export function eventCountsAsActual(
-  e: Pick<ExternalEvent, "start_at" | "end_at" | "all_day" | "busy" | "self_rsvp">,
+  e: Pick<
+    ExternalEvent,
+    "start_at" | "end_at" | "all_day" | "busy" | "self_rsvp" | "account_id" | "provider_event_id" | "calendar_id"
+  > & { recurring_event_id?: string | null },
   now: Date = new Date(),
+  filter?: ActualsFilter,
 ): boolean {
+  if (filter?.hiddenCalendarIds?.has(e.calendar_id)) return false;
+  if (filter?.hiddenEventKeys && isEventHidden(e, filter.hiddenEventKeys)) return false;
   if (e.all_day || !e.busy) return false;
   if (new Date(e.end_at).getTime() > now.getTime()) return false; // future / in progress
   const rsvp = e.self_rsvp ?? null;

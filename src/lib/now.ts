@@ -12,6 +12,7 @@ import {
   type VTask,
 } from "./vertical";
 import { endOf } from "./dates";
+import { isEventHidden } from "./eventActuals";
 import type { ExternalEvent, Task } from "./types";
 
 export interface Reason {
@@ -153,27 +154,11 @@ export function readDay(now: Date, busy: BusyBlock[], windowStart: Date, windowE
 // which is reassigned on a calendar re-import. A whole series shares one key:
 // account_id:series:recurring_event_id, so hiding the series hides every instance.
 
-/** Stable key for a single occurrence. */
-export function eventInstanceKey(e: { account_id: string; provider_event_id: string }): string {
-  return `${e.account_id}:${e.provider_event_id}`;
-}
-
-/** Stable key shared by every instance of a recurring series, or null if the
- *  event isn't part of one (or the master id isn't synced yet). */
-export function eventSeriesKey(e: { account_id: string; recurring_event_id?: string | null }): string | null {
-  return e.recurring_event_id ? `${e.account_id}:series:${e.recurring_event_id}` : null;
-}
-
-/** Is this event hidden — directly, or because its whole series is? */
-export function isEventHidden(
-  e: { account_id: string; provider_event_id: string; recurring_event_id?: string | null },
-  hiddenKeys: Set<string>,
-): boolean {
-  if (hiddenKeys.size === 0) return false;
-  if (hiddenKeys.has(eventInstanceKey(e))) return true;
-  const seriesKey = eventSeriesKey(e);
-  return seriesKey ? hiddenKeys.has(seriesKey) : false;
-}
+// The keys + the hidden test live in `eventActuals` (zero-dep) so the actuals
+// ledger can apply the same rule without importing this module. Re-exported
+// here because "what's hidden" and "what's busy" are read together.
+export { eventInstanceKey, eventSeriesKey } from "./eventActuals";
+export { isEventHidden };
 
 /** Fold the live calendar — external events + your own scheduled task blocks —
  *  into the BusyBlock list readDay() consumes. Skips all-day events, anything

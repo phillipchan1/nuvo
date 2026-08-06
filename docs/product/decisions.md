@@ -2402,6 +2402,52 @@ server serves the login wall — confirmed, not assumed. Everything below the UI
 by tests; what needs eyes is the crown's two groups and its drag, the proposal panel, the
 per-row time in both records, and a mid-week re-plan producing one sitting rather than two.*
 
+**D-085 · 2026-08-06 · The Domain wall shows the week's *shape*, not its share — and
+"hidden" means hidden from the ledger too.**
+
+Origin ⓞ: *"most of my time is definitely spent at SCE. why or how is that not
+reconciled?"* The wall read **SCE 4.3h · 23%** for a week that actually held **27.9h** of
+SCE meetings. Three causes, compounding — the first two are bugs, the third is this
+decision.
+
+1. **The calendar contributed exactly zero.** `useExternalEvents` ran an unbounded
+   `.select()`. PostgREST caps that at **1000 rows and returns them in physical order**, so
+   the domain ledger's 13-week window (1,363 rows) came back as the *oldest* 1000 — **not one
+   event from the current week**. Every hour on the wall was a completed task; every meeting
+   was invisible. This is the **third** incident from the same cap (see the routing loop, and
+   `useEventRouter`'s own paged key set) — the pattern is now: *any list query whose result
+   set is a **set** rather than a page must page.*
+2. **`event_domain_routing` was truncated the same way** (1,342 rows, 1,000 read), so the AI
+   router's cached verdicts silently reverted to "unattributed."
+3. **Hidden calendars were still in the ledger** — and that is the interesting one, because
+   fixing (1) would have made it *worse*. Phil's SCE work calendar is mirrored into his
+   personal Google account, and his iCloud family calendar into a second one; **24 of this
+   week's 35 SCE events exist twice**. Counting both would have shown ~50h of SCE. So:
+   **what the user takes out of the busy math comes out of the hours ledger too.** One rule
+   (`ActualsFilter` in `eventActuals.ts`), applied by `buildVertical`, `buildWeekEvidence`,
+   and the AI router — which now also stops spending completions on time it would never
+   count. **A mapping does not override a hide**: if you want hidden time counted, unhide the
+   calendar. Phil, asked directly about the ~8.5h/wk of church calendars that are hidden *and*
+   unmapped: **leave them out.**
+
+**The visualization.** The read was a 100%-stacked share bar. A share cannot tell a 40-hour
+week from a 4-hour one, and it flattens *when* into a percentage. Replaced with **seven day
+columns** on an absolute scale (floor: an 8h day), stacked by domain in one stable order,
+today in `--signal`, days still ahead as open `--slot` track. Offered against two
+alternatives (hours-vs-vow bars, both-with-a-toggle); Phil picked the day shape — *"which
+days got eaten"* is the question he was actually asking.
+
+**Known and deliberately not fixed here:** a day column sums attributed minutes, so
+concurrent time double-counts — Monday reads 16.5h against ~8.8h of union calendar time plus
+task estimates. The share bar hid this; the day view exposes it, which is an argument for the
+day view. Making a day the *union* of busy minutes (splitting a contested minute between
+domains) is a real change to what `investedThisWeek` means and belongs in its own decision.
+
+*Status: standing — typecheck clean, 423 tests green (7 new in `tests/event-actuals.test.ts`,
+1 pre-existing agent-prompt baseline failure untouched), web + desktop builds green, driven
+in the running dev app against real data: SCE 4.3h/23% → **27.9h/51%**, and the week's shape
+renders at 768px with no overflow.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 

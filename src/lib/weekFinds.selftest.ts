@@ -35,6 +35,7 @@ const trading: Domain = {
   quarterHours: 20,
   lastTouchedDays: 0,
   weeks: [0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 2],
+  days: [0, 0, 2, 0, 0, 0, 0],
   sort: 0,
 };
 

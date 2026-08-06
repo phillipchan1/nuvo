@@ -172,7 +172,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | W5 | Which domain am I starving? | Domain floor · invested/quarter · **the Week's Plan conscience read** | ◐ *re-scored 2026-07-30 (D-061): it is now **surfaced unasked** on a week that can still change, in plain language. Deliberately still ◐, not ✅ — the read names the quiet domain and hands nothing forward, because a "flag it for next week" button has no reader (D-062). It goes ✅ when the act exists with its reader.* |
 | W6 | Did anything move this week, or was I just busy? | **the Review** + evidence + the Find | ✅ |
 | W7 | What's carrying over, and is that a pattern? | Review → back to week · `roll_count` | ◐ *stays ◐. Carrying is at least **honest** now (2026-07-30, D-060): the old "Carry to next week" wrote a rock into a week whose slate is derived from spans, so it did nothing at all; it's a real span write. Pattern detection is still only the Find.* |
-| W8 | Where did my time actually go? | completed blocks · activity sources | ◐ *actuals from calendar; non-calendar work invisible (spec)* |
+| W8 | Where did my time actually go? | completed blocks · attended calendar · **the week's shape** on the domain wall | ◐ *re-scored 2026-08-06 (D-085). It had been answering **wrongly**, which is worse than ○: a 1000-row query cap meant no meeting from the current week ever reached the ledger, so the wall showed SCE at 4.3h against a real 27.9h. Fixed, and the read now shows the week's **shape** (seven days) rather than its share. Stays ◐ on two counts — non-calendar work is still invisible (Q-03), and a day column sums attributed minutes, so concurrent time double-counts.* |
 
 ### Project / quarterly — *"is the important thing alive?"*
 

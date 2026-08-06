@@ -5,7 +5,7 @@
 
 import { addDays, startOfWeek } from "date-fns";
 import { APP_TZ, parseDateISO, toDateISO } from "./dates";
-import { eventCountsAsActual, eventDomainId, eventKey, eventMins } from "./eventActuals";
+import { eventCountsAsActual, eventDomainId, eventKey, eventMins, type ActualsFilter } from "./eventActuals";
 import {
   domainById,
   initiativeById,
@@ -132,6 +132,8 @@ export interface BuildWeekEvidenceInput {
   events: ExternalEvent[];
   calendarDomainMap?: Record<string, string>;
   eventRouting?: Record<string, string>;
+  /** Hidden calendars / events stay out of the receipts, same as the busy math. */
+  actualsFilter?: ActualsFilter;
   activityUnits?: ActivityUnit[];
   /** How many weeks back this week is (0 = current). Used to index Domain.weeks. */
   weeksBack?: number;
@@ -163,6 +165,7 @@ export function buildWeekEvidence(input: BuildWeekEvidenceInput): WeekEvidence {
     events,
     calendarDomainMap = {},
     eventRouting = {},
+    actualsFilter = {},
     activityUnits = [],
     weeksBack = 0,
   } = input;
@@ -195,7 +198,7 @@ export function buildWeekEvidence(input: BuildWeekEvidenceInput): WeekEvidence {
 
   // ── Attended calendar events attributed to a domain ───────────────────────
   for (const e of events) {
-    if (!eventCountsAsActual(e, now)) continue;
+    if (!eventCountsAsActual(e, now, actualsFilter)) continue;
     const end = new Date(e.end_at);
     if (end < weekStart || end >= weekEnd) continue;
     const domainId = eventDomainId(e, calendarDomainMap, eventRouting);
