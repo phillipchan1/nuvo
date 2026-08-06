@@ -196,7 +196,14 @@ export function TaskPopover({
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
+      if (!popRef.current || popRef.current.contains(e.target as Node)) return;
+      // Force any pending blur-to-commit edit (title/notes…) through before the
+      // calendar grid's own mousedown handling (which calls preventDefault to
+      // support click-drag) can suppress the native blur and drop it silently.
+      if (popRef.current.contains(document.activeElement)) {
+        (document.activeElement as HTMLElement | null)?.blur();
+      }
+      onClose();
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -976,7 +983,17 @@ export function EventPopover({
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
+      if (!popRef.current || popRef.current.contains(e.target as Node)) return;
+      // The calendar grid's own click/drag-select handling calls
+      // preventDefault() on mousedown (it supports click-drag), which
+      // suppresses the browser's native focus-loss blur. Without this, an
+      // edit that commits on blur (title, notes, location…) is silently
+      // dropped whenever the popover is dismissed by clicking the grid —
+      // force it through before closing.
+      if (popRef.current.contains(document.activeElement)) {
+        (document.activeElement as HTMLElement | null)?.blur();
+      }
+      onClose();
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -1794,7 +1811,14 @@ export function SlotPopover({
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
+      if (!popRef.current || popRef.current.contains(e.target as Node)) return;
+      // Force any pending blur-to-commit edit (title/notes…) through before the
+      // calendar grid's own mousedown handling (which calls preventDefault to
+      // support click-drag) can suppress the native blur and drop it silently.
+      if (popRef.current.contains(document.activeElement)) {
+        (document.activeElement as HTMLElement | null)?.blur();
+      }
+      onClose();
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
