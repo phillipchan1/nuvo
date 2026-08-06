@@ -33,13 +33,32 @@ export function useSubscription() {
       // forever with nothing in the console. Failing after 8s routes into the
       // "Couldn't verify your subscription" card with its Try again button,
       // which is recoverable; an infinite splash is not.
-      const { data, error } = await supabase
-        .from("subscriptions")
-        .select("*, entitled")
-        .abortSignal(AbortSignal.timeout(8_000))
-        .maybeSingle();
-      if (error) throw error;
-      return data as Subscription | null;
+      const fetchOnce = async (): Promise<Subscription | null> => {
+        const { data, error } = await supabase
+          .from("subscriptions")
+          .select("*, entitled")
+          .abortSignal(AbortSignal.timeout(8_000))
+          .maybeSingle();
+        if (error) throw error;
+        return data as Subscription | null;
+      };
+
+      const first = await fetchOnce();
+      // Every account gets a subscriptions row atomically at signup — a null
+      // read here isn't "no subscription," it's RLS's silent zero-rows
+      // answer, which is indistinguishable from "this request raced the
+      // session attaching and went out unauthenticated." That race is rare
+      // but has happened, and its cost is a real paying customer staring at
+      // a paywall. So a null doesn't get trusted on one read: confirm a
+      // session is actually live, then re-read once before believing it.
+      if (first === null) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          console.warn("[nuvo] subscription read null with a live session — retrying once");
+          return fetchOnce();
+        }
+      }
+      return first;
     },
     // Three bounded attempts (~7s of backoff) before showing the error card, so
     // an ordinary blip still self-heals without the user seeing anything.
