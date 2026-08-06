@@ -214,12 +214,25 @@ export default function Sheet({
         // the visible viewport, so a vh-sized sheet ran off the bottom. The vh
         // pair stays first as the fallback for engines without dvh.
         className={`sheet-up glass flex ${
-          tall ? "sheet-h-tall pt-safe" : "sheet-h-max"
+          tall ? "sheet-h-tall" : "sheet-h-max"
         } flex-col rounded-t-2xl border-t border-line pb-safe outline-none`}
         style={kbInset ? { paddingBottom: kbInset } : undefined}
       >
-        {/* Grab pill — primary swipe target */}
-        <div {...handleProps} className="flex shrink-0 flex-col items-center py-2.5">
+        {/* Grab pill — primary swipe target. A `tall` sheet's safe-area inset
+            (the notch/Dynamic-Island clearance) lives HERE, as this div's own
+            padding, not as dead space on the outer container above it — that
+            padding is still part of this element's hit area, so the whole
+            gap stays swipe-to-dismiss-able instead of a dead zone a thumb
+            naturally lands in first. `max()` keeps a floor on devices with
+            no safe-area-inset (Android, older iPhones). */}
+        <div
+          {...handleProps}
+          className="flex shrink-0 flex-col items-center pb-2.5"
+          style={{
+            ...handleProps.style,
+            paddingTop: tall ? "max(env(safe-area-inset-top, 0px), 0.625rem)" : "0.625rem",
+          }}
+        >
           <span className="h-1 w-9 rounded-full bg-line-strong" />
         </div>
 
