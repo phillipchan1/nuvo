@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Label, Task } from "../../lib/types";
-import { ruleOf } from "../../lib/types";
+import { DEFAULT_DURATION_MINUTES, DURATION_PRESETS, ruleOf } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import type { useVertical } from "../../hooks/useVertical";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
 import { todayISO, tomorrowISO, nextWeekISO, fmtDuration } from "../../lib/dates";
+import { isProjectComplete, projectById } from "../../lib/vertical";
 import type { RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
 import Sheet from "./Sheet";
@@ -34,6 +35,7 @@ export default function MobileTaskSheet({
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
+  const [notes, setNotes] = useState(task.notes);
   const done = task.status === "done";
   const currentLabels = new Set((task.task_labels ?? []).map((tl) => tl.label_id));
   const [showDatePick, setShowDatePick] = useState(false);
@@ -75,7 +77,13 @@ export default function MobileTaskSheet({
     const next = title.trim();
     if (next && next !== task.title) mutations.patchTask(task.id, { title: next });
   };
-  commitRef.current = commitTitle;
+  const commitNotes = () => {
+    if (notes !== task.notes) mutations.patchTask(task.id, { notes });
+  };
+  commitRef.current = () => {
+    commitTitle();
+    commitNotes();
+  };
 
   // A long title grows the box instead of scrolling inside one hidden line.
   useEffect(() => {
@@ -109,6 +117,21 @@ export default function MobileTaskSheet({
 
   const setDomain = (domainId: string) => {
     mutations.patchTask(task.id, { domain_id: domainId || null });
+  };
+
+  const setProject = (projectId: string) => {
+    const p = projectById(vertical, projectId || null);
+    mutations.patchTask(task.id, {
+      project_id: p?.id ?? null,
+      initiative_id: p?.initiativeId ?? null,
+      domain_id: p?.domainId ?? task.domain_id,
+      // filing an inbox capture processes it; un-filing a dateless backlog
+      // task with no other parent sends it back to the inbox (never limbo)
+      ...(task.status === "inbox" && p ? { status: "backlog" as const } : {}),
+      ...(!p && task.status === "backlog" && !task.domain_id && !task.do_date
+        ? { status: "inbox" as const }
+        : {}),
+    });
   };
 
   const priorities: { value: Task["priority"]; label: string; color: string }[] = [
@@ -172,6 +195,20 @@ export default function MobileTaskSheet({
           )}
         </Section>
 
+        <Section label="Duration">
+          <div className="flex flex-wrap gap-1.5">
+            {DURATION_PRESETS.map((m) => (
+              <Chip
+                key={m}
+                on={(task.duration_minutes ?? DEFAULT_DURATION_MINUTES) === m}
+                onClick={() => mutations.patchTask(task.id, { duration_minutes: m })}
+              >
+                {fmtDuration(m)}
+              </Chip>
+            ))}
+          </div>
+        </Section>
+
         <Section label="Repeat">
           <RepeatControl
             anchorISO={anchorISO}
@@ -195,6 +232,32 @@ export default function MobileTaskSheet({
               </Chip>
             ))}
           </div>
+        </Section>
+
+        <Section label="Project">
+          <div className="flex flex-wrap gap-1.5">
+            <Chip on={!task.project_id} onClick={() => setProject("")}>
+              None
+            </Chip>
+            {vertical.projects
+              .filter((p) => !isProjectComplete(p.status) || p.id === task.project_id)
+              .map((p) => (
+                <Chip key={p.id} on={task.project_id === p.id} onClick={() => setProject(p.id)}>
+                  {p.name}
+                </Chip>
+              ))}
+          </div>
+        </Section>
+
+        <Section label="Notes">
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={commitNotes}
+            placeholder="Add notes"
+            rows={notes ? Math.min(6, notes.split("\n").length + 1) : 2}
+            className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-body outline-none placeholder:text-muted/60 focus:border-accent"
+          />
         </Section>
 
         <Section label="Priority">

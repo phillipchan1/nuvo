@@ -172,6 +172,11 @@ export interface VTask {
   sprint?: boolean;
   // pass-throughs the rituals need
   doDate: string | null;
+  /** The actual block. `doDate` alone means "planned for that day"; this is the
+   *  clock time, and the two are genuinely different commitments — a surface that
+   *  showed only the day would report a task as blocked when it isn't. Dropped by
+   *  `toVTask` until the record needed to say which work has a time. */
+  startTime: string | null;
   /** Inside a time slot — the slot carries the day/time; the task's own start_time is null. */
   slotId: string | null;
   /** when it was captured — lets a week judge the plan it made, not what landed after. */
@@ -336,6 +341,7 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
     inbox: t.status === "inbox",
     sprint: Boolean(currentSprintId && t.sprint_id === currentSprintId),
     doDate: t.do_date,
+    startTime: t.start_time,
     slotId: t.slot_id,
     createdAt: t.created_at ?? null,
     completedAt: t.completed_at,

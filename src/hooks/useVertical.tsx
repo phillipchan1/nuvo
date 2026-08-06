@@ -117,6 +117,10 @@ export interface VerticalStore {
   toggleTaskInbox: (id: string) => void;
 
   // sprint funnel — the Week gate
+  /** The current week's sprint id, creating the row if this is its first use.
+   *  Any surface that places work in time must pass this to `applySchedule`, or
+   *  it writes a `do_date` with no `sprint_id` and slips work past the gate (P2). */
+  ensureWeek: () => Promise<string>;
   toggleTaskSprint: (id: string) => void;
   /** Bulk commit (suggested pull "add all"): one write, not N. */
   commitTasksToSprint: (ids: string[]) => void;
@@ -154,9 +158,15 @@ export interface VerticalStore {
     placements: { id: string; doDateISO: string; startISO: string; durationMins?: number }[],
     opts?: { sprintId?: string | null },
   ) => Promise<void>;
-  /** Materialize batched focus blocks: create slot rows and move their tasks inside. */
+  /** Materialize batched focus blocks: create slot rows and move their tasks inside.
+   *
+   *  `existingSlotId` tops up a sitting that is already on the calendar instead of
+   *  minting a second one beside it — the block keeps the time it already has and
+   *  only grows to cover the work being added. Re-planning mid-week used to INSERT
+   *  a twin with the same project title, because nothing could ask whether the
+   *  project already had a sitting this week. */
   applySlots: (
-    slots: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; taskIds: string[] }[],
+    slots: { title: string; doDateISO: string; startISO: string; durationMins: number; domainId: string | null; color: string | null; projectId?: string | null; existingSlotId?: string | null; taskIds: string[] }[],
     opts?: { sprintId?: string | null },
   ) => Promise<void>;
   /** Standing-slot routing (docs/standing-slots.md): move already-committed tasks
@@ -1108,6 +1118,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           });
         }
       },
+      ensureWeek: async () => (await ensureSprint()).id,
       commitTasksToSprint: (ids) => {
         if (!ids.length) return;
         void ensureSprint().then(async (sprint) => {
@@ -1232,20 +1243,43 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if (!specs.length) return;
         const uid = await userId();
         for (const s of specs) {
-          const { data: slot, error } = await supabase
-            .from("slots")
-            .insert({
-              user_id: uid,
-              title: s.title,
-              do_date: s.doDateISO,
-              start_time: s.startISO,
-              duration_minutes: s.durationMins,
-              domain_id: s.domainId,
-              color: s.color,
-            })
-            .select("id")
-            .single();
-          if (error) { console.error("[batch] slot insert failed", error); continue; }
+          let slot: { id: string } | null = null;
+          if (s.existingSlotId) {
+            // Top up: the block keeps the day and time it already holds — the
+            // person put it there. Only its length moves, to cover what's being
+            // added. Never reposition a sitting the week has already lived with.
+            const { data: grown, error } = await supabase
+              .from("slots")
+              .update({ duration_minutes: s.durationMins })
+              .eq("id", s.existingSlotId)
+              .select("id")
+              .single();
+            if (error) { console.error("[batch] slot top-up failed", error); continue; }
+            slot = grown;
+          } else {
+            const { data: made, error } = await supabase
+              .from("slots")
+              .insert({
+                user_id: uid,
+                title: s.title,
+                do_date: s.doDateISO,
+                start_time: s.startISO,
+                duration_minutes: s.durationMins,
+                domain_id: s.domainId,
+                // The sitting says WHICH project it is. Without this a slot could
+                // only be traced back through its children's project_id, so
+                // nothing could ask "does this project already have a sitting this
+                // week?" — which is why a mid-week re-plan minted a twin instead
+                // of topping the first one up.
+                project_id: s.projectId ?? null,
+                color: s.color,
+              })
+              .select("id")
+              .single();
+            if (error) { console.error("[batch] slot insert failed", error); continue; }
+            slot = made;
+          }
+          if (!slot) continue;
           if (s.taskIds.length) {
             // children lose their own block (start_time null), keep the slot's day;
             // an optional sprintId pulls loose inbox captures into the committed

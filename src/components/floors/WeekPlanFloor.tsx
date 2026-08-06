@@ -269,6 +269,7 @@ export function WeekPlanBody({
                   onSpan={() => span(p)}
                   onPushOut={() => pushOut(p)}
                   onTakeOff={() => takeOff(p)}
+                  weekStartISO={viewedWeekISO}
                   onOpenProject={onOpenProject && p.projectId ? () => onOpenProject(p.projectId!) : undefined}
                 />
               ))}

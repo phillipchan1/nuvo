@@ -17,8 +17,10 @@ import { useState } from "react";
 import { addDays, format } from "date-fns";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
+import { useLooseWork, type PlacedPiece } from "../hooks/useFindTime";
 import { priorityWork, pushAsRock, weekPushes } from "../lib/priorities";
 import { planningWeekStartISO } from "../lib/dates";
+import type { Task } from "../lib/types";
 import { domainById, initiativeById, projectById, type VerticalData } from "../lib/vertical";
 import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
 import { ProjectShipAssess } from "./record/ShipAssess";
@@ -36,6 +38,21 @@ export interface WeekDoor {
   onOpen: () => void;
 }
 
+/** Stable identity for a rock with no project behind it — a new `{}` each render
+ *  would churn every row's memo for nothing. */
+const EMPTY_SPLIT: { placed: PlacedPiece[]; loose: Task[] } = { placed: [], loose: [] };
+
+/** "Thu 9:00am" — the one thing the crown could never say. Matches the idiom in
+ *  `FindTimeProposal`, so a proposed block and a real one read the same way. */
+function whenLabel(startISO: string): string {
+  const d = new Date(startISO);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? "pm" : "am";
+  const hh = ((h + 11) % 12) + 1;
+  return `${format(d, "EEE")} ${m === 0 ? `${hh}${ampm}` : `${hh}:${String(m).padStart(2, "0")}${ampm}`}`;
+}
+
 /** The color a priority inherits from the initiative/project it's anchored to. */
 function rockColor(data: VerticalData, rock: BigRock): string | null {
   const init = initiativeById(data, rock.initiative_id);
@@ -49,12 +66,18 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   const { data, togglePushLanded } = useVertical();
   const { openFlow, openRecord } = useAppNavigation();
   const [shipId, setShipId] = useState<string | null>(null);
+  // Which project rows are open to their loose work. Collapsed by default — the
+  // crown's job is the glance; the depth is there when the glance isn't enough.
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const weekISO = data?.sprint?.week_start ?? planningWeekStartISO();
+  // One definition of "loose", shared with the Week's Plan row that counts it.
+  const { splitFor } = useLooseWork(weekISO);
   if (!data) return null;
 
   // The week's priorities ARE the projects On Deck committed to this week —
   // derived, so this rail can never drift from the board (or from Set-the-week).
   // The stored rock, when one exists, carries only the verdict.
-  const pushes = weekPushes(data, data.sprint?.week_start ?? planningWeekStartISO());
+  const pushes = weekPushes(data, weekISO);
   const rocks: BigRock[] = pushes.map(pushAsRock);
   // `done` already folds in "shipped inside this week" — a shipped project must
   // count on the scoreboard, not vanish from it.
@@ -170,6 +193,16 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
                 shipped={Boolean(rock.project_id && shippedIds.has(rock.project_id))}
                 onToggle={() => onTick(rock)}
                 onOpen={() => openRow(rock)}
+                split={rock.project_id ? splitFor(rock.project_id) : EMPTY_SPLIT}
+                expanded={openIds.has(rock.id)}
+                onExpand={() =>
+                  setOpenIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(rock.id)) next.delete(rock.id);
+                    else next.add(rock.id);
+                    return next;
+                  })
+                }
               />
             ))}
           </div>
@@ -205,6 +238,9 @@ function PriorityRow({
   shipped,
   onToggle,
   onOpen,
+  split,
+  expanded,
+  onExpand,
 }: {
   rock: BigRock;
   data: VerticalData;
@@ -212,6 +248,11 @@ function PriorityRow({
   shipped: boolean;
   onToggle: () => void;
   onOpen: () => void;
+  /** this project's open work, cut by whether it has a time — the "Xh has a time
+   *  · Xh loose" line made into the actual tasks */
+  split: { placed: PlacedPiece[]; loose: Task[] };
+  expanded: boolean;
+  onExpand: () => void;
 }) {
   const done = Boolean(rock.done_at) || shipped;
   const work = priorityWork(data, rock);
@@ -224,8 +265,17 @@ function PriorityRow({
   // "closed the project" (or silently finished its tasks). (Push verdict ≠ done.)
   // Shipped is the exception — there the project really did finish.
   const continues = done && !shipped && Boolean(rock.project_id) && work.tasks.some((t) => t.status !== "done");
+  const { placed, loose } = split;
+  const open = placed.length + loose.length;
+  // A finished row has nothing left to say about time; offering it would be noise.
+  const canExpand = !done && !shipped && open > 0;
+  // State the split, not the half that happens to be non-zero. "3 of 5 placed"
+  // and "2 loose" are the same fact, but the first one can't be read as "and the
+  // rest is fine" — which is the read that let work go missing in the first place.
+  const pill = loose.length === 0 ? "all placed" : `${placed.length} of ${open} placed`;
 
   return (
+    <>
     <div className="group/row flex items-center gap-2 py-1">
       <button
         onClick={onToggle}
@@ -249,6 +299,34 @@ function PriorityRow({
       <button onClick={onOpen} title="Open" className="fast min-w-0 flex-1 truncate text-left">
         <span className={`text-body ${done ? "text-muted line-through" : "text-ink"}`}>{rock.title}</span>
       </button>
+
+      {/* The one thing the crown could never say: how much of this project has
+          no time yet. Opening it puts that work in the rail, where the calendar's
+          drag already reaches — the manual act the weekly plan automated. */}
+      {canExpand && (
+        <button
+          onClick={onExpand}
+          title={
+            expanded
+              ? "Hide this project's work"
+              : loose.length === 0
+                ? "Every piece has a time this week — open to see when"
+                : `${loose.length} piece${loose.length === 1 ? "" : "s"} with no time this week — open to place them`
+          }
+          aria-expanded={expanded}
+          aria-label={pill}
+          className="fast mono shrink-0 rounded-full px-1.5 py-0.5 text-micro"
+          style={
+            // Amber only when something is actually homeless. A fully-placed
+            // project is not a warning (P9 — quiet by default).
+            loose.length === 0
+              ? { color: "var(--muted)", background: "var(--surface-2)" }
+              : { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
+          }
+        >
+          {pill} {expanded ? "▾" : "▸"}
+        </button>
+      )}
 
       {shipped ? (
         // The week's win, crowned in the domain's own hue — never a vanished row.
@@ -287,5 +365,75 @@ function PriorityRow({
         </span>
       )}
     </div>
+
+    {/* `data-task-drag` is all this needs: CalendarPane mounts one FullCalendar
+        Draggable over the whole rail (railRef), so these rows drop onto the grid
+        — or into an existing sitting — through the same handlers the Today and
+        Inbox rows already use. Pointer-based, never HTML5 DnD (Tauri swallows it).
+        `data-task-week` marks them as week work: the drop commits them to the
+        sprint too, so placing one never writes a day without a week (P2). */}
+    {expanded && canExpand && (
+      <div
+        className="mb-1 ml-6 border-l border-line pl-2"
+        // The crown sits inside the rail's `data-tauri-drag-region="deep"` zone,
+        // so without this opt-out dragging one of these rows drags the macOS
+        // WINDOW and the task never moves — the row looks draggable and does
+        // nothing. Same guard `TaskRow` and the rail's own task list already
+        // carry; the crown never needed it until it started offering rows to drag.
+        data-tauri-drag-region="false"
+      >
+        {/* What HAS a time, and when. Not draggable: these are already on the
+            grid, and the calendar is where you move a block — a second place to
+            drag the same thing is a second answer to one question (P8). */}
+        {placed.length > 0 && (
+          <>
+            <div className="section-label !px-0 !pb-0 !pt-1">has a time</div>
+            <ul className="flex flex-col gap-0.5">
+              {placed.map((p) => (
+                <li key={p.task.id} className="flex items-baseline gap-2 py-0.5 pr-1">
+                  <span className="mono shrink-0 text-micro" style={{ color }}>
+                    {whenLabel(p.startISO)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-label text-muted">{p.task.title}</span>
+                  {/* A slot child has no block of its own — say what holds it,
+                      so "why does this one have no time of its own" has an
+                      answer on the row instead of looking like a bug. */}
+                  {p.slotTitle && (
+                    <span className="shrink-0 truncate text-micro text-muted" title={`Inside ${p.slotTitle}`}>
+                      in {p.slotTitle}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {loose.length > 0 && (
+          <>
+            {placed.length > 0 && <div className="section-label !px-0 !pb-0 !pt-1.5">loose</div>}
+            <ul className="flex flex-col gap-0.5">
+              {loose.map((t) => (
+                <li
+                  key={t.id}
+                  data-task-drag={t.id}
+                  data-task-title={t.title}
+                  data-task-duration={t.duration_minutes ?? ""}
+                  data-task-week="1"
+                  title="Drag onto the calendar to give it a time"
+                  className="fast flex cursor-grab items-center gap-2 rounded py-0.5 pr-1 hover:bg-surface-2 active:cursor-grabbing"
+                >
+                  <span className="min-w-0 flex-1 truncate text-label text-muted">{t.title}</span>
+                  {t.duration_minutes ? (
+                    <span className="mono shrink-0 text-micro text-muted">{t.duration_minutes}m</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+    )}
+    </>
   );
 }

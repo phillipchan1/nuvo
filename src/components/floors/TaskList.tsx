@@ -21,6 +21,7 @@
 // the top of the hierarchy.
 
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { format } from "date-fns";
 import { toast } from "sonner";
 import { useVertical, type TaskParent } from "../../hooks/useVertical";
 import type { KeyResult, VTask } from "../../lib/vertical";
@@ -31,6 +32,37 @@ import TaskRefine from "./TaskRefine";
 import DurationSelect from "../DurationSelect";
 
 export type { TaskParent };
+
+/** When a task actually happens, said in as few characters as it takes.
+ *
+ *  The record used to be silent about time: you could look at a project's whole
+ *  list and not learn which piece had a block on Thursday, because `TaskList`
+ *  read only `status === "done"` while `doDate` / `startTime` / `slotId` sat
+ *  unread in its own props. Answering it here is the point of `docs/` calling a
+ *  scheduled task a time block — the block is the plan, so a project that can't
+ *  show its blocks can't show its plan.
+ *
+ *  Three states, three different commitments, never flattened into one:
+ *    · a real block  → "Thu 9:00am"
+ *    · in a sitting  → "Thu · in a sitting" (the slot holds the clock, not the task)
+ *    · a day, no block → "Thu" — planned for that day, not blocked on it
+ *
+ *  Returns null when there is no time at all. Backlog work is *deliberately*
+ *  undated (glossary), so stamping "no time" on every row would dress a decision
+ *  up as a debt — P4, and P9's quiet-by-default. Silence is the honest render. */
+export function whenText(t: VTask): string | null {
+  if (t.startTime) {
+    const d = new Date(t.startTime);
+    const h = d.getHours();
+    const m = d.getMinutes();
+    const ampm = h >= 12 ? "pm" : "am";
+    const hh = ((h + 11) % 12) + 1;
+    return `${format(d, "EEE")} ${m === 0 ? `${hh}${ampm}` : `${hh}:${String(m).padStart(2, "0")}${ampm}`}`;
+  }
+  if (!t.doDate) return null;
+  const day = format(new Date(`${t.doDate}T00:00:00`), "EEE");
+  return t.slotId ? `${day} · in a sitting` : day;
+}
 
 /** Is the user typing? Every bare-letter binding is gated on this — otherwise
  *  "t" in a title jumps the caret out of the title. */
@@ -242,6 +274,21 @@ export default function TaskList({
               quiet={spine}
               className={`min-w-0 flex-1 text-body ${t.status === "done" ? "text-muted line-through" : ""}`}
             />
+
+            {/* Unlike the Schedule's rail — where `TaskRow` refuses clock time
+                because the calendar is rendering the same block inches away —
+                a record has no grid on screen to restate. Nothing here competes
+                with it, and without it the project cannot say which of its work
+                has a home in time. Done rows stay quiet: when it happened is
+                history, and the strike-through already carries it. */}
+            {t.status !== "done" && whenText(t) && (
+              <span
+                className="mono shrink-0 whitespace-nowrap pl-3 text-micro text-muted"
+                title={t.startTime ? "Has a time block this week" : t.slotId ? "Rides a sitting on this day" : "Planned for this day — no block yet"}
+              >
+                {whenText(t)}
+              </span>
+            )}
 
             <span className="mono shrink-0 pl-3 text-meta text-muted">
               <DurationSelect

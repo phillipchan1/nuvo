@@ -2277,6 +2277,131 @@ prompt gives no permission to use is a coin flip. Meetings are made of people: "
 that call?", "have I met her before?" are planning questions. Look them up; never turn one
 away, and never answer one from memory. *Status: standing.*
 
+**D-084 · 2026-08-05 · Work that has no time gets an act that gives it one — not only
+three ways to give up on it.**
+
+A project on this week's slate grew a task on a Wednesday, which is what projects do. It
+landed in dead space: on a project the week claims to be moving, while itself off the week,
+off the calendar, and outside the project's own sitting. The origin ⓞ: *"it actually
+technically goes dead space… it just lives in the shadows within this new project."*
+
+**The cause was an altitude mismatch, not a missing screen.** Bringing a *project* into a
+week has been manual for a long time — On Deck's drag, the ritual's Projects step, the
+phone — all writing `bringIntoWeekPatch`. One altitude down, `suggestPull` is the only
+function that knows a week's on-deck projects' open work IS the point of the week, and it
+had **exactly one caller in the repo**: the plan draft. So the act of giving project work a
+time existed *only inside the automation*. **We had built the automated version of a flow
+with no manual version** — the inversion of our own rule that AI automates a proven flow.
+
+The app already saw it. `weekPlacement().looseMins` counted the orphan, and the Week's Plan
+row said *"1.5h of what's left has no time this week"* mid-week (D-060). But every act
+offered was a deferral — another week, next week, off the week. D-039 built the remedies
+for *"it doesn't fit."* Nothing answered *"it fits — find it time."* So:
+
+- **"Find it time this week"** now sits **first** on that row's panel, above the three
+  deferrals. It composes with `composeWeek` (`lib/compose`) over the week's real remaining
+  open time — the same composer the ritual uses, so the manual act and the automated one
+  place work identically. It proposes and waits for a press (P3), and states what still
+  won't fit rather than dropping it (P6). Reaches the phone for free: the panel already
+  renders in the mobile Week's Plan sheet.
+- **The Schedule's week crown opens.** Each project row in `WeekPanel` discloses its loose
+  pieces, stamped `data-task-drag` — the attribute CalendarPane's FullCalendar `Draggable`
+  already watches across the whole rail. No new drag machinery, and the manual gesture now
+  exists at the altitude that was missing it.
+
+**Rejected: a third rail tab (Projects, beside Inbox and Today).** It was the proposal on
+the table. It is a fourth pool on the rail, and P10's bar — a new abstraction needs a second
+instance — isn't met by a pool whose contents were *already on the rail*, read-only, in the
+crown. Giving the existing pool depth costs no new noun and no new destination. Kept the
+word already on screen, **loose**, so nothing entered the glossary.
+
+**Two silent defects surfaced with it, both fixed.** (a) `applySlots` never wrote
+`slots.project_id`, so nothing could ask whether a project already had a sitting this week —
+which is *why* a top-up was impossible. (b) Consequently, re-planning mid-week INSERTed a
+**second slot with the same project title** beside the first (`keptTasks` drops already-placed
+siblings, and `commit()` only ever inserted). A sitting is now topped up in place: it keeps
+the day and time it already holds, and only grows to cover what's being added.
+
+**The gate held.** `block()` and `assignToSlot()` don't stamp `sprint_id`, so a naive drop
+would have written a `do_date` with no week behind it (P2). Crown rows carry
+`data-task-week`, and the drop commits them to the sprint in the same gesture; the composer
+path ensures the week via `ensureWeek()` before writing. Placing project work is a
+deliberate act, not the same-day reactive capture P2 exempts.
+
+**Out of scope by decision:** whether Plan the Week's *placement* step is redundant with the
+Schedule. It is a real question — the ritual decides *which projects* and *which loose work*,
+and then places in a second grid — but Phil's call was to leave the ritual alone. Not logged
+as an open question; recorded here only so the omission is deliberate.
+
+→ **Extended 2026-08-05 · the other half: what HAS a time.** Shipping the loose half alone
+left a lopsided app — you could see by name everything homeless and still nothing that was
+placed. Asked directly ("does this show which tasks have a time block?") the answer was
+*no, it shows the inverse*, and the gap ran deeper than the crown: **the project Record was
+silent about time entirely.** `floors/TaskList.tsx` rendered checkbox · title · duration ·
+KR chip · delete, and a grep of `src/components/record/**` for
+`start_time|do_date|slot_id|scheduled` returned **zero matches** — while the row's own
+`VTask` prop already carried `doDate`, `slotId` and a derived `status: "scheduled"`. The
+data was in the props, unread. So "which piece of this project has a Thursday block" was
+answerable only by opening every task's SlideOver in turn.
+
+- **The crown discloses both halves** — *has a time* (day + start, not draggable: they're
+  on the grid, and a second place to drag one thing is a second answer to one question, P8)
+  and *loose* (unchanged, still draggable). The pill states the split (`3 of 5 placed`), and
+  goes grey rather than amber once nothing is homeless (P9).
+- **One pass, not two filters.** `splitFor` partitions in a single loop over
+  `isPlacedInWeek`. Two independently-written predicates showing lists side by side is
+  exactly how a task ends up in both or neither; a test now asserts the partition.
+- **Both records say when.** `whenText` distinguishes three genuinely different
+  commitments — a block (`Thu 9:00am`), a sitting (`Thu · in a sitting`, since the slot
+  holds the clock), and a day with no block (`Thu`) — and is shared by the desktop record
+  and the phone's, so one shell can't answer what the other can't. `VTask` gained a
+  `startTime` pass-through it had always dropped.
+- **Silent when there's no time.** Backlog work is *deliberately* undated, so stamping "no
+  time" on every row would dress a decision up as a debt (P4, P9).
+- **`TaskRow` untouched.** Its no-clock rule — *"the calendar sits inches away rendering the
+  very same block"* — is correct **for the rail**. A record has no grid on screen to
+  restate.
+
+→ **A comment in `LeftRail` was simply false.** It justified merging the planned and
+scheduled sections with *"a blocked task already shows its time."* `TaskRow` never shows
+it, and in fact **suppresses** the date label once `start_time` is set — a scheduled row
+renders strictly *less* than an unscheduled one. So the desktop Today list lost the
+scheduled/unscheduled distinction in both the grouping and the row, on the strength of an
+affordance that does not exist. The comment is corrected. **Whether the split should return
+is left open on purpose** — that's a product call, not something to settle inside a fix.
+(Mobile still keeps its "On the clock" header, where no grid sits beside the list.)
+
+→ **Correction 2026-08-05 · the crown's drag never worked. Three blockers, all shipped.**
+The rows carried `data-task-drag` and the ghost followed the pointer, so it *looked* built —
+but nothing could land. Recorded rather than quietly patched, because each one is a trap the
+next draggable surface will walk into:
+
+1. **The drop couldn't find the task.** `CalendarPane`'s `tasks` prop is the **render set**
+   (inbox · today · sprint · scheduled · anytime · slot children). A project's loose work is
+   deliberately in none of them — no `do_date`, no `start_time`, no `sprint_id` — so
+   `findTask` missed and `onReceive` called `info.revert()`. Fixed with `resolveDropTask`,
+   kept **separate** from `tasks` on purpose: that set also feeds `fcEvents`, so widening it
+   to fix a lookup would start drawing untimed work on the grid.
+2. **`WeekBoard` had the identical gap** in the Spread view (`taskById` over the same five
+   pools, bailing at `if (!task) return`). Same resolver threaded through. Its sprint stamp
+   was already correct.
+3. **On macOS the drag moved the WINDOW.** The crown lives inside the rail's
+   `data-tauri-drag-region="deep"` zone, so a row drag was a window drag. `TaskRow` and the
+   rail's task list already carry `data-tauri-drag-region="false"` for exactly this; the
+   crown had never needed it because it had never offered anything to drag.
+
+**The lesson worth keeping:** a drag affordance is four things — the source attribute, the
+drop resolving the id, the write, and the platform not stealing the gesture — and a
+typecheck proves none of them. This is precisely the class of defect the "verify in the
+running app" rule exists to catch, and it shipped because that step was skipped.
+
+*Status: standing — typecheck clean, 376 tests green (3 new: the shared placed/loose
+predicate and its partition), web + desktop builds green. **Not driven in a running app:**
+this remote container has no Supabase credentials (`.env.local` is gitignored), so the dev
+server serves the login wall — confirmed, not assumed. Everything below the UI is covered
+by tests; what needs eyes is the crown's two groups and its drag, the proposal panel, the
+per-row time in both records, and a mid-week re-plan producing one sitting rather than two.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 
