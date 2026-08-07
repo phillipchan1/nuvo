@@ -20,20 +20,19 @@ import {
 } from "./types";
 import { parseDateISO, todayISO } from "./dates";
 import { eventCountsAsActual, eventDomainId, eventMins, type ActualsFilter } from "./eventActuals";
+import { type DomainContext, normalizeContext } from "../../supabase/functions/_shared/domainRouting.ts";
 
 export type Momentum = "up" | "flat" | "down";
 
 /** Machine-facing routing context — the signal passive grooming reads to file a
  *  terse capture into the right domain. Built from the charter (source of truth),
  *  proposed by the `enrichDomain` edge path, persisted on accept. Distinct from
- *  `intention` (the human-facing vow). */
-export interface DomainContext {
-  scope: string;
-  entities: string[];
-  keywords: string[];
-  boundary: string;
-  exemplars: string[];
-}
+ *  `intention` (the human-facing vow).
+ *
+ *  Defined ONCE, in the routing kernel, because six paths file things into a
+ *  domain and they each used to carry their own narrower idea of this shape —
+ *  which is how `keywords` and `exemplars` came to be generated and never read. */
+export type { DomainContext };
 
 export interface Domain {
   id: string;
@@ -580,7 +579,10 @@ export function buildVertical(
         icon: d.icon || "◇",
         intention: d.intention,
         charter: d.charter ?? "",
-        context: d.context ?? null,
+        // Through the kernel's reader, so every surface sees the same shape —
+        // a v1 blob (five fields) and a v2 blob deserialize identically, and a
+        // hand-edited or malformed one degrades instead of throwing downstream.
+        context: normalizeContext(d.context),
         weeklyTargetHours: d.weekly_target_hours ?? 0,
         investedThisWeek: led ? led.week / 60 : 0,
         meetingHoursThisWeek: (meetingWeek.get(d.id) ?? 0) / 60,

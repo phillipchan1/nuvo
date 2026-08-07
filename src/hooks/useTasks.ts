@@ -4,6 +4,7 @@ import { invokeQuiet, supabase } from "../lib/supabase";
 import { DEFAULT_DURATION_MINUTES, restingStatus, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
+import { useDomainEpoch } from "./useDomainEpoch";
 import { useOptionalUndoStack } from "./useUndoStack";
 import {
   COALESCE,
@@ -600,11 +601,12 @@ function todayLocalISO(d: Date): string {
 export function useGroomInbox(inbox: Task[], enabled = true) {
   const qc = useQueryClient();
   const running = useRef(false);
+  const epoch = useDomainEpoch();
 
   useEffect(() => {
     if (!enabled || running.current) return;
     // Skip optimistic rows (empty user_id) — they aren't persisted server-side yet.
-    const pending = inbox.filter((t) => t.user_id && needsGrooming(t));
+    const pending = inbox.filter((t) => t.user_id && needsGrooming(t, epoch));
     if (!pending.length) return;
 
     running.current = true;
@@ -621,7 +623,7 @@ export function useGroomInbox(inbox: Task[], enabled = true) {
       cancelled = true;
       running.current = false;
     };
-  }, [inbox, enabled, qc]);
+  }, [inbox, enabled, epoch, qc]);
 }
 
 /**

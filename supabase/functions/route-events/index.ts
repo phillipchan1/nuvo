@@ -15,9 +15,8 @@
 
 import { admin, handleOptions, json, requireUser } from "../_shared/admin.ts";
 import { llmBaseUrl, llmHeaders, llmKey, llmModel } from "../agent/llm.ts";
-
-// deno-lint-ignore no-control-regex
-const clean = (s: unknown): string => (typeof s === "string" ? s : "").replace(/[\x00-\x1F\x7F]/g, " ").trim();
+import { cleanText as clean, domainRoutingBlock, fromDomainRow } from "../_shared/domainRouting.ts";
+import { type EventSignal, eventSignalKey, readEventSignal } from "../_shared/eventSignal.ts";
 
 async function completeJSON<T>(prompt: string): Promise<T> {
   const key = llmKey();
@@ -38,17 +37,12 @@ async function completeJSON<T>(prompt: string): Promise<T> {
 
 interface InEvent {
   key: string; // account_id:provider_event_id — the cache key
+  /** `external_events.id` — the exact, indexed handle for the server-side
+   *  attendee lookup. Sent alongside `key` rather than parsing the composite. */
+  id?: string;
   title: string;
   calendarName?: string;
-  attendees?: string; // optional pre-joined "name <email>, …"
 }
-
-type DomainRow = {
-  id: string;
-  name: string;
-  intention: string | null;
-  context: { scope?: string; entities?: string[]; boundary?: string } | null;
-};
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -63,41 +57,48 @@ Deno.serve(async (req) => {
 
     const { data: domRows } = await admin
       .from("domains")
-      .select("id, name, intention, context")
+      .select("id, name, intention, charter, context")
       .eq("user_id", user.id)
       .order("sort_order");
-    const domains = (domRows ?? []) as DomainRow[];
-    if (!domains.length) return json({ routed: [] });
+    if (!domRows?.length) return json({ routed: [] });
+    const domains = domRows.map(fromDomainRow);
 
-    // A catch-all domain is defined by exclusions, not positive signals (empty
-    // entities). The model can't reliably infer it, and weak-matches residual
-    // events onto signal-rich domains instead — so name it explicitly.
-    const catchAll =
-      domains.find((d) => !(d.context?.entities?.length) && /personal|life|misc|other/i.test(d.name)) ??
-      domains.find((d) => !(d.context?.entities?.length));
+    // The domain block — including which domain is the catch-all — is built by
+    // the shared routing kernel, so this endpoint, passive inbox grooming and
+    // the project router describe a domain the same way. It used to be built
+    // here by hand and saw three of the seven fields we generate.
+    const { text: domLine } = domainRoutingBlock(domains);
 
-    const domLine = domains
-      .map((d) => {
-        const c = d.context;
-        const bits: string[] = [];
-        if (c?.scope) bits.push(clean(c.scope));
-        else if (d.intention) bits.push(clean(d.intention));
-        if (c?.entities?.length) bits.push(`signals: ${c.entities.map(clean).join(", ")}`);
-        if (c?.boundary) bits.push(`NOT: ${clean(c.boundary)}`);
-        const tag = d.id === catchAll?.id ? " [CATCH-ALL personal domain]" : "";
-        return `[${d.id}] ${clean(d.name)}${tag}${bits.length ? ` — ${bits.join(" · ")}` : ""}`;
-      })
-      .join("\n");
+    // The signal a title can't carry: who is in the meeting, where, and the
+    // first line of the invite. Resolved HERE rather than in the client because
+    // `useExternalEvents` deliberately doesn't select `raw` — and attendee
+    // addresses have no business making a round trip through the browser.
+    const ids = events.map((e) => e.id).filter((v): v is string => typeof v === "string");
+    const signals = new Map<string, EventSignal>();
+    if (ids.length) {
+      const { data: rows } = await admin
+        .from("external_events")
+        .select("id, location, raw")
+        .eq("user_id", user.id)
+        .in("id", ids);
+      for (const r of rows ?? []) signals.set(r.id as string, readEventSignal(r.raw, r.location));
+    }
+    const signalOf = (e: InEvent): EventSignal =>
+      (e.id && signals.get(e.id)) || { attendees: "", description: "", location: "", orgs: [] };
 
     // Recurring events (a daily "Facetime", a weekly "Deep Focus Work") flood the
     // batch with the same title; routing each instance separately is wasteful and
-    // lets the model return partial results. Route each UNIQUE title once, then
-    // fan the verdict back out to every instance.
-    const titleKey = (e: InEvent) => `${clean(e.title).toLowerCase()}|${clean(e.calendarName ?? "")}`;
+    // lets the model return partial results. Route each UNIQUE question once,
+    // then fan the verdict back out to every instance.
+    //
+    // The key includes the attendees' org domains: once attendees are in the
+    // prompt, a title-only key would collapse a 1:1 with the day job and a 1:1
+    // with the church into one verdict — discarding the very signal that was
+    // just added.
     const uniques: InEvent[] = [];
     const uniqueIdx = new Map<string, number>();
     for (const e of events) {
-      const tk = titleKey(e);
+      const tk = eventSignalKey(e.title, e.calendarName ?? "", signalOf(e));
       if (!uniqueIdx.has(tk)) {
         uniqueIdx.set(tk, uniques.length);
         uniques.push(e);
@@ -106,7 +107,13 @@ Deno.serve(async (req) => {
 
     const evLine = uniques
       .map((e, i) => {
-        const meta = [e.calendarName ? `cal: ${clean(e.calendarName)}` : "", e.attendees ? `with ${clean(e.attendees)}` : ""]
+        const s = signalOf(e);
+        const meta = [
+          e.calendarName ? `cal: ${clean(e.calendarName)}` : "",
+          s.attendees ? `with ${s.attendees}` : "",
+          s.location ? `at ${s.location}` : "",
+          s.description ? `note: ${s.description}` : "",
+        ]
           .filter(Boolean)
           .join("; ");
         return `[${i}] "${clean(e.title) || "(untitled)"}"${meta ? ` (${meta})` : ""}`;
@@ -115,16 +122,17 @@ Deno.serve(async (req) => {
 
     const prompt = `You are quietly attributing a person's calendar events to their life domains so their time-allocation is honest — they should not have to tag meetings by hand. Be a sharp copilot: match each event to the domain its title/signals fit.
 
-Their life domains (with the scope, signal words, and boundaries that define each):
+Their life domains (each with what it is, the people, signals, recurring activities and tools that mark it, and the boundaries that exclude it):
 ${domLine}
 
-The events to attribute:
+The events to attribute. An attendee written "Name (@acme.com)" carries their organisation — the org domain is often a stronger signal than the meeting's title, and an unlisted person from a known org still points at that org's life domain:
 ${evLine}
 
 For EACH event:
-1. Assign a SPECIFIC (non-catch-all) domain ONLY when the title clearly names or strongly implies that domain's scope or signal words. A weak or thematic association is NOT enough — do not stretch a generic event onto a signal-rich domain just because a word loosely fits.
-2. If it does not strongly match a specific domain, and a domain is marked [CATCH-ALL personal domain] above, assign that catch-all's id. A social, relational, or life-admin event — a 1:1 or lunch with a named person, a call/Facetime, an errand, appointment, or travel — belongs in the catch-all, NOT in a specific work/church/trading domain it only loosely resembles.
-3. Return null only when the title is truly cryptic/uninformative, or there is no [CATCH-ALL] domain at all.
+1. Assign a SPECIFIC (non-catch-all) domain ONLY when the title, the attendees' organisation, or the note clearly names or strongly implies that domain. A weak or thematic association is NOT enough — do not stretch a generic event onto a signal-rich domain just because a word loosely fits. If a domain lists the event under "looks like this but ISN'T", believe it.
+2. If it does not strongly match a specific domain, and a domain is marked [CATCH-ALL] above, assign that catch-all's id. A social, relational, or life-admin event — a 1:1 or lunch with a named person, a call/Facetime, an errand, appointment, or travel — belongs in the catch-all, NOT in a specific work/church/trading domain it only loosely resembles.
+3. Return null only when the event is truly cryptic/uninformative, or there is no [CATCH-ALL] domain at all.
+4. Report confidence honestly. A verdict you are unsure of is more useful marked unsure than asserted — a low score leaves the time unattributed instead of inventing an hour in the wrong place.
 
 Never invent a domain id; use only the bracketed ids above. Return exactly one entry for EVERY index listed above — do not skip any.
 
@@ -134,7 +142,7 @@ Respond with JSON only:
     const raw = await completeJSON<{ routed?: Array<{ i: unknown; domainId: unknown; confidence: unknown }> }>(prompt);
 
     const valid = new Set(domains.map((d) => d.id));
-    // verdict per UNIQUE title index
+    // verdict per UNIQUE routing question (title + calendar + attendee orgs)
     const verdict = new Map<number, { domainId: string | null; confidence: number }>();
     for (const r of raw.routed ?? []) {
       const idx = Number(r.i);
@@ -144,13 +152,14 @@ Respond with JSON only:
       verdict.set(idx, { domainId, confidence });
     }
 
-    // Fan each unique-title verdict back to every instance. A title the model
-    // omitted falls to null — but with few unique titles per batch that's rare.
+    // Fan each verdict back to every instance of the same question. One the
+    // model omitted falls to null — rare, with few unique questions per batch.
     const out: Array<{ key: string; domainId: string | null; confidence: number }> = [];
     const rows: Array<Record<string, unknown>> = [];
     const now = new Date().toISOString();
     for (const ev of events) {
-      const v = verdict.get(uniqueIdx.get(titleKey(ev))!) ?? { domainId: null, confidence: 0 };
+      const idx = uniqueIdx.get(eventSignalKey(ev.title, ev.calendarName ?? "", signalOf(ev)));
+      const v = (idx === undefined ? undefined : verdict.get(idx)) ?? { domainId: null, confidence: 0 };
       out.push({ key: ev.key, domainId: v.domainId, confidence: v.confidence });
       rows.push({ user_id: user.id, event_key: ev.key, domain_id: v.domainId, confidence: v.confidence, routed_at: now });
     }

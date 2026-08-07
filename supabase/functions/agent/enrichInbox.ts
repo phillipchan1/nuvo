@@ -14,6 +14,7 @@
 
 import { admin } from "../_shared/admin.ts";
 import { completeJSON } from "./llm.ts";
+import { domainRoutingBlock, fromDomainRow } from "../_shared/domainRouting.ts";
 
 type Energy = "deep" | "decide" | "delegate" | "quick";
 type Level = "project" | "initiative" | "domain" | "none";
@@ -59,7 +60,14 @@ type TaskRow = {
   domain_id: string | null;
   duration_minutes: number | null;
 };
-type Domain = { id: string; name: string; color: string | null; intention: string | null; context: unknown };
+type Domain = {
+  id: string;
+  name: string;
+  color: string | null;
+  intention: string | null;
+  charter: string | null;
+  context: unknown;
+};
 type Initiative = { id: string; name: string; outcome: string | null; domain_id: string | null };
 type Project = { id: string; name: string; outcome: string | null; domain_id: string | null; initiative_id: string | null };
 
@@ -83,7 +91,7 @@ export async function enrichInboxBatch(
   if (!tasks.length) return {};
 
   const [domRes, iniRes, projRes] = await Promise.all([
-    admin.from("domains").select("id, name, color, intention, context").eq("user_id", userId).order("sort_order"),
+    admin.from("domains").select("id, name, color, intention, charter, context").eq("user_id", userId).order("sort_order"),
     admin
       .from("initiatives")
       .select("id, name, outcome, domain_id, status")
@@ -192,15 +200,11 @@ Respond with JSON only:
   if (unlocked.length) {
     const fmt = (s: string | null, max = 80) =>
       s ? ` — ${clean(s.length > max ? s.slice(0, max) + "…" : s)}` : "";
-    const domLine = domains.map((d) => {
-      const c = (d.context ?? null) as { scope?: string; entities?: string[]; boundary?: string } | null;
-      const bits: string[] = [];
-      if (c?.scope) bits.push(clean(c.scope));
-      else if (d.intention) bits.push(clean(d.intention));
-      if (c?.entities?.length) bits.push(`signals: ${c.entities.map(clean).join(", ")}`);
-      if (c?.boundary) bits.push(`NOT: ${clean(c.boundary)}`);
-      return `[D:${d.id}] ${clean(d.name)}${bits.length ? ` — ${bits.join(" · ")}` : ""}`;
-    }).join("\n") || "(none yet)";
+    // Built by the shared routing kernel, so a capture and a calendar event are
+    // judged against the same description of a domain. This block used to be
+    // hand-built here and saw three of the seven fields we generate — `keywords`
+    // and `exemplars` never reached it, and it had no notion of a catch-all.
+    const { text: domLine } = domainRoutingBlock(domains.map(fromDomainRow), { idPrefix: "D:" });
     const iniLine = initiatives.map((i) => `[I:${i.id}] ${clean(i.name)}${fmt(i.outcome)}`).join("\n") || "(none)";
     const projLine = projects.map((p) => `[P:${p.id}] ${clean(p.name)}${fmt(p.outcome)}`).join("\n") || "(none)";
     const itemsLine = unlocked
@@ -211,7 +215,7 @@ Respond with JSON only:
 
 The person's life structure is Domain → Initiative (a bet with a finish line) → Project (a concrete chunk of work) → Task. Here is everything currently open:
 
-DOMAINS (life areas):
+DOMAINS (life areas — each with what it is, the people, signals, recurring activities and tools that mark it, and the boundaries that exclude it):
 ${domLine}
 
 INITIATIVES:
@@ -224,11 +228,11 @@ The items to groom:
 ${itemsLine}
 
 For EACH item, decide:
-1. placement — file by ALTITUDE, biasing UP. Default to the DOMAIN whose signals/scope the item matches (use the entities and NOT-boundaries above — an item naming a domain's signal almost certainly belongs to that domain). Descend to a specific initiative or project ONLY when the item is unmistakably about that exact bet or deliverable; otherwise stay at the domain. Over-filing into a project is the expensive mistake — when unsure between a project and its domain, choose the domain. Return "none" only when it matches no domain at all. Return the bracketed id (e.g. "D:..", "I:..", "P:..") or "none".
+1. placement — file by ALTITUDE, biasing UP. Default to the DOMAIN the item matches — an item naming a domain's people, signals, activities or tools almost certainly belongs to that domain, and a domain's "NOT" / "looks like this but ISN'T" lines rule it out just as strongly. A capture often names only a tool or a person and never the domain ("upload the receipts to Dext"): that is still a match. If one domain is marked [CATCH-ALL], residual life-admin belongs there rather than stretched onto a signal-rich domain. Descend to a specific initiative or project ONLY when the item is unmistakably about that exact bet or deliverable; otherwise stay at the domain. Over-filing into a project is the expensive mistake — when unsure between a project and its domain, choose the domain. Return "none" only when it matches no domain at all. Return the bracketed id (e.g. "D:..", "I:..", "P:..") or "none".
 2. durationMinutes — a realistic single-sitting estimate (5–240) if the item implies one; null if you truly can't tell.
 3. energy — the register: "deep" (focused making/thinking), "decide" (review/reply/judge), "delegate" (hand off / follow up), or "quick" (shallow errand/admin).
 4. rationale — ≤14 words, plain English, why it lands there (or why it's standalone). No ids.
-5. confidence — 0..1, how sure you are of the placement.
+5. confidence — 0..1, how sure you are of the PLACEMENT. Report it honestly: a low score leaves the item in the inbox for the human, which is far cheaper than filing it confidently in the wrong place.
 
 Return exactly one entry for EVERY index listed above — do not skip any.
 
@@ -245,12 +249,18 @@ Respond with JSON only:
   }
 
   // Honour the human's pinned duration over any estimate, and persist.
-  const rows: Array<{ id: string; suggestion: InboxSuggestion; suggested_at: string }> = [];
+  //
+  // EVERY task in the batch is stamped, including the ones the model skipped —
+  // with a null suggestion. Without the stamp a skipped task keeps
+  // `suggested_at = null`, reads as "never groomed" forever, and is re-sent on
+  // every single inbox change: a completion spent again and again on the one
+  // capture the model has already declined to judge. `liveSuggestion` already
+  // treats a null suggestion as nothing to offer, so the row is unaffected.
+  const rows: Array<{ id: string; suggestion: InboxSuggestion | null; suggested_at: string }> = [];
   const now = new Date().toISOString();
   for (const task of tasks) {
-    const s = results[task.id];
-    if (!s) continue;
-    if (typeof task.duration_minutes === "number") s.durationMinutes = task.duration_minutes;
+    const s = results[task.id] ?? null;
+    if (s && typeof task.duration_minutes === "number") s.durationMinutes = task.duration_minutes;
     rows.push({ id: task.id, suggestion: s, suggested_at: now });
   }
 

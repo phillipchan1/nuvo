@@ -90,6 +90,9 @@ export default function MobileDomainScreen({
   const dom = d.domains.find((x) => x.id === id);
   const [form, setForm] = useState<SigilForm>(() => domainForm(id));
   const [dressing, setDressing] = useState(false);
+  // The clarity mark rides the hero; the workbench that fixes it is at the foot
+  // of the screen. Tapping the mark opens and scrolls to it.
+  const [groomOpen, setGroomOpen] = useState(false);
 
   if (!dom) return <Empty>This domain is gone.</Empty>;
 
@@ -149,7 +152,7 @@ export default function MobileDomainScreen({
           {st.line}
         </div>
         <div className="mt-2.5">
-          <ClarityMark domain={dom} />
+          <ClarityMark domain={dom} onGroom={() => setGroomOpen(true)} />
         </div>
       </div>
 
@@ -395,7 +398,7 @@ export default function MobileDomainScreen({
 
       {/* ── how Nuvo files things here — the routing workbench, shared ── */}
       <Section label="Routing">
-        <DomainGroom domain={dom} phone />
+        <DomainGroom domain={dom} phone open={groomOpen} />
       </Section>
 
       <div className="mt-6 flex justify-end border-t border-line pt-4">

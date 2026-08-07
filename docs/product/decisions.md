@@ -2495,6 +2495,85 @@ colour swatches can't be 44px in a 375px row, so the drawn circle stays 32px and
 pre-existing agent-prompt baseline failure untouched), no horizontal overflow at 375px in
 either theme.*
 
+**D-087 · 2026-08-07 · A domain describes itself ONCE, to every path that files into it —
+and a verdict re-opens when the domains change.**
+
+Origin ⓞ: *"I notice the auto-assigns are not accurate... I'm wondering we should generate a
+lot more things — activities, words, keywords."* The instinct was right and the diagnosis was
+half. **Six** paths file something into a domain — the chat agent, passive inbox grooming, the
+calendar router, the project router on the Groom wall, the offline token matcher, the proposal
+engine — and each serialized `domains.context` by hand. Four of them threw most of it away:
+`keywords` and `exemplars` were generated on every groomed domain, capped, stored, rendered as
+chips, and **read by no router at all**; the project router saw `name: charter (scope)` and
+nothing else. So generating more fields would have improved exactly one path. Both routers even
+declared a local `{ scope?, entities?, boundary? }`, which made the other fields invisible to the
+type system as well as to the prompt.
+
+**The decision: routing context is a kernel, not a string each caller builds.**
+`supabase/functions/_shared/domainRouting.ts` — zero imports, pure, both runtimes, same
+constraints as `planningRules.ts`. `npm test` fails on a seventh copy (it greps for a hand-built
+`signals:` line, a redeclared narrow `DomainContext`, and the retired catch-all regex). Spec:
+[`domain-routing.md`](../domain-routing.md).
+
+**Five sub-decisions worth their own line:**
+
+1. **More fields, but chosen for *precision*, not volume.** `people` (with roles), `activities`,
+   `artifacts`, `places` and `counterExemplars`. The observed failure is a near-miss between two
+   confusable domains, and more positive signal raises recall while *lowering* precision — so the
+   load-bearing addition is `counterExemplars`, concrete phrases that look like this domain and
+   belong to a named sibling. **`verbs` was proposed and rejected**: bare verbs are the least
+   discriminative token class in a planner (every domain reviews, ships, calls) and they would
+   poison `domainCorpus`, where the offline matcher scores raw token overlap.
+2. **The catch-all is structural.** It was `/personal|life|misc|other/i` against the domain's
+   **name** — Principle 16 in one line, true only in an account whose catch-all happens to be
+   called "Personal". Now: the one domain with no discriminating signals and no boundary, name
+   demoted to a tiebreaker between equally blank domains, and **no catch-all at all** when it's
+   still ambiguous.
+3. **Staleness is an epoch, not a new column.** `max(context_at ?? created_at)` vs `routed_at`.
+   It handles the case a per-verdict context hash handles worse — a brand-new domain, which has no
+   context yet but invalidates every verdict formed without it. Clamped to `now` because
+   `context_at` is written by the browser's clock. Bounded by a pure
+   `selectRoutingCandidates` (never-routed first, stale capped per load) so a re-groom can't turn
+   one app load into a bill — the D-085 lesson, made testable outside React.
+4. **Confidence is finally read.** Collected on every routed event since the table existed and
+   used by nobody, so a 0.1 guess counted like a 0.99. Below 0.4 a verdict stays cached (never
+   re-spend) but reads as **unattributed** — honest emptiness over confident fiction, which is the
+   same argument D-085 made about the wall's hours. A human correction writes `confidence: 1`
+   explicitly, or a partial upsert would leave the model's score in place and filter the
+   correction out by its own floor.
+5. **`clarityOf` stops over-promising.** It scored `entities + keywords` and called anything above
+   zero "clear · groomed" while no router serialized keywords — the app promising routing it could
+   not deliver. It reads `routingStrength()` from the kernel now, so the mark cannot drift from
+   what the routers see, with a middle state ("routes loosely") for a domain that has something but
+   not enough.
+
+**Also fixed on the way through, each its own quiet bug:** the calendar router's `attendees` slot
+had been dead code — no caller ever filled it — so a meeting called "1:1" or "Sync" routed on
+nothing, while the attendees sat in `external_events.raw` all along (resolved server-side; the
+dedup key had to widen to the attendee **org domains** or two same-titled meetings would share one
+verdict and discard the new signal). `enrichInbox` stamped `suggested_at` only on tasks the model
+answered, so a skipped capture read as never-groomed forever and was re-sent on every inbox
+change. And the `grounded` filter deleted correctly-inferred aliases — the very folding its own
+prompt asks for — so it now chains through grounded tokens and applies to proper nouns only.
+
+**Not done, deliberately:** `agent/prompt.ts` still names three fields in its prose. The chat agent
+already receives the whole blob, so the new fields reach it for free; editing that file means
+regenerating the byte-identical prompt baseline and gating on `npm run eval -- --repeat 5`, which
+belongs in its own commit.
+
+*Status: standing — typecheck clean, 430 of 431 tests green (48 new in `tests/domain-routing.test.ts`;
+the one pre-existing agent-prompt baseline failure untouched and confirmed present on a clean
+tree), web + desktop builds green, edge-function parse green. **Driven** at `?domains`
+(`DomainHarness`, no auth needed) at 375px and desktop over a v2 fixture and a keywords-only one:
+the workbench renders every new class (who · signals · does · uses · at · sounds like · NOT ·
+looks-like-this-but-isn't), the keywords-only domain reads **"routes loosely"** rather than
+"clear", Nuvo's read names the routing gap, and tapping the clarity mark opens the workbench —
+44×44 at both widths (`min-h-[44px] -my-4`; `.tap-bloom`'s ±15px only reaches 41 from an 11px
+row), no panel overflow, no console errors. **NOT driven against live data** — this container has
+no Supabase credentials, so the app itself serves the login wall; the accuracy claim is measured by
+`npm run routing:check` (read-only) on Phil's account. **NEEDS DEPLOY** of both `agent` and
+`route-events` before any of it takes effect.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 

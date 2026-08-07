@@ -9,7 +9,7 @@
 // are the pieces it lays out. `phone` only bumps control sizing to 44px targets —
 // it never changes what a mark means.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useVertical } from "../../hooks/useVertical";
 import {
@@ -27,6 +27,7 @@ import {
   type SigilForm,
 } from "../../lib/domainSigil";
 import type { Domain, DomainContext } from "../../lib/vertical";
+import { routingStrength } from "../../../supabase/functions/_shared/domainRouting.ts";
 import DomainSigil from "../floors/DomainSigil";
 import { RefinedTick } from "../floors/parts";
 import { AltitudeIcon } from "../icons";
@@ -86,7 +87,12 @@ export function Flourish({ color, width = 124 }: { color: string; width?: number
 }
 
 // ── Can Nuvo file things here? ───────────────────────────────────────────────
-export function ClarityMark({ domain }: { domain: Domain }) {
+// When the answer is "not really", the mark is the way to fix it. Grooming lived
+// behind a collapsed disclosure at the bottom of the screen, so the one surface
+// that complains about routing didn't lead anywhere — `onGroom` hands the tap
+// through to the workbench. Optional: without it the mark reads exactly as
+// before, so nothing on the wall changes.
+export function ClarityMark({ domain, onGroom }: { domain: Domain; onGroom?: () => void }) {
   const c = clarityOf(domain);
   if (c.level === "clear") {
     return (
@@ -95,13 +101,31 @@ export function ClarityMark({ domain }: { domain: Domain }) {
       </div>
     );
   }
-  return (
-    <div className="flex w-full max-w-[132px] items-center gap-2" title={c.why}>
+  const body = (
+    <>
       <div className="h-[3px] flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
         <div style={{ width: `${Math.round(c.pct * 100)}%`, height: "100%", background: "var(--signal)", transition: "width .3s" }} />
       </div>
       <span className="whitespace-nowrap text-micro" style={{ color: "var(--signal)", letterSpacing: "0.04em" }}>✦ {c.label}</span>
-    </div>
+    </>
+  );
+  if (!onGroom) {
+    return <div className="flex w-full max-w-[132px] items-center gap-2" title={c.why}>{body}</div>;
+  }
+  // A 3px progress bar can't be 44px tall without becoming a different mark, so
+  // the drawing stays put and the BUTTON grows around it: `min-h-[44px]` for the
+  // thumb, `-my-4` so it costs the layout the same 12px it always did. Same
+  // trade the colour swatches make with `.tap-bloom` (D-086), one size up —
+  // bloom's ±15px only reaches 41px from an 11px row.
+  return (
+    <button
+      onClick={onGroom}
+      title={c.why}
+      aria-label={`${c.label} — teach Nuvo what belongs in ${domain.name}`}
+      className="fast -my-4 flex min-h-[44px] w-full max-w-[132px] items-center gap-2 text-left active:opacity-70"
+    >
+      {body}
+    </button>
   );
 }
 
@@ -268,9 +292,28 @@ export function SwatchGrid({
 type Misfiled = { kind: "initiative" | "project" | "task"; id: string; name: string; suggestDomain: string; suggestDomainId: string | null };
 type Refinement = { context: DomainContext; misfiled: Misfiled[] };
 
+/** The named-signal classes, in the order the router weighs them. Keyed off the
+ *  context so a field added to the kernel shows up here by adding one row —
+ *  the previous panel rendered two of the seven and quietly hid the rest. */
+const SIGNAL_GROUPS: Array<{ key: keyof DomainContext; label: string }> = [
+  { key: "people", label: "who" },
+  { key: "entities", label: "signals" },
+  { key: "activities", label: "does" },
+  { key: "artifacts", label: "uses" },
+  { key: "places", label: "at" },
+];
+
 export function DomainGroom({ domain, phone = false, open: openProp }: { domain: Domain; phone?: boolean; open?: boolean }) {
   const { data, updateDomain, updateInitiative, updateProject, routeTask } = useVertical();
   const [open, setOpen] = useState(Boolean(openProp));
+  const box = useRef<HTMLDivElement | null>(null);
+  // The clarity mark lives at the top of the screen and the workbench at the
+  // bottom, so opening it without scrolling would look like nothing happened.
+  useEffect(() => {
+    if (!openProp) return;
+    setOpen(true);
+    box.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [openProp]);
   const [charter, setCharter] = useState(domain.charter);
   const [busy, setBusy] = useState(false);
   const [prop, setProp] = useState<Refinement | null>(null);
@@ -320,7 +363,7 @@ export function DomainGroom({ domain, phone = false, open: openProp }: { domain:
   const chip = "rounded-sm px-1.5 py-px text-micro font-medium leading-none";
 
   return (
-    <div className={`w-full text-left ${phone ? "" : "mt-8 border-t pt-4"}`} style={phone ? undefined : { borderColor: "var(--line)" }}>
+    <div ref={box} className={`w-full text-left ${phone ? "" : "mt-8 border-t pt-4"}`} style={phone ? undefined : { borderColor: "var(--line)" }}>
       <button
         onClick={() => setOpen((o) => !o)}
         className={`fast flex w-full items-center justify-between text-meta uppercase text-muted ${phone ? "tap active:text-ink" : "hover:text-ink"}`}
@@ -363,21 +406,41 @@ export function DomainGroom({ domain, phone = false, open: openProp }: { domain:
               )}
               {accepted && <div className="mb-1.5 text-micro text-muted">✓ saved</div>}
               {shown.scope && <div className="text-body italic text-muted">{shown.scope}</div>}
-              {shown.entities.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {shown.entities.map((e) => (
-                    <span key={e} className={chip} style={{ background: `color-mix(in srgb, ${domain.color} 14%, var(--surface))`, color: domain.color }}>{e}</span>
-                  ))}
-                </div>
-              )}
+              {/* The named things Nuvo files by — one chip row per class, in the
+                  order the router weighs them. Rendered from the same list the
+                  serializer emits, so what you see IS what routes. */}
+              {SIGNAL_GROUPS.map(({ key, label }) => {
+                const vals = (shown[key] ?? []) as string[];
+                if (!vals.length) return null;
+                return (
+                  <div key={key} className="mt-2 flex flex-wrap items-center gap-1">
+                    <span className="text-micro uppercase text-muted" style={{ letterSpacing: "0.12em" }}>{label}</span>
+                    {vals.map((v) => (
+                      <span key={v} className={chip} style={{ background: `color-mix(in srgb, ${domain.color} 14%, var(--surface))`, color: domain.color }}>{v}</span>
+                    ))}
+                  </div>
+                );
+              })}
               {shown.keywords.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
                   {shown.keywords.map((k) => <span key={k} className="text-meta text-muted">{k}</span>)}
                 </div>
               )}
+              {shown.exemplars.length > 0 && (
+                <div className="mt-2 flex flex-col gap-0.5">
+                  {shown.exemplars.map((e) => <span key={e} className="text-meta text-muted">“{e}”</span>)}
+                </div>
+              )}
               {shown.boundary && <div className="mt-2 text-meta text-muted">⊘ {shown.boundary}</div>}
-              {shown.entities.length === 0 && shown.keywords.length === 0 && (
-                <div className="text-meta text-muted">No proper nouns of its own yet — routes by the line above.</div>
+              {(shown.counterExemplars ?? []).length > 0 && (
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {(shown.counterExemplars ?? []).map((e) => (
+                    <span key={e} className="text-meta text-muted">⊘ “{e}”</span>
+                  ))}
+                </div>
+              )}
+              {routingStrength({ id: domain.id, name: domain.name, context: shown }) === 0 && (
+                <div className="text-meta text-muted">Nothing specific to route on yet — files by the line above.</div>
               )}
             </div>
           )}

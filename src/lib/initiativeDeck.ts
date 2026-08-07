@@ -25,6 +25,7 @@ import {
   type VerticalData,
 } from "./vertical";
 import { lensGaps, type LensGap } from "./lenses";
+import { domainCorpus } from "../../supabase/functions/_shared/domainRouting.ts";
 
 /** Concrete quarter columns shown on the deck (this + next 3). Initiatives targeted
  *  further out than this just clamp into the furthest column — the inbox already
@@ -208,14 +209,10 @@ function tokenize(s: string): string[] {
   );
 }
 
-function domainCorpus(dom: Domain): string {
-  const entities = dom.context?.entities?.join(" ") ?? "";
-  const keywords = dom.context?.keywords?.join(" ") ?? "";
-  const scope = dom.context?.scope ?? "";
-  // the name/charter/intention are the routing source of truth — repeat the name
-  // so an exact name mention dominates.
-  return `${dom.name} ${dom.name} ${dom.charter} ${dom.intention} ${scope} ${entities} ${keywords}`;
-}
+// What text represents a domain is one rule, shared with the LLM routers — see
+// `domainCorpus` in the routing kernel. It repeats the name so an exact mention
+// dominates, and deliberately excludes counter-exemplars (the phrases a domain
+// should LOSE on; scoring them here would make a near-miss win).
 
 /** Best-guess domain for any free text (a project/initiative's name + outcome +
  *  description), or null when nothing clears the bar. Instant and offline — the

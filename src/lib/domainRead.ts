@@ -21,6 +21,7 @@ import {
   type Domain,
   type VerticalData,
 } from "./vertical";
+import { routingStrength } from "../../supabase/functions/_shared/domainRouting.ts";
 
 // ── Small voices ─────────────────────────────────────────────────────────────
 export function ago(d: number) {
@@ -71,18 +72,35 @@ export function stateOf(d: Domain): DomainState {
 // purely from persisted state (no AI call).
 export type Clarity = { level: "clear" | "partial" | "unrefined"; label: string; why: string; pct: number };
 
+/** `routingStrength` weights named things ×2 and describing words ×1, so this is
+ *  roughly "two named signals, or one plus a boundary" — enough for a classifier
+ *  to tell this domain from its neighbour, which is what "clear" claims. */
+const CLEAR_AT = 4;
+
 export function clarityOf(d: Domain): Clarity {
   const ctx = d.context;
   if (ctx) {
-    const signals = ctx.entities.length + ctx.keywords.length;
-    if (signals === 0)
+    // Scored on what the ROUTERS actually read, via the kernel — never on the
+    // raw field count. This mark used to add up `entities + keywords` and call
+    // anything above zero "clear", while no router serialized keywords at all:
+    // it promised routing the app could not deliver, which is the one thing a
+    // clarity mark must never do.
+    const strength = routingStrength(d);
+    const lead = [...ctx.entities, ...(ctx.people ?? []), ...(ctx.activities ?? [])].slice(0, 3).join(", ");
+    if (strength === 0)
       return {
         level: "partial",
         label: "needs detail",
         why: "Groomed, but Nuvo couldn't pull anything specific to route on — re-groom with a richer line.",
         pct: 0.6,
       };
-    const lead = ctx.entities.slice(0, 3).join(", ") || ctx.keywords.slice(0, 3).join(", ");
+    if (strength < CLEAR_AT)
+      return {
+        level: "partial",
+        label: "routes loosely",
+        why: `Nuvo has a little to go on here${lead ? ` (${lead})` : ""} — a richer line would sharpen it.`,
+        pct: 0.75,
+      };
     return { level: "clear", label: "groomed", why: `Nuvo files captures here by ${lead}.`, pct: 1 };
   }
   if (d.charter.trim())
@@ -142,6 +160,21 @@ export function domainRead(data: VerticalData, domain: Domain, now: Date): Read[
   if (domain.investedThisWeek > 0 && domain.meetingHoursThisWeek / domain.investedThisWeek > 0.5) {
     const pct = Math.round((domain.meetingHoursThisWeek / domain.investedThisWeek) * 100);
     out.push({ tone: "info", text: `Meetings are ${pct}% of your time here this week — worth protecting the deep-work half.` });
+  }
+
+  // routing — said HERE rather than only on the clarity mark, because the mark
+  // is a 3px bar at the top of the screen and this is the panel people read.
+  // A domain Nuvo can't file into is the quiet cause of "the auto-assigns are
+  // wrong": every capture, project and meeting it should have claimed lands
+  // somewhere else, and nothing on the surface says why.
+  const clarity = clarityOf(domain);
+  if (clarity.level !== "clear" && domain.lastTouchedDays < 99) {
+    out.push({
+      tone: "info",
+      text: clarity.level === "unrefined"
+        ? `Nuvo files things here by name alone — describe what belongs and it'll start catching them.`
+        : `Nuvo only half-knows this one — ${clarity.label}. A richer line below sharpens where your captures and meetings land.`,
+    });
   }
 
   // the affirmation — you're keeping faith

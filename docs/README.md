@@ -37,6 +37,7 @@ Statuses are owned by each doc's own header.
 - [`priorities-and-projects.md`](./priorities-and-projects.md) — how a Priority binds to standing work.
 - [`execution-flows.md`](./execution-flows.md) — the vertical meets the week; pools, the gate, the flows.
 - [`planning-kernel.md`](./planning-kernel.md) — **one rule, two runtimes.** How the app and the agent are kept from answering "what is my week" differently, and the test that fails when they do.
+- [`domain-routing.md`](./domain-routing.md) — **one description of a domain, six paths that file into it.** What Nuvo generates about a life area, how every router reads it, and when a cached verdict re-opens.
 
 **Planning & grooming**
 - [`on-deck.md`](./on-deck.md) — the project timeline you open first (the *When* lens).

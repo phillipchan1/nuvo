@@ -19,6 +19,8 @@ type Kind = {
   examples: string;
   suggested: string;
   color: string;
+  /** A worked example of a charter — the line Nuvo's routing is built on. */
+  charterHint: string;
 };
 
 // Colors are data (a domain's identity tint), not theme tokens — same hexes the
@@ -30,6 +32,7 @@ type Kind = {
 const KINDS: Kind[] = [
   {
     key: "work",
+    charterHint: "e.g. \"My day job at SCE — Obi, the Enterprise rollout\"",
     kind: "Work",
     prompt: "What pays the bills?",
     examples: "Work · Company · Clients · Practice",
@@ -38,6 +41,7 @@ const KINDS: Kind[] = [
   },
   {
     key: "community",
+    charterHint: "e.g. \"Frontier — Sunday services, the volunteer teams\"",
     kind: "Community",
     prompt: "Who's counting on you to show up?",
     examples: "Church · Board · Coaching · Volunteering",
@@ -46,6 +50,7 @@ const KINDS: Kind[] = [
   },
   {
     key: "discipline",
+    charterHint: "e.g. \"Trading — my setups, the backtester, the journal\"",
     kind: "Discipline",
     prompt: "What craft do you protect time for?",
     examples: "Trading · Training · Writing · Study",
@@ -54,6 +59,7 @@ const KINDS: Kind[] = [
   },
   {
     key: "people",
+    charterHint: "e.g. \"Home — Sarah, the kids, school runs, family admin\"",
     kind: "People",
     prompt: "Who do you love that never files a ticket?",
     examples: "Family · Marriage · Friends",
@@ -62,6 +68,7 @@ const KINDS: Kind[] = [
   },
   {
     key: "stewardship",
+    charterHint: "e.g. \"Money and body — the books, Dext, the gym\"",
     kind: "Stewardship",
     prompt: "What costs you later if you ignore it now?",
     examples: "Finances · Health · Home",
@@ -75,6 +82,11 @@ const EXTRA_COLORS = ["#D97706", "#4F46E5", "#0891B2", "#65A30D", "#DC2626"];
 export default function FirstRun({ onSkip }: { onSkip: () => void }) {
   const { seedDomains } = useVertical();
   const [picked, setPicked] = useState<Record<string, string>>({});
+  // What each domain IS, in the person's own words. Optional by design — every
+  // field can stay blank and the account is fully usable — but it is the one
+  // input the routers are built on, and asking for it once here is far cheaper
+  // than discovering months later that everything files into the wrong place.
+  const [charters, setCharters] = useState<Record<string, string>>({});
   const [extras, setExtras] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,8 +103,13 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
     ...KINDS.filter((k) => k.key in picked).map((k) => ({
       name: picked[k.key].trim() || k.suggested,
       color: k.color,
+      charter: charters[k.key] ?? "",
     })),
-    ...extras.map((name, i) => ({ name: name.trim(), color: EXTRA_COLORS[i % EXTRA_COLORS.length] })),
+    ...extras.map((name, i) => ({
+      name: name.trim(),
+      color: EXTRA_COLORS[i % EXTRA_COLORS.length],
+      charter: charters[`extra-${i}`] ?? "",
+    })),
   ].filter((d) => d.name.length > 0);
 
   const create = async () => {
@@ -118,8 +135,10 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
             domain; <span className="italic">shipping the new site</span> is a project inside it.
           </p>
           <p className="mt-3 max-w-lg text-caption text-muted">
-            Pick the ones you carry and name them the way you'd say them out loud. You can rename,
-            add, or remove any of this later.
+            Pick the ones you carry and name them the way you'd say them out loud. A line about
+            who and what belongs in each is optional — but it's what lets Nuvo file a stray note or
+            a meeting into the right one without asking. You can rename, add, or remove any of this
+            later.
           </p>
         </header>
 
@@ -166,6 +185,18 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
                       placeholder={k.suggested}
                       className="tap mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-body text-ink placeholder:text-muted"
                     />
+                    <label className="section-label mt-3 block text-muted" htmlFor={`c-${k.key}`}>
+                      Who and what belongs here <span className="normal-case tracking-normal">(optional)</span>
+                    </label>
+                    <input
+                      id={`c-${k.key}`}
+                      type="text"
+                      value={charters[k.key] ?? ""}
+                      autoComplete="off"
+                      onChange={(e) => setCharters((c) => ({ ...c, [k.key]: e.target.value }))}
+                      placeholder={k.charterHint}
+                      className="tap mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-body text-ink placeholder:text-muted"
+                    />
                   </div>
                 )}
               </li>
@@ -196,6 +227,14 @@ export default function FirstRun({ onSkip }: { onSkip: () => void }) {
                   Remove
                 </button>
               </div>
+              <input
+                type="text"
+                value={charters[`extra-${i}`] ?? ""}
+                autoComplete="off"
+                onChange={(e) => setCharters((c) => ({ ...c, [`extra-${i}`]: e.target.value }))}
+                placeholder="Who and what belongs here? (optional)"
+                className="tap mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-body text-ink placeholder:text-muted"
+              />
             </li>
           ))}
         </ul>

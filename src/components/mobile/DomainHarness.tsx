@@ -52,7 +52,20 @@ const DOMAINS: Domain[] = [
     sort: 0,
     intention: "Lead the Enterprise rollout without letting it eat the family.",
     charter: "My day job at SCE — Obi, the Enterprise rollout, Super Leader.",
-    context: { scope: "The day job.", entities: ["Obi", "Enterprise rollout"], keywords: ["standup", "roadmap"], boundary: "Not side projects.", exemplars: [] },
+    // A fully-groomed v2 context — every class the routing kernel serializes, so
+    // the workbench's chip rows and the "routes clean" mark are both exercised.
+    context: {
+      scope: "The day job.",
+      entities: ["SCE / Southern California Edison", "Enterprise rollout"],
+      people: ["Obi — my manager", "Dana — Super Leader cohort lead"],
+      activities: ["standup", "roadmap review", "1:1s"],
+      artifacts: ["Jira", "the board deck"],
+      places: ["Irwindale HQ"],
+      keywords: ["standup", "roadmap"],
+      boundary: "Not side projects, and not the church's leadership work.",
+      exemplars: ["file the Enterprise change request", "prep Monday's roadmap review"],
+      counterExemplars: ["men's retreat budget (that's Church)"],
+    },
     weeklyTargetHours: 20,
     investedThisWeek: 23.5,
     meetingHoursThisWeek: 13,
@@ -69,6 +82,15 @@ const DOMAINS: Domain[] = [
     sort: 1,
     intention: "Be present, not merely around.",
     charter: "",
+    // Groomed, but only keywords came back — the case that used to read "clear"
+    // while no router serialized keywords at all. Now: "routes loosely".
+    context: {
+      scope: "",
+      entities: [],
+      keywords: ["dinner", "school"],
+      boundary: "",
+      exemplars: [],
+    },
     weeklyTargetHours: 10,
     investedThisWeek: 4,
     meetingHoursThisWeek: 0,

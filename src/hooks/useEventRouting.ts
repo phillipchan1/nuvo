@@ -8,6 +8,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { ROUTING_CONFIDENCE_FLOOR } from "../../supabase/functions/_shared/domainRouting.ts";
 
 const EMPTY: Record<string, string> = {};
 
@@ -23,13 +24,22 @@ export function useEventRouting(): Record<string, string> {
       for (let from = 0; ; from += PAGE) {
         const { data, error } = await supabase
           .from("event_domain_routing")
-          .select("event_key, domain_id")
+          .select("event_key, domain_id, confidence")
           .order("event_key")
           .range(from, from + PAGE - 1);
         if (error) throw error;
         const rows = data ?? [];
         for (const r of rows) {
-          if (r.domain_id) map[r.event_key as string] = r.domain_id as string;
+          // The model's own confidence has been collected since this table
+          // existed and read by nobody, so a coin-flip guess counted exactly
+          // like a certainty and quietly put an hour in the wrong domain. Below
+          // the floor the verdict stays CACHED (we never re-spend on it) but
+          // reads as unattributed — honest emptiness over confident fiction.
+          // A null confidence is a human correction: always authoritative.
+          const c = r.confidence as number | null;
+          if (r.domain_id && (c == null || c >= ROUTING_CONFIDENCE_FLOOR)) {
+            map[r.event_key as string] = r.domain_id as string;
+          }
         }
         if (rows.length < PAGE) break;
       }
@@ -52,6 +62,11 @@ export function useEventRoutingMutations() {
           user_id: u.user.id,
           event_key: eventKey,
           domain_id: domainId,
+          // Written explicitly: a partial upsert leaves the omitted column
+          // alone, so without this a human correction would inherit whatever
+          // the model had scored and could be filtered out by its own floor.
+          // The person said so — that is the highest confidence there is.
+          confidence: 1,
           routed_at: new Date().toISOString(),
         },
         { onConflict: "user_id,event_key" },

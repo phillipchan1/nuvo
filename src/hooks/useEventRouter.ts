@@ -13,8 +13,17 @@ import { useCalendarAccounts, useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { calendarKey, eventCountsAsActual, eventKey } from "../lib/eventActuals";
 import { planningWeekStartISO } from "../lib/dates";
+import { type RoutedVerdict, selectRoutingCandidates } from "../lib/eventRouting";
+import { useDomainEpoch } from "./useDomainEpoch";
 
 const BATCH = 40;
+
+// How much of a batch may go on RE-opening verdicts that predate the current
+// domains. Re-grooming one domain makes thousands of cached verdicts stale at
+// once; without a ceiling, the first load after a groom would spend the lot.
+// Un-routed events always take priority, and the leftovers are picked up on the
+// next load — the same convergence the never-routed path has always had.
+const STALE_BUDGET = 40;
 
 export function useEventRouter() {
   const qc = useQueryClient();
@@ -30,29 +39,36 @@ export function useEventRouter() {
   const eventsQ = useExternalEvents(range.start, range.end);
   const accountsQ = useCalendarAccounts();
   const { settings } = useSettings();
+  const epoch = useDomainEpoch();
 
-  // The set of event keys already judged (domain or null) — so we never re-route.
-  // MUST be complete: PostgREST caps an unbounded select at 1000 rows, and a set
+  // Every verdict already cached — with WHEN it was formed and whether it landed
+  // anywhere, which is what lets a re-groom re-open the ones that predate it.
+  // MUST be complete: PostgREST caps an unbounded select at 1000 rows, and a map
   // that silently drops keys makes already-routed events read as candidates
   // forever — which loops this hook against the LLM for as long as the app is
   // open. Page through with a stable order so every key is present.
   const routedQ = useQuery({
-    queryKey: ["event_domain_routing", "keys"],
-    queryFn: async (): Promise<Set<string>> => {
+    queryKey: ["event_domain_routing", "verdicts"],
+    queryFn: async (): Promise<Map<string, RoutedVerdict>> => {
       const PAGE = 1000;
-      const keys = new Set<string>();
+      const out = new Map<string, RoutedVerdict>();
       for (let from = 0; ; from += PAGE) {
         const { data, error } = await supabase
           .from("event_domain_routing")
-          .select("event_key")
+          .select("event_key, domain_id, routed_at")
           .order("event_key")
           .range(from, from + PAGE - 1);
         if (error) throw error;
         const rows = data ?? [];
-        for (const r of rows) keys.add(r.event_key as string);
+        for (const r of rows) {
+          out.set(r.event_key as string, {
+            routedAt: (r.routed_at as string | null) ?? null,
+            domainId: (r.domain_id as string | null) ?? null,
+          });
+        }
         if (rows.length < PAGE) break;
       }
-      return keys;
+      return out;
     },
     staleTime: 60_000,
   });
@@ -79,15 +95,22 @@ export function useEventRouter() {
       hiddenCalendarIds: new Set(hiddenIds ?? []),
       hiddenEventKeys: new Set((hiddenEvents ?? []).map((h) => h.key)),
     };
-    const candidates = events
-      .filter(
-        (e) =>
-          eventCountsAsActual(e, undefined, filter) && // past, busy, attended, not hidden
-          !map[calendarKey(e)] && // not deterministically mapped
-          !routed.has(eventKey(e)) && // not already judged
-          !attempted.current.has(eventKey(e)), // never spend twice in one session
-      )
-      .slice(0, BATCH);
+    const eligible = events.filter(
+      (e) =>
+        eventCountsAsActual(e, undefined, filter) && // past, busy, attended, not hidden
+        !map[calendarKey(e)], // not deterministically mapped
+    );
+
+    const candidates = selectRoutingCandidates({
+      eligible,
+      key: eventKey,
+      startAt: (e) => e.start_at,
+      routed,
+      attempted: attempted.current,
+      epoch,
+      batch: BATCH,
+      staleBudget: STALE_BUDGET,
+    });
     if (!candidates.length) return;
 
     for (const e of candidates) attempted.current.add(eventKey(e));
@@ -101,6 +124,10 @@ export function useEventRouter() {
         body: {
           events: candidates.map((e) => ({
             key: eventKey(e),
+            // The row id, so the edge function can look up attendees, location
+            // and the invite's first line — the signal a bare "1:1" title can't
+            // carry. Resolved server-side; `useExternalEvents` doesn't fetch raw.
+            id: e.id,
             title: e.title,
             calendarName: calName.get(e.calendar_id),
           })),
@@ -113,5 +140,5 @@ export function useEventRouter() {
       .catch(() => {
         inFlight.current = false;
       });
-  }, [eventsQ.data, routedQ.data, map, hiddenIds, hiddenEvents, accountsQ.data, qc]);
+  }, [eventsQ.data, routedQ.data, map, hiddenIds, hiddenEvents, accountsQ.data, epoch, qc]);
 }

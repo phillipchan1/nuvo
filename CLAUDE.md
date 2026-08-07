@@ -156,6 +156,14 @@ disagreed about which week Saturday plans. So:
   agent via the service role. So a tap and a chat message place a project identically.
 - **A new agent tool that writes planning state needs its UI twin in the registry** — or a
   logged decision saying why it doesn't have one.
+- **The same law covers *filing*.** Six paths decide which domain something belongs to (chat,
+  inbox grooming, the calendar router, the project router, the offline matcher, the proposal
+  engine). How a domain describes itself to any of them lives once, in
+  `supabase/functions/_shared/domainRouting.ts` — **never serialize `domains.context` by hand**,
+  and never re-derive "can Nuvo route here" in a surface (`routingStrength`). A field added to
+  `enrichDomain` that isn't emitted by the kernel's serializer reaches nobody; that is exactly how
+  `keywords` and `exemplars` came to be generated and read by no router at all. Full law in
+  [`docs/domain-routing.md`](docs/domain-routing.md) · D-087.
 - `npm test` (vitest) runs the conformance suite; CI (`.github/workflows/checks.yml`) runs
   typecheck + tests + an edge-function parse on every push.
 

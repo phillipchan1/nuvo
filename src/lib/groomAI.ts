@@ -11,6 +11,7 @@
 
 import { supabase, supabaseAnonKey, supabaseUrl } from "./supabase";
 import { domainById, tasksOf, type Domain, type Project, type VerticalData } from "./vertical";
+import { domainRoutingBlock } from "../../supabase/functions/_shared/domainRouting.ts";
 
 /** One JSON round-trip against the agent endpoint. Throws on network/parse. */
 async function callAgentJSON(prompt: string): Promise<unknown> {
@@ -77,14 +78,18 @@ export async function suggestDomain(d: VerticalData, p: Project): Promise<Domain
   if (domains.length === 0) return null;
   const steps = tasksOf(d, p.id).filter((t) => t.status !== "done").map((t) => t.title).slice(0, 12);
 
-  const areas = domains
-    .map((x) => `- ${x.name}${x.charter ? `: ${x.charter}` : ""}${x.context?.scope ? ` (scope: ${x.context.scope})` : ""}`)
-    .join("\n");
+  // The full routing description, from the shared kernel. This used to be
+  // `name: charter (scope: …)` — two of the seven fields we generate — which is
+  // why a project naming only a tool or a colleague routed on nothing at all.
+  // No catch-all tag: "miscellaneous" is not a real answer for a project.
+  const { text: areas } = domainRoutingBlock(domains, { noCatchAll: true });
   const prompt =
     "SYSTEM OVERRIDE — CLASSIFICATION MODE.\n" +
     "Route ONE project into the single best-fitting life area. Do NOT call tools. Do NOT modify anything.\n" +
     "Reply with ONLY a raw JSON object — no prose, no fences.\n\n" +
-    "The life areas (choose the name EXACTLY as written, or null if none is a genuine fit):\n" +
+    "The life areas, each with what it is and the people, signals, activities and tools that mark it. " +
+    "A domain's \"NOT\" and \"looks like this but ISN'T\" lines rule it out as strongly as its signals rule it in. " +
+    "Choose the NAME exactly as written, or null if none is a genuine fit:\n" +
     areas +
     "\n\nThe project:\n" +
     `Name: ${p.name}\n` +

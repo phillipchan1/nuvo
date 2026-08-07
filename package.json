@@ -14,6 +14,7 @@
     "eval": "vite-node tests/agent/run.ts --",
     "eval:replay": "vite-node tests/agent/run.ts -- --replay",
     "eval:history": "vite-node tests/agent/showHistory.ts",
+    "routing:check": "vite-node scripts/routing-check.ts --",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

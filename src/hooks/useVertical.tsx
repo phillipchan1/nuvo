@@ -28,6 +28,7 @@ import {
   buildVertical,
   normalizeInitiativeStatus,
   type Domain,
+  type DomainContext,
   type DomainRow,
   type Initiative,
   type InitiativeRow,
@@ -38,6 +39,7 @@ import {
   type VerticalData,
   type VTask,
 } from "../lib/vertical";
+import { routingFingerprint } from "../../supabase/functions/_shared/domainRouting.ts";
 
 /** Stable identity so the build memo doesn't churn while settings load. */
 const EMPTY_MAP: Record<string, string> = {};
@@ -55,7 +57,7 @@ export interface VerticalStore {
   // domains
   addDomain: () => Promise<Domain>;
   /** First-run only: create several named domains in one write. */
-  seedDomains: (specs: { name: string; color: string }[]) => Promise<void>;
+  seedDomains: (specs: { name: string; color: string; charter?: string }[]) => Promise<void>;
   updateDomain: (id: string, patch: Partial<Domain>) => void;
   deleteDomain: (id: string) => void;
 
@@ -586,6 +588,10 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             name: s.name,
             color: s.color,
             icon: "◇",
+            // The line the person wrote at first run. Optional, and everything
+            // works without it — but a domain with no charter routes on its name
+            // alone, which is the thinnest signal the routers ever get.
+            charter: s.charter?.trim() || "",
             sort_order: base + i + 1,
           })),
         );
@@ -601,7 +607,16 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if (patch.charter != null) rowPatch.charter = patch.charter;
         if (patch.context !== undefined) {
           rowPatch.context = patch.context;
-          rowPatch.context_at = new Date().toISOString();
+          // `context_at` is the routing epoch: moving it re-opens every cached
+          // verdict older than it. So it moves only when the context actually
+          // CHANGED — re-accepting an identical proposal (a re-groom that
+          // returned the same thing) must not cost a full re-route sweep.
+          const before = data.domains.find((d) => d.id === id) ?? null;
+          const key = (c: DomainContext | null) =>
+            routingFingerprint([{ id, name: before?.name ?? "", context: c }]);
+          if (key(before?.context ?? null) !== key(patch.context)) {
+            rowPatch.context_at = new Date().toISOString();
+          }
         }
         if (patch.weeklyTargetHours != null) rowPatch.weekly_target_hours = patch.weeklyTargetHours;
         if (patch.sort != null) rowPatch.sort_order = patch.sort;
