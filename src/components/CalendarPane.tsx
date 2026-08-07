@@ -275,6 +275,11 @@ export default function CalendarPane({
   const mutationsRef = useRef(mutations);
   mutationsRef.current = mutations;
 
+  // Month view has no other orientation cue (Week/Day are covered by the
+  // "THIS WEEK" rail label) — without a title, paging ‹ › leaves no way to
+  // tell which month you're looking at.
+  const [monthTitle, setMonthTitle] = useState("");
+
   // Hidden events (Fantastical-style): kept off the board + out of the busy math.
   // `showHidden` reveals them dimmed so you can bring one back. The context menu /
   // popover toggle the per-event hidden state.
@@ -1700,6 +1705,7 @@ export default function CalendarPane({
 
   const handleDatesSet = (arg: DatesSetArg) => {
     onRangeChange(arg.start.toISOString(), arg.end.toISOString());
+    if (arg.view.type === "dayGridMonth") setMonthTitle(arg.view.title);
   };
 
   return (
@@ -2164,8 +2170,18 @@ export default function CalendarPane({
           <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
         </div>
 
-        {/* Center — flexible drag region between the two control clusters. */}
-        <div className="w-0" data-tauri-drag-region />
+        {/* Center — Month's only orientation cue (Week/Day rely on the "THIS
+              WEEK" rail label instead); otherwise a flexible drag region. */}
+        {isMonth ? (
+          <div
+            data-tauri-drag-region
+            className="pointer-events-none flex max-w-[220px] select-none justify-center truncate leading-none"
+          >
+            <span className="masthead truncate text-lead leading-none text-text">{monthTitle}</span>
+          </div>
+        ) : (
+          <div className="w-0" data-tauri-drag-region />
+        )}
 
         {/* Right — quiet clock · week door · altitude · overflow. No overflow-hidden
             here — the ··· menu drops below and must be allowed to paint. */}
