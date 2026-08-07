@@ -2361,6 +2361,20 @@ select.field { appearance: none; -webkit-appearance: none; }
     overflow: hidden !important;
   }
 
+  /* …but the lock is about the page BEHIND the sheet, and a sheet's own body
+     wears `.mobile-scroll` too (it wants the momentum scrolling and the
+     overscroll containment). Freezing it made every tall sheet unscrollable —
+     you could open the domain, the task, the event, but never reach the foot of
+     it. Hand scrolling back to any scroller inside the open dialog. Matching
+     `.overflow-y-auto` as well as `.mobile-scroll` keeps this to elements that
+     asked to scroll vertically, so a deliberately `overflow-y-hidden` strip
+     (the deck's snap rail) isn't handed an axis it doesn't want. Two plain
+     rules rather than `:not(.scrim *)` — this has to hold on older iOS, where a
+     Selectors-4 `:not()` would drop the whole declaration. */
+  body.sheet-open [role="dialog"] .mobile-scroll.overflow-y-auto {
+    overflow-y: auto !important;
+  }
+
   /* Icon-only controls (✕, ‹, ⋯, ☾, ⚙) — `.tap` only guarantees HEIGHT, so a
      32px round ✕ stayed a 32px-wide thumb target and every sheet was hard to
      close. This grows the HIT AREA to 44×44 from the centre with a transparent

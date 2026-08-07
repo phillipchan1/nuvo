@@ -15,6 +15,10 @@ import type { Domain, Initiative, Project, VTask, VerticalData } from "../../lib
 import { todayISO } from "../../lib/dates";
 import MobileDomains from "./MobileDomains";
 import MobileDomainScreen from "./detail/MobileDomainScreen";
+// The open domain as the app actually mounts it — inside the bottom Sheet, whose
+// swipe-to-dismiss shares the touch stream with the content's scroll. A frame
+// that renders the screen in a plain scroller cannot catch a scroll bug here.
+import MobileDetailSheet from "./detail/MobileDetailSheet";
 // The desktop floor over the same fixtures, beside the phone — the two shells
 // share `lib/domainRead.ts` and `components/domain/DomainParts.tsx`, so this is
 // where a divergence would show up as a difference you can see.
@@ -231,6 +235,7 @@ export default function DomainHarness() {
   const store = useHarnessStore();
   const [openId, setOpenId] = useState<string>("d1");
   const [deskId, setDeskId] = useState<string>("");
+  const [sheet, setSheet] = useState(false);
 
   return (
     <VerticalStoreProvider value={store}>
@@ -247,6 +252,12 @@ export default function DomainHarness() {
             theme
           </button>
           <span className="text-meta text-muted">open: {openId}</span>
+          <button
+            className="rounded-full border border-line px-3 py-1 text-label text-muted"
+            onClick={() => setSheet((s) => !s)}
+          >
+            {sheet ? "close sheet" : "open in Sheet"}
+          </button>
         </div>
         <div className="flex gap-4 overflow-x-auto">
           <Frame label="the wall">
@@ -285,6 +296,11 @@ export default function DomainHarness() {
           </div>
         </div>
       </div>
+
+      {/* The real mount: the shared bottom Sheet, portalled over everything. */}
+      {sheet && (
+        <MobileDetailSheet target={{ kind: "domain", id: openId, n: 1 }} onClose={() => setSheet(false)} />
+      )}
     </VerticalStoreProvider>
   );
 }
