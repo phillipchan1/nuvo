@@ -113,6 +113,10 @@ export const TEACH_TARGETS: Record<TeachTargetKey, TeachTargetDef> = {
     rung: "domain",
     waypoint: '[data-teach="rung-domain"]',
     clearFocus: true,
+    // The phone has a Domains tab now (D-086), so this step is no longer skipped
+    // there. Light the named card if the wall is already open; otherwise the tab
+    // that leads to it, the way the project/initiative steps do.
+    mobileSelector: '[data-teach="domain-card"], [data-teach="mtab-domains"]',
   },
 
   // 7 · Open the chat, then light it. Describing the assistant while it's shut

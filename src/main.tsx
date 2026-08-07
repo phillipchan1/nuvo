@@ -45,13 +45,14 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek / ?daycal / ?meet / ?invite, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?daycal / ?domains / ?meet / ?invite, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
 const showDayCalHarness = import.meta.env.DEV && params.has("daycal");
 const showMeetHarness = import.meta.env.DEV && params.has("meet");
 const showInviteHarness = import.meta.env.DEV && params.has("invite");
+const showDomainHarness = import.meta.env.DEV && params.has("domains");
 
 if (showInviteHarness) {
   void import("./components/InviteHarness").then(({ default: InviteHarness }) => {
@@ -82,6 +83,14 @@ if (showInviteHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <MobileDayHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showDomainHarness) {
+  void import("./components/mobile/DomainHarness").then(({ default: DomainHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <DomainHarness />
       </React.StrictMode>,
     );
   });

@@ -2448,6 +2448,53 @@ domains) is a real change to what `investedThisWeek` means and belongs in its ow
 in the running dev app against real data: SCE 4.3h/23% → **27.9h/51%**, and the week's shape
 renders at 768px with no overflow.*
 
+**D-086 · 2026-08-07 · The Domain comes to the phone at full parity — as the fifth tab,
+over one shared voice.**
+
+Origin ⓞ: *"mobile view of domains. Full desktop feature parity. There's now room on
+bottom bar."* The anchor altitude was the only one you couldn't reach on a phone: the bar
+carried Calendar · Tasks · Projects · Initiatives, and a domain was reachable only by
+accident — a global-search jump into a thin sheet with a pulse, a target field and a task
+list. Q7 (*"am I being faithful in what I've been given?"*) was answerable **only at a
+desk**, which is the wrong place for it: the question shows up on a Tuesday night, not
+during a planning session.
+
+**What shipped.** Domains is a fifth bottom-bar destination (all five labels fit at 375px,
+57px tall — measured, not assumed). It opens the **wall**: the week's shape strip, then
+one card per domain carrying the living sigil, the state word, the vow, the Gain numbers
+and the "routes clean" mark. Tapping one opens the **open domain** in the shared detail
+Sheet, now carrying everything the desktop plate does — the sigil hero and faithfulness
+voice, the 13-week pulse against your intent, the Gain (quarter · week/target · streak ·
+blocks) with the deep-work/meeting split, what you've built, the portfolio with each bet's
+outcome-vs-build bars and at-risk chips, Nuvo's read, the grooming workbench, ＋project /
+＋initiative, and delete. The two things the phone does its own way: the sigil form and the
+domain's light are a disclosure under the hero rather than hover-revealed corner chrome
+(there is no hover), and "Parked here" is an editable list with a composer rather than the
+desktop's count, because capture on a phone is the point.
+
+**The decision that matters is not the tab — it's that neither shell owns the domain's
+voice.** "Quiet for 9 days", "needs grooming", the four sentences of Nuvo's read, the
+week's shape and the shipped list now live in `lib/domainRead.ts`, and the marks that draw
+them in `components/domain/DomainParts.tsx`. Both shells import both. The desktop floor
+lost ~490 lines and gained nothing; the phone got parity for free. This is the same rule
+as the planning kernel (D-032, `planningRules.ts`) applied one altitude up: **a domain that
+reads "quiet for 9 days" at a desk says exactly that in your hand, because there is only
+one place that sentence is written.**
+
+**Verification.** No account credentials exist in a fresh container, so the surfaces were
+driven against fixtures instead of guessed at: `?domains` (`mobile/DomainHarness.tsx`)
+mounts the wall, the open domain (tended · quiet · never-touched) **and the desktop floor**
+over one fabricated store, so a divergence between the shells is a difference you can see.
+Interactions driven, not assumed: tapping a wall card opens that domain, the composer parks
+a real task, the form/colour disclosure writes through, the routing workbench opens. Ten
+colour swatches can't be 44px in a 375px row, so the drawn circle stays 32px and
+`.tap-bloom` grows the hit area — every control in the open domain now clears 44×44 at
+375px, audited in the browser with the mobile media query actually applied.
+
+*Status: standing — typecheck clean, builds green (web + desktop), 382 tests green (the one
+pre-existing agent-prompt baseline failure untouched), no horizontal overflow at 375px in
+either theme.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 

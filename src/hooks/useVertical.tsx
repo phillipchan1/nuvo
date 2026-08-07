@@ -231,6 +231,13 @@ export interface BlueprintTree {
 
 const Ctx = createContext<VerticalStore | null>(null);
 
+/** DEV verify harnesses only: mount a fabricated store so a surface that reads
+ *  `useVertical()` can be driven at phone width without an account (see
+ *  `mobile/DomainHarness.tsx`, reached at `?domains`). Never used by the app. */
+export function VerticalStoreProvider({ value, children }: { value: VerticalStore; children: ReactNode }) {
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
 /** Fields whose change requires re-syncing the Google mirror event. */
 const MIRROR_FIELDS: (keyof Task)[] = ["start_time", "duration_minutes", "title", "status", "do_date"];
 

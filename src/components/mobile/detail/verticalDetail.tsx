@@ -23,8 +23,6 @@ import {
   initiativeAttainment,
   initiativeProgress,
   initiativesOf,
-  looseProjectsOf,
-  looseTasksOfDomain,
   looseTasksOfInitiative,
   projectProgress,
   projectsOf,
@@ -189,101 +187,6 @@ export function VerticalList({
           />
         );
       })}
-    </div>
-  );
-}
-
-// ── A single domain ──────────────────────────────────────────────────────────
-export function DomainScreen({
-  d,
-  store,
-  id,
-  onOpenInitiative,
-  onOpenProject,
-}: {
-  d: VerticalData;
-  store: Store;
-  id: string;
-  onOpenInitiative: (id: string) => void;
-  onOpenProject: (id: string) => void;
-}) {
-  const dom = d.domains.find((x) => x.id === id);
-  if (!dom) return <Empty>This domain is gone.</Empty>;
-  const inits = initiativesOf(d, dom.id);
-  const loose = looseProjectsOf(d, dom.id);
-  const looseTasks = looseTasksOfDomain(d, dom.id);
-
-  return (
-    <div className="px-4 pt-1" style={{ ["--accent" as string]: dom.color }}>
-      <RecordHead
-        accent={dom.color}
-        name={dom.name}
-        onName={(v) => store.updateDomain(dom.id, { name: v })}
-        outcome={dom.intention}
-        onOutcome={(v) => store.updateDomain(dom.id, { intention: v })}
-        outcomePlaceholder="The standing vow — what faithfulness here means…"
-      />
-
-      <Section label="Faithfulness">
-        <div className="rounded-xl border border-line bg-surface-2 p-3">
-          <Pulse weeks={dom.weeks} color={dom.color} />
-          <div className="mono mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted">
-            <span style={{ color: dom.color }}>{dom.investedThisWeek.toFixed(1)}h this week</span>
-            <span>{dom.quarterHours}h this quarter</span>
-            <span>{dom.lastTouchedDays >= 99 ? "untouched" : `groomed ${dom.lastTouchedDays}d ago`}</span>
-          </div>
-        </div>
-      </Section>
-
-      <Section label="Weekly target">
-        <div className="flex items-center gap-2">
-          <NumberField value={dom.weeklyTargetHours} onCommit={(v) => store.updateDomain(dom.id, { weeklyTargetHours: v })} />
-          <span className="text-body text-muted">hours / week</span>
-        </div>
-      </Section>
-
-      <Section label="Initiatives" meter={inits.length ? String(inits.length) : null}>
-        {inits.length === 0 ? (
-          <Hint>No initiatives in this domain.</Hint>
-        ) : (
-          <CardList>
-            {inits.map((i) => (
-              <InitiativeRow key={i.id} d={d} i={i} onClick={() => onOpenInitiative(i.id)} />
-            ))}
-          </CardList>
-        )}
-      </Section>
-
-      {loose.length > 0 && (
-        <Section label="Projects (no initiative)" meter={String(loose.length)}>
-          <CardList>
-            {loose.map((p) => (
-              <ProjectRow key={p.id} d={d} p={p} onClick={() => onOpenProject(p.id)} />
-            ))}
-          </CardList>
-        </Section>
-      )}
-
-      <Section label="Parked here" meter={looseTasks.length ? String(looseTasks.length) : null}>
-        {looseTasks.length > 0 && (
-          <CardList>
-            {looseTasks.map((t) => (
-              <TaskRow
-                key={t.id}
-                t={t}
-                onToggle={() => store.toggleTask(t.id)}
-                onDelete={() => store.deleteTask(t.id)}
-              />
-            ))}
-          </CardList>
-        )}
-        <TaskComposer
-          parent={{ domainId: dom.id }}
-          store={store}
-          accent={dom.color}
-          placeholder="A task parked in this area…"
-        />
-      </Section>
     </div>
   );
 }
@@ -737,24 +640,6 @@ export function Lamp({ lit, color }: { lit: boolean; color: string }) {
   );
 }
 
-export function Pulse({ weeks, color }: { weeks: number[]; color: string }) {
-  const max = Math.max(0.5, ...weeks);
-  return (
-    <div className="flex h-7 items-end gap-0.5">
-      {weeks.map((w, idx) => (
-        <div
-          key={idx}
-          className="flex-1 rounded-sm"
-          style={{
-            height: Math.max(2, (w / max) * 28),
-            background: idx === weeks.length - 1 ? color : `color-mix(in srgb, ${color} 40%, transparent)`,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function ProgressBar({ pct, color }: { pct: number; color: string }) {
   return (
     <div className="relative mt-2 h-1.5 rounded-full" style={{ background: "var(--line)" }}>
@@ -928,18 +813,25 @@ export function AreaField({
   );
 }
 
-export function NumberField({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+/** An editable number that sits INSIDE a sentence ("23.5h / 20h this week") —
+ *  so it stays a 44px target and keeps a hairline to say it's editable, but it
+ *  doesn't grow a filled box that outweighs the figure it qualifies. */
+export function NumberField({ value, onCommit, accent }: { value: number; onCommit: (v: number) => void; accent?: string }) {
   return (
     <input
+      key={value}
       type="number"
+      inputMode="decimal"
       min={0}
       step={0.5}
       defaultValue={value}
+      aria-label="Weekly target hours"
       onBlur={(e) => {
         const next = Number(e.target.value);
         if (!Number.isNaN(next) && next !== value) onCommit(next);
       }}
-      className="mono tap w-20 rounded-lg border border-line bg-surface px-2.5 py-2 text-head outline-none focus:border-accent"
+      className="mono tap w-14 rounded-lg border border-line bg-transparent px-2 py-1.5 text-head tabular-nums outline-none focus:border-accent"
+      style={accent ? { color: accent } : undefined}
     />
   );
 }
@@ -958,6 +850,8 @@ export function RecordHead({
   onOutcome,
   outcomePlaceholder,
   accent,
+  center = false,
+  flourish,
 }: {
   name: string;
   onName: (v: string) => void;
@@ -965,18 +859,24 @@ export function RecordHead({
   onOutcome: (v: string) => void;
   outcomePlaceholder: string;
   accent: string;
+  /** A domain is ceremony, not a work item — its hero is centred, and its vow
+   *  reads as an inscription rather than a one-line outcome. */
+  center?: boolean;
+  /** An optional rule between the name and the vow (the domain's Flourish). */
+  flourish?: ReactNode;
 }) {
   return (
-    <div className="pb-1">
+    <div className={`pb-1 ${center ? "text-center" : ""}`}>
       <TextField
-        className="text-display masthead leading-tight"
+        className={`text-display masthead leading-tight ${center ? "text-center" : ""}`}
         value={name}
         onCommit={onName}
         style={{ caretColor: accent }}
       />
+      {flourish && <div className="my-2 flex justify-center">{flourish}</div>}
       <AreaField
-        className="mt-1 text-head leading-snug"
-        style={{ color: "color-mix(in srgb, var(--ink) 72%, var(--muted))", caretColor: accent }}
+        className={`mt-1 leading-snug ${center ? "serif text-head italic" : "text-head"}`}
+        style={{ color: "color-mix(in srgb, var(--ink) 72%, var(--muted))", caretColor: accent, ...(center ? { textAlign: "center" as const } : {}) }}
         value={outcome}
         placeholder={outcomePlaceholder}
         onCommit={onOutcome}

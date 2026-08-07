@@ -7,8 +7,8 @@ import { useEffect, useState } from "react";
 import { useVertical } from "../../../hooks/useVertical";
 import { useMobileSheetStackHistory } from "../../../hooks/useMobileOverlayHistory";
 import Sheet from "../Sheet";
+import MobileDomainScreen from "./MobileDomainScreen";
 import {
-  DomainScreen,
   InitiativeScreen,
   ProjectScreen,
   RecordCrumbs,
@@ -132,7 +132,7 @@ export default function MobileDetailSheet({
     >
       <div className="pb-8">
         {frame.level === "domain" ? (
-          <DomainScreen key={frame.id} d={d} store={store} id={frame.id} onOpenInitiative={openInitiative} onOpenProject={openProject} />
+          <MobileDomainScreen key={frame.id} d={d} store={store} id={frame.id} onOpenInitiative={openInitiative} onOpenProject={openProject} onClose={onClose} />
         ) : frame.level === "initiative" ? (
           <InitiativeScreen key={frame.id} d={d} store={store} id={frame.id} onOpenProject={openProject} />
         ) : frame.level === "project" ? (

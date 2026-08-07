@@ -32,6 +32,7 @@ import MobileCalendar from "./MobileCalendar";
 import RecurringUpkeepPanel from "../RecurringUpkeepPanel";
 import MobileProjects from "./MobileProjects";
 import MobileInitiatives from "./MobileInitiatives";
+import MobileDomains from "./MobileDomains";
 import MobileReadiness from "./MobileReadiness";
 import { WeekCompanions } from "./WeekPlanCard";
 import MobilePlanWeek from "./MobilePlanWeek";
@@ -44,13 +45,13 @@ import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
 
-// Top-level destinations — the four surfaces you work from on the phone, mirror-
-// ing the desktop altitudes: Calendar · Tasks, then the two strategic altitudes
-// that On Deck makes first-class — Projects and Initiatives. Capture (＋) and
-// Nuvo (✦) are *actions*, not places, so they float above the bar instead of
+// Top-level destinations — the five surfaces you work from on the phone, the
+// desktop altitudes in order: Calendar · Tasks, then the three strategic ones —
+// Projects, Initiatives and the anchor they all hang off, Domains. Capture (＋)
+// and Nuvo (✦) are *actions*, not places, so they float above the bar instead of
 // taking a slot; Nuvo opens as an overlay over whatever screen you're on, so its
 // answers carry that screen's context.
-type Tab = "calendar" | "tasks" | "projects" | "initiatives";
+type Tab = "calendar" | "tasks" | "projects" | "initiatives" | "domains";
 const TAB_KEY = "nuvo-mobile-tab-v3";
 const TAB_KEY_V2 = "nuvo-mobile-tab-v2"; // pre-redesign: now|calendar|tasks|plan|nuvo
 const SUB_KEY = "nuvo-mobile-tasksub";
@@ -66,6 +67,9 @@ const NAV: { id: Tab; label: string; kind: AltitudeKind }[] = [
   // each opening to its read-first On Deck.
   { id: "projects", label: "Projects", kind: "project" },
   { id: "initiatives", label: "Initiatives", kind: "initiative" },
+  // The anchor — the fixtures everything else hangs off. Read-first like the
+  // other two, and the one altitude measured by faithfulness, not throughput.
+  { id: "domains", label: "Domains", kind: "domain" },
 ];
 
 const SUBTABS: { id: MobileTab; label: string }[] = [
@@ -366,7 +370,8 @@ export default function MobileShell() {
   // Route a readiness "turn" to the surface that resolves it.
   const reviewFloor = (floor: Floor) => {
     if (floor === "project") setTab("projects");
-    else if (floor === "initiative" || floor === "domain") setTab("initiatives");
+    else if (floor === "domain") setTab("domains");
+    else if (floor === "initiative") setTab("initiatives");
     else {
       setSub("today");
       setTab("tasks");
@@ -441,6 +446,8 @@ export default function MobileShell() {
           <MobileProjects onOpenItem={openDetail} />
         ) : tab === "initiatives" ? (
           <MobileInitiatives onOpenItem={openDetail} />
+        ) : tab === "domains" ? (
+          <MobileDomains onOpenItem={openDetail} />
         ) : (
           <div className="fab-clear">
             <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
@@ -473,7 +480,7 @@ export default function MobileShell() {
         )}
       </main>
 
-      {/* Bottom bar — five equal navigation destinations. Capture (＋) and Nuvo
+      {/* Bottom bar — the five navigation destinations, equal width. Capture (＋) and Nuvo
           (✦) float above the bar as the two primary *actions* (bottom-right thumb
           arc), so the row stays even and the bold accent belongs to capture. */}
       <nav className="pb-safe relative flex shrink-0 items-stretch border-t border-line bg-surface">
@@ -608,6 +615,8 @@ function navFocusFor(
       return { rung: "project" };
     case "initiatives":
       return { rung: "initiative" };
+    case "domains":
+      return { rung: "domain" };
     default:
       return { rung: "day" };
   }
@@ -636,6 +645,8 @@ function liveHintFor(
       return { rung: "project" };
     case "initiatives":
       return { rung: "initiative" };
+    case "domains":
+      return { rung: "domain" };
     default:
       return { rung: "day", mobileTab: sub };
   }

@@ -627,18 +627,21 @@ export function IconBtn({ children, onClick, title, danger }: { children: ReactN
 /** Destructive, so it says what it does. A bare ✕ next to a "Done" button reads
  *  as "close" — the one thing it isn't. The word is the affordance; the arm step
  *  is the safety. */
-export function DeleteBtn({ onDelete, what }: { onDelete: () => void; what: string }) {
+export function DeleteBtn({ onDelete, what, phone = false }: { onDelete: () => void; what: string; phone?: boolean }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
     if (!armed) return;
     const t = setTimeout(() => setArmed(false), 2600);
     return () => clearTimeout(t);
   }, [armed]);
+  // `phone` only sizes it to a thumb (44px, body type) — the arm-then-confirm
+  // safety and the wording are the same on both shells.
+  const size = phone ? "tap px-4 py-2.5 text-body" : "px-2.5 py-1 text-meta";
   if (armed)
     return (
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        className="fast rounded-md border px-2.5 py-1 text-meta font-medium"
+        className={`fast rounded-md border font-medium ${size}`}
         style={{ borderColor: "var(--signal)", color: "var(--signal)" }}
       >
         Delete {what}?
@@ -648,7 +651,7 @@ export function DeleteBtn({ onDelete, what }: { onDelete: () => void; what: stri
     <button
       onClick={() => setArmed(true)}
       title={`Delete this ${what}`}
-      className="fast rounded-md border border-line px-2.5 py-1 text-meta font-medium text-muted hover:border-signal hover:text-signal"
+      className={`fast rounded-md border border-line font-medium text-muted hover:border-signal hover:text-signal ${size}`}
     >
       Delete
     </button>

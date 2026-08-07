@@ -107,8 +107,8 @@ it needs to work on a phone.
 
 - `AppShell` → `ResponsiveShell` renders `MobileShell` (<768px) or `AppShellInner`
   (desktop) via `useIsMobile()`.
-- **Mobile UI lives in `src/components/mobile/`.** Bottom bar = four equal navigation
-  destinations **Calendar · Tasks · Projects · Initiatives**, opening on Calendar. Capture
+- **Mobile UI lives in `src/components/mobile/`.** Bottom bar = five equal navigation
+  destinations **Calendar · Tasks · Projects · Initiatives · Domains**, opening on Calendar. Capture
   and Nuvo are *actions*, not places, so neither is a tab: they float above the bar
   (bottom-right) as the **＋ FAB** and the **✦ launcher**, both hidden only while the chat
   is open. Capture and the Nuvo chat are *permanent first-class actions*. Today/Week/Inbox
@@ -123,8 +123,17 @@ it needs to work on a phone.
   standing-slot routing, project-slot clustering, `composeWeek`, the commit. `SundayRitual`
   (desktop grid, drag) and `MobilePlanWeek` (phone steps, tap) are layouts over it. Never
   compute a week in a surface.
+- **The Domain reads the same on both shells.** The desktop floor
+  (`floors/DomainFloor.tsx`) and the phone (`mobile/MobileDomains.tsx` + the open domain,
+  `mobile/detail/MobileDomainScreen.tsx`) are two layouts over one voice
+  (`lib/domainRead.ts` — state, clarity, Nuvo's read, the week's shape) and one set of
+  marks (`components/domain/DomainParts.tsx` — the faithfulness pulse, the clarity mark,
+  the week-shape strip, the sigil-form and colour choosers, the grooming workbench).
+  **Never re-derive "is this domain quiet" in a surface** — import it. Verify both at once
+  at `?domains` (`mobile/DomainHarness.tsx`), which renders the wall, the open domain and
+  the desktop floor over the same fixtures — see D-086.
 - **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), Record
-  screens, the Domain floor, Project/Initiative floors, Collection board/table/timeline, and
+  screens, Project/Initiative floors, Collection board/table/timeline, and
   the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** instead of
   FullCalendar: month grid → drill into **List** (agenda + Free chips) or **Day** (one
   day as a proportional time grid), both over one `buildDayPlan` (`dayPlan.ts`) — see
