@@ -31,10 +31,28 @@ import DomainSigil from "../floors/DomainSigil";
 import { RefinedTick } from "../floors/parts";
 import { AltitudeIcon } from "../icons";
 
-/** The domain's light — the ten identities a fixture can take. */
+/** The domain's light — twenty identities, ordered by hue so the grid scans. */
 export const SWATCHES = [
-  "#DB2777", "#7C3AED", "#2563EB", "#0D9488", "#059669",
-  "#D97706", "#4F46E5", "#DC2626", "#0891B2", "#65A30D",
+  "#DC2626", // red
+  "#EA580C", // orange
+  "#D97706", // amber
+  "#CA8A04", // gold
+  "#65A30D", // lime
+  "#16A34A", // green
+  "#059669", // emerald
+  "#0D9488", // teal
+  "#0891B2", // cyan
+  "#0284C7", // sky
+  "#2563EB", // blue
+  "#4F46E5", // indigo
+  "#7C3AED", // violet
+  "#9333EA", // purple
+  "#C026D3", // fuchsia
+  "#DB2777", // pink
+  "#E11D48", // rose
+  "#BE185D", // magenta
+  "#B45309", // bronze
+  "#57534E", // stone
 ];
 
 // ── The faithfulness pulse — 13 weeks of showing-up, an EKG, not a bar ────────
@@ -230,7 +248,7 @@ export function SigilFormGrid({
   );
 }
 
-/** The domain's light. Same ten swatches on both shells. */
+/** The domain's light. Same twenty swatches on both shells. */
 export function SwatchGrid({
   value,
   onPick,
@@ -241,16 +259,16 @@ export function SwatchGrid({
   phone?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="grid grid-cols-5 gap-1.5">
       {SWATCHES.map((c) => (
         <button
           key={c}
           onClick={() => onPick(c)}
           aria-label={`Set the domain's light to ${c}`}
           aria-pressed={c === value}
-          // ten 44px circles don't fit a 375px row, so the drawn swatch stays
+          // Twenty 44px circles don't fit a 375px row, so the drawn swatch stays
           // 32px and `.tap-bloom` grows the hit area past 44 invisibly.
-          className={`fast rounded-full ring-1 ring-line ${phone ? "tap-bloom h-8 w-8 active:scale-95" : "h-5 w-5"}`}
+          className={`fast justify-self-center rounded-full ring-1 ring-line ${phone ? "tap-bloom h-8 w-8 active:scale-95" : "h-5 w-5"}`}
           style={{ background: c, ...(c === value ? { boxShadow: `0 0 0 2px var(--bg), 0 0 0 4px ${c}` } : {}) }}
         />
       ))}

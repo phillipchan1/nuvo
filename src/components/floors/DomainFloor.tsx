@@ -493,7 +493,7 @@ function ColorDot({ domain }: { domain: Domain }) {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="rise elev-2 absolute right-0 top-full z-50 mt-1 rounded-md border border-line bg-surface p-2" style={{ width: 140 }}>
+          <div className="rise elev-2 absolute right-0 top-full z-50 mt-1 rounded-md border border-line bg-surface p-2" style={{ width: 148 }}>
             <SwatchGrid value={domain.color} onPick={(c) => { updateDomain(domain.id, { color: c }); setOpen(false); }} />
           </div>
         </>
