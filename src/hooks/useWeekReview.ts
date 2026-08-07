@@ -5,6 +5,7 @@
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import type { WeekReport } from "../lib/composeWeek";
 
 export type FindResponse = "confirmed" | "corrected" | "dismissed" | "kept";
@@ -23,28 +24,19 @@ export interface WeekReviewRow {
 
 const KEY = ["week_reviews"] as const;
 
-async function uid(): Promise<string> {
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) throw new Error("Not signed in");
-  return data.user.id;
-}
 
-/** Ensure a week_reviews row exists without clobbering an existing report. */
+/**
+ * Ensure a week_reviews row exists without clobbering an existing report.
+ *
+ * Queued, and addressed by the **week**, not by a uuid. There is one row per
+ * week, and an offline client cannot learn the server's id for it — minting one
+ * would risk a second row for the same week and a `23505` that parks the whole
+ * review. The transport declares `week_start` as this table's identity and
+ * upserts on `(user_id, week_start)`, which is exactly the ensure this used to
+ * do with a read-then-insert (and without its lost-race window).
+ */
 async function ensureRow(weekStartISO: string): Promise<void> {
-  const userId = await uid();
-  const { data } = await supabase
-    .from("week_reviews")
-    .select("id")
-    .eq("week_start", weekStartISO)
-    .maybeSingle();
-  if (data) return;
-  const { error } = await supabase.from("week_reviews").insert({
-    user_id: userId,
-    week_start: weekStartISO,
-    report: {},
-  });
-  // Unique race: another writer won — fine.
-  if (error && error.code !== "23505") throw error;
+  await queueWrite(makeOp("week_reviews", "insert", weekStartISO, { report: {} }));
 }
 
 export function useWeekReviewRow(weekStartISO: string) {
@@ -93,28 +85,25 @@ export function useWeekReviewList() {
 
 export function useWeekReviewActions(weekStartISO: string) {
   const qc = useQueryClient();
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: KEY });
+  const invalidate = () => invalidateWhenSafe(qc, "week_reviews", KEY);
+
+  /** Every write addresses the row by its week — see `ensureRow`. */
+  const patchWeek = async (patch: Record<string, unknown>) => {
+    qc.setQueryData<WeekReviewRow | null>([...KEY, weekStartISO], (old) =>
+      old ? ({ ...old, ...patch } as WeekReviewRow) : old,
+    );
+    await queueWrite(makeOp("week_reviews", "update", weekStartISO, patch));
+    invalidateWhenSafe(qc, "week_reviews", KEY);
   };
 
   const seal = useMutation({
     mutationFn: async (report: WeekReport) => {
-      const userId = await uid();
-      const { data, error } = await supabase
-        .from("week_reviews")
-        .upsert(
-          {
-            user_id: userId,
-            week_start: weekStartISO,
-            report,
-            sealed_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id,week_start" },
-        )
-        .select("id, week_start, report, find_narration, find_response, find_kept, note_to_monday, note_to_monday_seen_at, sealed_at")
-        .single();
-      if (error) throw error;
-      return data as WeekReviewRow;
+      // Ensure-then-patch. The two fold into one upsert before they leave the
+      // device, and `week_reviews` is declared merge-on-conflict precisely so
+      // that folded insert still writes the report over a placeholder row
+      // instead of being ignored as a duplicate.
+      await ensureRow(weekStartISO);
+      await patchWeek({ report, sealed_at: new Date().toISOString() });
     },
     onSuccess: invalidate,
   });
@@ -122,14 +111,7 @@ export function useWeekReviewActions(weekStartISO: string) {
   const setFindResponse = useMutation({
     mutationFn: async ({ response, kept }: { response: FindResponse; kept?: boolean }) => {
       await ensureRow(weekStartISO);
-      const { error } = await supabase
-        .from("week_reviews")
-        .update({
-          find_response: response,
-          find_kept: kept ?? response === "kept",
-        })
-        .eq("week_start", weekStartISO);
-      if (error) throw error;
+      await patchWeek({ find_response: response, find_kept: kept ?? response === "kept" });
     },
     onSuccess: invalidate,
   });
@@ -137,11 +119,7 @@ export function useWeekReviewActions(weekStartISO: string) {
   const setFindNarration = useMutation({
     mutationFn: async (narration: { headline: string; detail: string }) => {
       await ensureRow(weekStartISO);
-      const { error } = await supabase
-        .from("week_reviews")
-        .update({ find_narration: narration })
-        .eq("week_start", weekStartISO);
-      if (error) throw error;
+      await patchWeek({ find_narration: narration });
     },
     onSuccess: invalidate,
   });
@@ -149,22 +127,14 @@ export function useWeekReviewActions(weekStartISO: string) {
   const setNoteToMonday = useMutation({
     mutationFn: async (note: string) => {
       await ensureRow(weekStartISO);
-      const { error } = await supabase
-        .from("week_reviews")
-        .update({ note_to_monday: note.trim() || null })
-        .eq("week_start", weekStartISO);
-      if (error) throw error;
+      await patchWeek({ note_to_monday: note.trim() || null });
     },
     onSuccess: invalidate,
   });
 
   const markNoteSeen = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase
-        .from("week_reviews")
-        .update({ note_to_monday_seen_at: new Date().toISOString() })
-        .eq("week_start", weekStartISO);
-      if (error) throw error;
+      await patchWeek({ note_to_monday_seen_at: new Date().toISOString() });
     },
     onSuccess: invalidate,
   });

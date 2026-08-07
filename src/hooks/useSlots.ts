@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
+import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../lib/types";
 
 const SLOT_COLS =
@@ -64,163 +65,105 @@ export interface NewSlotInput {
 export function useSlotMutations() {
   const qc = useQueryClient();
 
-  const create = useMutation({
-    mutationFn: async (input: NewSlotInput): Promise<Slot> => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) throw new Error("Not signed in");
-      const { data, error } = await supabase
-        .from("slots")
-        .insert({
-          ...input,
-          duration_minutes: input.duration_minutes ?? DEFAULT_DURATION_MINUTES,
-          user_id: session.user.id,
-        })
-        .select(SLOT_COLS)
-        .single();
-      if (error) throw error;
-      invokeQuiet("slot-mirror", { slotId: data.id });
-      return data as Slot;
-    },
-    onMutate: async (input) => {
-      await qc.cancelQueries({ queryKey: ["slots"] });
-      const tempId = crypto.randomUUID();
-      const optimistic: Slot = {
-        id: tempId,
-        user_id: "",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        title: input.title,
-        do_date: input.do_date,
-        start_time: input.start_time,
+  /**
+   * Create a standing slot.
+   *
+   * Client-minted id, cache first, then the queue — same shape as a task
+   * create, and for the same reason: the temp-id swap this used to do only
+   * existed because Postgres named the row. A slot dragged onto the grid with
+   * no network now stays there.
+   */
+  const createSlot = async (input: NewSlotInput): Promise<Slot> => {
+    const id = crypto.randomUUID();
+    const optimistic: Slot = {
+      id,
+      user_id: "",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      title: input.title,
+      do_date: input.do_date,
+      start_time: input.start_time,
+      duration_minutes: input.duration_minutes ?? DEFAULT_DURATION_MINUTES,
+      project_id: input.project_id ?? null,
+      domain_id: input.domain_id ?? null,
+      color: input.color ?? null,
+      google_event_id: null,
+      recurrence_id: null,
+      recurrence_date: null,
+      recurrence_overridden: false,
+    };
+    qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+      old ? [...old, optimistic] : [optimistic],
+    );
+
+    await queueWrite(
+      makeOp("slots", "insert", id, {
+        ...input,
         duration_minutes: input.duration_minutes ?? DEFAULT_DURATION_MINUTES,
-        project_id: input.project_id ?? null,
-        domain_id: input.domain_id ?? null,
-        color: input.color ?? null,
-        google_event_id: null,
-        recurrence_id: null,
-        recurrence_date: null,
-        recurrence_overridden: false,
-      };
-      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
-        old ? [...old, optimistic] : [optimistic],
-      );
-      return { tempId };
-    },
-    onSuccess: (realSlot, _, ctx) => {
-      if (!ctx) return;
-      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
-        old?.map((s) => (s.id === ctx.tempId ? realSlot : s)),
-      );
-    },
-    onError: (_, __, ctx) => {
-      if (!ctx) return;
-      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
-        old?.filter((s) => s.id !== ctx.tempId),
-      );
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["slots"] }),
-  });
+      }),
+    );
+    if (navigator.onLine) invokeQuiet("slot-mirror", { slotId: id });
+    invalidateWhenSafe(qc, "slots", ["slots"]);
+    return optimistic;
+  };
 
-  const update = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Partial<Slot> }) => {
-      const { error } = await supabase.from("slots").update(patch).eq("id", id);
-      if (error) throw error;
-      // Children ride the slot's day — keep their do_date in lockstep so the
-      // week board / readiness don't treat slotted work as "needs a day".
-      // Fire-and-forget: the UI already moved them in onMutate, and awaiting
-      // this (plus the Google mirror) was blanking the calendar for seconds.
+  /**
+   * Move / resize a slot, dragging its children's day with it.
+   *
+   * The child sync was `.update({do_date}).eq("slot_id", id)` — a predicate the
+   * server resolves. Queued, that is unsafe (it would match whatever sits in the
+   * slot days later, not what the user moved), so the children are resolved from
+   * the task cache now and queued one op each.
+   *
+   * Slots deliberately still do NOT invalidate on settle: the optimistic patch
+   * is what the user dragged to, and a refetch used to clear the event off the
+   * grid until it returned.
+   */
+  const updateSlot = ({ id, patch }: { id: string; patch: Partial<Slot> }) => {
+    const paint = () => {
+      patchSlotCaches(qc, id, patch);
       if (patch.do_date !== undefined) {
-        void supabase
-          .from("tasks")
-          .update({ do_date: patch.do_date })
-          .eq("slot_id", id)
-          .then(({ error: childErr }) => {
-            if (childErr) console.warn("[nuvo] slot child do_date sync failed:", childErr.message);
-          });
+        qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+          old?.map((t) => (t.slot_id === id ? { ...t, do_date: patch.do_date! } : t)),
+        );
       }
-      return { id, patch };
-    },
-    onMutate: async ({ id, patch }) => {
-      // Paint FIRST — any await before the cache write leaves FullCalendar
-      // reconciling against stale props, and the event vanishes until a slow
-      // refetch lands. Snapshot for rollback, then cancel in-flight refetches
-      // so they can't overwrite the optimistic times, then re-apply.
-      const snapshot = qc.getQueriesData<Slot[]>({ queryKey: ["slots"] });
-      const taskSnapshot = qc.getQueriesData<Task[]>({ queryKey: ["tasks"] });
-      const paint = () => {
-        patchSlotCaches(qc, id, patch);
-        if (patch.do_date !== undefined) {
-          qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-            old?.map((t) => (t.slot_id === id ? { ...t, do_date: patch.do_date! } : t)),
-          );
-        }
-      };
-      paint();
-      await Promise.all([
-        qc.cancelQueries({ queryKey: ["slots"] }),
-        qc.cancelQueries({ queryKey: ["tasks"] }),
-      ]);
-      paint();
-      return { snapshot, taskSnapshot };
-    },
-    onSuccess: ({ id }) => invokeQuiet("slot-mirror", { slotId: id }),
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.snapshot) {
-        for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
-      }
-      if (ctx?.taskSnapshot) {
-        for (const [key, data] of ctx.taskSnapshot) qc.setQueryData(key, data);
-      }
-    },
-    onSettled: (_data, _err, vars) => {
-      // Do NOT invalidate slots here. The optimistic patch is the truth the
-      // user just dragged to; a refetch (often multi-second to Supabase, and
-      // echoed again by realtime from our own write) was clearing the event
-      // off the grid until it returned. Realtime still refreshes google_event_id
-      // / cross-tab edits. Tasks only when the day actually moved.
-      if (vars.patch.do_date !== undefined) {
-        qc.invalidateQueries({ queryKey: ["tasks"] });
-      }
-    },
-  });
+    };
+    paint();
 
-  const remove = useMutation({
-    mutationFn: async (slot: Slot) => {
-      // Tear down the Google mirror first, passing the event id directly since
-      // the row is about to vanish (slot-mirror can't read a deleted row).
+    void (async () => {
+      await queueWrite(makeOp("slots", "update", id, patch as Record<string, unknown>));
+
+      if (patch.do_date !== undefined) {
+        const children = new Set<string>();
+        for (const [, rows] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+          for (const t of rows ?? []) if (t.slot_id === id) children.add(t.id);
+        }
+        for (const taskId of children) {
+          await queueWrite(makeOp("tasks", "update", taskId, { do_date: patch.do_date }));
+        }
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      }
+      if (navigator.onLine) invokeQuiet("slot-mirror", { slotId: id });
+    })();
+  };
+
+  const removeSlot = (slot: Slot) => {
+    qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+      old?.filter((s) => s.id !== slot.id),
+    );
+    // The mirror teardown carries the event id directly — the row is about to
+    // go, and slot-mirror cannot read a deleted row.
+    if (navigator.onLine) {
       invokeQuiet("slot-mirror", {
         slotId: slot.id,
         deleted: true,
         googleEventId: slot.google_event_id,
       });
-      const { error } = await supabase.from("slots").delete().eq("id", slot.id);
-      if (error) throw error;
-    },
-    onMutate: async (slot) => {
-      const snapshot = qc.getQueriesData<Slot[]>({ queryKey: ["slots"] });
-      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
-        old?.filter((s) => s.id !== slot.id),
-      );
-      await qc.cancelQueries({ queryKey: ["slots"] });
-      qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
-        old?.filter((s) => s.id !== slot.id),
-      );
-      return { snapshot };
-    },
-    onError: (_err, _slot, ctx) => {
-      if (ctx?.snapshot) {
-        for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
-      }
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["slots"] });
-      qc.invalidateQueries({ queryKey: ["tasks"] }); // orphaned children
-    },
-  });
-
-  return {
-    createSlot: create.mutateAsync,
-    updateSlot: update.mutate,
-    removeSlot: remove.mutate,
+    }
+    void queueWrite(makeOp("slots", "delete", slot.id));
+    invalidateWhenSafe(qc, "slots", ["slots"]);
+    invalidateWhenSafe(qc, "tasks", ["tasks"]); // orphaned children
   };
+
+  return { createSlot, updateSlot, removeSlot };
 }

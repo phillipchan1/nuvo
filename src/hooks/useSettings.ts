@@ -1,6 +1,7 @@
 import { useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { invalidateWhenSafe, makeOp, OWNER_ROW, queueWrite } from "../lib/sync";
 import type { UserSettings } from "../lib/types";
 import { DEFAULT_MEET_PREFERENCE, normalizeMeetPreference } from "../../supabase/functions/_shared/conferencing.ts";
 
@@ -72,25 +73,27 @@ export function useSettings() {
     },
   });
 
-  const update = useMutation({
-    mutationFn: async (patch: Partial<UserSettings>) => {
-      const { data: u } = await supabase.auth.getUser();
-      const { error } = await supabase
-        .from("user_settings")
-        .upsert({ user_id: u.user!.id, ...patch });
-      if (error) throw error;
-    },
-    onMutate: async (patch) => {
-      await qc.cancelQueries({ queryKey: KEY });
-      const prev = qc.getQueryData<UserSettings>(KEY);
-      if (prev) qc.setQueryData(KEY, { ...prev, ...patch });
-      return { prev };
-    },
-    onError: (_e, _p, ctx) => ctx?.prev && qc.setQueryData(KEY, ctx.prev),
-    onSettled: () => qc.invalidateQueries({ queryKey: KEY }),
-  });
+  /**
+   * Change a setting.
+   *
+   * Queued, and addressed by the *account* rather than by a row id — the
+   * `user_settings` primary key IS `user_id`, and the transport fills it from
+   * the session at send time (`ownerKeyed`). Filling it at enqueue time would
+   * be wrong: the op can be replayed on a later launch, after the session has
+   * been refreshed.
+   *
+   * The rollback branch is gone with the rest of them. A queued setting is not
+   * a lost setting, so reverting the toggle under the user's finger — which is
+   * what `onError` did on any blip — is now a lie rather than a safeguard.
+   */
+  const update = (patch: Partial<UserSettings>) => {
+    const prev = qc.getQueryData<UserSettings>(KEY);
+    if (prev) qc.setQueryData(KEY, { ...prev, ...patch });
+    void queueWrite(makeOp("user_settings", "update", OWNER_ROW, patch as Record<string, unknown>));
+    invalidateWhenSafe(qc, "user_settings", KEY);
+  };
 
-  return { settings: query.data, isLoading: query.isLoading, update: update.mutate };
+  return { settings: query.data, isLoading: query.isLoading, update };
 }
 
 /** Apply theme setting to <html data-theme> (system | light | dark). */

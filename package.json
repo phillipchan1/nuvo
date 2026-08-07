@@ -19,7 +19,8 @@
     "tauri:build": "tauri build",
     "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons",
     "app:install": "npm run tauri build && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app",
-    "app:install:live": "tauri build --config '{\"build\":{\"frontendDist\":\"http://localhost:5717\",\"beforeBuildCommand\":\"\"},\"bundle\":{\"targets\":[\"app\"]}}' && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app"
+    "app:install:live": "tauri build --config '{\"build\":{\"frontendDist\":\"http://localhost:5717\",\"beforeBuildCommand\":\"\"},\"bundle\":{\"targets\":[\"app\"]}}' && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app",
+    "check:sql": "node scripts/check-apply-patch.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.2.9",
@@ -31,7 +32,9 @@
     "@fullcalendar/react": "^6.1.15",
     "@fullcalendar/timegrid": "^6.1.15",
     "@supabase/supabase-js": "^2.47.0",
+    "@tanstack/query-async-storage-persister": "^5.101.4",
     "@tanstack/react-query": "^5.62.0",
+    "@tanstack/react-query-persist-client": "^5.101.4",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
@@ -47,10 +50,15 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.11.2",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.3",
     "@types/node": "^25.9.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4.0.0",
     "typescript": "~5.6.3",
     "vite": "^6.0.3",

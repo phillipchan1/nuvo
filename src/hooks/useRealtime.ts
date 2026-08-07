@@ -1,6 +1,10 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { invalidateWhenSafe, SYNC_TABLES, type SyncTable } from "../lib/sync";
+
+const isSyncTable = (t: string): t is SyncTable =>
+  (SYNC_TABLES as readonly string[]).includes(t);
 
 const TABLE_TO_KEYS: Record<string, string[][]> = {
   tasks: [["tasks"]],
@@ -38,19 +42,31 @@ export function useRealtime(enabled: boolean) {
     if (!enabled) return;
 
     // Keys awaiting invalidation, deduped — a burst touching the same table a
-    // thousand times still ends as one entry.
-    const pending = new Map<string, string[]>();
+    // thousand times still ends as one entry. The source table rides along
+    // because the refetch has to be gated on what this device still owes.
+    const pending = new Map<string, { key: string[]; table: string }>();
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const flush = () => {
       timer = null;
-      const keys = [...pending.values()];
+      const entries = [...pending.values()];
       pending.clear();
-      for (const key of keys) qc.invalidateQueries({ queryKey: key });
+      for (const { key, table } of entries) {
+        // A Realtime echo must not overwrite work still sitting in the outbox.
+        // This used to invalidate unconditionally, which was a live hole in the
+        // offline guarantee rather than a theoretical one: Nuvo has server-side
+        // writers (calendar sync every 15 minutes, the rollover cron), so a
+        // refetch could land on top of queued local edits at any moment and
+        // wipe them off the screen until the drain caught up — or permanently,
+        // if the op had been parked. Syncable tables defer; everything else
+        // (external events, calendar accounts) has no local queue to protect.
+        if (isSyncTable(table)) invalidateWhenSafe(qc, table, key);
+        else qc.invalidateQueries({ queryKey: key });
+      }
     };
 
     const queue = (table: string) => {
-      for (const key of TABLE_TO_KEYS[table] ?? []) pending.set(key.join("/"), key);
+      for (const key of TABLE_TO_KEYS[table] ?? []) pending.set(key.join("/"), { key, table });
       if (pending.size && timer === null) timer = setTimeout(flush, COALESCE_MS);
     };
 

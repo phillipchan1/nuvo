@@ -15,6 +15,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import { upsertPushVerdict } from "../lib/priorities";
 import { useVertical } from "./useVertical";
 import type { Sprint } from "../lib/types";
@@ -48,18 +49,15 @@ export function useWeekVerdicts(weekStartISO: string): WeekVerdicts {
       );
       if (next === rocks) return; // clearing a verdict that was never cast
       void (async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        const uid = session?.user?.id;
-        if (!uid) return;
         qc.setQueryData<Sprint | null>(["sprint", weekStartISO], (old) =>
-          old ? { ...old, big_rocks: next } : ({ user_id: uid, week_start: weekStartISO, big_rocks: next } as unknown as Sprint),
+          old ? { ...old, big_rocks: next } : ({ week_start: weekStartISO, big_rocks: next } as unknown as Sprint),
         );
-        const { error } = await supabase
-          .from("sprints")
-          .upsert({ user_id: uid, week_start: weekStartISO, big_rocks: next }, { onConflict: "user_id,week_start" });
-        if (error) console.error("[useWeekVerdicts] upsert failed", error);
-        qc.invalidateQueries({ queryKey: ["sprint", weekStartISO] });
-        qc.invalidateQueries({ queryKey: ["vertical"] });
+        // Addressed by the week — `sprints` is natural-keyed in the transport,
+        // and the upsert's conflict target is the same (user_id, week_start)
+        // uniqueness this used to name by hand.
+        await queueWrite(makeOp("sprints", "insert", weekStartISO, { big_rocks: next }));
+        invalidateWhenSafe(qc, "sprints", ["sprint", weekStartISO]);
+        invalidateWhenSafe(qc, "sprints", ["vertical"]);
       })();
     },
   };

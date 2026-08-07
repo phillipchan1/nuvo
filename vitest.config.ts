@@ -16,9 +16,12 @@ export const ALIASES = [
 export default defineConfig({
   resolve: { alias: ALIASES },
   test: {
-    setupFiles: ["./tests/agent/setup.ts"],
+    // Node is still the default — the kernel, agent and sync-core suites need no
+    // DOM and are much faster without one. Files that drive React opt in with a
+    // `@vitest-environment jsdom` docblock.
+    setupFiles: ["./tests/agent/setup.ts", "./tests/setupDom.ts"],
     // The prompt-level eval (`*.eval.ts`) is deliberately absent — it needs a
     // live model. `npm run eval`, vitest.eval.config.ts.
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
   },
 });
