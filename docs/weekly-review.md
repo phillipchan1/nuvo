@@ -92,16 +92,16 @@ The Spine currently has two subheaders: `EXECUTE` (Today, Schedule) and `BUILD`
 - **Reflect** — **Domain + the Review** *(the long arc + the conscience)*
 
 Rationale: Domain is already "barely edited, calm, conscience-layer, measured by
-faithfulness over a long arc" — that's reflection, not construction. The Review is the
-weekly heartbeat of that same faithfulness, so they pair. **Deliberate tension to own:**
+showing up over a long arc" — that's reflection, not construction. The Review is the
+weekly heartbeat of that same showing up, so they pair. **Deliberate tension to own:**
 in the pure funnel Domain is the *top* (where Project→Initiative culminate); moving it to
-Reflect commits to "Domain is where you examine faithfulness, not where the build stack
+Reflect commits to "Domain is where you examine showing up, not where the build stack
 terminates." We think that's true to how it's actually used.
 
 Deeper read: the app has **three axes** and the Spine only draws one. Space (the Spine —
 the funnel), Time (the flows — Today/Sunday/Review/Summit, the cadences), and Memory (the
 archive of Reviews). The Reviews archive is the first real **memory axis** — and it is
-literally the evidence for the Domain "faithfulness over a long arc" thesis (a stack of
+literally the evidence for the Domain "showing up over a long arc" thesis (a stack of
 Reviews over a quarter *is* the long arc the Summit looks back on).
 
 ## Anatomy of a Review (Phil's edits applied)

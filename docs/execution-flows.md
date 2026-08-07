@@ -9,7 +9,7 @@
 Nuvo already has two excellent halves that don't yet touch:
 
 - **The vertical** (Spine → Domain / Initiative / Project floors) answers *"what matters
-  and why."* Faithfulness lamps, momentum, key results framed as Gain — it's the
+  and why."* Showing up lamps, momentum, key results framed as Gain — it's the
   conscience layer, and it's good.
 - **The Planner** (Day · Week) answers *"what am I doing right now."* Inbox, drag-to-block,
   rollover, mirror calendar — it's the execution layer, and it works.
@@ -228,8 +228,8 @@ monthly variant (steps 1 and 3 only).
 1. **The Quarter's Gain** — quarter hours per domain, shipped initiatives, KR baselines
    → currents. The trophy shelf: shipped initiatives rendered as a permanent gallery
    (also visible any time on the Initiatives floor — gains must have a *place*).
-2. **Faithfulness review** — each domain's intention re-read (edit or re-affirm), weekly
-   target hours adjusted. Domains are vows; this is where vows get renewed.
+2. **Showing up review** — each domain's intention re-read (edit or re-affirm), weekly
+   target hours adjusted. Domains are mandates; this is where mandates get renewed.
 3. **Portfolio decisions** — the Initiatives collection in Board mode with verdict
    actions: ship · keep · pause · drop · **new bet**. Starting a new initiative here
    opens AI scaffolding (§6) inline: outcome → key results → first project → first tasks.
@@ -287,7 +287,7 @@ the inbox, never on Today. That makes every AI feature safe to use aggressively.
 |---|---|---|
 | Project floor | **Scaffold with AI** (wire the existing stub) | Agent gets `scaffold_project` tool: reads project outcome + initiative context, proposes an *ordered* task list (a→b→c via `sort_order`, with energy + duration + rough sequence). Renders as a **draft diff** — editable checklist, accept all / per-task. Accepted tasks land in `backlog`. |
 | Summit | **New-bet scaffolding** | Same tool chained upward: outcome → suggested key results (with baselines) → first project → its first tasks. |
-| Sunday step 4 | **Suggested pull** | Heuristic first (it's `rankNow` generalized to a week: faithfulness gaps, deadlines inside the week, lead-initiative next-ups, capacity fit), agent later. Always shown as a proposal to prune. |
+| Sunday step 4 | **Suggested pull** | Heuristic first (it's `rankNow` generalized to a week: showing up gaps, deadlines inside the week, lead-initiative next-ups, capacity fit), agent later. Always shown as a proposal to prune. |
 | Now floor | **Today's recommendation** | Already built. Feed it real data: the live calendar gap (next external event / block) replaces the stubbed `gapMins`, and candidates come from the Week pool first. |
 | Any task | **Delegate to the agent** | The `delegate` energy bucket becomes actionable: `assignee='agent'` + a `prepare_task` tool. The agent does *pre-work* — research, drafting an email, outlining the doc — and writes it into the task's notes, then flags it `prework ready ✦`. Sunrise surfaces these: "2 tasks came back prepared overnight." Execution stays yours; later, whole task types graduate to full agent execution. |
 | Sundown / Sunday | **The narrator** | Small LLM pass that turns the week's raw deltas into the one-sentence gain framing ("Measured from January, you're 64% of the way…"). Cheap, and it's the voice of the gain. |
@@ -304,7 +304,7 @@ numbers. With one task model they become *facts*:
 - **KR currents** stay manual (they're judgments) but get a nudge: completing the last
   task of a project under an initiative prompts "move any key result?"
 
-Then the gain surfaces are honest: faithfulness lamps, the Sunday Gain screen, the week
+Then the gain surfaces are honest: showing up lamps, the Sunday Gain screen, the week
 ring, the quarter trophy shelf — all derived, none performative.
 
 ## 8 · Build plan
@@ -315,7 +315,7 @@ ring, the quarter trophy shelf — all derived, none performative.
 | **2 · The Week** | `sprints` table; Week rail tab w/ goal + ring; sprint pull/commit against real tasks; Sunrise pulls from Week; Sundown "back to week"; domain-colored blocks + lineage breadcrumbs | migration 04, `LeftRail`, `SprintFloor`, `Rituals`, `CalendarPane`, `TaskRow`, `SlideOver` |
 | **3 · Sunday** | The five-step ritual (Gain · Sweep · Bets · Pull · Anchor); Begin button on Spine; contextual prompt; lead-initiative ★ | new `rituals/` shell + steps (compose existing floors), `Spine`, `Planner` |
 | **4 · Intelligence I** | `scaffold_project` tool + draft-diff UI; live gap feeding Now; suggested pull (heuristic) | `agent/tools.ts`, `ProjectFloor`, `now.ts`, Sunday step 4 |
-| **5 · Summit** | Quarterly ritual; trophy shelf; derived invested-hours/faithfulness | `rituals/`, `InitiativesFloor`, `DomainFloor`, queries |
+| **5 · Summit** | Quarterly ritual; trophy shelf; derived invested-hours/showing up | `rituals/`, `InitiativesFloor`, `DomainFloor`, queries |
 | **6 · Intelligence II** | `prepare_task` delegation + prework badges; the narrator | `agent/`, `Rituals`, task rows |
 
 Phases 1–2 are the foundation everything else stands on; 3 is the Sunday experience;
@@ -331,4 +331,4 @@ with a decision. Between them sits one gate: the Week. Scaffolding fills quiet b
 below it, GTD captures queue ahead of it, and only deliberate Sunday commitment lets
 work through to your days — where every block carries its domain color and its thread
 back up the vertical, so that on a random Wednesday at 10am, the thing on your calendar
-visibly belongs to a bet you chose, in a life area you're being faithful to.
+visibly belongs to a bet you chose, in a life area you're being present to.

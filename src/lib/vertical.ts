@@ -26,7 +26,7 @@ export type Momentum = "up" | "flat" | "down";
 /** Machine-facing routing context — the signal passive grooming reads to file a
  *  terse capture into the right domain. Built from the charter (source of truth),
  *  proposed by the `enrichDomain` edge path, persisted on accept. Distinct from
- *  `intention` (the human-facing vow). */
+ *  `intention` (the human-facing mandate). */
 export interface DomainContext {
   scope: string;
   entities: string[];
@@ -40,7 +40,7 @@ export interface Domain {
   name: string;
   color: string;
   icon: string; // a single glyph/emoji — domains are fixtures, give them a face
-  intention: string; // the standing vow — what faithfulness to this domain means
+  intention: string; // the standing mandate — what it asks of you
   charter: string; // plain-line "what this domain IS" — the routing source of truth
   context: DomainContext | null; // AI-expanded routing metadata (entities, boundary…)
   weeklyTargetHours: number;
@@ -56,7 +56,7 @@ export interface Domain {
    *  `meetingHoursThisWeek` so `stateOf(d: Domain)` stays single-argument and both
    *  shells get it for free (D-086). */
   lastShip: { name: string; daysAgo: number } | null;
-  weeks: number[]; // derived: invested hours per week, last 13 weeks (oldest → now) — the faithfulness pulse
+  weeks: number[]; // derived: invested hours per week, last 13 weeks (oldest → now) — the presence pulse
   days: number[]; // derived: invested hours per day of THIS week (index 0 = weekStart) — the week's shape
   sort: number;
 }
@@ -363,7 +363,7 @@ export function toVTask(t: Task, currentSprintId: string | null, today: string):
 /**
  * Build the floors' snapshot from live rows. `tasks` should be every
  * non-trashed task (done included — completed blocks are the time ledger that
- * the faithfulness/gain numbers derive from).
+ * the presence/gain numbers derive from).
  */
 export function buildVertical(
   domainRows: DomainRow[],
@@ -495,18 +495,34 @@ export function buildVertical(
   // refetch — never let them surface
   const tasks = taskRows.filter((t) => t.status !== "trashed").map((t) => {
     const v = toVTask(t, sprint?.id ?? null, today);
-    // resolve the effective domain through the parent chain so the gain
-    // ledger and balance strips never lose hours to a missing denormalized id
-    if (!v.domainId) {
-      if (v.projectId) v.domainId = projectById.get(v.projectId)?.domainId ?? null;
-      if (!v.domainId && v.initiativeId) v.domainId = initiativeDomain.get(v.initiativeId) ?? null;
-    }
+    // resolve the effective domain through the parent chain so the gain ledger and
+    // balance strips never lose hours to a missing — or STALE — denormalized id
+    v.domainId = resolveDomainId(
+      v.domainId,
+      v.projectId,
+      v.initiativeId,
+      (id) => projectById.get(id)?.domainId,
+      (id) => initiativeDomain.get(id),
+    );
     return v;
   });
 
+  // What each project was SHAPED to take, and how much of that already reached the
+  // ledger as a checked-off block. A ship books the difference (see the ship fold
+  // below) — trashed rows are already out of `tasks`, so work dropped at the ship
+  // verdict is never booked as time spent.
+  const projectMins = new Map<string, { planned: number; ledgered: number }>();
+  for (const t of tasks) {
+    if (!t.projectId) continue;
+    const e = projectMins.get(t.projectId) ?? { planned: 0, ledgered: 0 };
+    e.planned += t.durationMins;
+    if (t.status === "done" && t.completedAt && t.domainId) e.ledgered += t.durationMins;
+    projectMins.set(t.projectId, e);
+  }
+
   // ── derive the domain gain ledger from completed blocks ────────────────────
   // Alongside the week/quarter/last totals, bucket each completed block into one
-  // of the last 13 weeks — the faithfulness "pulse" the open domain renders as an arc.
+  // of the last 13 weeks — the presence "pulse" the open domain renders as an arc.
   const WEEK_MS = 7 * 86_400_000;
   const seriesStart = weekStart.getTime() - 12 * WEEK_MS;
   const ledger = new Map<string, { week: number; quarter: number; last: number | null }>();
@@ -585,10 +601,18 @@ export function buildVertical(
   // closed last week — and the domain still read "quiet". D-085 again: the ledger
   // was honest about its inputs and its inputs were incomplete.
   //
-  // A ship contributes a TOUCH, NOT HOURS. It never lands in `entry.week`,
-  // `entry.quarter`, `weekly[]` or `daily[]` — the 13-week pulse and
-  // `investedThisWeek` stay measured time only (P6: an hour is a thing you can
-  // point at; a ship is not a duration).
+  // A ship books its project's UNLEDGERED effort — what the project was shaped to
+  // take, minus what already reached the ledger as a checked-off block:
+  //
+  //     shipMins = max(0, planned − ledgered)
+  //
+  // A project whose tasks were all checked off yields 0, so nothing double-counts
+  // and the 13-week pulse keeps those hours in the weeks they were actually worked.
+  // A ship with untracked work — no tasks, or tasks closed under a parent that never
+  // resolved — yields the gap, so the week stops reading empty the day something
+  // landed. (This reverses the earlier "a ship is a touch, never hours" rule: it was
+  // honest about its inputs, but it left a shipped week indistinguishable from a
+  // dead one, which is the more misleading of the two.)
   const shipped = new Map<string, { name: string; at: number }>();
   for (const p of projects) {
     if (!p.shippedAt || !p.domainId || !validDomain.has(p.domainId)) continue;
@@ -598,6 +622,22 @@ export function buildVertical(
     if (!cur || at > cur.at) shipped.set(p.domainId, { name: p.name, at });
     const entry = ledger.get(p.domainId) ?? { week: 0, quarter: 0, last: null };
     if (entry.last == null || at > entry.last) entry.last = at;
+
+    const m = projectMins.get(p.id);
+    const shipMins = Math.max(0, (m?.planned ?? 0) - (m?.ledgered ?? 0));
+    if (shipMins > 0) {
+      if (at >= weekStart.getTime()) entry.week += shipMins;
+      addDay(p.domainId, at, shipMins);
+      if (at >= quarterStart.getTime()) entry.quarter += shipMins;
+      if (at >= seriesStart) {
+        const wk = Math.floor((at - seriesStart) / WEEK_MS);
+        if (wk >= 0 && wk <= 12) {
+          const arr = weekly.get(p.domainId) ?? new Array(13).fill(0);
+          arr[wk] += shipMins;
+          weekly.set(p.domainId, arr);
+        }
+      }
+    }
     ledger.set(p.domainId, entry);
   }
 
@@ -659,6 +699,13 @@ export const tasksOf = (d: VerticalData, projectId: string) =>
 /** Projects that hang directly off a domain with no initiative parent. */
 export const looseProjectsOf = (d: VerticalData, domainId: string) =>
   d.projects.filter((p) => p.domainId === domainId && !p.initiativeId);
+
+/** …of which the ones still in play. The open domain's portfolio asks "what are you
+ *  building toward", and a shipped project is not an answer to that — it belongs to
+ *  "what you've built", where `domainShipped` already lists it. Listing it in both
+ *  put the same four rows on the screen twice. */
+export const openLooseProjectsOf = (d: VerticalData, domainId: string) =>
+  looseProjectsOf(d, domainId).filter((p) => isOpenStatus(p.status));
 
 /** Tasks parented to an initiative but to no project — first-class loose work. */
 export const looseTasksOfInitiative = (d: VerticalData, initiativeId: string) =>
@@ -947,21 +994,55 @@ export function initiativePriorityScore(
   return Math.round(gap * urgency * staleBoost);
 }
 
+/**
+ * WHICH DOMAIN DOES A TASK BELONG TO — the one rule, so no surface re-derives it.
+ *
+ * `tasks.domain_id` is a *denormalized copy* of the parent's domain, stamped when
+ * the task was filed. It goes stale the moment the project is re-homed, and every
+ * reader used to ask it FIRST (`t.domain_id ?? project.domainId`), so the stale
+ * copy beat the truth: four Stampede projects' hours were credited to Frontier and
+ * Trading, and the open domain read "0h this week" the day a project shipped there.
+ *
+ * So: **a parented task belongs to its parent's domain.** Its own `domain_id` is
+ * authoritative only for a loose task, which has no parent to ask — and it stays
+ * the fallback when a parent has no domain of its own.
+ */
+export function resolveDomainId(
+  ownDomainId: string | null | undefined,
+  projectId: string | null | undefined,
+  initiativeId: string | null | undefined,
+  projectDomain: (id: string) => string | null | undefined,
+  initiativeDomain: (id: string) => string | null | undefined,
+): string | null {
+  if (projectId) return projectDomain(projectId) || ownDomainId || null;
+  if (initiativeId) return initiativeDomain(initiativeId) || ownDomainId || null;
+  return ownDomainId || null;
+}
+
+/** `resolveDomainId` over a built snapshot — the form every surface wants. */
+export function taskDomainId(
+  d: VerticalData,
+  t: { domain_id?: string | null; project_id?: string | null; initiative_id?: string | null },
+): string | null {
+  return resolveDomainId(
+    t.domain_id,
+    t.project_id,
+    t.initiative_id,
+    (id) => projectById(d, id)?.domainId,
+    (id) => initiativeById(d, id)?.domainId,
+  );
+}
+
 /** Resolve a task ROW's domain color through the parent chain — the one
  *  accent rule, shared by the rail, the calendar, and the rituals. */
 export function taskDomainColor(
   d: VerticalData,
   t: { domain_id: string | null; project_id: string | null; initiative_id: string | null },
 ): string | null {
-  const domainId =
-    t.domain_id ??
-    projectById(d, t.project_id)?.domainId ??
-    initiativeById(d, t.initiative_id)?.domainId ??
-    null;
-  return domainById(d, domainId)?.color ?? null;
+  return domainById(d, taskDomainId(d, t))?.color ?? null;
 }
 
-// ── Faithfulness rhythm — read from the 13-week pulse ────────────────────────
+// ── Presence rhythm — read from the 13-week pulse ────────────────────────
 /** Trailing run of most-recent weeks with any invested hours — the streak. */
 export function domainStreak(weeks: number[]): number {
   let n = 0;
@@ -972,7 +1053,7 @@ export function domainStreak(weeks: number[]): number {
   return n;
 }
 
-/** How many of the last 13 weeks any time was kept — "kept faith N of 13". */
+/** How many of the last 13 weeks any time was kept — "showed up N of 13". */
 export function domainKeptCount(weeks: number[]): number {
   return weeks.filter((h) => h > 0).length;
 }
@@ -1020,8 +1101,8 @@ export const QUARTER_DAYS = 91;
  *  which is how "quiet for 7 days" became an accusation. */
 export const weeksLabel = (days: number) => `${Math.max(1, Math.floor(days / 7))}w`;
 
-/** Faithfulness read: lit = tended recently, dim = going quiet. */
-export function faithfulness(dom: Domain): { lit: boolean; note: string } {
+/** Presence read: lit = tended recently, dim = going quiet. */
+export function showingUp(dom: Domain): { lit: boolean; note: string } {
   // a finish line crossed this week keeps the sigil warm even with no hours on it
   if (dom.lastShip && dom.lastShip.daysAgo <= SHIP_GLOW_DAYS) return { lit: true, note: "shipped" };
   if (dom.lastTouchedDays != null && dom.lastTouchedDays <= 2) return { lit: true, note: "kept" };

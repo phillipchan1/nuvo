@@ -5,7 +5,7 @@
 //
 // Remaining effort is bottom-up: the sum of open task estimates (durationMins
 // defaults to 30, so any scaffolded project is sized for free). Actual pace is
-// the trailing completion rate — the same completed-block signal faithfulness
+// the trailing completion rate — the same completed-block signal presence
 // reads (vertical.ts §invested), but scoped to one project. From those two we
 // project a finish date and the drift against the target.
 //

@@ -66,7 +66,7 @@ project), so:
 - **Bind repo → project.** One concrete decision, no altitude guesswork.
 - A merged PR lands on that **project** as a unit.
 - The project already rolls up to its **domain** through the existing hierarchy —
-  First Light's Motion / faithfulness inherits the activity automatically. You never feed a
+  First Light's Motion / showing up inherits the activity automatically. You never feed a
   domain directly, any more than you attach a task to a domain.
 - Cross-cutting repo? The PR carries a label / `!domain`, and the AI router re-homes the
   odd ones — the same escape hatch as `route-events`.
@@ -106,7 +106,7 @@ project (= app), themed by the AI into outcome language.
 ## 5 · The surfaces
 
 **Domain actuals (continuous).** Each merge drops a unit into First Light's Motion /
-faithfulness — the domain visibly moves even with **zero tasks attached**, which is the
+showing up — the domain visibly moves even with **zero tasks attached**, which is the
 exact gap this solves. Same channel attended events already feed; GitHub is one more `kind`.
 
 **Reflect / Weekly Review (the prize).** The week's merges get AI-themed into a short,

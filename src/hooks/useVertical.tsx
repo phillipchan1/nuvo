@@ -336,7 +336,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
   });
 
   // Every non-trashed task, done included: completed blocks are the time
-  // ledger the faithfulness/gain numbers derive from.
+  // ledger the presence/gain numbers derive from.
   const tasksQ = useQuery({
     queryKey: ["tasks", "all"],
     queryFn: async (): Promise<Task[]> => {

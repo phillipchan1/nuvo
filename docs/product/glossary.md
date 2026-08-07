@@ -13,8 +13,9 @@ migrations)* should be confirmed against `supabase/migrations/` before being rel
 | User-facing | In code | What it is |
 |---|---|---|
 | **Domain** | `domains` *(per migrations)*, `domain_id` | An area of lasting responsibility — one you've committed to keep showing up in and producing from. **Not a folder or a tag.** Carries a color used as identity across calendar and rails. Signup seeds **none**; the account names its own via the first-run picker over the five domain *kinds* in [`personas.md`](./personas.md) §1 (D-026). |
+| **Mandate** | `domains.intention` | A domain's standing one-liner — what this area of your life asks of you, in the operator's own words. Edited in the domain hero and re-read each quarter in **Summit → The Mandates**. Replaces *vow*, which read as a register the user was being addressed in rather than the most precise word (D-088). |
 | **Life** *(marketing only)* | — *(no code name — the app says **domain**)* | The **outward-facing** word for a domain on [nuvo.day](https://nuvo.day): *"You live more than one life."* A cold reader has no word for themselves and doesn't know what a "domain" is, but recognizes the plural life instantly. Two names for one concept is the deliberate ceiling — *lives* outside, *domains* inside (D-057). **One app surface says it: the first-run welcome** (*"Your whole life, actually moving"*), which is the boundary between the marketing promise and the app's vocabulary and sits before any altitude noun appears (D-065). Nothing past it does. |
-| **Initiative** | `initiatives` *(per migrations)* | A big outcome under a domain, usually a quarter's worth. Has vows / key results. |
+| **Initiative** | `initiatives` *(per migrations)* | A big outcome under a domain, usually a quarter's worth. Has key results. |
 | **Project** | `projects` *(per migrations)*, `project_id` | A finite thing that gets *finished*. Has size (remaining effort) and a finish line — the two inputs to pace. |
 | **Task** | `tasks` | The atom. One row carries pool membership, planning, *and* scheduling. |
 | **Priority** | **`big_rocks`**, `tasks.big_rock_id` | ⚠️ **The main naming drift.** The week's priorities. A real node that can own tasks — it slides along a crystallization line from pure intention → proto-object → bound to a project. See [`priorities-and-projects.md`](../priorities-and-projects.md). |
@@ -68,7 +69,7 @@ been used to argue against things it doesn't forbid.
 | **the Review** | weekly, backward | The closing valve. Evidence receipts, one scored **Find**, Keep, Note to Monday, a sealed `week_reviews` snapshot. **Your Reviews** is the archive of every sealed one — stored forever, browsed via a gallery of past emblems opened from inside the same floor (D-070) — never a nav destination of its own. [`weekly-review.md`](../weekly-review.md) |
 | **Sunrise** | daily, morning | The day's plan; pulls from the Week pool, surfaces prepared tasks. |
 | **Sundown** | daily, evening | Leads with the day's gain; "back to week" for leftovers. |
-| **Summit** | quarterly | Quarter's Gain → Vows → Portfolio → Months. |
+| **Summit** | quarterly | Quarter's Gain → Mandates → Portfolio → Months. |
 | **Blueprint** | on demand | State a bet → proposed KRs + projects + ordered tasks → accept creates the subtree. |
 | **On Deck** | continuous | The project timeline you open *first* — coarse calls about which weeks hold what. [`on-deck.md`](../on-deck.md) |
 | **the Refine run** | on demand, phone-first | Grooming as a winnable game — a short card run that moves readiness. [`refine-run.md`](../refine-run.md) |
@@ -92,7 +93,7 @@ been used to argue against things it doesn't forbid.
 | **The Find** | At most **one** evidence-backed discovery per Review. Hidden when nothing is notable — never manufactured. |
 | **Actuals** | What actually happened (completed blocks, attended events, activity sources) vs. tasks (what was planned). |
 | **Shipped** | A project or initiative that crossed its finish line. Dated by **when it actually shipped** (`projects.shipped_at`, stamped at the one write choke point), not by when it was due — a thing shipped today against a June deadline belongs to this month's record. The **Shipped wall** collects them (projects by month, bets by quarter); the open domain shows its own as *what you've built*. A ship also counts as a **touch** on its domain — see *Kept*. D-087. |
-| **Kept** | Time actually kept in a domain — the faithfulness axis. A domain reads *kept* when hours landed in it recently, *shipped* when a finish line crossed there inside the week, *resting* when the last thing that happened was a finish, *quiet* when neither has happened for weeks, and *unstarted* when nothing ever has. Measured over a **quarter**, so it speaks in weeks, never days. Not to be confused with **grooming**, which is the *routing* axis (can Nuvo file captures here?) — one word per axis. D-087. |
+| **Kept** | Time actually kept in a domain — the *presence* axis. A domain reads *kept* when hours landed in it recently, *shipped* when a finish line crossed there inside the week, *resting* when the last thing that happened was a finish, *quiet* when neither has happened for weeks, and *unstarted* when nothing ever has. Measured over a **quarter**, so it speaks in weeks, never days. Not to be confused with **grooming**, which is the *routing* axis (can Nuvo file captures here?) — one word per axis. D-087. |
 | **Activity source** | Any external feed of *completed* work attributable to the hierarchy. The calendar was the first; GitHub is the second. [`activity-sources.md`](../activity-sources.md) |
 
 ## The assistant & surfaces
@@ -146,6 +147,8 @@ been used to argue against things it doesn't forbid.
 | *Harvest* | **the Review** | Farming metaphor. D-006. |
 | *Tend / Tending* | **the Refine run** / grooming | Same. (`TendingFlow` survives in code pending retirement.) |
 | *Ritual* (in copy) | **flow**, or the ceremony's name | Reads culty. Code keeps the folder name. |
+| *Vow / Vows* | **mandate** / **The Mandates** | Devotional register. It asked the reader to share a conviction to parse the word — the test in [`brandscript.md`](./brandscript.md) §10 that *vow* used to pass. D-088. |
+| *Faithfulness · kept faith · keeping faith* | **showing up** / **presence** | Same. The axis is still real and still measured over a quarter; the word for it is now plain. Code renamed too (`faithfulness()` → `showingUp()`, `FaithPulse` → `PresencePulse`) so it can't leak back into copy. D-088. |
 | *Big rock* (in copy) | **Priority** | Cliché; the code name stays. |
 | *Slate · Pull · Shape* | **Projects · Leftovers · Inbox · The week** | Invented verbs used nowhere else in the product; they named the act after our mechanics instead of after what the operator is deciding. D-034. Code keeps `suggestPull` / `PullSuggestion` / `weekSlate`. |
 | *Slot the projects · Slot the work* | same as above | The desktop's own pair of verbs, a third vocabulary for one act. D-034. |

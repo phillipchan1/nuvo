@@ -5,7 +5,7 @@ import type { useTaskMutations } from "../../hooks/useTasks";
 import type { useVertical } from "../../hooks/useVertical";
 import { useRecurrenceMutations, useRecurrences } from "../../hooks/useRecurrence";
 import { todayISO, tomorrowISO, nextWeekISO, fmtDuration } from "../../lib/dates";
-import { isProjectComplete, projectById } from "../../lib/vertical";
+import { isProjectComplete, projectById, taskDomainId } from "../../lib/vertical";
 import type { RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
 import Sheet from "./Sheet";
@@ -115,6 +115,10 @@ export default function MobileTaskSheet({
     { label: "Inbox", run: () => mutations.backToInbox(task, TRIAGE_UNDO), active: task.status === "inbox" },
   ];
 
+  // the domain the task actually counts toward — its parent's, not its own stale
+  // copy (see `resolveDomainId`), so the chips agree with the hours ledger
+  const effectiveDomainId = taskDomainId(vertical, task);
+
   const setDomain = (domainId: string) => {
     mutations.patchTask(task.id, { domain_id: domainId || null });
   };
@@ -220,11 +224,11 @@ export default function MobileTaskSheet({
 
         <Section label="Domain">
           <div className="flex flex-wrap gap-1.5">
-            <Chip on={!task.domain_id} onClick={() => setDomain("")}>
+            <Chip on={!effectiveDomainId} onClick={() => setDomain("")}>
               None
             </Chip>
             {vertical.domains.map((d) => (
-              <Chip key={d.id} on={task.domain_id === d.id} onClick={() => setDomain(d.id)}>
+              <Chip key={d.id} on={effectiveDomainId === d.id} onClick={() => setDomain(d.id)}>
                 <span className="inline-flex items-center gap-1.5">
                   <span>{d.icon}</span>
                   {d.name}

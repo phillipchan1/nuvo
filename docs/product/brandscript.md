@@ -170,8 +170,8 @@ Run any idea through four tests before designing it:
 
 ## 10 · Language canon
 
-**Say:** funnel · the Week · commit · carry · land it on the hour · domain · faithful ·
-gain · what moved · steward · propose · promote · quiet · evidence · honest.
+**Say:** funnel · the Week · commit · carry · land it on the hour · domain · mandate ·
+showing up · gain · what moved · steward · propose · promote · quiet · evidence · honest.
 
 **Never say:** *crush it · hustle · 10x · productivity hacks · supercharge · effortless ·
 AI-powered · let AI run your day · unlock · game-changer · seamless.*
@@ -189,12 +189,20 @@ excellence is the witness — the copy doesn't have to be. So:
 | | | |
 |---|---|---|
 | **Explicit — out** | Presumes the reader shares the faith, or names it | *called · calling · what God has given you · ministry* (as a default domain) · scripture · any devotional register |
-| **Tangential — in** | Carries moral weight, fully usable by anyone | **steward · faithful · vow · gain · discipline · integrity · presence · showing up** |
+| **Tangential — in** | Carries moral weight, fully usable by anyone | **steward · gain · discipline · integrity · presence · showing up · mandate** |
 
 The test: *would a reader who shares none of these convictions still find this the most
 precise word — or would they feel addressed as an outsider?* "Steward" passes; "called"
 doesn't. When a tangential word is doing work no synonym does, **keep it** — the answer to
 "is this too much?" is precision, not dilution.
+
+**Two words failed that test on contact with the running app and came out (D-088):
+*vow* and *faithful* / *faithfulness*.** They read to the operator as a register he was
+being addressed in — "makes no sense to me and won't make sense to others" — not as the
+most precise available word. A domain's standing line is now its **mandate**; the axis it
+measures is **showing up** (or **presence**, in code). The lesson generalizes: this table
+is a hypothesis about how a word lands, and the app is where it gets tested. A tangential
+word that survives review but not a real screen is out.
 
 Applied: Domain is now *"where you've committed to show up"*, not *"where you are called to
 be faithful."* Same idea, no entry fee.

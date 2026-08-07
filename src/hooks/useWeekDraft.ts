@@ -20,7 +20,7 @@ import { useExternalEvents } from "./useCalendar";
 import { useSlots, useSlotTasks } from "./useSlots";
 import { useAllTasks, useScheduledTasks } from "./useTasks";
 import {
-  faithfulness,
+  showingUp,
   inboxTasks,
   initiativeProgress,
   initiativeProgressAt,
@@ -57,7 +57,7 @@ export function computeGain(data: VerticalData) {
     .sort((a, b) => b.to - b.from - (a.to - a.from));
 
   const quiet = data.domains
-    .filter((d) => d.weeklyTargetHours > 0 && !faithfulness(d).lit)
+    .filter((d) => d.weeklyTargetHours > 0 && !showingUp(d).lit)
     .map((d) => d.name)
     .slice(0, 2);
 
@@ -100,7 +100,7 @@ export function useWeekDraft() {
   const reviewableEvents = useMemo(() => events.filter((e) => !hiddenCals.has(e.calendar_id)), [events, hiddenCals]);
 
   // ── the two buckets, intelligence picks: projects (lead initiatives, next-up,
-  //    deadlines) + inbox (deadlines, faithfulness top-ups). One ranked set. ──
+  //    deadlines) + inbox (deadlines, presence top-ups). One ranked set. ──
   // the week's projects are the pull's primary source — pass the week so it can
   // read them off On Deck instead of guessing from deadlines
   const suggestions = useMemo(() => suggestPull(data, weekStartISO), [data, weekStartISO]);

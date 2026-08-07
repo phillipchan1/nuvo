@@ -4,7 +4,7 @@
 
 import {
   domainById,
-  faithfulness,
+  showingUp,
   initiativeById,
   QUIET_SPEAKS_DAYS,
   type Domain,
@@ -223,9 +223,9 @@ export function rankNow(data: VerticalData, ctx: NowContext): Suggestion[] {
     const reasons: Reason[] = [];
     let score = 0;
 
-    // Faithfulness — the strongest pull. A starving domain wants you back.
+    // Presence — the strongest pull. A starving domain wants you back.
     if (domain) {
-      const f = faithfulness(domain);
+      const f = showingUp(domain);
       if (!f.lit) {
         const since = domain.lastTouchedDays ?? QUIET_SPEAKS_DAYS;
         const w = since >= QUIET_SPEAKS_DAYS ? 4 : 3;

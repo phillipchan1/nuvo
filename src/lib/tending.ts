@@ -162,7 +162,7 @@ export function tendedScore(d: VerticalData, kind: "project" | "initiative", id:
   return effectiveScore(d, kind, item) ?? 0;
 }
 
-// ── Per-item "last touched" — the silent / faithfulness signal ───────────────
+// ── Per-item "last touched" — the silent / presence signal ───────────────
 function lastDoneAt(tasks: VTask[]): number | null {
   let last: number | null = null;
   for (const t of tasks) {

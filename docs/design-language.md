@@ -19,7 +19,7 @@ doubt, go look at those.
    Borders are hairlines (`--line`) at the edge of perception, often replaced by
    whitespace entirely. A wall of bordered cards is the old idiom.
 2. **Serif for ceremony, system for work.** Fraunces (`masthead` / `serif`) carries the
-   things that *matter* — the date, the greeting, a floor's name, a vow, a record's
+   things that *matter* — the date, the greeting, a floor's name, a mandate, a record's
    title. The system font does everything else and recedes.
 3. **Color is a whisper, and always semantic.** Nothing is colored for decoration. Every
    hue means something (roles below) at low saturation. If you can't name what a color
@@ -218,7 +218,7 @@ the rule that keeps a dense screen calm.
 1. **One anchor, in the surface's own voice.** Each surface has a single element at the top
    of its hierarchy, and nothing else competes with it. **The voice matches the surface:**
    a *ceremony/identity* surface anchors with a Fraunces `masthead` — a floor's
-   `text-display masthead` name, the Review's date, a domain's vow (serif is for a *name*,
+   `text-display masthead` name, the Review's date, a domain's mandate (serif is for a *name*,
    never a *number*). An *execution* surface anchors with a **functional header** — a
    tracked-caps eyebrow over a quiet status line, numbers in `mono`, the meter idiom the
    spine and Standing gauges use. The Schedule rail's crown is execution: "THIS WEEK · JUL
@@ -405,7 +405,7 @@ The law, so a new planner surface can't drift:
 | Use | Class | Notes |
 |-----|-------|-------|
 | Floor / record / day heroes | `masthead` (+ size) | Fraunces, the editorial voice. Every floor `<h1>` uses this — never `font-semibold`. |
-| Ceremony (vows, plaques) | `serif` | Fraunces, softer terminals — the Domain floor's register. |
+| Ceremony (mandates, plaques) | `serif` | Fraunces, softer terminals — the Domain floor's register. |
 | Everything else (UI, lists) | system (`--font-sans`) | The default. Recedes by design. |
 | Section eyebrows | `section-label` | Tracked uppercase, `--muted`, the only "chrome." |
 | Aligned numerics (times, %) | `mono` | System sans with tabular figures — *not* monospace. |

@@ -81,7 +81,7 @@ CRITICAL: the CHARTER below is the source of truth for what this domain is. The 
 
 DOMAIN: ${clean(domain.name)}
 CHARTER (what the person says this domain IS — authoritative): ${charter || "(none given — infer conservatively; keep context sparse)"}
-${domain.intention ? `Their vow (an ambition, NOT a router): ${clean(domain.intention)}` : ""}
+${domain.intention ? `Their mandate (an ambition, NOT a router): ${clean(domain.intention)}` : ""}
 
 THE PERSON'S OTHER DOMAINS (where mis-filed work likely belongs):
 ${sibLine}

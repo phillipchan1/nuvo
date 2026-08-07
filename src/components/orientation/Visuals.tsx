@@ -1,4 +1,4 @@
-// Product-faithful mini-illustrations for the welcome walkthrough. Built from the
+// Product-true mini-illustrations for the welcome walkthrough. Built from the
 // same tokens as the app (never a raw hex — the Appearance step below is the one
 // deliberate exception, see its own comment) so they flip in light/dark automatically,
 // and animated with the shared orientation motion. These aren't decoration — they
@@ -25,8 +25,8 @@ function Plate({ children }: { children: React.ReactNode }) {
 const AREAS = [
   { label: "Family", color: "var(--accent)" },
   { label: "Work", color: "var(--slot)" },
-  { label: "Faith", color: "var(--signal)" },
-  { label: "Health", color: "var(--muted)" },
+  { label: "Health", color: "var(--signal)" },
+  { label: "Finances", color: "var(--muted)" },
 ];
 
 function tint(color: string, pct = 16) {

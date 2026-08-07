@@ -2634,6 +2634,119 @@ untouched, verified identical on the base commit). Driven at `?domains` at 375px
 the reported card now reads **SHIPPED** with a glowing sigil, no horizontal overflow, and
 both shells agree — which is the divergence check D-086 built that harness for.*
 
+**D-088 · 2026-08-07 · A parented task belongs to its parent's domain. The stored
+`tasks.domain_id` is a cache, and the cache was outvoting the truth.**
+
+Origin ⓞ: *"confused. i shipped something this week which is great but showing 0 hours/this
+week."*
+
+The open domain read **Shipped Get Stampede Ready for ATC Review yesterday** in the hero and
+**0h / 0h this week · 0wk current streak** in the row beneath it. Both were true statements
+from the same ledger, which is what made it hard to see.
+
+`tasks.domain_id` is a *denormalized copy* of the parent's domain, stamped at the moment the
+task is filed (`setProject` writes `domain_id: p?.domainId ?? task.domain_id`). It goes stale
+the instant the project is re-homed — and nothing re-stamps it. Every reader in the app then
+asked the copy **first**: `t.domain_id ?? project?.domainId ?? initiative?.domainId`. The
+fallback chain existed, but it only ran when the copy was *missing*, never when it was
+*wrong*. Live data:
+
+| Stampede project | done tasks | `domain_id` they carried |
+|---|---|---|
+| Get Stampede Ready for ATC Review | 9 (7.75h **this week**) | Frontier |
+| Stampede v3 | 5 | Trading |
+| Stampede marketing website | 7 | Trading |
+| Meridian Phase 2 | 7 | **null** → resolved correctly |
+
+The only project whose hours reached Stampede was the one whose tasks had *no* stored domain
+— the case where the fallback was allowed to run. Frontier and Trading were quietly inflated
+by exactly what Stampede was missing, so no total looked wrong anywhere; only the attribution
+was.
+
+**The rule, in one place:** `resolveDomainId` (`src/lib/vertical.ts`) — if a task has a
+project, the project's domain wins; if it has an initiative, the initiative's does; the
+task's own id is authoritative only for a **loose** task, which has no parent to ask, and
+remains the fallback when a parent has no domain of its own. `buildVertical`'s ledger derive,
+`taskDomainColor`, `taskDomainId`, the rail, the task list, the task sheet and the SlideOver
+all read it. The stored copies stay in the database and are simply no longer consulted for
+parented rows — no backfill, because a derive that ignores the cache can't go stale again.
+
+**The general lesson (third time — D-085, D-087, now this):** the domain ledger has been
+wrong three times and never once by miscalculating. It was wrong about its *inputs* — a
+truncated query, a missing source, and now a trusted stale copy. A number that is arithmetically
+correct over the wrong rows is the failure mode this subsystem actually has, and `??` chains
+are where it hides: the operator that means "when this is missing" reads as if it means
+"when this is wrong".
+
+*Status: standing — typecheck clean, 20 tests over the real `buildVertical` including three
+pinning the precedence (parent wins · loose task keeps its own · fallback when the parent has
+none). Verified in the running dev app: Stampede's week went 0h → **7.8h**, Frontier 10.6h →
+5.3h.*
+
+---
+
+**D-089 · 2026-08-07 · *Vow* and *faithfulness* are retired. A domain's line is a
+**mandate**; the axis is **showing up**.**
+
+Origin ⓞ: *"can we remove faith language from these domains. 'vow' 'kept faith' — makes no
+sense to me and wont make sense to others."*
+
+[`brandscript.md`](./brandscript.md) §10 explicitly blessed both words: D-027's register table
+listed **vow · faithful** under "tangential — in", the column for words that carry moral
+weight and are *fully usable by anyone*. The test was: would a reader who shares none of these
+convictions still find this the most precise word, or would they feel addressed as an
+outsider? On the running screen, the answer came back from the person who wrote the
+convictions — it read as a register, not as precision.
+
+Retired from copy **and from code**, because a surviving identifier is how a dead word gets
+back into a string (the D-053 lesson, applied harder this time): `faithfulness()` →
+`showingUp()`, `FaithPulse` → `PresencePulse`, `WinKind.kept_faith` → `kept`, `faithWins()` →
+`keptWins()`, `hoursVow()` → `hoursNote()`, and the comment layer that taught the vocabulary.
+`domains.intention` keeps its column name.
+
+Copy that moved: *State the standing vow…* → *…standing mandate…* · *Kept faith N of the last
+13 weeks* → *Showed up N of the last 13 weeks* · *Measured by faithfulness over a long arc* →
+*Measured over a long arc by whether you keep showing up* · *You're keeping faith — a 5-week
+streak. This one's tended* → *You've shown up 5 weeks running. This one's steady* (which also
+retired a stray *tended*, D-006) · Summit's **The Vows** → **The Mandates** · the Gain's
+subtitle *what this domain has cost you* → *what you've actually put in*, which had been
+contradicting its own heading. **Faith** also stopped being an example domain in the
+first-run copy and the Settings blurb — a religious *default domain* is "explicit — out" under
+D-027 and always was.
+
+**What the register table is, after this:** a hypothesis about how a word lands, not a
+finding. The app is where it gets tested, and a tangential word that survives review but not a
+real screen is out.
+
+*Status: standing — typecheck clean, full suite green.*
+
+---
+
+**D-090 · 2026-08-07 · A ship books the work its tasks never ledgered — and nothing more.**
+
+Chasing D-088, the ledger's other half was re-opened: D-087 had ruled that a ship contributes
+a **touch, not hours** (P6 — an hour is a thing you can point at). That left a shipped week
+visually indistinguishable from a dead one, so the rule was reversed: a ship now books
+`max(0, planned − ledgered)` at its ship date, where *planned* is the project's non-trashed
+task effort and *ledgered* is what already reached the ledger as a checked-off block.
+
+**It is deliberately near-inert, and that is the honest outcome.** A project only reaches
+`complete` when every task is closed (or dropped, and dropped rows are trashed before the
+ledger sees them), so `planned − ledgered` is zero for essentially every real ship. The gap it
+genuinely closes is the task marked `done` with a null `completed_at` — real in older rows,
+and invisible to a ledger that keys every hour off that timestamp.
+
+Worth stating plainly because it was almost built as something bigger: the reported symptom
+looked like "shipping should count as hours", and the fix for it was D-088's attribution rule.
+Had the ship simply been credited with its project's effort, it would have double-counted
+every hour those tasks already contributed and papered over the real bug at the same time. The
+subtraction is what keeps it honest, and the fact that it usually evaluates to zero is the
+proof that the hours were already there.
+
+*Status: standing — pinned by three tests (`A2` the null-`completed_at` gap, `A3` no double
+count, `B` dropped work contributes nothing).*
+
+---
 ---
 ## 3 · Open questions (decide these deliberately)
 

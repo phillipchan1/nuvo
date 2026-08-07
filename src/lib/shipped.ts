@@ -183,7 +183,7 @@ export interface PeriodContribution {
 export interface PeriodHours {
   domain: Domain;
   hours: number; // Domain.quarterHours — the last-90-days arc
-  vow: string; // a warm, derived faithfulness line
+  note: string; // a warm, derived showing-up line
 }
 
 export interface PeriodGain {
@@ -237,7 +237,7 @@ function periodWindow(rung: ShippedRung, now: Date, offset: number): PeriodWindo
   };
 }
 
-/** Trailing run of weeks with any invested hours — the faithfulness streak. */
+/** Trailing run of weeks with any invested hours — the presence streak. */
 function trailingStreak(weeks: number[]): number {
   let n = 0;
   for (let i = weeks.length - 1; i >= 0; i--) {
@@ -248,7 +248,7 @@ function trailingStreak(weeks: number[]): number {
 }
 
 /** A warm, honest one-liner for a domain's recent hours — derived, never invented. */
-function hoursVow(dom: Domain): string {
+function hoursNote(dom: Domain): string {
   const streak = trailingStreak(dom.weeks);
   const target = dom.weeklyTargetHours * 13;
   if (streak >= 11) return "In motion nearly every week.";
@@ -313,10 +313,10 @@ export function readPeriodGain(
   const hours: PeriodHours[] | null =
     offset === 0
       ? d.domains
-          .map((dom) => ({ domain: dom, hours: Math.round(dom.quarterHours), vow: "" }))
+          .map((dom) => ({ domain: dom, hours: Math.round(dom.quarterHours), note: "" }))
           .filter((h) => h.hours > 0)
           .sort((a, b) => b.hours - a.hours)
-          .map((h) => ({ ...h, vow: hoursVow(h.domain) }))
+          .map((h) => ({ ...h, note: hoursNote(h.domain) }))
       : null;
 
   const canGoBack = done.some((x) => parse(shipDate(x) as string) < win.start);

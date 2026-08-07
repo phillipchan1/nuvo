@@ -5,7 +5,7 @@
 //
 // Pure selectors over the live VerticalData snapshot: no hooks, no AI call, no
 // fetching. Everything here answers one of the three questions the domain asks —
-// *am I still showing up?* (faithfulness), *can Nuvo file things here?*
+// *am I still showing up?* (presence), *can Nuvo file things here?*
 // (clarity), and *what should I do about it?* (the read).
 
 import { differenceInCalendarDays, startOfWeek } from "date-fns";
@@ -14,7 +14,7 @@ import { readShipped, type ShippedItem } from "./shipped";
 import {
   domainKeptCount,
   domainStreak,
-  faithfulness,
+  showingUp,
   initiativeAtRisk,
   initiativeEffortGap,
   initiativesOf,
@@ -48,7 +48,7 @@ export const mom = (m: string) => (m === "up" ? "↑" : m === "down" ? "↓" : "
 export const quietFor = (days: number) =>
   days < QUIET_SPEAKS_DAYS ? "this week" : `for ${Math.floor(days / 7)} weeks`;
 
-// ── Faithfulness, voiced ─────────────────────────────────────────────────────
+// ── Presence, voiced ─────────────────────────────────────────────────────
 export type DomainState = {
   tone: "lit" | "quiet";
   /** WHY it's lit or quiet — lets a surface style or test the delivery case
@@ -73,7 +73,7 @@ export function stateOf(d: Domain): DomainState {
     };
   }
 
-  const f = faithfulness(d);
+  const f = showingUp(d);
   if (f.lit) {
     const when = ago(d.lastTouchedDays ?? 0);
     if (d.weeklyTargetHours > 0 && d.investedThisWeek > d.weeklyTargetHours)
@@ -121,7 +121,7 @@ export function stateOf(d: Domain): DomainState {
 }
 
 // ── Clarity, voiced ──────────────────────────────────────────────────────────
-// A second axis from faithfulness: how well Nuvo can ROUTE captures here. Read
+// A second axis from presence: how well Nuvo can ROUTE captures here. Read
 // purely from persisted state (no AI call).
 export type Clarity = { level: "clear" | "partial" | "unrefined"; label: string; why: string; pct: number };
 
@@ -208,10 +208,10 @@ export function domainRead(data: VerticalData, domain: Domain, now: Date): Read[
     out.push({ tone: "info", text: `Meetings are ${pct}% of your time here this week — worth protecting the deep-work half.` });
   }
 
-  // the affirmation — you're keeping faith
+  // the affirmation — you keep turning up here
   if (st.tone === "lit" && streak >= 5) {
     const over = domain.weeklyTargetHours > 0 && domain.investedThisWeek > domain.weeklyTargetHours;
-    out.push({ tone: "good", text: `You're keeping faith — a ${streak}-week streak${over ? ", over your intent" : ""}. This one's tended.` });
+    out.push({ tone: "good", text: `You've shown up ${streak} weeks running${over ? ", over your intent" : ""}. This one's steady.` });
   }
 
   if (out.length === 0) out.push({ tone: "good", text: "All calm here — nothing's asking for your attention." });

@@ -47,6 +47,6 @@ export const INCLUDED = [
   "Every calendar in one place — Google, Outlook, iCloud",
   "Nuvo, your planning copilot",
   "Projects, initiatives, and domains",
-  "Weekly planning and review rituals",
+  "Weekly planning and review flows",
   "The Mac app and your iPhone",
 ];

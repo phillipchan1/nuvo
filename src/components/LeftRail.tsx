@@ -10,7 +10,7 @@ import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useListReorder } from "../hooks/useListReorder";
-import { domainById, initiativeById, projectById, taskDomainColor } from "../lib/vertical";
+import { domainById, initiativeById, projectById, taskDomainColor, taskDomainId } from "../lib/vertical";
 import { useOptionalUndoStack } from "../hooks/useUndoStack";
 import TaskRow, { type TaskMeta } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
@@ -270,10 +270,7 @@ export default function LeftRail({
   const metaOf = (t: Task): TaskMeta => {
     const project = projectById(vertical, t.project_id);
     const initiative = initiativeById(vertical, t.initiative_id ?? project?.initiativeId ?? null);
-    const domain = domainById(
-      vertical,
-      t.domain_id ?? project?.domainId ?? initiative?.domainId ?? null,
-    );
+    const domain = domainById(vertical, taskDomainId(vertical, t));
     return {
       project: project?.name ?? null,
       initiative: initiative?.name ?? null,

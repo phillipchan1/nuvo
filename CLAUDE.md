@@ -127,7 +127,7 @@ it needs to work on a phone.
   (`floors/DomainFloor.tsx`) and the phone (`mobile/MobileDomains.tsx` + the open domain,
   `mobile/detail/MobileDomainScreen.tsx`) are two layouts over one voice
   (`lib/domainRead.ts` — state, clarity, Nuvo's read, the week's shape) and one set of
-  marks (`components/domain/DomainParts.tsx` — the faithfulness pulse, the clarity mark,
+  marks (`components/domain/DomainParts.tsx` — the presence pulse, the clarity mark,
   the week-shape strip, the sigil-form and colour choosers, the grooming workbench).
   **Never re-derive "is this domain quiet" in a surface** — import it. Verify both at once
   at `?domains` (`mobile/DomainHarness.tsx`), which renders the wall, the open domain and
@@ -191,6 +191,12 @@ and the same rule as the kernel — **the battery drives the deployed code, neve
   (`work_start_minutes` / `work_end_minutes` default 480/990, `hidden_calendar_ids`).
 - **A scheduled task IS a time block** — one `tasks` row (`do_date` + `start_time`). No
   separate event entity for tasks.
+- **Which domain a task counts toward: `resolveDomainId` / `taskDomainId` (`lib/vertical.ts`).**
+  `tasks.domain_id` is a *denormalized copy* of the parent's domain and goes stale the moment
+  a project is re-homed — so **a parented task belongs to its parent's domain**, and its own
+  id is authoritative only for a loose task. Never write `t.domain_id ?? project?.domainId`:
+  that chain only runs when the copy is *missing*, never when it's *wrong*, which is how four
+  projects' hours ended up credited to the wrong domains (D-088).
 - Capture via free text: `parseCapture` in `src/lib/nlp.ts` turns
   "call David tomorrow 9am 30m #work !high" into structure.
 

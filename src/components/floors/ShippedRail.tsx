@@ -6,13 +6,13 @@
 // Altitude: projects celebrate by the QUARTER, initiatives by the calendar YEAR
 // (one level out from what the wall groups by). A ‹ › stepper walks back through
 // past periods — the constellation encodes WINS PER DOMAIN, so any past period
-// redraws faithfully from its stored ship date alone (no stored snapshot).
+// redraws exactly from its stored ship date alone (no stored snapshot).
 //
 //   · the count        — finish lines crossed this period, as a quiet stat
 //   · the constellation — the reused emblem, rings ∝ wins per domain, ambient
 //     light for shipped volume (a keepsake that grows)
 //   · where the hours went — the real ~90-day arc per domain (current only, since
-//     that's how deep the data goes) + a vow line
+//     that's how deep the data goes) + a mandate line
 //   · Nuvo's read       — one warm synthesis sentence
 
 import { useMemo, useState } from "react";
@@ -94,7 +94,7 @@ export default function ShippedRail({
                     style={{ width: `${Math.round((h.hours / maxBar) * 100)}%`, background: h.domain.color }}
                   />
                 </div>
-                <div className="mt-1 text-micro italic text-muted">{h.vow}</div>
+                <div className="mt-1 text-micro italic text-muted">{h.note}</div>
               </div>
             ))}
           </div>

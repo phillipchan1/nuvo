@@ -2,7 +2,7 @@
 // (weekEmblem.ts). Same doctrine, applied to a fixture instead of a week:
 //
 //   1. It is a PURE function of a tiny spec derived from the domain's own
-//      faithfulness data — no hooks, no fetching, no Math.random / Date.now
+//      showing up data — no hooks, no fetching, no Math.random / Date.now
 //      beyond a seeded jitter — so a domain redraws pixel-identically forever.
 //   2. It is drawn ONLY from the domain color (identity) + neutral theme tokens
 //      (--line / --muted), so it flips across every theme with no per-theme art.
@@ -15,7 +15,7 @@
 // now (see domainForm / setDomainForm) so it needs no schema change; swapping to
 // a `form` column later is a one-line change in useVertical.
 
-import { faithfulness, type Domain } from "./vertical";
+import { showingUp, type Domain } from "./vertical";
 
 export const SIGIL_FORMS = ["orbit", "bloom", "strata", "thread"] as const;
 export type SigilForm = (typeof SIGIL_FORMS)[number];
@@ -32,7 +32,7 @@ export const SIGIL_FORM_BLURB: Record<SigilForm, string> = {
   orbit: "A lit core, the pulse as orbiting weeks — kin to the week emblem.",
   bloom: "Thirteen spokes, each week's hours its length — rhythm you can feel.",
   strata: "Weeks as sediment layers — the long arc, accreted.",
-  thread: "A constellation of showing-up, linked into one line of faith.",
+  thread: "A constellation of showing-up, linked into one line.",
 };
 
 /** ~18 numbers, all derived from the domain. The sigil is a pure function of this. */
@@ -67,7 +67,7 @@ export function domainSigilSpec(dom: Domain, form: SigilForm): SigilSpec {
     color: dom.color,
     weeks: dom.weeks.length === 13 ? dom.weeks : new Array(13).fill(0),
     target: dom.weeklyTargetHours,
-    lit: faithfulness(dom).lit,
+    lit: showingUp(dom).lit,
     seed: seedFromString(dom.id || dom.name),
   };
 }

@@ -106,7 +106,7 @@ export const VERTICAL_TOOL_DEFINITIONS = [
         type: "object",
         properties: {
           name: { type: "string" },
-          intention: { type: "string", description: "Standing vow — what faithfulness here means" },
+          intention: { type: "string", description: "The domain's standing mandate — what it asks of you" },
           icon: { type: "string" },
           color: { type: "string" },
           weekly_target_hours: { type: "number" },

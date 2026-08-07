@@ -8,6 +8,7 @@ import {
   initiativeById,
   projectById,
   taskDomainColor,
+  taskDomainId,
 } from "../../lib/vertical";
 import TaskRow, { type TaskMeta } from "../TaskRow";
 import { SectionLabel } from "../ui";
@@ -47,7 +48,7 @@ export default function MobileTaskList({
   const metaOf = (t: Task): TaskMeta => {
     const project = projectById(vertical, t.project_id);
     const initiative = initiativeById(vertical, t.initiative_id ?? project?.initiativeId ?? null);
-    const domain = domainById(vertical, t.domain_id ?? project?.domainId ?? initiative?.domainId ?? null);
+    const domain = domainById(vertical, taskDomainId(vertical, t));
     return {
       project: project?.name ?? null,
       initiative: initiative?.name ?? null,

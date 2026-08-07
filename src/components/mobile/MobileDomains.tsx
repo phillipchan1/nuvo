@@ -1,6 +1,6 @@
 // The Domains tab — the phone's domain WALL, the same surface the desktop floor
 // opens on (`floors/DomainFloor.tsx`): the fixtures of your life, measured by
-// faithfulness over a long arc rather than throughput.
+// presence over a long arc rather than throughput.
 //
 // Desktop lays the wall out as a three-up grid of glass cards; a phone has one
 // column, so the cards stack — but they are the SAME cards, carrying the same
@@ -57,7 +57,7 @@ export default function MobileDomains({
         <FloorGuide
           eyebrow="Domains"
           title="Name the areas of your life."
-          teach="Domains are your standing commitments — Family, Work, Faith, Health. Everything you plan hangs off one of them."
+          teach="Domains are your standing commitments — Family, Work, Health, Finances. Everything you plan hangs off one of them."
           Visual={WelcomeVisual}
           actionLabel="Add your first domain"
           onAction={create}
@@ -85,7 +85,7 @@ export default function MobileDomains({
         </div>
       </div>
       <p className="mb-4 text-caption text-muted">
-        Measured by faithfulness over a long arc — not throughput. Are you still showing up?
+        Measured over a long arc by whether you keep showing up — not by throughput.
       </p>
 
       {totalWeek > 0 && (

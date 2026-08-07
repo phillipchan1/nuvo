@@ -51,7 +51,7 @@ consumer:
 
 | Floor | Its items | "Ready" means | Meter source | The one cue |
 |---|---|---|---|---|
-| **Domain** | open initiatives (+ domain-level projects) | bets clear enough for projects to run | structural readiness | faithfulness — "untouched this week" (invested &lt; target / last-touched) |
+| **Domain** | open initiatives (+ domain-level projects) | bets clear enough for projects to run | structural readiness | showing up — "untouched this week" (invested &lt; target / last-touched) |
 | **Initiative** | open initiatives | projects defined enough to run | `ripenessOfInitiative` rollup | "N drifting" (silent) · "N to ready" (raw) |
 | **Project** | open projects | tasks sized + a finish line, so the week can take them | `ripenessOfProject` rollup | "N drifting" · "N to ready" |
 | **Week** (Schedule) | this week's committed tasks | the week is decided **and** every task traces to a domain | `composed × attributed` | "plan the week" (window open, not composed) · "N loose this week" |
@@ -66,7 +66,7 @@ stays inside the Today tab. So Today's spine rung is pure navigation — no gaug
 "all at rest" means *every groomed floor is groomed*, never blocked by a half-lived day.
 
 Note the **two axes on Domain**: the meter is *structural* readiness (ready for the
-floor below); *faithfulness* (did you spend time there) is a separate signal — it drives
+floor below); *showing up* (did you spend time there) is a separate signal — it drives
 the cue and the existing domain lamp, not the meter. They mean different things and must
 not be blended.
 
@@ -84,7 +84,7 @@ the cue is the single highest-priority *exception* (what's actually slipping).
   exceptions — quiet line, no cue, meter in the calm tone.
 - A floor raises **one** cue (its top exception), never a list. Exception sources, in
   priority order, reuse `readTending` where they already exist: `silent` (in-flight,
-  undated, quiet ≥ 14d) → raw-and-imminent → domain faithfulness → week not-composed →
+  undated, quiet ≥ 14d) → raw-and-imminent → domain showing up → week not-composed →
   week loose → day unordered.
 
 This is the anti-deficit rule made literal: you never see "everything that isn't 100%";
@@ -148,7 +148,7 @@ payoff ("this makes *this* week composable") to beat present bias.
   rollup / reward state.
 - **Reuse, don't duplicate**: `effectiveScore` / `readTending` / `silent` / `raw`
   (`tending.ts`), `readDay` / `toBusyBlocks` (`now.ts`) for day/week shape, and the
-  derived faithfulness / sprint data (`vertical.ts`, per execution-flows §7).
+  derived showing up / sprint data (`vertical.ts`, per execution-flows §7).
 - **`Spine.tsx`** — per-rung meter + cue replacing the hover chip; active glass pill
   unchanged.
 - **Mobile** (`MobileReadiness`, atop the Tasks → Week segment) — the demand line + a cue
@@ -164,6 +164,6 @@ is currently un-exported in `tending.ts` — export it (or lift `settledScore` t
 
 - `CALM` threshold (≈ 0.85?) — where a floor goes quiet.
 - Week-readiness weights — `composed` vs `attributed` split.
-- Domain meter — structural-only (recommended) vs blended with faithfulness.
-- Faithfulness window — what counts as "untouched."
+- Domain meter — structural-only (recommended) vs blended with showing up.
+- Showing up window — what counts as "untouched."
 - Day-readiness definition — how much "shaped" is shaped.

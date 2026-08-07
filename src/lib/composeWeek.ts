@@ -59,7 +59,7 @@ export interface WeekDomain {
   color: string;
   hours: number; // invested this week
   target: number; // weekly target
-  quiet: boolean; // not faithful this week → drawn as an ember (picture-only)
+  quiet: boolean; // no presence this week → drawn as an ember (picture-only)
 }
 
 export interface WeekCapacity {

@@ -3,7 +3,7 @@
 // domain detail) BOTH wear.
 //
 // A domain reads the same on a laptop and a phone or it isn't the same domain:
-// the faithfulness pulse, the "routes clean" mark, the week's shape, the sigil's
+// the presence pulse, the "routes clean" mark, the week's shape, the sigil's
 // form, the domain's light, and the grooming workbench all live here so neither
 // shell can quietly grow its own version. Layout is the shell's business; these
 // are the pieces it lays out. `phone` only bumps control sizing to 44px targets —
@@ -58,9 +58,9 @@ export const SWATCHES = [
   "#57534E", // stone
 ];
 
-// ── The faithfulness pulse — 13 weeks of showing-up, an EKG, not a bar ────────
+// ── The presence pulse — 13 weeks of showing-up, an EKG, not a bar ────────
 // The dashed line marks your weekly intent, so a glance reads over/under.
-export function FaithPulse({
+export function PresencePulse({
   weeks,
   color,
   target,
@@ -251,7 +251,7 @@ export function SigilFormGrid({
   );
 }
 
-/** The domain's light. Same twenty swatches on both shells. */
+/** The domain's light. Same swatches on both shells. */
 export function SwatchGrid({
   value,
   onPick,

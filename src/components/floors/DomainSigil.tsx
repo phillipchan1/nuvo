@@ -1,5 +1,5 @@
 // DomainSigil — the load-bearing piece. A PURE, deterministic SVG of a domain's
-// faithfulness, in one of four generative forms. See src/lib/domainSigil.ts for
+// presence, in one of four generative forms. See src/lib/domainSigil.ts for
 // the spec and the doctrine. No data, no hooks (bar useId for a gradient id), no
 // randomness beyond the seeded jitter.
 //

@@ -198,6 +198,20 @@ const PROJECTS: Project[] = [
     name: "Fix the back fence", outcome: "", status: "waiting",
     startDate: null, targetDate: null, sort: 1,
   } as unknown as Project,
+  // d5 ("Stampede") has shipped everything and has nothing open — the case that
+  // used to print the same rows in BOTH "what you've built" and "what you're
+  // building toward" (D-088's sibling fix), and now has to land on its own
+  // empty state rather than the never-started one.
+  {
+    id: "p3", domainId: "d5", initiativeId: null, keyResultId: null,
+    name: "Stampede v3", outcome: "", status: "complete",
+    shippedAt: "2026-07-30", startDate: null, targetDate: null, sort: 2,
+  } as unknown as Project,
+  {
+    id: "p4", domainId: "d5", initiativeId: null, keyResultId: null,
+    name: "Stampede marketing website", outcome: "", status: "complete",
+    shippedAt: "2026-07-24", startDate: null, targetDate: null, sort: 3,
+  } as unknown as Project,
 ];
 
 const TASKS: VTask[] = [

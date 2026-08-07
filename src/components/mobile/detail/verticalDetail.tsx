@@ -4,9 +4,9 @@
 // Projects and Initiatives tabs (and global search) can open the SAME detail
 // through one bottom Sheet.
 //
-// Viewing is rich (progress, the 13-week faithfulness pulse, key results);
+// Viewing is rich (progress, the 13-week presence pulse, key results);
 // editing stays light — name, outcome, status, momentum, dates, and a domain's
-// vow + weekly target. No new data layer: every read is a pure selector over the
+// mandate + weekly target. No new data layer: every read is a pure selector over the
 // live VerticalData snapshot, every write goes through useVertical()'s mutations.
 
 import { useRef, useState, type ReactNode } from "react";
@@ -18,7 +18,7 @@ import { QuarterBand, WeekBand } from "../../record/PlacementBand";
 import { RecordLog } from "../../record/RecordLog";
 import {
   domainById,
-  faithfulness,
+  showingUp,
   initiativeById,
   initiativeAttainment,
   initiativeProgress,
@@ -166,7 +166,7 @@ export function VerticalList({
   return (
     <div>
       {d.domains.map((dom) => {
-        const f = faithfulness(dom);
+        const f = showingUp(dom);
         const open = initiativesOf(d, dom.id).filter((i) => i.status !== "complete" && i.status !== "cancelled").length;
         return (
           <Row
@@ -859,10 +859,10 @@ export function RecordHead({
   onOutcome: (v: string) => void;
   outcomePlaceholder: string;
   accent: string;
-  /** A domain is ceremony, not a work item — its hero is centred, and its vow
+  /** A domain is ceremony, not a work item — its hero is centred, and its mandate
    *  reads as an inscription rather than a one-line outcome. */
   center?: boolean;
-  /** An optional rule between the name and the vow (the domain's Flourish). */
+  /** An optional rule between the name and the mandate (the domain's Flourish). */
   flourish?: ReactNode;
 }) {
   return (

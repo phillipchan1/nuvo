@@ -30,7 +30,7 @@ const fmtH = (h: number) => `${h.toFixed(h % 1 === 0 ? 0 : 1)}h`;
 
 // ── The Gain — what moved, and what it means ─────────────────────────────────
 
-export type WinKind = "shipped" | "milestone" | "unblocked" | "advanced" | "kept_faith";
+export type WinKind = "shipped" | "milestone" | "unblocked" | "advanced" | "kept";
 
 export interface Win {
   id: string;
@@ -127,15 +127,15 @@ function unblockWins(d: VerticalData, weekStart: Date): Win[] {
   return wins;
 }
 
-/** Domains that kept faith with their weekly vow — fidelity is its own gain. */
-function faithWins(domains: Domain[]): Win[] {
+/** Domains that met their weekly intent — showing up is its own gain. */
+function keptWins(domains: Domain[]): Win[] {
   return domains
     .filter((dom) => dom.weeklyTargetHours > 0 && dom.investedThisWeek >= dom.weeklyTargetHours)
     .map((dom) => ({
-      id: `faith-${dom.id}`,
-      kind: "kept_faith" as const,
+      id: `kept-${dom.id}`,
+      kind: "kept" as const,
       accent: dom.color,
-      headline: `${dom.name} — ${fmtH(dom.investedThisWeek)} this week, vow kept`,
+      headline: `${dom.name} — ${fmtH(dom.investedThisWeek)} this week, intent met`,
       implication: dom.quarterHours >= dom.weeklyTargetHours * 8 ? `${dom.quarterHours}h this quarter — a steady arc.` : null,
       weight: 30,
     }));
@@ -223,7 +223,7 @@ export interface StandbackRead {
 export function readStandback(d: VerticalData, now: Date = new Date()): StandbackRead {
   const weekStart = startOfWeek(parseDateISO(todayISO(now)), { weekStartsOn: 1 });
 
-  const wins = [...initiativeWins(d, weekStart), ...unblockWins(d, weekStart), ...faithWins(d.domains)]
+  const wins = [...initiativeWins(d, weekStart), ...unblockWins(d, weekStart), ...keptWins(d.domains)]
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 6);
 

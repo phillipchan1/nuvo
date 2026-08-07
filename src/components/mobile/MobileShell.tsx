@@ -68,7 +68,7 @@ const NAV: { id: Tab; label: string; kind: AltitudeKind }[] = [
   { id: "projects", label: "Projects", kind: "project" },
   { id: "initiatives", label: "Initiatives", kind: "initiative" },
   // The anchor — the fixtures everything else hangs off. Read-first like the
-  // other two, and the one altitude measured by faithfulness, not throughput.
+  // other two, and the one altitude measured by presence, not throughput.
   { id: "domains", label: "Domains", kind: "domain" },
 ];
 

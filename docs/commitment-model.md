@@ -100,7 +100,7 @@ Standing keeps **Defined** and **Motion**; `FloorStanding` drops the Capacity ga
   decided here, at altitude ("16 project-weeks of demand into a 13-week quarter — drop a
   bet or move a finish line").
 - **Sunday → Pull:** feed the pull the right target — this week's required pace per
-  in-flight project — so it proposes a capacity-gated, faithfulness-balanced pull
+  in-flight project — so it proposes a capacity-gated, showing up-balanced pull
   instead of an arbitrary `sprintLoadMins` vs `weeklyCapacityHours`.
 - **Refine / Reality-Check card:** the per-project version of the portfolio ribbon
   (already built — `refineFeasibility.ts`).

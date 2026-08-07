@@ -1,6 +1,6 @@
 // Summit — the quarterly flow. Inputs: the quarter's ledger and the standing
-// vows. Output: a re-affirmed set of domains and a decided portfolio of initiatives,
-// rough-cut across the months. Four steps: the Quarter's Gain → the Vows →
+// mandates. Output: a re-affirmed set of domains and a decided portfolio of initiatives,
+// rough-cut across the months. Four steps: the Quarter's Gain → the Mandates →
 // the Portfolio → the Months.
 
 import { useMemo, useState } from "react";
@@ -69,10 +69,10 @@ export default function SummitRitual({
       body: <QuarterGainStep />,
     },
     {
-      id: "vows",
-      label: "The Vows",
-      value: `${data.domains.length} vows · ${targetSum}h/wk`,
-      body: <VowsStep />,
+      id: "mandates",
+      label: "The Mandates",
+      value: `${data.domains.length} mandates · ${targetSum}h/wk`,
+      body: <MandatesStep />,
     },
     {
       id: "portfolio",
@@ -108,7 +108,7 @@ export default function SummitRitual({
             <div className="max-w-[460px] text-center">
               <div className="text-display masthead">The quarter is shaped.</div>
               <div className="mt-2 text-body text-muted">
-                Vows re-affirmed, initiatives decided, months rough-cut. The Sunday flow takes it from here, week by week.
+                Mandates re-affirmed, initiatives decided, months rough-cut. The Sunday flow takes it from here, week by week.
               </div>
               <div className="mt-6"><Btn kind="primary" onClick={onClose}>Back to the week</Btn></div>
             </div>
@@ -234,12 +234,12 @@ function QuarterGainStep() {
   );
 }
 
-// ── 2 · The Vows — re-read every intention, re-set every target ─────────────
-function VowsStep() {
+// ── 2 · The Mandates — re-read every intention, re-set every target ─────────────
+function MandatesStep() {
   const { data, updateDomain } = useVertical();
   return (
     <div>
-      <StepTitle title="The Vows" sub="Domains are vows, not goals. Re-read each intention — edit it or let it stand — and re-set the weekly hours it deserves this season." />
+      <StepTitle title="The Mandates" sub="Domains are mandates, not goals. Re-read each one — edit it or let it stand — and re-set the weekly hours it deserves this season." />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {data.domains.map((d) => (
           <div key={d.id} className="rounded-md border border-line bg-surface p-4">
@@ -256,7 +256,7 @@ function VowsStep() {
               <InlineTextarea
                 value={d.intention}
                 onChange={(v) => updateDomain(d.id, { intention: v })}
-                placeholder="State the standing intention…"
+                placeholder="State the standing mandate…"
                 className="text-body italic text-muted"
               />
             </div>

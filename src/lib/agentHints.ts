@@ -66,7 +66,7 @@ export function agentHints(ctx: AgentHintContext): AgentHints {
       return {
         prompt: domain
           ? `Domains — balance across your life. Viewing ${domain}.`
-          : "Domains — balance and faithfulness across your life.",
+          : "Domains — balance and follow-through across your life.",
         starters: [
           "Which domain have I neglected lately?",
           "Summarize my domain balance this week",

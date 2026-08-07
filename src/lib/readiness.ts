@@ -111,7 +111,7 @@ export function projectedFloorShaped(
 }
 
 /** One domain's STRUCTURAL readiness = its open bets (+ loose projects) settled.
- *  Faithfulness (did you spend time there) is a separate axis — it drives the
+ *  Presence (did you spend time there) is a separate axis — it drives the
  *  cue and the domain lamp, never this meter. */
 export function readinessOfDomain(d: VerticalData, domainId: string): number {
   const inits = initiativesOf(d, domainId)
@@ -125,14 +125,14 @@ export function readinessOfDomain(d: VerticalData, domainId: string): number {
 
 /** A domain is "clear" once it's been refined — it carries the routing context
  *  (charter → entities/boundary) the agent uses to file captures here, and
- *  benefits from forever. Unlike faithfulness (an ongoing "did you show up?"),
+ *  benefits from forever. Unlike presence (an ongoing "did you show up?"),
  *  clarity is a ONE-TIME investment: a refined domain stays clear. */
 export function isDomainClear(dom: Domain): boolean {
   return dom.context != null;
 }
 
 /** The Domain floor meter = how much of the life map Nuvo can actually route —
- *  the share of domains that have been refined. Not faithfulness (that's the
+ *  the share of domains that have been refined. Not presence (that's the
  *  domain lamp): a one-time clarity that, once earned, holds. */
 export function readinessOfDomainFloor(d: VerticalData): number {
   if (!d.domains.length) return 1;
@@ -195,7 +195,7 @@ function groomCue(silent: GroomCandidate[], raw: GroomCandidate[], kind: "projec
 
 /** Domain cue = a life area Nuvo can't yet route — unrefined, no charter/context.
  *  A one-time clarity nudge ("refine this and grooming gets it forever"), not the
- *  faithfulness nag the domain lamp already carries. */
+ *  presence nag the domain lamp already carries. */
 function domainCue(d: VerticalData): FloorCue | null {
   const unclear = d.domains.filter((dom) => !isDomainClear(dom));
   if (!unclear.length) return null;

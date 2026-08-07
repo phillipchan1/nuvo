@@ -6,7 +6,7 @@ stale or the canon needs an explicit change (log it in [`decisions.md`](./decisi
 
 > **The one-liner.** *Nuvo is the one funnel from the things you're responsible for, down
 > to the hour on your calendar — so a week of being busy is never mistaken for a week of
-> being faithful.*
+> being present.*
 
 ---
 
@@ -165,7 +165,7 @@ new instrumentation.
 | **Roll rate** (`roll_count`) | low and falling | The week was over-committed, or blocks are fiction |
 | **Commitment ratio** | 0.7–1.0 | >1.0 = lying to yourself on Sunday; <0.7 = a bet isn't being pulled |
 | **Backlog age** | bounded | Work is being captured but never groomed — the funnel is clogged |
-| **Domain faithfulness** | no domain dark for a quarter | One world is eating the others (it's usually Family) |
+| **Domain showing up** | no domain dark for a quarter | One world is eating the others (it's usually Family) |
 | **Capture → structure latency** | minutes | Capture works; routing doesn't |
 | **Review completed** | weekly | Nothing is closing the loop; Sunday starts cold |
 | **Prepared blocks used** | rising | The assistant is helping at the moment of work, not just at planning time |

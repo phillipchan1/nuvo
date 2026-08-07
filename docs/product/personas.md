@@ -118,10 +118,11 @@ productivity theater.
 
 > **Register — resolved (D-027).** Nuvo's convictions are Christian; **its vocabulary
 > isn't, and you don't have to be to use it.** Explicit language ("where you are *called*
-> to be faithful") is out. Tangential language — *steward · faithful · vow · gain ·
-> discipline* — stays, because it carries the moral seriousness the product actually runs
-> on, and every one of those words is fully usable by someone who shares none of the
-> convictions. **The excellence is the witness; the copy doesn't have to be.** P3 still
+> to be faithful") is out. Tangential language — *steward · gain · discipline · presence ·
+> showing up · mandate* — stays, because it carries the moral seriousness the product
+> actually runs on, and every one of those words is fully usable by someone who shares none
+> of the convictions. (*vow* and *faithful* were on this list until D-089 tested them on a
+> real screen and they read as a register rather than as precision.) **The excellence is the witness; the copy doesn't have to be.** P3 still
 > gets a product whose weight they recognize; P2 is never asked to adopt a stance.
 
 ---
@@ -183,8 +184,8 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 | Q3 | What does "done" even mean here? | the **record's lead line** · Groom deck *Brief* lens | ✅ *re-scored 2026-07-29 (D-050): the outcome sits directly under the name, and when empty it asks the question. Was ✳ against a spec that had since shipped.* |
 | Q4 | What are the actual steps? | the **record's Tasks hero** · *Path* lens · AI scaffold | ◐ *re-scored 2026-07-29: the Path lens shipped and the steps are now the record's hero (`t` to add), but an empty project still leans on AI to get its first list* |
 | Q5 | What's stuck, waiting, or dependent? | *In the way* lens | ✳ *spec* |
-| Q6 | Which bets do I pull this quarter, and which do I refuse? | Summit → Vows → Portfolio | ◐ *refusal isn't a first-class act* |
-| Q7 | Am I being faithful in what I've been given? | Domain wall / open domain — **on both shells** | ◐ *the philosophical question — deliberately gentle. Re-noted 2026-08-07 (D-086): it's no longer a desk-only question — the wall and the open domain reach full parity on the phone, which is where the question actually shows up. **Re-scored 2026-08-07 (D-087): it had been answering it wrongly, which is worse than ○** — the signal counted only completed tasks and attended meetings, so finishing a project made its domain read "quiet for 7 days", and it alarmed in days on an instrument measured in quarters. A ship is now a touch, delivery reads differently from drift, and the voice speaks in weeks. Back to ◐, not ✅, for the original reason: nothing yet **asks** it of you; you have to go looking.* |
+| Q6 | Which bets do I pull this quarter, and which do I refuse? | Summit → The Mandates → Portfolio | ◐ *refusal isn't a first-class act* |
+| Q7 | Am I being faithful in what I've been given? | Domain wall / open domain — **on both shells** | ◐ *the philosophical question — deliberately gentle. Re-noted 2026-08-07 (D-086): it's no longer a desk-only question — the wall and the open domain reach full parity on the phone, which is where the question actually shows up. **Re-scored 2026-08-07 (D-087): it had been answering it wrongly, which is worse than ○** — the signal counted only completed tasks and attended meetings, so finishing a project made its domain read "quiet for 7 days", and it alarmed in days on an instrument measured in quarters. A ship is now a touch, delivery reads differently from drift, and the voice speaks in weeks. Back to ◐, not ✅, for the original reason: nothing yet **asks** it of you; you have to go looking. **Re-checked 2026-08-07 (D-088): it was still answering wrongly, for a different reason** — a stale `tasks.domain_id` credited four projects' hours to the wrong domains, so the domain that had just shipped read 0h for the week. Fixed at the derive. Holds at ◐.* |
 
 ### Ambient dread — *the questions that wake you up*
 

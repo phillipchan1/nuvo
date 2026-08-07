@@ -17,7 +17,7 @@ import { useEventDetails, useHiddenEvents } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
-import { domainById, initiativeById, isProjectComplete, projectById } from "../lib/vertical";
+import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId } from "../lib/vertical";
 import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { deriveSlotTitle } from "../lib/slots";
 import { rulesEqual, type RecurrenceRule } from "../lib/recurrence";
@@ -164,10 +164,7 @@ export function TaskPopover({
   // the thread up the vertical
   const project = projectById(vertical, task.project_id);
   const initiative = initiativeById(vertical, task.initiative_id ?? project?.initiativeId ?? null);
-  const domain = domainById(
-    vertical,
-    task.domain_id ?? project?.domainId ?? initiative?.domainId ?? null,
-  );
+  const domain = domainById(vertical, taskDomainId(vertical, task));
   const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
 
   const setProject = (projectId: string) => {
@@ -362,7 +359,7 @@ export function TaskPopover({
           >
             {domain ? <><span>{domain.icon}</span><span>{domain.name}</span></> : <span>+ domain</span>}
             <select
-              value={task.domain_id ?? ""}
+              value={domain?.id ?? ""}
               onChange={(e) => setDomain(e.target.value)}
               className="absolute inset-0 w-full cursor-pointer opacity-0"
             >

@@ -175,7 +175,7 @@ function comeback(report: WeekReport, evidence: WeekEvidence, vertical: Vertical
       kind: "comeback",
       tone: "comeback",
       headline: `This was the first week in ${quietRun + 1} that ${d.name} crossed its intended rhythm.`,
-      detail: `${fmtH(d.hours * 60)} kept — after ${quietRun} quiet weeks. Faithfulness, not a streak to protect.`,
+      detail: `${fmtH(d.hours * 60)} kept — after ${quietRun} quiet weeks. Showing up again counts.`,
       receipts: domainReceipts(evidence, d.id),
       confidence,
       unexpectedness,

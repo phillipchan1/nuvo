@@ -1,10 +1,10 @@
-// Domain — the anchor of faithfulness, reimagined as a place you ENTER, not a
+// Domain — the anchor of presence, reimagined as a place you ENTER, not a
 // dashboard you scan. The wall is a set of glass cards, each carrying a LIVING
 // SIGIL (src/components/floors/DomainSigil.tsx) generated from the domain's own
 // 13-week pulse — warm when tended, a cold ember when you've gone quiet — plus a
 // balance strip that answers "am I starving a domain to feed another?". Click a
-// card to open that domain: the standing vow as a Fraunces inscription, the
-// faithfulness pulse, the Gain you've banked, what you've built, the portfolio
+// card to open that domain: the standing mandate as a Fraunces inscription, the
+// presence pulse, the Gain you've banked, what you've built, the portfolio
 // pointed at outcomes, and Nuvo's derived read. Domains don't ask for action —
 // they ask to be kept.
 
@@ -14,7 +14,7 @@ import { FloorGuide } from "../orientation/FloorGuide";
 import { WelcomeVisual } from "../orientation/Visuals";
 import {
   initiativesOf,
-  looseProjectsOf,
+  openLooseProjectsOf,
   looseTasksOfDomain,
   domainStreak,
   domainKeptCount,
@@ -41,7 +41,7 @@ import {
 import {
   ClarityMark,
   DomainGroom,
-  FaithPulse,
+  PresencePulse,
   Flourish,
   SigilFormGrid,
   SwatchGrid,
@@ -112,7 +112,7 @@ export default function DomainFloor({
       <FloorGuide
         eyebrow="Domains · ⌘4"
         title="Name the areas of your life."
-        teach="Domains are your standing commitments — Family, Work, Faith, Health. Everything you plan hangs off one of them."
+        teach="Domains are your standing commitments — Family, Work, Health, Finances. Everything you plan hangs off one of them."
         Visual={WelcomeVisual}
         actionLabel="Add your first domain"
         onAction={() => void addDomain().then((d) => { setFreshDomain(d); enter(d.id); })}
@@ -138,7 +138,7 @@ export default function DomainFloor({
       >
         <h1 className="serif text-[26px]" style={{ fontWeight: 500 }}>The fixtures of your life</h1>
         <p className="mt-1 max-w-[560px] text-body text-muted">
-          Measured by faithfulness over a long arc — not throughput. Are you still showing up?
+          Measured over a long arc by whether you keep showing up — not by throughput.
         </p>
       </FloorHeader>
 
@@ -228,7 +228,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
   const lit = st.tone === "lit";
   const inits = initiativesOf(data, domain.id);
   const openInits = inits.filter((i) => isOpenStatus(i.status));
-  const looseProjects = looseProjectsOf(data, domain.id);
+  const looseProjects = openLooseProjectsOf(data, domain.id);
   const loose = looseTasksOfDomain(data, domain.id);
   const accent = domain.color;
 
@@ -285,10 +285,10 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
         </span>
       </div>
 
-      {/* faint watermark of the sigil behind the vow */}
+      {/* faint watermark of the sigil behind the mandate */}
       <DomainSigil spec={spec} size={360} className="pointer-events-none absolute left-1/2 -translate-x-1/2" style={{ top: 44, opacity: 0.06 }} />
 
-      {/* ── the hero: mark · name · vow · faithfulness voice ── */}
+      {/* ── the hero: mark · name · mandate · showing up voice ── */}
       <div className="relative mx-auto flex max-w-[560px] flex-col items-center px-6 pb-8 pt-14 text-center">
         <DomainSigil spec={spec} size={120} />
         <div className="serif mt-3 text-[42px]" style={{ fontWeight: 500 }}>
@@ -298,7 +298,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
         <InlineTextarea
           value={domain.intention}
           onChange={(v) => updateDomain(domain.id, { intention: v })}
-          placeholder="State the standing vow for this domain…"
+          placeholder="State the standing mandate for this domain…"
           className="serif text-display italic"
         />
         <div className="mt-5 text-label uppercase" style={{ letterSpacing: "0.16em", color: lit ? "color-mix(in srgb, var(--text) 55%, var(--muted))" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}>
@@ -310,10 +310,10 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
       <div className="relative border-t px-7 py-6" style={{ borderColor: "var(--line)" }}>
         {panelHead("The last quarter", "are you still showing up?")}
         <div style={{ maxWidth: 320 }}>
-          <FaithPulse weeks={domain.weeks} color={accent} target={domain.weeklyTargetHours} />
+          <PresencePulse weeks={domain.weeks} color={accent} target={domain.weeklyTargetHours} />
         </div>
         <div className="mono mt-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-meta text-muted">
-          <span><span style={{ color: accent }}>Kept faith {kept} of the last 13 weeks.</span>{longestQuiet > 1 ? ` Longest quiet stretch: ${longestQuiet} weeks.` : ""}</span>
+          <span><span style={{ color: accent }}>Showed up {kept} of the last 13 weeks.</span>{longestQuiet > 1 ? ` Longest quiet stretch: ${longestQuiet} weeks.` : ""}</span>
           <span className="text-micro uppercase" style={{ letterSpacing: "0.08em" }}>dashed line · your {fmtH(domain.weeklyTargetHours)}/wk intent</span>
         </div>
       </div>
@@ -321,7 +321,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
       {/* ── the Gain · what you've built (two-up) ── */}
       <div className="relative grid border-t md:grid-cols-2" style={{ borderColor: "var(--line)" }}>
         <div className="px-7 py-6">
-          {panelHead("The Gain", "what this domain has cost you")}
+          {panelHead("The Gain", "what you've actually put in")}
           <div className="flex flex-wrap gap-x-7 gap-y-3">
             <GainNum n={`${domain.quarterHours}`} unit="h" label="this quarter" />
             <div>
@@ -380,7 +380,11 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
         ))}
 
         {openInits.length === 0 && looseProjects.length === 0 ? (
-          <div className="serif text-body italic text-muted">No initiatives yet — this domain simply asks to be groomed.</div>
+          <div className="serif text-body italic text-muted">
+            {shipped.length > 0
+              ? "Nothing in flight — everything here has shipped. What's next?"
+              : "No initiatives yet — this domain simply asks to be groomed."}
+          </div>
         ) : (
           <div className="flex flex-col">
             {openInits.map((i) => {

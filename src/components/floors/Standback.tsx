@@ -17,7 +17,7 @@ const WIN_GLYPH: Record<Win["kind"], string> = {
   milestone: "◆",
   unblocked: "→",
   advanced: "↗",
-  kept_faith: "♢",
+  kept: "♢",
 };
 
 // Calm by intent — the compass uses accent for good and muted for neutral.

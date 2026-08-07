@@ -1,4 +1,4 @@
-// Domain faithfulness — the ledger that decides whether a domain is "quiet".
+// Domain presence — the ledger that decides whether a domain is "quiet".
 //
 // These drive the REAL `buildVertical`, not hand-built `Domain` objects, because
 // that's where the bug lived: the ledger counted completed tasks and attended
@@ -11,7 +11,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildVertical,
-  faithfulness,
+  domainStreak,
+  showingUp,
   type DomainRow,
   type ProjectRow,
 } from "../src/lib/vertical";
@@ -106,7 +107,7 @@ describe("a ship is a touch", () => {
 
     expect(dom.lastTouchedDays).toBe(2);
     expect(dom.lastShip).toEqual({ name: "Stampede rebrand", daysAgo: 2 });
-    expect(faithfulness(dom).lit).toBe(true);
+    expect(showingUp(dom).lit).toBe(true);
 
     const st = stateOf(dom);
     expect(st.because).toBe("shipped");
@@ -114,11 +115,45 @@ describe("a ship is a touch", () => {
     expect(st.line).toContain("Stampede rebrand");
     expect(domainRead(data, dom, NOW).every((r) => r.tone !== "warn")).toBe(true);
 
-    // the guarantee that keeps this honest: a ship is a TOUCH, never HOURS (P6)
+    // A ship with no tasks has no shaped effort to book, so there are still no
+    // hours to invent — but the touch is what makes the domain read `shipped`.
     expect(dom.investedThisWeek).toBe(0);
     expect(dom.quarterHours).toBe(0);
-    expect(dom.weeks.every((h) => h === 0)).toBe(true);
-    expect(dom.days.every((h) => h === 0)).toBe(true);
+  });
+
+  it("A2 · a ship books the work its tasks never ledgered", () => {
+    // A project only ships once every task is closed, so `planned − ledgered` is
+    // normally zero. The gap it exists to close is the task marked done with no
+    // `completed_at` — real in older rows, and invisible to the ledger, which
+    // keys every hour off that timestamp. Before this, such a project shipped
+    // into a week that read 0h.
+    const { dom } = build(
+      [projectRow({ id: "ATC review", shipped_at: daysAgo(1) })],
+      [
+        taskRow({ id: "t1", completed_at: null, project_id: "ATC review", duration_minutes: 120 }),
+        taskRow({ id: "t2", completed_at: null, project_id: "ATC review", duration_minutes: 60 }),
+      ],
+    );
+
+    expect(dom.investedThisWeek).toBe(3);
+    expect(dom.quarterHours).toBe(3);
+    expect(dom.weeks[12]).toBe(3);
+    expect(domainStreak(dom.weeks)).toBe(1); // no longer contradicts the hero
+  });
+
+  it("A3 · a ship never double-counts work already checked off", () => {
+    // Every task done → planned equals ledgered → the ship books nothing, and the
+    // hours stay in the week they were actually worked.
+    const { dom } = build(
+      [projectRow({ id: "ATC review", shipped_at: daysAgo(1) })],
+      [
+        taskRow({ id: "t1", completed_at: daysAgo(1), project_id: "ATC review", duration_minutes: 120 }),
+        taskRow({ id: "t2", completed_at: daysAgo(2), project_id: "ATC review", duration_minutes: 60 }),
+      ],
+    );
+
+    expect(dom.investedThisWeek).toBe(3); // 3h, not 6h
+    expect(dom.quarterHours).toBe(3);
   });
 
   it("B · shipping with the 'drop' verdict cannot erase the touch", () => {
@@ -302,5 +337,61 @@ describe("shipped work is filed by when it shipped", () => {
 
     const board = readShipped(data, "initiative", NOW);
     expect(board.groups[0].label).toBe("Q2 2026");
+  });
+});
+
+describe("a task's domain is its parent's, not its own stale copy", () => {
+  // The reported bug (Stampede read "0h this week" the day a project shipped
+  // there): `tasks.domain_id` is a denormalized copy stamped when the task was
+  // filed, and it goes stale the moment the project is re-homed. Every reader
+  // asked it FIRST, so four projects' worth of hours were credited to the
+  // domains those projects used to live in.
+  const OTHER = "dom-2";
+  const otherRow = (): DomainRow => domainRow({ id: OTHER, name: "Frontier", sort_order: 1 });
+
+  it("credits the project's domain when the task's copy is stale", () => {
+    const data = buildVertical(
+      [domainRow(), otherRow()],
+      [],
+      [projectRow({ id: "ATC review", status: "in_progress", domain_id: DOM })],
+      [
+        taskRow({ id: "t1", completed_at: daysAgo(1), project_id: "ATC review", domain_id: OTHER, duration_minutes: 120 }),
+        taskRow({ id: "t2", completed_at: daysAgo(2), project_id: "ATC review", domain_id: OTHER, duration_minutes: 60 }),
+      ],
+      null,
+      NOW,
+    );
+
+    const stampede = data.domains.find((d) => d.id === DOM)!;
+    const frontier = data.domains.find((d) => d.id === OTHER)!;
+    expect(stampede.investedThisWeek).toBe(3);
+    expect(frontier.investedThisWeek).toBe(0);
+  });
+
+  it("still trusts a loose task's own domain — it has no parent to ask", () => {
+    const data = buildVertical(
+      [domainRow(), otherRow()],
+      [],
+      [],
+      [taskRow({ id: "t1", completed_at: daysAgo(1), domain_id: OTHER, duration_minutes: 60 })],
+      null,
+      NOW,
+    );
+
+    expect(data.domains.find((d) => d.id === OTHER)!.investedThisWeek).toBe(1);
+    expect(data.domains.find((d) => d.id === DOM)!.investedThisWeek).toBe(0);
+  });
+
+  it("falls back to the task's copy when the parent has no domain of its own", () => {
+    const data = buildVertical(
+      [domainRow()],
+      [],
+      [projectRow({ id: "Orphan", status: "in_progress", domain_id: null })],
+      [taskRow({ id: "t1", completed_at: daysAgo(1), project_id: "Orphan", domain_id: DOM, duration_minutes: 60 })],
+      null,
+      NOW,
+    );
+
+    expect(data.domains[0].investedThisWeek).toBe(1);
   });
 });

@@ -2,7 +2,7 @@
 // (`floors/DomainFloor.tsx`), at full feature parity.
 //
 // The desktop opens a domain as a tall bordered plate with a radial wash of the
-// domain's own light: hero (sigil · name · vow · faithfulness voice), the last
+// domain's own light: hero (sigil · name · mandate · presence voice), the last
 // quarter's pulse, the Gain beside what you've built, the portfolio pointed at
 // outcomes, Nuvo's derived read, and the grooming workbench at the foot. The
 // phone runs the SAME acts down one column inside the detail Sheet, in the same
@@ -28,7 +28,7 @@ import {
   initiativeProgress,
   initiativesOf,
   isOpenStatus,
-  looseProjectsOf,
+  openLooseProjectsOf,
   looseTasksOfDomain,
   type VerticalData,
 } from "../../../lib/vertical";
@@ -44,7 +44,7 @@ import {
 import {
   ClarityMark,
   DomainGroom,
-  FaithPulse,
+  PresencePulse,
   Flourish,
   SigilFormGrid,
   SwatchGrid,
@@ -110,7 +110,7 @@ export default function MobileDomainScreen({
   const reads = domainRead(d, dom, now);
 
   const openInits = initiativesOf(d, dom.id).filter((i) => isOpenStatus(i.status));
-  const looseProjects = looseProjectsOf(d, dom.id);
+  const looseProjects = openLooseProjectsOf(d, dom.id);
   const looseTasks = looseTasksOfDomain(d, dom.id);
 
   return (
@@ -120,14 +120,14 @@ export default function MobileDomainScreen({
       className="px-4 pt-1"
       style={{
         // The domain's light IS the accent inside its own screen — including the
-        // soft pair, or the "keeping faith" card tints with the app accent while
+        // soft pair, or the "showing up" card tints with the app accent while
         // its rule tints with the domain's.
         ["--accent" as string]: accent,
         ["--accent-soft" as string]: `color-mix(in srgb, ${accent} 12%, transparent)`,
         background: `radial-gradient(120% 40% at 50% -2%, color-mix(in srgb, ${accent} 12%, transparent) 0%, transparent 60%)`,
       }}
     >
-      {/* ── the hero: mark · name · vow · faithfulness voice ── */}
+      {/* ── the hero: mark · name · mandate · presence voice ── */}
       <div className="flex flex-col items-center pb-1 text-center">
         <DomainSigil spec={spec} size={96} />
         <div className="mt-2 w-full">
@@ -137,7 +137,7 @@ export default function MobileDomainScreen({
             onName={(v) => store.updateDomain(dom.id, { name: v })}
             outcome={dom.intention}
             onOutcome={(v) => store.updateDomain(dom.id, { intention: v })}
-            outcomePlaceholder="State the standing vow for this domain…"
+            outcomePlaceholder="State the standing mandate for this domain…"
             center
             flourish={<Flourish color={accent} width={96} />}
           />
@@ -181,9 +181,9 @@ export default function MobileDomainScreen({
       {/* ── the last quarter — the pulse ── */}
       <Section label="The last quarter">
         <div className="rounded-xl border border-line bg-surface-2 p-3">
-          <FaithPulse weeks={dom.weeks} color={accent} target={dom.weeklyTargetHours} height={48} />
+          <PresencePulse weeks={dom.weeks} color={accent} target={dom.weeklyTargetHours} height={48} />
           <div className="mono mt-2 text-meta text-muted">
-            <span style={{ color: accent }}>Kept faith {kept} of the last 13 weeks.</span>
+            <span style={{ color: accent }}>Showed up {kept} of the last 13 weeks.</span>
             {longestQuiet > 1 ? ` Longest quiet stretch: ${longestQuiet} weeks.` : ""}
           </div>
           {dom.weeklyTargetHours > 0 && (
@@ -269,7 +269,11 @@ export default function MobileDomainScreen({
         meter={openInits.length || looseProjects.length ? `${openInits.length + looseProjects.length}` : null}
       >
         {openInits.length === 0 && looseProjects.length === 0 ? (
-          <Hint>No initiatives yet — this domain simply asks to be groomed.</Hint>
+          <Hint>
+            {shipped.length > 0
+              ? "Nothing in flight — everything here has shipped. What's next?"
+              : "No initiatives yet — this domain simply asks to be groomed."}
+          </Hint>
         ) : (
           <CardList>
             {openInits.map((i) => {

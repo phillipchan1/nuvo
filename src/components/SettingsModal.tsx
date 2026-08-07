@@ -1331,7 +1331,7 @@ function AboutPane({ onClose }: { onClose: () => void }) {
       <div className="mb-2 flex flex-col items-center gap-1 rounded-xl border border-line bg-surface-2/40 px-4 py-7 text-center">
         <div className="wordmark text-lead text-ink">Nuvo</div>
         <p className="max-w-xs text-caption leading-snug text-muted">
-          Your whole life — work, family, faith, health — held in one calm place.
+          Your whole life — work, family, health, finances — held in one calm place.
         </p>
         <span className="mono mt-1 text-micro text-muted">v{__APP_VERSION__}</span>
       </div>

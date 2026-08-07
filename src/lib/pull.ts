@@ -8,7 +8,7 @@ import { projectsOnDeck } from "./priorities";
 import {
   backlogTasks,
   domainById,
-  faithfulness,
+  showingUp,
   inboxTasks,
   initiativeById,
   isProjectComplete,
@@ -36,7 +36,7 @@ export interface PullSuggestion {
 }
 
 /** `weekStartISO` turns on the primary source: the projects On Deck committed to
- *  that week. Without it the pull can only guess from deadlines + faithfulness —
+ *  that week. Without it the pull can only guess from deadlines + presence —
  *  which is how a fully-groomed week used to yield a single unrelated task. */
 export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggestion[] {
   const picked = new Map<string, PullSuggestion>();
@@ -45,7 +45,7 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
   // happens. Without this, a deadline or a slip could drag a task back into a
   // week you'd deliberately pushed its project out of — which made "push it out"
   // a lie. A project with no week at all ("needs a week") is not this week's
-  // either. Loose work (no project) still answers to deadlines/faithfulness.
+  // either. Loose work (no project) still answers to deadlines/presence.
   const onDeck = weekStartISO ? new Set(projectsOnDeck(d, weekStartISO).map((p) => p.id)) : null;
   const elsewhere = (task: VTask) => onDeck != null && task.projectId != null && !onDeck.has(task.projectId);
 
@@ -92,9 +92,9 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
     }
   }
 
-  // 5 · faithfulness: one small task from each domain that's going quiet.
+  // 5 · presence: one small task from each domain that's going quiet.
   for (const domain of d.domains) {
-    if (faithfulness(domain).lit) continue;
+    if (showingUp(domain).lit) continue;
     const candidates = d.tasks
       .filter((t) => t.domainId === domain.id && t.status !== "done" && !t.sprint && !picked.has(t.id))
       .sort((a, b) => a.durationMins - b.durationMins);
