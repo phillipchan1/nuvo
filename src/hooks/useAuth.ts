@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import { clearPersistedCache } from "../lib/sync/persist";
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
@@ -26,7 +27,15 @@ export function useAuth() {
       setSession(data.session);
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s);
+      // Nuvo is multi-tenant and the offline read cache is written to disk, so
+      // a sign-out has to take it with it. Otherwise the next account to sign in
+      // on this device rehydrates the previous one's tasks, projects and
+      // domains before its own first fetch lands — a cross-account leak that
+      // looks exactly like a rendering bug.
+      if (event === "SIGNED_OUT") void clearPersistedCache();
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 

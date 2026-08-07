@@ -6,13 +6,13 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { patchCaches } from "./useTasks";
+import { invalidateWhenSafe, makeOp, queueWrite, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
 import { upsertPushVerdict } from "../lib/priorities";
 import {
@@ -20,6 +20,7 @@ import {
   DEFAULT_PROJECT_DURATION_MINUTES,
   restingStatus,
   type BigRock,
+  type Slot,
   type Sprint,
   type Task,
   type TaskStatus,
@@ -234,6 +235,10 @@ const Ctx = createContext<VerticalStore | null>(null);
 /** DEV verify harnesses only: mount a fabricated store so a surface that reads
  *  `useVertical()` can be driven at phone width without an account (see
  *  `mobile/DomainHarness.tsx`, reached at `?domains`). Never used by the app. */
+/** Mirrors the `domains.color` schema default (migration 1). Client-minted rows
+ *  must name it so the optimistic domain matches the persisted one. */
+const NEW_DOMAIN_COLOR = "#6B7280";
+
 export function VerticalStoreProvider({ value, children }: { value: VerticalStore; children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -450,55 +455,171 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       qc.setQueryData<R[]>(key, (old) => old?.filter((r) => !drop.has(r.id)));
     };
 
+    /**
+     * Delete projects and detach their children.
+     *
+     * Same shape as `deleteInitiativeRows`, and the same reason: the detach was
+     * three set-based updates (`.eq("project_id", …)` across tasks, slots and
+     * recurrences), and a predicate the server evaluates later can match rows
+     * the user never saw. Children are resolved from the cache and queued one
+     * op each.
+     *
+     * `recurrences` is NOT in the outbox's table list, so its detach still goes
+     * straight to the network and is lost offline. The FK (`on delete set null`)
+     * repairs it server-side when the project delete lands, so the outcome is
+     * correct either way — but the write itself is not offline-capable, and that
+     * is why `recurrences` appears in the not-converted list in
+     * `docs/offline-sync.md`.
+     */
     const deleteProjectRows = async (ids: string[]) => {
       if (!ids.length) return;
+      const doomed = new Set(ids);
       removeRows<ProjectRow>(["vertical", "projects"], ids);
-      try {
-        const uid = await userId();
-        // Detach children first — clearer than relying on FK + RLS during cascade.
-        for (const table of ["tasks", "slots", "recurrences"] as const) {
-          const q = supabase.from(table).update({ project_id: null }).eq("user_id", uid);
-          const { error } = ids.length === 1
-            ? await q.eq("project_id", ids[0])
-            : await q.in("project_id", ids);
-          if (error) throw error;
+
+      const tasks = qc.getQueryData<Task[]>(["tasks", "all"]) ?? [];
+      const slots = qc.getQueryData<Slot[]>(["slots"]) ?? [];
+
+      for (const t of tasks) {
+        if (t.project_id && doomed.has(t.project_id)) {
+          patchCaches(qc, t.id, { project_id: null });
+          await queueWrite(makeOp("tasks", "update", t.id, { project_id: null }));
         }
-        const { error } = ids.length === 1
-          ? await supabase.from("projects").delete().eq("id", ids[0]).eq("user_id", uid)
-          : await supabase.from("projects").delete().in("id", ids).eq("user_id", uid);
-        if (error) throw error;
-        invalidate(["vertical", "projects"], ["tasks"], ["slots"], ["recurrences"]);
-      } catch (err) {
-        console.error("[vertical] delete project(s) failed", err);
-        invalidate(["vertical", "projects"], ["tasks"], ["slots"], ["recurrences"]);
       }
-    };
-
-    const writeTable = async (table: string, id: string, rowPatch: Record<string, unknown>) => {
-      const { error } = await supabase.from(table).update(rowPatch).eq("id", id);
-      if (error) {
-        console.error(`[vertical] update ${table} failed`, error);
-        throw error;
+      for (const s of slots) {
+        if (s.project_id && doomed.has(s.project_id)) {
+          await queueWrite(makeOp("slots", "update", s.id, { project_id: null }));
+        }
       }
+      for (const id of ids) await queueWrite(makeOp("projects", "delete", id));
+
+      invalidateWhenSafe(qc, "projects", ["vertical", "projects"]);
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      invalidateWhenSafe(qc, "slots", ["slots"]);
     };
 
-    /** Persist an optimistic vertical patch; on failure, refetch so the UI
-     *  doesn't stay on a lie, and surface the error. */
-    const persistVertical = (table: string, id: string, rowPatch: Record<string, unknown>) => {
-      void writeTable(table, id, rowPatch)
-        .then(() => invalidate(["vertical"]))
-        .catch((e) => {
-          invalidate(["vertical"]);
-          toast.error(e instanceof Error ? e.message : `Couldn't update that ${table.replace(/_/g, " ")}.`);
-        });
+    /**
+     * Delete initiatives and detach what hangs off them.
+     *
+     * The old version leaned on set-based SQL — `.in("initiative_id", ids)` for
+     * the project detach and the key-result delete. The outbox cannot express
+     * that: an op names one row, because a predicate evaluated on the server
+     * days later would match a different set than the user saw when they acted.
+     * So the affected rows are resolved from the local cache *now* and queued
+     * individually, which also makes each one independently retriable.
+     *
+     * The trade is honest and worth naming: rows this device has never loaded
+     * are not detached. In a single-player app the cache holds the user's whole
+     * portfolio, so the gap is theoretical — and the FK (`on delete set null`
+     * for projects, `on delete cascade` for key results) is still the backstop
+     * that makes the database correct regardless.
+     */
+    const deleteInitiativeRows = (ids: string[]) => {
+      if (!ids.length) return;
+      const doomed = new Set(ids);
+
+      const projects = qc.getQueryData<ProjectRow[]>(["vertical", "projects"]) ?? [];
+      // Key results have no query key of their own — they ride the initiatives
+      // query (`select "*, key_results(*)"`), so they come off the derived model
+      // rather than the cache. Reading `["vertical","key_results"]` would have
+      // silently returned nothing and queued no deletes at all.
+      const keyResults = data.initiatives
+        .filter((i) => doomed.has(i.id))
+        .flatMap((i) => i.keyResults);
+
+      removeRows<InitiativeRow>(["vertical", "initiatives"], ids);
+
+      void (async () => {
+        for (const p of projects) {
+          if (p.initiative_id && doomed.has(p.initiative_id)) {
+            patchRows<ProjectRow>(["vertical", "projects"], p.id, {
+              initiative_id: null,
+            } as Partial<ProjectRow>);
+            await queueWrite(makeOp("projects", "update", p.id, { initiative_id: null }));
+          }
+        }
+        for (const kr of keyResults) {
+          await queueWrite(makeOp("key_results", "delete", kr.id));
+        }
+        for (const id of ids) await queueWrite(makeOp("initiatives", "delete", id));
+
+        invalidateWhenSafe(qc, "initiatives", ["vertical"]);
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      })();
     };
 
-    /** The current sprint row, created on first use. Creating/entering a new
-     *  week releases unfinished commitments from PAST sprints back to their
-     *  pools (the gate re-decides — nothing strands on a stale sprint_id). */
+    /**
+     * The single update path for every vertical row.
+     *
+     * Queues rather than writes. It resolves once the op is durable, so callers
+     * that `await` it are awaiting *safety*, not a round-trip — and it no longer
+     * throws on a dead network, which is why the rollback-and-toast branch below
+     * is gone rather than merely quieter.
+     */
+    const writeTable = async (table: SyncTable, id: string, rowPatch: Record<string, unknown>) => {
+      await queueWrite(makeOp(table, "update", id, rowPatch));
+    };
+
+    /**
+     * Persist an optimistic vertical patch.
+     *
+     * This used to refetch on failure "so the UI doesn't stay on a lie" and
+     * raise a toast. Both were artefacts of a write that could be lost: the
+     * refetch existed to undo the optimistic patch, and the toast to apologise
+     * for it. A queued write is not lost, so the honest behaviour is to keep the
+     * patch on screen and let the outbox deliver it. Genuine rejections surface
+     * once, in the sync strip, where they can actually be retried.
+     */
+    const persistVertical = (table: SyncTable, id: string, rowPatch: Record<string, unknown>) => {
+      void queueWrite(makeOp(table, "update", id, rowPatch));
+      invalidateWhenSafe(qc, table, ["vertical"]);
+    };
+
+    /** Every task the caches know about, deduped by id. The local stand-in for
+     *  the `.in(...)` / `.eq(...)` predicates the server used to resolve. */
+    const allCachedTasks = (): Task[] => {
+      const seen = new Map<string, Task>();
+      for (const [, rows] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+        for (const t of rows ?? []) seen.set(t.id, t);
+      }
+      return [...seen.values()];
+    };
+
+    /** Queue one patch per task and refresh once. */
+    const patchTasks = async (ids: Iterable<string>, patch: Partial<Task>) => {
+      for (const id of ids) {
+        patchCaches(qc, id, patch);
+        await queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>));
+      }
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+    };
+
+    /**
+     * The current sprint row, created on first use.
+     *
+     * **This is the one place the weekly ritual still needs a connection, and
+     * only in a narrow case.** Tasks reference `sprint_id`, so committing work
+     * to a week needs the sprint's real id. When the week's row is already in
+     * cache — true whenever the app has been opened online at any point this
+     * week — everything below runs offline. When it is not, the client cannot
+     * safely invent one: another device may already have created that week's
+     * row with a different id, our insert would lose the
+     * `unique (user_id, week_start)` race, and every task referencing our
+     * invented id would fail its foreign key and park. Refusing here costs the
+     * user a clear message; guessing would cost them the whole plan.
+     */
     const ensureSprint = async (): Promise<Sprint> => {
       const cached = qc.getQueryData<Sprint | null>(["sprint", weekStart]);
-      if (cached) return cached;
+      if (cached) {
+        releaseStaleCommitments(cached.id);
+        return cached;
+      }
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        throw new Error(
+          "This week hasn't been opened online yet — connect once to start planning it.",
+        );
+      }
+
       const uid = await userId();
       const { data: row, error } = await supabase
         .from("sprints")
@@ -507,28 +628,48 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         .single();
       if (error) throw error;
       qc.setQueryData(["sprint", weekStart], row);
-
-      // parentless week-only captures go back to the inbox (never limbo)…
-      await supabase
-        .from("tasks")
-        .update({ status: "inbox", sprint_id: null })
-        .eq("status", "backlog")
-        .is("project_id", null)
-        .is("initiative_id", null)
-        .is("domain_id", null)
-        .is("do_date", null)
-        .not("sprint_id", "is", null)
-        .neq("sprint_id", row.id);
-      // …and everything else unfinished is released to its backlog
-      await supabase
-        .from("tasks")
-        .update({ sprint_id: null })
-        .not("sprint_id", "is", null)
-        .neq("sprint_id", row.id)
-        .not("status", "in", '("done","trashed")');
-      invalidate(["tasks"]);
-
+      releaseStaleCommitments((row as Sprint).id);
       return row as Sprint;
+    };
+
+    /**
+     * Entering a week releases unfinished commitments from PAST sprints back to
+     * their pools, so nothing strands on a stale `sprint_id`.
+     *
+     * The two set-based updates this replaces were predicates the server
+     * resolved (`sprint_id is not null and sprint_id <> current and status not
+     * in (done, trashed)`), which is unsafe to queue: evaluated days later they
+     * would sweep up work the user committed in the meantime. Resolved from the
+     * cache and queued per row instead.
+     */
+    const releaseStaleCommitments = (currentSprintId: string) => {
+      const seen = new Map<string, Task>();
+      for (const [, rows] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+        for (const t of rows ?? []) seen.set(t.id, t);
+      }
+
+      void (async () => {
+        for (const t of seen.values()) {
+          if (!t.sprint_id || t.sprint_id === currentSprintId) continue;
+          if (t.status === "done" || t.status === "trashed") continue;
+
+          // A parentless week-only capture goes back to the inbox rather than
+          // into limbo; everything else is released to its own backlog.
+          const orphan =
+            t.status === "backlog" &&
+            !t.project_id &&
+            !t.initiative_id &&
+            !t.domain_id &&
+            !t.do_date;
+          const patch = orphan
+            ? { status: "inbox" as const, sprint_id: null }
+            : { sprint_id: null };
+
+          patchCaches(qc, t.id, patch);
+          await queueWrite(makeOp("tasks", "update", t.id, patch));
+        }
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      })();
     };
 
     const patchSprint = async (rowPatch: Partial<Sprint>) => {
@@ -536,7 +677,11 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       qc.setQueryData<Sprint | null>(["sprint", weekStart], (old) =>
         old ? { ...old, ...rowPatch } : old,
       );
-      await writeTable("sprints", sprint.id, rowPatch);
+      // Addressed by the week, not by `sprint.id` — `sprints` is natural-keyed
+      // in the transport so an offline client can patch a week it has never
+      // learned the uuid for.
+      void sprint;
+      await queueWrite(makeOp("sprints", "update", weekStart, rowPatch as Record<string, unknown>));
       invalidate(["sprint"]);
     };
 
@@ -557,41 +702,56 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
       // ── domains ──────────────────────────────────────────────────────────
       addDomain: async () => {
-        const uid = await userId();
+        // The id is minted here, not by Postgres — the caller gets a real
+        // primary key back immediately, so the domain it opens for editing is
+        // the same row the insert will create even if that insert is still
+        // sitting in the outbox.
+        const id = crypto.randomUUID();
         const sort = (domainsQ.data?.length ?? 0) + 1;
-        const { data: row, error } = await supabase
-          .from("domains")
-          .insert({ user_id: uid, name: "New domain", icon: "◇", sort_order: sort })
-          .select("*")
-          .single();
-        if (error) throw error;
-        invalidate(["vertical"]);
+        const row = {
+          name: "New domain",
+          icon: "◇",
+          sort_order: sort,
+          // Named explicitly rather than left to the column default. The row is
+          // now built on the client, so an omitted colour would render one shade
+          // optimistically and a different one after the insert lands. (Not a
+          // design token — this mirrors the schema default in migration 1.)
+          color: NEW_DOMAIN_COLOR,
+        };
+
+        qc.setQueryData<DomainRow[]>(["vertical", "domains"], (old) =>
+          old ? [...old, { id, ...row } as DomainRow] : old,
+        );
+        await queueWrite(makeOp("domains", "insert", id, row));
+        invalidateWhenSafe(qc, "domains", ["vertical"]);
+
         return {
-          id: row.id, name: row.name, color: row.color, icon: row.icon,
-          intention: row.intention, charter: row.charter ?? "", context: row.context ?? null,
-          weeklyTargetHours: row.weekly_target_hours ?? 0,
+          id, name: row.name, color: row.color, icon: row.icon,
+          intention: "", charter: "", context: null,
+          weeklyTargetHours: 0,
           investedThisWeek: 0, meetingHoursThisWeek: 0, quarterHours: 0,
           lastTouchedDays: null, lastShip: null,
           weeks: new Array(13).fill(0), days: new Array(7).fill(0), sort,
         };
       },
       // Signup seeds no domains (migration 42) — the first-run picker calls this
-      // with what the account named for itself. One write, then a single refetch.
+      // with what the account named for itself. One op per domain rather than
+      // one batched insert: the outbox is per-row, and a batch that half-lands
+      // has no safe retry.
       seedDomains: async (specs) => {
         if (!specs.length) return;
-        const uid = await userId();
         const base = domainsQ.data?.length ?? 0;
-        const { error } = await supabase.from("domains").insert(
-          specs.map((s, i) => ({
-            user_id: uid,
-            name: s.name,
-            color: s.color,
-            icon: "◇",
-            sort_order: base + i + 1,
-          })),
-        );
-        if (error) throw error;
-        invalidate(["vertical"]);
+        for (const [i, s] of specs.entries()) {
+          await queueWrite(
+            makeOp("domains", "insert", crypto.randomUUID(), {
+              name: s.name,
+              color: s.color,
+              icon: "◇",
+              sort_order: base + i + 1,
+            }),
+          );
+        }
+        invalidateWhenSafe(qc, "domains", ["vertical"]);
       },
       updateDomain: (id, patch) => {
         const rowPatch: Record<string, unknown> = {};
@@ -611,15 +771,16 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         persistVertical("domains", id, rowPatch);
       },
       deleteDomain: (id) => {
-        void supabase.from("domains").delete().eq("id", id)
-          .then(() => invalidate(["vertical"], ["tasks"]));
+        removeRows<DomainRow>(["vertical", "domains"], [id]);
+        void queueWrite(makeOp("domains", "delete", id));
+        invalidateWhenSafe(qc, "domains", ["vertical"]);
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
       },
 
       // ── initiatives ──────────────────────────────────────────────────────
       addInitiative: async (domainId, init) => {
-        const uid = await userId();
+        const id = crypto.randomUUID();
         const insert: Record<string, unknown> = {
-          user_id: uid,
           domain_id: domainId,
           name: init?.name?.trim() || "New initiative",
         };
@@ -628,20 +789,23 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if ("startDate" in (init ?? {})) insert.start_date = init?.startDate ?? null;
         if ("targetDate" in (init ?? {})) insert.target_date = init?.targetDate ?? null;
         if (init?.status != null) insert.status = init.status;
-        const { data: row, error } = await supabase
-          .from("initiatives")
-          .insert(insert)
-          .select("*")
-          .single();
-        if (error) throw error;
-        invalidate(["vertical"]);
+
+        qc.setQueryData<InitiativeRow[]>(["vertical", "initiatives"], (old) =>
+          old ? [...old, { id, ...insert } as InitiativeRow] : old,
+        );
+        await queueWrite(makeOp("initiatives", "insert", id, insert));
+        invalidateWhenSafe(qc, "initiatives", ["vertical"]);
+
         return {
-          id: row.id, domainId, name: row.name, outcome: row.outcome ?? "",
-          description: row.description ?? "", startDate: row.start_date ?? null,
-          targetDate: row.target_date ?? null,
-          status: normalizeInitiativeStatus(row.status ?? "in_progress"), progress: row.progress ?? 0,
-          momentum: (row.momentum ?? "flat") as Initiative["momentum"], keyResults: [],
-          createdAt: row.created_at ?? null, tendedAt: row.tended_at ?? null,
+          id, domainId, name: insert.name as string,
+          outcome: (insert.outcome as string) ?? "",
+          description: (insert.description as string) ?? "",
+          startDate: (insert.start_date as string) ?? null,
+          targetDate: (insert.target_date as string) ?? null,
+          status: normalizeInitiativeStatus((insert.status as string) ?? "in_progress"),
+          progress: 0,
+          momentum: "flat" as Initiative["momentum"], keyResults: [],
+          createdAt: new Date().toISOString(), tendedAt: null,
           verification: null, verifiedAt: null, brief: null,
         };
       },
@@ -661,35 +825,22 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         patchRows<InitiativeRow>(["vertical", "initiatives"], id, rowPatch);
         persistVertical("initiatives", id, rowPatch);
       },
-      deleteInitiative: (id) => {
-        void supabase.from("initiatives").delete().eq("id", id)
-          .then(() => invalidate(["vertical"], ["tasks"]));
-      },
-      deleteInitiatives: (ids) => {
-        if (!ids.length) return;
-        void (async () => {
-          await supabase.from("projects").update({ initiative_id: null }).in("initiative_id", ids);
-          await supabase.from("key_results").delete().in("initiative_id", ids);
-          await supabase.from("initiatives").delete().in("id", ids);
-          invalidate(["vertical"], ["tasks"]);
-        })();
-      },
+      deleteInitiative: (id) => deleteInitiativeRows([id]),
+      deleteInitiatives: (ids) => deleteInitiativeRows(ids),
 
       // ── key results ──────────────────────────────────────────────────────
       addKeyResult: (initiativeId, init) => {
-        void userId().then(async (uid) => {
-          const row: Record<string, unknown> = {
-            user_id: uid, initiative_id: initiativeId,
-            name: init?.name ?? "New result",
-            sort_order: (data.initiatives.find((i) => i.id === initiativeId)?.keyResults.length ?? 0) + 1,
-          };
-          if (init?.baseline != null) row.baseline_value = init.baseline;
-          if (init?.current != null) row.current_value = init.current;
-          if (init?.target != null) row.target_value = init.target;
-          if (init?.unit != null) row.unit = init.unit;
-          await supabase.from("key_results").insert(row);
-          invalidate(["vertical"]);
-        });
+        const row: Record<string, unknown> = {
+          initiative_id: initiativeId,
+          name: init?.name ?? "New result",
+          sort_order: (data.initiatives.find((i) => i.id === initiativeId)?.keyResults.length ?? 0) + 1,
+        };
+        if (init?.baseline != null) row.baseline_value = init.baseline;
+        if (init?.current != null) row.current_value = init.current;
+        if (init?.target != null) row.target_value = init.target;
+        if (init?.unit != null) row.unit = init.unit;
+        void queueWrite(makeOp("key_results", "insert", crypto.randomUUID(), row));
+        invalidateWhenSafe(qc, "key_results", ["vertical"]);
       },
       updateKeyResult: (_initiativeId, krId, patch) => {
         const rowPatch: Record<string, unknown> = {};
@@ -702,8 +853,8 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         persistVertical("key_results", krId, rowPatch);
       },
       deleteKeyResult: (_initiativeId, krId) => {
-        void supabase.from("key_results").delete().eq("id", krId)
-          .then(() => invalidate(["vertical"]));
+        void queueWrite(makeOp("key_results", "delete", krId));
+        invalidateWhenSafe(qc, "key_results", ["vertical"]);
       },
 
       // ── projects ─────────────────────────────────────────────────────────
@@ -752,39 +903,25 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           createdAt: row.created_at ?? null, tendedAt: row.tended_at ?? null,
           verification: null, verifiedAt: null, brief: null,
         });
-        try {
-          const uid = await userId();
-          const insert: Record<string, unknown> = {
-            user_id: uid,
-            domain_id: domainId,
-            initiative_id: initiativeId,
-            name,
-            status,
-            sort_order: sortOrder,
-          };
-          if (init?.outcome != null) insert.outcome = init.outcome.trim();
-          if (init?.description != null) insert.description = init.description.trim();
-          if ("startDate" in (init ?? {})) insert.start_date = init?.startDate ?? null;
-          if ("targetDate" in (init ?? {})) insert.target_date = init?.targetDate ?? null;
-          const { data: row, error } = await supabase
-            .from("projects")
-            .insert(insert)
-            .select("*")
-            .single();
-          if (error) throw error;
-          qc.setQueryData<ProjectRow[]>(["vertical", "projects"], (old) =>
-            old?.map((r) => (r.id === tempId ? (row as ProjectRow) : r)),
-          );
-          invalidate(["vertical"]);
-          return rowToProject(row as ProjectRow);
-        } catch (e) {
-          qc.setQueryData<ProjectRow[]>(["vertical", "projects"], (old) =>
-            old?.filter((r) => r.id !== tempId),
-          );
-          console.error("[vertical] addProject failed", e);
-          toast.error(e instanceof Error ? e.message : "Couldn't add that project.");
-          throw e;
-        }
+        const insert: Record<string, unknown> = {
+          domain_id: domainId,
+          initiative_id: initiativeId,
+          name,
+          status,
+          sort_order: sortOrder,
+        };
+        if (init?.outcome != null) insert.outcome = init.outcome.trim();
+        if (init?.description != null) insert.description = init.description.trim();
+        if ("startDate" in (init ?? {})) insert.start_date = init?.startDate ?? null;
+        if ("targetDate" in (init ?? {})) insert.target_date = init?.targetDate ?? null;
+
+        // `tempId` is no longer temporary — it is the row's real primary key, so
+        // the reconcile-and-swap that used to follow the insert is gone, and so
+        // is the catch that removed the optimistic row when the write failed. A
+        // queued create is not a failed create.
+        await queueWrite(makeOp("projects", "insert", tempId, insert));
+        invalidateWhenSafe(qc, "projects", ["vertical"]);
+        return rowToProject(optimistic);
       },
       updateProject: (id, patch) => {
         const rowPatch: Record<string, unknown> = {};
@@ -846,36 +983,24 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
           old ? [...old, optimistic] : [optimistic],
         );
-        void (async () => {
-          try {
-            const uid = await userId();
-            const { data: row, error } = await supabase
-              .from("tasks")
-              .insert({
-                user_id: uid,
-                title,
-                status,
-                project_id: parent.projectId ?? null,
-                initiative_id: parent.initiativeId ?? null,
-                domain_id: parent.domainId ?? null,
-                energy: "quick",
-                duration_minutes: durationMins,
-              })
-              .select("*")
-              .single();
-            if (error) throw error;
-            qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-              old?.map((t) => (t.id === tempId ? (row as Task) : t)),
-            );
-            invalidate(["tasks"]);
-          } catch (e) {
-            qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-              old?.filter((t) => t.id !== tempId),
-            );
-            console.error("[vertical] addTask failed", e);
-            toast.error(e instanceof Error ? e.message : "Couldn't add that task.");
-          }
-        })();
+        // Queued, like `useTasks.createTask`. These two paths had diverged:
+        // capturing from the rail survived a dead network and adding a task
+        // inside a project record did not — the same act with two different
+        // answers depending on which surface you happened to be on, which is
+        // worse than being uniformly online-only because there is no rule to
+        // learn. `tempId` is the row's real primary key, so the reconcile-swap
+        // and the unwind-on-failure are both gone.
+        void queueWrite(
+          makeOp("tasks", "insert", tempId, {
+            title,
+            status,
+            project_id: parent.projectId ?? null,
+            initiative_id: parent.initiativeId ?? null,
+            domain_id: parent.domainId ?? null,
+            energy: "quick",
+            duration_minutes: durationMins,
+          }),
+        ).then(() => invalidateWhenSafe(qc, "tasks", ["tasks"]));
       },
       addTasks: async (parent, drafts) => {
         if (!drafts.length) return;
@@ -894,46 +1019,31 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             sortOrder: baseSort + i,
           }),
         );
-        const tempIds = new Set(temps.map((t) => t.id));
+
         void qc.cancelQueries({ queryKey: ["tasks"] });
         qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
           old ? [...old, ...temps] : temps,
         );
-        try {
-          const uid = await userId();
-          const { data: rows, error } = await supabase
-            .from("tasks")
-            .insert(
-              drafts.map((d, i) => ({
-                user_id: uid,
-                title: d.title,
-                status: "backlog" as const,
-                project_id: parent.projectId ?? null,
-                initiative_id: parent.initiativeId ?? null,
-                domain_id: parent.domainId ?? null,
-                big_rock_id: d.bigRockId ?? null,
-                energy: d.energy,
-                duration_minutes: d.durationMins,
-                sort_order: baseSort + i,
-              })),
-            )
-            .select("*");
-          if (error) throw error;
-          const real = (rows ?? []) as Task[];
-          qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) => {
-            if (!old) return real;
-            const kept = old.filter((t) => !tempIds.has(t.id));
-            return [...kept, ...real];
-          });
-          invalidate(["tasks"]);
-        } catch (e) {
-          qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-            old?.filter((t) => !tempIds.has(t.id)),
+        // One op per draft rather than one batch insert: a batch that
+        // half-lands has no safe retry, whereas each per-row upsert is
+        // independently idempotent. The optimistic rows already carry the ids
+        // the inserts will use, so nothing is swapped afterwards.
+        for (const [i, d] of drafts.entries()) {
+          await queueWrite(
+            makeOp("tasks", "insert", temps[i].id, {
+              title: d.title,
+              status: "backlog",
+              project_id: parent.projectId ?? null,
+              initiative_id: parent.initiativeId ?? null,
+              domain_id: parent.domainId ?? null,
+              big_rock_id: d.bigRockId ?? null,
+              energy: d.energy,
+              duration_minutes: d.durationMins,
+              sort_order: baseSort + i,
+            }),
           );
-          console.error("[vertical] addTasks failed", e);
-          toast.error(e instanceof Error ? e.message : "Couldn't add those tasks.");
-          throw e;
         }
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
       },
       addTasksToWeek: async (parent, drafts) => {
         if (!drafts.length) return;
@@ -955,48 +1065,30 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             sortOrder: baseSort + i,
           }),
         );
-        const tempIds = new Set(temps.map((t) => t.id));
+
         void qc.cancelQueries({ queryKey: ["tasks"] });
         qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
           old ? [...old, ...temps] : temps,
         );
-        try {
-          const uid = await userId();
-          const { data: rows, error } = await supabase
-            .from("tasks")
-            .insert(
-              drafts.map((d, i) => ({
-                user_id: uid,
-                title: d.title,
-                status: "backlog" as const,
-                project_id: parent.projectId ?? null,
-                initiative_id: parent.initiativeId ?? null,
-                domain_id: parent.domainId ?? null,
-                sprint_id: sprint.id,
-                big_rock_id: d.bigRockId ?? null,
-                deadline: d.deadline ?? null,
-                energy: d.energy,
-                duration_minutes: d.durationMins,
-                sort_order: baseSort + i,
-              })),
-            )
-            .select("*");
-          if (error) throw error;
-          const real = (rows ?? []) as Task[];
-          qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) => {
-            if (!old) return real;
-            const kept = old.filter((t) => !tempIds.has(t.id));
-            return [...kept, ...real];
-          });
-          invalidate(["tasks"]);
-        } catch (e) {
-          qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-            old?.filter((t) => !tempIds.has(t.id)),
+        // Per-row ops, ids already minted into the optimistic rows.
+        for (const [i, d] of drafts.entries()) {
+          await queueWrite(
+            makeOp("tasks", "insert", temps[i].id, {
+              title: d.title,
+              status: "backlog",
+              project_id: parent.projectId ?? null,
+              initiative_id: parent.initiativeId ?? null,
+              domain_id: parent.domainId ?? null,
+              sprint_id: sprint.id,
+              big_rock_id: d.bigRockId ?? null,
+              deadline: d.deadline ?? null,
+              energy: d.energy,
+              duration_minutes: d.durationMins,
+              sort_order: baseSort + i,
+            }),
           );
-          console.error("[vertical] addTasksToWeek failed", e);
-          toast.error(e instanceof Error ? e.message : "Couldn't add those tasks.");
-          throw e;
         }
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
       },
       updateTask: (id, patch) => {
         const rowPatch: Partial<Task> = {};
@@ -1143,37 +1235,52 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       commitTasksToSprint: (ids) => {
         if (!ids.length) return;
         void ensureSprint().then(async (sprint) => {
-          await supabase.from("tasks").update({ sprint_id: sprint.id }).in("id", ids);
-          await supabase.from("tasks").update({ status: "backlog" }).in("id", ids).eq("status", "inbox");
-          invalidate(["tasks"]);
+          // The second statement was `.in(ids).eq("status","inbox")` — a
+          // predicate the server re-evaluated. Decided here instead, against
+          // the state the user actually acted on.
+          const byId = new Map(allCachedTasks().map((t) => [t.id, t]));
+          for (const id of ids) {
+            const patch: Partial<Task> =
+              byId.get(id)?.status === "inbox"
+                ? { sprint_id: sprint.id, status: "backlog" }
+                : { sprint_id: sprint.id };
+            patchCaches(qc, id, patch);
+            await queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>));
+          }
+          invalidateWhenSafe(qc, "tasks", ["tasks"]);
         });
       },
       addProjectReadyToSprint: (projectId) => {
         void ensureSprint().then(async (sprint) => {
-          await supabase
-            .from("tasks")
-            .update({ sprint_id: sprint.id })
-            .eq("project_id", projectId)
-            .not("status", "in", '("done","trashed")');
-          invalidate(["tasks"]);
+          const ids = allCachedTasks()
+            .filter(
+              (t) =>
+                t.project_id === projectId && t.status !== "done" && t.status !== "trashed",
+            )
+            .map((t) => t.id);
+          await patchTasks(ids, { sprint_id: sprint.id });
         });
       },
       clearSprint: () => {
         const sprint = data.sprint;
         if (!sprint) return;
         void (async () => {
-          // parentless week-only captures resurface in the inbox
-          await supabase
-            .from("tasks")
-            .update({ status: "inbox", sprint_id: null })
-            .eq("sprint_id", sprint.id)
-            .eq("status", "backlog")
-            .is("project_id", null)
-            .is("initiative_id", null)
-            .is("domain_id", null)
-            .is("do_date", null);
-          await supabase.from("tasks").update({ sprint_id: null }).eq("sprint_id", sprint.id);
-          invalidate(["tasks"]);
+          for (const t of allCachedTasks()) {
+            if (t.sprint_id !== sprint.id) continue;
+            // parentless week-only captures resurface in the inbox
+            const orphan =
+              t.status === "backlog" &&
+              !t.project_id &&
+              !t.initiative_id &&
+              !t.domain_id &&
+              !t.do_date;
+            const patch: Partial<Task> = orphan
+              ? { status: "inbox", sprint_id: null }
+              : { sprint_id: null };
+            patchCaches(qc, t.id, patch);
+            await queueWrite(makeOp("tasks", "update", t.id, patch as Record<string, unknown>));
+          }
+          invalidateWhenSafe(qc, "tasks", ["tasks"]);
         })();
       },
       setSprintGoal: (goal) => void patchSprint({ goal }),
@@ -1253,35 +1360,30 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           const patch: Record<string, unknown> = { status: "planned", do_date: p.doDateISO, start_time: p.startISO, slot_id: null };
           if (p.durationMins != null) patch.duration_minutes = p.durationMins;
           if (opts?.sprintId) patch.sprint_id = opts.sprintId;
-          const { error } = await supabase.from("tasks").update(patch).eq("id", p.id);
-          if (error) console.error("[compose] apply failed", error);
-          else invokeQuiet("task-mirror", { taskId: p.id });
+          patchCaches(qc, p.id, patch as Partial<Task>);
+          await queueWrite(makeOp("tasks", "update", p.id, patch));
+          if (navigator.onLine) invokeQuiet("task-mirror", { taskId: p.id });
         }
-        invalidate(["tasks"]);
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
       },
 
       applySlots: async (specs, opts) => {
         if (!specs.length) return;
-        const uid = await userId();
         for (const s of specs) {
-          let slot: { id: string } | null = null;
+          // The slot id is minted here when the sitting is new, so the tasks
+          // that ride it can reference it without waiting for a round-trip.
+          const slotId = s.existingSlotId ?? crypto.randomUUID();
+
           if (s.existingSlotId) {
             // Top up: the block keeps the day and time it already holds — the
             // person put it there. Only its length moves, to cover what's being
             // added. Never reposition a sitting the week has already lived with.
-            const { data: grown, error } = await supabase
-              .from("slots")
-              .update({ duration_minutes: s.durationMins })
-              .eq("id", s.existingSlotId)
-              .select("id")
-              .single();
-            if (error) { console.error("[batch] slot top-up failed", error); continue; }
-            slot = grown;
+            await queueWrite(
+              makeOp("slots", "update", slotId, { duration_minutes: s.durationMins }),
+            );
           } else {
-            const { data: made, error } = await supabase
-              .from("slots")
-              .insert({
-                user_id: uid,
+            await queueWrite(
+              makeOp("slots", "insert", slotId, {
                 title: s.title,
                 do_date: s.doDateISO,
                 start_time: s.startISO,
@@ -1294,28 +1396,27 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
                 // of topping the first one up.
                 project_id: s.projectId ?? null,
                 color: s.color,
-              })
-              .select("id")
-              .single();
-            if (error) { console.error("[batch] slot insert failed", error); continue; }
-            slot = made;
+              }),
+            );
           }
-          if (!slot) continue;
+
           if (s.taskIds.length) {
             // children lose their own block (start_time null), keep the slot's day;
             // an optional sprintId pulls loose inbox captures into the committed
             // week (status leaves 'inbox') so a slotted run counts as week work.
-            const patch: Record<string, unknown> = { slot_id: slot.id, do_date: s.doDateISO, start_time: null, status: "planned" };
+            const patch: Record<string, unknown> = {
+              slot_id: slotId,
+              do_date: s.doDateISO,
+              start_time: null,
+              status: "planned",
+            };
             if (opts?.sprintId) patch.sprint_id = opts.sprintId;
-            const { error: tErr } = await supabase
-              .from("tasks")
-              .update(patch)
-              .in("id", s.taskIds);
-            if (tErr) console.error("[batch] slot task assign failed", tErr);
+            await patchTasks(s.taskIds, patch as Partial<Task>);
           }
-          invokeQuiet("slot-mirror", { slotId: slot.id });
+          if (navigator.onLine) invokeQuiet("slot-mirror", { slotId });
         }
-        invalidate(["slots"], ["tasks"]);
+        invalidateWhenSafe(qc, "slots", ["slots"]);
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
       },
 
       assignToStanding: async (specs, opts) => {
@@ -1328,10 +1429,9 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             slot_id: s.slotId, do_date: s.doDateISO, start_time: null, status: "planned",
           };
           if (opts?.sprintId) patch.sprint_id = opts.sprintId;
-          const { error } = await supabase.from("tasks").update(patch).in("id", s.taskIds);
-          if (error) console.error("[standing] assign failed", error);
+          await patchTasks(s.taskIds, patch as Partial<Task>);
         }
-        invalidate(["slots"], ["tasks"]);
+        invalidateWhenSafe(qc, "slots", ["slots"]);
       },
 
       planWeek: async ({ commitTaskIds, placements, goal }) => {
@@ -1340,58 +1440,67 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         // 1 · every kept candidate becomes a week commitment (the funnel),
         //     and any inbox capture among them is processed out of the inbox
         if (commitTaskIds.length) {
-          await supabase.from("tasks").update({ sprint_id: sprint.id }).in("id", commitTaskIds);
-          await supabase
-            .from("tasks")
-            .update({ status: "backlog" })
-            .in("id", commitTaskIds)
-            .eq("status", "inbox");
+          const byId = new Map(allCachedTasks().map((t) => [t.id, t]));
+          for (const id of commitTaskIds) {
+            const patch: Partial<Task> =
+              byId.get(id)?.status === "inbox"
+                ? { sprint_id: sprint.id, status: "backlog" }
+                : { sprint_id: sprint.id };
+            patchCaches(qc, id, patch);
+            await queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>));
+          }
         }
+
         // 2 · the placed subset also lands on the calendar
+        const byId = new Map(allCachedTasks().map((t) => [t.id, t]));
         for (const p of placements) {
           // an overdue task carved across sittings: parts 2+ become their own
           // rows (a task row can only hold one time block), cloned from the source
           if (p.splitChild) {
-            const { data: src } = await supabase
-              .from("tasks")
-              .select("user_id, project_id, domain_id, initiative_id, energy, deadline")
-              .eq("id", p.id)
-              .single();
+            // The source row is read from the cache rather than re-fetched — a
+            // queued split cannot wait on a round-trip, and the fields it copies
+            // (parentage, energy, deadline) are all already loaded.
+            const src = byId.get(p.id);
             if (!src) continue;
-            const { data: child, error } = await supabase
-              .from("tasks")
-              .insert({
-                ...src,
+            const childId = crypto.randomUUID();
+            await queueWrite(
+              makeOp("tasks", "insert", childId, {
+                project_id: src.project_id,
+                domain_id: src.domain_id,
+                initiative_id: src.initiative_id,
+                energy: src.energy,
+                deadline: src.deadline,
                 title: p.splitChild.title,
                 status: "planned",
                 do_date: p.doDateISO,
                 start_time: p.startISO,
                 duration_minutes: p.durationMins ?? null,
                 sprint_id: sprint.id,
-              })
-              .select("id")
-              .single();
-            if (error) console.error("[plan] split sitting failed", error);
-            else if (child) invokeQuiet("task-mirror", { taskId: child.id });
+              }),
+            );
+            if (navigator.onLine) invokeQuiet("task-mirror", { taskId: childId });
             continue;
           }
-          const { error } = await supabase
-            .from("tasks")
-            .update({
-              status: "planned", do_date: p.doDateISO, start_time: p.startISO, sprint_id: sprint.id,
-              ...(p.durationMins != null ? { duration_minutes: p.durationMins } : {}),
-            })
-            .eq("id", p.id);
-          if (error) console.error("[plan] schedule failed", error);
-          else invokeQuiet("task-mirror", { taskId: p.id });
+          const patch: Record<string, unknown> = {
+            status: "planned",
+            do_date: p.doDateISO,
+            start_time: p.startISO,
+            sprint_id: sprint.id,
+            ...(p.durationMins != null ? { duration_minutes: p.durationMins } : {}),
+          };
+          patchCaches(qc, p.id, patch as Partial<Task>);
+          await queueWrite(makeOp("tasks", "update", p.id, patch));
+          if (navigator.onLine) invokeQuiet("task-mirror", { taskId: p.id });
         }
+
         // 3 · stamp the week: goal + reviewed (focus/contexts persist live as
         //     they're toggled, so they're already on the row)
         const rowPatch = { goal, reviewed_at: new Date().toISOString() };
         qc.setQueryData<Sprint | null>(["sprint", weekStart], (old) => (old ? { ...old, ...rowPatch } : old));
-        await writeTable("sprints", sprint.id, rowPatch);
+        await queueWrite(makeOp("sprints", "update", weekStart, rowPatch));
 
-        invalidate(["tasks"], ["sprint"]);
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+        invalidateWhenSafe(qc, "sprints", ["sprint"]);
       },
 
       addInitiativeTree: async (domainId, tree) => {

@@ -27,6 +27,7 @@ import CreateRecord from "./floors/CreateRecord";
 import Orientation from "./orientation/Orientation";
 import { OrientationProvider } from "../hooks/useOrientation";
 import { TrialBanner } from "./billing/TrialBanner";
+import SyncStatus from "./SyncStatus";
 import StatusBar from "./terminal/StatusBar";
 import { zoomIn, zoomOut, zoomReset } from "../hooks/useUiScale";
 
@@ -335,6 +336,7 @@ function AppShellInner() {
           rail · calendar — the cardinal rule is untouched. */}
       <div className="app-canvas atmosphere flex min-w-0 flex-1 flex-col">
       <TrialBanner />
+      <SyncStatus />
       <div className="flex min-h-0 flex-1">
       <Spine
         collapsed={focusMode}

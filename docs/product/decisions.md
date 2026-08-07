@@ -1950,6 +1950,7 @@ not-clean account produces. *Status: standing.*
 | **N-11** | Rebuilding the UI wholesale on Untitled UI React | Tried for real — a full overnight rebuild on branch `untitled-ui-rebuild` (2026-07-28: React 19, UUI tokens bridged under every surface, one RecordCard, focus-trapped dialogs; all gates green). Phil's feel test rejected the look, and a feel test has exactly one judge. Branch destroyed same day (tip `832ae43`, unreferenced). Transferable learnings noted before deletion: the React 19 upgrade is ~3 type fixes; workbox precaches nothing over 2 MiB; react-aria adds ~200KB to the bundle | A concrete new reason beyond cohesion — e.g. hand-rolled component debt starts blocking features — and even then, propose per-primitive adoption, not a wholesale reskin |
 | **N-14** | Hard-gating the week on readiness — refusing a project that has no tasks | It's the version that only works with clean data (P7): an account mid-import, or an operator who really is holding a project in their head, gets blocked from recording something true. It also contradicts P4 and `readiness-model.md` §1 ("never commands, never shames, never auto-acts"), and a refusal in `bringIntoWeekPatch` would make the browser and the agent disagree about what a week can hold. D-064 uses friction with the cost named instead | Evidence that the notice is ignored often enough to matter — and even then, gate at the *ritual*, not in the shared kernel act |
 | **N-13** | Replacing the orientation's rebuilt art with coach marks on the live app | A cold account has nothing to point at. `FirstRun` gates the shell on zero domains, so orientation opens with the domains they just named and **nothing else** — four of five ladder steps would spotlight empty surfaces, and an orb on an empty Inbox teaches less than a drawing of a full one (P7). D-059 forks instead, and the live door teaches by *making the thing exist* | Never as a straight swap. The live door already covers the real want; if it needs more reach, extend it — don't point at emptiness |
+| **N-15** | Queuing recurring-series materialisation offline | Tried and reverted the same day. `materializeSeries` **reads server state** to work out which occurrences are missing, and `clearFuture` deletes by predicate — queued, you get a series row with no occurrences behind it: a recurring commitment that displays but does not exist. That is worse than an honest "needs connection", so the `field_ts` column and the `apply_patch` allowlist entry were backed out rather than shipped half-working (D-091) | Materialisation moves to a pure client-side computation over the already-cached occurrence set, so it needs no read to decide what to write |
 | **N-12** | Pasting the video-call link into the event description | It's the *unstructured* copy of a structured fact (D-056): invisible to every client's Join button, doesn't move when the meeting does, outlives a removed conference, and can't be told apart from a link a human typed. `conferenceData` is the field they all already read | A provider Nuvo writes to has no conference field at all — and even then, say plainly that the link is pasted |
 
 ---
@@ -2745,6 +2746,41 @@ proof that the hours were already there.
 
 *Status: standing — pinned by three tests (`A2` the null-`completed_at` gap, `A3` no double
 count, `B` dropped work contributes nothing).*
+
+---
+
+**D-091 · 2026-08-07 · A write is durable before it is sent. Nuvo has an offline
+outbox, and per-field last-write-wins is the conflict rule.**
+
+Nuvo was a server-authoritative thin client: every one of 123 write sites called Supabase
+directly, the query cache lived in memory only, and a write made offline was **actively
+destroyed** — it retried three times, then `onError` rolled the optimistic patch back. The
+user watched a capture appear, sit for ten seconds, and vanish. On the phone, where offline is
+the normal case, opening the app with no network showed an empty planner.
+
+The fix is an IndexedDB outbox (`src/lib/sync/`, spec [`offline-sync.md`](../offline-sync.md)).
+`queueWrite` resolves when the op is **durable**, not when Postgres acknowledges it; nothing is
+ever rolled back. Three things make replay safe: **client-generated row ids** (a server-side
+uuid cannot be replayed — a lost response means a duplicate row), **per-field timestamps** so
+two devices editing different fields both keep their work, and a **monotonic `seq`** so a child
+insert never overtakes its parent.
+
+Conflict resolution is per-field LWW in `apply_patch` (migrations 53–54), `SECURITY INVOKER` so
+RLS still decides what a caller may touch. Because the outcome depends only on the timestamps
+and never on arrival order, out-of-order delivery *converges* rather than merely not crashing.
+
+Two consequences worth naming. **Invalidation is now conditional** — an unconditional refetch
+while writes are queued returns rows that predate them and wipes the user's offline work, so
+mutations call `invalidateWhenSafe`. And **the persisted read cache is cleared on sign-out**:
+Nuvo is multi-tenant and that cache is on disk, so leaving it would rehydrate one account's
+tasks for the next person to sign in on the device.
+
+Known limit, deliberately accepted: `field_ts` is client wall-clock, so a wrong clock can win or
+lose an exchange. The RPC clamps future stamps to `now()`, which bounds a fast clock; a slow one
+still loses. A hybrid logical clock would close it.
+
+*Status: standing — tasks, the vertical record CRUD, slots and record comments are converted;
+50 writes remain online-only, inventoried in the spec. 96 tests in `tests/sync/`.*
 
 ---
 ---

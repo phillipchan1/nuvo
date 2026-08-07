@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
+import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, restingStatus, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
@@ -238,9 +239,12 @@ export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
   }
 }
 
-function invalidateTasks(qc: QueryClient) {
-  qc.invalidateQueries({ queryKey: ["tasks"] });
-}
+// NOTE: the old unconditional `invalidateTasks` is gone. An outright
+// invalidation is unsafe now that writes can be queued: the refetch returns
+// server rows that predate everything still in the outbox, so the user's
+// offline edits vanish from the screen one query at a time. Mutations call
+// `invalidateWhenSafe`, which refetches immediately when the table owes the
+// server nothing and defers until the drain when it does.
 
 /** Fields whose change requires re-syncing the Google mirror event. */
 const MIRROR_FIELDS: (keyof Task)[] = ["start_time", "duration_minutes", "title", "status", "do_date"];
@@ -268,132 +272,91 @@ export function useTaskMutations() {
   const qc = useQueryClient();
   const { recordUndo } = useOptionalUndoStack();
 
-  // In-flight creates keyed by their optimistic temp id. A task can be toggled
-  // (or otherwise patched) within the ~150ms before its insert round-trips —
-  // patching the temp id is a server no-op and gets clobbered when the create
-  // resolves, so the change appears to "stick then revert". We defer such
-  // patches until the real row exists, then apply them to its real id.
-  const pendingCreates = useRef(new Map<string, Promise<Task>>());
+  // NOTE: the temp-id machinery this hook used to carry is gone. It existed
+  // because the server minted the row id, so a patch fired in the ~150ms before
+  // the insert round-tripped had no real id to address and had to be deferred
+  // and re-targeted. Ids are now generated on the client (the outbox needs them
+  // for idempotent replay anyway), so the id a task is created with is the id it
+  // keeps — there is no window to race, online or off.
 
-  const create = useMutation({
-    mutationFn: async (input: NewTaskInput): Promise<Task> => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) throw new Error("Not signed in");
-      const { labelIds, clientId: _clientId, ...fields } = input;
-      const status = fields.do_date ? "planned" : "inbox";
-      const duration =
-        fields.start_time != null
-          ? (fields.duration_minutes ?? DEFAULT_DURATION_MINUTES)
-          : fields.duration_minutes;
-      const { data, error } = await supabase
-        .from("tasks")
-        .insert({ ...fields, duration_minutes: duration, status, user_id: session.user.id })
-        .select(TASK_COLS)
-        .single();
-      if (error) throw error;
-      if (labelIds?.length) {
-        await supabase
-          .from("task_labels")
-          .insert(labelIds.map((label_id) => ({ task_id: data.id, label_id })));
-      }
-      if (data.start_time) invokeQuiet("task-mirror", { taskId: data.id });
-      return data as Task;
-    },
-    onMutate: async (input) => {
-      await qc.cancelQueries({ queryKey: ["tasks"] });
-      const tempId = input.clientId ?? crypto.randomUUID();
-      const status: TaskStatus = input.do_date ? "planned" : "inbox";
-      const duration = input.start_time != null
+  /**
+   * Create a task.
+   *
+   * The row is built in full on the client — id included — written to the
+   * caches, and handed to the outbox. It does not wait for Postgres and it is
+   * never rolled back: once `queueWrite` resolves the capture is in IndexedDB
+   * and will land whenever the network next allows, including after a
+   * force-quit. That is the entire point of the layer, and the reason a capture
+   * typed in a tunnel is no longer a capture the user loses.
+   */
+  const createTask = async (input: NewTaskInput): Promise<Task> => {
+    const id = input.clientId ?? crypto.randomUUID();
+    const { labelIds, clientId: _clientId, ...fields } = input;
+    const status: TaskStatus = input.do_date ? "planned" : "inbox";
+    const duration =
+      input.start_time != null
         ? (input.duration_minutes ?? DEFAULT_DURATION_MINUTES)
         : input.duration_minutes;
-      const optimistic: Task = {
-        id: tempId,
-        user_id: "",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        title: input.title,
-        notes: input.notes ?? "",
-        status,
-        do_date: input.do_date ?? null,
-        start_time: input.start_time ?? null,
+
+    const optimistic: Task = {
+      id,
+      user_id: "",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      title: input.title,
+      notes: input.notes ?? "",
+      status,
+      do_date: input.do_date ?? null,
+      start_time: input.start_time ?? null,
+      duration_minutes: duration ?? null,
+      deadline: input.deadline ?? null,
+      priority: input.priority ?? "none",
+      roll_count: 0,
+      completed_at: null,
+      project_id: input.project_id ?? null,
+      initiative_id: input.initiative_id ?? null,
+      domain_id: input.domain_id ?? null,
+      key_result_id: null,
+      sprint_id: null,
+      big_rock_id: null,
+      energy: null,
+      assignee: "me",
+      prework: "",
+      prework_at: null,
+      suggestion: null,
+      suggested_at: null,
+      google_event_id: null,
+      sort_order: 9999,
+      slot_id: input.slot_id ?? null,
+      recurrence_id: null,
+      recurrence_date: null,
+      recurrence_overridden: false,
+      task_labels: labelIds?.map((label_id) => ({ label_id })) ?? [],
+    };
+
+    qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+      old ? [...old, optimistic] : [optimistic],
+    );
+
+    await queueWrite(
+      makeOp("tasks", "insert", id, {
+        ...fields,
         duration_minutes: duration ?? null,
-        deadline: input.deadline ?? null,
-        priority: input.priority ?? "none",
-        roll_count: 0,
-        completed_at: null,
-        project_id: input.project_id ?? null,
-        initiative_id: input.initiative_id ?? null,
-        domain_id: input.domain_id ?? null,
-        key_result_id: null,
-        sprint_id: null,
-        big_rock_id: null,
-        energy: null,
-        assignee: "me",
-        prework: "",
-        prework_at: null,
-        suggestion: null,
-        suggested_at: null,
-        google_event_id: null,
-        sort_order: 9999,
-        slot_id: input.slot_id ?? null,
-        recurrence_id: null,
-        recurrence_date: null,
-        recurrence_overridden: false,
-        task_labels: input.labelIds?.map((label_id) => ({ label_id })) ?? [],
-      };
-      qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-        old ? [...old, optimistic] : [optimistic],
-      );
-      return { tempId };
-    },
-    onSuccess: (realTask, _, ctx) => {
-      if (!ctx) return;
-      qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-        old?.map((t) => (t.id === ctx.tempId ? realTask : t)),
-      );
-    },
-    onError: (_, __, ctx) => {
-      if (!ctx) return;
-      qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-        old?.filter((t) => t.id !== ctx.tempId),
-      );
-    },
-    onSettled: () => invalidateTasks(qc),
-  });
+        status,
+      }),
+    );
 
-  const update = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Partial<Task> }) => {
-      const { error } = await supabase.from("tasks").update(patch).eq("id", id);
-      if (error) throw error;
-      return { id, patch };
-    },
-    onMutate: async ({ id, patch }) => {
-      await qc.cancelQueries({ queryKey: ["tasks"] });
-      const snapshot = qc.getQueriesData<Task[]>({ queryKey: ["tasks"] });
-      patchCaches(qc, id, patch);
-      return { snapshot };
-    },
-    onSuccess: ({ id, patch }) => {
-      if (MIRROR_FIELDS.some((f) => f in patch)) invokeQuiet("task-mirror", { taskId: id });
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.snapshot) {
-        for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
-      }
-    },
-    onSettled: () => invalidateTasks(qc),
-  });
+    for (const label_id of labelIds ?? []) {
+      await queueWrite(makeOp("task_labels", "insert", `${id}|${label_id}`, { }));
+    }
 
-  /** Create a task, tracking its in-flight promise so patches fired before the
-   *  insert resolves can be re-targeted at the real row (see `pendingCreates`). */
-  const createTask = (input: NewTaskInput): Promise<Task> => {
-    const clientId = crypto.randomUUID();
-    const promise = create.mutateAsync({ ...input, clientId });
-    pendingCreates.current.set(clientId, promise);
-    void promise
-      .catch(() => {}) // the create's own onError unwinds the optimistic row
-      .finally(() => pendingCreates.current.delete(clientId));
-    return promise;
+    // The Google mirror is a server-side echo of a time block, not user data —
+    // if we are offline it simply re-syncs after the drain, so there is nothing
+    // to queue and nothing to lose by skipping it.
+    if (optimistic.start_time && navigator.onLine) invokeQuiet("task-mirror", { taskId: id });
+
+    invalidateWhenSafe(qc, "tasks", ["tasks"]);
+    return optimistic;
   };
 
   const patchTask = (id: string, patch: Partial<Task>, opts?: UndoOpts & {
@@ -402,15 +365,17 @@ export function useTaskMutations() {
     kind?: keyof typeof TASK_UNDO_DEFAULT;
     title?: string;
   }) => {
-    const pending = pendingCreates.current.get(id);
-    if (pending) {
-      // Show the change immediately on the optimistic row, but defer the server
-      // write until the insert resolves — then patch the real id so it sticks.
-      patchCaches(qc, id, patch);
-      void pending.then((real) => update.mutate({ id: real.id, patch })).catch(() => {});
-    } else {
-      update.mutate({ id, patch });
+    // No temp-id dance: `id` is the real, client-minted primary key from the
+    // moment the task exists, so a patch fired one tick after a create targets
+    // the same row the insert will create. The outbox folds the two into a
+    // single insert before either leaves the device.
+    patchCaches(qc, id, patch);
+    void queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>));
+
+    if (MIRROR_FIELDS.some((f) => f in patch) && navigator.onLine) {
+      invokeQuiet("task-mirror", { taskId: id });
     }
+    invalidateWhenSafe(qc, "tasks", ["tasks"]);
 
     // Field edits default to no undo (native input undo wins). Callers that
     // move/resize pass `before` + `undo` tier.
@@ -568,14 +533,41 @@ export function useTaskMutations() {
         }, { undo: false }),
       opts),
 
+    /**
+     * Replace a task's labels.
+     *
+     * Expressed as a diff rather than the old delete-all-then-reinsert. That
+     * pattern is not safe to replay: if the queue delivered the delete and then
+     * lost the connection, the task came back with *no* labels — a destructive
+     * intermediate state that a retry might never repair. Queuing only the rows
+     * that actually changed means every op is independently idempotent and the
+     * worst interruption leaves a partially-applied set, never an emptied one.
+     */
     setLabels: async (taskId: string, labelIds: string[]) => {
-      await supabase.from("task_labels").delete().eq("task_id", taskId);
-      if (labelIds.length) {
-        await supabase
-          .from("task_labels")
-          .insert(labelIds.map((label_id) => ({ task_id: taskId, label_id })));
+      const current = new Set<string>();
+      for (const [, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+        const hit = data?.find((t) => t.id === taskId);
+        if (hit?.task_labels) {
+          for (const l of hit.task_labels) current.add(l.label_id);
+          break;
+        }
       }
-      invalidateTasks(qc);
+      const next = new Set(labelIds);
+
+      patchCaches(qc, taskId, { task_labels: labelIds.map((label_id) => ({ label_id })) });
+
+      for (const label_id of next) {
+        if (!current.has(label_id)) {
+          await queueWrite(makeOp("task_labels", "insert", `${taskId}|${label_id}`, {}));
+        }
+      }
+      for (const label_id of current) {
+        if (!next.has(label_id)) {
+          await queueWrite(makeOp("task_labels", "delete", `${taskId}|${label_id}`));
+        }
+      }
+
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
     },
   };
 }

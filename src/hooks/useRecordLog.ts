@@ -4,6 +4,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 
 export type RecordKind = "project" | "initiative";
 
@@ -65,37 +66,60 @@ export function useRecordLog(kind: RecordKind, id: string) {
     },
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: key });
+  const invalidate = () => invalidateWhenSafe(qc, "record_comments", key);
+
+  /** Patch the open thread so the comment moves now, before the queue drains. */
+  const patchThread = (fn: (rows: RecordComment[]) => RecordComment[]) =>
+    qc.setQueryData<RecordComment[]>(key, (old) => fn(old ?? []));
 
   const addComment = async (body: string) => {
     const text = body.trim();
     if (!text) return;
-    const uid = await userId();
-    const row: Record<string, unknown> = { user_id: uid, [col]: id, body: text };
-    // author_kind may not exist on older DBs — try with it first, fall back bare.
-    let error = (await supabase.from("record_comments").insert({ ...row, author_kind: "user" })).error;
-    if (error?.message?.includes("author_kind")) {
-      error = (await supabase.from("record_comments").insert(row)).error;
-    }
-    if (error) throw error;
+    const commentId = crypto.randomUUID();
+    const uid = await userId().catch(() => "");
+
+    patchThread((rows) => [
+      ...rows,
+      {
+        id: commentId,
+        body: text,
+        created_at: new Date().toISOString(),
+        updated_at: null,
+        user_id: uid,
+        author_kind: "user",
+      },
+    ]);
+
+    // The old two-step "insert with author_kind, retry bare if the column is
+    // missing" fallback is gone: it needed the server's error to decide, which a
+    // queued write does not have. Migration 51 added the column, and a schema
+    // that predates it is no longer a case worth carrying — the fallback would
+    // have silently written a comment with no author on any failure whose
+    // message happened to mention the column.
+    await queueWrite(
+      makeOp("record_comments", "insert", commentId, {
+        [col]: id,
+        body: text,
+        author_kind: "user",
+      }),
+    );
     invalidate();
   };
 
   const deleteComment = async (commentId: string) => {
-    const { error } = await supabase.from("record_comments").delete().eq("id", commentId);
-    if (error) throw error;
+    patchThread((rows) => rows.filter((r) => r.id !== commentId));
+    await queueWrite(makeOp("record_comments", "delete", commentId));
     invalidate();
   };
 
   const updateComment = async (commentId: string, body: string) => {
     const text = body.trim();
     if (!text) return;
-    const patch = { body: text, updated_at: new Date().toISOString() };
-    let error = (await supabase.from("record_comments").update(patch).eq("id", commentId)).error;
-    if (error?.message?.includes("updated_at")) {
-      error = (await supabase.from("record_comments").update({ body: text }).eq("id", commentId)).error;
-    }
-    if (error) throw error;
+    const updated_at = new Date().toISOString();
+    patchThread((rows) =>
+      rows.map((r) => (r.id === commentId ? { ...r, body: text, updated_at } : r)),
+    );
+    await queueWrite(makeOp("record_comments", "update", commentId, { body: text, updated_at }));
     invalidate();
   };
 

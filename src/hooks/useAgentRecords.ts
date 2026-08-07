@@ -7,9 +7,11 @@
 // That only works if these lookups sit inside the caches everything else
 // already writes to — hence the `["tasks"]` / `["external_events"]` prefixes,
 // which `useRealtime` invalidates and `useTaskMutations` patches optimistically.
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { invokeQuiet, supabase } from "../lib/supabase";
+import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
+import { patchCaches } from "./useTasks";
 import { useVertical } from "./useVertical";
 import type { AgentAction } from "../lib/agentTypes";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
@@ -86,35 +88,46 @@ export function useAgentUndo() {
       if (undo.kind === "task") {
         const id = action.ref?.id;
         if (!id) throw new Error("Nothing to undo — the action has no record.");
-        const { error } = await supabase.from("tasks").update(undo.patch).eq("id", id);
-        if (error) throw error;
+        patchCaches(qc, id, undo.patch as Partial<Task>);
+        await queueWrite(makeOp("tasks", "update", id, undo.patch));
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
         return;
       }
 
       // A slot that moved goes back to where it was; the work inside travels
-      // with it, exactly as it did on the way out.
+      // with it, exactly as it did on the way out. The children used to ride a
+      // `.eq("slot_id", id)` predicate — resolved from the cache now and queued
+      // per row, so an undo tapped offline restores the same set the user is
+      // looking at rather than whatever occupies the slot when the queue drains.
       if (undo.kind === "slot") {
         const id = action.ref?.id;
         if (!id) throw new Error("Nothing to undo — the action has no record.");
-        const { error } = await supabase.from("slots").update(undo.patch).eq("id", id);
-        if (error) throw error;
+        await queueWrite(makeOp("slots", "update", id, undo.patch));
         if (undo.patch.do_date) {
-          await supabase.from("tasks").update({ do_date: undo.patch.do_date }).eq("slot_id", id);
+          for (const childId of taskIdsInSlot(qc, id)) {
+            patchCaches(qc, childId, { do_date: undo.patch.do_date } as Partial<Task>);
+            await queueWrite(makeOp("tasks", "update", childId, { do_date: undo.patch.do_date }));
+          }
+          invalidateWhenSafe(qc, "tasks", ["tasks"]);
         }
-        invokeQuiet("slot-mirror", { slotId: id });
+        if (navigator.onLine) invokeQuiet("slot-mirror", { slotId: id });
+        invalidateWhenSafe(qc, "slots", ["slots"]);
         return;
       }
 
       // Undoing "hold this block" releases the time AND takes back the tasks it
       // created inside it — leaving them loose on the day would be a different
-      // state than the one the user had before they asked.
+      // state than the one the user had before they asked. The child ids are
+      // carried on the undo record, so this one never needed a predicate.
       if (undo.kind === "slot-delete") {
-        if (undo.childIds.length) {
-          await supabase.from("tasks").update({ status: "trashed", slot_id: null }).in("id", undo.childIds);
+        for (const childId of undo.childIds) {
+          patchCaches(qc, childId, { status: "trashed", slot_id: null } as Partial<Task>);
+          await queueWrite(makeOp("tasks", "update", childId, { status: "trashed", slot_id: null }));
         }
-        const { error } = await supabase.from("slots").delete().eq("id", undo.id);
-        if (error) throw error;
-        invokeQuiet("slot-mirror", { slotId: undo.id, deleted: true });
+        await queueWrite(makeOp("slots", "delete", undo.id));
+        if (navigator.onLine) invokeQuiet("slot-mirror", { slotId: undo.id, deleted: true });
+        invalidateWhenSafe(qc, "slots", ["slots"]);
+        invalidateWhenSafe(qc, "tasks", ["tasks"]);
         return;
       }
 
@@ -140,4 +153,14 @@ export function useAgentUndo() {
     undo: (action: AgentAction) => run.mutate(action),
     undoing: run.isPending,
   };
+}
+
+/** Task ids currently sitting in a slot, across every fragment of the task
+ *  cache — the local answer to what `.eq("slot_id", id)` used to ask the server. */
+function taskIdsInSlot(qc: QueryClient, slotId: string): string[] {
+  const ids = new Set<string>();
+  for (const [, rows] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+    for (const t of rows ?? []) if (t.slot_id === slotId) ids.add(t.id);
+  }
+  return [...ids];
 }

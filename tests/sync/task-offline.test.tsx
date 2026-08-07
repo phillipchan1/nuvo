@@ -1,0 +1,389 @@
+// @vitest-environment jsdom
+/**
+ * The integration test that matters most: a capture typed with no network.
+ *
+ * Before the outbox this scenario lost data. `useTaskMutations` wrote straight
+ * to Supabase with an optimistic cache patch, retried a few times, and then
+ * `onError` rolled the patch back — the task appeared, sat there for about ten
+ * seconds, and vanished. These tests drive the *real* hook and assert the whole
+ * path: instant local write, durability across a restart, and delivery on
+ * reconnect with the id the client minted.
+ */
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { IDBFactory } from "fake-indexeddb";
+import React from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// ---------------------------------------------------------------------------
+// A Supabase stand-in that records writes and can be taken offline.
+// ---------------------------------------------------------------------------
+
+interface Recorded {
+  table: string;
+  kind: "upsert" | "update" | "delete" | "insert";
+  payload: unknown;
+  match?: unknown;
+}
+
+const net = {
+  online: true,
+  recorded: [] as Recorded[],
+  rpcCalls: [] as { fn: string; args: unknown }[],
+  /** When set, the RPC reports itself undeployed so the fallback path runs. */
+  rpcMissing: false,
+};
+
+function fail() {
+  return { data: null, error: new TypeError("Failed to fetch") };
+}
+
+function builder(table: string) {
+  const api = {
+    upsert(payload: unknown) {
+      if (!net.online) return Promise.resolve(fail());
+      net.recorded.push({ table, kind: "upsert", payload });
+      return Promise.resolve({ data: null, error: null });
+    },
+    insert(payload: unknown) {
+      if (!net.online) return Promise.resolve(fail());
+      net.recorded.push({ table, kind: "insert", payload });
+      return Promise.resolve({ data: null, error: null });
+    },
+    update(payload: unknown) {
+      return {
+        match: (m: unknown) => {
+          if (!net.online) return Promise.resolve(fail());
+          net.recorded.push({ table, kind: "update", payload, match: m });
+          return Promise.resolve({ data: null, error: null });
+        },
+        eq: () => Promise.resolve({ data: null, error: null }),
+      };
+    },
+    delete() {
+      return {
+        match: (m: unknown) => {
+          if (!net.online) return Promise.resolve(fail());
+          net.recorded.push({ table, kind: "delete", payload: null, match: m });
+          return Promise.resolve({ data: null, error: null });
+        },
+        eq: () => Promise.resolve({ data: null, error: null }),
+      };
+    },
+    select: () => api,
+  };
+  return api;
+}
+
+vi.mock("../../src/lib/supabase", () => ({
+  supabase: {
+    from: (table: string) => builder(table),
+    rpc: (fn: string, args: unknown) => {
+      if (!net.online) return Promise.resolve({ data: null, error: new TypeError("Failed to fetch") });
+      if (net.rpcMissing) {
+        return Promise.resolve({
+          data: null,
+          error: { code: "PGRST202", message: "Could not find the function" },
+        });
+      }
+      net.rpcCalls.push({ fn, args });
+      return Promise.resolve({ data: null, error: null });
+    },
+    auth: {
+      getSession: () =>
+        Promise.resolve({ data: { session: { user: { id: "user-1" } } } }),
+    },
+    functions: { invoke: () => Promise.resolve({ error: null }) },
+  },
+  invokeQuiet: () => {},
+  supabaseConfigured: true,
+  supabaseUrl: "http://localhost",
+  supabaseAnonKey: "anon",
+}));
+
+const { useTaskMutations } = await import("../../src/hooks/useTasks");
+const { resetIdbForTests } = await import("../../src/lib/sync/idb");
+const { pendingOps, parkedOps, refreshOutboxStatus } = await import("../../src/lib/sync/outbox");
+const { drain } = await import("../../src/lib/sync/engine");
+const { createSupabaseTransport, resetTransportProbeForTests } = await import(
+  "../../src/lib/sync/transport"
+);
+const { refreshOwing } = await import("../../src/lib/sync/coordinator");
+
+const transport = createSupabaseTransport(async () => "user-1");
+
+function wrapper({ children }: { children: React.ReactNode }) {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+}
+
+function setOnline(v: boolean) {
+  net.online = v;
+  Object.defineProperty(navigator, "onLine", { value: v, configurable: true });
+}
+
+beforeEach(() => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).indexedDB = new IDBFactory();
+  resetIdbForTests();
+  resetTransportProbeForTests();
+  net.recorded = [];
+  net.rpcCalls = [];
+  net.rpcMissing = false;
+  setOnline(true);
+});
+
+afterEach(() => setOnline(true));
+
+describe("creating a task offline", () => {
+  it("shows it immediately and keeps it — no rollback", async () => {
+    setOnline(false);
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    let created: { id: string; title: string } | undefined;
+    await act(async () => {
+      created = await result.current.create({ title: "Call David" });
+    });
+
+    expect(created?.title).toBe("Call David");
+
+    // The old behaviour: retries exhaust, then the optimistic row is removed.
+    // Give it far longer than that window and assert the task is still queued.
+    await new Promise((r) => setTimeout(r, 50));
+
+    const queued = await pendingOps();
+    expect(queued).toHaveLength(1);
+    expect(queued[0].payload).toMatchObject({ title: "Call David" });
+    expect(queued[0].rowId).toBe(created!.id);
+    expect(net.recorded).toEqual([]);
+  });
+
+  it("delivers it on reconnect under the id the client minted", async () => {
+    setOnline(false);
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    let created: { id: string } | undefined;
+    await act(async () => {
+      created = await result.current.create({ title: "Ship the thing" });
+    });
+
+    setOnline(true);
+    await drain(transport);
+
+    const insert = net.recorded.find((r) => r.table === "tasks");
+    expect(insert?.kind).toBe("upsert");
+    expect(insert?.payload).toMatchObject({ id: created!.id, title: "Ship the thing" });
+    expect(await pendingOps()).toEqual([]);
+  });
+
+  it("survives a force-quit before the network returns", async () => {
+    setOnline(false);
+    const { result, unmount } = renderHook(() => useTaskMutations(), { wrapper });
+
+    await act(async () => {
+      await result.current.create({ title: "Survive the crash" });
+    });
+
+    // Kill the app: unmount everything and drop the in-process IDB handle.
+    unmount();
+    resetIdbForTests();
+
+    setOnline(true);
+    await drain(transport);
+
+    expect(net.recorded.find((r) => r.table === "tasks")?.payload).toMatchObject({
+      title: "Survive the crash",
+    });
+  });
+
+  it("sends one insert for a task created and edited many times offline", async () => {
+    setOnline(false);
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    let created: { id: string } | undefined;
+    await act(async () => {
+      created = await result.current.create({ title: "Draft" });
+    });
+    await act(async () => {
+      result.current.patchTask(created!.id, { title: "Draft 2" });
+      result.current.patchTask(created!.id, { priority: "high" });
+      result.current.patchTask(created!.id, { title: "Final" });
+      await Promise.resolve();
+    });
+
+    setOnline(true);
+    await drain(transport);
+
+    const taskWrites = net.recorded.filter((r) => r.table === "tasks");
+    expect(taskWrites).toHaveLength(1);
+    expect(taskWrites[0].kind).toBe("upsert");
+    expect(taskWrites[0].payload).toMatchObject({
+      id: created!.id,
+      title: "Final",
+      priority: "high",
+    });
+  });
+
+  it("never sends a task created and trashed before reconnecting", async () => {
+    setOnline(false);
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    let created: { id: string } | undefined;
+    await act(async () => {
+      created = await result.current.create({ title: "Mistake" });
+    });
+    // `trash` is a status patch, so the row still has to reach the server —
+    // but a create followed by a hard delete must not.
+    await act(async () => {
+      const { queueWrite, makeOp } = await import("../../src/lib/sync");
+      await queueWrite(makeOp("tasks", "delete", created!.id));
+    });
+
+    setOnline(true);
+    await drain(transport);
+
+    expect(net.recorded.filter((r) => r.table === "tasks")).toEqual([]);
+  });
+});
+
+describe("editing offline", () => {
+  it("queues a patch and sends it through the field-LWW RPC", async () => {
+    setOnline(false);
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    await act(async () => {
+      result.current.patchTask("existing-id", { title: "Renamed" });
+      await Promise.resolve();
+    });
+
+    expect(await pendingOps()).toHaveLength(1);
+
+    setOnline(true);
+    await drain(transport);
+
+    expect(net.rpcCalls).toHaveLength(1);
+    expect(net.rpcCalls[0].fn).toBe("apply_patch");
+    expect(net.rpcCalls[0].args).toMatchObject({
+      p_table: "tasks",
+      p_match: { id: "existing-id" },
+      p_patch: { title: "Renamed" },
+    });
+    // Every field carries a stamp — that is what makes the merge resolvable.
+    const args = net.rpcCalls[0].args as { p_field_ts: Record<string, string> };
+    expect(args.p_field_ts.title).toBeTruthy();
+  });
+
+  it("falls back to a plain update when apply_patch is not deployed", async () => {
+    net.rpcMissing = true;
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    await act(async () => {
+      result.current.patchTask("existing-id", { title: "Renamed" });
+      await Promise.resolve();
+    });
+
+    await drain(transport);
+
+    const update = net.recorded.find((r) => r.kind === "update");
+    expect(update).toMatchObject({
+      table: "tasks",
+      payload: { title: "Renamed" },
+      match: { id: "existing-id" },
+    });
+    expect(await pendingOps()).toEqual([]);
+  });
+
+  it("a patch fired immediately after a create targets the same row", async () => {
+    setOnline(false);
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    // No await between them — this is the race the old temp-id machinery existed
+    // to paper over.
+    let id = "";
+    await act(async () => {
+      const p = result.current.create({ title: "Fast" });
+      const t = await p;
+      id = t.id;
+      result.current.patchTask(id, { status: "done" });
+      await Promise.resolve();
+    });
+
+    setOnline(true);
+    await drain(transport);
+
+    const writes = net.recorded.filter((r) => r.table === "tasks");
+    expect(writes).toHaveLength(1);
+    expect(writes[0].payload).toMatchObject({ id, title: "Fast", status: "done" });
+  });
+});
+
+describe("labels", () => {
+  it("queues only the labels that actually changed", async () => {
+    setOnline(false);
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    await act(async () => {
+      await result.current.setLabels("task-1", ["label-a", "label-b"]);
+    });
+
+    const ops = await pendingOps();
+    expect(ops).toHaveLength(2);
+    expect(ops.every((o) => o.table === "task_labels")).toBe(true);
+    expect(ops.map((o) => o.rowId).sort()).toEqual(["task-1|label-a", "task-1|label-b"]);
+  });
+
+  it("writes the join row's composite key on delivery", async () => {
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    await act(async () => {
+      await result.current.setLabels("task-1", ["label-a"]);
+    });
+    await drain(transport);
+
+    const write = net.recorded.find((r) => r.table === "task_labels");
+    expect(write?.payload).toMatchObject({ task_id: "task-1", label_id: "label-a" });
+  });
+});
+
+describe("rejected writes", () => {
+  it("parks an RLS refusal instead of dropping it", async () => {
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    await act(async () => {
+      await result.current.create({ title: "Not allowed" });
+    });
+
+    await drain({
+      async send() {
+        return { ok: false, retriable: false, error: "row-level security policy" };
+      },
+    });
+
+    const parked = await parkedOps();
+    expect(parked).toHaveLength(1);
+    expect(parked[0].payload).toMatchObject({ title: "Not allowed" });
+
+    const status = await refreshOutboxStatus();
+    expect(status.parked).toBe(1);
+    expect(status.pending).toBe(0);
+  });
+});
+
+describe("the queue is visible to the shell", () => {
+  it("reports what is owed while offline", async () => {
+    setOnline(false);
+    const { result } = renderHook(() => useTaskMutations(), { wrapper });
+
+    await act(async () => {
+      await result.current.create({ title: "One" });
+      await result.current.create({ title: "Two" });
+    });
+
+    await refreshOwing();
+    const status = await refreshOutboxStatus();
+
+    await waitFor(() => expect(status.pending).toBe(2));
+  });
+});

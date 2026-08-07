@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { invokeQuiet, supabase } from "../lib/supabase";
+import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import type { AttendeeStatus, CalendarAccount, CalendarProvider, ExternalEvent, GoogleRawEvent, HiddenEvent, Label, RecurrenceScope } from "../lib/types";
 import { eventInstanceKey, eventSeriesKey, isEventHidden } from "../lib/now";
 import { eventsFunctionFor } from "../lib/calendarWrite";
@@ -532,6 +533,10 @@ export function useEventDetails(id: string | null) {
   });
 }
 
+/** Mirrors the `labels.color` schema default — client-minted rows must name it
+ *  so the optimistic label matches the persisted one. */
+const DEFAULT_LABEL_COLOR = "#2563EB";
+
 export function useLabels() {
   const qc = useQueryClient();
   const query = useQuery({
@@ -543,40 +548,32 @@ export function useLabels() {
     },
   });
 
-  const createLabel = useMutation({
-    mutationFn: async ({ name, color }: { name: string; color?: string }) => {
-      const { data: u } = await supabase.auth.getUser();
-      const { data, error } = await supabase
-        .from("labels")
-        .insert({ name, color: color ?? "#2563EB", user_id: u.user!.id })
-        .select()
-        .single();
-      if (error) throw error;
-      return data as Label;
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["labels"] }),
-  });
-
-  const updateLabel = useMutation({
-    mutationFn: async ({ id, ...patch }: { id: string; name?: string; color?: string }) => {
-      const { error } = await supabase.from("labels").update(patch).eq("id", id);
-      if (error) throw error;
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["labels"] }),
-  });
-
-  const deleteLabel = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("labels").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["labels"] }),
-  });
-
-  return {
-    labels: query.data ?? [],
-    createLabel: createLabel.mutateAsync,
-    updateLabel: updateLabel.mutate,
-    deleteLabel: deleteLabel.mutate,
+  /** Labels are user data, so they queue like everything else. The colour
+   *  default is named here rather than left to the column default — the row is
+   *  built on the client now, and an omitted colour would render one shade
+   *  optimistically and another once the insert lands. */
+  const createLabel = async ({ name, color }: { name: string; color?: string }): Promise<Label> => {
+    const id = crypto.randomUUID();
+    const row = { name, color: color ?? DEFAULT_LABEL_COLOR };
+    qc.setQueryData<Label[]>(["labels"], (old) => [...(old ?? []), { id, ...row }]);
+    await queueWrite(makeOp("labels", "insert", id, row));
+    invalidateWhenSafe(qc, "labels", ["labels"]);
+    return { id, ...row };
   };
+
+  const updateLabel = ({ id, ...patch }: { id: string; name?: string; color?: string }) => {
+    qc.setQueryData<Label[]>(["labels"], (old) =>
+      old?.map((l) => (l.id === id ? { ...l, ...patch } : l)),
+    );
+    void queueWrite(makeOp("labels", "update", id, patch));
+    invalidateWhenSafe(qc, "labels", ["labels"]);
+  };
+
+  const deleteLabel = (id: string) => {
+    qc.setQueryData<Label[]>(["labels"], (old) => old?.filter((l) => l.id !== id));
+    void queueWrite(makeOp("labels", "delete", id));
+    invalidateWhenSafe(qc, "labels", ["labels"]);
+  };
+
+  return { labels: query.data ?? [], createLabel, updateLabel, deleteLabel };
 }

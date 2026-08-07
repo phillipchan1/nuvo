@@ -3,7 +3,7 @@ import { Icon } from "../Icon";
 import { format } from "date-fns";
 import { todayISO } from "../../lib/dates";
 import { useMobileOverlayHistory } from "../../hooks/useMobileOverlayHistory";
-import { useOnline } from "../../hooks/useOnline";
+import SyncStatus from "../SyncStatus";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useSettings } from "../../hooks/useSettings";
 import { useVertical } from "../../hooks/useVertical";
@@ -263,10 +263,14 @@ export default function MobileShell() {
       lastResume.current = nowMs;
       const day = todayISO(new Date());
       const materialize = lastMaterializeDay.current !== day;
-      lastMaterializeDay.current = day;
       void (async () => {
         await rollover();
-        if (materialize) await recurrenceMutations.materializeAll();
+        // Record the day only once it actually ran. `materializeAll` declines
+        // when the occurrence pool has not loaded, and marking that as done
+        // would suppress every retry for the rest of the day.
+        if (materialize && (await recurrenceMutations.materializeAll())) {
+          lastMaterializeDay.current = day;
+        }
       })();
     };
     resume();
@@ -386,8 +390,6 @@ export default function MobileShell() {
     [tab, sub, detailFrame, vertical],
   );
 
-  const online = useOnline();
-
   return (
     // Pin to the layout viewport with `fixed inset-0` rather than a percentage/
     // dvh height: on iOS standalone PWAs `100dvh`/`innerHeight` can resolve to the
@@ -429,16 +431,12 @@ export default function MobileShell() {
 
       <TrialBanner />
 
-      {/* Offline — say it once, quietly, instead of raining error toasts.
-          TanStack refetches on reconnect, so the strip clearing IS the resync. */}
-      {!online && (
-        <div
-          role="status"
-          className="shrink-0 border-b border-line bg-surface-2 px-4 py-1.5 text-center text-caption text-muted"
-        >
-          You're offline — showing your last synced day.
-        </div>
-      )}
+      {/* Offline, queued work and refused writes all speak through one strip —
+          see SyncStatus. It replaced a bare "you're offline" notice that also
+          promised "your last synced day" at a time when nothing was actually
+          persisted across a restart; the promise is true now, and the strip
+          also has to account for writes still sitting in the outbox. */}
+      <SyncStatus />
 
       {/* Content */}
       <main ref={scrollRef} onScroll={recordScroll} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">

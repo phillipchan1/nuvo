@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Toaster, toast } from "sonner";
+import { supabase } from "./lib/supabase";
+import { configureSync, createSupabaseTransport, teardownSync } from "./lib/sync";
+import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
@@ -245,14 +249,49 @@ function Shell() {
   );
 }
 
+/**
+ * Owns the sync client's lifetime.
+ *
+ * Inside the provider (it needs the QueryClient) and above the shell, so the
+ * outbox starts draining the moment the app mounts — before any screen renders
+ * and regardless of whether the user goes anywhere near the surface that queued
+ * the work. An install relaunched after a week offline delivers on launch.
+ */
+function SyncHost({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    const transport = createSupabaseTransport(async () => {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.user?.id ?? null;
+    });
+    configureSync(queryClient, transport);
+    return () => teardownSync();
+  }, []);
+
+  return <>{children}</>;
+}
+
+const persister = createIdbPersister();
+
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <UndoProvider>
-        <ErrorBoundary>
-          <Shell />
-        </ErrorBoundary>
-      </UndoProvider>
-    </QueryClientProvider>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister,
+        maxAge: MAX_CACHE_AGE_MS,
+        dehydrateOptions: { shouldDehydrateQuery },
+        // Bump when a query's shape changes incompatibly — a restored cache
+        // from an older build is worse than no cache.
+        buster: "sync-v1",
+      }}
+    >
+      <SyncHost>
+        <UndoProvider>
+          <ErrorBoundary>
+            <Shell />
+          </ErrorBoundary>
+        </UndoProvider>
+      </SyncHost>
+    </PersistQueryClientProvider>
   );
 }

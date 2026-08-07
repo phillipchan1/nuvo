@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useSettings } from "./useSettings";
-import { supabase } from "../lib/supabase";
+import { makeOp, OWNER_ROW, queueWrite } from "../lib/sync";
 import { ORIENTATION_VERSION } from "../components/orientation/steps";
 
 // The first-run welcome walkthrough is app chrome, not a route — it lives in its
@@ -99,14 +99,17 @@ function lsClear(k: string) {
 // isn't there yet (remote migration pending), swallow the error — localStorage
 // already carries the state on this device.
 async function mirrorToDb(version: number) {
+  // Queued like every other settings write, so finishing orientation on a
+  // patchy connection still reaches the account. localStorage remains the
+  // source of truth on this device either way.
   try {
-    const { data: u } = await supabase.auth.getUser();
-    if (!u.user) return;
-    await supabase
-      .from("user_settings")
-      .upsert({ user_id: u.user.id, onboarding_completed_version: version });
+    await queueWrite(
+      makeOp("user_settings", "update", OWNER_ROW, {
+        onboarding_completed_version: version,
+      }),
+    );
   } catch {
-    /* column may not exist yet — localStorage is the source of truth */
+    /* storage unavailable — localStorage already carries the state */
   }
 }
 
