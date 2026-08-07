@@ -341,9 +341,12 @@ export default function MobileShell() {
   // Open the Nuvo chat overlay, optionally seeding a first message — e.g. "Ask
   // Nuvo" from the Now view. The shared agent means the conversation is already
   // there; this just surfaces it over the current screen.
-  const openChat = (seed?: string) => {
+  // `say` is what the transcript records when the seed is a constructed sentence
+  // the user never wrote — the button did the talking, so the button's words are
+  // what's shown and the seed travels to Nuvo unseen (D-087).
+  const openChat = (seed?: string, say?: string) => {
     setChatOpen(true);
-    if (seed) void agent.sendMessage(seed);
+    if (seed) void agent.sendMessage(seed, [], { display: say });
   };
 
   // Open a strategic-vertical item in the shared detail Sheet (nonce so the same

@@ -52,7 +52,7 @@ export default function MobileEventSheet({
   task?: Task | null;
   mutations: Mutations;
   onClose: () => void;
-  onAskNuvo?: (seed: string) => void;
+  onAskNuvo?: (seed: string, say?: string) => void;
   onEditTask?: (taskId: string) => void;
 }) {
   const { rsvpEvent, updateEvent, deleteEvent } = useExternalEventMutations();
@@ -96,7 +96,9 @@ export default function MobileEventSheet({
       tap.kind === "event"
         ? `I have "${tap.title}"${!tap.allDay ? ` at ${at(tap.start)}–${at(tap.end)}` : ""}${tap.location ? ` at ${tap.location}` : ""}. Help me prepare.`
         : `I have a task block: "${tap.title}" at ${at(tap.start)}–${at(tap.end)}. Help me think about it.`;
-    onAskNuvo(seed);
+    // The seed carries the whole block (title, time, place) so Nuvo doesn't have
+    // to go looking; the transcript shows what the user actually pressed.
+    onAskNuvo(seed, `Help me prepare for “${tap.title}”`);
     onClose();
   };
 

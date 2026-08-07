@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboardInset } from "../../hooks/useKeyboardInset";
-import type { AgentAttachment } from "../../lib/agentTypes";
+import type { AgentAttachment, AgentSuggestion } from "../../lib/agentTypes";
 import type { AgentHandle } from "../../hooks/useAgent";
 import { useFileDrop } from "../../hooks/useFileDrop";
 import { filesToAttachments } from "../../lib/agentAttachments";
@@ -58,15 +58,18 @@ export default function ChatPane({
     }
   }, [messages, loading]);
 
-  const send = (text?: string) => {
+  /** `display` is set only when the turn came from a tap — see AgentSidebar. */
+  const send = (text?: string, display?: string) => {
     const msg = (text ?? input).trim();
     if ((!msg && attachments.length === 0) || loading) return;
     const files = attachments;
     setInput("");
     setAttachments([]);
     setOtherMode(false);
-    void sendMessage(msg, files);
+    void sendMessage(msg, files, { display });
   };
+
+  const pickSuggestion = (s: AgentSuggestion) => send(s.message, s.label);
 
   const last = messages[messages.length - 1];
   // Only the newest reply offers "try again" — see AgentSidebar.
@@ -115,7 +118,7 @@ export default function ChatPane({
             <div className="w-full max-w-sm">
               <AgentSuggestionChips
                 suggestions={hints.starters.map((s) => ({ label: s, message: s }))}
-                onPick={send}
+                onPick={pickSuggestion}
                 onOther={focusOther}
               />
             </div>
@@ -134,7 +137,7 @@ export default function ChatPane({
             {activeSuggestions && (
               <AgentSuggestionChips
                 suggestions={activeSuggestions}
-                onPick={send}
+                onPick={pickSuggestion}
                 onOther={focusOther}
                 disabled={loading}
               />

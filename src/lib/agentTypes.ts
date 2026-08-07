@@ -23,6 +23,13 @@ export interface AgentMessage {
    *  sees it. Rendered under the user's line so a long-running conversation has
    *  somewhere to read its own age. */
   at?: number;
+  /** What the user actually *did*, when they didn't type. A tapped suggestion
+   *  sends `content` (a tool argument — it may carry an email address, an
+   *  initiative name, a whole constructed paragraph) but renders `display` (the
+   *  words on the button they pressed). The transcript then records the choice
+   *  they made instead of putting a sentence they never wrote in their mouth —
+   *  see D-087. Absent on anything typed. */
+  display?: string;
   attachments?: AgentAttachment[];
   actions?: AgentAction[];
   /** Clickable quick replies rendered below this message. */

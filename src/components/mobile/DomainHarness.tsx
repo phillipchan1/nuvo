@@ -15,6 +15,10 @@ import type { Domain, Initiative, Project, VTask, VerticalData } from "../../lib
 import { todayISO } from "../../lib/dates";
 import MobileDomains from "./MobileDomains";
 import MobileDomainScreen from "./detail/MobileDomainScreen";
+// The open domain as the app actually mounts it — inside the bottom Sheet, whose
+// swipe-to-dismiss shares the touch stream with the content's scroll. A frame
+// that renders the screen in a plain scroller cannot catch a scroll bug here.
+import MobileDetailSheet from "./detail/MobileDetailSheet";
 // The desktop floor over the same fixtures, beside the phone — the two shells
 // share `lib/domainRead.ts` and `components/domain/DomainParts.tsx`, so this is
 // where a divergence would show up as a difference you can see.
@@ -36,7 +40,8 @@ const dom = (o: Partial<Domain> & { id: string; name: string; color: string }): 
   investedThisWeek: 0,
   meetingHoursThisWeek: 0,
   quarterHours: 0,
-  lastTouchedDays: 99,
+  lastTouchedDays: null,
+  lastShip: null,
   weeks: new Array(13).fill(0),
   days: new Array(7).fill(0),
   sort: 0,
@@ -112,6 +117,49 @@ const DOMAINS: Domain[] = [
     weeks: pulse(3, 2, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0),
   }),
   dom({ id: "d4", name: "Writing", color: "#D97706", icon: "✍️", sort: 3 }),
+  // ── the three states the ship-aware ledger added (D-087) ──────────────────
+  // d5 reproduces the reported bug exactly: a major project shipped 2 days ago,
+  // the last task under it checked off 7 days ago, zero hours this week. Before
+  // the fix this read "Quiet for 7 days — when did you last show up here?".
+  dom({
+    id: "d5",
+    name: "Stampede",
+    color: "#7C3AED",
+    icon: "🐎",
+    sort: 4,
+    intention: "Ship the thing, then let it breathe.",
+    quarterHours: 88,
+    lastTouchedDays: 7,
+    lastShip: { name: "Stampede rebrand", daysAgo: 2 },
+    weeks: pulse(6, 9, 7, 11, 8, 6, 10, 12, 9, 7, 11, 8, 0),
+  }),
+  // d6 — the same domain a month on: the glow has passed, but the last thing
+  // that happened here was still a FINISH, not a drift
+  dom({
+    id: "d6",
+    name: "Sabbatical",
+    color: "#0891B2",
+    icon: "⛵",
+    sort: 5,
+    intention: "Rest is part of the work.",
+    quarterHours: 40,
+    lastTouchedDays: 30,
+    lastShip: { name: "The book proposal", daysAgo: 30 },
+    weeks: pulse(5, 6, 4, 7, 5, 0, 0, 0, 0, 0, 0, 0, 0),
+  }),
+  // d7 — genuinely dark for four months. Under the old 99 sentinel this claimed
+  // "no time has been kept here yet", which was false: it has real history.
+  dom({
+    id: "d7",
+    name: "Woodworking",
+    color: "#B45309",
+    icon: "🪵",
+    sort: 6,
+    intention: "Make one thing a season with my hands.",
+    quarterHours: 0,
+    lastTouchedDays: 120,
+    weeks: new Array(13).fill(0),
+  }),
 ];
 
 const INITIATIVES: Initiative[] = [
@@ -253,6 +301,7 @@ export default function DomainHarness() {
   const store = useHarnessStore();
   const [openId, setOpenId] = useState<string>("d1");
   const [deskId, setDeskId] = useState<string>("");
+  const [sheet, setSheet] = useState(false);
 
   return (
     <VerticalStoreProvider value={store}>
@@ -269,6 +318,12 @@ export default function DomainHarness() {
             theme
           </button>
           <span className="text-meta text-muted">open: {openId}</span>
+          <button
+            className="rounded-full border border-line px-3 py-1 text-label text-muted"
+            onClick={() => setSheet((s) => !s)}
+          >
+            {sheet ? "close sheet" : "open in Sheet"}
+          </button>
         </div>
         <div className="flex gap-4 overflow-x-auto">
           <Frame label="the wall">
@@ -307,6 +362,11 @@ export default function DomainHarness() {
           </div>
         </div>
       </div>
+
+      {/* The real mount: the shared bottom Sheet, portalled over everything. */}
+      {sheet && (
+        <MobileDetailSheet target={{ kind: "domain", id: openId, n: 1 }} onClose={() => setSheet(false)} />
+      )}
     </VerticalStoreProvider>
   );
 }

@@ -6,11 +6,13 @@ import {
   domainById,
   faithfulness,
   initiativeById,
+  QUIET_SPEAKS_DAYS,
   type Domain,
   type Initiative,
   type VerticalData,
   type VTask,
 } from "./vertical";
+import { quietFor } from "./domainRead";
 import { endOf } from "./dates";
 import { isEventHidden } from "./eventActuals";
 import type { ExternalEvent, Task } from "./types";
@@ -225,11 +227,14 @@ export function rankNow(data: VerticalData, ctx: NowContext): Suggestion[] {
     if (domain) {
       const f = faithfulness(domain);
       if (!f.lit) {
-        const w = domain.lastTouchedDays >= 10 ? 4 : 3;
+        const since = domain.lastTouchedDays ?? QUIET_SPEAKS_DAYS;
+        const w = since >= QUIET_SPEAKS_DAYS ? 4 : 3;
         score += w;
         reasons.push({
           glyph: "⚖",
-          text: domain.lastTouchedDays >= 99 ? `${domain.name} is untouched` : `${domain.name} has been quiet ${domain.lastTouchedDays} days`,
+          text: domain.lastTouchedDays == null
+            ? `nothing has landed in ${domain.name} yet`
+            : `${domain.name} has been quiet ${quietFor(domain.lastTouchedDays)}`,
         });
       }
     }

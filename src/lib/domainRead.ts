@@ -12,12 +12,17 @@ import { differenceInCalendarDays, startOfWeek } from "date-fns";
 import { parseDateISO, todayISO } from "./dates";
 import { readShipped, type ShippedItem } from "./shipped";
 import {
+  domainKeptCount,
   domainStreak,
   faithfulness,
   initiativeAtRisk,
   initiativeEffortGap,
   initiativesOf,
   isOpenStatus,
+  QUARTER_DAYS,
+  QUIET_SPEAKS_DAYS,
+  SHIP_GLOW_DAYS,
+  weeksLabel,
   type Domain,
   type VerticalData,
 } from "./vertical";
@@ -40,30 +45,79 @@ export function shipWhen(iso: string | null) {
 /** The momentum glyph an initiative wears in a domain's portfolio. */
 export const mom = (m: string) => (m === "up" ? "↑" : m === "down" ? "↓" : "→");
 
+/** How long a domain has gone without hours, in its own altitude's units. */
+export const quietFor = (days: number) =>
+  days < QUIET_SPEAKS_DAYS ? "this week" : `for ${Math.floor(days / 7)} weeks`;
+
 // ── Faithfulness, voiced ─────────────────────────────────────────────────────
-export type DomainState = { tone: "lit" | "quiet"; line: string; short: string };
+export type DomainState = {
+  tone: "lit" | "quiet";
+  /** WHY it's lit or quiet — lets a surface style or test the delivery case
+   *  without a third tone, and without re-deriving it (D-086). */
+  because: "kept" | "shipped" | "resting" | "drifting" | "unstarted";
+  line: string;
+  short: string;
+};
 
 export function stateOf(d: Domain): DomainState {
+  const ship = d.lastShip;
+
+  // a finish line crossed inside the week — the loudest thing a domain can do
+  if (ship && ship.daysAgo <= SHIP_GLOW_DAYS) {
+    return {
+      tone: "lit",
+      because: "shipped",
+      line: d.investedThisWeek > 0
+        ? `Shipped ${ship.name} ${ago(ship.daysAgo)} · ${fmtH(d.investedThisWeek)} kept this week`
+        : `Shipped ${ship.name} ${ago(ship.daysAgo)}`,
+      short: "shipped",
+    };
+  }
+
   const f = faithfulness(d);
   if (f.lit) {
+    const when = ago(d.lastTouchedDays ?? 0);
     if (d.weeklyTargetHours > 0 && d.investedThisWeek > d.weeklyTargetHours)
       return {
         tone: "lit",
-        line: `Groomed ${ago(d.lastTouchedDays)} — over your ${fmtH(d.weeklyTargetHours)} this week`,
+        because: "kept",
+        line: `Kept ${when} — over your ${fmtH(d.weeklyTargetHours)} this week`,
         short: `over ${fmtH(d.investedThisWeek)}`,
       };
     return {
       tone: "lit",
-      line: `Groomed ${ago(d.lastTouchedDays)} — ${fmtH(d.investedThisWeek)} kept this week`,
-      short: "groomed",
+      because: "kept",
+      line: `Kept ${when} — ${fmtH(d.investedThisWeek)} this week`,
+      short: "kept",
     };
   }
-  if (d.lastTouchedDays >= 99)
-    return { tone: "quiet", line: "Ungroomed — no time has been kept here yet", short: "ungroomed" };
+
+  // nothing has ever landed — say that, don't invent a failure (P7/P16, D-061)
+  if (d.lastTouchedDays == null)
+    return { tone: "quiet", because: "unstarted", line: "Nothing kept here yet", short: "unstarted" };
+
+  // quiet, and the last thing that happened here was a FINISH. Quiet before
+  // finishing and quiet after finishing are the same day count and opposite
+  // meanings; this is the branch that tells them apart.
+  if (ship && ship.daysAgo === d.lastTouchedDays && ship.daysAgo <= QUARTER_DAYS)
+    return {
+      tone: "quiet",
+      because: "resting",
+      line: `Quiet since ${ship.name} shipped`,
+      short: `shipped · ${weeksLabel(ship.daysAgo)}`,
+    };
+
+  // the kept-count is CONTEXT — it makes a gap read as a trough in a rhythm rather
+  // than a failure. When it's zero there is no rhythm to point at, and saying "0 of
+  // 13" after "quiet for 17 weeks" is the same fact twice, which reads as insistence
+  const kept = domainKeptCount(d.weeks);
   return {
     tone: "quiet",
-    line: `Quiet for ${d.lastTouchedDays} days — when did you last show up here?`,
-    short: `quiet · ${d.lastTouchedDays}d`,
+    because: "drifting",
+    line: kept > 0
+      ? `Quiet ${quietFor(d.lastTouchedDays)} — ${kept} of the last 13 weeks kept`
+      : `Quiet ${quietFor(d.lastTouchedDays)}`,
+    short: d.lastTouchedDays < QUIET_SPEAKS_DAYS ? "quiet" : `quiet · ${weeksLabel(d.lastTouchedDays)}`,
   };
 }
 
@@ -129,11 +183,21 @@ export function domainRead(data: VerticalData, domain: Domain, now: Date): Read[
   const streak = domainStreak(domain.weeks);
   const inits = initiativesOf(data, domain.id).filter((i) => isOpenStatus(i.status));
 
-  // rhythm — the domain going quiet is the first thing worth saying
-  if (domain.lastTouchedDays >= 99) {
-    out.push({ tone: "info", text: "Nothing's been kept here yet — put the first hour on the calendar and the sigil lights." });
-  } else if (st.tone === "quiet") {
-    out.push({ tone: "warn", text: `Quiet for ${domain.lastTouchedDays} days — the sigil's cooling. Worth putting an hour back on the calendar this week?` });
+  // rhythm — a domain is measured over a QUARTER, so it stays silent about a gap a
+  // week long: the 13-week pulse right above already draws it, and repeating it as
+  // a sentence turns a normal trough into an accusation (P4 · P9 · D-061 — never
+  // shame a quiet domain, sometimes weighting elsewhere was right). Nothing here
+  // is `warn`: --signal is reserved for NOW, and a quiet domain is the least "now"
+  // thing on the screen. A freshly shipped domain says nothing at all — the hero
+  // already names the ship, and saying it twice makes it a trophy.
+  if (st.because === "unstarted") {
+    out.push({ tone: "info", text: "Nothing's landed here yet — the first hour on the calendar starts the arc." });
+  } else if (st.because === "resting" && domain.lastShip) {
+    out.push({ tone: "good", text: `You shipped ${domain.lastShip.name} here ${ago(domain.lastShip.daysAgo)}. It's been quiet since — that's what finishing looks like.` });
+  } else if (st.because === "drifting" && domain.lastTouchedDays != null && domain.lastTouchedDays >= QUIET_SPEAKS_DAYS) {
+    const kept = domainKeptCount(domain.weeks);
+    const rhythm = kept > 0 ? ` — you've kept ${kept} of the last 13 weeks here` : "";
+    out.push({ tone: "info", text: `Quiet ${quietFor(domain.lastTouchedDays)}${rhythm}. It's there when you're ready, no rush.` });
   }
 
   // drifting bets — at-risk initiatives, named with their reasons
@@ -167,8 +231,14 @@ export function domainRead(data: VerticalData, domain: Domain, now: Date): Read[
   // A domain Nuvo can't file into is the quiet cause of "the auto-assigns are
   // wrong": every capture, project and meeting it should have claimed lands
   // somewhere else, and nothing on the surface says why.
+  //
+  // Silent on an `unstarted` domain: nothing has ever landed there, so it has
+  // nothing to route yet and the rhythm block above already says the one true
+  // thing. (This was guarded on the retired `lastTouchedDays < 99` sentinel,
+  // which the ship-aware ledger turned into `number | null` — and `null < 99`
+  // is `true`, so the old form fired on exactly the domain it meant to spare.)
   const clarity = clarityOf(domain);
-  if (clarity.level !== "clear" && domain.lastTouchedDays < 99) {
+  if (clarity.level !== "clear" && st.because !== "unstarted") {
     out.push({
       tone: "info",
       text: clarity.level === "unrefined"
@@ -196,7 +266,7 @@ export function domainShipped(d: VerticalData, domainId: string, now: Date, limi
     ...readShipped(d, "project", now).groups.flatMap((g) => g.items),
   ]
     .filter((it) => it.domain?.id === domainId)
-    .sort((a, b) => (b.targetDate ?? "").localeCompare(a.targetDate ?? ""))
+    .sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""))
     .slice(0, limit);
 }
 

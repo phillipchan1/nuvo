@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentAttachment } from "../lib/agentTypes";
+import type { AgentAttachment, AgentSuggestion } from "../lib/agentTypes";
 import type { AgentHandle } from "../hooks/useAgent";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useVertical } from "../hooks/useVertical";
@@ -85,14 +85,16 @@ export default function AgentSidebar({
     }
   }, [open]);
 
-  const submit = (text?: string) => {
+  /** `display` is set only when the turn came from a tap — it's the words on the
+   *  button, and it replaces the wire text in the transcript (D-087). */
+  const submit = (text?: string, display?: string) => {
     const msg = (text ?? input).trim();
     if ((!msg && attachments.length === 0) || loading) return;
     const files = attachments;
     setInput("");
     setAttachments([]);
     setOtherMode(false);
-    void sendMessage(msg, files);
+    void sendMessage(msg, files, { display });
   };
 
   const last = messages[messages.length - 1];
@@ -102,7 +104,7 @@ export default function AgentSidebar({
   const activeSuggestions =
     !loading && last?.role === "assistant" && last.suggestions?.length ? last.suggestions : null;
 
-  const pickSuggestion = (message: string) => submit(message);
+  const pickSuggestion = (s: AgentSuggestion) => submit(s.message, s.label);
 
   const focusOther = () => {
     setOtherMode(true);

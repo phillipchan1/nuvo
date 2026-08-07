@@ -292,7 +292,7 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Items named against a project → that project's backlog | `create_task` | ✅ `capture-into-project` |
 | Date only → planned · date + time → scheduled | `create_task` | ✅ `capture-timed` |
 | Title hygiene — verb-first, no parent echo | `create_task` | ✅ `capture-title-hygiene` |
-| Domain routing from `routingContext` | `create_task` | ◐ covered via `structure-routes-by-domain`. The chat agent receives the whole blob, so the fields added by D-087 (people · activities · artifacts · places · counter-exemplars) reach it for free — but `prompt.ts` still names only three of them, and no scenario pins routing on the new ones |
+| Domain routing from `routingContext` | `create_task` | ◐ covered via `structure-routes-by-domain`. The chat agent receives the whole blob, so the fields added by D-088 (people · activities · artifacts · places · counter-exemplars) reach it for free — but `prompt.ts` still names only three of them, and no scenario pins routing on the new ones |
 | Voice / dictated capture | `create_task` | ◐ same path, no transcription scenario |
 | Image attachments (a screenshot of a schedule) | — | ○ no scenario; the harness sends text only |
 
@@ -349,7 +349,7 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Capability | Tool | State |
 |---|---|---|
 | Create domain / initiative / project / key result | `create_*` | ◐ one scenario, one path |
-| Route a new project to the right life area | `create_project` | ✅ `structure-routes-by-domain`. Note the *client* project router (`groomAI.suggestDomain`, the Groom wall chip) is a separate path — it saw only name + charter until D-087 and is covered by `tests/domain-routing.test.ts`, not by the battery |
+| Route a new project to the right life area | `create_project` | ✅ `structure-routes-by-domain`. Note the *client* project router (`groomAI.suggestDomain`, the Groom wall chip) is a separate path — it saw only name + charter until D-088 and is covered by `tests/domain-routing.test.ts`, not by the battery |
 | Never claim a write that failed | — | ✅ `structure-no-phantom-claims` |
 | A name that already exists isn't created twice | `create_project` | ✅ `structure-existing-is-not-a-creation` + handler cases |
 | An id already handed back is reused, not re-looked-up by name | `create_task` | ✅ `structure-reuses-the-id-it-was-given` |

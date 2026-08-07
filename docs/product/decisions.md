@@ -2495,7 +2495,152 @@ colour swatches can't be 44px in a 375px row, so the drawn circle stays 32px and
 pre-existing agent-prompt baseline failure untouched), no horizontal overflow at 375px in
 either theme.*
 
-**D-087 · 2026-08-07 · A domain describes itself ONCE, to every path that files into it —
+> ⚠️ **Two entries below both carry D-087** — the chat one and the ship one landed from
+> branches that never saw each other, and by the time they met here each was already cited by
+> six or seven files (`agentTypes.ts`, `AgentMessageBubble`… / `glossary.md`, `personas.md`,
+> `tests/domain-faithfulness.test.ts`…). Renumbering either would churn work that isn't this
+> change's, so they stand as-is and the *next* number is 088. Cite them by title, not by id.
+
+**D-087 · 2026-08-07 · A tapped suggestion says the label, not the message — the button
+does the talking.**
+
+Origin ⓞ: *"I press a button and it literally will send the underlying message in the
+message. That feels awkward, like putting words in my mouth."* The transcript rendered the
+suggestion's `message` as the user's own line, which was already impossible to write well,
+because D-082 had settled that **the `message` is a tool argument, not prose** — it has to
+carry the thing that actually resolves. So the two rules collided in the worst possible
+place: tapping *"Ryan Weeks"* made the transcript claim the user had typed
+*"Use ryancweeks@gmail.com"*. Same failure with a seeded turn — the event sheet's *"Ask
+Nuvo to help prepare"* wrote a whole constructed paragraph (title, time, location) into the
+user's mouth, and *"Plan with Nuvo"* said *"Help me plan this week."* Nobody talks like
+that, and a transcript that misquotes you is a transcript you stop trusting as a record.
+
+**The split.** `AgentMessage` gains `display` — what the user *did*, kept apart from what
+Nuvo *hears*. `sendMessage(text, files, { display })` sends `content` on the wire, exactly
+as before, and renders `display` in the transcript. The label never reaches the model, so
+it can't be mistaken for an instruction; the resolving token never reaches the page, so it
+can't be mistaken for something the user said. `AgentSuggestionChips` now hands its caller
+the whole suggestion rather than the message alone — a caller given only the message
+*cannot* tell the transcript what was pressed, which is how this shipped in the first
+place. All three chat surfaces (rail · phone `ChatPane` · ⌘K spotlight) and both seeded
+turns route through it, and `retry()` carries the label so a retried tap is still a tap.
+
+**A pick is not a bubble.** D-077 gave the user's line a bubble because a quotation is the
+one thing in the transcript that came from elsewhere — but a tap is not a quotation, it's a
+point. So it renders as `.agent-bubble-pick`: a quiet pill with a ✓, lighter than the user
+bubble on purpose, because **pointing is a smaller act than speaking**. The wire text stays
+reachable as the pill's `title` and nowhere else. The rejected alternative was sending the
+turn *silently* — nothing in the transcript at all, which is what the ask literally
+described. It loses the record: scroll back an hour and there's an answer to a question you
+can no longer see yourself having answered. A concierge doesn't repeat your order back
+verbatim and inflated, and doesn't stay silent either — they confirm the choice in one
+short line. That's the pill.
+
+**What this asks of the prompt (unchanged, now load-bearing).** The `label` was already
+specified as the human sentence and the `message` as the resolving token; that split is now
+what the user reads as their own voice, so a label written as instruction-to-Nuvo rather
+than in the user's voice is now a visible defect rather than a cosmetic one. No prompt edit
+shipped with this — the existing labels read correctly as speech — and changing the prompt
+gates on `npm run eval`, which needs a live model this container has no key for.
+
+**Verification.** No account credentials exist in a fresh container, so the transcript was
+driven against fixtures at `?chat` (`AgentPickHarness.tsx`, precedent `?invite` / `?meet`):
+desktop rail and phone column side by side, seeded with the two shapes that fail loudest —
+the D-082 address and the event sheet's paragraph — plus a live chip row, so tapping was
+exercised, not assumed. Confirmed the pill renders the label and never the wire text, in
+both themes, with the ✓ sitting on the first line of a wrapping label.
+
+*Status: standing — typecheck clean, 386 tests green (the one pre-existing agent-prompt
+baseline failure untouched, as in D-086), no horizontal overflow at 375px in either theme.*
+
+---
+
+**D-087 · 2026-08-07 · A ship is a touch. Quiet after finishing is not quiet before
+finishing, and the domain speaks in weeks because it is measured in quarters.**
+
+Origin ⓞ: *"I go to domain, it says this has been quiet for 7 days for Stampede when in
+fact I finished a major project this week. So that's not only untrue, the signal is really
+quite the opposite."*
+
+**The input was incomplete — the same failure shape as D-085.** `Domain.lastTouchedDays`
+was derived from exactly two sources: completed **tasks** and attended **calendar events**.
+Shipping a project stamps `projects.shipped_at` and nothing else, and the ledger never read
+it. So a finish line reached the domain only by the accident of a task that happened to be
+checked off — and three ordinary ways of finishing produced silence instead:
+
+1. ship a project carrying no tasks;
+2. ship with the **drop** verdict — `ShipAssess` trashes the leftovers, and trashed rows are
+   filtered before the ledger, so **finishing deletes its own evidence**;
+3. ship a project whose last task closed the week before (the reported case).
+
+The failure was therefore *correlated with finishing well*: the more decisively you closed
+something out, the more neglected its domain looked. **The wall punished completion.**
+
+**But the missing input was only half of it.** Days-since-last-task measures **liveness**,
+not faithfulness — and the domain exists to answer Q7, *am I being faithful in what I've
+been given?* `overview.md` opens by stating the product's purpose — *"so a week of being
+busy is never mistaken for a week of being faithful"* — and this signal did the inverse: it
+mistook a week of not-being-busy for a week of not-being-faithful. It also alarmed at **3
+days** and rendered `warn` → `var(--signal)`, which is red-alert styling for a non-urgent
+state — P4's own *violated when* — while `overview.md` sets the domain horizon at **a
+quarter**. That is day-altitude urgency on a quarterly instrument, and it is how "quiet for
+7 days" turned into an accusation. **D-061 had already ruled the tone** (*"never shame a
+quiet domain, since sometimes weighting elsewhere was right"*); it was simply never wired to
+this surface.
+
+**What shipped.**
+
+- **Finish lines fold into the ledger** (`buildVertical`), contributing a **touch, not
+  hours** — never into `investedThisWeek`, the 13-week pulse or the day columns, because an
+  hour is a thing you can point at and a ship is not a duration (P6). Fixing the *input*
+  rather than the readers means the sigil glows, the weekly **Pull** stops proposing a "get
+  back to it" task because that domain is starving, and Standback stops nominating it as the
+  quietest — all without touching a single surface.
+- **Drift and delivery are told apart.** `DomainState` gains a `because`
+  (`kept · shipped · resting · drifting · unstarted`) rather than a third `tone`: `tone` is
+  consumed as `=== "lit"` at four sites driving ~14 style ternaries, and an unhandled third
+  value would silently fall into the *quiet* visual branch — painting a just-shipped domain
+  as neglected, with no compiler error anywhere.
+- **The voice is restrained on purpose.** A freshly shipped domain names the ship in the
+  hero and says **nothing** in Nuvo's read — no affirmation, no forward-fold. Saying it
+  twice would make it a trophy, and P9 rules out the badge register. Once the glow passes:
+  *"You shipped X here 30 days ago. It's been quiet since — that's what finishing looks
+  like."* Rest after delivery is the shape of completion, not a lapse.
+- **Quiet re-scaled to domain altitude.** Nothing is said below **two weeks** — the pulse
+  above already draws it. Past that it speaks in weeks and carries the kept-count as
+  evidence (*"3 of the last 13 weeks kept"*), which makes a gap read as a trough in a
+  rhythm; when the count is zero there is no rhythm to point at, so it states the gap once
+  and stops. Every `warn` in the rhythm read became `info` / `good`, and the quiet chip gave
+  up `--signal`, which P9 reserves for **now**.
+- **The 99 sentinel is gone** — `lastTouchedDays` is `number | null`. `99` was silently
+  plausible: it read as a number everywhere and made a domain last touched 120 days ago
+  claim *"no time has been kept here yet"*, which was false. `null` made the compiler
+  enumerate all 13 readers, which is the D-085 lesson turned into a mechanical check.
+- **Shipped work is filed by when it shipped**, not by when it was due — `shipped.ts` groups
+  on `shippedAt` with `targetDate` as the fallback for initiatives. The rail's own comment
+  had justified `targetDate` as "durable and reconstructable"; that argument is right about
+  counting **wins**, but `shipped_at` is equally stored and was **backfilled** to
+  `target_date` by migration 35, so it is never thinner and usually truer — the same call
+  the kernel already made (*"`shippedAt` is the only honest answer — `targetDate` is when it
+  was DUE"*). This also un-hides completed projects with no finish line set, which were
+  invisible on the Gain rail forever. **Historical Gain counts move on deploy** — expected,
+  not a new bug.
+- **Two P11 collisions closed.** `stateOf` said "Groomed" for time kept while `clarityOf`
+  said "needs grooming" for routing — three lines apart on the same mobile hero. Faithfulness
+  takes **Kept** (already its verb); routing keeps **grooming**. Both are now in the glossary,
+  along with **Shipped**, which had no entry at all.
+
+**Known gap, deliberately not closed here:** initiatives have no completion stamp — there is
+no `initiatives.shipped_at` — so only projects fold into the ledger, and initiative grouping
+still falls back to `targetDate`. A schema change shouldn't ride a bug fix; logged as Q-12.
+
+*Status: standing — typecheck clean, builds green (web + desktop), 415 tests green including
+15 new ones over the real `buildVertical` (the one pre-existing agent-prompt baseline failure
+untouched, verified identical on the base commit). Driven at `?domains` at 375px and 1440px:
+the reported card now reads **SHIPPED** with a glowing sigil, no horizontal overflow, and
+both shells agree — which is the divergence check D-086 built that harness for.*
+
+**D-088 · 2026-08-07 · A domain describes itself ONCE, to every path that files into it —
 and a verdict re-opens when the domains change.**
 
 Origin ⓞ: *"I notice the auto-assigns are not accurate... I'm wondering we should generate a
@@ -2587,3 +2732,4 @@ no Supabase credentials, so the app itself serves the login wall; the accuracy c
 | **Q-10** | ~~Do the two first-run surfaces compose?~~ **Mostly answered by D-059** — the sequence is now deliberate and each surface asks one question: the picker collects *what you carry*, the fork asks *how you want to learn*, the path teaches. Still open: nobody has watched a stranger take the pair back to back, and the live door's auto-advance transition is unverified (every milestone is pre-satisfied in the builder's account) | Principle 8, and whether the fork reads as a choice or as a wall | One genuinely fresh account, watched |
 | **Q-07** | Where do timezone and working hours come from for a new account? | Rollover is LA-anchored and hours default to 480/990. Both are silent wrongness for anyone else — and capacity math depends on them | Reading how the rollover cron and `user_settings` actually resolve per user |
 | **Q-11** | Where does Monday's reader for `note_to_monday` live? | The Find has written this column since migration 33 and **nothing reads it** — the surface that did went with the Today rung. It's a letter from Friday-you to Monday-you that never arrives, and it's the precedent D-062 was written against. Either give it a reader or cut the field; leaving it is the one thing that shouldn't continue | Deciding which surface Monday actually opens on |
+| **Q-12** | Does an initiative get a completion stamp (`initiatives.shipped_at`)? | D-087 gave projects an honest ship date and folded them into the domain ledger. Initiatives have no stamp at all — `status === "complete"` and nothing else — so a finished bet neither keeps its domain warm nor files under the quarter it actually landed in; it files under the quarter it was *due*. The fallback is honest about being a fallback, which is why this is a question and not a bug | Whether a migration is worth it, or whether the bet's finish line is close enough at quarter grain |

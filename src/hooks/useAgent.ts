@@ -70,7 +70,15 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
   messagesRef.current = messages;
 
   const sendMessage = useCallback(
-    async (text: string, attachments: AgentAttachment[] = []) => {
+    async (
+      text: string,
+      attachments: AgentAttachment[] = [],
+      // `display` splits what the user *said* from what Nuvo *hears*: a tapped
+      // button renders its own label in the transcript while the resolving text
+      // travels unseen. Only the wire half (`content`) is ever sent — the label
+      // never reaches the model, so it can't be mistaken for an instruction.
+      opts?: { display?: string },
+    ) => {
       const trimmed = text.trim();
       const hasAttachments = attachments.length > 0;
       if ((!trimmed && !hasAttachments) || loading) return;
@@ -80,6 +88,7 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
         role: "user",
         content: trimmed,
         at: Date.now(),
+        display: opts?.display?.trim() || undefined,
         attachments: hasAttachments ? attachments : undefined,
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -244,7 +253,9 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
     messagesRef.current = rewound;
     setMessages(rewound);
     setError(null);
-    void sendMessage(target.content, target.attachments ?? []);
+    // Carry the label too — a retried tap is still the same tap, and rewriting
+    // it as its raw wire text would put the words back in the user's mouth.
+    void sendMessage(target.content, target.attachments ?? [], { display: target.display });
   }, [loading, sendMessage]);
 
   return { messages, loading, error, sendMessage, clear, retry };

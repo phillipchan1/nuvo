@@ -188,7 +188,7 @@ function Niche({ domain, focused, onEnter, teach }: { domain: Domain; focused: b
           <div className="serif text-lead" style={{ fontWeight: 500, color: lit ? "var(--text)" : "color-mix(in srgb, var(--text) 68%, var(--muted))" }}>
             {domain.name}
           </div>
-          <div className="mt-0.5 text-meta uppercase" style={{ letterSpacing: "0.1em", color: lit ? "var(--muted)" : "var(--signal)" }}>
+          <div className="mt-0.5 text-meta uppercase" style={{ letterSpacing: "0.1em", color: lit ? "var(--muted)" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}>
             {st.short}
           </div>
         </div>
@@ -301,7 +301,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
           placeholder="State the standing vow for this domain…"
           className="serif text-display italic"
         />
-        <div className="mt-5 text-label uppercase" style={{ letterSpacing: "0.16em", color: lit ? "color-mix(in srgb, var(--text) 55%, var(--muted))" : "var(--signal)" }}>
+        <div className="mt-5 text-label uppercase" style={{ letterSpacing: "0.16em", color: lit ? "color-mix(in srgb, var(--text) 55%, var(--muted))" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}>
           {st.line}
         </div>
       </div>
@@ -356,7 +356,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
                 <div key={it.id} className="flex items-baseline gap-2.5 border-t py-2 text-body first:border-t-0" style={{ borderColor: "var(--line)" }}>
                   <span style={{ color: "var(--slot)" }}>✓</span>
                   <span className="min-w-0 flex-1 truncate">{it.name}</span>
-                  {it.targetDate && <span className="mono ml-auto text-meta text-muted">{shipWhen(it.targetDate)}</span>}
+                  {it.at && <span className="mono ml-auto text-meta text-muted">{shipWhen(it.at)}</span>}
                 </div>
               ))}
             </div>

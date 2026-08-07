@@ -572,7 +572,8 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           id: row.id, name: row.name, color: row.color, icon: row.icon,
           intention: row.intention, charter: row.charter ?? "", context: row.context ?? null,
           weeklyTargetHours: row.weekly_target_hours ?? 0,
-          investedThisWeek: 0, meetingHoursThisWeek: 0, quarterHours: 0, lastTouchedDays: 99,
+          investedThisWeek: 0, meetingHoursThisWeek: 0, quarterHours: 0,
+          lastTouchedDays: null, lastShip: null,
           weeks: new Array(13).fill(0), days: new Array(7).fill(0), sort,
         };
       },

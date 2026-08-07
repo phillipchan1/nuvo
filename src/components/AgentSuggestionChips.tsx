@@ -9,7 +9,10 @@ export default function AgentSuggestionChips({
   disabled,
 }: {
   suggestions: AgentSuggestion[];
-  onPick: (message: string) => void;
+  /** Handed the whole suggestion, not just its `message`: the label is what the
+   *  user is saying, the message is only what Nuvo hears (D-087). A caller that
+   *  takes the message alone can't tell the transcript what was pressed. */
+  onPick: (suggestion: AgentSuggestion) => void;
   onOther: () => void;
   disabled?: boolean;
 }) {
@@ -24,7 +27,7 @@ export default function AgentSuggestionChips({
             key={`${s.label}-${i}`}
             type="button"
             disabled={disabled}
-            onClick={() => (isOther ? onOther() : onPick(s.message))}
+            onClick={() => (isOther ? onOther() : onPick(s))}
             className={`agent-suggestion-chip fast group flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-caption transition-all disabled:opacity-40 ${
               isOther
                 ? "border-dashed border-line bg-transparent text-muted hover:border-accent/50 hover:bg-accent-soft/20 hover:text-accent"

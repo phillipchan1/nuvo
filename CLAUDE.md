@@ -163,7 +163,7 @@ disagreed about which week Saturday plans. So:
   and never re-derive "can Nuvo route here" in a surface (`routingStrength`). A field added to
   `enrichDomain` that isn't emitted by the kernel's serializer reaches nobody; that is exactly how
   `keywords` and `exemplars` came to be generated and read by no router at all. Full law in
-  [`docs/domain-routing.md`](docs/domain-routing.md) · D-087.
+  [`docs/domain-routing.md`](docs/domain-routing.md) · D-088.
 - `npm test` (vitest) runs the conformance suite; CI (`.github/workflows/checks.yml`) runs
   typecheck + tests + an edge-function parse on every push.
 

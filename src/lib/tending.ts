@@ -249,7 +249,9 @@ function buildCandidate(
 
   // importance prior — lives in a domain you've tended lately (momentum)
   const domain = d.domains.find((dom) => dom.id === item.domainId);
-  if (domain && domain.lastTouchedDays <= 3) {
+  // `!= null` on purpose: a domain nothing has ever landed in has no momentum to
+  // inherit, and must not earn this prior
+  if (domain && domain.lastTouchedDays != null && domain.lastTouchedDays <= 3) {
     priority += 12;
     reasons.push(`in ${domain.name}`);
   }
