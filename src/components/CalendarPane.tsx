@@ -31,6 +31,7 @@ import WeatherPopover from "./WeatherPopover";
 import TimeZoneChip from "./TimeZoneChip";
 import { fixedCssPx, useUiScale } from "../hooks/useUiScale";
 import { useOptionalUndoStack } from "../hooks/useUndoStack";
+import { consumeCalendarClickHandled } from "../lib/calendarDismissGuard";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
 
@@ -1347,6 +1348,10 @@ export default function CalendarPane({
   // Click-drag on empty grid → open the quick-create card. Modifiers pick the
   // type up front (⌥ event, ⌘/Ctrl slot); otherwise the toolbar create mode.
   const onSelect = (arg: DateSelectArg) => {
+    // This same click may have just dismissed an open event/task/slot popover
+    // (a separate system reacting to the same physical click) — that click
+    // was a dismiss, not a request to also start a new draft.
+    if (consumeCalendarClickHandled()) return;
     if (arg.allDay) {
       // Anytime row click → plan a task for that day with no time.
       const day = arg.start;
@@ -1370,6 +1375,10 @@ export default function CalendarPane({
   };
 
   const onDateClick = (arg: DateClickArg) => {
+    // This same click may have just dismissed an open event/task/slot popover
+    // (a separate system reacting to the same physical click) — that click
+    // was a dismiss, not a request to also start a new draft.
+    if (consumeCalendarClickHandled()) return;
     clearFocus(); // clicking empty space drops the focused block
     if (isMonth || draft) return;
     if (arg.allDay) {

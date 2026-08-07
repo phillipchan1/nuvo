@@ -23,6 +23,7 @@ import { deriveSlotTitle } from "../lib/slots";
 import { rulesEqual, type RecurrenceRule } from "../lib/recurrence";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import { supabase } from "../lib/supabase";
+import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
 import { RecurrenceDeleteButton, RepeatControl, SlotDeleteButton, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn, RollBadge } from "./ui";
 
@@ -197,6 +198,10 @@ export function TaskPopover({
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!popRef.current || popRef.current.contains(e.target as Node)) return;
+      // This click dismisses the popover only — mark it so the calendar
+      // grid's own click-to-create handling (a separate system reacting to
+      // the same physical click) skips opening a second, unwanted draft.
+      markCalendarClickHandled();
       // Force any pending blur-to-commit edit (title/notes…) through before the
       // calendar grid's own mousedown handling (which calls preventDefault to
       // support click-drag) can suppress the native blur and drop it silently.
@@ -984,6 +989,10 @@ export function EventPopover({
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!popRef.current || popRef.current.contains(e.target as Node)) return;
+      // This click dismisses the popover only — mark it so the calendar
+      // grid's own click-to-create handling (a separate system reacting to
+      // the same physical click) skips opening a second, unwanted draft.
+      markCalendarClickHandled();
       // The calendar grid's own click/drag-select handling calls
       // preventDefault() on mousedown (it supports click-drag), which
       // suppresses the browser's native focus-loss blur. Without this, an
@@ -1812,6 +1821,10 @@ export function SlotPopover({
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!popRef.current || popRef.current.contains(e.target as Node)) return;
+      // This click dismisses the popover only — mark it so the calendar
+      // grid's own click-to-create handling (a separate system reacting to
+      // the same physical click) skips opening a second, unwanted draft.
+      markCalendarClickHandled();
       // Force any pending blur-to-commit edit (title/notes…) through before the
       // calendar grid's own mousedown handling (which calls preventDefault to
       // support click-drag) can suppress the native blur and drop it silently.
