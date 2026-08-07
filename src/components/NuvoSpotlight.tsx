@@ -3,6 +3,7 @@ import { parseCapture, resolveRoute, routeKey, type RouteTarget } from "../lib/n
 import type { Label } from "../lib/types";
 import type { NewTaskInput } from "../hooks/useTasks";
 import type { AgentHandle } from "../hooks/useAgent";
+import type { AgentSuggestion } from "../lib/agentTypes";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import AgentMessageBubble from "./AgentMessageBubble";
 import AgentSuggestionChips from "./AgentSuggestionChips";
@@ -379,12 +380,16 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
   };
 
   // ── Ask mode ──────────────────────────────────────────────────────────────
-  const sendAsk = (text?: string) => {
+  // `display` is set only when the turn came from a tap — the button's own words
+  // stand in for the wire text in the transcript (D-087).
+  const sendAsk = (text?: string, display?: string) => {
     const msg = (text ?? askText).trim();
     if (!msg || loading) return;
     setAskText("");
-    void sendMessage(msg);
+    void sendMessage(msg, [], { display });
   };
+
+  const pickSuggestion = (s: AgentSuggestion) => sendAsk(s.message, s.label);
 
   const last = messages[messages.length - 1];
   const activeSuggestions =
@@ -628,7 +633,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
                 </p>
                 <AgentSuggestionChips
                   suggestions={ASK_STARTERS.map((s) => ({ label: s, message: s }))}
-                  onPick={(m) => sendAsk(m)}
+                  onPick={pickSuggestion}
                   onOther={() => inputRef.current?.focus()}
                 />
               </div>
@@ -641,7 +646,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
                 {activeSuggestions && (
                   <AgentSuggestionChips
                     suggestions={activeSuggestions}
-                    onPick={(m) => sendAsk(m)}
+                    onPick={pickSuggestion}
                     onOther={() => inputRef.current?.focus()}
                     disabled={loading}
                   />

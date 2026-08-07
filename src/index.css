@@ -2134,6 +2134,30 @@ select.field { appearance: none; -webkit-appearance: none; }
   border-bottom-right-radius: var(--radius-sm);
 }
 
+/* A tapped option is a choice, not a sentence you typed — so it is not a
+   bubble. It reads as the thing you pointed at: a quiet pill carrying the
+   button's own words, with the resolving text (an address, an id, a whole
+   constructed paragraph) travelling to Nuvo unseen. Lighter than the user
+   bubble on purpose — pointing is a smaller act than speaking. */
+.agent-bubble-pick {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 11px 4px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 65%, transparent);
+  color: var(--ink);
+  animation: rise var(--d-base) var(--ease-out) both;
+}
+/* Sits on the first line, not in the middle of the pill — a two-line label
+   with a centred check reads as a bullet floating in space. */
+.agent-bubble-pick-mark {
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
 /* Nuvo's half of the conversation has no bubble — it IS the page. Only the
    user's line keeps a frame, because a quotation is the one thing here that
    came from somewhere else. Carries the entrance the bubble used to own. */

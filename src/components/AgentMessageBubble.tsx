@@ -103,15 +103,30 @@ export default function AgentMessageBubble({
   ) : null;
 
   // What you said is a quotation — it keeps its bubble, tucked to the right.
+  // What you *tapped* is not a quotation: the transcript records the choice
+  // (the words on the button) as a pick, while the resolving text underneath it
+  // — an address, an initiative, a constructed paragraph — goes to Nuvo unseen.
+  // Speaking for the user is worse than saying nothing (D-087).
   if (isUser) {
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="agent-bubble agent-bubble-user max-w-[85%]">
-          {attachments}
-          {message.content && (
-            <p className={`whitespace-pre-wrap leading-relaxed ${textSize}`}>{message.content}</p>
-          )}
-        </div>
+        {message.display ? (
+          <span
+            className="agent-bubble-pick max-w-[85%] text-caption"
+            // The wire text stays reachable for the curious, and nowhere else.
+            title={message.content !== message.display ? message.content : undefined}
+          >
+            <span aria-hidden className="agent-bubble-pick-mark">✓</span>
+            <span className="min-w-0 leading-snug">{message.display}</span>
+          </span>
+        ) : (
+          <div className="agent-bubble agent-bubble-user max-w-[85%]">
+            {attachments}
+            {message.content && (
+              <p className={`whitespace-pre-wrap leading-relaxed ${textSize}`}>{message.content}</p>
+            )}
+          </div>
+        )}
         {message.at && <span className="mono text-micro text-muted">{fmtTime(message.at)}</span>}
       </div>
     );

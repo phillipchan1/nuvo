@@ -2495,6 +2495,58 @@ colour swatches can't be 44px in a 375px row, so the drawn circle stays 32px and
 pre-existing agent-prompt baseline failure untouched), no horizontal overflow at 375px in
 either theme.*
 
+**D-087 · 2026-08-07 · A tapped suggestion says the label, not the message — the button
+does the talking.**
+
+Origin ⓞ: *"I press a button and it literally will send the underlying message in the
+message. That feels awkward, like putting words in my mouth."* The transcript rendered the
+suggestion's `message` as the user's own line, which was already impossible to write well,
+because D-082 had settled that **the `message` is a tool argument, not prose** — it has to
+carry the thing that actually resolves. So the two rules collided in the worst possible
+place: tapping *"Ryan Weeks"* made the transcript claim the user had typed
+*"Use ryancweeks@gmail.com"*. Same failure with a seeded turn — the event sheet's *"Ask
+Nuvo to help prepare"* wrote a whole constructed paragraph (title, time, location) into the
+user's mouth, and *"Plan with Nuvo"* said *"Help me plan this week."* Nobody talks like
+that, and a transcript that misquotes you is a transcript you stop trusting as a record.
+
+**The split.** `AgentMessage` gains `display` — what the user *did*, kept apart from what
+Nuvo *hears*. `sendMessage(text, files, { display })` sends `content` on the wire, exactly
+as before, and renders `display` in the transcript. The label never reaches the model, so
+it can't be mistaken for an instruction; the resolving token never reaches the page, so it
+can't be mistaken for something the user said. `AgentSuggestionChips` now hands its caller
+the whole suggestion rather than the message alone — a caller given only the message
+*cannot* tell the transcript what was pressed, which is how this shipped in the first
+place. All three chat surfaces (rail · phone `ChatPane` · ⌘K spotlight) and both seeded
+turns route through it, and `retry()` carries the label so a retried tap is still a tap.
+
+**A pick is not a bubble.** D-077 gave the user's line a bubble because a quotation is the
+one thing in the transcript that came from elsewhere — but a tap is not a quotation, it's a
+point. So it renders as `.agent-bubble-pick`: a quiet pill with a ✓, lighter than the user
+bubble on purpose, because **pointing is a smaller act than speaking**. The wire text stays
+reachable as the pill's `title` and nowhere else. The rejected alternative was sending the
+turn *silently* — nothing in the transcript at all, which is what the ask literally
+described. It loses the record: scroll back an hour and there's an answer to a question you
+can no longer see yourself having answered. A concierge doesn't repeat your order back
+verbatim and inflated, and doesn't stay silent either — they confirm the choice in one
+short line. That's the pill.
+
+**What this asks of the prompt (unchanged, now load-bearing).** The `label` was already
+specified as the human sentence and the `message` as the resolving token; that split is now
+what the user reads as their own voice, so a label written as instruction-to-Nuvo rather
+than in the user's voice is now a visible defect rather than a cosmetic one. No prompt edit
+shipped with this — the existing labels read correctly as speech — and changing the prompt
+gates on `npm run eval`, which needs a live model this container has no key for.
+
+**Verification.** No account credentials exist in a fresh container, so the transcript was
+driven against fixtures at `?chat` (`AgentPickHarness.tsx`, precedent `?invite` / `?meet`):
+desktop rail and phone column side by side, seeded with the two shapes that fail loudest —
+the D-082 address and the event sheet's paragraph — plus a live chip row, so tapping was
+exercised, not assumed. Confirmed the pill renders the label and never the wire text, in
+both themes, with the ✓ sitting on the first line of a wrapping label.
+
+*Status: standing — typecheck clean, 386 tests green (the one pre-existing agent-prompt
+baseline failure untouched, as in D-086), no horizontal overflow at 375px in either theme.*
+
 ---
 ## 3 · Open questions (decide these deliberately)
 

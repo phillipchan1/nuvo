@@ -18,7 +18,7 @@ export default function MobileReadiness({
   onReview,
 }: {
   data: VerticalData;
-  onAskNuvo: (seed?: string) => void;
+  onAskNuvo: (seed?: string, say?: string) => void;
   onReview: (floor: Floor) => void;
 }) {
   const spine = readSpine(data);
@@ -36,7 +36,7 @@ export default function MobileReadiness({
     turn.floor === "project" ? "Open Projects" : turn.floor === "day" ? "Review week" : "Open Initiatives";
   const action =
     turn.floor === "day" && turn.cue?.tone === "invite"
-      ? { label: "Plan with Nuvo", run: () => onAskNuvo("Help me plan this week") }
+      ? { label: "Plan with Nuvo", run: () => onAskNuvo("Help me plan this week", "Plan my week") }
       : { label: reviewLabel, run: () => onReview(turn.floor) };
 
   return (
