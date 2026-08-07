@@ -31,26 +31,29 @@ import DomainSigil from "../floors/DomainSigil";
 import { RefinedTick } from "../floors/parts";
 import { AltitudeIcon } from "../icons";
 
-/** The domain's light — twenty identities, ordered by hue so the grid scans. */
+/** The domain's light — twenty identities, one step around the wheel.
+ *  Tuned for warm paper: deep enough to read as text and as a 12% wash in
+ *  both themes. Near-duplicates (rose/magenta/fuchsia) culled so each swatch
+ *  earns its slot — mustard holds "company yellow" without dying on cream. */
 export const SWATCHES = [
   "#DC2626", // red
+  "#E11D48", // rose
+  "#DB2777", // pink
+  "#C2410C", // terracotta
   "#EA580C", // orange
   "#D97706", // amber
-  "#CA8A04", // gold
+  "#CA8A04", // mustard — company yellow that still holds as text
   "#65A30D", // lime
-  "#16A34A", // green
+  "#4D7C0F", // olive
   "#059669", // emerald
   "#0D9488", // teal
   "#0891B2", // cyan
   "#0284C7", // sky
   "#2563EB", // blue
+  "#1D4ED8", // navy
   "#4F46E5", // indigo
   "#7C3AED", // violet
   "#9333EA", // purple
-  "#C026D3", // fuchsia
-  "#DB2777", // pink
-  "#E11D48", // rose
-  "#BE185D", // magenta
   "#B45309", // bronze
   "#57534E", // stone
 ];
