@@ -6,7 +6,7 @@
 // Altitude: projects celebrate by the QUARTER, initiatives by the calendar YEAR
 // (one level out from what the wall groups by). A ‹ › stepper walks back through
 // past periods — the constellation encodes WINS PER DOMAIN, so any past period
-// redraws faithfully from `targetDate` alone (no stored snapshot).
+// redraws faithfully from its stored ship date alone (no stored snapshot).
 //
 //   · the count        — finish lines crossed this period, as a quiet stat
 //   · the constellation — the reused emblem, rings ∝ wins per domain, ambient

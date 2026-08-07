@@ -18,6 +18,7 @@ import {
   initiativeProgressAt,
   isProjectInFlight,
   projectsOf,
+  QUIET_SPEAKS_DAYS,
   tasksOf,
   type Domain,
   type Initiative,
@@ -198,8 +199,13 @@ export interface Invitation {
 function readInvitation(domains: Domain[]): Invitation {
   const invested = domains.filter((d) => d.investedThisWeek > 0).sort((a, b) => b.investedThisWeek - a.investedThisWeek);
   const investedMost = invested[0] ? { domain: invested[0], hours: invested[0].investedThisWeek } : null;
-  const quiet = [...domains].sort((a, b) => b.lastTouchedDays - a.lastTouchedDays)[0];
-  const readyForYou = quiet && quiet.lastTouchedDays >= 5 ? quiet : null;
+  // a domain nothing has ever landed in is the MOST quiet, not the least — written
+  // on purpose, because the old `99` sentinel sorted it as merely 99 days old
+  const sinceTouched = (x: Domain) => x.lastTouchedDays ?? Number.POSITIVE_INFINITY;
+  const quiet = [...domains].sort((a, b) => sinceTouched(b) - sinceTouched(a))[0];
+  // 5 days is day-altitude urgency on a quarterly instrument — a domain is quiet
+  // when it's been quiet for weeks (QUIET_SPEAKS_DAYS)
+  const readyForYou = quiet && sinceTouched(quiet) >= QUIET_SPEAKS_DAYS ? quiet : null;
   return { investedMost, readyForYou };
 }
 

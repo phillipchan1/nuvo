@@ -3,6 +3,7 @@
 // proposes; only you promote work toward the calendar).
 
 import { fmtHours } from "./dates";
+import { quietFor } from "./domainRead";
 import { projectsOnDeck } from "./priorities";
 import {
   backlogTasks,
@@ -97,7 +98,10 @@ export function suggestPull(d: VerticalData, weekStartISO?: string): PullSuggest
     const candidates = d.tasks
       .filter((t) => t.domainId === domain.id && t.status !== "done" && !t.sprint && !picked.has(t.id))
       .sort((a, b) => a.durationMins - b.durationMins);
-    add(candidates[0] ?? null, `${domain.name} has been quiet ${domain.lastTouchedDays}d`, "quiet");
+    const why = domain.lastTouchedDays == null
+      ? `nothing has landed in ${domain.name} yet`
+      : `${domain.name} has been quiet ${quietFor(domain.lastTouchedDays)}`;
+    add(candidates[0] ?? null, why, "quiet");
   }
 
   // cap the proposal at ~60% of weekly capacity — a starting pull, not a full

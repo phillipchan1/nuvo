@@ -4,10 +4,12 @@
 // in, so the wall reads as a growing record of delivered work. Pure over a
 // VerticalData snapshot — no scoring, just an arrangement of the completed set.
 //
-// There is no stored completed-at timestamp on a project/initiative, so we group
-// by `targetDate` — the finish line they crossed. Projects group by MONTH (a
-// project is a week-scale arc), initiatives by QUARTER (a bet is a multi-month
-// arc), mirroring how each is time-boxed on its deck.
+// We group by the day it ACTUALLY crossed the line (`shippedAt`), not by the day
+// it was due (`targetDate`) — a project shipped today against a June deadline
+// belongs to this month's record, not June's. `targetDate` survives as the
+// fallback for initiatives, which carry no completion stamp yet. Projects group
+// by MONTH (a project is a week-scale arc), initiatives by QUARTER (a bet is a
+// multi-month arc), mirroring how each is time-boxed on its deck.
 
 import {
   endOfQuarter,
@@ -20,6 +22,7 @@ import {
   subQuarters,
   subYears,
 } from "date-fns";
+import { todayISO } from "./dates";
 import {
   domainById,
   isProjectComplete,
@@ -34,7 +37,22 @@ export interface ShippedItem {
   id: string;
   name: string;
   domain: Domain | null;
-  targetDate: string | null;
+  /** the day it crossed the line — `shippedAt`, or the finish line as fallback. */
+  at: string | null;
+}
+
+/** The day it actually crossed the line. `shippedAt` is stamped at the one write
+ *  choke point every ship path goes through (useVertical.updateProject) and was
+ *  backfilled to `target_date` for everything older (migration 35), so it is at
+ *  worst as reconstructable as the finish line and usually truer — which is the
+ *  same call the kernel already made (`planningRules.shippedInWeek`: "shippedAt
+ *  is the only honest answer — targetDate is when it was DUE"). `targetDate`
+ *  survives as the fallback for INITIATIVES, which carry no stamp yet.
+ *
+ *  `todayISO` (not `.slice(0,10)`) so an evening ship files under the local day
+ *  it happened, matching how completed blocks are dated. */
+function shipDate(x: { shippedAt?: string | null; targetDate: string | null }): string | null {
+  return x.shippedAt ? todayISO(new Date(x.shippedAt)) : x.targetDate;
 }
 
 export interface ShippedGroup {
@@ -95,24 +113,26 @@ export function readShipped(
     id: x.id,
     name: x.name,
     domain: domainById(d, x.domainId),
-    targetDate: x.targetDate,
+    at: shipDate(x),
   }));
 
-  // group by finish-line period
+  // group by the period it shipped in, newest first WITHIN each group too —
+  // otherwise a group lands in `sort_order`, which has nothing to do with when
   const map = new Map<string, ShippedGroup>();
   for (const it of items) {
-    const p = period(it.targetDate, grain);
+    const p = period(it.at, grain);
     const g = map.get(p.key) ?? { key: p.key, label: p.label, items: [] };
     g.items.push(it);
     map.set(p.key, g);
   }
+  for (const g of map.values()) g.items.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
   // undated bucket sinks to the bottom; everything else newest-first
   const groups = [...map.values()].sort((a, b) =>
     a.key === "0000-undated" ? 1 : b.key === "0000-undated" ? -1 : b.key.localeCompare(a.key),
   );
 
   const curKey = currentPeriodKey(now, grain);
-  const thisPeriodCount = items.filter((it) => period(it.targetDate, grain).key === curKey).length;
+  const thisPeriodCount = items.filter((it) => period(it.at, grain).key === curKey).length;
 
   // per-domain tally
   const domCount = new Map<string, { domain: Domain | null; count: number }>();
@@ -141,11 +161,17 @@ export function readShipped(
 // you closed and which domains you moved.
 //
 // The constellation encodes WINS PER DOMAIN (contribution), not hours — because
-// that's the durable, reconstructable signal (it's just `targetDate`), so it
-// steps cleanly through any past period at any altitude with no stored snapshot.
-// Domains with zero wins in the period never appear. Hours (time invested) only
-// exist for the last ~90 days in the data, so they ride along as an honest,
-// current-period-only companion (see `hours`), never pinned to a stepped period.
+// that's the durable, reconstructable signal (it's just a stored date on the row),
+// so it steps cleanly through any past period at any altitude with no stored
+// snapshot. Domains with zero wins in the period never appear. Hours (time
+// invested) only exist for the last ~90 days in the data, so they ride along as an
+// honest, current-period-only companion (see `hours`), never pinned to a stepped
+// period.
+//
+// That durability argument is why this counts wins — but it does NOT argue for
+// `targetDate`, which is only when a thing was DUE. `shippedAt` is equally stored
+// and was backfilled to `target_date` for every older row (migration 35), so it is
+// never thinner and usually truer. See `shipDate`.
 
 export type ShippedRung = "project" | "initiative";
 
@@ -239,14 +265,16 @@ export function readPeriodGain(
 ): PeriodGain {
   const win = periodWindow(rung, now, offset);
   const source = rung === "initiative" ? d.initiatives : d.projects;
-  const done = source.filter((x) => isProjectComplete(x.status) && x.targetDate);
+  // `shipDate` rather than `targetDate` — which also stops a completed project
+  // with no finish line set from being invisible on this rail forever
+  const done = source.filter((x) => isProjectComplete(x.status) && shipDate(x));
 
   const items: ShippedItem[] = done
     .filter((x) => {
-      const when = parse(x.targetDate as string);
+      const when = parse(shipDate(x) as string);
       return when >= win.start && when <= win.end;
     })
-    .map((x) => ({ id: x.id, name: x.name, domain: domainById(d, x.domainId), targetDate: x.targetDate }));
+    .map((x) => ({ id: x.id, name: x.name, domain: domainById(d, x.domainId), at: shipDate(x) }));
 
   // wins per domain — the contribution signal, reconstructable at any period
   const shipsByDomain = new Map<string, number>();
@@ -291,7 +319,7 @@ export function readPeriodGain(
           .map((h) => ({ ...h, vow: hoursVow(h.domain) }))
       : null;
 
-  const canGoBack = done.some((x) => parse(x.targetDate as string) < win.start);
+  const canGoBack = done.some((x) => parse(shipDate(x) as string) < win.start);
 
   return {
     offset,

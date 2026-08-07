@@ -47,7 +47,15 @@ export interface Domain {
   investedThisWeek: number; // derived: hours invested this week (completed blocks + attended meetings)
   meetingHoursThisWeek: number; // derived: the meeting slice of investedThisWeek (so the UI can name it)
   quarterHours: number; // derived: the long arc (Gain), last 90 days
-  lastTouchedDays: number; // derived: days since last completed task → faithfulness
+  /** derived: days since the last thing LANDED here — hours kept, a meeting
+   *  attended, or a finish line crossed. `null` = nothing ever has. (Was 99, a
+   *  sentinel that collided with a real 99-day count.) */
+  lastTouchedDays: number | null;
+  /** derived: the most recent finish line crossed here — what makes a quiet week
+   *  a delivered one rather than a drifting one. Denormalized like
+   *  `meetingHoursThisWeek` so `stateOf(d: Domain)` stays single-argument and both
+   *  shells get it for free (D-086). */
+  lastShip: { name: string; daysAgo: number } | null;
   weeks: number[]; // derived: invested hours per week, last 13 weeks (oldest → now) — the faithfulness pulse
   days: number[]; // derived: invested hours per day of THIS week (index 0 = weekStart) — the week's shape
   sort: number;
@@ -569,10 +577,37 @@ export function buildVertical(
     }
   }
 
+  // ── fold FINISH LINES into the same ledger ────────────────────────────────
+  // Shipping is the loudest thing that can happen in a domain, and until now it
+  // reached the ledger through one accident: a task that happened to be checked
+  // off. Ship with no tasks, ship with the "drop" verdict (ShipAssess trashes the
+  // leftovers and trashed rows never reach `tasks`), or ship one whose last task
+  // closed last week — and the domain still read "quiet". D-085 again: the ledger
+  // was honest about its inputs and its inputs were incomplete.
+  //
+  // A ship contributes a TOUCH, NOT HOURS. It never lands in `entry.week`,
+  // `entry.quarter`, `weekly[]` or `daily[]` — the 13-week pulse and
+  // `investedThisWeek` stay measured time only (P6: an hour is a thing you can
+  // point at; a ship is not a duration).
+  const shipped = new Map<string, { name: string; at: number }>();
+  for (const p of projects) {
+    if (!p.shippedAt || !p.domainId || !validDomain.has(p.domainId)) continue;
+    const at = new Date(p.shippedAt).getTime();
+    if (Number.isNaN(at) || at > now.getTime()) continue;
+    const cur = shipped.get(p.domainId);
+    if (!cur || at > cur.at) shipped.set(p.domainId, { name: p.name, at });
+    const entry = ledger.get(p.domainId) ?? { week: 0, quarter: 0, last: null };
+    if (entry.last == null || at > entry.last) entry.last = at;
+    ledger.set(p.domainId, entry);
+  }
+
+  const daysSince = (at: number) => Math.max(0, Math.floor((now.getTime() - at) / 86_400_000));
+
   const domains: Domain[] = [...domainRows]
     .sort((a, b) => a.sort_order - b.sort_order)
     .map((d, idx) => {
       const led = ledger.get(d.id);
+      const ship = shipped.get(d.id);
       return {
         id: d.id,
         name: d.name,
@@ -585,9 +620,8 @@ export function buildVertical(
         investedThisWeek: led ? led.week / 60 : 0,
         meetingHoursThisWeek: (meetingWeek.get(d.id) ?? 0) / 60,
         quarterHours: led ? Math.round(led.quarter / 60) : 0,
-        lastTouchedDays: led?.last != null
-          ? Math.max(0, Math.floor((now.getTime() - led.last) / 86_400_000))
-          : 99,
+        lastTouchedDays: led?.last != null ? daysSince(led.last) : null,
+        lastShip: ship ? { name: ship.name, daysAgo: daysSince(ship.at) } : null,
         weeks: (weekly.get(d.id) ?? new Array(13).fill(0)).map((m: number) => m / 60),
         days: (daily.get(d.id) ?? new Array(7).fill(0)).map((m: number) => m / 60),
         sort: d.sort_order ?? idx,
@@ -971,11 +1005,28 @@ export function domainQuarterDone(
   ).length;
 }
 
+/** A finish line keeps a domain warm for a week — a ship is a bigger event than
+ *  an hour, and the week is the ritual's own beat. */
+export const SHIP_GLOW_DAYS = 7;
+/** Below two weeks, a QUARTERLY instrument has nothing to report that the 13-week
+ *  pulse doesn't already draw (overview.md — no domain dark for a quarter).
+ *  Domain altitude is not day altitude. */
+export const QUIET_SPEAKS_DAYS = 14;
+/** Past a quarter, "resting after a ship" stops being true — that's drift. */
+export const QUARTER_DAYS = 91;
+
+/** Domain altitude speaks in WEEKS. The pulse is 13 of them and the health horizon
+ *  is a quarter; a day count invites a daily reading of a quarterly instrument,
+ *  which is how "quiet for 7 days" became an accusation. */
+export const weeksLabel = (days: number) => `${Math.max(1, Math.floor(days / 7))}w`;
+
 /** Faithfulness read: lit = tended recently, dim = going quiet. */
 export function faithfulness(dom: Domain): { lit: boolean; note: string } {
-  if (dom.lastTouchedDays <= 2) return { lit: true, note: "groomed" };
+  // a finish line crossed this week keeps the sigil warm even with no hours on it
+  if (dom.lastShip && dom.lastShip.daysAgo <= SHIP_GLOW_DAYS) return { lit: true, note: "shipped" };
+  if (dom.lastTouchedDays != null && dom.lastTouchedDays <= 2) return { lit: true, note: "kept" };
   if (dom.investedThisWeek > dom.weeklyTargetHours)
     return { lit: true, note: `over ${Math.round(dom.investedThisWeek)}h` };
-  if (dom.lastTouchedDays >= 99) return { lit: false, note: "untouched" };
-  return { lit: false, note: `quiet ${dom.lastTouchedDays}d` };
+  if (dom.lastTouchedDays == null) return { lit: false, note: "unstarted" };
+  return { lit: false, note: `quiet ${weeksLabel(dom.lastTouchedDays)}` };
 }

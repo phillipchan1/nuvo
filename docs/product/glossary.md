@@ -91,6 +91,8 @@ been used to argue against things it doesn't forbid.
 | **Calibration** | Proven weekly pace from the last 4 weeks of completed blocks, capping the composer (+15% room to grow). No history → it says so. `src/lib/calibration.ts` |
 | **The Find** | At most **one** evidence-backed discovery per Review. Hidden when nothing is notable — never manufactured. |
 | **Actuals** | What actually happened (completed blocks, attended events, activity sources) vs. tasks (what was planned). |
+| **Shipped** | A project or initiative that crossed its finish line. Dated by **when it actually shipped** (`projects.shipped_at`, stamped at the one write choke point), not by when it was due — a thing shipped today against a June deadline belongs to this month's record. The **Shipped wall** collects them (projects by month, bets by quarter); the open domain shows its own as *what you've built*. A ship also counts as a **touch** on its domain — see *Kept*. D-087. |
+| **Kept** | Time actually kept in a domain — the faithfulness axis. A domain reads *kept* when hours landed in it recently, *shipped* when a finish line crossed there inside the week, *resting* when the last thing that happened was a finish, *quiet* when neither has happened for weeks, and *unstarted* when nothing ever has. Measured over a **quarter**, so it speaks in weeks, never days. Not to be confused with **grooming**, which is the *routing* axis (can Nuvo file captures here?) — one word per axis. D-087. |
 | **Activity source** | Any external feed of *completed* work attributable to the hierarchy. The calendar was the first; GitHub is the second. [`activity-sources.md`](../activity-sources.md) |
 
 ## The assistant & surfaces

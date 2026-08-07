@@ -144,7 +144,7 @@ export default function MobileDomainScreen({
         </div>
         <div
           className="mt-3 text-micro uppercase"
-          style={{ letterSpacing: "0.14em", color: lit ? "color-mix(in srgb, var(--ink) 55%, var(--muted))" : "var(--signal)" }}
+          style={{ letterSpacing: "0.14em", color: lit ? "color-mix(in srgb, var(--ink) 55%, var(--muted))" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}
         >
           {st.line}
         </div>
@@ -250,7 +250,7 @@ export default function MobileDomainScreen({
               <div key={it.id} className="flex items-baseline gap-2.5 px-3 py-2.5 text-body">
                 <span style={{ color: "var(--slot)" }}>✓</span>
                 <span className="min-w-0 flex-1 truncate">{it.name}</span>
-                {it.targetDate && <span className="mono shrink-0 text-meta text-muted">{shipWhen(it.targetDate)}</span>}
+                {it.at && <span className="mono shrink-0 text-meta text-muted">{shipWhen(it.at)}</span>}
               </div>
             ))}
           </CardList>

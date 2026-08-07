@@ -40,7 +40,8 @@ const dom = (o: Partial<Domain> & { id: string; name: string; color: string }): 
   investedThisWeek: 0,
   meetingHoursThisWeek: 0,
   quarterHours: 0,
-  lastTouchedDays: 99,
+  lastTouchedDays: null,
+  lastShip: null,
   weeks: new Array(13).fill(0),
   days: new Array(7).fill(0),
   sort: 0,
@@ -94,6 +95,49 @@ const DOMAINS: Domain[] = [
     weeks: pulse(3, 2, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0),
   }),
   dom({ id: "d4", name: "Writing", color: "#D97706", icon: "✍️", sort: 3 }),
+  // ── the three states the ship-aware ledger added (D-087) ──────────────────
+  // d5 reproduces the reported bug exactly: a major project shipped 2 days ago,
+  // the last task under it checked off 7 days ago, zero hours this week. Before
+  // the fix this read "Quiet for 7 days — when did you last show up here?".
+  dom({
+    id: "d5",
+    name: "Stampede",
+    color: "#7C3AED",
+    icon: "🐎",
+    sort: 4,
+    intention: "Ship the thing, then let it breathe.",
+    quarterHours: 88,
+    lastTouchedDays: 7,
+    lastShip: { name: "Stampede rebrand", daysAgo: 2 },
+    weeks: pulse(6, 9, 7, 11, 8, 6, 10, 12, 9, 7, 11, 8, 0),
+  }),
+  // d6 — the same domain a month on: the glow has passed, but the last thing
+  // that happened here was still a FINISH, not a drift
+  dom({
+    id: "d6",
+    name: "Sabbatical",
+    color: "#0891B2",
+    icon: "⛵",
+    sort: 5,
+    intention: "Rest is part of the work.",
+    quarterHours: 40,
+    lastTouchedDays: 30,
+    lastShip: { name: "The book proposal", daysAgo: 30 },
+    weeks: pulse(5, 6, 4, 7, 5, 0, 0, 0, 0, 0, 0, 0, 0),
+  }),
+  // d7 — genuinely dark for four months. Under the old 99 sentinel this claimed
+  // "no time has been kept here yet", which was false: it has real history.
+  dom({
+    id: "d7",
+    name: "Woodworking",
+    color: "#B45309",
+    icon: "🪵",
+    sort: 6,
+    intention: "Make one thing a season with my hands.",
+    quarterHours: 0,
+    lastTouchedDays: 120,
+    weeks: new Array(13).fill(0),
+  }),
 ];
 
 const INITIATIVES: Initiative[] = [

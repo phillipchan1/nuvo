@@ -142,7 +142,7 @@ function Niche({ domain, onEnter, teach }: { domain: Domain; onEnter: () => void
           </div>
           <div
             className="mt-0.5 text-meta uppercase"
-            style={{ letterSpacing: "0.1em", color: lit ? "var(--muted)" : "var(--signal)" }}
+            style={{ letterSpacing: "0.1em", color: lit ? "var(--muted)" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}
           >
             {st.short}
           </div>

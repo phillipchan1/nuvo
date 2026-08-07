@@ -153,8 +153,8 @@ function ShippedCard({ item, onOpen }: { item: ShippedItem; onOpen: () => void }
               <span className="truncate">{item.domain.name}</span>
             </>
           )}
-          {item.domain && fmtWhen(item.targetDate) && <span>·</span>}
-          {fmtWhen(item.targetDate) && <span>{fmtWhen(item.targetDate)}</span>}
+          {item.domain && fmtWhen(item.at) && <span>·</span>}
+          {fmtWhen(item.at) && <span>{fmtWhen(item.at)}</span>}
         </div>
       </div>
     </button>
@@ -194,8 +194,8 @@ function LooseCard({
           <div className="line-clamp-2 text-caption font-semibold text-ink">{item.name}</div>
           <div className="mono mt-1 flex items-center gap-1.5 text-micro text-muted">
             <span>Unattributed</span>
-            {fmtWhen(item.targetDate) && <span>·</span>}
-            {fmtWhen(item.targetDate) && <span>{fmtWhen(item.targetDate)}</span>}
+            {fmtWhen(item.at) && <span>·</span>}
+            {fmtWhen(item.at) && <span>{fmtWhen(item.at)}</span>}
           </div>
         </div>
       </button>
@@ -236,9 +236,9 @@ function LooseCard({
   );
 }
 
-function fmtWhen(targetDate: string | null): string | null {
-  return targetDate
-    ? new Date(targetDate + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })
+function fmtWhen(at: string | null): string | null {
+  return at
+    ? new Date(at + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })
     : null;
 }
 

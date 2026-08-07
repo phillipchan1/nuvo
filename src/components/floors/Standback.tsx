@@ -109,7 +109,7 @@ export default function Standback({
             {invitation.readyForYou && (
               <>
                 <button onClick={() => onOpenDomain(invitation.readyForYou!.id)} className="fast font-medium underline-offset-2 hover:underline" style={{ color: invitation.readyForYou.color }}>{invitation.readyForYou.name}</button>
-                {invitation.readyForYou.lastTouchedDays >= 99
+                {invitation.readyForYou.lastTouchedDays == null
                   ? " is there whenever you want to begin its arc."
                   : ` has been quiet — it's there when you're ready, no rush.`}
               </>
