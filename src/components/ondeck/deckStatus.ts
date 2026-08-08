@@ -30,6 +30,7 @@ export const INITIATIVE_STATE_LABEL: Record<InitiativeLaneState, string> = {
   needs_shaping: "needs shaping",
   idea: "no finish line",
   parked: "parked",
+  done: "shipped",
 };
 
 /** A project's one word.
@@ -42,7 +43,7 @@ export const INITIATIVE_STATE_LABEL: Record<InitiativeLaneState, string> = {
  *  6's corollary forbids. Drift belongs where it can be explained (the record,
  *  Groom), not as a permanent orange word on a planning card. */
 export function projectCardStatus(l: OnDeckLane): DeckStatus {
-  if (l.readyTier === "done") return { label: "shipped", tone: "muted" };
+  if (l.readyTier === "done") return { label: "shipped", tone: "ready" };
   if (l.readyTier === "parked") return { label: "parked", tone: "muted" };
   const over = l.pace.read === "overdue" ? l.pace.driftDays : null;
   if (over != null && over > 0) return { label: `${over}d overdue`, tone: "signal" };
@@ -56,6 +57,7 @@ export function projectCardStatus(l: OnDeckLane): DeckStatus {
 
 /** A bet's one word — same precedence shape, one altitude up. */
 export function initiativeCardStatus(lane: InitiativeLane): DeckStatus {
+  if (lane.state === "done") return { label: "shipped", tone: "ready" };
   if (lane.state === "parked") return { label: "parked", tone: "muted" };
   if (lane.overdue) return { label: "overdue", tone: "signal" };
   if (lane.state === "at_risk") return { label: INITIATIVE_STATE_LABEL.at_risk, tone: "signal" };

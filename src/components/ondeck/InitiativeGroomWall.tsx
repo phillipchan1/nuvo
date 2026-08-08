@@ -44,6 +44,7 @@ const STATE_COLOR: Record<InitiativeLaneState, string> = {
   needs_shaping: CAUTION,
   idea: "var(--line-strong)",
   parked: "var(--muted)",
+  done: READY,
 };
 
 function InitiativeGroomCard({

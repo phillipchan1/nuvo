@@ -275,7 +275,8 @@ function ProjectCard({
       status={projectCardStatus(lane)}
       pips={done ? [true, true, true] : [lane.axes.defined, lane.axes.planned, lane.axes.fits === true]}
       pipTone={PIP_TONE[lane.readyTier]}
-      dim={done || lane.readyTier === "parked"}
+      dim={lane.readyTier === "parked"}
+      shipped={done}
     />
   );
 }

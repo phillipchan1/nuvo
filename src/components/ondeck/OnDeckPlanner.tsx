@@ -531,7 +531,8 @@ export default function OnDeckPlanner() {
                           status={projectCardStatus(l)}
                           pips={done ? [true, true, true] : [l.axes.defined, l.axes.planned, l.axes.fits === true]}
                           pipTone={PIP_TONE[l.readyTier]}
-                          dim={done || l.readyTier === "parked"}
+                          dim={l.readyTier === "parked"}
+                          shipped={done}
                         >
                           <span data-resize="start" className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize" aria-hidden />
                           <span data-resize="end" className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize" aria-hidden />

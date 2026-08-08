@@ -31,18 +31,19 @@ import DomainCoverage, { type CoverageRow } from "./DomainCoverage";
 import CoverageControls from "./CoverageControls";
 import { initiativeReadinessAxes } from "../../lib/lenses";
 import {
+  LANE_ORDER,
   quarterEndISO,
   quarterRangeLabel,
   readInitiativeDeck,
   suggestDomainForInitiative,
   type InitiativeLane,
-  type InitiativeLaneState,
 } from "../../lib/initiativeDeck";
 import { DomainPicker, PROJECT_STATUS_COLORS } from "../floors/parts";
 import ShippedStrip from "../floors/ShippedStrip";
 import InlineAdd from "./InlineAdd";
 import PlannerRail from "./PlannerRail";
 import DeckCard, { type DeckTone } from "./DeckCard";
+import { initiativeCardStatus } from "./deckStatus";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
@@ -57,17 +58,6 @@ const LABEL_W = 96;
 // domain (the pips), so a window selector was noise; near-term is what matters.
 const HORIZON_QUARTERS = 4;
 
-// The card no longer paints a colour per state — it says at most ONE thing, in
-// one of the four deck tones (see DeckCard). The labels stay; the ramp is gone.
-const STATE_LABEL: Record<InitiativeLaneState, string> = {
-  on_track: "on track",
-  at_risk: "at risk",
-  needs_okrs: "needs OKRs",
-  needs_shaping: "needs shaping",
-  idea: "no finish line",
-  parked: "parked",
-};
-
 export default function InitiativeDeck() {
   const { data, updateInitiative, updateProject, addInitiative } = useVertical();
   const { openRecord, openFloorModal, setInitiativeView } = useAppNavigation();
@@ -76,7 +66,7 @@ export default function InitiativeDeck() {
   const [coverageCollapsed, setCoverageCollapsed] = useCoverageCollapsed("initiative");
   const [filterOpen, setFilterOpen] = useState(false);
   const now = useMemo(() => new Date(), []);
-  const board = useMemo(() => readInitiativeDeck(data, now, HORIZON_QUARTERS), [data, now]);
+  const board = useMemo(() => readInitiativeDeck(data, now, HORIZON_QUARTERS, true), [data, now]);
   // The domain a lane-composed initiative lands in (reassignable in the record);
   // the first domain, mirroring the full composer's default.
   const domainsSorted = useMemo(() => [...data.domains].sort((a, b) => a.sort - b.sort), [data.domains]);
@@ -109,11 +99,9 @@ export default function InitiativeDeck() {
       arr.push(l);
       m.set(idx, arr);
     }
-    // most urgent first inside a column: at risk / overdue, then needs work
-    const order: Record<InitiativeLaneState, number> = {
-      at_risk: 0, needs_okrs: 1, needs_shaping: 2, on_track: 3, idea: 4, parked: 5,
-    };
-    for (const arr of m.values()) arr.sort((a, b) => order[a.state] - order[b.state]);
+    // most urgent first inside a column: at risk / overdue, then needs work, then
+    // parked, then finished (shared with the phone deck via LANE_ORDER)
+    for (const arr of m.values()) arr.sort((a, b) => LANE_ORDER[a.state] - LANE_ORDER[b.state]);
     return m;
   }, [board.lanes]);
 
@@ -314,8 +302,13 @@ export default function InitiativeDeck() {
                 <div aria-hidden />
                 {board.quarters.map((q) => {
               const lanes = byColumn.get(q.idx) ?? [];
+              // The per-quarter cap counts open commitments — a finished bet doesn't
+              // still owe the quarter anything, so it shouldn't trip the "over" warning
+              // or hide the empty-quarter prompt (mirrors the project deck's pinch math,
+              // which never counts a done project's hours as still-demanded).
+              const openLanes = lanes.filter((l) => l.state !== "done");
               const risky = lanes.filter((l) => l.atRisk.atRisk).length;
-              const over = lanes.length > maxPerQuarter;
+              const over = openLanes.length > maxPerQuarter;
               const dropping = dropCol === q.idx;
               // "You are here" — a quiet band on the current quarter. Orientation,
               // not alarm: `--signal` stays for at-risk; `--slot` is the drop target.
@@ -340,8 +333,8 @@ export default function InitiativeDeck() {
                       {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: NOW_MARK }} />}
                       {q.label}
                     </span>
-                    <span className="mono text-micro tabular-nums" title={`${lanes.length} committed · max ${maxPerQuarter} — your per-quarter focus cap`} style={{ color: over ? CAUTION : "var(--muted)" }}>
-                      {lanes.length}/{maxPerQuarter}{over ? " ⚠" : ""}{risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
+                    <span className="mono text-micro tabular-nums" title={`${openLanes.length} committed · max ${maxPerQuarter} — your per-quarter focus cap`} style={{ color: over ? CAUTION : "var(--muted)" }}>
+                      {openLanes.length}/{maxPerQuarter}{over ? " ⚠" : ""}{risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
                     </span>
                   </div>
                   {/* month span + week scale — each column reads when it starts and
@@ -477,7 +470,8 @@ function InitiativeCard({
   // groomed, amber = mid, faint = raw), so a partial bar reads "needs grooming".
   const axes = initiativeReadinessAxes(data, i);
   const met = (axes.defined ? 1 : 0) + (axes.planned ? 1 : 0);
-  const pipTone: DeckTone = lane.state === "parked" ? "muted" : met === 2 ? "ready" : met === 1 ? "caution" : "muted";
+  const done = lane.state === "done";
+  const pipTone: DeckTone = done ? "ready" : lane.state === "parked" ? "muted" : met === 2 ? "ready" : met === 1 ? "caution" : "muted";
 
   // The bet's weight isn't hours — it's how measured it is. Key results are the
   // unit, and attainment is the one *measured* number a bet has (Principle 6), so
@@ -489,19 +483,9 @@ function InitiativeCard({
         ? `${lane.krCount} KR${lane.krCount === 1 ? "" : "s"}`
         : `${lane.krCount} KR${lane.krCount === 1 ? "" : "s"} · ${Math.round(lane.attainment * 100)}%`;
 
-  // one status word, by precedence — the same rule the project card follows.
-  const status: { label: string; tone: DeckTone } | null =
-    lane.state === "parked"
-      ? { label: "parked", tone: "muted" }
-      : lane.overdue
-        ? { label: "overdue", tone: "signal" }
-        : lane.state === "at_risk"
-          ? { label: STATE_LABEL.at_risk, tone: "signal" }
-          : lane.gaps.length
-            ? { label: lane.gaps[0].label, tone: "caution" }
-            : lane.state === "needs_okrs" || lane.state === "idea"
-              ? { label: STATE_LABEL[lane.state], tone: "caution" }
-              : null;
+  // one status word, by precedence — the shared rule the project card follows too
+  // (the phone deck already called this; the desktop one had drifted into its own copy).
+  const status = initiativeCardStatus(lane);
 
   return (
     <DeckCard
@@ -516,9 +500,10 @@ function InitiativeCard({
       title={i.name}
       weight={weight}
       status={status}
-      pips={[axes.defined, axes.planned]}
+      pips={done ? [true, true] : [axes.defined, axes.planned]}
       pipTone={pipTone}
       dim={lane.state === "parked"}
+      shipped={done}
       footer={
         // auto-link — only when the bet has no domain yet (a placement necessity,
         // not default clutter); the deep OKR work lives in Groom / the record

@@ -19,12 +19,12 @@ import { NOW_MARK } from "../ondeck/plannerNow";
 import { useVertical } from "../../hooks/useVertical";
 import { useMaxPerQuarter } from "../../hooks/usePlannerPrefs";
 import {
+  LANE_ORDER,
   quarterEndISO,
   quarterRangeLabel,
   readInitiativeDeck,
   suggestDomainForInitiative,
   type InitiativeLane,
-  type InitiativeLaneState,
 } from "../../lib/initiativeDeck";
 import { initiativeReadinessAxes } from "../../lib/lenses";
 import { weeksBetween } from "../../lib/week";
@@ -39,11 +39,6 @@ import { Hint, VerticalList } from "./detail/verticalDetail";
 
 const HORIZON_QUARTERS = 4;
 
-// Most urgent first inside a quarter — the desktop deck's order.
-const STATE_ORDER: Record<InitiativeLaneState, number> = {
-  at_risk: 0, needs_okrs: 1, needs_shaping: 2, on_track: 3, idea: 4, parked: 5,
-};
-
 const SEG_KEY = "nuvo-mobile-initiatives-seg";
 type Seg = "ondeck" | "all";
 
@@ -55,7 +50,7 @@ export default function MobileInitiatives({
   const { data: d, ready, updateInitiative, updateProject, addInitiative } = useVertical();
   const [maxPerQuarter] = useMaxPerQuarter();
   const now = useMemo(() => new Date(), []);
-  const board = useMemo(() => readInitiativeDeck(d, now, HORIZON_QUARTERS), [d, now]);
+  const board = useMemo(() => readInitiativeDeck(d, now, HORIZON_QUARTERS, true), [d, now]);
 
   const [seg, setSegState] = useState<Seg>(() => {
     try {
@@ -91,7 +86,7 @@ export default function MobileInitiatives({
       arr.push(l);
       m.set(idx, arr);
     }
-    for (const arr of m.values()) arr.sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+    for (const arr of m.values()) arr.sort((a, b) => LANE_ORDER[a.state] - LANE_ORDER[b.state]);
     return m;
   }, [board.lanes]);
 
@@ -103,7 +98,9 @@ export default function MobileInitiatives({
       chip: q.shortLabel.split(" ")[0],
       title: q.shortLabel,
       when: `${q.label} · ${quarterRangeLabel(q.start, q.end)}`,
-      load: (byColumn.get(q.idx) ?? []).length,
+      // the cap counts open commitments — a finished bet doesn't still owe the
+      // quarter anything (mirrors the desktop deck's openLanes).
+      load: (byColumn.get(q.idx) ?? []).filter((l) => l.state !== "done").length,
       cap: maxPerQuarter,
       now: q.idx === 0,
       head: <SprintRunway total={total} spent={spent} current={q.idx === 0} />,
@@ -264,7 +261,8 @@ function InitiativeCard({
   const suggestion = lane.needsDomain ? suggestDomainForInitiative(d, i) : null;
   const axes = initiativeReadinessAxes(d, i);
   const met = (axes.defined ? 1 : 0) + (axes.planned ? 1 : 0);
-  const pipTone: DeckTone = lane.state === "parked" ? "muted" : met === 2 ? "ready" : met === 1 ? "caution" : "muted";
+  const done = lane.state === "done";
+  const pipTone: DeckTone = done ? "ready" : lane.state === "parked" ? "muted" : met === 2 ? "ready" : met === 1 ? "caution" : "muted";
 
   // The same card the desktop deck wears (D-048), sized for a thumb. The only
   // altitude tell is the spine: heavier and full-height for a bet.
@@ -278,9 +276,10 @@ function InitiativeCard({
       title={i.name}
       weight={initiativeWeight(lane)}
       status={initiativeCardStatus(lane)}
-      pips={[axes.defined, axes.planned]}
+      pips={done ? [true, true] : [axes.defined, axes.planned]}
       pipTone={pipTone}
       dim={lane.state === "parked"}
+      shipped={done}
       footer={
         // the one placement necessity: a bet with no domain gets a one-tap home
         lane.needsDomain ? (

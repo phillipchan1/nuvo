@@ -54,7 +54,22 @@ export type InitiativeLaneState =
   | "needs_okrs"
   | "needs_shaping"
   | "idea"
-  | "parked";
+  | "parked"
+  | "done";
+
+/** Most-urgent-first sort within a quarter column — shared so the desktop deck and
+ *  the phone deck can never disagree about ordering (they did, as two hand-copied
+ *  literals, until this). Finished sinks below parked, same as the project deck's
+ *  rank() (`onDeck.ts`). */
+export const LANE_ORDER: Record<InitiativeLaneState, number> = {
+  at_risk: 0,
+  needs_okrs: 1,
+  needs_shaping: 2,
+  on_track: 3,
+  idea: 4,
+  parked: 5,
+  done: 6,
+};
 
 export interface InitiativeLane {
   initiative: Initiative;
@@ -112,6 +127,7 @@ function laneState(
   gaps: LensGap[],
   atRisk: { atRisk: boolean; reasons: string[] },
 ): InitiativeLaneState {
+  if (isProjectComplete(i.status)) return "done";
   if (i.status === "waiting") return "parked";
   if (!i.targetDate) return "idea";
   if (i.keyResults.length === 0) return "needs_okrs";
@@ -158,8 +174,14 @@ export function readInitiativeDeck(
   d: VerticalData,
   now: Date,
   horizonQuarters: number = HORIZON_QUARTERS,
+  /** Keep a finished bet on the board as long as its target quarter hasn't fully
+   *  passed yet — a "done, not gone" state, mirroring `onDeck.ts`'s
+   *  `includeCompleted` for projects. Off by default so the Groom wall's source
+   *  (`allOpenInitiativeLanes`) and any other caller stay demand-only. */
+  includeCompleted: boolean = false,
 ): InitiativeDeckBoard {
   const thisStart = startOfQuarter(now);
+  const thisSerial = quarterSerial(now);
 
   const quarters: QuarterColumn[] = [];
   for (let i = 0; i < horizonQuarters; i++) {
@@ -174,8 +196,16 @@ export function readInitiativeDeck(
     });
   }
 
+  // A finished bet stays on the board only while its target quarter is still this
+  // one or later — once that quarter is behind us it's out of the horizon and
+  // drops off on its own (permanent history lives on the Shipped wall instead).
+  const completeInHorizon = (i: Initiative): boolean => {
+    if (!includeCompleted || !isProjectComplete(i.status) || !i.targetDate) return false;
+    return quarterSerial(new Date(i.targetDate + "T12:00:00")) >= thisSerial;
+  };
+
   const open = d.initiatives.filter(
-    (i) => isOpenStatus(i.status) && !isProjectComplete(i.status),
+    (i) => (isOpenStatus(i.status) && !isProjectComplete(i.status)) || completeInHorizon(i),
   );
 
   const lanes: InitiativeLane[] = [];

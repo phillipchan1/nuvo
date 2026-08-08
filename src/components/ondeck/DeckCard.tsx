@@ -43,6 +43,7 @@
 // Scope reads as mass. That's all it should ever take.
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { Icon } from "../Icon";
 import { READY } from "../floors/ReadinessBanner";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 
@@ -84,6 +85,7 @@ export default function DeckCard({
   pips,
   pipTone,
   dim,
+  shipped,
   footer,
   className = "",
   style,
@@ -110,8 +112,13 @@ export default function DeckCard({
   /** readiness axes, met/unmet — three for a project, two for a bet. */
   pips?: boolean[];
   pipTone?: DeckTone;
-  /** shipped / parked — the card recedes without disappearing. */
+  /** parked / settled — the card recedes without disappearing. Never true together
+   *  with `shipped`: a finished card reads as an affirmation, not a fade. */
   dim?: boolean;
+  /** finished — full ink, no fade, a quiet check beside the status word. The
+   *  Shipped wall's own restrained look, brought inline (Principle 9: no badge
+   *  register, just "this happened"). */
+  shipped?: boolean;
   /** card-specific extras (the initiative's auto-link chip). */
   footer?: ReactNode;
   className?: string;
@@ -176,7 +183,12 @@ export default function DeckCard({
           {weight ? <span className="tabular-nums"> · {weight}</span> : null}
         </span>
         {status && (
-          <span className="mono min-w-0 shrink truncate text-micro" style={{ color: TONE_COLOR[status.tone] }} title={status.label}>
+          <span
+            className="mono flex min-w-0 shrink items-center gap-1 truncate text-micro"
+            style={{ color: TONE_COLOR[status.tone] }}
+            title={status.label}
+          >
+            {shipped && <Icon name="check" size={10} />}
             {status.label}
           </span>
         )}
