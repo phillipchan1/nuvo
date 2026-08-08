@@ -15,6 +15,7 @@ import { patchCaches } from "./useTasks";
 import { invalidateWhenSafe, makeOp, queueWrite, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
 import { upsertPushVerdict } from "../lib/priorities";
+import { titleCase } from "../lib/text";
 import {
   DEFAULT_DURATION_MINUTES,
   DEFAULT_PROJECT_DURATION_MINUTES,
@@ -744,7 +745,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         for (const [i, s] of specs.entries()) {
           await queueWrite(
             makeOp("domains", "insert", crypto.randomUUID(), {
-              name: s.name,
+              name: titleCase(s.name),
               color: s.color,
               icon: "◇",
               sort_order: base + i + 1,
@@ -755,7 +756,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
       updateDomain: (id, patch) => {
         const rowPatch: Record<string, unknown> = {};
-        if (patch.name != null) rowPatch.name = patch.name;
+        if (patch.name != null) rowPatch.name = titleCase(patch.name);
         if (patch.color != null) rowPatch.color = patch.color;
         if (patch.icon != null) rowPatch.icon = patch.icon;
         if (patch.intention != null) rowPatch.intention = patch.intention;
@@ -782,7 +783,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         const id = crypto.randomUUID();
         const insert: Record<string, unknown> = {
           domain_id: domainId,
-          name: init?.name?.trim() || "New initiative",
+          name: init?.name?.trim() ? titleCase(init.name) : "New initiative",
         };
         if (init?.outcome != null) insert.outcome = init.outcome.trim();
         if (init?.description != null) insert.description = init.description.trim();
@@ -811,7 +812,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
       updateInitiative: (id, patch) => {
         const rowPatch: Record<string, unknown> = {};
-        if (patch.name != null) rowPatch.name = patch.name;
+        if (patch.name != null) rowPatch.name = titleCase(patch.name);
         if (patch.outcome != null) rowPatch.outcome = patch.outcome;
         if (patch.description != null) rowPatch.description = patch.description;
         if ("startDate" in patch) rowPatch.start_date = patch.startDate;
@@ -864,7 +865,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       // sort_order appends the new project after the existing ones.
       addProject: async (domainId, initiativeId, init) => {
         const tempId = crypto.randomUUID();
-        const name = init?.name?.trim() || "New project";
+        const name = init?.name?.trim() ? titleCase(init.name) : "New project";
         const status = (init?.status ?? "backlog") as Project["status"];
         const sortOrder = Date.now();
         const optimistic: ProjectRow = {
@@ -925,7 +926,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
       updateProject: (id, patch) => {
         const rowPatch: Record<string, unknown> = {};
-        if (patch.name != null) rowPatch.name = patch.name;
+        if (patch.name != null) rowPatch.name = titleCase(patch.name);
         if (patch.outcome != null) rowPatch.outcome = patch.outcome;
         if (patch.description != null) rowPatch.description = patch.description;
         if ("startDate" in patch) rowPatch.start_date = patch.startDate;
