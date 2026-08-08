@@ -43,9 +43,8 @@
 // Scope reads as mass. That's all it should ever take.
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { Icon } from "../Icon";
 import { READY } from "../floors/ReadinessBanner";
-import { PROJECT_STATUS_COLORS } from "../floors/parts";
+import { PROJECT_STATUS_COLORS, ShipSeal } from "../floors/parts";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 
@@ -188,7 +187,7 @@ export default function DeckCard({
             style={{ color: TONE_COLOR[status.tone] }}
             title={status.label}
           >
-            {shipped && <Icon name="check" size={10} />}
+            {shipped && <ShipSeal size={16} />}
             {status.label}
           </span>
         )}

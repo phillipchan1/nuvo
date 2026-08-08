@@ -138,6 +138,22 @@ export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
 // Initiatives speak the same status vocabulary as projects now — reuse
 // PROJECT_STATUS / PROJECT_STATUS_COLORS / PROJECT_STATUS_LABEL above.
 
+/** The mark a finished project/initiative wears: a tinted circle holding a
+ *  check — a badge, not a color tweak. Originated on the Shipped wall
+ *  (`ShippedWall.tsx`'s `ShippedCard`); shared here so a deck card, a record
+ *  header, and the wall never grow three different ideas of what "done" looks
+ *  like. Sized down for a compact meta line, at its native size for a header. */
+export function ShipSeal({ size = 22 }: { size?: number }) {
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-full"
+      style={{ height: size, width: size, background: `color-mix(in srgb, ${PROJECT_STATUS_COLORS.complete} 14%, transparent)` }}
+    >
+      <Icon name="check" size={Math.round(size * 0.55)} style={{ color: PROJECT_STATUS_COLORS.complete }} />
+    </span>
+  );
+}
+
 // ── Ripeness pip — ambient readiness, gray (raw) → green (active) ────────────
 // The one source for the dot is the computed Ripeness; the ramp leans on the
 // "complete" teal already in the status vocab, so no new green is introduced.

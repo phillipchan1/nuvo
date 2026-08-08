@@ -273,7 +273,7 @@ function ProjectCard({
       title={lane.project.name}
       weight={done ? null : deckWeight(lane.pace.remainingMins)}
       status={projectCardStatus(lane)}
-      pips={done ? [true, true, true] : [lane.axes.defined, lane.axes.planned, lane.axes.fits === true]}
+      pips={done ? undefined : [lane.axes.defined, lane.axes.planned, lane.axes.fits === true]}
       pipTone={PIP_TONE[lane.readyTier]}
       dim={lane.readyTier === "parked"}
       shipped={done}

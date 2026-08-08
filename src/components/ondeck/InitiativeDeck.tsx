@@ -500,7 +500,7 @@ function InitiativeCard({
       title={i.name}
       weight={weight}
       status={status}
-      pips={done ? [true, true] : [axes.defined, axes.planned]}
+      pips={done ? undefined : [axes.defined, axes.planned]}
       pipTone={pipTone}
       dim={lane.state === "parked"}
       shipped={done}

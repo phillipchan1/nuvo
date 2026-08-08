@@ -529,7 +529,7 @@ export default function OnDeckPlanner() {
                           // hours explains an over-committed sprint; a count doesn't.
                           weight={done ? null : deckWeight(l.pace.remainingMins)}
                           status={projectCardStatus(l)}
-                          pips={done ? [true, true, true] : [l.axes.defined, l.axes.planned, l.axes.fits === true]}
+                          pips={done ? undefined : [l.axes.defined, l.axes.planned, l.axes.fits === true]}
                           pipTone={PIP_TONE[l.readyTier]}
                           dim={l.readyTier === "parked"}
                           shipped={done}

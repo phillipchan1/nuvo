@@ -23,6 +23,7 @@ import {
   initiativeAttainment,
   initiativeProgress,
   initiativesOf,
+  isProjectComplete,
   looseTasksOfInitiative,
   projectProgress,
   projectsOf,
@@ -36,7 +37,7 @@ import {
   type VerticalData,
 } from "../../../lib/vertical";
 import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../../lib/tending";
-import { DomainPicker, RipenessPip } from "../../floors/parts";
+import { DomainPicker, RipenessPip, ShipSeal } from "../../floors/parts";
 import { whenText } from "../../floors/TaskList";
 
 export type Store = ReturnType<typeof useVertical>;
@@ -220,6 +221,7 @@ export function InitiativeScreen({
         outcome={i.outcome}
         onOutcome={(v) => store.updateInitiative(i.id, { outcome: v })}
         outcomePlaceholder="What does done look like, in one line?"
+        shipped={isProjectComplete(i.status)}
       />
 
       {/* A bet's "when" is a QUARTER — and its runway is counted in weeks, the
@@ -340,6 +342,7 @@ export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store;
         outcome={p.outcome}
         onOutcome={(v) => store.updateProject(p.id, { outcome: v })}
         outcomePlaceholder="What does done look like, in one line?"
+        shipped={isProjectComplete(p.status)}
       />
 
       {/* A project's "when" is a WEEK, not two dates — the same commitment the
@@ -852,6 +855,7 @@ export function RecordHead({
   accent,
   center = false,
   flourish,
+  shipped = false,
 }: {
   name: string;
   onName: (v: string) => void;
@@ -864,15 +868,26 @@ export function RecordHead({
   center?: boolean;
   /** An optional rule between the name and the mandate (the domain's Flourish). */
   flourish?: ReactNode;
+  /** Finished — the same seal the desktop record's checkbox marks. Read-only here:
+   *  the actual ship/reopen toggle lives in the screen's Status section below, so
+   *  this isn't a second control, just parity with what desktop shows at rest. */
+  shipped?: boolean;
 }) {
   return (
     <div className={`pb-1 ${center ? "text-center" : ""}`}>
-      <TextField
-        className={`text-display masthead leading-tight ${center ? "text-center" : ""}`}
-        value={name}
-        onCommit={onName}
-        style={{ caretColor: accent }}
-      />
+      <div className={`flex items-start gap-2 ${center ? "justify-center" : ""}`}>
+        {shipped && (
+          <span className="mt-[5px]">
+            <ShipSeal size={22} />
+          </span>
+        )}
+        <TextField
+          className={`min-w-0 flex-1 text-display masthead leading-tight ${center ? "text-center" : ""}`}
+          value={name}
+          onCommit={onName}
+          style={{ caretColor: accent }}
+        />
+      </div>
       {flourish && <div className="my-2 flex justify-center">{flourish}</div>}
       <AreaField
         className={`mt-1 leading-snug ${center ? "serif text-head italic" : "text-head"}`}

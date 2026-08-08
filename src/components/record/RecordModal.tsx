@@ -498,6 +498,7 @@ function InitiativeRecord({
   const childPct = projects.length
     ? Math.round(projects.reduce((s, p) => s + projectProgress(data, p), 0) / projects.length)
     : 0;
+  const shipped = isProjectComplete(initiative.status);
 
   return (
     <Sheet variant="bounded" spine={accent} wide={assessing} sheetRef={sheetRef}>
@@ -535,6 +536,17 @@ function InitiativeRecord({
         }
         name={initiative.name}
         onName={(v) => updateInitiative(initiative.id, { name: v })}
+        titlePrefix={
+          <button
+            onClick={() => updateInitiative(initiative.id, { status: shipped ? "in_progress" : "complete" })}
+            aria-label={shipped ? "Reopen initiative" : "Ship initiative — mark complete"}
+            title={shipped ? "Shipped — tap to reopen" : "Finished — ship it"}
+            className="group/chk fast mt-[5px] flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
+            style={shipped ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
+          >
+            <Icon name="check" size={11} className={shipped ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: shipped ? "#fff" : READY }} />
+          </button>
+        }
         outcome={initiative.outcome}
         onOutcome={(v) => updateInitiative(initiative.id, { outcome: v })}
         outcomePlaceholder="The outcome, one inspiring line — not a task"
@@ -631,10 +643,17 @@ function InitiativeRecord({
                       eyebrow={pDomain?.name ?? "—"}
                       title={p.name}
                       weight={deckWeight(pOpen.reduce((s, t) => s + (t.durationMins || 0), 0))}
-                      status={p.targetDate ? { label: weekName(new Date(p.targetDate + "T12:00:00")), tone: "muted" } : null}
-                      pips={[pAxes.defined, pAxes.planned, pAxes.fits ?? true]}
+                      status={
+                        p.status === "complete"
+                          ? { label: "shipped", tone: "ready" }
+                          : p.targetDate
+                            ? { label: weekName(new Date(p.targetDate + "T12:00:00")), tone: "muted" }
+                            : null
+                      }
+                      pips={p.status === "complete" ? undefined : [pAxes.defined, pAxes.planned, pAxes.fits ?? true]}
                       pipTone="muted"
-                      dim={p.status === "complete" || p.status === "cancelled"}
+                      dim={p.status === "cancelled"}
+                      shipped={p.status === "complete"}
                       className="cursor-pointer"
                       onClick={() => onOpenProject(p.id)}
                     />

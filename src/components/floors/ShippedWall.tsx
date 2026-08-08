@@ -20,7 +20,7 @@ import { readShipped, type ShippedItem } from "../../lib/shipped";
 import { suggestDomainForText } from "../../lib/initiativeDeck";
 import type { Domain } from "../../lib/vertical";
 import { READY } from "./ReadinessBanner";
-import { FloorHeader } from "./parts";
+import { FloorHeader, ShipSeal } from "./parts";
 import ShippedRail from "./ShippedRail";
 
 export default function ShippedWall({ rung }: { rung: "project" | "initiative" }) {
@@ -138,11 +138,8 @@ function ShippedCard({ item, onOpen }: { item: ShippedItem; onOpen: () => void }
     >
       {/* domain rail — which area this belongs to */}
       <span className="pointer-events-none absolute inset-y-2.5 left-0 w-[3px] rounded-full" style={{ background: dot }} />
-      <span
-        className="mt-[1px] flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full"
-        style={{ background: `color-mix(in srgb, ${READY} 14%, transparent)` }}
-      >
-        <Seal color={READY} />
+      <span className="mt-[1px]">
+        <ShipSeal size={22} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="line-clamp-2 text-caption font-semibold text-ink">{item.name}</div>

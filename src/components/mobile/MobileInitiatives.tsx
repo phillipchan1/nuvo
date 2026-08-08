@@ -276,7 +276,7 @@ function InitiativeCard({
       title={i.name}
       weight={initiativeWeight(lane)}
       status={initiativeCardStatus(lane)}
-      pips={done ? [true, true] : [axes.defined, axes.planned]}
+      pips={done ? undefined : [axes.defined, axes.planned]}
       pipTone={pipTone}
       dim={lane.state === "parked"}
       shipped={done}
