@@ -780,32 +780,50 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       // ── initiatives ──────────────────────────────────────────────────────
       addInitiative: async (domainId, init) => {
         const id = crypto.randomUUID();
+        const name = init?.name?.trim() || "New initiative";
+        const outcome = init?.outcome?.trim() ?? "";
+        const description = init?.description?.trim() ?? "";
+        const startDate = init?.startDate ?? null;
+        const targetDate = init?.targetDate ?? null;
+        const status = init?.status ?? "in_progress";
+        const sortOrder = Date.now();
+        const createdAt = new Date().toISOString();
+
         const insert: Record<string, unknown> = {
           domain_id: domainId,
-          name: init?.name?.trim() || "New initiative",
+          name,
+          sort_order: sortOrder,
         };
-        if (init?.outcome != null) insert.outcome = init.outcome.trim();
-        if (init?.description != null) insert.description = init.description.trim();
-        if ("startDate" in (init ?? {})) insert.start_date = init?.startDate ?? null;
-        if ("targetDate" in (init ?? {})) insert.target_date = init?.targetDate ?? null;
-        if (init?.status != null) insert.status = init.status;
+        if (init?.outcome != null) insert.outcome = outcome;
+        if (init?.description != null) insert.description = description;
+        if ("startDate" in (init ?? {})) insert.start_date = startDate;
+        if ("targetDate" in (init ?? {})) insert.target_date = targetDate;
+        if (init?.status != null) insert.status = status;
 
+        // The optimistic row must satisfy the full InitiativeRow shape — a
+        // partial `insert` spread here left `outcome` undefined for callers
+        // that omit it (e.g. mobile's quick-add), which crashed every reader
+        // that does `initiative.outcome.trim()`.
+        const optimisticRow: InitiativeRow = {
+          id, domain_id: domainId, name, outcome, description,
+          start_date: startDate, target_date: targetDate, status,
+          momentum: "flat", progress: 0, sort_order: sortOrder,
+          created_at: createdAt, tended_at: null,
+          verification: null, verified_at: null, brief: null,
+          key_results: [],
+        };
         qc.setQueryData<InitiativeRow[]>(["vertical", "initiatives"], (old) =>
-          old ? [...old, { id, ...insert } as InitiativeRow] : old,
+          old ? [...old, optimisticRow] : [optimisticRow],
         );
         await queueWrite(makeOp("initiatives", "insert", id, insert));
         invalidateWhenSafe(qc, "initiatives", ["vertical"]);
 
         return {
-          id, domainId, name: insert.name as string,
-          outcome: (insert.outcome as string) ?? "",
-          description: (insert.description as string) ?? "",
-          startDate: (insert.start_date as string) ?? null,
-          targetDate: (insert.target_date as string) ?? null,
-          status: normalizeInitiativeStatus((insert.status as string) ?? "in_progress"),
+          id, domainId, name, outcome, description, startDate, targetDate,
+          status: normalizeInitiativeStatus(status),
           progress: 0,
           momentum: "flat" as Initiative["momentum"], keyResults: [],
-          createdAt: new Date().toISOString(), tendedAt: null,
+          createdAt, tendedAt: null,
           verification: null, verifiedAt: null, brief: null,
         };
       },
