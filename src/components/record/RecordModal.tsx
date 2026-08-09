@@ -537,14 +537,17 @@ function InitiativeRecord({
         name={initiative.name}
         onName={(v) => updateInitiative(initiative.id, { name: v })}
         titlePrefix={
+          // A bet outweighs a project (D-048's "scope reads as mass") — the same
+          // checkbox as ProjectRecord's, just bigger: a heavier border, a bigger
+          // check, so a shipped initiative visibly carries more weight at rest.
           <button
             onClick={() => updateInitiative(initiative.id, { status: shipped ? "in_progress" : "complete" })}
             aria-label={shipped ? "Reopen initiative" : "Ship initiative — mark complete"}
             title={shipped ? "Shipped — tap to reopen" : "Finished — ship it"}
-            className="group/chk fast mt-[5px] flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
+            className="group/chk fast mt-[3px] flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border-2"
             style={shipped ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
           >
-            <Icon name="check" size={11} className={shipped ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: shipped ? "#fff" : READY }} />
+            <Icon name="check" size={13} className={shipped ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: shipped ? "#fff" : READY }} />
           </button>
         }
         outcome={initiative.outcome}

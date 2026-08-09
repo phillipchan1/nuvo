@@ -140,10 +140,19 @@ export default function DeckCard({
       onContextMenu={onContextMenu}
       onPointerDown={onPointerDown}
       onClick={onClick}
-      className={`group/card glass-card lift-anim fast relative flex select-none flex-col border border-line pl-4 pr-3 hover:border-line-strong ${
-        phone ? "rounded-xl py-3" : "rounded-lg py-2.5"
-      } ${className}`}
-      style={{ opacity: dim ? 0.55 : undefined, ...style }}
+      className={`group/card ${shipped ? "glass-tint" : "glass-card"} lift-anim fast relative flex select-none flex-col border pl-4 pr-3 hover:border-line-strong ${
+        shipped ? "" : "border-line"
+      } ${phone ? "rounded-xl py-3" : "rounded-lg py-2.5"} ${className}`}
+      style={{
+        opacity: dim ? 0.55 : undefined,
+        ...(shipped
+          ? ({
+              "--tint": PROJECT_STATUS_COLORS.complete,
+              borderColor: `color-mix(in srgb, ${PROJECT_STATUS_COLORS.complete} 35%, var(--line))`,
+            } as CSSProperties)
+          : {}),
+        ...style,
+      }}
     >
       {/* The one thing that differs between the altitudes. A project wears a 3px
           rounded spine inset from the card's ends — a mark *on* the card, the bar
@@ -183,11 +192,13 @@ export default function DeckCard({
         </span>
         {status && (
           <span
-            className="mono flex min-w-0 shrink items-center gap-1 truncate text-micro"
+            className={`mono flex min-w-0 shrink items-center gap-1 truncate ${
+              shipped ? `font-semibold ${bounded ? "text-caption" : "text-micro"}` : "text-micro"
+            }`}
             style={{ color: TONE_COLOR[status.tone] }}
             title={status.label}
           >
-            {shipped && <ShipSeal size={16} />}
+            {shipped && <ShipSeal size={bounded ? 22 : 18} />}
             {status.label}
           </span>
         )}

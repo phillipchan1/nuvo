@@ -104,7 +104,7 @@ export default function ShippedWall({ rung }: { rung: "project" | "initiative" }
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-2.5">
                     {g.items.map((it) =>
                       it.domain ? (
-                        <ShippedCard key={it.id} item={it} onOpen={() => openRecord(rung, it.id)} />
+                        <ShippedCard key={it.id} item={it} rung={rung} onOpen={() => openRecord(rung, it.id)} />
                       ) : (
                         <LooseCard
                           key={it.id}
@@ -129,7 +129,7 @@ export default function ShippedWall({ rung }: { rung: "project" | "initiative" }
   );
 }
 
-function ShippedCard({ item, onOpen }: { item: ShippedItem; onOpen: () => void }) {
+function ShippedCard({ item, rung, onOpen }: { item: ShippedItem; rung: "project" | "initiative"; onOpen: () => void }) {
   const dot = item.domain?.color ?? "var(--line-strong)";
   return (
     <button
@@ -139,7 +139,7 @@ function ShippedCard({ item, onOpen }: { item: ShippedItem; onOpen: () => void }
       {/* domain rail — which area this belongs to */}
       <span className="pointer-events-none absolute inset-y-2.5 left-0 w-[3px] rounded-full" style={{ background: dot }} />
       <span className="mt-[1px]">
-        <ShipSeal size={22} />
+        <ShipSeal size={rung === "initiative" ? 26 : 22} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="line-clamp-2 text-caption font-semibold text-ink">{item.name}</div>

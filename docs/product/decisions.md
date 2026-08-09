@@ -2783,6 +2783,31 @@ still loses. A hybrid logical clock would close it.
 50 writes remain online-only, inventoried in the spec. 96 tests in `tests/sync/`.*
 
 ---
+
+**D-092 · 2026-08-09 · A shipped project/initiative gets a heavier, tinted mark — a
+deliberate, scoped strain of Principle 9.**
+
+The On Deck card, the Shipped wall's card, and both records used to mark "finished" the same
+way everything else settles — a faded card or a single small check. Read back against a real
+screenshot, a shipped card was indistinguishable from a healthy in-progress one at a glance,
+the opposite of what the state needs to say. The fix (`ShipSeal` in `floors/parts.tsx`,
+shared by `DeckCard.tsx`, `ShippedWall.tsx`, and both record headers) gives shipped work a
+tinted card background, a bigger badge, and a bolder label — and scales that weight by
+altitude, since a finished initiative is a bigger deal than a finished project (the same
+"scope reads as mass" rule D-048 established for the live card).
+
+This leans on Principle 9 ("quiet by default… violated when something animates, colors, or
+notifies for engagement rather than information") and on D-087's explicit ban on a "badge
+register" for a freshly-finished thing. Decided deliberately, not silently: the treatment is
+**static only** — no pop, glow, or one-time celebration. The app already has that primitive
+(`useRefinedCelebration` + `.seal-draw`, built for the "all groomed" seal) and it was
+considered and declined here, specifically to keep this on the "information" side of P9's
+own test rather than the "engagement" side. If this starts reading as a trophy in practice,
+that's the signal to revisit.
+
+*Status: standing.*
+
+---
 ---
 ## 3 · Open questions (decide these deliberately)
 

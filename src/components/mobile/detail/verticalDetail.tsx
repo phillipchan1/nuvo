@@ -222,6 +222,7 @@ export function InitiativeScreen({
         onOutcome={(v) => store.updateInitiative(i.id, { outcome: v })}
         outcomePlaceholder="What does done look like, in one line?"
         shipped={isProjectComplete(i.status)}
+        sealSize={26}
       />
 
       {/* A bet's "when" is a QUARTER — and its runway is counted in weeks, the
@@ -856,6 +857,7 @@ export function RecordHead({
   center = false,
   flourish,
   shipped = false,
+  sealSize = 22,
 }: {
   name: string;
   onName: (v: string) => void;
@@ -872,13 +874,16 @@ export function RecordHead({
    *  the actual ship/reopen toggle lives in the screen's Status section below, so
    *  this isn't a second control, just parity with what desktop shows at rest. */
   shipped?: boolean;
+  /** A bet outweighs a project (D-048's "scope reads as mass") — initiatives pass
+   *  a bigger seal than the default project size. */
+  sealSize?: number;
 }) {
   return (
     <div className={`pb-1 ${center ? "text-center" : ""}`}>
       <div className={`flex items-start gap-2 ${center ? "justify-center" : ""}`}>
         {shipped && (
           <span className="mt-[5px]">
-            <ShipSeal size={22} />
+            <ShipSeal size={sealSize} />
           </span>
         )}
         <TextField
