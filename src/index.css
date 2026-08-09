@@ -1253,6 +1253,88 @@ body.odp-dragging [data-resize] {
   animation: sealCheck 0.5s var(--ease-out) 0.12s both;
 }
 
+/* ── Ship stamp — a wax-seal mark for a finished project/initiative. Unlike
+   sealPop/sealHalo/sealCheck above (hardcoded seconds, one-time and one-way),
+   this references each skin's own --d-moment/--d-base/--ease-* tokens, so
+   Terminal stamps fast+mechanical, Blueprint draws linear, and e-ink collapses
+   to its "no smooth motion, the display just refreshes" identity — and it
+   animates BOTH directions: stamping down on ship, lifting away on reopen. */
+@keyframes ship-stamp-press {
+  0%   { transform: scale(1.55) rotate(-7deg); }
+  55%  { transform: scale(0.93) rotate(1.5deg); }
+  78%  { transform: scale(1.05) rotate(-0.5deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+@keyframes ship-stamp-lift {
+  0%   { transform: scale(1) rotate(0deg); }
+  30%  { transform: scale(1.12) rotate(-4deg); }
+  65%  { transform: scale(0.95) rotate(2deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.ship-stamp--stamping {
+  animation: ship-stamp-press var(--d-moment, 540ms) var(--ease-spring, cubic-bezier(0.34, 1.4, 0.5, 1)) both;
+}
+.ship-stamp--lifting {
+  animation: ship-stamp-lift var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+/* Ink fade — the tint disc, both rings, and the arced lettering print in
+   together on stamp-down and fade back to a hollow ghost on lift-off. Each
+   keeps its OWN resting opacity (a ring reads heavier than the wash), so they
+   interpolate independently rather than as one flat cross-fade. */
+@keyframes ship-ink-in-tint   { from { opacity: 0; }    to { opacity: 1; } }
+@keyframes ship-ink-out-tint  { from { opacity: 1; }    to { opacity: 0; } }
+@keyframes ship-ink-in-outer  { from { opacity: 0.15; } to { opacity: 0.35; } }
+@keyframes ship-ink-out-outer { from { opacity: 0.35; } to { opacity: 0.15; } }
+@keyframes ship-ink-in-inner  { from { opacity: 0.35; } to { opacity: 0.9; } }
+@keyframes ship-ink-out-inner { from { opacity: 0.9; }  to { opacity: 0.35; } }
+@keyframes ship-ink-in-text   { from { opacity: 0; }    to { opacity: 0.85; } }
+@keyframes ship-ink-out-text  { from { opacity: 0.85; } to { opacity: 0; } }
+@keyframes ship-check-in  { 0% { opacity: 0; transform: scale(0.5); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes ship-check-out { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(0.6); } }
+
+.ship-check { transform-origin: 50px 50px; }
+
+.ship-stamp--stamping .ship-tint       { animation: ship-ink-in-tint  var(--d-moment, 540ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+.ship-stamp--stamping .ship-ring-outer { animation: ship-ink-in-outer var(--d-moment, 540ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+.ship-stamp--stamping .ship-ring-inner { animation: ship-ink-in-inner var(--d-moment, 540ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+.ship-stamp--stamping .ship-text       { animation: ship-ink-in-text  var(--d-moment, 540ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+.ship-stamp--stamping .ship-check {
+  animation: ship-check-in calc(var(--d-moment, 540ms) * 0.65) var(--ease-spring, cubic-bezier(0.34, 1.4, 0.5, 1)) calc(var(--d-moment, 540ms) * 0.3) both;
+}
+
+.ship-stamp--lifting .ship-tint       { animation: ship-ink-out-tint  var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+.ship-stamp--lifting .ship-ring-outer { animation: ship-ink-out-outer var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+.ship-stamp--lifting .ship-ring-inner { animation: ship-ink-out-inner var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+.ship-stamp--lifting .ship-text       { animation: ship-ink-out-text  var(--d-base, 220ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both; }
+.ship-stamp--lifting .ship-check {
+  animation: ship-check-out calc(var(--d-base, 220ms) * 0.7) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+/* Steady states — the JS timer settles here after each transition so a later
+   reverse can retrigger --stamping/--lifting cleanly (class-name changes
+   re-trigger CSS animations; leaving the same class applied does not). */
+.ship-stamp--on .ship-tint        { opacity: 1; }
+.ship-stamp--on .ship-ring-outer  { opacity: 0.35; }
+.ship-stamp--on .ship-ring-inner  { opacity: 0.9; }
+.ship-stamp--on .ship-text        { opacity: 0.85; }
+.ship-stamp--on .ship-check       { opacity: 1; }
+
+.ship-stamp--off .ship-tint       { opacity: 0; }
+.ship-stamp--off .ship-ring-outer { opacity: 0.15; }
+.ship-stamp--off .ship-ring-inner { opacity: 0.35; }
+.ship-stamp--off .ship-text       { opacity: 0; }
+.ship-stamp--off .ship-check      { opacity: 0; }
+
+/* The one interactive exception: a button wrapping an off-phase (ghost)
+   stamp reveals a faint preview of the check on hover/focus — the same
+   hover-reveal the old bespoke buttons used (`group-hover/chk:opacity-60`),
+   just moved onto the stamp's own check path. */
+.group\/chk:hover .ship-stamp--off .ship-check,
+.group\/chk:focus-visible .ship-stamp--off .ship-check {
+  opacity: 0.5;
+}
+
 /* Marquee multi-select — suppress text selection while dragging */
 body.nuvo-selecting,
 body.nuvo-selecting * {

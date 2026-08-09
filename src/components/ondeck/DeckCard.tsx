@@ -44,7 +44,8 @@
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { READY } from "../floors/ReadinessBanner";
-import { PROJECT_STATUS_COLORS, ShipSeal } from "../floors/parts";
+import { PROJECT_STATUS_COLORS } from "../floors/parts";
+import { ShipStamp } from "../ShipStamp";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 
@@ -198,7 +199,7 @@ export default function DeckCard({
             style={{ color: TONE_COLOR[status.tone] }}
             title={status.label}
           >
-            {shipped && <ShipSeal size={bounded ? 22 : 18} />}
+            {shipped && <ShipStamp shipped size={bounded ? 22 : 18} />}
             {status.label}
           </span>
         )}

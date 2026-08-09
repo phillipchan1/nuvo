@@ -20,7 +20,8 @@ import { readShipped, type ShippedItem } from "../../lib/shipped";
 import { suggestDomainForText } from "../../lib/initiativeDeck";
 import type { Domain } from "../../lib/vertical";
 import { READY } from "./ReadinessBanner";
-import { FloorHeader, ShipSeal } from "./parts";
+import { FloorHeader } from "./parts";
+import { ShipStamp } from "../ShipStamp";
 import ShippedRail from "./ShippedRail";
 
 export default function ShippedWall({ rung }: { rung: "project" | "initiative" }) {
@@ -139,7 +140,7 @@ function ShippedCard({ item, rung, onOpen }: { item: ShippedItem; rung: "project
       {/* domain rail — which area this belongs to */}
       <span className="pointer-events-none absolute inset-y-2.5 left-0 w-[3px] rounded-full" style={{ background: dot }} />
       <span className="mt-[1px]">
-        <ShipSeal size={rung === "initiative" ? 26 : 22} />
+        <ShipStamp shipped size={rung === "initiative" ? 26 : 22} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="line-clamp-2 text-caption font-semibold text-ink">{item.name}</div>

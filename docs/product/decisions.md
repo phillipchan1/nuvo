@@ -2805,6 +2805,39 @@ considered and declined here, specifically to keep this on the "information" sid
 own test rather than the "engagement" side. If this starts reading as a trophy in practice,
 that's the signal to revisit.
 
+*Status: superseded by D-093 — see below.*
+
+---
+
+**D-093 · 2026-08-09 · The ship mark now animates both ways — a deliberate, user-directed
+reversal of D-092's "static only," redesigned as a wax-seal stamp.**
+
+D-092 named its own revisit trigger: "if this starts reading as a trophy in practice." That's
+not what triggered this — the trigger here is a direct design request (a stamp motif, plus a
+"neat animation for check/uncheck" in both directions), a different kind of signal than the one
+D-092 anticipated, but the same discipline: decide it out loud rather than let it drift in.
+
+`ShipStamp` (`src/components/ShipStamp.tsx`) replaces `ShipSeal` — a double solid ring (never
+dashed — Nuvo's own house rule already says a dashed line "reads as noise") + an arced "SHIPPED"
+band + a check SVG stands in for the flat tinted circle, and it now plays a stamp-down animation
+when a project or initiative ships, and a lift-off when it's reopened. That's the first
+bidirectional check/uncheck animation in the app: `TaskRow`'s `completing` bloom and D-092's own
+declined `.seal-draw` primitive both only ever animate one direction (done, or "all groomed").
+
+This still tests against Principle 9 the way D-092 did, and still passes: the animation fires
+only as the direct, synchronous result of the user's own click on the record's checkbox — never
+ambient, never time-delayed, never a notification — and carries no glow/halo/celebration burst
+(deliberately narrower than the `.seal-draw` primitive this declines a second time). Motion is
+gated through the same `--d-moment`/`--d-base`/`--ease-*` tokens every other transition in the
+app already uses per skin, so it inherits each material's own identity rather than repeating
+`.seal-draw`'s mistake of hardcoded seconds — e-ink still gets a near-instant "refresh," not a
+special-cased celebration.
+
+Scope stays narrow: the passive display sites (`DeckCard`, `ShippedWall`, mobile `RecordHead`)
+get the new stamp graphic but no new behavior — still conditionally mounted, no animation plays
+there. Only the two live toggles in `RecordModal` — the one place a user watches the state
+change happen — actually witness the stamp-down/lift-off transition.
+
 *Status: standing.*
 
 ---

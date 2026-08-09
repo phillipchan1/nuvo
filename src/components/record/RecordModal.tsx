@@ -36,7 +36,6 @@
 // live in the ··· overflow, where a destructive act belongs.
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { Icon } from "../Icon";
 import { useVertical } from "../../hooks/useVertical";
 import {
   domainById,
@@ -65,9 +64,9 @@ import {
   InlineText,
   PROJECT_STATUS_COLORS,
 } from "../floors/parts";
-import { READY } from "../floors/ReadinessBanner";
 import TaskList, { isTypingIn } from "../floors/TaskList";
 import DeckCard, { deckWeight } from "../ondeck/DeckCard";
+import { ShipStamp } from "../ShipStamp";
 import { QuarterBand, WeekBand } from "./PlacementBand";
 import { RecordLog } from "./RecordLog";
 import { AssessLayer, type AssessFinding } from "./AssessLayer";
@@ -285,10 +284,9 @@ function ProjectRecord({
             onClick={() => (shipped ? updateProject(project.id, { status: "in_progress" }) : setShipping(true))}
             aria-label={shipped ? "Reopen project" : "Ship project — mark complete"}
             title={shipped ? "Shipped — tap to reopen" : "Finished — ship it"}
-            className="group/chk fast mt-[5px] flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border"
-            style={shipped ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
+            className="group/chk fast mt-[5px] flex h-[22px] w-[22px] shrink-0 items-center justify-center"
           >
-            <Icon name="check" size={11} className={shipped ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: shipped ? "#fff" : READY }} />
+            <ShipStamp shipped={shipped} size={22} />
           </button>
         }
         outcome={project.outcome}
@@ -538,16 +536,15 @@ function InitiativeRecord({
         onName={(v) => updateInitiative(initiative.id, { name: v })}
         titlePrefix={
           // A bet outweighs a project (D-048's "scope reads as mass") — the same
-          // checkbox as ProjectRecord's, just bigger: a heavier border, a bigger
-          // check, so a shipped initiative visibly carries more weight at rest.
+          // stamp as ProjectRecord's, just bigger, so a shipped initiative
+          // visibly carries more weight at rest.
           <button
             onClick={() => updateInitiative(initiative.id, { status: shipped ? "in_progress" : "complete" })}
             aria-label={shipped ? "Reopen initiative" : "Ship initiative — mark complete"}
             title={shipped ? "Shipped — tap to reopen" : "Finished — ship it"}
-            className="group/chk fast mt-[3px] flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border-2"
-            style={shipped ? { background: READY, borderColor: READY } : { borderColor: "var(--line-strong)" }}
+            className="group/chk fast mt-[3px] flex h-[26px] w-[26px] shrink-0 items-center justify-center"
           >
-            <Icon name="check" size={13} className={shipped ? "opacity-100" : "opacity-0 transition-opacity group-hover/chk:opacity-60"} style={{ color: shipped ? "#fff" : READY }} />
+            <ShipStamp shipped={shipped} size={26} />
           </button>
         }
         outcome={initiative.outcome}

@@ -37,7 +37,8 @@ import {
   type VerticalData,
 } from "../../../lib/vertical";
 import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../../lib/tending";
-import { DomainPicker, RipenessPip, ShipSeal } from "../../floors/parts";
+import { DomainPicker, RipenessPip } from "../../floors/parts";
+import { ShipStamp } from "../../ShipStamp";
 import { whenText } from "../../floors/TaskList";
 
 export type Store = ReturnType<typeof useVertical>;
@@ -883,7 +884,7 @@ export function RecordHead({
       <div className={`flex items-start gap-2 ${center ? "justify-center" : ""}`}>
         {shipped && (
           <span className="mt-[5px]">
-            <ShipSeal size={sealSize} />
+            <ShipStamp shipped size={sealSize} />
           </span>
         )}
         <TextField
