@@ -76,12 +76,23 @@ export default function DraftComposer({
   onCreate: (draft: CreateDraft) => void;
   onCancel: () => void;
 }) {
-  // Anytime (all-day) drafts are task-only — events and slots require a specific time.
-  const kinds = allDay ? KINDS.filter((k) => k.value === "task") : KINDS.filter((k) => k.value !== "event" || googleAvailable);
-  const [kind, setKind] = useState<CreateKind>(
-    initialKind === "event" && !googleAvailable ? "task" : initialKind,
+  // Whole-day drafts (anytime row or month grid) offer Task + Event, never
+  // Slot — a slot needs a specific time-of-day, which a day cell doesn't have.
+  // A range spanning more than one day can only be an event — tasks/slots
+  // can't span days.
+  const multiDay = allDay && toDateISO(end) !== toDateISO(start);
+  const kinds = KINDS.filter(
+    (k) =>
+      (k.value !== "event" || googleAvailable) &&
+      (!allDay || k.value !== "slot") &&
+      (!multiDay || k.value === "event"),
   );
-  const [eventAllDay, setEventAllDay] = useState(false);
+  const [kind, setKind] = useState<CreateKind>(() =>
+    kinds.some((k) => k.value === initialKind) ? initialKind : (kinds[0]?.value ?? "task"),
+  );
+  // A whole-day draft starts as a true all-day event; the timed grid's
+  // ⌥-event draft still starts with a specific time.
+  const [eventAllDay, setEventAllDay] = useState(allDay);
   const [title, setTitle] = useState("");
   const [repeat, setRepeat] = useState<RecurrenceRule | null>(null);
   const [attendees, setAttendees] = useState<string[]>([]);
@@ -250,10 +261,12 @@ export default function DraftComposer({
         <div className="px-3.5 pt-3">
           <div className="flex items-center gap-2.5 rounded-[var(--radius)] bg-surface-2 px-3.5 py-2.5 text-body">
             <Icon name="clock" size={13} className="shrink-0 text-muted/70" />
-            <span className="font-medium text-ink">{format(start, "EEE, MMM d")}</span>
+            <span className="font-medium text-ink">
+              {multiDay ? `${format(start, "MMM d")} – ${format(end, "MMM d")}` : format(start, "EEE, MMM d")}
+            </span>
             <span className="text-muted/40">·</span>
             {allDay ? (
-              <span className="text-muted">anytime</span>
+              <span className="text-muted">{kind === "event" ? "All day" : "anytime"}</span>
             ) : kind === "event" && eventAllDay ? (
               <span className="text-muted">All day</span>
             ) : (
@@ -267,8 +280,9 @@ export default function DraftComposer({
           </div>
         </div>
 
-        {/* ── All day — calendar events only ── */}
-        {kind === "event" && (
+        {/* ── All day — calendar events only; a whole-day draft is already
+              all-day, so there's no specific time to offer switching back to ── */}
+        {kind === "event" && !allDay && (
           <div className="px-3.5 pt-2.5">
             <button
               type="button"

@@ -1350,6 +1350,17 @@ export default function CalendarPane({
     }
   };
 
+  // Month grid: plain click/drag → all-day event (⌥ task, ⌘/Ctrl slot); a
+  // multi-day drag always resolves to an event since tasks/slots can't span
+  // days. `selectAllow` below already keeps a drag to one day when there's no
+  // writable calendar to put a multi-day event on.
+  const monthKindFromModifiers = (je: MouseEvent | null | undefined): CreateKind => {
+    let kind: CreateKind = canCreateEvents ? "event" : "task";
+    if (je?.altKey) kind = canCreateEvents ? "task" : "event";
+    else if (je?.metaKey || je?.ctrlKey) kind = "slot";
+    return kind;
+  };
+
   // Click-drag on empty grid → open the quick-create card. Modifiers pick the
   // type up front (⌥ event, ⌘/Ctrl slot); otherwise the toolbar create mode.
   const onSelect = (arg: DateSelectArg) => {
@@ -1357,6 +1368,15 @@ export default function CalendarPane({
     // (a separate system reacting to the same physical click) — that click
     // was a dismiss, not a request to also start a new draft.
     if (consumeCalendarClickHandled()) return;
+    if (isMonth) {
+      const je = arg.jsEvent;
+      const inclusiveEnd = addDays(arg.end, -1);
+      const multiDay = toDateISO(inclusiveEnd) !== toDateISO(arg.start);
+      let kind = monthKindFromModifiers(je);
+      if (multiDay) kind = "event";
+      setDraft({ start: arg.start, end: inclusiveEnd, kind, point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 }, allDay: true });
+      return;
+    }
     if (arg.allDay) {
       // Anytime row click → plan a task for that day with no time.
       const day = arg.start;
@@ -1385,7 +1405,15 @@ export default function CalendarPane({
     // was a dismiss, not a request to also start a new draft.
     if (consumeCalendarClickHandled()) return;
     clearFocus(); // clicking empty space drops the focused block
-    if (isMonth || draft) return;
+    if (draft) return;
+    if (isMonth) {
+      const day = arg.date;
+      day.setHours(0, 0, 0, 0);
+      const je = arg.jsEvent;
+      const kind = monthKindFromModifiers(je);
+      setDraft({ start: day, end: day, kind, point: { x: je.clientX, y: je.clientY }, allDay: true });
+      return;
+    }
     if (arg.allDay) {
       const day = arg.date;
       day.setHours(0, 0, 0, 0);
@@ -1453,7 +1481,7 @@ export default function CalendarPane({
         }
       } else if (kind === "event") {
         const range = eventAllDay
-          ? allDayRangeFromStart(start)
+          ? allDayRangeFromStart(start, end)
           : { start_at: start.toISOString(), end_at: end.toISOString() };
         await eventMutations.createEvent({
           title,
@@ -2469,10 +2497,13 @@ export default function CalendarPane({
           events={draftPreviewEvent ? [...fcEvents, draftPreviewEvent] : fcEvents}
           editable
           droppable
-          selectable={!isMonth}
+          selectable
           selectMirror
           unselectAuto={false}
           selectMinDistance={5}
+          selectAllow={(arg) =>
+            !isMonth || canCreateEvents || toDateISO(addDays(arg.end, -1)) === toDateISO(arg.start)
+          }
           select={onSelect}
           dateClick={onDateClick}
           eventReceive={onReceive}
