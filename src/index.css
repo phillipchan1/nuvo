@@ -3843,35 +3843,35 @@ html[data-skin="terminal"] {
      real estate, not rank. Letter-spacing also goes to 0 — the base scale's
      negative tracking is tuned for proportional type and crowds/overlaps a
      fixed-width face. */
-  --text-display: 13px;
+  --text-display: 12px;
   --text-display--line-height: 1.4;
   --text-display--letter-spacing: 0em;
 
-  --text-lead: 13px;
+  --text-lead: 12px;
   --text-lead--line-height: 1.4;
   --text-lead--letter-spacing: 0em;
 
-  --text-head: 13px;
+  --text-head: 12px;
   --text-head--line-height: 1.4;
   --text-head--letter-spacing: 0em;
 
-  --text-body: 13px;
+  --text-body: 12px;
   --text-body--line-height: 1.4;
   --text-body--letter-spacing: 0em;
 
-  --text-caption: 13px;
+  --text-caption: 12px;
   --text-caption--line-height: 1.4;
   --text-caption--letter-spacing: 0em;
 
-  --text-label: 13px;
+  --text-label: 12px;
   --text-label--line-height: 1.4;
   --text-label--letter-spacing: 0em;
 
-  --text-meta: 11px;
+  --text-meta: 10px;
   --text-meta--line-height: 1.3;
   --text-meta--letter-spacing: 0em;
 
-  --text-micro: 11px;
+  --text-micro: 10px;
   --text-micro--line-height: 1.3;
   --text-micro--letter-spacing: 0em;
 }
