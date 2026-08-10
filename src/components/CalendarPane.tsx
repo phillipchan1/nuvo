@@ -420,6 +420,62 @@ export default function CalendarPane({
     };
   }, []);
 
+  // Live ghost while dragging on the month grid. FullCalendar's own
+  // selectMirror only draws a flat cell tint for dayGrid (verified empirically —
+  // it never renders a mirror event there, only for timeGrid), so without this
+  // a month-view drag looks like nothing until you release. Runs a plain
+  // mousedown/mousemove/mouseup watch alongside FC's own (untouched) selection
+  // handling — same pointer-tracking idiom as the Timeline/board drag pattern,
+  // since this is a visual overlay FC doesn't offer here, not a replacement for
+  // FC's own `select`/`onSelect` (still the source of truth on release).
+  const [monthDragRange, setMonthDragRange] = useState<{ start: Date; end: Date } | null>(null);
+  useEffect(() => {
+    if (view !== "dayGridMonth") return;
+    const root = wrapRef.current;
+    if (!root) return;
+
+    const onMouseDown = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest(".fc-event")) return;
+      // Snapshot every cell's rect once, up front, and hit-test against those —
+      // not `elementFromPoint`, which during the drag resolves to whatever FC's
+      // own `.fc-highlight` selection overlay (or our ghost) is sitting on top
+      // of at that pixel, not the day cell actually under the cursor.
+      const cells = Array.from(root.querySelectorAll<HTMLElement>(".fc-daygrid-day[data-date]")).map((el) => ({
+        date: el.dataset.date!,
+        rect: el.getBoundingClientRect(),
+      }));
+      const cellAt = (x: number, y: number) =>
+        cells.find((c) => x >= c.rect.left && x < c.rect.right && y >= c.rect.top && y < c.rect.bottom)?.date ?? null;
+      const anchor = cellAt(e.clientX, e.clientY);
+      if (!anchor) return;
+      let current = anchor;
+      let lastKey = "";
+      const onMove = (ev: MouseEvent) => {
+        const date = cellAt(ev.clientX, ev.clientY);
+        if (date) current = date;
+        const startISO = anchor <= current ? anchor : current;
+        // A drag with no writable calendar can only land as a single-day task
+        // (selectAllow enforces the same cap on the real selection) — keep the
+        // live ghost from promising a multi-day span it can't deliver.
+        const endISO = !canCreateEvents ? startISO : anchor <= current ? current : anchor;
+        const key = `${startISO}:${endISO}`;
+        if (key === lastKey) return;
+        lastKey = key;
+        setMonthDragRange({ start: parseDateISO(startISO), end: parseDateISO(endISO) });
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        setMonthDragRange(null);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+
+    root.addEventListener("mousedown", onMouseDown);
+    return () => root.removeEventListener("mousedown", onMouseDown);
+  }, [view, canCreateEvents]);
+
   const showWeather = settings?.show_weather ?? false;
   const { data: weatherData } = useWeather(showWeather);
   const weatherIndex = useMemo(() => indexWeather(weatherData?.days), [weatherData]);
@@ -899,19 +955,25 @@ export default function CalendarPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, now, taskAccent, slotTitle]);
 
-  // Ghost block shown while the DraftComposer popover is open — on the month
-  // grid this is the only visual (dayGrid's own selection highlight is a flat
-  // cell tint, not an event-shaped bar); on the timed grid it layers over FC's
-  // own selectMirror/highlight. `draft.end` is the INCLUSIVE last day for
-  // all-day drafts (see onSelect/onDateClick), so it needs bumping to FC's
-  // exclusive convention to span the full multi-day range.
-  const draftPreviewEvent = draft
+  // Ghost block shown while dragging on the month grid (monthDragRange, live)
+  // or while the DraftComposer popover is open (draft, on release/click) — on
+  // the month grid this is the only visual (dayGrid's own selection highlight
+  // is a flat cell tint, not an event-shaped bar); on the timed grid it layers
+  // over FC's own selectMirror/highlight. `end` is the INCLUSIVE last day for
+  // all-day ranges (see onSelect/onDateClick/monthDragRange), so it needs
+  // bumping to FC's exclusive convention to span the full multi-day range.
+  const previewRange = draft
+    ? { start: draft.start, end: draft.end, allDay: Boolean(draft.allDay) }
+    : monthDragRange
+      ? { start: monthDragRange.start, end: monthDragRange.end, allDay: true }
+      : null;
+  const draftPreviewEvent = previewRange
     ? {
         id: "draft:preview",
         title: "",
-        start: draft.start.toISOString(),
-        end: (draft.allDay ? addDays(draft.end, 1) : draft.end).toISOString(),
-        allDay: Boolean(draft.allDay),
+        start: previewRange.start.toISOString(),
+        end: (previewRange.allDay ? addDays(previewRange.end, 1) : previewRange.end).toISOString(),
+        allDay: previewRange.allDay,
         editable: false,
         classNames: ["evt-task", "evt-draft-preview"],
         ...blockColors("var(--accent)"),
