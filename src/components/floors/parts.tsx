@@ -19,7 +19,7 @@ import {
   startOfYear,
 } from "date-fns";
 import { ENERGY_META, ENERGY_ORDER, type Energy } from "../../lib/energy";
-import type { Domain, KeyResult, Momentum, ProjectStatus } from "../../lib/vertical";
+import type { Domain, Initiative, KeyResult, Momentum, Project, ProjectStatus } from "../../lib/vertical";
 import { RIPENESS_HINT, RIPENESS_LABEL, type Ripeness } from "../../lib/tending";
 import type { CollectionSelection } from "../../hooks/useCollectionSelection";
 import { SelectCheckbox, itemSelectRowClass } from "./collectionSelection";
@@ -525,6 +525,153 @@ export function DomainPicker({
             {d.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
           </button>
         ))}
+      </FloatingMenu>
+    </span>
+  );
+}
+
+// ── Initiative picker — reparent a project to a different bet, or none ───────
+// The upward half of linking a project ↔ initiative. Mirrors DomainPicker;
+// stays silent (returns null) when there's nothing to route to, same as
+// KrPicker below — an empty picker is noise, not an affordance.
+export function InitiativePicker({
+  initiatives,
+  value,
+  onChange,
+  onOpen,
+  align = "left",
+  size = "sm",
+}: {
+  /** Already scoped to the project's own domain — an initiative lives in one. */
+  initiatives: Initiative[];
+  value: string | null;
+  onChange: (initiativeId: string | null) => void;
+  /** Opens the initiative's own record — offered as the menu's first row. */
+  onOpen?: (initiativeId: string) => void;
+  align?: "left" | "right";
+  size?: "sm" | "lg";
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const cur = initiatives.find((i) => i.id === value) ?? null;
+  const lg = size === "lg";
+  if (!cur && initiatives.length === 0) return null;
+  return (
+    <span className="relative inline-block">
+      <button
+        ref={btnRef}
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        className={`fast tap flex items-center rounded-full ${
+          lg ? "gap-1.5 px-2.5 py-1 text-caption hover:bg-accent-soft/40" : "gap-1 border border-line px-2 py-0.5 text-meta"
+        }`}
+        style={cur ? undefined : { color: "var(--muted)" }}
+        title="Change which initiative this belongs to"
+      >
+        <span className={cur ? "truncate font-medium" : "truncate"} style={{ maxWidth: lg ? 160 : 120 }}>
+          {cur?.name ?? "No initiative"}
+        </span>
+        <span className="opacity-40">▾</span>
+      </button>
+      <FloatingMenu open={open} anchorRef={btnRef} align={align} minWidth={lg ? 200 : 170} onClose={() => setOpen(false)}>
+        {cur && onOpen && (
+          <>
+            <button
+              onClick={() => { onOpen(cur.id); setOpen(false); }}
+              className="fast block w-full px-2.5 py-1.5 text-left text-label text-muted hover:bg-accent-soft"
+            >
+              Open “{cur.name}” →
+            </button>
+            <div className="my-1 h-px bg-line" />
+          </>
+        )}
+        {initiatives.map((i) => (
+          <button
+            key={i.id}
+            onClick={() => { onChange(i.id); setOpen(false); }}
+            className="fast flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-label hover:bg-accent-soft"
+            style={{ color: i.id === value ? "var(--accent)" : "var(--text)" }}
+          >
+            <span className="truncate">{i.name}</span>
+            {i.id === value && <span className="ml-auto text-micro opacity-60">✓</span>}
+          </button>
+        ))}
+        {value && (
+          <button
+            onClick={() => { onChange(null); setOpen(false); }}
+            className="fast mono mt-0.5 block w-full border-t border-line px-2.5 py-1 text-left text-micro text-muted hover:bg-accent-soft"
+          >
+            no initiative
+          </button>
+        )}
+      </FloatingMenu>
+    </span>
+  );
+}
+
+// ── Project attach picker — the downward half, from an initiative's record ───
+// "Belongs here" (`RecordModal.tsx`) already surfaces loose TASKS that want a
+// home; this is the project-level sibling — a filtered search over projects
+// in the initiative's own domain (its own, or unattached, or another bet's:
+// reparenting reads the same either direction) that aren't here yet.
+export function ProjectAttachPicker({
+  candidates,
+  onAttach,
+  accent = "var(--accent)",
+}: {
+  candidates: Project[];
+  onAttach: (projectId: string) => void;
+  accent?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const filtered = q.trim()
+    ? candidates.filter((p) => p.name.toLowerCase().includes(q.trim().toLowerCase()))
+    : candidates;
+
+  if (candidates.length === 0) return null;
+
+  return (
+    <span className="relative inline-block">
+      <button
+        ref={btnRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+          setQ("");
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+        className="fast tap text-meta text-muted hover:text-ink"
+      >
+        + Attach an existing project…
+      </button>
+      <FloatingMenu open={open} anchorRef={btnRef} minWidth={220} onClose={() => setOpen(false)}>
+        <div className="px-2 pb-1">
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
+            placeholder="Find a project…"
+            className="w-full rounded-[var(--radius-sm)] border border-line bg-transparent px-2 py-1 text-label outline-none placeholder:text-muted"
+            style={{ caretColor: accent }}
+          />
+        </div>
+        <div className="max-h-64 overflow-y-auto">
+          {filtered.length === 0 && (
+            <div className="px-2.5 py-1.5 text-label text-muted opacity-70">No match</div>
+          )}
+          {filtered.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => { onAttach(p.id); setOpen(false); }}
+              className="fast block w-full truncate px-2.5 py-1.5 text-left text-label hover:bg-accent-soft"
+            >
+              {p.name || "Untitled"}
+            </button>
+          ))}
+        </div>
       </FloatingMenu>
     </span>
   );

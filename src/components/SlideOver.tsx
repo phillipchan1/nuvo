@@ -17,7 +17,7 @@ import { useEventDetails, useHiddenEvents } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
-import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId } from "../lib/vertical";
+import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { deriveSlotTitle } from "../lib/slots";
 import { rulesEqual, type RecurrenceRule } from "../lib/recurrence";
@@ -163,7 +163,7 @@ export function TaskPopover({
 
   // the thread up the vertical
   const project = projectById(vertical, task.project_id);
-  const initiative = initiativeById(vertical, task.initiative_id ?? project?.initiativeId ?? null);
+  const initiative = initiativeById(vertical, taskInitiativeId(vertical, task));
   const domain = domainById(vertical, taskDomainId(vertical, task));
   const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
 

@@ -1033,6 +1033,32 @@ export function taskDomainId(
   );
 }
 
+/**
+ * WHICH INITIATIVE DOES A TASK BELONG TO — same rule as `resolveDomainId`,
+ * one altitude down. `tasks.initiative_id` is a denormalized copy stamped
+ * when a task is filed under a project; it goes stale the moment that
+ * project moves to a different initiative (the InitiativePicker makes that
+ * possible). So: **a parented task belongs to its parent project's
+ * initiative.** Its own `initiative_id` is authoritative only when the task
+ * has no project — that's a task loose directly on the initiative.
+ */
+export function resolveInitiativeId(
+  ownInitiativeId: string | null | undefined,
+  projectId: string | null | undefined,
+  projectInitiative: (id: string) => string | null | undefined,
+): string | null {
+  if (projectId) return projectInitiative(projectId) ?? null;
+  return ownInitiativeId || null;
+}
+
+/** `resolveInitiativeId` over a built snapshot — the form every surface wants. */
+export function taskInitiativeId(
+  d: VerticalData,
+  t: { initiative_id?: string | null; project_id?: string | null },
+): string | null {
+  return resolveInitiativeId(t.initiative_id, t.project_id, (id) => projectById(d, id)?.initiativeId);
+}
+
 /** Resolve a task ROW's domain color through the parent chain — the one
  *  accent rule, shared by the rail, the calendar, and the rituals. */
 export function taskDomainColor(

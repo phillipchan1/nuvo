@@ -60,9 +60,11 @@ import {
   DeleteBtn,
   DomainPicker,
   FloatingMenu,
+  InitiativePicker,
   InlineNumber,
   InlineText,
   PROJECT_STATUS_COLORS,
+  ProjectAttachPicker,
 } from "../floors/parts";
 import TaskList, { isTypingIn } from "../floors/TaskList";
 import DeckCard, { deckWeight } from "../ondeck/DeckCard";
@@ -211,6 +213,11 @@ function ProjectRecord({
   const domain = domainById(data, project.domainId);
   const initiative = initiativeById(data, project.initiativeId);
   const domains = [...data.domains].sort((a, b) => a.sort - b.sort);
+  // An initiative lives in one domain (D-073's cascade rule), so the picker
+  // only ever offers ones that could actually hold this project.
+  const domainInitiatives = data.initiatives
+    .filter((i) => i.domainId === project.domainId)
+    .sort((a, b) => a.name.localeCompare(b.name));
   const accent = domain?.color ?? "var(--accent)";
   const tasks = tasksOf(data, project.id);
   const done = tasks.filter((t) => t.status === "done").length;
@@ -245,12 +252,16 @@ function ProjectRecord({
                 updateProject(project.id, { domainId, ...(crossDomain ? { initiativeId: null, keyResultId: null } : {}) });
               }}
             />
-            {initiative && (
+            {(initiative || domainInitiatives.length > 0) && (
               <>
                 <span className="text-meta text-muted">›</span>
-                <button onClick={() => onOpenInitiative(initiative.id)} className="fast text-meta text-muted hover:text-ink">
-                  {initiative.name}
-                </button>
+                <InitiativePicker
+                  initiatives={domainInitiatives}
+                  value={project.initiativeId}
+                  size="lg"
+                  onOpen={onOpenInitiative}
+                  onChange={(initiativeId) => updateProject(project.id, { initiativeId })}
+                />
               </>
             )}
           </>
@@ -491,6 +502,12 @@ function InitiativeRecord({
   };
 
   const projects = projectsOf(data, initiative.id);
+  // The downward half of linking a project ↔ initiative: any other project
+  // that could actually join this bet (same domain — D-073's cascade rule —
+  // and not already here). Includes projects reparenting from another bet.
+  const attachable = data.projects
+    .filter((p) => p.domainId === initiative.domainId && p.initiativeId !== initiative.id)
+    .sort((a, b) => a.name.localeCompare(b.name));
   const suggestions = suggestForInitiative(data, initiative);
   const attainment = initiative.keyResults.length ? initiativeAttainment(data, initiative) : null;
   const childPct = projects.length
@@ -668,6 +685,13 @@ function InitiativeRecord({
                   onOpenProject={onOpenProject}
                   accent={accent}
                   inputRef={projRef}
+                />
+              </div>
+              <div className={GUT_PAD}>
+                <ProjectAttachPicker
+                  candidates={attachable}
+                  accent={accent}
+                  onAttach={(projectId) => updateProject(projectId, { initiativeId: initiative.id })}
                 />
               </div>
             </Sec>

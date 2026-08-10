@@ -37,7 +37,7 @@ import {
   type VerticalData,
 } from "../../../lib/vertical";
 import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../../lib/tending";
-import { DomainPicker, RipenessPip } from "../../floors/parts";
+import { DomainPicker, InitiativePicker, ProjectAttachPicker, RipenessPip } from "../../floors/parts";
 import { ShipStamp } from "../../ShipStamp";
 import { whenText } from "../../floors/TaskList";
 
@@ -278,6 +278,15 @@ export function InitiativeScreen({
             ))}
           </CardList>
         )}
+        <div className="mt-2">
+          <ProjectAttachPicker
+            accent={accent}
+            candidates={d.projects
+              .filter((p) => p.domainId === i.domainId && p.initiativeId !== i.id)
+              .sort((a, b) => a.name.localeCompare(b.name))}
+            onAttach={(projectId) => store.updateProject(projectId, { initiativeId: i.id })}
+          />
+        </div>
       </Section>
 
       <Section label="Loose tasks" meter={looseTasks.length ? String(looseTasks.length) : null}>
@@ -928,6 +937,11 @@ export function RecordCrumbs({
     const p = d.projects.find((x) => x.id === frame.id);
     if (!p) return null;
     const init = p.initiativeId ? d.initiatives.find((x) => x.id === p.initiativeId) : null;
+    // An initiative lives in one domain (D-073's cascade rule) — same scoping
+    // as the desktop record.
+    const domainInitiatives = d.initiatives
+      .filter((i) => i.domainId === p.domainId)
+      .sort((a, b) => a.name.localeCompare(b.name));
     return (
       <>
         {/* Routing this to the right area is a primary act, not a crumb — the
@@ -943,7 +957,18 @@ export function RecordCrumbs({
             store.updateProject(p.id, { domainId, ...(crossDomain ? { initiativeId: null, keyResultId: null } : {}) });
           }}
         />
-        {init && <ParentCrumb onClick={() => onOpenInitiative(init.id)}>{init.name}</ParentCrumb>}
+        {(init || domainInitiatives.length > 0) && (
+          <>
+            <span className="text-caption font-normal text-muted/60">›</span>
+            <InitiativePicker
+              initiatives={domainInitiatives}
+              value={p.initiativeId}
+              size="lg"
+              onOpen={onOpenInitiative}
+              onChange={(initiativeId) => store.updateProject(p.id, { initiativeId })}
+            />
+          </>
+        )}
       </>
     );
   }
