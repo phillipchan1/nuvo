@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fixedCssPx } from "./useUiScale";
 
 /**
  * Pointer-drag reordering for a vertical list, with a live insertion line.
@@ -37,6 +38,8 @@ export interface ListReorderOptions {
   externalDropAt?: (x: number, y: number, id: string) => string | null;
   /** Commit the external act. Only called for a release inside a zone. */
   onExternalDrop?: (key: string, id: string) => void;
+  /** Label for the cursor-following chip shown while hovering an external zone. */
+  zoneLabel?: (zone: string, id: string) => string;
   /** Fired on press, before the gesture has decided what it is. */
   onPointerDown?: (id: string) => void;
   /** Fired once the press clears the drag threshold. */
@@ -66,6 +69,7 @@ export function useListReorder({
   onCommit,
   externalDropAt,
   onExternalDrop,
+  zoneLabel,
   onPointerDown,
   onDragStart,
   onDragEnd,
@@ -74,13 +78,11 @@ export function useListReorder({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [lineTop, setLineTop] = useState<number | null>(null);
   const [zone, setZone] = useState<string | null>(null);
-  /** Live pointer while dragging — for a cursor-following label. */
-  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
 
   // Everything the live gesture reads, held in refs so a mid-drag re-render
   // (the line moving) never re-subscribes the listeners underneath it.
-  const opts = useRef({ bandOf, bandIds, onCommit, externalDropAt, onExternalDrop, onPointerDown, onDragStart, onDragEnd });
-  opts.current = { bandOf, bandIds, onCommit, externalDropAt, onExternalDrop, onPointerDown, onDragStart, onDragEnd };
+  const opts = useRef({ bandOf, bandIds, onCommit, externalDropAt, onExternalDrop, zoneLabel, onPointerDown, onDragStart, onDragEnd });
+  opts.current = { bandOf, bandIds, onCommit, externalDropAt, onExternalDrop, zoneLabel, onPointerDown, onDragStart, onDragEnd };
 
   const rowRect = useCallback(
     (id: string) => {
@@ -107,6 +109,16 @@ export function useListReorder({
     let pointerY = 0;
     let pointerX = 0;
     let inZone: string | null = null;
+
+    // Cursor-following "you're about to..." label. Plain DOM, not React state —
+    // same reasoning as CalendarPane's own drag chip: this repaints on every
+    // pointermove of the gesture, and routing that through setState re-rendered
+    // the whole rail (every task row) dozens of times a second, which is what
+    // read as the app "shifting" while dragging.
+    const chip = document.createElement("div");
+    chip.className = "slot-drop-chip drop-chip-act";
+    chip.setAttribute("aria-hidden", "true");
+    document.body.appendChild(chip);
 
     const stopScroll = () => {
       if (scrollRaf) cancelAnimationFrame(scrollRaf);
@@ -160,6 +172,7 @@ export function useListReorder({
       const droppedIn = inZone;
       stopScroll();
       document.body.classList.remove("wb-noselect");
+      chip.classList.remove("is-visible");
       let reordered = false;
       if (commit && wasDragging && draggedId && droppedIn) {
         opts.current.onExternalDrop?.(droppedIn, draggedId);
@@ -182,7 +195,6 @@ export function useListReorder({
       setDraggingId(null);
       setLineTop(null);
       setZone(null);
-      setPointer(null);
       if (wasDragging && draggedId) opts.current.onDragEnd?.(draggedId, reordered);
     };
 
@@ -217,14 +229,20 @@ export function useListReorder({
         opts.current.onDragStart?.(id);
         if (!scrollRaf) scrollRaf = requestAnimationFrame(autoScroll);
       }
-      setPointer({ x: pointerX, y: pointerY });
-
       // A surface-owned zone wins outright, so a tab hanging over the list's top
       // edge can't be read as "reorder to position 0".
       const nextZone = opts.current.externalDropAt?.(e.clientX, e.clientY, id) ?? null;
       if (nextZone !== inZone) {
         inZone = nextZone;
         setZone(nextZone);
+      }
+      if (nextZone) {
+        chip.textContent = opts.current.zoneLabel?.(nextZone, id) ?? "";
+        chip.style.left = `${fixedCssPx(pointerX + 14)}px`;
+        chip.style.top = `${fixedCssPx(pointerY + 16)}px`;
+        chip.classList.add("is-visible");
+      } else {
+        chip.classList.remove("is-visible");
       }
       const list = container();
       const r = list?.getBoundingClientRect();
@@ -258,8 +276,9 @@ export function useListReorder({
       window.removeEventListener("keydown", onKey);
       stopScroll();
       document.body.classList.remove("wb-noselect");
+      chip.remove();
     };
   }, [containerRef, itemSelector, idAttr, rowRect, disabled]);
 
-  return { draggingId, lineTop, zone, pointer };
+  return { draggingId, lineTop, zone };
 }

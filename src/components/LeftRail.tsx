@@ -388,7 +388,7 @@ export default function LeftRail({
     },
   };
 
-  const { draggingId, lineTop, zone, pointer } = useListReorder({
+  const { draggingId, lineTop, zone } = useListReorder({
     containerRef: listRef,
     itemSelector: "[data-task-drag]",
     idAttr: "data-task-drag",
@@ -410,6 +410,7 @@ export default function LeftRail({
       // Mutation layer owns the toast + Undo (D-063a destination label above).
       act.run(t);
     },
+    zoneLabel: (key, id) => dropActs[key]?.label(byId.get(id) ?? ({} as Task)) ?? "",
     onPointerDown: () => {
       preDragSelection.current = selectedIdRef.current;
     },
@@ -572,22 +573,10 @@ export default function LeftRail({
         {lineTop != null && (
           <div className="reorder-insert-line" style={{ top: lineTop }} aria-hidden />
         )}
-        {/* Names the act at the cursor, so nothing lands anywhere unannounced.
-            Portalled — the rail clips its own overflow. Same idiom as the
-            calendar's slot chip. */}
-        {zone &&
-          pointer &&
-          draggingId &&
-          createPortal(
-            <div
-              className="slot-drop-chip drop-chip-act is-visible"
-              style={{ left: pointer.x + 14, top: pointer.y + 16 }}
-              aria-hidden
-            >
-              {dropActs[zone]?.label(byId.get(draggingId) ?? ({} as Task))}
-            </div>,
-            document.body,
-          )}
+        {/* The "you're about to..." label itself is plain DOM, owned by
+            useListReorder (`zoneLabel` above) — same idiom as the calendar's
+            slot chip, and for the same reason: it repaints every pointermove,
+            and routing that through React state re-rendered the whole rail. */}
 
         {tab === "inbox" && (
           <>
