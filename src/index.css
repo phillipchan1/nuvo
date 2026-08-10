@@ -3879,6 +3879,23 @@ html[data-skin="terminal"] .mono,
 html[data-skin="terminal"] .masthead {
   letter-spacing: 0em;
 }
+/* The calendar's day numerals (CalendarPane.tsx) hardcode their own px and
+   circle diameter instead of reading the --text-* tokens above, so the
+   collapse to one cell size never reached them — they kept rendering as a
+   size-based hero the terminal doctrine (above) explicitly rejects. Bring
+   them down to the same body cell, and shrink the today-badge circle to
+   match; non-today numerals have no inline width/height, so those rules
+   are no-ops there. */
+html[data-skin="terminal"] .fc-col-header-cell-cushion .masthead {
+  font-size: 12px !important;
+  width: 22px !important;
+  height: 22px !important;
+}
+html[data-skin="terminal"] .fc-daygrid-day-number .masthead {
+  font-size: 12px !important;
+  width: 18px !important;
+  height: 18px !important;
+}
 /* Flat: quick and smooth — the modern-app snap. */
 html[data-skin="flat"] {
   --d-fast: 90ms; --d-base: 150ms;
