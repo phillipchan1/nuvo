@@ -5,7 +5,7 @@ import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { Draggable } from "@fullcalendar/interaction";
-import type { DatesSetArg, DateSelectArg, DayCellContentArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from "@fullcalendar/core";
+import type { DatesSetArg, DateSelectArg, DayCellContentArg, EventApi, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from "@fullcalendar/core";
 import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
 import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
@@ -899,14 +899,19 @@ export default function CalendarPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, now, taskAccent, slotTitle]);
 
-  // Ghost block shown while the DraftComposer popover is open from a click
-  // (drag already gets selectMirror; click has no selection on the grid).
+  // Ghost block shown while the DraftComposer popover is open — on the month
+  // grid this is the only visual (dayGrid's own selection highlight is a flat
+  // cell tint, not an event-shaped bar); on the timed grid it layers over FC's
+  // own selectMirror/highlight. `draft.end` is the INCLUSIVE last day for
+  // all-day drafts (see onSelect/onDateClick), so it needs bumping to FC's
+  // exclusive convention to span the full multi-day range.
   const draftPreviewEvent = draft
     ? {
         id: "draft:preview",
         title: "",
         start: draft.start.toISOString(),
-        end: draft.end.toISOString(),
+        end: (draft.allDay ? addDays(draft.end, 1) : draft.end).toISOString(),
+        allDay: Boolean(draft.allDay),
         editable: false,
         classNames: ["evt-task", "evt-draft-preview"],
         ...blockColors("var(--accent)"),
@@ -2494,6 +2499,11 @@ export default function CalendarPane({
           height="100%"
           expandRows={!isMonth}
           dayMaxEvents={isMonth ? 4 : false}
+          // Always keep the draft ghost out of the "+N more" overflow — a
+          // packed month day would otherwise bury it behind real events.
+          eventOrder={(a: unknown, b: unknown) =>
+            (a as EventApi).id === "draft:preview" ? -1 : (b as EventApi).id === "draft:preview" ? 1 : 0
+          }
           events={draftPreviewEvent ? [...fcEvents, draftPreviewEvent] : fcEvents}
           editable
           droppable
