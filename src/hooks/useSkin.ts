@@ -219,6 +219,21 @@ function notify() {
   listeners.forEach((l) => l());
 }
 
+// Cross-window sync: the ⌥Space spotlight is a separate, long-lived webview
+// (an NSPanel that survives across summons, not a fresh page load), so its own
+// copy of `skin`/`schemeBySkin` never sees a change made in the main window
+// unless it's told. `storage` fires in every OTHER same-origin context when
+// localStorage changes — re-read both keys and repaint.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key !== null && e.key !== SKIN_KEY && e.key !== SCHEME_KEY) return;
+    skin = readSkin();
+    schemeBySkin = readSchemes();
+    apply();
+    notify();
+  });
+}
+
 export function setSkin(s: Skin) {
   if (s === skin) return;
   skin = s;
