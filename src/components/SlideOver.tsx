@@ -194,7 +194,12 @@ export function TaskPopover({
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (!popRef.current || popRef.current.contains(e.target as Node)) return;
+      // Use composedPath() (frozen at dispatch time), not contains(e.target):
+      // a row inside the popover can remove itself from the DOM synchronously
+      // in its own mousedown handler (e.g. GuestsInput's "add guest" — see
+      // GuestsInput.tsx), which would make e.target read as already-detached
+      // and falsely look like an outside click by the time this listener runs.
+      if (!popRef.current || e.composedPath().includes(popRef.current)) return;
       // This click dismisses the popover only — mark it so the calendar
       // grid's own click-to-create handling (a separate system reacting to
       // the same physical click) skips opening a second, unwanted draft.
@@ -985,7 +990,12 @@ export function EventPopover({
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (!popRef.current || popRef.current.contains(e.target as Node)) return;
+      // Use composedPath() (frozen at dispatch time), not contains(e.target):
+      // a row inside the popover can remove itself from the DOM synchronously
+      // in its own mousedown handler (e.g. GuestsInput's "add guest" — see
+      // GuestsInput.tsx), which would make e.target read as already-detached
+      // and falsely look like an outside click by the time this listener runs.
+      if (!popRef.current || e.composedPath().includes(popRef.current)) return;
       // This click dismisses the popover only — mark it so the calendar
       // grid's own click-to-create handling (a separate system reacting to
       // the same physical click) skips opening a second, unwanted draft.
@@ -1817,7 +1827,12 @@ export function SlotPopover({
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (!popRef.current || popRef.current.contains(e.target as Node)) return;
+      // Use composedPath() (frozen at dispatch time), not contains(e.target):
+      // a row inside the popover can remove itself from the DOM synchronously
+      // in its own mousedown handler (e.g. GuestsInput's "add guest" — see
+      // GuestsInput.tsx), which would make e.target read as already-detached
+      // and falsely look like an outside click by the time this listener runs.
+      if (!popRef.current || e.composedPath().includes(popRef.current)) return;
       // This click dismisses the popover only — mark it so the calendar
       // grid's own click-to-create handling (a separate system reacting to
       // the same physical click) skips opening a second, unwanted draft.
