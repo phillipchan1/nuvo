@@ -420,17 +420,20 @@ export default function CalendarPane({
     };
   }, []);
 
-  // Live ghost while dragging on the month grid. FullCalendar's own
+  // Live ghost while dragging any all-day range — the month grid, or the
+  // anytime row in week/day view (both render `.fc-daygrid-day` cells under
+  // the hood, month via dayGrid, the anytime row via the same daygrid table
+  // FC's timeGrid view reuses for its all-day section). FullCalendar's own
   // selectMirror only draws a flat cell tint for dayGrid (verified empirically —
   // it never renders a mirror event there, only for timeGrid), so without this
-  // a month-view drag looks like nothing until you release. Runs a plain
+  // an all-day drag looks like nothing until you release. Runs a plain
   // mousedown/mousemove/mouseup watch alongside FC's own (untouched) selection
   // handling — same pointer-tracking idiom as the Timeline/board drag pattern,
   // since this is a visual overlay FC doesn't offer here, not a replacement for
   // FC's own `select`/`onSelect` (still the source of truth on release).
-  const [monthDragRange, setMonthDragRange] = useState<{ start: Date; end: Date } | null>(null);
+  const [allDayDragRange, setAllDayDragRange] = useState<{ start: Date; end: Date } | null>(null);
   useEffect(() => {
-    if (view !== "dayGridMonth") return;
+    if (view === "board") return; // WeekBoard has no FC canvas at all
     const root = wrapRef.current;
     if (!root) return;
 
@@ -439,7 +442,9 @@ export default function CalendarPane({
       // Snapshot every cell's rect once, up front, and hit-test against those —
       // not `elementFromPoint`, which during the drag resolves to whatever FC's
       // own `.fc-highlight` selection overlay (or our ghost) is sitting on top
-      // of at that pixel, not the day cell actually under the cursor.
+      // of at that pixel, not the day cell actually under the cursor. In
+      // week/day view this only ever finds the anytime row's cells — the timed
+      // columns are `.fc-timegrid-col`, a different structure entirely.
       const cells = Array.from(root.querySelectorAll<HTMLElement>(".fc-daygrid-day[data-date]")).map((el) => ({
         date: el.dataset.date!,
         rect: el.getBoundingClientRect(),
@@ -461,12 +466,12 @@ export default function CalendarPane({
         const key = `${startISO}:${endISO}`;
         if (key === lastKey) return;
         lastKey = key;
-        setMonthDragRange({ start: parseDateISO(startISO), end: parseDateISO(endISO) });
+        setAllDayDragRange({ start: parseDateISO(startISO), end: parseDateISO(endISO) });
       };
       const onUp = () => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
-        setMonthDragRange(null);
+        setAllDayDragRange(null);
       };
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
@@ -955,17 +960,17 @@ export default function CalendarPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, now, taskAccent, slotTitle]);
 
-  // Ghost block shown while dragging on the month grid (monthDragRange, live)
-  // or while the DraftComposer popover is open (draft, on release/click) — on
-  // the month grid this is the only visual (dayGrid's own selection highlight
-  // is a flat cell tint, not an event-shaped bar); on the timed grid it layers
+  // Ghost block shown while dragging an all-day range (allDayDragRange, live)
+  // or while the DraftComposer popover is open (draft, on release/click) — for
+  // an all-day drag this is the only visual (dayGrid's own selection highlight
+  // is a flat cell tint, not an event-shaped bar); for a timed drag it layers
   // over FC's own selectMirror/highlight. `end` is the INCLUSIVE last day for
-  // all-day ranges (see onSelect/onDateClick/monthDragRange), so it needs
+  // all-day ranges (see onSelect/onDateClick/allDayDragRange), so it needs
   // bumping to FC's exclusive convention to span the full multi-day range.
   const previewRange = draft
     ? { start: draft.start, end: draft.end, allDay: Boolean(draft.allDay) }
-    : monthDragRange
-      ? { start: monthDragRange.start, end: monthDragRange.end, allDay: true }
+    : allDayDragRange
+      ? { start: allDayDragRange.start, end: allDayDragRange.end, allDay: true }
       : null;
   const draftPreviewEvent = previewRange
     ? {
@@ -1417,11 +1422,12 @@ export default function CalendarPane({
     }
   };
 
-  // Month grid: plain click/drag → all-day event (⌥ task, ⌘/Ctrl slot); a
-  // multi-day drag always resolves to an event since tasks/slots can't span
-  // days. `selectAllow` below already keeps a drag to one day when there's no
+  // Any all-day range — the month grid, or the anytime row in week/day view:
+  // plain click/drag → all-day event (⌥ task, ⌘/Ctrl slot); a multi-day drag
+  // always resolves to an event since tasks/slots can't span days.
+  // `selectAllow` below already keeps a drag to one day when there's no
   // writable calendar to put a multi-day event on.
-  const monthKindFromModifiers = (je: MouseEvent | null | undefined): CreateKind => {
+  const allDayKindFromModifiers = (je: MouseEvent | null | undefined): CreateKind => {
     let kind: CreateKind = canCreateEvents ? "event" : "task";
     if (je?.altKey) kind = canCreateEvents ? "task" : "event";
     else if (je?.metaKey || je?.ctrlKey) kind = "slot";
@@ -1435,21 +1441,17 @@ export default function CalendarPane({
     // (a separate system reacting to the same physical click) — that click
     // was a dismiss, not a request to also start a new draft.
     if (consumeCalendarClickHandled()) return;
-    if (isMonth) {
+    if (isMonth || arg.allDay) {
       const je = arg.jsEvent;
-      const inclusiveEnd = addDays(arg.end, -1);
-      const multiDay = toDateISO(inclusiveEnd) !== toDateISO(arg.start);
-      let kind = monthKindFromModifiers(je);
+      const start = new Date(arg.start);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(arg.end);
+      end.setHours(0, 0, 0, 0);
+      const inclusiveEnd = addDays(end, -1);
+      const multiDay = toDateISO(inclusiveEnd) !== toDateISO(start);
+      let kind = allDayKindFromModifiers(je);
       if (multiDay) kind = "event";
-      setDraft({ start: arg.start, end: inclusiveEnd, kind, point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 }, allDay: true });
-      return;
-    }
-    if (arg.allDay) {
-      // Anytime row click → plan a task for that day with no time.
-      const day = arg.start;
-      day.setHours(0, 0, 0, 0);
-      const je = arg.jsEvent;
-      setDraft({ start: day, end: day, kind: "task", point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 }, allDay: true });
+      setDraft({ start, end: inclusiveEnd, kind, point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 }, allDay: true });
       return;
     }
     clearFocus();
@@ -1473,19 +1475,12 @@ export default function CalendarPane({
     if (consumeCalendarClickHandled()) return;
     clearFocus(); // clicking empty space drops the focused block
     if (draft) return;
-    if (isMonth) {
+    if (isMonth || arg.allDay) {
       const day = arg.date;
       day.setHours(0, 0, 0, 0);
       const je = arg.jsEvent;
-      const kind = monthKindFromModifiers(je);
+      const kind = allDayKindFromModifiers(je);
       setDraft({ start: day, end: day, kind, point: { x: je.clientX, y: je.clientY }, allDay: true });
-      return;
-    }
-    if (arg.allDay) {
-      const day = arg.date;
-      day.setHours(0, 0, 0, 0);
-      const je = arg.jsEvent;
-      setDraft({ start: day, end: day, kind: "task", point: { x: je.clientX, y: je.clientY }, allDay: true });
       return;
     }
     const start = arg.date;
@@ -2574,7 +2569,7 @@ export default function CalendarPane({
           unselectAuto={false}
           selectMinDistance={5}
           selectAllow={(arg) =>
-            !isMonth || canCreateEvents || toDateISO(addDays(arg.end, -1)) === toDateISO(arg.start)
+            !arg.allDay || canCreateEvents || toDateISO(addDays(arg.end, -1)) === toDateISO(arg.start)
           }
           select={onSelect}
           dateClick={onDateClick}
