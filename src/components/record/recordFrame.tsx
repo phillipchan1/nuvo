@@ -73,9 +73,14 @@ export function useRecordKeys(sheetRef: RefObject<HTMLDivElement>, onClose: () =
 export function RecordScrim({ onClose, children }: { onClose: () => void; children: ReactNode }) {
   return createPortal(
     <div
-      className="scrim fixed inset-0 z-[60] flex items-start justify-center bg-black/35 px-4 py-[5vh] backdrop-blur-[3px]"
+      className="fixed inset-0 z-[60] flex items-start justify-center px-4 py-[5vh]"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
+      {/* Blur and dim split so only the (cheap) dim fades — animating opacity on
+          the same element as backdrop-filter forces a re-blur every frame,
+          which is what made the record open read as a slow-motion fade. */}
+      <div className="scrim-blur fixed inset-0 backdrop-blur-[3px]" aria-hidden="true" />
+      <div className="scrim pointer-events-none fixed inset-0 bg-black/35" aria-hidden="true" />
       {children}
     </div>,
     document.body,

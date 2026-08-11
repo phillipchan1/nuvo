@@ -106,9 +106,15 @@ export function Modal({
       // Mobile-first: centered with a margin and scrollable so it can't overflow
       // a phone. sm+ restores the desktop look (top-anchored, or centered for a
       // tall sheet — children own their scroll).
-      className={`scrim fixed inset-0 z-[70] flex items-center justify-center bg-black/30 p-3 backdrop-blur-[2px] ${scrimPos}`}
+      className={`fixed inset-0 z-[70] flex items-center justify-center p-3 ${scrimPos}`}
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
+      {/* Blur and dim are split so only the (cheap) dim fades — animating opacity
+          on the same element as backdrop-filter forces a re-blur every frame,
+          which is what made the open read as a slow-motion fade. `fixed inset-0`
+          (not `absolute`) so the parent's own p-3 doesn't inset them. */}
+      <div className="scrim-blur fixed inset-0 backdrop-blur-[2px]" aria-hidden="true" />
+      <div className="scrim pointer-events-none fixed inset-0 bg-black/30" aria-hidden="true" />
       <div
         ref={panelRef}
         role="dialog"

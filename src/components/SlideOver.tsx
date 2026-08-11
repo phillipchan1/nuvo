@@ -288,10 +288,13 @@ export function TaskPopover({
     // Anchored variant: `contents` makes the wrapper layout-transparent so the
     // fixed popover positions exactly as before.
     <div className={centered ? "fixed inset-0 z-40 flex items-center justify-center bg-black/20 p-4" : "contents"}>
-      {/* Popover card */}
+      {/* Popover card — anchored opens use `pop-in` (fast, no spring): a
+          click-to-open inspector should feel instant, same as EventPopover.
+          `moment` (the 540ms modal spring) is for the centered/⌘K variant,
+          which really is a scrim-backed modal. */}
       <div
         ref={popRef}
-        className={`moment z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface ${centered ? "relative" : "fixed"}`}
+        className={`${centered ? "moment" : "pop-in"} z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface ${centered ? "relative" : "fixed"}`}
         style={{
           ...(centered ? {} : { top: pos.top, left: pos.left }),
           width: TASK_POP_W,

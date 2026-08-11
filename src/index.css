@@ -1342,12 +1342,19 @@ body.nuvo-selecting * {
   -webkit-user-select: none !important;
 }
 
-/* The scrim behind a moment — fades the world back, blurs it softly. */
+/* The scrim behind a moment — fades the world back, blurs it softly. Kept as
+   TWO layers where a backdrop-blur is involved: `.scrim` is the animated dim
+   (cheap — plain opacity), `.scrim-blur` is a static sibling carrying the
+   actual `backdrop-filter` with no animation on it. Animating opacity on an
+   element that also has backdrop-filter forces a re-blur every frame, which
+   is what made a modal/popover open read as a slow-motion fade — see
+   ui.tsx's Modal and recordFrame.tsx's RecordScrim. */
 @keyframes scrim-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 .scrim { animation: scrim-in var(--d-base) var(--ease-out) both; }
+.scrim-blur { pointer-events: none; }
 
 /* A moment arriving — a raised surface that springs gently into place. */
 @keyframes moment-in {
@@ -2453,9 +2460,13 @@ select.field { appearance: none; -webkit-appearance: none; }
   .moment { animation: pop-in var(--d-fast) var(--ease-out) both; }
 
   /* And the scrim dims harder so whatever translucency remains in the panel
-     can't read page content through it. */
+     can't read page content through it. Split the same way as desktop (see
+     `.scrim-blur` below `.scrim`'s definition): the blur lives on its own
+     static layer so `.scrim`'s opacity fade stays a cheap, blur-free animation. */
   .scrim {
     background: rgba(0, 0, 0, 0.5);
+  }
+  .scrim-blur {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
   }
