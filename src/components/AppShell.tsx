@@ -27,7 +27,7 @@ import CreateRecord from "./floors/CreateRecord";
 import Orientation from "./orientation/Orientation";
 import { OrientationProvider } from "../hooks/useOrientation";
 import { TrialBanner } from "./billing/TrialBanner";
-import SyncStatus from "./SyncStatus";
+import { useParkedAlert } from "./SyncPanel";
 import StatusBar from "./terminal/StatusBar";
 import { zoomIn, zoomOut, zoomReset } from "../hooks/useUiScale";
 
@@ -79,6 +79,15 @@ function ResponsiveShell() {
   const { data, ready } = useVertical();
   const [skippedFirstRun, setSkippedFirstRun] = useState(false);
   useEventRouter(); // quietly attribute events on unmapped calendars (Layer 3)
+
+  // The sync queue's only interruption, mounted once for both shells: a write
+  // the server *refused*. Everything else it does is silent (D-095).
+  const { openOverlay, setSettingsSection } = useAppNavigation();
+  const openSync = useCallback(() => {
+    setSettingsSection("about");
+    openOverlay("settings");
+  }, [openOverlay, setSettingsSection]);
+  useParkedAlert(openSync);
 
   // Signup seeds no domains (migration 42), so zero domains means a brand-new
   // account. One gate for both shells — the picker is single-column by design.
@@ -336,7 +345,6 @@ function AppShellInner() {
           rail · calendar — the cardinal rule is untouched. */}
       <div className="app-canvas atmosphere flex min-w-0 flex-1 flex-col">
       <TrialBanner />
-      <SyncStatus />
       <div className="flex min-h-0 flex-1">
       <Spine
         collapsed={focusMode}

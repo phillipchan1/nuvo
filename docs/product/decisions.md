@@ -2782,7 +2782,6 @@ still loses. A hybrid logical clock would close it.
 *Status: standing — tasks, the vertical record CRUD, slots and record comments are converted;
 50 writes remain online-only, inventoried in the spec. 96 tests in `tests/sync/`.*
 
----
 
 **D-092 · 2026-08-09 · A shipped project/initiative gets a heavier, tinted mark — a
 deliberate, scoped strain of Principle 9.**
@@ -2840,6 +2839,116 @@ change happen — actually witness the stamp-down/lift-off transition.
 
 *Status: standing.*
 
+**D-094 · 2026-08-09 · The marketing page demonstrates instead of diagramming, the headline
+becomes the promise in the operator's own words, and the page follows the pipeline —
+in, down, measured, proven. Amends [D-057](#).**
+
+**What D-057 keeps.** Its real holding was that *situation* is the axis, not identity, and
+the rotating identity card it killed stays killed: P1 has no name for itself, half those
+labels are business structure, and "todo app" caps the claim at the ceiling this product
+exists to break. None of that is reopened.
+
+**What changed: the picture.** The hero was a lives × altitude plane — five rows of life
+against four columns of horizon, empty cells load-bearing. It is an *argument*, and an
+argument has to be decoded. In the four seconds a hero gets, a stranger learned Nuvo has
+categories and time horizons and never learned there was a planner in it; the empty cells
+read to us as an honest admission and to everyone else as an unfinished mockup. It also led
+with **breadth**, which is what "another everything app" sounds like.
+
+It now demonstrates. One screen, three times: the layout holds fixed — pool left, grid of
+time right — and only two things change as the reader climbs, what's in the pool
+(`task → project → initiative`) and what the columns are (`hours → weeks → quarters`). That
+is the product's own law (the Schedule, the project deck and the initiative deck are the
+same act at three clock speeds), so the reader gets *"it's the same move all the way up"*
+without reading a word. It is the `Nuvo owns the elevator` claim shown rather than argued,
+and about a thousand words earlier than the page used to make it.
+
+**What changed: the headline.** `Nothing you're carrying gets lost. Everything you're
+accountable for gets done.` — the operator's own sentence. Two candidates were tried and
+rejected in front of him first: `One system should hold all of them` (true, but a claim
+Notion, Motion and Sunsama all make, and he's heard it from all three) and `Nuvo lands every
+one of them on an hour` (the mechanism — precise, and it left the page cold, because a
+mechanism is not what a person is afraid of). The lesson is worth keeping: **once the visual
+carries the mechanism, the headline is free to carry the fear, and should.** Recognition
+moved into the subhead rather than out — "you live more than one life" still has to arrive,
+it just no longer has to arrive first.
+
+**What changed: the page.** The two clauses of that sentence are not one feeling — they're
+two distinct fears, and they map onto the product's two motions: **converge** (loose things
+gather into one line) and **descend** (that line goes down to an hour). The page is now the
+pipeline, in the order the software actually works:
+
+| | | |
+|---|---|---|
+| **In** | It gets in before you can forget it | the app's own welcome image, ported |
+| **Down** | It plans against the time you actually have left | Plan the week, with the calendars folded in |
+| **Measured** | And afterwards, where the hours actually went | the domain time ledger |
+| **Proven** | Friday tells you the truth | text, deliberately |
+
+Three consequences worth recording. **Calendars stopped being a section** — an integration
+isn't a feature, it's the reason the free-hours number is *true*, so it belongs inside the
+beat whose arithmetic depends on it. **The field moved up** from just-before-the-price to
+directly after the mechanism: "I already have a tool for this" was being answered on page
+five, after four app screens in which nobody acknowledged the reader had already tried to
+solve this. And **`route-events` got sold for the first time** — where the hours went is
+the one question nothing on the field table can answer, and it had been shipping quietly
+for a month.
+
+**The constraint that governs the build, and it is not decoration: a visible cursor performs
+every drag.** Blocks that place themselves are a picture of Motion — **N-01**, and precisely
+what Principles 3 and 4 exist to refuse. The cursor is the human. Any future edit that drops
+it has changed what the product claims to be.
+
+Two build lessons: the walk is gated on `IntersectionObserver`, not a mount timer, because
+on a phone the headline pushes the card ~1200px down and a mount timer runs the whole
+demonstration while the reader is still on the h1 — they arrive at a finished, motionless
+screen having missed the point of the section. And the hero card must clear the fold at
+1440×900, which is what the tightened hero spacing pays for; a demonstration below the fold
+is a diagram with extra steps.
+
+**Deliberately not sold:** forwarding an email to the inbox. There is no inbound-email
+function and no Resend on master (checked 2026-08-09). The capture beat names the API, which
+does ship (`supabase/functions/capture`).
+
+*Status: standing — typechecked, built (prerender clean), driven at 1440×900 and 375×812.*
+---
+
+**D-095 · 2026-08-11 · The sync queue reports nothing. It lives in Settings, and only a
+*refused* write ever interrupts.**
+
+The outbox (D-091) shipped with a status strip in normal flow at the top of both shells,
+above the Spine and the calendar. Every task or slot write queues exactly one op, which
+drains within a beat while online — so the strip mounted and unmounted within a frame or
+two, and **the whole app shoved down and sprang back on every interaction.** The first
+answer was a 400ms debounce, which killed the fast case but kept the shape: any write
+slower than a beat still displaced the entire layout, and the user was still paying
+attention-tax to be told something they had no action to take about.
+
+Phil's read, verbatim: *"its no point to me as a user."* He's right. **A queue that is
+draining normally is not news.** The strip was reporting the mechanism's health, not
+answering a question anyone asks — Principle 2's "the app reports, you decide" means
+reporting *decisions*, not plumbing.
+
+So: the strip is deleted from both shells. The queue's one surface is **Settings → About →
+Sync**, which shows the live state, a Sync-now button, and the parked list with
+Retry/Discard. It sits *above* the changelog, because a refused write is the one thing
+there anyone is sent to act on.
+
+**The one interruption that survives** is a **parked** op — a change the server refused,
+which will never land on its own. Silently dropping a write is the exact failure the
+outbox exists to prevent, so `useParkedAlert` (mounted once in `ResponsiveShell`) raises a
+sonner toast when the parked count *rises*, with a Review action that opens the panel. A
+toast floats, so unlike the strip it cannot move anything. It fires for nothing else —
+not pending, not syncing, not offline.
+
+**The general rule this sets:** *no chrome in normal flow may appear or disappear on the
+timescale of a write.* If a transient state is worth showing at all, it floats. Note this
+also drops the offline notice from the app frame — an accepted cost, since writes are
+durable offline (D-091) and the panel says so; revisit if offline turns out to need a
+standing tell.
+
+*Status: standing — typechecked, `npm test` green (552), driven in the dev app: no strip
+above the Schedule, panel renders "Everything is saved" in Settings → About.*
 ---
 ---
 ## 3 · Open questions (decide these deliberately)

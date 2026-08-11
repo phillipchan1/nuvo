@@ -3,7 +3,6 @@ import { Icon } from "../Icon";
 import { format } from "date-fns";
 import { todayISO } from "../../lib/dates";
 import { useMobileOverlayHistory } from "../../hooks/useMobileOverlayHistory";
-import SyncStatus from "../SyncStatus";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useSettings } from "../../hooks/useSettings";
 import { useVertical } from "../../hooks/useVertical";
@@ -431,12 +430,12 @@ export default function MobileShell() {
 
       <TrialBanner />
 
-      {/* Offline, queued work and refused writes all speak through one strip —
-          see SyncStatus. It replaced a bare "you're offline" notice that also
-          promised "your last synced day" at a time when nothing was actually
-          persisted across a restart; the promise is true now, and the strip
-          also has to account for writes still sitting in the outbox. */}
-      <SyncStatus />
+      {/* No sync strip here. Queued work drains within a beat, so a strip in
+          normal flow above the content shoved the whole app down and back on
+          every write — chrome the user paid for constantly to be told
+          something they never had to act on. The queue now lives in
+          Settings → About → Sync, and only a *refused* write interrupts, as a
+          floating toast (see SyncPanel / useParkedAlert, D-095). */}
 
       {/* Content */}
       <main ref={scrollRef} onScroll={recordScroll} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">

@@ -22,6 +22,7 @@ import { Btn, Modal } from "./ui";
 import Sheet from "./mobile/Sheet";
 import { Field, TextInput, Select, Toggle, Stepper, Segmented } from "./form";
 import { BillingPane } from "./billing/BillingPane";
+import SyncPanel from "./SyncPanel";
 import type { SettingsSection } from "../lib/appNav";
 import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
 import { useAppNavigation } from "../hooks/useAppNavigation";
@@ -1351,6 +1352,13 @@ function AboutPane({ onClose }: { onClose: () => void }) {
       )}
 
       {!desktop && <InstallRow />}
+
+      {/* The sync queue's home. It reports nothing in the app itself — a queue
+          that is draining normally is not news, and the strip that used to say
+          so shifted the whole layout on every write (D-095). Sits above the
+          changelog because a refused write is the one thing here someone is
+          sent to act on; it shouldn't be below a screen of release notes. */}
+      <SyncPanel />
 
       <ReleaseHistory />
 
