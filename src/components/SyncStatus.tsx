@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOnline } from "../hooks/useOnline";
 import { useOutbox, outboxSummary } from "../hooks/useOutbox";
 import { discard, parkedOps, syncNowIfConfigured, unpark, type Op } from "../lib/sync";
@@ -23,7 +23,27 @@ export default function SyncStatus() {
   const [showParked, setShowParked] = useState(false);
   const summary = outboxSummary(status, online);
 
-  if (!summary && status.durable) return null;
+  // This bar sits above everything else in the shell, in normal flow — it
+  // isn't an overlay. A plain queued write (every task/slot drag fires
+  // exactly one) drains within a beat while online, so showing it live meant
+  // it mounted and unmounted within a frame or two: the whole app shoved down
+  // and back up, read as a jarring shift on every drag. Only a hold worth
+  // telling the user about — parked, offline, or a sync still going after a
+  // beat — earns the chrome; a same-beat round trip stays silent.
+  const urgent = status.parked > 0 || !online || !status.durable;
+  const [settled, setSettled] = useState(summary);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (!summary || urgent || settled) {
+      clearTimeout(timer.current);
+      setSettled(summary);
+      return;
+    }
+    timer.current = setTimeout(() => setSettled(summary), 400);
+    return () => clearTimeout(timer.current);
+  }, [summary, urgent, settled]);
+
+  if (!settled && status.durable) return null;
 
   const tone = status.parked > 0 ? "signal" : "muted";
 
@@ -36,7 +56,7 @@ export default function SyncStatus() {
           tone === "signal" ? "border-signal bg-signal-soft text-signal" : "border-line text-muted"
         }`}
       >
-        <span className="font-medium">{summary ?? "Changes are kept in memory only"}</span>
+        <span className="font-medium">{settled ?? "Changes are kept in memory only"}</span>
 
         {!status.durable && (
           <span className="text-meta">
