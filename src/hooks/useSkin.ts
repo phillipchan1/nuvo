@@ -96,6 +96,13 @@ export const SCHEMES: Record<Skin, Scheme[]> = {
     { id: "crt", name: "CRT", hint: "Scanlines & bloom", modes: "dark",
       light: { bg: "#0b0e0a", surface: "#101510", line: "#1e2b19", accent: "#8fef5a" },
       dark:  { bg: "#0b0e0a", surface: "#101510", line: "#1e2b19", accent: "#8fef5a" } },
+    // The dark-room scheme. Every other terminal theme is designed for a lit
+    // desk and reads as glare at 1am; this one is tuned for a room where the
+    // screen is the only light — a warm near-black ground, ink held around
+    // 7:1 instead of white-on-black's 20:1, and a low-blue ramp.
+    { id: "nocturne", name: "Nocturne", hint: "Dark-room dim", modes: "dark",
+      light: { bg: "#0c0b0a", surface: "#121110", line: "#201e1c", accent: "#ab8250" },
+      dark:  { bg: "#0c0b0a", surface: "#121110", line: "#201e1c", accent: "#ab8250" } },
     { id: "ayu", name: "Ayu", hint: "Warm mirage", modes: "dark",
       light: { bg: "#0f131a", surface: "#1a1f29", line: "#2a3341", accent: "#ffb454" },
       dark:  { bg: "#0f131a", surface: "#1a1f29", line: "#2a3341", accent: "#ffb454" } },

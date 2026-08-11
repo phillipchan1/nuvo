@@ -3255,6 +3255,43 @@ html[data-skin="terminal"][data-palette="crt"] body {
   text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+/* NOCTURNE — the dark-room scheme. Every editor theme here is drawn for a lit
+   desk: Dracula's ink is 12:1 on its ground, Phosphor's is nearly 15:1, and in
+   a room where the screen is the only light source that reads as glare, not
+   contrast. This one is built backwards from that room.
+
+     · A WARM near-black ground (#0c0b0a, not #000). Pure black maximises the
+       step to any ink laid on it; a few points up gives the same "off" look
+       with a shorter jump, and the warmth keeps blue out of a dark-adapted eye.
+     · INK AROUND 7:1, not 20:1. Text is a dimmed bone (#a49a8d) and muted sits
+       at ~3:1 — still legible, but nothing on screen is ever at full strength.
+     · ONE LOW-BLUE FAMILY. The whole ramp is desaturated amber/olive/sage; the
+       signal is an ember rather than a red, so urgency still reads without a
+       saturated flare. Rank comes from value, not from turning anything up.
+
+   Colour tokens only — the flat material, the sharp corners and the type ladder
+   all come from the base terminal block. */
+html[data-skin="terminal"][data-palette="nocturne"][data-theme] {
+  --bg: #0c0b0a; --surface: #121110; --surface-2: #171614;
+  --line: #201e1c; --line-strong: #2d2a27; --text: #a49a8d; --muted: #6a6259;
+  /* The accent is held a notch below every other scheme's on purpose: it
+     arrives as a FILL (the ＋ button, the active segment, the status branch),
+     and a full-strength fill that size is the brightest thing in the room. */
+  --accent: #ab8250; --accent-2: #c09a67; --on-accent: #0c0b0a;
+  --accent-soft: rgba(171, 130, 80, 0.10); --accent-glow: rgba(171, 130, 80, 0.18);
+  --signal: #bf7250; --signal-soft: rgba(191, 114, 80, 0.13);
+  --slot: #6f9083; --event-default: #6a6259;
+  --syn-1: #b98d55; --syn-2: #8b9a6d; --syn-3: #b07f79;
+  --syn-4: #6f9083; --syn-5: #93899f; --syn-6: #6a6259;
+}
+/* The base terminal focus is a full-strength accent edge plus a 16px accent
+   bloom (see `.glass-lift` above) — in the dark that halo is the brightest
+   thing on screen. Nocturne keeps the edge and drops the bloom: the selected
+   pane is *outlined*, never lit. */
+html[data-skin="terminal"][data-palette="nocturne"] .glass-lift {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
 html[data-skin="terminal"][data-palette="ayu"][data-theme] {
   --bg: #0f131a; --surface: #1a1f29; --surface-2: #212836;
   --line: #2a3341; --line-strong: #3a4657; --text: #cbccc6; --muted: #7a8699;
@@ -3607,7 +3644,7 @@ html[data-skin="blueprint"] .fc-event:not(.evt-slot) {
   border-top: 1px solid var(--line);
   background: var(--surface);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
   color: var(--muted);
   user-select: none;
@@ -3711,7 +3748,7 @@ html[data-skin="terminal"] [data-tabs] > button[data-on="true"]::before {
     color: var(--line-strong);
   }
   html[data-skin="terminal"] [data-breadcrumb] .masthead {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
   }
 }
@@ -3725,7 +3762,7 @@ html[data-skin="terminal"] .fc-timegrid-slot-label {
 }
 html[data-skin="terminal"] .fc-timegrid-slot-label-cushion {
   font-variant-numeric: tabular-nums;
-  font-size: 10px;
+  font-size: 9.5px;
   letter-spacing: 0.02em;
   color: var(--muted);
   opacity: 0.75;
@@ -3769,7 +3806,7 @@ html[data-skin="terminal"] .spine[data-rail] .spine-rung-n::before {
 }
 html[data-skin="terminal"] .spine-rung-n::before {
   content: "▸";
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1;
 }
 html[data-skin="terminal"] button[aria-current="true"] .spine-rung-n::before,
@@ -3794,8 +3831,8 @@ html[data-skin="terminal"] textarea {
   html[data-skin="terminal"] .term-caret::after {
     content: "";
     display: inline-block;
-    width: 7px;
-    height: 13px;
+    width: 6px;
+    height: 12px;
     margin-left: 1px;
     background: var(--accent);
     vertical-align: text-bottom;
@@ -3842,42 +3879,56 @@ html[data-skin="terminal"] {
      dense numerics (durations, timeline ticks, timestamps) where the win is
      real estate, not rank. Letter-spacing also goes to 0 — the base scale's
      negative tracking is tuned for proportional type and crowds/overlaps a
-     fixed-width face. */
-  --text-display: 12px;
+     fixed-width face.
+
+     THE CELL IS 11px. A mono face at a given px reads visibly larger than a
+     proportional one — the glyphs are drawn on a fixed advance, so nothing
+     tucks — which is why 12px here felt a size up from the paper skin's 13px
+     body rather than a size down. 11px is the size a real editor actually
+     runs at, and every hardcoded px in TERMINAL CHROME (status bar, gutter,
+     day numerals, breadcrumb, caret) steps down with it. */
+  --text-display: 11px;
   --text-display--line-height: 1.4;
   --text-display--letter-spacing: 0em;
 
-  --text-lead: 12px;
+  --text-lead: 11px;
   --text-lead--line-height: 1.4;
   --text-lead--letter-spacing: 0em;
 
-  --text-head: 12px;
+  --text-head: 11px;
   --text-head--line-height: 1.4;
   --text-head--letter-spacing: 0em;
 
-  --text-body: 12px;
+  --text-body: 11px;
   --text-body--line-height: 1.4;
   --text-body--letter-spacing: 0em;
 
-  --text-caption: 12px;
+  --text-caption: 11px;
   --text-caption--line-height: 1.4;
   --text-caption--letter-spacing: 0em;
 
-  --text-label: 12px;
+  --text-label: 11px;
   --text-label--line-height: 1.4;
   --text-label--letter-spacing: 0em;
 
-  --text-meta: 10px;
+  --text-meta: 9.5px;
   --text-meta--line-height: 1.3;
   --text-meta--letter-spacing: 0em;
 
-  --text-micro: 10px;
+  --text-micro: 9.5px;
   --text-micro--line-height: 1.3;
   --text-micro--letter-spacing: 0em;
 }
 html[data-skin="terminal"] .mono,
 html[data-skin="terminal"] .masthead {
   letter-spacing: 0em;
+}
+/* …and the INHERITED base, which the token ladder never touched: `body` is
+   13px globally, so every element that never took a text-* utility — the spine
+   rungs, plain buttons, bare spans — was rendering a full size ABOVE the cell.
+   That, more than the ladder, is why the console kept reading large. */
+html[data-skin="terminal"] body {
+  font-size: var(--text-body);
 }
 /* The calendar's day numerals (CalendarPane.tsx) hardcode their own px and
    circle diameter instead of reading the --text-* tokens above, so the
@@ -3887,14 +3938,14 @@ html[data-skin="terminal"] .masthead {
    match; non-today numerals have no inline width/height, so those rules
    are no-ops there. */
 html[data-skin="terminal"] .fc-col-header-cell-cushion .masthead {
-  font-size: 12px !important;
-  width: 22px !important;
-  height: 22px !important;
+  font-size: 11px !important;
+  width: 20px !important;
+  height: 20px !important;
 }
 html[data-skin="terminal"] .fc-daygrid-day-number .masthead {
-  font-size: 12px !important;
-  width: 18px !important;
-  height: 18px !important;
+  font-size: 11px !important;
+  width: 17px !important;
+  height: 17px !important;
 }
 /* Flat: quick and smooth — the modern-app snap. */
 html[data-skin="flat"] {
