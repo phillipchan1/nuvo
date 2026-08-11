@@ -357,6 +357,61 @@ describe("editing offline", () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["tasks"] });
   });
+
+  /**
+   * The fast-toggle-reverts regression: checking a task done and then, before
+   * that write has landed, unchecking it again. A drain snapshots its ops
+   * *before* it starts sending, so the second toggle — queued while the first
+   * is still in flight — can't be part of that pass and is still owed once it
+   * finishes. `syncNow` used to invalidate `["tasks"]` unconditionally whenever
+   * it had sent *anything*, so that refetch pulled the server's "done" row
+   * over the optimistic "not done" patch and the checkbox visibly flipped back.
+   */
+  it("does not let a completed drain refetch tasks while a fast second toggle is still queued", async () => {
+    await refreshOwing();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    const { queueWrite, makeOp } = await import("../../src/lib/sync");
+
+    let resolveSend: ((r: { ok: true }) => void) | null = null;
+    const stallingTransport = {
+      send: () =>
+        new Promise<{ ok: true }>((resolve) => {
+          resolveSend = resolve;
+        }),
+    };
+
+    // First toggle: mark the task done.
+    await queueWrite(
+      makeOp("tasks", "update", "task-1", { status: "done", completed_at: "2026-08-11T00:00:00.000Z" }),
+    );
+
+    const firstDrain = syncNow({ qc, transport: stallingTransport });
+    // Let the drain reach `transport.send` and start waiting on it.
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The user unchecks it again while the first write is still in flight —
+    // this can't be in the snapshot the in-progress drain already took.
+    await queueWrite(makeOp("tasks", "update", "task-1", { status: "planned", completed_at: null }));
+
+    resolveSend!({ ok: true });
+    await firstDrain;
+
+    // "tasks" still owes the second write. Refetching now would show the
+    // server's stale "done" row and clobber the still-queued "planned" patch.
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ["tasks"] });
+
+    // Once the second write actually drains, the table is genuinely settled
+    // and the refetch is safe again.
+    const secondDrain = syncNow({ qc, transport: stallingTransport });
+    await new Promise((r) => setTimeout(r, 0));
+    resolveSend!({ ok: true });
+    await secondDrain;
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["tasks"] });
+  });
 });
 
 describe("labels", () => {

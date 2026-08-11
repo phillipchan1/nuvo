@@ -90,8 +90,18 @@ export async function syncNow({ qc, transport }: SyncRunOptions): Promise<void> 
   // should see what really landed rather than what we hoped would.
   if (report.sent > 0) {
     for (const table of settled) qc.invalidateQueries({ queryKey: [table] });
-    qc.invalidateQueries({ queryKey: ["tasks"] });
-    qc.invalidateQueries({ queryKey: ["vertical"] });
+    // "tasks"/"vertical" are cross-table blast radius (task_labels joins into
+    // tasks, projects/domains feed vertical) so any settlement refreshes them —
+    // but only once "tasks" itself owes nothing. A drain's `ops` snapshot is
+    // taken before it starts sending; a second toggle queued mid-drain (still
+    // owing, not yet part of any snapshot) is invisible to `settled` here. Firing
+    // this refetch anyway would pull the pre-toggle server row over the still-
+    // pending optimistic patch and flip the checkbox back — exactly the "fast
+    // double-tap reverts" bug this guard exists to prevent.
+    if (!owing.has("tasks")) {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["vertical"] });
+    }
   }
 }
 
