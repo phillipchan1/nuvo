@@ -414,6 +414,90 @@ describe("editing offline", () => {
   });
 });
 
+describe("recurring series domain cascade", () => {
+  /**
+   * Domain is a series-level attribute (see cascadeDomainToSeries in
+   * useTasks.ts): re-homing one occurrence must re-home every sibling row and
+   * the recurrences template, not just the row that was edited.
+   */
+  function seedSeries(qc: QueryClient) {
+    qc.setQueryData(["tasks", "all"], [
+      { id: "a", recurrence_id: "rec-1", domain_id: "domain-old" },
+      { id: "b", recurrence_id: "rec-1", domain_id: "domain-old", status: "done" },
+      { id: "c", recurrence_id: "rec-2", domain_id: "domain-old" },
+      { id: "d", recurrence_id: null, domain_id: "domain-old" },
+    ]);
+    qc.setQueryData(["recurrences"], [
+      { id: "rec-1", domain_id: "domain-old" },
+      { id: "rec-2", domain_id: "domain-old" },
+    ]);
+  }
+
+  it("re-homes every sibling occurrence and the series template, but not other series or loose tasks", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    seedSeries(qc);
+    const localWrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useTaskMutations(), { wrapper: localWrapper });
+
+    act(() => {
+      result.current.patchTask("a", { domain_id: "domain-new" });
+    });
+
+    // Optimistic: the sibling (even a done one — this feeds the domain time
+    // ledger) picks it up immediately; a different series and a loose task do not.
+    const tasks = qc.getQueryData<{ id: string; domain_id: string | null }[]>(["tasks", "all"]);
+    expect(tasks?.find((t) => t.id === "b")?.domain_id).toBe("domain-new");
+    expect(tasks?.find((t) => t.id === "c")?.domain_id).toBe("domain-old");
+    expect(tasks?.find((t) => t.id === "d")?.domain_id).toBe("domain-old");
+
+    const recs = qc.getQueryData<{ id: string; domain_id: string | null }[]>(["recurrences"]);
+    expect(recs?.find((r) => r.id === "rec-1")?.domain_id).toBe("domain-new");
+    expect(recs?.find((r) => r.id === "rec-2")?.domain_id).toBe("domain-old");
+
+    // And it actually lands server-side, for the edited row, the cascaded
+    // sibling, and the template — not for the unrelated series or loose task.
+    await drain(transport);
+    const patched = (table: string, id: string) =>
+      net.rpcCalls.find(
+        (c) =>
+          c.fn === "apply_patch" &&
+          (c.args as { p_table: string; p_match: { id: string } }).p_table === table &&
+          (c.args as { p_match: { id: string } }).p_match.id === id,
+      )?.args as { p_patch: { domain_id?: string } } | undefined;
+
+    expect(patched("tasks", "a")?.p_patch.domain_id).toBe("domain-new");
+    expect(patched("tasks", "b")?.p_patch.domain_id).toBe("domain-new");
+    expect(patched("recurrences", "rec-1")?.p_patch.domain_id).toBe("domain-new");
+    expect(patched("tasks", "c")).toBeUndefined();
+    expect(patched("tasks", "d")).toBeUndefined();
+    expect(patched("recurrences", "rec-2")).toBeUndefined();
+  });
+
+  it("does nothing when the task has no recurrence_id", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    seedSeries(qc);
+    const localWrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useTaskMutations(), { wrapper: localWrapper });
+
+    act(() => {
+      result.current.patchTask("d", { domain_id: "domain-new" });
+    });
+
+    const tasks = qc.getQueryData<{ id: string; domain_id: string | null }[]>(["tasks", "all"]);
+    expect(tasks?.find((t) => t.id === "a")?.domain_id).toBe("domain-old");
+    const recs = qc.getQueryData<{ id: string; domain_id: string | null }[]>(["recurrences"]);
+    expect(recs?.find((r) => r.id === "rec-1")?.domain_id).toBe("domain-old");
+  });
+});
+
 describe("labels", () => {
   it("queues only the labels that actually changed", async () => {
     setOnline(false);

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
-import { DEFAULT_DURATION_MINUTES, restingStatus, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
+import { DEFAULT_DURATION_MINUTES, restingStatus, type Recurrence, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
 import { useOptionalUndoStack } from "./useUndoStack";
@@ -239,6 +239,42 @@ export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
   }
 }
 
+/**
+ * Domain is a series-level attribute — `recurrences.domain_id` is part of the
+ * template (see `SeriesTemplate` in useRecurrence.ts), not a per-occurrence
+ * schedule detail the way start_time/title legitimately are. Editing one
+ * occurrence's domain re-homes the whole series, silently: every sibling task
+ * row plus the recurrence template, so future materializations and the
+ * domain time-ledger agree. Pure field cascade over rows that already exist —
+ * no rule change, no regeneration (contrast updateSeries/clearFuture in
+ * useRecurrence.ts). Cascades regardless of `recurrence_overridden` (that
+ * flag pins schedule fields against rule regeneration; domain identity is
+ * unrelated) and regardless of status (done occurrences feed the ledger too).
+ */
+function cascadeDomainToSeries(qc: QueryClient, id: string, domainId: string | null) {
+  // The unfiltered pool is the only cache that can authoritatively answer
+  // "does this task have siblings" — null means it hasn't loaded, and unknown
+  // must mean skip (see occurrenceDates in useRecurrence.ts): guessing "no
+  // series" here would silently strand the rest of the series un-rehomed.
+  const pool = qc.getQueryData<Task[]>(["tasks", "all"]);
+  if (!pool) return;
+  const recurrenceId = pool.find((t) => t.id === id)?.recurrence_id;
+  if (!recurrenceId) return;
+
+  for (const sibling of pool) {
+    if (sibling.id === id || sibling.recurrence_id !== recurrenceId) continue;
+    patchCaches(qc, sibling.id, { domain_id: domainId });
+    void queueWrite(makeOp("tasks", "update", sibling.id, { domain_id: domainId }));
+  }
+
+  qc.setQueryData<Recurrence[]>(["recurrences"], (old) =>
+    old?.map((r) => (r.id === recurrenceId ? { ...r, domain_id: domainId } : r)),
+  );
+  void queueWrite(makeOp("recurrences", "update", recurrenceId, { domain_id: domainId })).then(() =>
+    invalidateWhenSafe(qc, "recurrences", ["recurrences"]),
+  );
+}
+
 // NOTE: the old unconditional `invalidateTasks` is gone. An outright
 // invalidation is unsafe now that writes can be queued: the refetch returns
 // server rows that predate everything still in the outbox, so the user's
@@ -370,6 +406,14 @@ export function useTaskMutations() {
     // the same row the insert will create. The outbox folds the two into a
     // single insert before either leaves the device.
     patchCaches(qc, id, patch);
+
+    // `"domain_id" in patch` (not `patch.domain_id != null`) so an explicit
+    // clear (`domain_id: null`) cascades too — domain is a series identity,
+    // and "no domain" is as much a series-level choice as any other value.
+    if ("domain_id" in patch) {
+      cascadeDomainToSeries(qc, id, patch.domain_id ?? null);
+    }
+
     // `invalidateWhenSafe` must run after `owing` reflects this op (queueWrite's
     // own awaits), not right after it's kicked off — fired synchronously here it
     // always saw the table as owing nothing yet and refetched immediately, ahead
