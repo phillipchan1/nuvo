@@ -2950,6 +2950,42 @@ standing tell.
 *Status: standing — typechecked, `npm test` green (552), driven in the dev app: no strip
 above the Schedule, panel renders "Everything is saved" in Settings → About.*
 ---
+
+**D-096 · 2026-08-11 · A material that changes the easing must change the durations with
+it. Linear at ease-out's numbers is the slow-motion bug.**
+
+Blueprint's modals, popovers, Settings and create-record opens read as a slow-motion fade
+— on that skin only. Not a rendering cost, and not what the modal/popover fade fix
+(`ed3d2d8`, shipped v0.1.175) addressed; that one was a `.moment`/`.pop-in` mismatch on
+TaskPopover plus `backdrop-filter` re-blurring every frame under an animated opacity.
+Both were real, both shipped, and neither touched this.
+
+**The cause is one line of skin CSS.** Warm Paper's `--ease-out` is
+`cubic-bezier(0.22, 1, 0.36, 1)` — an expo curve that is ~75% complete in the first fifth
+of its duration. The duration ladder (130/220/340/**540**) was chosen against that curve,
+so a 540ms `.moment` *looks* like ~150ms. Blueprint replaced the easing with
+`cubic-bezier(0, 0, 1, 1)` (linear) to get its plotter character and **kept the paper
+durations**. Nothing is front-loaded under linear: the surface is honestly at half opacity
+at the halfway mark, so every ceremony open runs at its full 540ms and the base fade at
+its full 220ms — 3–4× the perceived duration of every other material.
+
+Terminal already had this right and is the precedent: it takes the same linear curve and
+ships 45/85/120/150 with it. Blueprint now carries 70/115/165/210 — quicker than paper, a
+step calmer than the console, which is what a plotter should read as. It also picks up the
+`--ease-in-out` override Terminal has and Blueprint was missing.
+
+**Surveyed the rest, in the running app** (computed tokens read per skin, not inferred):
+glass 130/220/340/540 + expo, flat 90/150/340/540 + expo, terminal 45/85/120/150 + linear,
+e-ink 1ms + linear. **Blueprint was the only material with linear easing on unshortened
+durations** — the others are each internally consistent.
+
+**The rule:** `--ease-*` and `--d-*` are one decision, not two. A skin that overrides the
+curve owns the ladder that goes with it. Reviewing an easing change without the durations
+beside it will keep producing this.
+
+*Status: standing — verified in the dev app: `.moment` resolves to 0.21s linear under
+blueprint (was 0.54s linear), all five skins' tokens read back as above.*
+---
 ---
 ## 3 · Open questions (decide these deliberately)
 

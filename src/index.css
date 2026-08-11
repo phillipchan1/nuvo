@@ -3962,9 +3962,22 @@ html[data-skin="terminal"] .fc-daygrid-day-number .masthead {
 html[data-skin="flat"] {
   --d-fast: 90ms; --d-base: 150ms;
 }
-/* Blueprint: a plotter — even and linear, never bouncy. */
+/* Blueprint: a plotter — even and linear, never bouncy.
+
+   The durations MUST come with the easing. The Warm Paper defaults
+   (130/220/340/540) are tuned for `--ease-out: cubic-bezier(0.22, 1, 0.36, 1)`,
+   an expo curve that is ~75% done at a fifth of its duration — a 540ms
+   `.moment` *looks* like 150ms. Swap in linear and nothing is front-loaded any
+   more: the surface is honestly at half opacity at the halfway mark, so every
+   modal, popover, Settings and create-record open read as a slow-motion fade
+   at 3-4x the other materials. Blueprint shipped with the linear easing and
+   the paper durations, which is exactly that bug; Terminal above got this
+   right, and its shortened numbers are the precedent. A plotter is
+   deliberate, not sluggish — so: quicker than paper, a step calmer than the
+   console. (D-096) */
 html[data-skin="blueprint"] {
-  --ease-out: cubic-bezier(0, 0, 1, 1); --ease-spring: cubic-bezier(0, 0, 1, 1);
+  --d-fast: 70ms; --d-base: 115ms; --d-slow: 165ms; --d-moment: 210ms;
+  --ease-out: cubic-bezier(0, 0, 1, 1); --ease-in-out: cubic-bezier(0, 0, 1, 1); --ease-spring: cubic-bezier(0, 0, 1, 1);
 }
 /* E-Ink: the display just refreshes — no smooth motion at all, like real paper. */
 html[data-skin="eink"] {
