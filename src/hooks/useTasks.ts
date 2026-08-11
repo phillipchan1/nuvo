@@ -370,12 +370,20 @@ export function useTaskMutations() {
     // the same row the insert will create. The outbox folds the two into a
     // single insert before either leaves the device.
     patchCaches(qc, id, patch);
-    void queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>));
+    // `invalidateWhenSafe` must run after `owing` reflects this op (queueWrite's
+    // own awaits), not right after it's kicked off — fired synchronously here it
+    // always saw the table as owing nothing yet and refetched immediately, ahead
+    // of the write it was supposed to be waiting for. The server's pre-drag row
+    // then failed the just-changed membership filter (e.g. a task that just
+    // picked up a start_time missing from the scheduled-tasks query) and the
+    // task vanished from the calendar until the real write landed.
+    void queueWrite(makeOp("tasks", "update", id, patch as Record<string, unknown>)).then(() =>
+      invalidateWhenSafe(qc, "tasks", ["tasks"]),
+    );
 
     if (MIRROR_FIELDS.some((f) => f in patch) && navigator.onLine) {
       invokeQuiet("task-mirror", { taskId: id });
     }
-    invalidateWhenSafe(qc, "tasks", ["tasks"]);
 
     // Field edits default to no undo (native input undo wins). Callers that
     // move/resize pass `before` + `undo` tier.

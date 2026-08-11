@@ -108,7 +108,7 @@ const { drain } = await import("../../src/lib/sync/engine");
 const { createSupabaseTransport, resetTransportProbeForTests } = await import(
   "../../src/lib/sync/transport"
 );
-const { refreshOwing } = await import("../../src/lib/sync/coordinator");
+const { refreshOwing, syncNow } = await import("../../src/lib/sync/coordinator");
 
 const transport = createSupabaseTransport(async () => "user-1");
 
@@ -316,6 +316,46 @@ describe("editing offline", () => {
     const writes = net.recorded.filter((r) => r.table === "tasks");
     expect(writes).toHaveLength(1);
     expect(writes[0].payload).toMatchObject({ id, title: "Fast", status: "done" });
+  });
+
+  /**
+   * The drag-jank regression: dragging a task (block / assignToSlot / resize —
+   * all `patchTask` underneath) used to fire `invalidateWhenSafe` synchronously,
+   * one tick before `queueWrite`'s own awaits had a chance to mark the table as
+   * owing. That refetch landed the server's pre-drag row on top of the
+   * optimistic one — a task that just picked up a `start_time` briefly failed
+   * the scheduled-tasks membership filter and blinked off the calendar, and the
+   * grid reflowed around it. `patchTask` must not let `invalidateQueries` run
+   * ahead of the write that's supposed to make it safe.
+   */
+  it("does not invalidate the tasks query before its own write is durably queued", async () => {
+    await refreshOwing(); // a clean starting mirror — IDB was reset, this test's isn't queued yet
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const localWrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+
+    const { result } = renderHook(() => useTaskMutations(), { wrapper: localWrapper });
+
+    act(() => {
+      result.current.patchTask("existing-id", { start_time: "2026-08-10T15:00:00.000Z" });
+    });
+
+    // Still mid-flight: `queueWrite`'s IndexedDB write hasn't resolved, so the
+    // table doesn't yet owe anything as far as a synchronous check can tell.
+    // An invalidate fired here is the bug — it can only see the stale row.
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    // Once the write is actually queued, syncNow's drain settles it and the
+    // deferred invalidate is released — the refetch happens, just no longer
+    // ahead of the change it's supposed to reflect.
+    await act(async () => {
+      await syncNow({ qc, transport });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["tasks"] });
   });
 });
 
