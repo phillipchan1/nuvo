@@ -486,11 +486,22 @@ export default function OnDeckPlanner() {
               {/* cards — lane-packed rows float on top. items-stretch equalizes a
                   row's card heights; pb clears the pinned + project button. The
                   inline composer slots into the grid right under the clicked week's
-                  last card (composeRowIdx). */}
+                  last card (composeRowIdx).
+
+                  NO HORIZONTAL PADDING ON THESE ROWS. They carry the same `cols`
+                  template as the week headers and the background column rules, and
+                  three grids only line up if they resolve it over the SAME width.
+                  These rows used to add `px-1.5`, which took 12px out of the box
+                  the `minmax(…, 1fr)` columns divide — so each card column came out
+                  3px narrower than the rule column it sits in, and the error
+                  ACCUMULATED: week 1's card sat 10px off its left rule and 1px off
+                  its right, week 4 the mirror image. Read as drifting gutters down
+                  the deck. The card's own `mx-1` is the gutter; the rules and the
+                  cards must share one box (D-097). */}
               {rows.length === 0 ? (
                 cw != null ? (
                   <div className="relative pb-16 pt-2.5">
-                    <div className="grid items-stretch px-1.5 py-1" style={{ gridTemplateColumns: cols }}>
+                    <div className="grid items-stretch py-1" style={{ gridTemplateColumns: cols }}>
                       {composerCell}
                     </div>
                   </div>
@@ -502,7 +513,7 @@ export default function OnDeckPlanner() {
               ) : (
                 <div className="pointer-events-none relative pb-16 pt-2.5">
                   {rows.map((row, ri) => (
-                    <div key={ri} className="grid items-stretch px-1.5 py-1" style={{ gridTemplateColumns: cols }}>
+                    <div key={ri} className="grid items-stretch py-1" style={{ gridTemplateColumns: cols }}>
                     {row.map((g) => {
                       const { l } = g;
                       const { start, end, beyond } = effOf(g);
@@ -543,7 +554,7 @@ export default function OnDeckPlanner() {
                     </div>
                   ))}
                   {composeRowIdx === rows.length && (
-                    <div className="grid items-stretch px-1.5 py-1" style={{ gridTemplateColumns: cols }}>
+                    <div className="grid items-stretch py-1" style={{ gridTemplateColumns: cols }}>
                       {composerCell}
                     </div>
                   )}

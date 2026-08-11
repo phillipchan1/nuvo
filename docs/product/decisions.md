@@ -2986,6 +2986,38 @@ beside it will keep producing this.
 *Status: standing — verified in the dev app: `.moment` resolves to 0.21s linear under
 blueprint (was 0.54s linear), all five skins' tokens read back as above.*
 ---
+
+**D-097 · 2026-08-11 · Layers that share a grid template must share a box. On Deck's cards
+drifted 3px per column away from the rules they sit in.**
+
+The On Deck planner stacks three layers on one `cols` template
+(`96px repeat(4, minmax(216px, 1fr))`): the background week columns that draw the vertical
+rules, the week headers, and the lane-packed card rows. The card rows carried `px-1.5`.
+
+**A `1fr` column resolves against the box it's in.** That 12px of horizontal padding came
+out of the width the four flexible columns divide, so the card grid's columns computed to
+**296.75px against the rules' 299.75px** — and the 3px error *accumulated* across the row.
+Measured in the running app before the fix: week 1's card sat **10px** off its left rule
+and **1px** off its right, week 2 7/4, week 3 4/7. Down the deck it read as gutters that
+drift and cards that crowd one rule and float off the other.
+
+Fix is the whole diagnosis: drop the padding, let the card's own `mx-1` be the gutter. Now
+every card measures **4.0/4.0** in its column, and the two grids resolve to identical
+templates.
+
+**Not a skin bug** — it was equally present on Aurora/glass, where it was first measured.
+Blueprint only *exposed* it, because that material draws crisp high-contrast column rules
+while paper's are faint enough to hide a 3px drift. Verified 4.0/4.0 across all five
+materials after the fix. The sibling initiative deck uses a single grid and was never
+affected.
+
+**The rule:** if two elements carry the same `gridTemplateColumns`, any padding, border or
+scrollbar on one of their containers silently desynchronises them wherever the template
+uses a flexible unit. Put the gutter on the child, never on the shared grid.
+
+*Status: standing — typechecked, `npm test` green (552), built; measured per card per skin
+in the running dev app.*
+---
 ---
 ## 3 · Open questions (decide these deliberately)
 
