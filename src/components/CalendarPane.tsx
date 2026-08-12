@@ -1293,6 +1293,9 @@ export default function CalendarPane({
         });
       } else {
         tasks.forEach((t) => mutations.assignToSlot(t, slot));
+        // Single-task external drop: the phantom event id matches fcEvents, but
+        // the task is joining a slot — drop the ghost so it doesn't snap back.
+        if (!group && tasks.length === 1) info.event.remove();
       }
       return;
     }
@@ -1346,8 +1349,10 @@ export default function CalendarPane({
           });
           const slot = hoveredSlot ?? timeSlot;
           if (slot) {
-            info.revert(); // undo FC's move — the task joins the slot, not a time block
             mutations.assignToSlot(task, slot);
+            // Remove the FC ghost silently — the task rides the slot now, not its
+            // own block. Revert() animates snap-back before the cache patch lands.
+            info.event.remove();
           } else {
             mutations.block(task, info.event.start);
           }

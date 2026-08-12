@@ -52,9 +52,15 @@ export function useSlotTasks(slotIds: string[]) {
   });
 }
 
-function patchSlotCaches(qc: QueryClient, id: string, patch: Partial<Slot>) {
+export function patchSlotCaches(qc: QueryClient, id: string, patch: Partial<Slot>) {
   qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
     old?.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+  );
+}
+
+export function insertSlotCache(qc: QueryClient, slot: Slot) {
+  qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+    old ? [...old, slot] : [slot],
   );
 }
 
@@ -81,7 +87,7 @@ export function useSlotMutations() {
    * existed because Postgres named the row. A slot dragged onto the grid with
    * no network now stays there.
    */
-  const createSlot = async (input: NewSlotInput): Promise<Slot> => {
+  const createSlot = (input: NewSlotInput): Slot => {
     const id = crypto.randomUUID();
     const optimistic: Slot = {
       id,
@@ -100,18 +106,18 @@ export function useSlotMutations() {
       recurrence_date: null,
       recurrence_overridden: false,
     };
-    qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
-      old ? [...old, optimistic] : [optimistic],
-    );
+    insertSlotCache(qc, optimistic);
 
-    await queueWrite(
-      makeOp("slots", "insert", id, {
-        ...input,
-        duration_minutes: input.duration_minutes ?? DEFAULT_DURATION_MINUTES,
-      }),
-    );
-    if (navigator.onLine) invokeQuiet("slot-mirror", { slotId: id });
-    invalidateWhenSafe(qc, "slots", ["slots"]);
+    void (async () => {
+      await queueWrite(
+        makeOp("slots", "insert", id, {
+          ...input,
+          duration_minutes: input.duration_minutes ?? DEFAULT_DURATION_MINUTES,
+        }),
+      );
+      if (navigator.onLine) invokeQuiet("slot-mirror", { slotId: id });
+      invalidateWhenSafe(qc, "slots", ["slots"]);
+    })();
     return optimistic;
   };
 
@@ -201,7 +207,7 @@ export function useSlotMutations() {
       slot_id: t.slot_id,
     }));
 
-    const slot = await createSlot({
+    const slot = createSlot({
       title: "",
       do_date: toDateISO(start),
       start_time: start.toISOString(),

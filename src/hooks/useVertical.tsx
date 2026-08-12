@@ -12,6 +12,7 @@ import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { fetchAllTasks, patchCaches } from "./useTasks";
+import { insertSlotCache, patchSlotCaches } from "./useSlots";
 import { invalidateWhenSafe, makeOp, queueWrite, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
 import { upsertPushVerdict } from "../lib/priorities";
@@ -1410,10 +1411,28 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
             // Top up: the block keeps the day and time it already holds — the
             // person put it there. Only its length moves, to cover what's being
             // added. Never reposition a sitting the week has already lived with.
+            patchSlotCaches(qc, slotId, { duration_minutes: s.durationMins });
             await queueWrite(
               makeOp("slots", "update", slotId, { duration_minutes: s.durationMins }),
             );
           } else {
+            insertSlotCache(qc, {
+              id: slotId,
+              user_id: "",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              title: s.title,
+              do_date: s.doDateISO,
+              start_time: s.startISO,
+              duration_minutes: s.durationMins,
+              project_id: s.projectId ?? null,
+              domain_id: s.domainId,
+              color: s.color ?? null,
+              google_event_id: null,
+              recurrence_id: null,
+              recurrence_date: null,
+              recurrence_overridden: false,
+            });
             await queueWrite(
               makeOp("slots", "insert", slotId, {
                 title: s.title,

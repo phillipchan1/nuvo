@@ -197,6 +197,7 @@ export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
       const belongs = next != null && next.status === "inbox";
       if (!belongs) updated = data.filter((t) => t.id !== id);
       else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+      else if (next) updated = [...data, next];
     } else if (kind === "day") {
       const dateISO = key[2] as string;
       const belongs =
@@ -206,6 +207,11 @@ export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
         (next.status === "planned" || next.status === "done");
       if (!belongs) updated = data.filter((t) => t.id !== id);
       else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+      else if (next) {
+        // Leaving a slot: the slot cache drops it; insert here so the day rail
+        // and all-day row don't flash empty until the refetch returns.
+        updated = [...data, next];
+      }
     } else if (kind === "anytime") {
       const startDate = key[2] as string;
       const endDate = key[3] as string;
@@ -219,6 +225,7 @@ export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
         next.do_date < endDate;
       if (!belongs) updated = data.filter((t) => t.id !== id);
       else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+      else if (next) updated = [...data, next];
     } else if (kind === "scheduled") {
       const rangeStart = key[2] as string;
       const rangeEnd = key[3] as string;
@@ -230,6 +237,7 @@ export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
         next.start_time < rangeEnd;
       if (!belongs) updated = data.filter((t) => t.id !== id);
       else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+      else if (next) updated = [...data, next];
     } else if (kind === "slot") {
       const slotIds = key[2] as string[];
       const belongs =
