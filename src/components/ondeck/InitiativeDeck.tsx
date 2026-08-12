@@ -348,24 +348,21 @@ export default function InitiativeDeck() {
 
                   <div className="flex min-h-[60px] flex-1 flex-col gap-2">
                     {lanes.length === 0 && composeCol !== q.idx ? (
-                      <div
+                      <button
+                        type="button"
                         onClick={() => composeInCol(q.idx)}
                         // Not flex-1: now that a column runs the full height of the
                         // pane, a stretched drop zone becomes a huge empty framed box
                         // — the loudest thing in an empty quarter. It stays a modest
                         // offer at the top; the rest of the column is a click target too.
-                        className="slot-open fast cursor-pointer rounded-lg border px-2 py-6 text-center text-micro text-muted transition-colors"
+                        className="slot-open fast w-full cursor-pointer rounded-lg border px-2 py-6 text-center text-micro text-muted transition-colors"
                         title="New initiative in this quarter"
                       >
                         Drop an initiative here, or tap to add
-                      </div>
+                      </button>
                     ) : null}
                     {lanes.length === 0 && composeCol !== q.idx ? (
-                      <div
-                        onClick={() => composeInCol(q.idx)}
-                        title="New initiative in this quarter"
-                        className="slot-col fast min-h-[28px] flex-1 cursor-pointer rounded-lg transition-colors"
-                      />
+                      <AddSlotFiller onAdd={() => composeInCol(q.idx)} label={`New initiative in ${q.label}`} />
                     ) : (
                       <>
                         {lanes.map((l) => (
@@ -393,11 +390,7 @@ export default function InitiativeDeck() {
                         ) : (
                           // the empty space below the cards is a click target too —
                           // tap anywhere here to start an initiative in this quarter
-                          <div
-                            onClick={() => composeInCol(q.idx)}
-                            title="New initiative in this quarter"
-                            className="slot-col fast min-h-[28px] flex-1 cursor-pointer rounded-lg transition-colors"
-                          />
+                          <AddSlotFiller onAdd={() => composeInCol(q.idx)} label={`New initiative in ${q.label}`} />
                         )}
                       </>
                     )}
@@ -441,6 +434,33 @@ export default function InitiativeDeck() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The rest of a quarter column: drop target for a pointer, "add here" for a
+ * keyboard.
+ *
+ * It used to be a bare `<div onClick>`, which meant creating an initiative *in
+ * a particular quarter* was a mouse-only act — `I` opens the composer from
+ * anywhere, but it can't say which column you meant. A button restores that.
+ *
+ * The label appears on focus as well as hover. An invisible tab stop is worse
+ * than no tab stop: the ring lands on an empty rectangle and the user has to
+ * guess what activating it would do. On focus it says so.
+ */
+function AddSlotFiller({ onAdd, label }: { onAdd: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onAdd}
+      title={label}
+      className="slot-col fast group/add flex min-h-[28px] flex-1 cursor-pointer items-start justify-center rounded-lg pt-1.5 transition-colors"
+    >
+      <span className="text-micro text-muted opacity-0 transition-opacity group-hover/add:opacity-100 group-focus-visible/add:opacity-100">
+        ＋ {label}
+      </span>
+    </button>
   );
 }
 

@@ -19,6 +19,7 @@ import {
   itemSelectVisual,
 } from "./collectionSelection";
 import { useRecordContextMenu } from "../RecordContextMenu";
+import { pressable } from "../../lib/a11y";
 
 export interface CollectionRecord {
   id: string;
@@ -190,6 +191,12 @@ function TableView({ config, selection }: { config: CollectionConfig; selection:
             key={r.id}
             data-select-id={r.id}
             ref={(el) => selection.registerRef(r.id, el)}
+            // The table row opens the record on click; without this it did so
+            // for the mouse only. Enter/Space now does the same, and `pressable`
+            // ignores the keystroke when it came from a control *inside* the row
+            // (the inline name field, the status select) — the same carve-out the
+            // click handler makes below, for the same reason.
+            {...pressable(() => r.open(), { label: r.title })}
             onContextMenu={recordKind ? onContextMenu(recordKind, r.id) : undefined}
             onMouseDown={(e) => { if (e.shiftKey || e.metaKey || e.ctrlKey) selection.itemPointerDown(r.id)(e); }}
             onClick={(e) => {

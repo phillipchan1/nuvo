@@ -11,6 +11,7 @@ import {
 } from "../lib/recurrence";
 import { parseDateISO } from "../lib/dates";
 import { Btn } from "./ui";
+import { useEscape } from "../hooks/useEscape";
 
 /**
  * A delete control that fans out into series scopes when the item repeats.
@@ -33,6 +34,8 @@ export function RecurrenceDeleteButton({
   onSeries: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Declared before the early return — a hook can't sit behind a condition.
+  useEscape(open, () => setOpen(false));
   if (!recurring) return <Btn kind="signal" onClick={onSimple}>{label}</Btn>;
   const items: { label: string; fn: () => void }[] = [
     { label: "This occurrence", fn: onThis },
@@ -86,6 +89,7 @@ export function SlotDeleteButton({
 }) {
   const [open, setOpen] = useState(false);
   const [deleteTasks, setDeleteTasks] = useState(false);
+  useEscape(open, () => setOpen(false));
 
   // Nothing to decide — a plain, empty, non-recurring slot deletes outright.
   if (!recurring && taskCount === 0) {
@@ -279,6 +283,8 @@ export default function RecurrencePicker({
   const [count, setCount] = useState(current?.count ?? 10);
 
   const popRef = useRef<HTMLDivElement>(null);
+  // The popover is only mounted while open, so it is always active here.
+  useEscape(true, onClose);
   const [pos, setPos] = useState<{ top: number; left: number; side: "right" | "left" }>({
     top: anchor.bottom + 6,
     left: anchor.left,

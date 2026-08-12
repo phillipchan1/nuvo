@@ -280,5 +280,38 @@ export function useListReorder({
     };
   }, [containerRef, itemSelector, idAttr, rowRect, disabled]);
 
-  return { draggingId, lineTop, zone };
+  /**
+   * The same reorder, one row at a time, without a pointer.
+   *
+   * Drag is a *gesture*: it needs an origin, continuous travel and a release,
+   * and none of those exist on a keyboard. So the keyboard path can't reuse the
+   * gesture — it reuses what the gesture *decides*: the same `bandOf` honesty
+   * gate (a time-blocked row is ordered by its clock, so it doesn't move here
+   * either) and the same `onCommit`, so ⌥↑ and a drag write identical history.
+   *
+   * Returns the new 1-based position and the band's length so the caller can
+   * say it out loud — a sighted mouse user watches the row travel, and the
+   * announcement is what replaces having watched it.
+   */
+  const moveBy = useCallback(
+    (id: string, delta: number): { index: number; total: number } | null => {
+      if (disabled) return null;
+      const band = bandOf(id);
+      if (!band) return null;
+      const ids = bandIds(band);
+      const from = ids.indexOf(id);
+      if (from === -1 || ids.length < 2) return null;
+      const to = from + delta;
+      // Clamped, not wrapped: ⌥↑ held at the top should rest there, not
+      // teleport the row to the bottom of the list.
+      if (to < 0 || to >= ids.length) return null;
+      const next = ids.filter((x) => x !== id);
+      next.splice(to, 0, id);
+      onCommit(band, next);
+      return { index: to + 1, total: ids.length };
+    },
+    [disabled, bandOf, bandIds, onCommit],
+  );
+
+  return { draggingId, lineTop, zone, moveBy };
 }

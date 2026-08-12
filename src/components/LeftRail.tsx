@@ -10,6 +10,8 @@ import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useListReorder } from "../hooks/useListReorder";
+import { announce } from "../lib/announce";
+import { isTypingIn } from "../lib/a11y";
 import { domainById, initiativeById, projectById, taskDomainColor, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { useOptionalUndoStack } from "../hooks/useUndoStack";
 import TaskRow, { type TaskMeta } from "./TaskRow";
@@ -388,7 +390,7 @@ export default function LeftRail({
     },
   };
 
-  const { draggingId, lineTop, zone } = useListReorder({
+  const { draggingId, lineTop, zone, moveBy } = useListReorder({
     containerRef: listRef,
     itemSelector: "[data-task-drag]",
     idAttr: "data-task-drag",
@@ -447,6 +449,39 @@ export default function LeftRail({
       });
     },
   });
+
+  // ── ⌥↑ / ⌥↓ — reorder the selected row without a pointer ───────────────────
+  // Its own effect rather than a case in the hotkey switch above, for two
+  // reasons: that handler returns early on any modifier, so ⌥ would be filtered
+  // out before it could match — and it is declared above `useListReorder`, so
+  // it cannot name `moveBy` in its dependency array without reading it first.
+  //
+  // ⌥ and not ⌘: ⌘↑/⌘↓ already travel the ladder from anywhere (AppShell), and
+  // a rail row is exactly where someone would hit that by accident. ⌥ is also
+  // what Linear and Notion use for the same act.
+  useEffect(() => {
+    if (!hotkeysEnabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.metaKey || e.ctrlKey) return;
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      if (isTypingIn(e.target)) return;
+      const id = selectedIdRef.current;
+      if (!id) return;
+      e.preventDefault();
+      const moved = moveBy(id, e.key === "ArrowDown" ? 1 : -1);
+      const task = visible.find((t) => t.id === id);
+      // Nothing moved: either the row sits at the end of its band, or its band
+      // won't take a manual order at all (a time-blocked row is sorted by its
+      // clock). Say so — silence reads as a dropped keystroke.
+      announce(
+        moved
+          ? `${task?.title ?? "Task"}, position ${moved.index} of ${moved.total}`
+          : "Can't move this row any further",
+      );
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hotkeysEnabled, moveBy, visible]);
 
   const rowProps = (t: Task) => ({
     task: t,

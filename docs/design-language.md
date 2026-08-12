@@ -111,6 +111,33 @@ rise *from* — **never lift a solid-white card; make it glass first.**
 **2. Focus = the same glass, lifted.** The focal element rises with a real shadow
 (`--shadow-lift`) and a small translate. No outline, no ring, no color swap.
 
+**3. …except the keyboard, which gets the one ring in the app.** "Focus lifts" answers
+*selection* — this is the thing you picked, and it is true whether you picked it with a
+mouse or a key. It does not answer **"where is my cursor right now"**, and a keyboard
+user has nothing else to answer it with: no pointer, and a shadow that reads as depth
+under a mouse reads as nothing when it is the only mark on the screen. WCAG 2.4.7 asks
+for that answer, so there is exactly one ring and it is spent here:
+
+```css
+:where(button, a[href], [tabindex]:not([tabindex="-1"]), [role="button"], …):focus-visible {
+  outline: 2px solid var(--ring);   /* --ring = --accent */
+  outline-offset: 2px;
+}
+```
+
+The rule that keeps it from becoming the old flat outline is **`:focus-visible`, never
+`:focus`** — the browser only matches it for keyboard interaction, so a *clicked* button
+still gets the quiet lift and nothing else. `outline` rather than `box-shadow` so it
+neither touches layout nor overwrites `--shadow-lift`: a focused glass card keeps its
+lift *and* gains the ring. Text inputs are excluded — a caret plus the `--accent-soft`
+ring already says "you are here", and a third mark reads as an error state.
+
+Two supporting rules live with it, both in `src/index.css`: hover-revealed row actions
+(`opacity-0 group-hover:opacity-100`) come back on `:focus-within`, because otherwise
+they stay focusable and *invisible*; and `.fc-event` re-earns the ring on
+`:focus-visible` at a 1px offset, having suppressed it on `:focus`. The gate that keeps
+all of this honest is `tests/keyboard-operability.test.ts`.
+
 ### The token vocabulary (all in `src/index.css`)
 
 | Token | Is | Used on |
@@ -609,7 +636,12 @@ horizontal scroll of larger chips you drag onto the grid.
 - [ ] Borders are hairlines or absent; no box where whitespace would do.
 - [ ] Eyebrows are `section-label`; numerics are `mono`.
 - [ ] Floating things rest as glass (`.glass-card`); focus **lifts** (`.glass-lift` /
-      `.glass-lift-row` / `.glass-grab`) — no flat outline, no accent ring.
+      `.glass-lift-row` / `.glass-grab`) — no flat outline, no accent ring. (The one
+      exception is the keyboard ring on `:focus-visible` — see **Glass**, point 3. Never
+      paint it on plain `:focus`.)
+- [ ] Anything clickable is reachable by Tab and acts on Enter/Space — a `<div onClick>`
+      needs `pressable()` from `src/lib/a11y.ts`. Anything dismissible closes on Escape
+      (`useEscape`). Anything hidden until hover reappears on focus.
 - [ ] Grid views fill the floor and sit single-plane (no `bg-surface` frame).
 - [ ] **If the surface creates something, it wears that thing's own frame** — import from
       `recordFrame.tsx`, don't restyle a form to look close (D-055).

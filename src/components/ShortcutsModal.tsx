@@ -47,6 +47,7 @@ const GROUPS: Group[] = [
     title: "Inbox & tasks",
     items: [
       { keys: [["J"], ["K"]], sep: "/", label: "Move cursor" },
+      { keys: [["⌥", "↑"], ["⌥", "↓"]], sep: "/", label: "Move task up / down" },
       { keys: [["↵"]], label: "Open task" },
       { keys: [["E"]], label: "Plan for today" },
       { keys: [["T"]], label: "Plan for tomorrow" },
@@ -57,6 +58,16 @@ const GROUPS: Group[] = [
       { keys: [["X"]], label: "Move to trash" },
       { keys: [["#"]], label: "Label" },
       { keys: [["1"], ["2"]], sep: "/", label: "Inbox / Today tab" },
+    ],
+  },
+  {
+    // Not bindings so much as promises: these hold on every surface, so the
+    // panel is where they stop being folklore.
+    title: "Everywhere",
+    items: [
+      { keys: [["Tab"], ["⇧", "Tab"]], sep: "/", label: "Next / previous control" },
+      { keys: [["↵"], ["Space"]], sep: "or", label: "Activate what's focused" },
+      { keys: [["Esc"]], label: "Close a menu, modal or picker" },
     ],
   },
 ];
