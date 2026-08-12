@@ -239,9 +239,9 @@ export default function CalendarPane({
   onRefreshCalendars?: () => void;
   onFullRefreshCalendars?: () => void;
   refreshingCalendars?: boolean;
-  onOpenTask: (t: Task, anchor: DOMRect) => void;
-  onOpenEvent: (e: ExternalEvent, anchor: DOMRect) => void;
-  onOpenSlot: (s: Slot, anchor: DOMRect) => void;
+  onOpenTask: (t: Task, anchor: DOMRect, anchorEl?: HTMLElement | null) => void;
+  onOpenEvent: (e: ExternalEvent, anchor: DOMRect, anchorEl?: HTMLElement | null) => void;
+  onOpenSlot: (s: Slot, anchor: DOMRect, anchorEl?: HTMLElement | null) => void;
   onRangeChange: (startISO: string, endISO: string) => void;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
   /** Rows carrying `data-task-week` are this week's project work being placed by
@@ -1651,13 +1651,13 @@ export default function CalendarPane({
     focusBlock(info.el);
     if (kind === "task") {
       const task = findTask(refId);
-      if (task) onOpenTask(task, info.el.getBoundingClientRect());
+      if (task) onOpenTask(task, info.el.getBoundingClientRect(), info.el);
     } else if (kind === "slot") {
       const slot = findSlot(refId);
-      if (slot) onOpenSlot(slot, info.el.getBoundingClientRect());
+      if (slot) onOpenSlot(slot, info.el.getBoundingClientRect(), info.el);
     } else {
       const evt = findEvent(refId);
-      if (evt) onOpenEvent(evt, info.el.getBoundingClientRect());
+      if (evt) onOpenEvent(evt, info.el.getBoundingClientRect(), info.el);
     }
   };
 
@@ -2115,9 +2115,10 @@ export default function CalendarPane({
             ) : (
               <>
                 <EventMenuItem onClick={() => {
-                  const rect = taskMenu.el.getBoundingClientRect();
+                  const el = taskMenu.el;
+                  const rect = el.getBoundingClientRect();
                   setTaskMenu(null);
-                  onOpenTask(task, rect);
+                  onOpenTask(task, rect, el);
                 }}>
                   Open
                 </EventMenuItem>
@@ -2189,9 +2190,10 @@ export default function CalendarPane({
               {slotTitle(slot)}
             </div>
             <EventMenuItem onClick={() => {
-              const rect = slotMenu.el.getBoundingClientRect();
+              const el = slotMenu.el;
+              const rect = el.getBoundingClientRect();
               setSlotMenu(null);
-              onOpenSlot(slot, rect);
+              onOpenSlot(slot, rect, el);
             }}>
               Open
             </EventMenuItem>
@@ -2211,13 +2213,14 @@ export default function CalendarPane({
             </EventMenuItem>
             <div className="my-1 border-t border-line" />
             <EventMenuItem onClick={() => {
-              const rect = slotMenu.el.getBoundingClientRect();
+              const el = slotMenu.el;
+              const rect = el.getBoundingClientRect();
               setSlotMenu(null);
               // A plain, empty, non-recurring slot deletes outright. Anything with
               // occurrence scope or tasks inside needs the full picker in the slot
               // detail panel (SlotDeleteButton) — don't reimplement that choice here.
               if (!recurring && childCount === 0) slotMutations.removeSlot(slot);
-              else onOpenSlot(slot, rect);
+              else onOpenSlot(slot, rect, el);
             }}>
               <span style={{ color: "var(--signal)" }}>
                 {!recurring && childCount === 0 ? "Delete slot" : "Delete slot…"}

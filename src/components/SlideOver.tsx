@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GuestsInput } from "./GuestsInput";
 import { Icon } from "./Icon";
 import ReactMarkdown from "react-markdown";
@@ -82,9 +82,86 @@ function PopoverMoreMenu({
   );
 }
 
+/**
+ * Positions an anchored popover beside its trigger, and keeps it glued there.
+ * The trigger's `DOMRect` is only a snapshot from click time — if `anchorEl`
+ * (the live trigger element) is given, its position is re-measured on scroll
+ * and resize, so the popover follows a calendar block instead of freezing
+ * mid-air when the grid scrolls underneath it. `onDismiss` fires if the
+ * anchor element is later removed from the DOM (e.g. a view switch).
+ */
+function useAnchoredPosition({
+  anchorEl,
+  anchorRect,
+  popRef,
+  width,
+  gap,
+  disabled,
+  onDismiss,
+}: {
+  anchorEl: HTMLElement | null | undefined;
+  anchorRect: DOMRect;
+  popRef: React.RefObject<HTMLDivElement>;
+  width: number;
+  gap: number;
+  disabled?: boolean;
+  onDismiss?: () => void;
+}) {
+  const [state, setState] = useState(() => ({
+    top: anchorRect.top,
+    left: anchorRect.right + gap,
+    side: "right" as "right" | "left",
+    anchorTop: anchorRect.top,
+    anchorHeight: anchorRect.height,
+  }));
+
+  const place = useCallback(() => {
+    if (anchorEl && !anchorEl.isConnected) {
+      onDismiss?.();
+      return;
+    }
+    const rect = anchorEl ? anchorEl.getBoundingClientRect() : anchorRect;
+    const pop = popRef.current;
+    if (!pop) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const h = pop.offsetHeight;
+    let left = rect.right + gap;
+    let side: "right" | "left" = "right";
+    if (left + width > vw - 8) {
+      left = rect.left - gap - width;
+      side = "left";
+    }
+    left = Math.max(8, left);
+    let top = rect.top + rect.height / 2 - h / 2;
+    top = Math.max(8, Math.min(top, vh - h - 8));
+    setState({ top, left, side, anchorTop: rect.top, anchorHeight: rect.height });
+  }, [anchorEl, anchorRect, popRef, width, gap, onDismiss]);
+
+  useLayoutEffect(() => {
+    if (!disabled) place();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled, place]);
+
+  useEffect(() => {
+    if (disabled) return;
+    window.addEventListener("resize", place);
+    // Capture phase: scroll events on an inner scrollable ancestor (the
+    // calendar's own time-grid scroller) don't bubble to window.
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [disabled, place]);
+
+  return state;
+}
+
 export function TaskPopover({
   task,
   anchor,
+  anchorEl,
   labels,
   mutations,
   recurrence,
@@ -95,6 +172,9 @@ export function TaskPopover({
 }: {
   task: Task;
   anchor: DOMRect;
+  /** Live trigger element (e.g. the clicked calendar block) — when given, the
+   *  popover follows it on scroll/resize instead of freezing at `anchor`. */
+  anchorEl?: HTMLElement | null;
   labels: Label[];
   mutations: ReturnType<typeof useTaskMutations>;
   /** The series this task belongs to (if any) — drives the repeat chip. */
@@ -116,30 +196,15 @@ export function TaskPopover({
   const popRef = useRef<HTMLDivElement>(null);
   const TASK_POP_W = 380;
 
-  const [pos, setPos] = useState<{ top: number; left: number; side: "right" | "left" }>({
-    top: anchor.top,
-    left: anchor.right + 10,
-    side: "right",
+  const pos = useAnchoredPosition({
+    anchorEl,
+    anchorRect: anchor,
+    popRef,
+    width: TASK_POP_W,
+    gap: 10,
+    disabled: centered, // centered modal positions via CSS, not the anchor
+    onDismiss: onClose,
   });
-
-  useLayoutEffect(() => {
-    const pop = popRef.current;
-    if (!pop) return;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const h = pop.offsetHeight;
-    if (centered) return; // centered modal positions via CSS, not the anchor
-    let left = anchor.right + 10;
-    let side: "right" | "left" = "right";
-    if (left + TASK_POP_W > vw - 8) {
-      left = anchor.left - 10 - TASK_POP_W;
-      side = "left";
-    }
-    left = Math.max(8, left);
-    let top = anchor.top + anchor.height / 2 - h / 2;
-    top = Math.max(8, Math.min(top, vh - h - 8));
-    setPos({ top, left, side });
-  }, [anchor]);
 
   // delegation: the assistant does the pre-work, execution stays yours
   const prepare = async () => {
@@ -312,7 +377,7 @@ export function TaskPopover({
               ? {
                   left: -6,
                   top: Math.max(16, Math.min(
-                    anchor.top + anchor.height / 2 - pos.top - 5,
+                    pos.anchorTop + pos.anchorHeight / 2 - pos.top - 5,
                     (popRef.current?.offsetHeight ?? 200) - 16,
                   )),
                   borderRight: "none",
@@ -321,7 +386,7 @@ export function TaskPopover({
               : {
                   right: -6,
                   top: Math.max(16, Math.min(
-                    anchor.top + anchor.height / 2 - pos.top - 5,
+                    pos.anchorTop + pos.anchorHeight / 2 - pos.top - 5,
                     (popRef.current?.offsetHeight ?? 200) - 16,
                   )),
                   borderLeft: "none",
@@ -894,6 +959,7 @@ const POP_GAP = 10;
 export function EventPopover({
   event,
   anchor,
+  anchorEl,
   editable,
   calendarId,
   calendarName,
@@ -906,6 +972,9 @@ export function EventPopover({
 }: {
   event: ExternalEvent;
   anchor: DOMRect;
+  /** Live trigger element (e.g. the clicked calendar block) — when given, the
+   *  popover follows it on scroll/resize instead of freezing at `anchor`. */
+  anchorEl?: HTMLElement | null;
   editable: boolean;
   calendarId?: string;
   calendarName?: string;
@@ -1011,30 +1080,14 @@ export function EventPopover({
   }, [onClose]);
 
   // Compute fixed position: prefer right of event, fall back to left
-  const [pos, setPos] = useState<{ top: number; left: number; side: "right" | "left" }>({
-    top: anchor.top,
-    left: anchor.right + POP_GAP,
-    side: "right",
+  const pos = useAnchoredPosition({
+    anchorEl,
+    anchorRect: anchor,
+    popRef,
+    width: POP_W,
+    gap: POP_GAP,
+    onDismiss: onClose,
   });
-
-  useLayoutEffect(() => {
-    const pop = popRef.current;
-    if (!pop) return;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const h = pop.offsetHeight;
-
-    let left = anchor.right + POP_GAP;
-    let side: "right" | "left" = "right";
-    if (left + POP_W > vw - 8) {
-      left = anchor.left - POP_GAP - POP_W;
-      side = "left";
-    }
-    left = Math.max(8, left);
-    let top = anchor.top + anchor.height / 2 - h / 2;
-    top = Math.max(8, Math.min(top, vh - h - 8));
-    setPos({ top, left, side });
-  }, [anchor]);
 
   const myAttendee = raw?.attendees?.find((a) => a.self);
   const myResponse: AttendeeStatus = pendingRsvp ?? (myAttendee?.responseStatus ?? "needsAction");
@@ -1155,7 +1208,7 @@ export function EventPopover({
               ? {
                   left: -6,
                   top: Math.max(16, Math.min(
-                    anchor.top + anchor.height / 2 - pos.top - 5,
+                    pos.anchorTop + pos.anchorHeight / 2 - pos.top - 5,
                     (popRef.current?.offsetHeight ?? 200) - 16
                   )),
                   borderRight: "none",
@@ -1164,7 +1217,7 @@ export function EventPopover({
               : {
                   right: -6,
                   top: Math.max(16, Math.min(
-                    anchor.top + anchor.height / 2 - pos.top - 5,
+                    pos.anchorTop + pos.anchorHeight / 2 - pos.top - 5,
                     (popRef.current?.offsetHeight ?? 200) - 16
                   )),
                   borderLeft: "none",
@@ -1750,6 +1803,7 @@ const SLOT_POP_W = 340;
 export function SlotPopover({
   slot,
   anchor,
+  anchorEl,
   childTasks,
   taskMutations,
   slotMutations,
@@ -1760,6 +1814,9 @@ export function SlotPopover({
 }: {
   slot: Slot;
   anchor: DOMRect;
+  /** Live trigger element (e.g. the clicked calendar block) — when given, the
+   *  popover follows it on scroll/resize instead of freezing at `anchor`. */
+  anchorEl?: HTMLElement | null;
   childTasks: Task[];
   taskMutations: ReturnType<typeof useTaskMutations>;
   slotMutations: ReturnType<typeof useSlotMutations>;
@@ -1844,29 +1901,14 @@ export function SlotPopover({
     return () => document.removeEventListener("mousedown", onDown);
   }, [onClose]);
 
-  const [pos, setPos] = useState<{ top: number; left: number; side: "right" | "left" }>({
-    top: anchor.top,
-    left: anchor.right + 10,
-    side: "right",
+  const pos = useAnchoredPosition({
+    anchorEl,
+    anchorRect: anchor,
+    popRef,
+    width: SLOT_POP_W,
+    gap: 10,
+    onDismiss: onClose,
   });
-
-  useLayoutEffect(() => {
-    const pop = popRef.current;
-    if (!pop) return;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const h = pop.offsetHeight;
-    let left = anchor.right + 10;
-    let side: "right" | "left" = "right";
-    if (left + SLOT_POP_W > vw - 8) {
-      left = anchor.left - 10 - SLOT_POP_W;
-      side = "left";
-    }
-    left = Math.max(8, left);
-    let top = anchor.top + anchor.height / 2 - h / 2;
-    top = Math.max(8, Math.min(top, vh - h - 8));
-    setPos({ top, left, side });
-  }, [anchor]);
 
   const commitTitle = () =>
     title.trim() !== slot.title &&

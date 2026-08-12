@@ -36,6 +36,10 @@ interface AppNavigationContextValue {
   canGoBack: () => boolean;
   panelAnchor: DOMRect | null;
   setPanelAnchor: (anchor: DOMRect | null) => void;
+  /** The live DOM element the current panel/popover is anchored to, when one
+   *  exists — re-measured on scroll/resize so the popover follows its target
+   *  instead of freezing at the DOMRect snapshot taken when it opened. */
+  panelAnchorEl: HTMLElement | null;
   setRung: (r: Rung) => void;
   goRung: (r: Rung) => void;
   setTab: (t: RailTab) => void;
@@ -43,7 +47,12 @@ interface AppNavigationContextValue {
   openFlow: (f: FlowName, focus?: FlowFocus) => void;
   closeFlow: () => void;
   setFlowStep: (step: number) => void;
-  openOverlay: (kind: OverlayKind, id?: string | null, anchor?: DOMRect | null) => void;
+  openOverlay: (
+    kind: OverlayKind,
+    id?: string | null,
+    anchor?: DOMRect | null,
+    anchorEl?: HTMLElement | null,
+  ) => void;
   closeOverlay: () => void;
   /** Open a project / initiative as the centered Record modal. */
   openRecord: (kind: "project" | "initiative", id: string) => void;
@@ -68,6 +77,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   navRef.current = nav;
 
   const [panelAnchor, setPanelAnchor] = useState<DOMRect | null>(null);
+  const [panelAnchorEl, setPanelAnchorEl] = useState<HTMLElement | null>(null);
   const syncingRef = useRef(false);
   const seededRef = useRef(false);
 
@@ -87,6 +97,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     const state = stackRef.current[index] ?? DEFAULT_NAV;
     setNav(state);
     setPanelAnchor(null);
+    setPanelAnchorEl(null);
   }, []);
 
   const applyNav = useCallback(
@@ -222,6 +233,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       if (r !== "day") {
         clearCalendarOverlay(patch);
         setPanelAnchor(null);
+        setPanelAnchorEl(null);
       }
       navigate(patch);
     },
@@ -273,8 +285,14 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   );
 
   const openOverlay = useCallback(
-    (kind: OverlayKind, id: string | null = null, anchor: DOMRect | null = null) => {
+    (
+      kind: OverlayKind,
+      id: string | null = null,
+      anchor: DOMRect | null = null,
+      anchorEl: HTMLElement | null = null,
+    ) => {
       setPanelAnchor(anchor);
+      setPanelAnchorEl(anchorEl);
       navigate({ overlay: kind, overlayId: id, floorModal: null });
     },
     [navigate],
@@ -365,6 +383,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     canGoBack,
     panelAnchor,
     setPanelAnchor,
+    panelAnchorEl,
     setRung,
     goRung,
     setTab,

@@ -65,6 +65,7 @@ export default function Planner({
     toggleAgent,
     navigate,
     panelAnchor,
+    panelAnchorEl,
     openProject,
     openInitiative,
   } = useAppNavigation();
@@ -530,7 +531,7 @@ export default function Planner({
           today={todayTasksForRail}
           labels={labels}
           mutations={mutations}
-          onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor)}
+          onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor, null)}
           hotkeysEnabled={!anyModalOpen && !focusMode}
           now={now}
           railRef={railRef}
@@ -572,9 +573,9 @@ export default function Planner({
             onRefreshCalendars={accounts.length > 0 ? refreshCalendars : undefined}
             onFullRefreshCalendars={accounts.length > 0 ? fullRefreshCalendars : undefined}
             refreshingCalendars={refreshingCalendars}
-            onOpenTask={(t, anchor) => openOverlay("task", t.id, anchor)}
-            onOpenEvent={(e, anchor) => openOverlay("event", e.id, anchor)}
-            onOpenSlot={(s, anchor) => openOverlay("slot", s.id, anchor)}
+            onOpenTask={(t, anchor, anchorEl) => openOverlay("task", t.id, anchor, anchorEl)}
+            onOpenEvent={(e, anchor, anchorEl) => openOverlay("event", e.id, anchor, anchorEl)}
+            onOpenSlot={(s, anchor, anchorEl) => openOverlay("slot", s.id, anchor, anchorEl)}
             onRangeChange={syncRange}
             railRef={railRef}
             onWeekWorkPlaced={commitTasksToSprint}
@@ -598,6 +599,7 @@ export default function Planner({
             <TaskPopover
               task={openTask}
               anchor={panelRect}
+              anchorEl={panelAnchorEl}
               labels={labels}
               mutations={mutations}
               recurrence={openTask.recurrence_id ? recurrenceById.get(openTask.recurrence_id) ?? null : null}
@@ -612,6 +614,7 @@ export default function Planner({
             <EventPopover
               event={openEvent}
               anchor={panelRect}
+              anchorEl={panelAnchorEl}
               editable={isWritableAccount(openEventAccount) && !isReadOnlyCalendarId(openEvent.calendar_id)}
               calendarId={openEvent.calendar_id}
               calendarName={openEventCalendar?.summary}
@@ -629,6 +632,7 @@ export default function Planner({
             <SlotPopover
               slot={openSlot}
               anchor={panelRect}
+              anchorEl={panelAnchorEl}
               childTasks={slotTasksBySlot[openSlot.id] ?? []}
               taskMutations={mutations}
               slotMutations={slotMutations}
