@@ -207,17 +207,22 @@ function currentScheme(): string {
 // default Warm Paper boot never downloads the other four (P2-11 — 187 of the
 // 194 theme blocks in index.css belonged to skins the session wasn't wearing).
 // Loaded once, on demand; the promise is cached so re-switching is instant.
+//
+// IMPORTANT: each skin MUST be its own statically-analysable `import()` in a
+// map — not a ternary of imports. Vite's CSS code-split + `__vite__mapDeps`
+// collapses a ternary into one preload (the last branch) and rewrites every
+// branch to `Promise.resolve({})`, so picking Terminal would set data-skin
+// but never inject terminal.css (the app stayed on Warm Paper).
+const SKIN_CSS: Record<Exclude<Skin, "paper">, () => Promise<unknown>> = {
+  flat: () => import("../skins/flat.css"),
+  terminal: () => import("../skins/terminal.css"),
+  blueprint: () => import("../skins/blueprint.css"),
+  eink: () => import("../skins/eink.css"),
+};
 const skinCssLoaded: Partial<Record<Skin, Promise<unknown>>> = {};
 function loadSkinCss(s: Skin): Promise<unknown> {
   if (s === "paper") return Promise.resolve();
-  return (skinCssLoaded[s] ??=
-    s === "flat"
-      ? import("../skins/flat.css")
-      : s === "terminal"
-        ? import("../skins/terminal.css")
-        : s === "blueprint"
-          ? import("../skins/blueprint.css")
-          : import("../skins/eink.css"));
+  return (skinCssLoaded[s] ??= SKIN_CSS[s]());
 }
 
 // Paint BOTH axes together — the scheme is meaningless without its material.
@@ -237,6 +242,9 @@ function apply() {
     if (skin !== target) return;
     el.dataset.skin = target;
     el.dataset.palette = currentScheme();
+  }).catch(() => {
+    // Drop the cached rejection so the next switch can retry the fetch.
+    delete skinCssLoaded[target];
   });
 }
 
