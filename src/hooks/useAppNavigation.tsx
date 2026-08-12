@@ -52,6 +52,8 @@ interface AppNavigationContextValue {
     id?: string | null,
     anchor?: DOMRect | null,
     anchorEl?: HTMLElement | null,
+    /** Slot id when opening a task from SlotPopover — stacks both panels. */
+    fromSlotId?: string | null,
   ) => void;
   closeOverlay: () => void;
   /** Open a project / initiative as the centered Record modal. */
@@ -215,6 +217,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     if (overlay === "task" || overlay === "event" || overlay === "slot" || overlay === "week-plan") {
       patch.overlay = "none";
       patch.overlayId = null;
+      patch.overlayParentId = null;
     }
   }, []);
 
@@ -290,10 +293,14 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       id: string | null = null,
       anchor: DOMRect | null = null,
       anchorEl: HTMLElement | null = null,
+      fromSlotId: string | null = null,
     ) => {
       setPanelAnchor(anchor);
       setPanelAnchorEl(anchorEl);
-      navigate({ overlay: kind, overlayId: id, floorModal: null });
+      const patch: Partial<AppNavState> = { overlay: kind, overlayId: id, floorModal: null };
+      if (kind === "task" && fromSlotId) patch.overlayParentId = fromSlotId;
+      else if (kind === "slot") patch.overlayParentId = null;
+      navigate(patch);
     },
     [navigate],
   );

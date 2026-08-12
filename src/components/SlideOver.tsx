@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
 import { RecurrenceDeleteButton, RepeatControl, SlotDeleteButton, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn, RollBadge } from "./ui";
+import { isTypingIn } from "./floors/TaskList";
 
 /** Minutes after local midnight for an ISO instant (for series templates). */
 function localMinutes(iso: string): number {
@@ -169,6 +170,8 @@ export function TaskPopover({
   recurrenceMutations,
   onClose,
   onConvertToEvent,
+  onBack,
+  backLabel,
   variant = "anchored",
 }: {
   task: Task;
@@ -183,6 +186,9 @@ export function TaskPopover({
   recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
   onClose: () => void;
   onConvertToEvent?: () => void;
+  /** When opened from a slot popover — back returns to the slot (history.back). */
+  onBack?: () => void;
+  backLabel?: string;
   /** "anchored" (default) floats beside a calendar block with an arrow; "centered"
    *  renders the same card as a scrim-backed modal, summonable from ⌘K on any rung. */
   variant?: "anchored" | "centered";
@@ -254,10 +260,15 @@ export function TaskPopover({
   };
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (onBack) onBack();
+        else onClose();
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, onBack]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -361,7 +372,7 @@ export function TaskPopover({
           which really is a scrim-backed modal. */}
       <div
         ref={popRef}
-        className={`${centered ? "moment" : "pop-in"} z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface ${centered ? "relative" : "fixed"}`}
+        className={`${centered ? "moment" : "pop-in"} ${onBack ? "z-[55]" : "z-50"} flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface ${centered ? "relative" : "fixed"}`}
         style={{
           ...(centered ? {} : { top: pos.top, left: pos.left }),
           width: TASK_POP_W,
@@ -400,6 +411,16 @@ export function TaskPopover({
         {/* ── Title + close ── */}
         <div className="flex shrink-0 items-start gap-2 px-4 pt-4 pb-2">
           <div className="min-w-0 flex-1">
+            {onBack && backLabel && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="fast mono mb-1.5 flex max-w-full items-center gap-1 truncate text-meta text-muted hover:text-ink"
+              >
+                <span aria-hidden>←</span>
+                <span className="truncate">{backLabel}</span>
+              </button>
+            )}
             {(domain || initiative || project) && (
               <div className="mono mb-1.5 flex items-center gap-1 text-meta">
                 {domain && <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span>}
@@ -1799,7 +1820,7 @@ export function EventPopover({
 }
 
 // ── SlotPopover — a time slot and the tasks it holds ─────────────────────
-const SLOT_POP_W = 340;
+export const SLOT_POP_W = 340;
 
 export function SlotPopover({
   slot,
@@ -1812,6 +1833,8 @@ export function SlotPopover({
   recurrenceMutations,
   onOpenTask,
   focusTitle = false,
+  muted = false,
+  onPopRect,
   onClose,
 }: {
   slot: Slot;
@@ -1828,12 +1851,18 @@ export function SlotPopover({
   recurrence: Recurrence | null;
   recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
   onOpenTask: (t: Task) => void;
+  /** De-emphasize when a task detail panel is stacked beside this popover. */
+  muted?: boolean;
+  /** Reports the popover's live screen rect (for stacking a task panel). */
+  onPopRect?: (rect: DOMRect) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(slot.title);
   const [newTitle, setNewTitle] = useState("");
   const [naming, setNaming] = useState(false);
+  const [sel, setSel] = useState(-1);
   const titleRef = useRef<HTMLInputElement>(null);
+  const addRef = useRef<HTMLInputElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // Live reorder state: { id: dragged, index: target insertion slot }.
@@ -1916,13 +1945,17 @@ export function SlotPopover({
   };
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (muted) return;
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, muted]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
+      if (muted) return;
       // Use composedPath() (frozen at dispatch time), not contains(e.target):
       // a row inside the popover can remove itself from the DOM synchronously
       // in its own mousedown handler (e.g. GuestsInput's "add guest" — see
@@ -1943,7 +1976,7 @@ export function SlotPopover({
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [onClose]);
+  }, [onClose, muted]);
 
   const pos = useAnchoredPosition({
     anchorEl,
@@ -1953,6 +1986,16 @@ export function SlotPopover({
     gap: 10,
     onDismiss: onClose,
   });
+
+  useLayoutEffect(() => {
+    if (!onPopRect || !popRef.current) return;
+    const el = popRef.current;
+    const report = () => onPopRect(el.getBoundingClientRect());
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [onPopRect, pos.top, pos.left]);
 
   const commitTitle = () =>
     title.trim() !== slot.title &&
@@ -2087,7 +2130,68 @@ export function SlotPopover({
     if (!newTitle.trim()) return;
     void taskMutations.createInSlot(slot, newTitle.trim());
     setNewTitle("");
+    addRef.current?.focus();
   };
+
+  // ↑↓/jk select · ↵ open · space toggle · x remove · t focus add
+  useEffect(() => {
+    if (muted) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "ArrowDown" || e.key === "j") {
+        if (!ordered.length) return;
+        e.preventDefault();
+        setSel((i) => {
+          const next = i + 1;
+          return Math.max(0, Math.min(ordered.length - 1, next < 0 ? 0 : next));
+        });
+        return;
+      }
+      if (e.key === "ArrowUp" || e.key === "k") {
+        if (!ordered.length) return;
+        e.preventDefault();
+        setSel((i) => {
+          const next = i - 1;
+          return Math.max(0, Math.min(ordered.length - 1, next < 0 ? 0 : next));
+        });
+        return;
+      }
+      if (e.key === "t") {
+        e.preventDefault();
+        addRef.current?.focus();
+        return;
+      }
+      if (sel < 0 || sel >= ordered.length) return;
+      const t = ordered[sel];
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onOpenTask(t);
+      } else if (e.key === " ") {
+        e.preventDefault();
+        t.status === "done" ? taskMutations.uncomplete(t) : taskMutations.complete(t);
+      } else if (e.key === "x" || e.key === "Backspace" || e.key === "Delete") {
+        e.preventDefault();
+        taskMutations.removeFromSlot(t);
+        setSel((i) => Math.min(i, ordered.length - 2));
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setSel(-1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  useEffect(() => {
+    if (sel >= ordered.length) setSel(ordered.length - 1);
+  }, [ordered.length, sel]);
+
+  // Scroll the keyboard selection into view.
+  useEffect(() => {
+    if (sel < 0 || !listRef.current) return;
+    const row = listRef.current.querySelector<HTMLElement>(`[data-slot-row="${ordered[sel]?.id}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+  }, [sel, ordered]);
 
   const project = projectById(vertical, slot.project_id);
   const domain = domainById(vertical, slot.domain_id ?? project?.domainId ?? null);
@@ -2124,7 +2228,9 @@ export function SlotPopover({
     <>
       <div
         ref={popRef}
-        className="pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
+        className={`pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface transition-opacity ${
+          muted ? "pointer-events-none opacity-45" : ""
+        }`}
         style={{
           top: pos.top,
           left: pos.left,
@@ -2280,14 +2386,33 @@ export function SlotPopover({
           {totalMins > 0 && <span>· {fmtDuration(totalMins)} of tasks</span>}
         </div>
 
+        {/* Add task — leads when empty, sits above the list when populated */}
+        <div className="shrink-0 border-t border-line px-3 py-2">
+          <input
+            ref={addRef}
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addTask();
+              if (e.key === "Escape") { e.stopPropagation(); setNewTitle(""); e.currentTarget.blur(); }
+            }}
+            placeholder="+ Add task to slot…"
+            className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-caption outline-none focus:border-accent"
+          />
+        </div>
+
         {/* Child tasks — grip to reorder, body drags out (calendar / inbox) */}
         <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
           {reorderLineTop != null && (
             <div className="reorder-insert-line" style={{ top: reorderLineTop }} aria-hidden />
           )}
-          {ordered.map((t) => {
+          {ordered.length === 0 && (
+            <div className="px-2 py-2 text-caption italic text-muted/70">No tasks yet — type above.</div>
+          )}
+          {ordered.map((t, i) => {
             const done = t.status === "done";
             const dragging = reorder?.id === t.id;
+            const selected = i === sel;
             return (
               <div
                 key={t.id}
@@ -2295,7 +2420,9 @@ export function SlotPopover({
                 className={`group flex items-center gap-0.5 rounded-md pr-1 hover:bg-bg ${
                   dragging
                     ? "pointer-events-none bg-accent-soft text-accent shadow-[inset_0_3px_0_0_var(--accent)]"
-                    : ""
+                    : selected
+                      ? "bg-accent-soft/60 ring-1 ring-inset ring-accent/30"
+                      : ""
                 }`}
               >
                 <button
@@ -2331,6 +2458,7 @@ export function SlotPopover({
                   </button>
                   <button
                     onClick={() => onOpenTask(t)}
+                    onMouseDown={() => setSel(i)}
                     className={`min-w-0 flex-1 truncate text-left text-caption ${
                       done ? "text-muted line-through" : "text-text"
                     }`}
@@ -2349,20 +2477,6 @@ export function SlotPopover({
               </div>
             );
           })}
-          {ordered.length === 0 && (
-            <div className="px-2 py-3 text-caption italic text-muted/70">No tasks yet — add one below.</div>
-          )}
-        </div>
-
-        {/* Add task */}
-        <div className="shrink-0 border-t border-line px-3 py-2.5">
-          <input
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addTask()}
-            placeholder="+ Add task to slot…"
-            className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-caption outline-none focus:border-accent"
-          />
         </div>
 
         {/* Footer */}

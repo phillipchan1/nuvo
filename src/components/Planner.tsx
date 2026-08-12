@@ -70,7 +70,7 @@ export default function Planner({
     openInitiative,
   } = useAppNavigation();
 
-  const { tab, calView: view, overlay, overlayId, agentOpen, settingsSection, rung } = nav;
+  const { tab, calView: view, overlay, overlayId, overlayParentId, agentOpen, settingsSection, rung } = nav;
   const onSchedule = rung === "day";
 
   const [range, setRangeLocal] = useState<{ start: string; end: string }>(() => {
@@ -362,6 +362,7 @@ export default function Planner({
   // the same gesture rather than a second trip. Cleared when the popover closes,
   // so re-opening that same block later doesn't grab the caret again.
   const [focusSlotTitle, setFocusSlotTitle] = useState(false);
+  const [slotPopRect, setSlotPopRect] = useState<DOMRect | null>(null);
 
   const allTasksArray = useMemo(() => [...allKnownTasks.values()], [allKnownTasks]);
 
@@ -401,13 +402,16 @@ export default function Planner({
     ? (openEventAccount.calendars.find((c) => c.id === openEvent.calendar_id) ?? null)
     : null;
   const openSlot = slotPanel ? (slots.find((s) => s.id === slotPanel.id) ?? null) : null;
+  const slotContextSlot = overlayParentId ? (slots.find((s) => s.id === overlayParentId) ?? null) : null;
+  const visibleSlot = openSlot ?? slotContextSlot;
+  const slotStackedWithTask = Boolean(openTask && slotContextSlot);
 
   // A project/initiative record owns the screen exactly as much as the other
   // modals do — it was missing here, so the rail behind an open record still
   // answered its hotkeys: ↵ opened the *selected task* and navigated straight
   // over the record you were reading.
   const recordOpen = overlay === "project-record" || overlay === "initiative-record";
-  const anyModalOpen = showCmd || showSettings || showEvening || showUpkeep || recordOpen || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
+  const anyModalOpen = showCmd || showSettings || showEvening || showUpkeep || recordOpen || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(slotContextSlot) || Boolean(recordTask);
 
   // The searchable vertical for ⌘K — every task / project / initiative / domain
   // as a SearchHit whose `run` navigates to it. Built from the shared builder
@@ -608,13 +612,24 @@ export default function Planner({
             <Suspense fallback={null}>
             <TaskPopover
               task={openTask}
-              anchor={panelRect}
-              anchorEl={panelAnchorEl}
+              anchor={
+                slotStackedWithTask && slotPopRect
+                  ? new DOMRect(slotPopRect.right + 10, slotPopRect.top, 0, slotPopRect.height)
+                  : panelRect
+              }
+              anchorEl={slotStackedWithTask ? null : panelAnchorEl}
               labels={labels}
               mutations={mutations}
               recurrence={openTask.recurrence_id ? recurrenceById.get(openTask.recurrence_id) ?? null : null}
               recurrenceMutations={recurrenceMutations}
               onClose={closeOverlay}
+              onBack={slotStackedWithTask ? closeOverlay : undefined}
+              backLabel={
+                slotStackedWithTask && slotContextSlot
+                  ? slotContextSlot.title.trim() ||
+                    deriveSlotTitle(slotContextSlot, slotTasksBySlot[slotContextSlot.id] ?? [], vertical)
+                  : undefined
+              }
               onConvertToEvent={() => handleConvertTaskToEvent(openTask)}
             />
             </Suspense>
@@ -637,21 +652,24 @@ export default function Planner({
             />
             </Suspense>
           )}
-          {onSchedule && openSlot && slotPanel && !openTask && (
+          {onSchedule && visibleSlot && (slotPanel || slotContextSlot) && !openEvent && (
             <Suspense fallback={null}>
             <SlotPopover
-              slot={openSlot}
+              slot={visibleSlot}
               anchor={panelRect}
               anchorEl={panelAnchorEl}
-              childTasks={slotTasksBySlot[openSlot.id] ?? []}
+              childTasks={slotTasksBySlot[visibleSlot.id] ?? []}
               taskMutations={mutations}
               slotMutations={slotMutations}
-              recurrence={openSlot.recurrence_id ? recurrenceById.get(openSlot.recurrence_id) ?? null : null}
+              recurrence={visibleSlot.recurrence_id ? recurrenceById.get(visibleSlot.recurrence_id) ?? null : null}
               recurrenceMutations={recurrenceMutations}
-              onOpenTask={(t) => openOverlay("task", t.id, panelRect)}
-              focusTitle={focusSlotTitle}
+              onOpenTask={(t) => openOverlay("task", t.id, panelRect, panelAnchorEl, visibleSlot.id)}
+              focusTitle={focusSlotTitle && Boolean(slotPanel)}
+              muted={slotStackedWithTask}
+              onPopRect={setSlotPopRect}
               onClose={() => {
                 setFocusSlotTitle(false);
+                setSlotPopRect(null);
                 closeOverlay();
               }}
             />

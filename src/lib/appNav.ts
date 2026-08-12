@@ -61,6 +61,9 @@ export interface AppNavState {
   calView: CalView;
   overlay: OverlayKind;
   overlayId: string | null;
+  /** When a task popover was opened from a slot popover, the slot id — kept so
+   *  both panels can render stacked and browser-back returns to the slot. */
+  overlayParentId: string | null;
   settingsSection: SettingsSection;
   agentOpen: boolean;
   floorModal: FloorModal;
@@ -79,6 +82,7 @@ export const DEFAULT_NAV: AppNavState = {
   calView: typeof window !== "undefined" && window.innerWidth < 1100 ? "timeGridDay" : "timeGridWeek",
   overlay: "none",
   overlayId: null,
+  overlayParentId: null,
   settingsSection: "appearance",
   agentOpen: readAgentOpen(),
   floorModal: null,
@@ -94,8 +98,13 @@ export function fallbackPanelAnchor(): DOMRect {
 export function mergeNav(prev: AppNavState, patch: Partial<AppNavState>): AppNavState {
   const next: AppNavState = { ...prev, ...patch };
   if (patch.overlay !== undefined && patch.overlay !== prev.overlay) {
-    if (patch.overlay === "none") next.overlayId = null;
-    else if (patch.overlayId === undefined) next.overlayId = prev.overlayId;
+    if (patch.overlay === "none") {
+      next.overlayId = null;
+      next.overlayParentId = null;
+    } else if (patch.overlayId === undefined) next.overlayId = prev.overlayId;
+  }
+  if (patch.overlayParentId === undefined && patch.overlay === "slot") {
+    next.overlayParentId = null;
   }
   if (patch.flow !== undefined && patch.flow !== prev.flow && patch.flow === null) {
     next.flowStep = 0;
@@ -122,6 +131,7 @@ export function navEqual(a: AppNavState, b: AppNavState): boolean {
     a.calView === b.calView &&
     a.overlay === b.overlay &&
     a.overlayId === b.overlayId &&
+    a.overlayParentId === b.overlayParentId &&
     a.settingsSection === b.settingsSection &&
     a.agentOpen === b.agentOpen &&
     a.floorModal === b.floorModal
