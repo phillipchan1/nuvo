@@ -15,13 +15,13 @@ function isStandalone(): boolean {
   );
 }
 
-/** The guide's authority, three short lines — straight from the brandscript
- *  (docs/product/brandscript.md §3): every calendar you own, the one funnel,
- *  and the Review's evidence closing the loop back to Sunday. */
+/** The guide's authority, three short lines lifted verbatim from the
+ *  marketing site's own feature inventory (marketing/src/Home.tsx) — real,
+ *  shipped copy rather than a fresh paraphrase. */
 const PROMISE: { icon: IconName; text: string }[] = [
-  { icon: "calendar", text: "Every calendar you own, on one surface." },
-  { icon: "arrow-right", text: "One funnel, from your commitments to your calendar." },
-  { icon: "repeat", text: "Friday tells the truth. Sunday plans with it." },
+  { icon: "calendar", text: "Meetings and your work, one grid." },
+  { icon: "arrow-right", text: "Every level in one system." },
+  { icon: "repeat", text: "A Friday review, with evidence." },
 ];
 
 export default function Login() {
@@ -205,7 +205,7 @@ export default function Login() {
             <div className="mb-9 flex flex-col items-center gap-3 text-center">
               <NuvoMark size={44} />
               <span className="wordmark wordmark-grad text-display text-[26px] leading-none">Nuvo</span>
-              <p className="serif text-lead leading-snug text-ink/90">Know your week is the right week.</p>
+              <p className="serif text-lead leading-snug text-ink/90">You live more than one life.</p>
             </div>
             {form}
           </div>
@@ -216,22 +216,23 @@ export default function Login() {
 
   return (
     <div className="atmosphere relative flex h-full overflow-hidden">
-      {/* The guide's side — brand, ceremony line, the authority bullets from
-          the brandscript. Full-bleed and transparent so the atmosphere reads
+      {/* The guide's side — brand, the marketing site's own hero promise
+          (marketing/src/Home.tsx), the authority bullets from its feature
+          inventory. Full-bleed and transparent so the atmosphere reads
           continuously across both panes; only a hairline separates them. */}
       <div className="hidden flex-1 flex-col justify-center border-r border-line px-16 xl:flex">
         {glow}
-        <div className="relative max-w-sm">
+        <div className="relative max-w-md">
           <div className="mb-7 flex items-center gap-3">
             <NuvoMark size={36} />
             <span className="wordmark wordmark-grad text-display text-[24px] leading-none">Nuvo</span>
           </div>
-          <h1 className="masthead text-[30px] leading-[1.16] text-ink">
-            Know your week is the right week.
+          <h1 className="masthead text-[26px] leading-[1.2] text-ink">
+            Nothing you're carrying gets lost. Everything you're accountable for gets done.
           </h1>
           <p className="mt-4 text-body leading-relaxed text-muted">
-            A daily planner with a conscience — one funnel from what you're responsible for
-            down to the hour on your calendar.
+            You live more than one life. One funnel holds all of them — from what you're
+            responsible for, down to the hour on your calendar.
           </p>
           <div className="mt-10 flex flex-col">
             {PROMISE.map((row, i) => (
