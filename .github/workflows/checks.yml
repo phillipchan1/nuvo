@@ -21,20 +21,10 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          # 22, not 20. `npm ci` on npm 10 (what Node 20 ships) cannot validate a
-          # lockfile written by npm 11 — it reads the bundleDependencies of
-          # @tailwindcss/oxide-wasm32-wasi as unresolved and refuses to install.
-          # The gate was red on every commit for a day without ever reaching a
-          # test. Several deps (@supabase/supabase-js, @testing-library/jest-dom)
-          # also declare `node >= 22`, so 20 was already the wrong floor.
+          # 22, not 20: @supabase/supabase-js and @testing-library/jest-dom both
+          # declare `node >= 22`, and 20 logged EBADENGINE on every run.
           node-version: 22
           cache: npm
-      # npm 11 is what WRITES the lockfile on the dev machine, so it has to be
-      # what reads it here. Node 22 still ships npm 10, and npm 10 reads the
-      # bundleDependencies of @tailwindcss/oxide-wasm32-wasi as unresolved
-      # (@emnapi/core, @emnapi/runtime) and refuses to install. Bumping Node
-      # alone did not fix it — the version that matters is npm's, not Node's.
-      - run: npm install -g npm@11
       - run: npm ci
       - name: Typecheck (SPA)
         run: npm run typecheck
