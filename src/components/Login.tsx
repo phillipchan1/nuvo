@@ -203,7 +203,7 @@ export default function Login() {
         <div className="relative flex flex-1 flex-col justify-center">
           <div className="moment mx-auto w-full max-w-sm">
             <div className="mb-9 flex flex-col items-center gap-3 text-center">
-              <TwilightMark size={44} />
+              <NuvoMark size={44} />
               <span className="wordmark wordmark-grad text-display text-[26px] leading-none">Nuvo</span>
               <p className="serif text-lead leading-snug text-ink/90">Know your week is the right week.</p>
             </div>
@@ -223,7 +223,7 @@ export default function Login() {
         {glow}
         <div className="relative max-w-sm">
           <div className="mb-7 flex items-center gap-3">
-            <TwilightMark size={36} />
+            <NuvoMark size={36} />
             <span className="wordmark wordmark-grad text-display text-[24px] leading-none">Nuvo</span>
           </div>
           <h1 className="masthead text-[30px] leading-[1.16] text-ink">
@@ -251,7 +251,7 @@ export default function Login() {
       <div className="relative flex flex-1 items-center justify-center px-4">
         <div className="moment elev-3 w-full max-w-sm rounded-lg border border-line bg-surface p-8">
           <div className="mb-6 flex items-center gap-2.5">
-            <TwilightMark size={32} />
+            <NuvoMark size={32} />
             <span className="wordmark wordmark-grad text-display leading-none">Nuvo</span>
           </div>
           <div className="mb-6 text-caption leading-relaxed text-muted xl:hidden">
@@ -291,10 +291,13 @@ function GoogleMark() {
   );
 }
 
-/** The mark: a sun cresting the horizon — the arc of the day, Nuvo's metaphor. */
-function TwilightMark({ size = 32 }: { size?: number }) {
+/** The mark: the same "N" monogram as the app icon (favicon / PWA / dock icon),
+ *  set live in Fraunces instead of shipped as a raster so it stays crisp at any
+ *  size and themes correctly via --on-accent. */
+function NuvoMark({ size = 32 }: { size?: number }) {
   return (
     <span
+      aria-hidden
       className="flex shrink-0 items-center justify-center rounded-lg"
       style={{
         width: size,
@@ -302,7 +305,18 @@ function TwilightMark({ size = 32 }: { size?: number }) {
         background: "linear-gradient(140deg, var(--accent), var(--accent-2) 70%, var(--signal))",
       }}
     >
-      <Icon name="sun" size={Math.round(size * 0.56)} style={{ color: "var(--on-accent)" }} />
+      <span
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontWeight: 700,
+          fontVariationSettings: '"SOFT" 100, "WONK" 0',
+          fontSize: size * 0.6,
+          lineHeight: 1,
+          color: "var(--on-accent)",
+        }}
+      >
+        N
+      </span>
     </span>
   );
 }
