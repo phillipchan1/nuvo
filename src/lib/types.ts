@@ -347,4 +347,121 @@ export interface GoogleRawEvent {
       label?: string;
     }>;
   };
+  /** Present on a Google recurring instance; absent otherwise. */
+  recurringEventId?: string;
+}
+
+// ── Microsoft Graph raw event shape (subset we use) ───────────────────────
+// m365-sync stores the Graph event resource verbatim in `raw` — a different
+// vocabulary from Google's (attendees[].emailAddress.address vs .email,
+// body.content vs description, onlineMeeting.joinUrl vs hangoutLink…).
+// `bodyPreview` is a Graph-exclusive key present on every event resource
+// (even as ""), so its presence is what tells `normalizeRawEvent` which
+// shape it's holding.
+export interface GraphAttendee {
+  emailAddress?: { address?: string; name?: string };
+  status?: { response?: string };
+  type?: "required" | "optional" | "resource";
+}
+
+export interface GraphRawEvent {
+  bodyPreview?: string;
+  attendees?: GraphAttendee[];
+  organizer?: { emailAddress?: { address?: string; name?: string } };
+  body?: { contentType?: "text" | "html"; content?: string };
+  webLink?: string;
+  onlineMeeting?: { joinUrl?: string };
+  onlineMeetingProvider?: string;
+  /** Present on a Graph recurring instance; absent otherwise. */
+  seriesMasterId?: string;
+}
+
+export type ProviderRawEvent = GoogleRawEvent | GraphRawEvent;
+
+function mapGraphResponseStatus(response: string | undefined): AttendeeStatus {
+  switch (response) {
+    case "accepted":
+      return "accepted";
+    case "declined":
+      return "declined";
+    case "tentativelyAccepted":
+      return "tentative";
+    default:
+      return "needsAction";
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Every consumer of `external_events.raw` (SlideOver's EventPopover,
+ * MobileEventSheet, `joinUrl`/`conferenceName` in `conferencing.ts`) only
+ * understands Google's field names. Rather than teach each of them both
+ * provider vocabularies, normalize Microsoft Graph's shape into Google's
+ * once, at the read boundary (`useEventDetails`) — Google payloads pass
+ * through untouched.
+ *
+ * `ownerEmail` (the connected account's own address) resolves what Graph
+ * doesn't mark directly: Google flags the calendar owner's own attendee row
+ * with `self: true` and its own event's `organizer.self`; Graph has neither,
+ * so we match by email instead.
+ */
+export function normalizeRawEvent(
+  raw: ProviderRawEvent | null | undefined,
+  ownerEmail?: string | null,
+): GoogleRawEvent | null {
+  if (!raw) return null;
+  if (!("bodyPreview" in raw)) return raw as GoogleRawEvent;
+
+  const g = raw as GraphRawEvent;
+  const owner = ownerEmail?.toLowerCase();
+  const organizerEmail = g.organizer?.emailAddress?.address;
+
+  const attendees: GoogleAttendee[] | undefined = g.attendees?.map((a) => {
+    const email = a.emailAddress?.address ?? "";
+    return {
+      email,
+      displayName: a.emailAddress?.name,
+      responseStatus: mapGraphResponseStatus(a.status?.response),
+      self: owner ? email.toLowerCase() === owner : undefined,
+      organizer: organizerEmail ? email.toLowerCase() === organizerEmail.toLowerCase() : undefined,
+      optional: a.type === "optional",
+    };
+  });
+
+  const description =
+    g.body?.contentType === "html"
+      ? g.body.content
+      : g.body?.content || g.bodyPreview
+        ? escapeHtml(g.body?.content ?? g.bodyPreview ?? "").replace(/\n/g, "<br>")
+        : undefined;
+
+  const joinLink = g.onlineMeeting?.joinUrl;
+
+  return {
+    attendees,
+    organizer: organizerEmail
+      ? {
+          email: organizerEmail,
+          displayName: g.organizer?.emailAddress?.name,
+          self: owner ? organizerEmail.toLowerCase() === owner : undefined,
+        }
+      : undefined,
+    description,
+    htmlLink: g.webLink,
+    conferenceData: joinLink
+      ? {
+          conferenceSolution: {
+            name: g.onlineMeetingProvider === "teamsForBusiness" ? "Microsoft Teams" : "online meeting",
+          },
+          entryPoints: [{ entryPointType: "video", uri: joinLink }],
+        }
+      : undefined,
+    recurringEventId: g.seriesMasterId,
+  };
 }
