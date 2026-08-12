@@ -333,8 +333,8 @@ const PAPER: Record<IconName, PaperGlyph> = {
     vb: "0 0 18 18",
     body: (
       <>
-        <circle cx="9" cy="10" r="3.4" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M2.5 13.5h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M5.6 10a3.4 3.4 0 0 1 6.8 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M2.5 10h13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         <path d="M9 3.2v1.6M14 5l-1.1 1.1M4 5l1.1 1.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       </>
     ),
