@@ -11,7 +11,7 @@
  * product already writes about you, which is the whole reason it belongs here.
  */
 
-const CRAFT = '#B45309'
+import { CRAFT } from './hues'
 
 /** Thirteen weeks. 0 = a week you didn't show up. */
 const PULSE = [0, 0, 0, 0, 0, 0, 0, 34, 12, 0, 22, 0, 8]

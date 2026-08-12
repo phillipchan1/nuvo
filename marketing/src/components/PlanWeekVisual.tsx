@@ -30,11 +30,7 @@ const DAY_START = 8
 const DAY_END = 17
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16]
 
-/** Domain identity, the one place a raw hue is right — same set the Schedule
- *  visual uses so the two screens read as one product. */
-const WORK = '#2563EB'
-const FAITH = '#7C3AED'
-const HOME = '#0D9488'
+import { COMMUNITY as FAITH, HEALTH as HOME, WORK } from './hues'
 
 type Step = 0 | 1 | 2
 
@@ -188,7 +184,10 @@ export default function PlanWeekVisual() {
       {/* ── the pool: where the week's work is coming from ─────────────────── */}
       <aside className="planweek-rail flex flex-col border-b border-[var(--line)] md:border-b-0 md:border-r">
         <div className="px-4 pt-4">
-          <p className="section-label text-[var(--accent)]">Sprint 31 · Jul 27–Aug 2</p>
+          {/* A week names itself by distance, never by a number — "sprint" is a
+              retired word (agile jargon, in a single-player app, that also means
+              *hurry*). Keep this in the product's own voice. */}
+          <p className="section-label text-[var(--accent)]">This week · Jul 27–Aug 2</p>
           <p className="masthead mt-1 text-[1.0625rem] text-[var(--text)]">Week of July 27</p>
 
           {/* the stepper — positional only; the step number is said once, below */}

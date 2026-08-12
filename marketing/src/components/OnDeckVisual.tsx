@@ -15,12 +15,7 @@
  * coverage row is the answer to the second, and it costs nothing to show.
  */
 
-const WORK = '#2563EB'
-const CHURCH = '#7C3AED'
-const HEALTH = '#0D9488'
-const FAMILY = '#DB2777'
-const CRAFT = '#B45309'
-const MONEY = '#64748B'
+import { COMMUNITY as CHURCH, CRAFT, FAMILY, HEALTH, MONEY, WORK } from './hues'
 
 const COVERAGE = [
   { name: 'Work', color: WORK, bars: [[2, 60], [2, 46], [2, 38]] },

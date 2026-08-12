@@ -13,10 +13,7 @@
  * surfaces can't disagree about where a project lives.
  */
 
-const WORK = '#2563EB'
-const CHURCH = '#7C3AED'
-const HEALTH = '#0D9488'
-const FAMILY = '#DB2777'
+import { COMMUNITY as CHURCH, FAMILY, HEALTH, WORK } from './hues'
 
 const ROWS = [
   { name: 'Onboarding rewrite', meta: '5/5 · 4h', color: WORK, tight: false },

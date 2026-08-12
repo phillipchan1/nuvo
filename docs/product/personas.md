@@ -203,7 +203,7 @@ exactly why they're all unanswered — nobody in the building has ever needed an
 
 | # | The question | Where Nuvo answers it | Honesty |
 |---|---|---|---|
-| **O1** | What is this, and what do I do first? | the **Orientation fork** — *Show me around* (visual tour) or *Walk me through it* (live, docked panel over the real app) | ✅ *re-scored 2026-07-30 (D-059). Driven in the dev app on both shells. "What do I do first" is now literally the first step, and the live door hands you the act instead of describing it.* |
+| **O1** | What is this, and what do I do first? | the **Orientation fork** — *Show me around* (visual tour) or *Walk me through it* (live, docked panel over the real app) | ✅ *re-scored 2026-07-30 (D-059). Driven in the dev app on both shells. "What do I do first" is now literally the first step, and the live door hands you the act instead of describing it. **Answered one step earlier as of 2026-08-09 (D-094):** the marketing hero no longer diagrams the offer, it performs the act — one drag, at three altitudes — so a stranger sees what the software does before they ever sign in.* |
 | **O2** | These aren't my domains — how do I make them mine? | **first-run picker** (`FirstRun.tsx`) — five kinds, named by you | ✅ *D-026. Unverified against a running app — see the note below.* |
 | **O3** | Do I have to connect a calendar before this is useful? | — | ○ *the whole capacity model degrades silently without one; nothing says so* |
 | **O4** | Who can see my calendar and my work? | — | ○ *no privacy surface. Single-player is a **selling point** we never state.* |

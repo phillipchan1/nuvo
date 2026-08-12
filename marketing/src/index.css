@@ -354,6 +354,204 @@ body {
   }
 }
 
+/* Scattered, then held — the capture beat. A DIAGRAM, so it wears no card and
+   no chrome: things on the paper, finding a line. The travel is the argument,
+   so every chip animates position, not just opacity. */
+.converge {
+  --converge-held-x: 54%;
+  position: relative;
+  height: 320px;
+  max-width: 100%;
+}
+
+.converge-rule {
+  position: absolute;
+  left: 52.5%;
+  top: 4%;
+  bottom: 8%;
+  width: 1.5px;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: opacity 0.9s var(--ease-out);
+}
+
+.converge-chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 44%;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    left 1.05s var(--ease-out),
+    top 1.05s var(--ease-out),
+    opacity 0.7s var(--ease-out),
+    background 0.7s var(--ease-out),
+    border-color 0.7s var(--ease-out),
+    color 0.7s var(--ease-out);
+}
+
+.converge-dot {
+  height: 5px;
+  width: 5px;
+  flex: none;
+  border-radius: 9999px;
+  transition: background 0.7s var(--ease-out);
+}
+
+.converge-caption {
+  position: absolute;
+  left: 54%;
+  bottom: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  transition: opacity 0.9s var(--ease-out) 0.6s;
+}
+
+/* Phone: the same gather, shorter throw. The chips have to shrink or the held
+   column runs off the right edge. */
+@media (max-width: 639px) {
+  .converge {
+    --converge-held-x: 40%;
+    height: 300px;
+  }
+  .converge-chip {
+    max-width: 56%;
+    padding: 0.32rem 0.5rem;
+    font-size: 0.75rem;
+    gap: 0.35rem;
+  }
+  .converge-rule {
+    left: 38.5%;
+  }
+  .converge-caption {
+    left: 40%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .converge-chip,
+  .converge-rule,
+  .converge-caption,
+  .converge-dot {
+    transition: none;
+  }
+}
+
+/* The hero — the same move at every altitude. Same grammar as every planner
+   surface in the product and as the Plan-the-week visual below it: pool left →
+   grid of time right. That the layout is identical at all three altitudes is
+   the argument, so nothing here may change shape between them. */
+.altitude {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 100%;
+}
+
+.altitude-rail {
+  min-width: 0;
+}
+
+/* Holds its height across the three altitudes, so taking a pill never resizes
+   the card under the reader's cursor. */
+.altitude-pool {
+  min-height: 176px;
+}
+
+.altitude-body {
+  min-width: 0;
+}
+
+.altitude-scroll {
+  min-width: 0;
+}
+
+.altitude-line {
+  animation: rise-in 0.5s var(--ease-out) both;
+}
+
+.altitude-landed {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: rise-in 0.45s var(--ease-out) both;
+}
+
+/* The card in flight and the hand carrying it. Both ride the same transform so
+   they arrive together; neither is interactive. */
+.altitude-ghost,
+.altitude-cursor {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  transition:
+    transform 0.72s var(--ease-out),
+    opacity 0.28s ease;
+}
+
+.altitude-ghost {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-lift);
+  transform-origin: left center;
+}
+
+.altitude-cursor {
+  line-height: 0;
+  filter: drop-shadow(0 2px 4px rgba(60, 42, 20, 0.3));
+}
+
+@media (min-width: 768px) {
+  .altitude {
+    grid-template-columns: minmax(0, 16rem) minmax(0, 1fr);
+  }
+  .altitude-pool {
+    min-height: 232px;
+  }
+}
+
+/* Phone: the pool stacks above and the drag travels straight down, which reads
+   better than a cramped diagonal. The grid keeps its columns by scrolling
+   inside its own container — the page itself never scrolls sideways. */
+@media (max-width: 767px) {
+  .altitude-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  /* Wide enough that a column still fits a legible card — at 420 the quarter
+     columns squeezed the landed block's eyebrow down to "INITIATIV…", which
+     tells the reader nothing. */
+  .altitude-grid {
+    min-width: 540px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .altitude-line,
+  .altitude-landed {
+    animation: none;
+  }
+  .altitude-ghost,
+  .altitude-cursor {
+    transition: none;
+  }
+}
+
 /* Plan the week — pool left, the week right. Same grammar as the Schedule
    visual (and as the real planner surfaces: pool left → grid of time right). */
 .planweek {
