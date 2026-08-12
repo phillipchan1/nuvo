@@ -419,6 +419,11 @@ export default function CalendarPane({
     const onDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null;
       if (t?.closest(".fc-event")) return;
+      // The block's own popover counts as still being "on" it. Dropping focus
+      // here un-expanded and un-lifted the block mid-inspection, and since the
+      // popover is anchored to that block, its ~3px lift and full-column width
+      // vanishing shifted the popover under the cursor.
+      if (t?.closest("[data-block-popover]")) return;
       clearFocus();
     };
     document.addEventListener("pointerdown", onDown, true);

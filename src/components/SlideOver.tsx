@@ -100,6 +100,8 @@ function useAnchoredPosition({
   gap,
   disabled,
   onDismiss,
+  align = "center",
+  holdHeight,
 }: {
   anchorEl: HTMLElement | null | undefined;
   anchorRect: DOMRect;
@@ -108,6 +110,13 @@ function useAnchoredPosition({
   gap: number;
   disabled?: boolean;
   onDismiss?: () => void;
+  /** "center" aligns the popover to the anchor's middle; "top" hugs its top. */
+  align?: "center" | "top";
+  /** Keep using the last measured height when deciding how far to lift the
+   *  popover off the viewport bottom. Set while a panel that can outgrow the
+   *  popover is open (the slot's task slide-out) so its extra height scrolls
+   *  inside the card instead of sliding the whole card upward. */
+  holdHeight?: boolean;
 }) {
   const [state, setState] = useState(() => ({
     top: anchorRect.top,
@@ -115,7 +124,20 @@ function useAnchoredPosition({
     side: "right" as "right" | "left",
     anchorTop: anchorRect.top,
     anchorHeight: anchorRect.height,
+    /** Room left between `top` and the viewport bottom. */
+    maxHeight: 0,
+    viewportWidth: typeof window === "undefined" ? 0 : window.innerWidth,
   }));
+
+  const frozenRef = useRef<{
+    el: HTMLElement | null;
+    rect: DOMRect;
+    vw: number;
+    width: number;
+    left: number;
+    side: "right" | "left";
+  } | null>(null);
+  const heldHeightRef = useRef(0);
 
   const place = useCallback(() => {
     if (anchorEl && !anchorEl.isConnected) {
@@ -128,17 +150,50 @@ function useAnchoredPosition({
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const h = pop.offsetHeight;
-    let left = rect.right + gap;
-    let side: "right" | "left" = "right";
-    if (left + width > vw - 8) {
-      left = rect.left - gap - width;
-      side = "left";
+    // Horizontal placement is decided ONCE per (anchor, viewport) and then held.
+    // The anchor is a live calendar block whose *width* changes underneath us:
+    // CalendarPane expands the clicked block to the full column (`.evt-focused`)
+    // and drops that the moment you press anywhere that isn't a block — including
+    // a task row inside this very popover. Re-deriving `left` from each fresh
+    // measurement made the popover chase that ~280px reflow sideways every time
+    // you opened a task. Vertical still tracks live, so the popover keeps
+    // following its block when the grid scrolls.
+    const frozen = frozenRef.current;
+    const sameAnchor =
+      frozen && frozen.el === (anchorEl ?? null) && (anchorEl ? true : frozen.rect === anchorRect);
+    let left: number;
+    let side: "right" | "left";
+    if (sameAnchor && frozen.vw === vw && frozen.width === width) {
+      ({ left, side } = frozen);
+    } else {
+      left = rect.right + gap;
+      side = "right";
+      if (left + width > vw - 8) {
+        left = rect.left - gap - width;
+        side = "left";
+      }
+      left = Math.max(8, left);
+      frozenRef.current = { el: anchorEl ?? null, rect: anchorRect, vw, width, left, side };
     }
-    left = Math.max(8, left);
-    let top = rect.top + rect.height / 2 - h / 2;
-    top = Math.max(8, Math.min(top, vh - h - 8));
-    setState({ top, left, side, anchorTop: rect.top, anchorHeight: rect.height });
-  }, [anchorEl, anchorRect, popRef, width, gap, onDismiss]);
+    // Vertical DOES track the anchor live (the popover has to follow its block
+    // when the time grid scrolls), but the height it budgets for itself is held
+    // while `holdHeight` is set — otherwise the slide-out's taller content
+    // re-runs the "lift it off the bottom edge" clamp and walks the whole card
+    // up the screen as it opens.
+    if (!holdHeight || !heldHeightRef.current) heldHeightRef.current = h;
+    const budget = heldHeightRef.current;
+    let top = align === "top" ? rect.top : rect.top + rect.height / 2 - budget / 2;
+    top = Math.max(8, Math.min(top, vh - budget - 8));
+    setState({
+      top,
+      left,
+      side,
+      anchorTop: rect.top,
+      anchorHeight: rect.height,
+      maxHeight: vh - top - 8,
+      viewportWidth: vw,
+    });
+  }, [anchorEl, anchorRect, popRef, width, gap, onDismiss, align, holdHeight]);
 
   useLayoutEffect(() => {
     if (!disabled) place();
@@ -190,10 +245,12 @@ export function TaskPopover({
   onBack?: () => void;
   backLabel?: string;
   /** "anchored" (default) floats beside a calendar block with an arrow; "centered"
-   *  renders the same card as a scrim-backed modal, summonable from ⌘K on any rung. */
-  variant?: "anchored" | "centered";
+   *  renders the same card as a scrim-backed modal, summonable from ⌘K on any rung.
+   *  "slideout" fills a pane inside SlotPopover — no portal or positioning. */
+  variant?: "anchored" | "centered" | "slideout";
 }) {
   const centered = variant === "centered";
+  const slideout = variant === "slideout";
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes);
   const [preparing, setPreparing] = useState(false);
@@ -209,7 +266,7 @@ export function TaskPopover({
     popRef,
     width: TASK_POP_W,
     gap: 10,
-    disabled: centered, // centered modal positions via CSS, not the anchor
+    disabled: centered || slideout,
     onDismiss: onClose,
   });
 
@@ -266,11 +323,13 @@ export function TaskPopover({
         else onClose();
       }
     };
+    if (slideout) return;
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, onBack]);
+  }, [onClose, onBack, slideout]);
 
   useEffect(() => {
+    if (slideout) return;
     const onDown = (e: MouseEvent) => {
       // Use composedPath() (frozen at dispatch time), not contains(e.target):
       // a row inside the popover can remove itself from the DOM synchronously
@@ -292,7 +351,7 @@ export function TaskPopover({
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [onClose]);
+  }, [onClose, slideout]);
 
   const commitTitle = () => title.trim() && title !== task.title && mutations.patchTask(task.id, { title: title.trim() });
   const commitNotes = () => notes !== task.notes && mutations.patchTask(task.id, { notes });
@@ -360,28 +419,20 @@ export function TaskPopover({
     return null;
   })();
 
-  return createPortal(
-    // Centered variant: a flex scrim that dims the page and centers the card
-    // (no transform on the card, so the `.moment` spring doesn't fight it).
-    // Anchored variant: `contents` makes the wrapper layout-transparent so the
-    // fixed popover positions exactly as before.
-    <div className={centered ? "fixed inset-0 z-40 flex items-center justify-center bg-black/20 p-4" : "contents"}>
-      {/* Popover card — anchored opens use `pop-in` (fast, no spring): a
-          click-to-open inspector should feel instant, same as EventPopover.
-          `moment` (the 540ms modal spring) is for the centered/⌘K variant,
-          which really is a scrim-backed modal. */}
+  const dismiss = onBack ?? onClose;
+
+  const card = (
       <div
-        ref={popRef}
-        className={`${centered ? "moment" : "pop-in"} ${onBack ? "z-[55]" : "z-50"} flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface ${centered ? "relative" : "fixed"}`}
+        ref={slideout ? undefined : popRef}
+        data-block-popover=""
+        className={`${centered ? "moment" : slideout ? "" : "pop-in"} ${slideout ? "h-full" : centered ? "relative" : "fixed"} ${slideout ? "" : onBack ? "z-[55]" : "z-50"} flex flex-col ${slideout ? "" : "rounded-[var(--radius-lg)] border border-line bg-surface"}`}
         style={{
-          ...(centered ? {} : { top: pos.top, left: pos.left }),
-          width: TASK_POP_W,
-          maxHeight: "min(620px, calc(100vh - 24px))",
-          boxShadow: "var(--shadow-3)",
+          ...(centered || slideout ? {} : { top: pos.top, left: pos.left }),
+          ...(slideout ? {} : { width: TASK_POP_W, maxHeight: "min(620px, calc(100vh - 24px))", boxShadow: "var(--shadow-3)" }),
         }}
       >
         {/* Arrow connector — anchored variant only (the modal has no anchor). */}
-        {!centered && (
+        {!centered && !slideout && (
         <div
           className="absolute h-2.5 w-2.5 rotate-45 border border-line bg-surface"
           style={
@@ -716,7 +767,7 @@ export function TaskPopover({
           {task.status === "done" ? (
             <Btn onClick={() => mutations.uncomplete(task)}>Reopen</Btn>
           ) : (
-            <Btn kind="primary" onClick={() => { mutations.complete(task); onClose(); }}>
+            <Btn kind="primary" onClick={() => { mutations.complete(task); dismiss(); }}>
               Done
             </Btn>
           )}
@@ -728,14 +779,14 @@ export function TaskPopover({
                 ? [{
                     label: "→ Inbox",
                     title: "Move back to inbox",
-                    onClick: () => { mutations.backToInbox(task, { undo: "toast" }); onClose(); },
+                    onClick: () => { mutations.backToInbox(task, { undo: "toast" }); dismiss(); },
                   }]
                 : []),
               ...(onConvertToEvent && task.start_time
                 ? [{
                     label: "→ Event",
                     title: "Convert to a calendar event and remove the task",
-                    onClick: () => { onConvertToEvent(); onClose(); },
+                    onClick: () => { onConvertToEvent(); dismiss(); },
                   }]
                 : []),
             ]}
@@ -743,20 +794,27 @@ export function TaskPopover({
           <RecurrenceDeleteButton
             recurring={Boolean(task.recurrence_id && recurrence)}
             label="Trash"
-            onSimple={() => { mutations.trash(task); onClose(); }}
+            onSimple={() => { mutations.trash(task); dismiss(); }}
             onThis={() => {
               if (recurrence && task.recurrence_date) recurrenceMutations.skipOccurrence(recurrence, task.recurrence_date);
               mutations.trash(task);
-              onClose();
+              dismiss();
             }}
             onFollowing={() => {
               if (recurrence && task.do_date) recurrenceMutations.deleteFollowing(recurrence, task.do_date);
-              onClose();
+              dismiss();
             }}
-            onSeries={() => { if (recurrence) recurrenceMutations.deleteSeries(recurrence); onClose(); }}
+            onSeries={() => { if (recurrence) recurrenceMutations.deleteSeries(recurrence); dismiss(); }}
           />
         </div>
       </div>
+  );
+
+  if (slideout) return card;
+
+  return createPortal(
+    <div className={centered ? "fixed inset-0 z-40 flex items-center justify-center bg-black/20 p-4" : "contents"}>
+      {card}
     </div>,
     document.body,
   );
@@ -1213,6 +1271,7 @@ export function EventPopover({
       {/* Popover card */}
       <div
         ref={popRef}
+        data-block-popover=""
         className="pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"
         style={{
           top: pos.top,
@@ -1821,6 +1880,10 @@ export function EventPopover({
 
 // ── SlotPopover — a time slot and the tasks it holds ─────────────────────
 export const SLOT_POP_W = 340;
+const TASK_SLIDE_W = 380;
+/** Floor for the slide-out on a narrow window — below this it stops giving way
+ *  and simply overhangs, rather than shrinking into an unreadable strip. */
+const TASK_SLIDE_MIN_W = 300;
 
 export function SlotPopover({
   slot,
@@ -1831,30 +1894,31 @@ export function SlotPopover({
   slotMutations,
   recurrence,
   recurrenceMutations,
+  labels,
+  openTask = null,
+  taskRecurrence = null,
   onOpenTask,
+  onCloseTask,
+  onConvertTaskToEvent,
   focusTitle = false,
-  muted = false,
-  onPopRect,
   onClose,
 }: {
   slot: Slot;
   anchor: DOMRect;
-  /** Live trigger element (e.g. the clicked calendar block) — when given, the
-   *  popover follows it on scroll/resize instead of freezing at `anchor`. */
   anchorEl?: HTMLElement | null;
-  /** Open with the name selected — set when a drop just made this block, so
-   *  naming it is part of that gesture and not a second trip. */
   focusTitle?: boolean;
   childTasks: Task[];
   taskMutations: ReturnType<typeof useTaskMutations>;
   slotMutations: ReturnType<typeof useSlotMutations>;
   recurrence: Recurrence | null;
   recurrenceMutations: ReturnType<typeof useRecurrenceMutations>;
+  labels: Label[];
+  /** Task detail slide-out — stays inside this shell so position never jumps. */
+  openTask?: Task | null;
+  taskRecurrence?: Recurrence | null;
   onOpenTask: (t: Task) => void;
-  /** De-emphasize when a task detail panel is stacked beside this popover. */
-  muted?: boolean;
-  /** Reports the popover's live screen rect (for stacking a task panel). */
-  onPopRect?: (rect: DOMRect) => void;
+  onCloseTask: () => void;
+  onConvertTaskToEvent?: (t: Task) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(slot.title);
@@ -1863,7 +1927,8 @@ export function SlotPopover({
   const [sel, setSel] = useState(-1);
   const titleRef = useRef<HTMLInputElement>(null);
   const addRef = useRef<HTMLInputElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const slotColRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // Live reorder state: { id: dragged, index: target insertion slot }.
   const [reorder, setReorder] = useState<{ id: string; index: number } | null>(null);
@@ -1874,8 +1939,8 @@ export function SlotPopover({
   // FullCalendar's drop geometry. The reorder handle sits outside [data-task-drag]
   // so grabbing it never starts an FC drag — only the row body drags out.
   useEffect(() => {
-    if (!popRef.current) return;
-    const d = new Draggable(popRef.current, {
+    if (!slotColRef.current) return;
+    const d = new Draggable(slotColRef.current, {
       itemSelector: "[data-task-drag]",
       minDistance: 6,
       eventData: (el) => ({
@@ -1946,22 +2011,18 @@ export function SlotPopover({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (muted) return;
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (openTask) onCloseTask();
+        else onClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, muted]);
+  }, [onClose, onCloseTask, openTask]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (muted) return;
-      // Use composedPath() (frozen at dispatch time), not contains(e.target):
-      // a row inside the popover can remove itself from the DOM synchronously
-      // in its own mousedown handler (e.g. GuestsInput's "add guest" — see
-      // GuestsInput.tsx), which would make e.target read as already-detached
-      // and falsely look like an outside click by the time this listener runs.
-      if (!popRef.current || e.composedPath().includes(popRef.current)) return;
+      if (!shellRef.current || e.composedPath().includes(shellRef.current)) return;
       // This click dismisses the popover only — mark it so the calendar
       // grid's own click-to-create handling (a separate system reacting to
       // the same physical click) skips opening a second, unwanted draft.
@@ -1969,33 +2030,45 @@ export function SlotPopover({
       // Force any pending blur-to-commit edit (title/notes…) through before the
       // calendar grid's own mousedown handling (which calls preventDefault to
       // support click-drag) can suppress the native blur and drop it silently.
-      if (popRef.current.contains(document.activeElement)) {
+      if (shellRef.current.contains(document.activeElement)) {
         (document.activeElement as HTMLElement | null)?.blur();
       }
-      onClose();
+      if (openTask) onCloseTask();
+      else onClose();
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [onClose, muted]);
+  }, [onClose, onCloseTask, openTask]);
 
+  // Placement is computed for the slot column *alone* — the task slide-out is
+  // never part of the flip math. So opening a task can't change where the slot
+  // sits, and closing it can't change it back.
   const pos = useAnchoredPosition({
     anchorEl,
     anchorRect: anchor,
-    popRef,
+    popRef: shellRef,
     width: SLOT_POP_W,
     gap: 10,
+    align: "top",
+    holdHeight: Boolean(openTask),
     onDismiss: onClose,
   });
 
-  useLayoutEffect(() => {
-    if (!onPopRect || !popRef.current) return;
-    const el = popRef.current;
-    const report = () => onPopRect(el.getBoundingClientRect());
-    report();
-    const ro = new ResizeObserver(report);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [onPopRect, pos.top, pos.left]);
+  // The slide-out unfolds on whichever side of the column has more room, and
+  // the shell is pinned by the column's *own* edge (`left` when it grows right,
+  // `right` when it grows left). Width then changes without moving the column
+  // one pixel — the earlier version pinned `left` always, so on a left-flipped
+  // popover the whole panel lurched sideways as the pane opened.
+  const colLeft = pos.left;
+  const colRight = pos.left + SLOT_POP_W;
+  const roomRight = pos.viewportWidth - 8 - colRight;
+  const roomLeft = colLeft - 8;
+  const paneSide: "right" | "left" = roomRight >= roomLeft ? "right" : "left";
+  const paneW = openTask
+    ? Math.round(
+        Math.min(TASK_SLIDE_W, Math.max(TASK_SLIDE_MIN_W, paneSide === "right" ? roomRight : roomLeft)),
+      )
+    : 0;
 
   const commitTitle = () =>
     title.trim() !== slot.title &&
@@ -2039,7 +2112,7 @@ export function SlotPopover({
     // these fixed positions (not the live, re-ordering DOM) keeps it stable — no
     // feedback loop where moving the row changes what's under the cursor.
     const mids = ordered.map((t) => {
-      const r = popRef.current
+      const r = slotColRef.current
         ?.querySelector(`[data-slot-row="${t.id}"]`)
         ?.getBoundingClientRect();
       return r ? r.top + r.height / 2 : Number.POSITIVE_INFINITY;
@@ -2050,7 +2123,7 @@ export function SlotPopover({
     setReorder({ id, index });
     setReorderLineTop(insertLineTop(id, e.clientY));
     const onMove = (ev: PointerEvent) => {
-      const pop = popRef.current?.getBoundingClientRect();
+      const pop = slotColRef.current?.getBoundingClientRect();
       const inside =
         !!pop &&
         ev.clientX >= pop.left && ev.clientX <= pop.right &&
@@ -2135,7 +2208,7 @@ export function SlotPopover({
 
   // ↑↓/jk select · ↵ open · space toggle · x remove · t focus add
   useEffect(() => {
-    if (muted) return;
+    if (openTask) return;
     const onKey = (e: KeyboardEvent) => {
       if (isTypingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "ArrowDown" || e.key === "j") {
@@ -2226,28 +2299,46 @@ export function SlotPopover({
 
   return createPortal(
     <>
+      {/* Arrow — a portal sibling, not a shell child: the shell has to clip
+          (`overflow-hidden`) so the slide-out can unfold from zero width, and
+          that clipping ate the arrow's negative offset. The arrow sits on the
+          column edge facing the anchor, so the pane covers it exactly when it
+          unfolds toward the anchor — i.e. when `paneSide` is the opposite of
+          the side the popover took. */}
+      {!(openTask && paneSide !== pos.side) && (
+        <div
+          className="fixed z-[51] h-2.5 w-2.5 rotate-45 border border-line bg-surface"
+          style={{
+            top: pos.top + 24,
+            ...(pos.side === "right"
+              ? { left: colLeft - 6, borderRight: "none", borderTop: "none" }
+              : { left: colRight - 6, borderLeft: "none", borderBottom: "none" }),
+          }}
+        />
+      )}
       <div
-        ref={popRef}
-        className={`pop-in fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface transition-opacity ${
-          muted ? "pointer-events-none opacity-45" : ""
-        }`}
+        ref={shellRef}
+        data-block-popover=""
+        className={`pop-in fixed z-50 flex ${
+          paneSide === "left" ? "flex-row-reverse" : ""
+        } overflow-hidden rounded-[var(--radius-lg)] border border-line bg-surface`}
         style={{
           top: pos.top,
-          left: pos.left,
-          width: SLOT_POP_W,
-          maxHeight: "min(560px, calc(100vh - 24px))",
+          // Pin the edge the column sits on, so `width` grows away from it.
+          ...(paneSide === "right"
+            ? { left: colLeft }
+            : { right: Math.max(0, pos.viewportWidth - colRight) }),
+          width: SLOT_POP_W + paneW,
+          maxHeight: Math.min(560, pos.maxHeight),
           boxShadow: "var(--shadow-3)",
+          transition: "width 180ms ease-out",
         }}
       >
-        {/* Arrow */}
+        {/* Slot column — fixed width; position is owned by the shell, not this pane */}
         <div
-          className="absolute h-2.5 w-2.5 rotate-45 border border-line bg-surface"
-          style={
-            pos.side === "right"
-              ? { left: -6, top: 24, borderRight: "none", borderTop: "none" }
-              : { right: -6, top: 24, borderLeft: "none", borderBottom: "none" }
-          }
-        />
+          ref={slotColRef}
+          className="flex min-h-0 w-[340px] shrink-0 flex-col"
+        >
 
         {/* Header */}
         <div className="flex shrink-0 items-start gap-2 px-4 pt-4 pb-2">
@@ -2503,6 +2594,35 @@ export function SlotPopover({
               onClose();
             }}
           />
+        </div>
+        </div>
+
+        {/* Task slide-out — same shell, slides open to the right */}
+        <div
+          className={`fast flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface transition-[width,opacity] duration-200 ease-out ${
+            openTask
+              ? `opacity-100 ${paneSide === "right" ? "border-l" : "border-r"} border-line`
+              : "opacity-0"
+          }`}
+          style={{ width: paneW }}
+        >
+          {openTask && (
+            <TaskPopover
+              variant="slideout"
+              task={openTask}
+              anchor={anchor}
+              labels={labels}
+              mutations={taskMutations}
+              recurrence={taskRecurrence}
+              recurrenceMutations={recurrenceMutations}
+              onClose={onCloseTask}
+              onBack={onCloseTask}
+              backLabel={slot.title.trim() || derivedTitle}
+              onConvertToEvent={
+                onConvertTaskToEvent ? () => onConvertTaskToEvent(openTask) : undefined
+              }
+            />
+          )}
         </div>
       </div>
     </>,

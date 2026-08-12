@@ -61,9 +61,8 @@ export interface AppNavState {
   calView: CalView;
   overlay: OverlayKind;
   overlayId: string | null;
-  /** When a task popover was opened from a slot popover, the slot id — kept so
-   *  both panels can render stacked and browser-back returns to the slot. */
-  overlayParentId: string | null;
+  /** Task id open inside the slot popover (overlay must be "slot"). History-backed. */
+  overlaySubId: string | null;
   settingsSection: SettingsSection;
   agentOpen: boolean;
   floorModal: FloorModal;
@@ -82,7 +81,7 @@ export const DEFAULT_NAV: AppNavState = {
   calView: typeof window !== "undefined" && window.innerWidth < 1100 ? "timeGridDay" : "timeGridWeek",
   overlay: "none",
   overlayId: null,
-  overlayParentId: null,
+  overlaySubId: null,
   settingsSection: "appearance",
   agentOpen: readAgentOpen(),
   floorModal: null,
@@ -100,11 +99,11 @@ export function mergeNav(prev: AppNavState, patch: Partial<AppNavState>): AppNav
   if (patch.overlay !== undefined && patch.overlay !== prev.overlay) {
     if (patch.overlay === "none") {
       next.overlayId = null;
-      next.overlayParentId = null;
+      next.overlaySubId = null;
     } else if (patch.overlayId === undefined) next.overlayId = prev.overlayId;
   }
-  if (patch.overlayParentId === undefined && patch.overlay === "slot") {
-    next.overlayParentId = null;
+  if (patch.overlay === "slot" && patch.overlaySubId === undefined && patch.overlayId !== undefined && patch.overlayId !== prev.overlayId) {
+    next.overlaySubId = null;
   }
   if (patch.flow !== undefined && patch.flow !== prev.flow && patch.flow === null) {
     next.flowStep = 0;
@@ -131,7 +130,7 @@ export function navEqual(a: AppNavState, b: AppNavState): boolean {
     a.calView === b.calView &&
     a.overlay === b.overlay &&
     a.overlayId === b.overlayId &&
-    a.overlayParentId === b.overlayParentId &&
+    a.overlaySubId === b.overlaySubId &&
     a.settingsSection === b.settingsSection &&
     a.agentOpen === b.agentOpen &&
     a.floorModal === b.floorModal
@@ -159,6 +158,9 @@ export function readNavState(raw: unknown): AppNavState | null {
     initiativeView: (["ondeck", "groom", "all", "shipped"] as DetailView[]).includes(s.initiativeView as DetailView)
       ? (s.initiativeView as DetailView)
       : "ondeck",
+    overlaySubId: (s as { overlaySubId?: string | null; overlayParentId?: string | null }).overlaySubId
+      ?? (s as { overlayParentId?: string | null }).overlayParentId
+      ?? null,
     settingsSection:
       (s.settingsSection as string) === "integrations" || !s.settingsSection
         ? DEFAULT_NAV.settingsSection

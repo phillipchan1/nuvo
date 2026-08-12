@@ -52,9 +52,9 @@ interface AppNavigationContextValue {
     id?: string | null,
     anchor?: DOMRect | null,
     anchorEl?: HTMLElement | null,
-    /** Slot id when opening a task from SlotPopover — stacks both panels. */
-    fromSlotId?: string | null,
   ) => void;
+  /** Open a task inside the current slot popover (overlay must be "slot"). */
+  openSlotTask: (taskId: string) => void;
   closeOverlay: () => void;
   /** Open a project / initiative as the centered Record modal. */
   openRecord: (kind: "project" | "initiative", id: string) => void;
@@ -97,9 +97,17 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   const applyAtIndex = useCallback((index: number) => {
     indexRef.current = index;
     const state = stackRef.current[index] ?? DEFAULT_NAV;
+    const prev = navRef.current;
     setNav(state);
-    setPanelAnchor(null);
-    setPanelAnchorEl(null);
+    // Drop the anchor only when a *different* panel takes over. Going back
+    // within one panel (closing the task slide-out inside a slot popover)
+    // never unmounts it, so clearing the anchor here would strand the still-
+    // open popover on `fallbackPanelAnchor()` — it visibly teleported off its
+    // calendar block the moment you closed a task.
+    if (state.overlay !== prev.overlay || state.overlayId !== prev.overlayId) {
+      setPanelAnchor(null);
+      setPanelAnchorEl(null);
+    }
   }, []);
 
   const applyNav = useCallback(
@@ -217,7 +225,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     if (overlay === "task" || overlay === "event" || overlay === "slot" || overlay === "week-plan") {
       patch.overlay = "none";
       patch.overlayId = null;
-      patch.overlayParentId = null;
+      patch.overlaySubId = null;
     }
   }, []);
 
@@ -293,15 +301,22 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
       id: string | null = null,
       anchor: DOMRect | null = null,
       anchorEl: HTMLElement | null = null,
-      fromSlotId: string | null = null,
     ) => {
       setPanelAnchor(anchor);
       setPanelAnchorEl(anchorEl);
       const patch: Partial<AppNavState> = { overlay: kind, overlayId: id, floorModal: null };
-      if (kind === "task" && fromSlotId) patch.overlayParentId = fromSlotId;
-      else if (kind === "slot") patch.overlayParentId = null;
+      if (kind === "slot") patch.overlaySubId = null;
       navigate(patch);
     },
+    [navigate],
+  );
+
+  const openSlotTask = useCallback(
+    (taskId: string) =>
+      // Opening the drill-in pushes (so back closes it); switching between
+      // tasks while it's already open replaces, so back is always "close the
+      // pane", not a walk back through every task you glanced at.
+      navigate({ overlaySubId: taskId }, navRef.current.overlaySubId ? "replace" : "push"),
     [navigate],
   );
 
@@ -331,6 +346,11 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   );
 
   const closeOverlay = useCallback(() => {
+    if (navRef.current.overlaySubId) {
+      if (canGoBack()) back();
+      else navigate({ overlaySubId: null }, "replace");
+      return;
+    }
     if (navRef.current.overlay !== "none") {
       // Prefer history.back() so the overlay open is removed from the stack.
       // Fall back to a direct replace when there's nowhere to go back to
@@ -399,6 +419,7 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
     closeFlow,
     setFlowStep,
     openOverlay,
+    openSlotTask,
     closeOverlay,
     openRecord,
     openFloorModal,
