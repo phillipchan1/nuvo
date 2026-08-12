@@ -31,6 +31,7 @@ export default function Sheet({
   onClose,
   children,
   title,
+  action,
   tall = false,
   contentClassName = "",
   onContentScroll,
@@ -38,6 +39,9 @@ export default function Sheet({
   onClose: () => void;
   children: ReactNode;
   title?: ReactNode;
+  /** A trailing control in the title row, left of ✕ — the record's ⋯ overflow.
+   *  Rendered only when there IS a title row. */
+  action?: ReactNode;
   tall?: boolean;
   contentClassName?: string;
   /** so a sheet can react to its own scroll — the record uses it to fade its
@@ -246,6 +250,13 @@ export default function Sheet({
                 its own content out absolutely (the record's crumb/name
                 cross-fade) has a width to lay it out in. */}
             <div id={titleId} className="min-w-0 flex-1 text-head font-semibold tracking-tight select-none">{title}</div>
+            {action != null && (
+              // Opts out of drag-to-dismiss like every other control in this
+              // row — the grab pill above still owns the gesture.
+              <div onPointerDown={(e) => e.stopPropagation()} className="shrink-0">
+                {action}
+              </div>
+            )}
             <button
               onClick={onClose}
               onPointerDown={(e) => e.stopPropagation()}

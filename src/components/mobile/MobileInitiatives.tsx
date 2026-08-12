@@ -12,6 +12,9 @@
 // Cards lead with OKR health, because grooming a bet is about making the outcome
 // measurable: the two-segment meter (Defined · Measured) and one state word. A bet
 // with no domain still gets its one-tap auto-link, exactly like the desktop card.
+//
+// The tab carries the desktop's FOUR faces, in the desktop's order — On Deck
+// (when) · Groom (what) · All (everything) · Shipped (what landed).
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -36,11 +39,14 @@ import SkeletonRows from "./Skeleton";
 import PlannerCard, { type DeckTone } from "../ondeck/DeckCard";
 import { initiativeCardStatus, initiativeWeight } from "../ondeck/deckStatus";
 import { Hint, VerticalList } from "./detail/verticalDetail";
+import MobileGroom from "./MobileGroom";
+import MobileShipped from "./MobileShipped";
+import { useRecordActions } from "./MobileRecordActions";
 
 const HORIZON_QUARTERS = 4;
 
 const SEG_KEY = "nuvo-mobile-initiatives-seg";
-type Seg = "ondeck" | "all";
+type Seg = "ondeck" | "groom" | "all" | "shipped";
 
 export default function MobileInitiatives({
   onOpenItem,
@@ -48,13 +54,18 @@ export default function MobileInitiatives({
   onOpenItem: (kind: "project" | "initiative" | "domain", id: string) => void;
 }) {
   const { data: d, ready, updateInitiative, updateProject, addInitiative } = useVertical();
+  // A hold on the All list opens the record's acts — the phone's right-click.
+  // (On the deck a hold picks the bet up; those cards reach the same acts
+  // through the ⋯ in the record.)
+  const { actionProps, sheet: actionSheet } = useRecordActions(onOpenItem);
   const [maxPerQuarter] = useMaxPerQuarter();
   const now = useMemo(() => new Date(), []);
   const board = useMemo(() => readInitiativeDeck(d, now, HORIZON_QUARTERS, true), [d, now]);
 
   const [seg, setSegState] = useState<Seg>(() => {
     try {
-      return localStorage.getItem(SEG_KEY) === "all" ? "all" : "ondeck";
+      const v = localStorage.getItem(SEG_KEY);
+      return v === "groom" || v === "all" || v === "shipped" ? v : "ondeck";
     } catch {
       return "ondeck";
     }
@@ -200,6 +211,10 @@ export default function MobileInitiatives({
 
       {!ready ? (
         <SkeletonRows rows={4} />
+      ) : seg === "groom" ? (
+        <MobileGroom scope="initiative" onOpenItem={onOpenItem} />
+      ) : seg === "shipped" ? (
+        <MobileShipped scope="initiative" onOpenItem={onOpenItem} />
       ) : seg === "all" ? (
         <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto fab-clear">
           <VerticalList
@@ -208,7 +223,9 @@ export default function MobileInitiatives({
             onOpenProject={(id) => onOpenItem("project", id)}
             onOpenInitiative={(id) => onOpenItem("initiative", id)}
             onOpenDomain={(id) => onOpenItem("domain", id)}
+            hold={actionProps}
           />
+          {actionSheet}
         </div>
       ) : (
         <MobileDeck
@@ -332,9 +349,13 @@ function SprintRunway({ total, spent, current }: { total: number; spent: number;
 }
 
 function SegHeader({ seg, setSeg }: { seg: Seg; setSeg: (s: Seg) => void }) {
+  // The desktop's four faces, in the desktop's order (FloorPane's RungTabs):
+  // when · what · everything · what landed.
   const items: { id: Seg; label: string }[] = [
     { id: "ondeck", label: "On Deck" },
+    { id: "groom", label: "Groom" },
     { id: "all", label: "All" },
+    { id: "shipped", label: "Shipped" },
   ];
   return (
     <div className="flex shrink-0 gap-1 border-b border-line px-3 py-2">

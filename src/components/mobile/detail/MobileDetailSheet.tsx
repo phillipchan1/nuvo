@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useVertical } from "../../../hooks/useVertical";
 import { useMobileSheetStackHistory } from "../../../hooks/useMobileOverlayHistory";
 import Sheet from "../Sheet";
+import { useRecordActions } from "../MobileRecordActions";
 import MobileDomainScreen from "./MobileDomainScreen";
 import {
   InitiativeScreen,
@@ -64,6 +65,26 @@ export default function MobileDetailSheet({
   // still pushed onto this stack from global search.
   const openInitiative = (id: string) => push({ level: "initiative", id });
   const openProject = (id: string) => push({ level: "project", id });
+
+  // The record's lifecycle acts (ship · park · delete) — the desktop reaches
+  // them by right-clicking the card, the phone by the ⋯ in this row. Without it
+  // a project or initiative could not be deleted on a phone at all. Deleting the
+  // record you're looking at closes the sheet with it; "Open" is a no-op here
+  // (you are already in it), so the menu is opened by button only.
+  const { openActions, sheet: actionSheet } = useRecordActions(() => {});
+  const recordFrame = frame.level === "project" || frame.level === "initiative" ? frame : null;
+  const gone =
+    recordFrame &&
+    !(recordFrame.level === "project"
+      ? d.projects.some((p) => p.id === recordFrame.id)
+      : d.initiatives.some((i) => i.id === recordFrame.id));
+  useEffect(() => {
+    if (!gone) return;
+    // Deleted out from under us: fall back to the parent frame if there is one,
+    // otherwise leave — never sit on a "this project is gone" screen.
+    if (atRoot) onClose();
+    else history.back();
+  }, [gone, atRoot, onClose]);
 
   const title =
     frame.level === "domain"
@@ -123,6 +144,18 @@ export default function MobileDetailSheet({
     <Sheet
       tall
       title={titleNode}
+      action={
+        recordFrame && (
+          <button
+            onClick={() => openActions(recordFrame.level, recordFrame.id)}
+            aria-label={`Actions for this ${recordFrame.level}`}
+            className="tap-icon fast flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted active:bg-surface-2"
+            style={{ cursor: "default" }}
+          >
+            ⋯
+          </button>
+        )
+      }
       onClose={onClose}
       contentClassName="mobile-scroll overflow-y-auto"
       onContentScroll={(e) => {
@@ -139,6 +172,7 @@ export default function MobileDetailSheet({
           <ProjectScreen key={frame.id} d={d} store={store} id={frame.id} />
         ) : null}
       </div>
+      {actionSheet}
     </Sheet>
   );
 }
