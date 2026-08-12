@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Toaster, toast } from "sonner";
@@ -15,7 +15,11 @@ import Login from "./components/Login";
 import AppShell from "./components/AppShell";
 import ErrorBoundary from "./components/ErrorBoundary";
 import LockedScreen from "./components/billing/LockedScreen";
-import { SpotlightHost } from "./components/SpotlightWindow";
+// The ⌥Space spotlight window is its own Tauri webview — the main window
+// never renders it, so its panel code loads only in that window.
+const SpotlightHost = lazy(() =>
+  import("./components/SpotlightWindow").then((m) => ({ default: m.SpotlightHost })),
+);
 import UpdateToast from "./components/UpdateToast";
 import { AppNavigationProvider } from "./hooks/useAppNavigation";
 import { AgentProvider } from "./hooks/useAgentContext";
@@ -170,7 +174,9 @@ function Shell() {
   if (IS_SPOTLIGHT) {
     return (
       <>
-        <SpotlightHost signedIn={Boolean(session) && !loading} loading={loading} />
+        <Suspense fallback={null}>
+          <SpotlightHost signedIn={Boolean(session) && !loading} loading={loading} />
+        </Suspense>
         <AppToaster />
       </>
     );

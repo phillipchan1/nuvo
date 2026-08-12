@@ -23,8 +23,7 @@ export function calendarKey(e: Pick<ExternalEvent, "account_id" | "calendar_id">
   return `${e.account_id}:${e.calendar_id}`;
 }
 
-/** Alias of `eventKey` — the same string, named for the hidden-set call sites. */
-export const eventInstanceKey = eventKey;
+
 
 /** Stable key shared by every instance of a recurring series, or null if the
  *  event isn't part of one (or the master id isn't synced yet). */
@@ -38,7 +37,7 @@ export function isEventHidden(
   hiddenKeys: Set<string>,
 ): boolean {
   if (hiddenKeys.size === 0) return false;
-  if (hiddenKeys.has(eventInstanceKey(e))) return true;
+  if (hiddenKeys.has(eventKey(e))) return true;
   const seriesKey = eventSeriesKey(e);
   return seriesKey ? hiddenKeys.has(seriesKey) : false;
 }

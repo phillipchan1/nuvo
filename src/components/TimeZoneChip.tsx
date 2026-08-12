@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useHomeTimezone } from "../hooks/useHomeTimezone";
 import { Icon } from "./Icon";
 import { detectDeviceTz, tzCity, tzStatus } from "../lib/timezone";
@@ -14,7 +15,10 @@ function GlobeGlyph({ size = 12 }: { size?: number }) {
   );
 }
 
-export default function TimeZoneChip({ now, className = "" }: { now: Date; className?: string }) {
+// Memoized: it rides toolbars that re-render on every data change, and its
+// tzStatus derive runs Intl formatters — real work for a chip whose answer
+// changes at most when the 30s clock prop ticks.
+export default memo(function TimeZoneChip({ now, className = "" }: { now: Date; className?: string }) {
   const [homeTz] = useHomeTimezone();
   const deviceTz = detectDeviceTz();
   const s = tzStatus(homeTz, deviceTz, now);
@@ -42,4 +46,4 @@ export default function TimeZoneChip({ now, className = "" }: { now: Date; class
       <span className="mono leading-none">{s.deviceAbbr}</span>
     </span>
   );
-}
+});

@@ -203,13 +203,41 @@ function currentScheme(): string {
   return schemeBySkin[skin] ?? defaultScheme(skin);
 }
 
+// Non-default materials live in their own stylesheets (src/skins/*.css) so the
+// default Warm Paper boot never downloads the other four (P2-11 — 187 of the
+// 194 theme blocks in index.css belonged to skins the session wasn't wearing).
+// Loaded once, on demand; the promise is cached so re-switching is instant.
+const skinCssLoaded: Partial<Record<Skin, Promise<unknown>>> = {};
+function loadSkinCss(s: Skin): Promise<unknown> {
+  if (s === "paper") return Promise.resolve();
+  return (skinCssLoaded[s] ??=
+    s === "flat"
+      ? import("../skins/flat.css")
+      : s === "terminal"
+        ? import("../skins/terminal.css")
+        : s === "blueprint"
+          ? import("../skins/blueprint.css")
+          : import("../skins/eink.css"));
+}
+
 // Paint BOTH axes together — the scheme is meaningless without its material.
+// For a non-default material the attribute lands only after its stylesheet is
+// in (else the app would paint half-skinned); the guard drops a stale load if
+// the user switched again mid-flight.
 function apply() {
   if (typeof document === "undefined") return;
   const el = document.documentElement;
-  if (skin === "paper") delete el.dataset.skin;
-  else el.dataset.skin = skin;
-  el.dataset.palette = currentScheme();
+  if (skin === "paper") {
+    delete el.dataset.skin;
+    el.dataset.palette = currentScheme();
+    return;
+  }
+  const target = skin;
+  void loadSkinCss(target).then(() => {
+    if (skin !== target) return;
+    el.dataset.skin = target;
+    el.dataset.palette = currentScheme();
+  });
 }
 
 // First paint before React mounts (no flash).

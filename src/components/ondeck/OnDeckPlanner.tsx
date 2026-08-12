@@ -100,7 +100,14 @@ export default function OnDeckPlanner() {
 
   // ── drag state (in React so the bar + counts preview live) ───────────────────
   // inbox drags ride a card-shaped ghost (placed bars preview in place instead)
-  const [drag, setDrag] = useState<{ name: string; dot: string; sub: string; x: number; y: number } | null>(null);
+  // The ghost's identity is React state (it changes once, at drag start); its
+  // POSITION is not — pointer coords go straight to the DOM node per rAF.
+  // Routing x/y through setState re-rendered the whole planner per pointermove
+  // (51 commits and 9–10 dropped frames per drag in the audit).
+  const [drag, setDrag] = useState<{ name: string; dot: string; sub: string } | null>(null);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
+  const ghostPos = useRef({ x: 0, y: 0 });
+  const ghostTransform = (x: number, y: number) => `translate3d(${x + 14}px, ${y + 8}px, 0) rotate(-2deg)`;
   const [dropWeek, setDropWeek] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
   const [preview, setPreview] = useState<Preview>(null);
@@ -250,7 +257,21 @@ export default function OnDeckPlanner() {
       let tWeek: number | null = null;
       let tInbox = false;
 
-      const move = (ev: PointerEvent) => {
+      // rAF coalescing: pointermove can fire past 120Hz, and every call used to
+      // hit-test + setState — the audit clocked 51 commits and a 49.9ms `up`
+      // LoAF on one drag. Now the latest pointer event is stashed and ONE flush
+      // runs per frame; React state only changes when the derived target
+      // actually changed, and the ghost is a direct transform write.
+      let lastEv: PointerEvent | null = null;
+      let raf = 0;
+      let prevWeek: number | null = null;
+      let prevInbox = false;
+      let prevPreviewKey = "";
+
+      const flush = () => {
+        raf = 0;
+        const ev = lastEv;
+        if (!ev) return;
         if (!moved && Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) < 5) return;
         if (!moved) {
           moved = true;
@@ -260,30 +281,41 @@ export default function OnDeckPlanner() {
           document.body.classList.add("odp-dragging");
           document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
           window.getSelection()?.removeAllRanges();
+          // live preview: an inbox project has no bar yet, so it rides the
+          // floating chip + column highlight. Identity set once, here.
+          if (fromInbox) setDrag({ name: p.name, dot: ghostDot, sub: ghostSub });
         }
+        ghostPos.current = { x: ev.clientX, y: ev.clientY };
+        if (ghostRef.current) ghostRef.current.style.transform = ghostTransform(ev.clientX, ev.clientY);
         const hit = document.elementFromPoint(ev.clientX, ev.clientY);
         const wk = hit?.closest("[data-week]");
         if (wk) { tWeek = Number(wk.getAttribute("data-week")); tInbox = false; }
         else if (mode === "move" && hit?.closest("[data-pool-drop]")) { tInbox = true; tWeek = null; }
         else { tWeek = null; tInbox = false; }
-        setDropWeek(tWeek);
-        setOverInbox(tInbox);
-        // live preview: existing bars follow to their prospective span; an inbox
-        // project has no bar yet, so it rides the floating chip + column highlight.
-        if (fromInbox) {
-          setDrag({ name: p.name, dot: ghostDot, sub: ghostSub, x: ev.clientX, y: ev.clientY });
-          setPreview(null);
-        } else if (tWeek != null) {
-          if (mode === "move") setPreview({ id: p.id, start: tWeek, end: tWeek + width - 1 });
-          else if (mode === "end") setPreview({ id: p.id, start: curStart, end: Math.max(tWeek, curStart) });
-          else setPreview({ id: p.id, start: Math.min(tWeek, curEnd), end: curEnd });
-        } else {
-          setPreview(null);
+        if (tWeek !== prevWeek) { prevWeek = tWeek; setDropWeek(tWeek); }
+        if (tInbox !== prevInbox) { prevInbox = tInbox; setOverInbox(tInbox); }
+        // existing bars follow to their prospective span
+        let next: Preview = null;
+        if (!fromInbox && tWeek != null) {
+          if (mode === "move") next = { id: p.id, start: tWeek, end: tWeek + width - 1 };
+          else if (mode === "end") next = { id: p.id, start: curStart, end: Math.max(tWeek, curStart) };
+          else next = { id: p.id, start: Math.min(tWeek, curEnd), end: curEnd };
         }
+        const nextKey = next ? `${next.id}:${next.start}:${next.end}` : "";
+        if (nextKey !== prevPreviewKey) { prevPreviewKey = nextKey; setPreview(next); }
+      };
+
+      const move = (ev: PointerEvent) => {
+        lastEv = ev;
+        if (!raf) raf = requestAnimationFrame(flush);
       };
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+        // a final flush so the drop uses the last pointer position, not the
+        // last painted frame
+        flush();
         document.body.style.cursor = "";
         document.body.classList.remove("wb-noselect");
         document.body.classList.remove("odp-dragging");
@@ -570,11 +602,14 @@ export default function OnDeckPlanner() {
         </div>
       </div>
 
-      {/* drag ghost — a lifted copy of the inbox card (placed bars preview in place) */}
+      {/* drag ghost — a lifted copy of the inbox card (placed bars preview in
+          place). Positioned by transform only (compositor-friendly), written
+          directly per rAF while the pointer moves. */}
       {drag && (
         <div
-          className="glass-grab pointer-events-none fixed z-[60] w-60 rounded-lg border border-line bg-surface px-3 py-2.5"
-          style={{ left: drag.x + 14, top: drag.y + 8, transform: "rotate(-2deg)" }}
+          ref={ghostRef}
+          className="glass-grab pointer-events-none fixed left-0 top-0 z-[60] w-60 rounded-lg border border-line bg-surface px-3 py-2.5"
+          style={{ transform: ghostTransform(ghostPos.current.x, ghostPos.current.y), willChange: "transform" }}
         >
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: drag.dot }} />

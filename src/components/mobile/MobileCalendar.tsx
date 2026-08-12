@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import {
   addDays,
@@ -537,6 +537,20 @@ export function ScheduleView({
   const stripRef = useRef<HTMLDivElement>(null);
   const stripPrevWidth = useRef<number | null>(null);
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
+  // Stable ref callbacks per day key — DayCard is memoized (it was the single
+  // most expensive component in the app), and an inline closure here would
+  // hand every card a fresh prop each render, defeating the memo.
+  const dayRefFns = useRef(new Map<string, (el: HTMLElement | null) => void>());
+  const innerRefFor = (key: string) => {
+    let fn = dayRefFns.current.get(key);
+    if (!fn) {
+      fn = (el: HTMLElement | null) => {
+        dayRefs.current[key] = el;
+      };
+      dayRefFns.current.set(key, fn);
+    }
+    return fn;
+  };
 
   const jumpTo = (key: string) => {
     dayRefs.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -719,9 +733,7 @@ export function ScheduleView({
             <DayCard
               key={dayKey(d.date)}
               day={d}
-              innerRef={(el) => {
-                dayRefs.current[dayKey(d.date)] = el;
-              }}
+              innerRef={innerRefFor(dayKey(d.date))}
               onTapEvent={onTapEvent}
             />
           ))}
@@ -733,7 +745,10 @@ export function ScheduleView({
 
 // One day: header with a free/busy read, the day's events, and — the point of
 // this whole view — its open windows spelled out so you can answer on the spot.
-function DayCard({
+// Memoized: 21 of these render per agenda, and the audit measured this as the
+// single most expensive component anywhere in the app — a parent re-render
+// with unchanged plans must not re-render every card.
+const DayCard = memo(function DayCard({
   day,
   innerRef,
   onTapEvent,
@@ -854,4 +869,4 @@ function DayCard({
       )}
     </section>
   );
-}
+});

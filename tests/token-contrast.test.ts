@@ -115,7 +115,16 @@ function resolveTokens(rules: Rule[], attrs: Record<string, string>): Record<str
   return out;
 }
 
-const css = readFileSync(join(__dirname, "..", "src", "index.css"), "utf8");
+// The non-default materials were split into on-demand stylesheets (P2-11) —
+// the deployed values now live across index.css + src/skins/*.css, so the
+// gate reads them all. Still straight from the source files, never a copy.
+const css = [
+  readFileSync(join(__dirname, "..", "src", "index.css"), "utf8"),
+  readFileSync(join(__dirname, "..", "src", "skins", "flat.css"), "utf8"),
+  readFileSync(join(__dirname, "..", "src", "skins", "terminal.css"), "utf8"),
+  readFileSync(join(__dirname, "..", "src", "skins", "blueprint.css"), "utf8"),
+  readFileSync(join(__dirname, "..", "src", "skins", "eink.css"), "utf8"),
+].join("\n");
 const rules = parseRules(css);
 
 // ── the gate ───────────────────────────────────────────────────────────────

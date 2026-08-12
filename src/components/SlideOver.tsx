@@ -15,6 +15,7 @@ import type { useSlotMutations } from "../hooks/useSlots";
 import type { useRecurrenceMutations, SeriesTemplate } from "../hooks/useRecurrence";
 import { useEventDetails, useHiddenEvents } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
+import { plainTextFromHtml } from "../lib/text";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
@@ -756,16 +757,6 @@ function DescriptionHtml({ html }: { html: string }) {
   );
 }
 
-/** Flatten an event description (Google can store HTML) to editable plain text. */
-export function plainTextFromHtml(s: string): string {
-  if (!s) return "";
-  if (!/[<&]/.test(s)) return s; // already plain
-  const doc = new DOMParser().parseFromString(
-    s.replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div)>/gi, "\n"),
-    "text/html",
-  );
-  return (doc.body.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
-}
 
 // ── CalendarPicker — the calendar/account field + grouped move menu ──────
 // A real button (big hit target) that opens a menu grouped by account, each
@@ -955,7 +946,8 @@ export function EventPopover({
     [moveGroups],
   );
 
-  const { data: raw, isLoading: detailsLoading } = useEventDetails(event.id);
+  const ownerAccount = (accounts ?? []).find((a) => a.id === event.account_id);
+  const { data: raw, isLoading: detailsLoading } = useEventDetails(event.id, ownerAccount?.email);
   // Google marks instances with recurringEventId in raw; iCloud (CalDAV)
   // occurrences carry a `uid::<recurrence-id>` provider id.
   const recurring =
@@ -1063,7 +1055,7 @@ export function EventPopover({
   const joinLink = joinUrl(raw);
   // Only Google can mint a Meet link; iCloud write-back can't, and offering the
   // button on an event we'd fail to add one to is worse than not offering it.
-  const isGoogleEvent = (accounts ?? []).find((a) => a.id === event.account_id)?.provider === "google";
+  const isGoogleEvent = ownerAccount?.provider === "google";
   const canAddMeet = editable && isGoogleEvent && !joinLink && !detailsLoading;
 
   const rsvpOptions: { status: AttendeeStatus; label: string }[] = [
@@ -1629,7 +1621,7 @@ export function EventPopover({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="fast shrink-0 text-label text-muted hover:text-ink"
-                title="Open in Google Calendar"
+                title={ownerAccount?.provider === "m365" ? "Open in Outlook" : "Open in Google Calendar"}
               >
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className="inline-block align-middle">
                   <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8M8 1h4m0 0v4m0-4L5.5 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>

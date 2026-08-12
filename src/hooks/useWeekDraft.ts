@@ -30,7 +30,7 @@ import {
 } from "../lib/vertical";
 import { parseDateISO, planningWeekStartISO, todayISO } from "../lib/dates";
 import { composeWeek, type DayContext, type Placement } from "../lib/compose";
-import { eventInstanceKey, eventSeriesKey, isEventHidden } from "../lib/now";
+import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
 import { clusterInboxRuns, clusterWeek, synthTask, type Batch, type InboxGroup } from "../lib/batch";
 import { isStandingSlot, routeToStanding } from "../lib/standingSlots";
 import { supabase } from "../lib/supabase";
@@ -490,7 +490,7 @@ export function useWeekDraft() {
   );
   const toggleEventHidden = useCallback(
     (e: ExternalEvent) => {
-      const key = eventInstanceKey(e);
+      const key = eventKey(e);
       const current = settings?.hidden_events ?? [];
       const on = isEventHidden(e, hiddenEventKeys);
       // Hiding uses the instance key; un-hiding has to clear a series key too, or

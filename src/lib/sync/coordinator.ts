@@ -28,6 +28,14 @@ import type { SyncTable } from "./ops";
 /** Tables whose queries are waiting for a drain before they may refetch. */
 const deferred = new Map<SyncTable, readonly string[][]>();
 
+/** The row tables the ["vertical", …] caches are built from. */
+const VERTICAL_SOURCES: ReadonlySet<SyncTable> = new Set([
+  "projects",
+  "initiatives",
+  "domains",
+  "key_results",
+]);
+
 /** Synchronous mirror of which tables owe the server, so `invalidate` can
  *  decide without awaiting IndexedDB on every mutation. */
 let owing = new Set<SyncTable>();
@@ -76,30 +84,41 @@ export interface SyncRunOptions {
  * back refresh against the truth we just wrote.
  */
 export async function syncNow({ qc, transport }: SyncRunOptions): Promise<void> {
-  const before = new Set(owing);
   const report = await drain(transport);
   await refreshOwing();
 
-  // Only release tables that are genuinely settled — a drain interrupted
-  // halfway must not let a refetch land on top of the ops still queued.
-  const settled = [...before].filter((t) => !owing.has(t));
-  releaseDeferred(qc, settled);
+  // Release every deferred key whose table now owes nothing — a drain
+  // interrupted halfway must not let a refetch land on top of ops still
+  // queued, hence the owing filter. (This used to be gated on membership in a
+  // pre-drain snapshot too, which stranded keys for a table that only started
+  // owing mid-drain.)
+  releaseDeferred(qc, [...deferred.keys()].filter((t) => !owing.has(t)));
 
   // Anything we actually delivered is now stale locally: the server may have
   // applied a field-LWW merge that rejected part of our patch, and the user
-  // should see what really landed rather than what we hoped would.
+  // should see what really landed rather than what we hoped would. Scope is
+  // report.sentTables — what this drain really delivered — never "everything".
   if (report.sent > 0) {
-    for (const table of settled) qc.invalidateQueries({ queryKey: [table] });
-    // "tasks"/"vertical" are cross-table blast radius (task_labels joins into
-    // tasks, projects/domains feed vertical) so any settlement refreshes them —
-    // but only once "tasks" itself owes nothing. A drain's `ops` snapshot is
-    // taken before it starts sending; a second toggle queued mid-drain (still
-    // owing, not yet part of any snapshot) is invisible to `settled` here. Firing
-    // this refetch anyway would pull the pre-toggle server row over the still-
-    // pending optimistic patch and flip the checkbox back — exactly the "fast
-    // double-tap reverts" bug this guard exists to prevent.
-    if (!owing.has("tasks")) {
+    const sent = [...report.sentTables].filter((t) => !owing.has(t));
+    for (const table of sent) qc.invalidateQueries({ queryKey: [table] });
+
+    // Cross-table blast radius, scoped to what was delivered: task_labels
+    // joins into the ["tasks"] caches, and projects/initiatives/domains/
+    // key_results feed the ["vertical", …] row caches. These used to fire on
+    // ANY delivery, so a lone task create refetched the whole vertical and
+    // re-ran buildVertical 3–4 extra times after the ack.
+    //
+    // The `owing` guards stay: a drain's `ops` snapshot is taken before it
+    // starts sending, so a second toggle queued mid-drain is still owed once
+    // it finishes. Refetching over it would pull the pre-toggle server row
+    // over the still-pending optimistic patch and flip the checkbox back —
+    // the "fast double-tap reverts" bug this guard exists to prevent.
+    const touchesTasks = sent.some((t) => t === "tasks" || t === "task_labels");
+    if (touchesTasks && !owing.has("tasks") && !owing.has("task_labels")) {
       qc.invalidateQueries({ queryKey: ["tasks"] });
+    }
+    const touchesVertical = sent.some((t) => VERTICAL_SOURCES.has(t));
+    if (touchesVertical && ![...VERTICAL_SOURCES].some((t) => owing.has(t))) {
       qc.invalidateQueries({ queryKey: ["vertical"] });
     }
   }

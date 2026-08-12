@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LADDER, type Rung } from "./AppShell";
 import { useUiScale } from "../hooks/useUiScale";
@@ -76,20 +76,44 @@ const activePill: CSSProperties = {
 // it's the label the rail spent, handed back on demand.
 type Tip = { top: number; label: string; hint?: string; cue?: string; cueTone?: string } | null;
 
-export default function Spine({
-  rung,
-  setRung,
-  openSettings,
-  openShortcuts,
-  collapsed = false,
-}: {
+interface SpineProps {
   rung: Rung;
   setRung: (r: Rung) => void;
   openSettings: () => void;
   openShortcuts: () => void;
   /** Focus mode: slide the whole spine closed (the calendar takes the room). */
   collapsed?: boolean;
-}) {
+}
+
+// The thin half: subscribes to the vertical, derives the spine reading, and
+// hands the body a signature-stable value. The Spine is mounted on every
+// desktop surface and was the top self-time component on 18 of 24 measured
+// interactions — because every vertical rebuild re-rendered its whole DOM even
+// when the reading it displays hadn't changed. SpineState is small pure data,
+// so a JSON signature is an honest identity for it.
+export default function Spine(props: SpineProps) {
+  // Reads from the same cached vertical snapshot the floors use — no extra
+  // fetch. Until it's loaded the rail stays a plain table of contents (no
+  // half-empty meters flashing during the first paint).
+  const { data, ready } = useVertical();
+  // Memoized on data identity: the Spine re-renders on every rung change
+  // (ancestor render), and re-walking the whole vertical for a nav that
+  // changed no data was most of its measured self time.
+  const fresh = useMemo<SpineState | null>(() => (ready ? readSpine(data) : null), [data, ready]);
+  const held = useRef<{ sig: string; value: SpineState | null }>({ sig: "", value: null });
+  const sig = useMemo(() => (fresh ? JSON.stringify(fresh) : ""), [fresh]);
+  if (sig !== held.current.sig) held.current = { sig, value: fresh };
+  return <SpineBody spine={held.current.value} {...props} />;
+}
+
+const SpineBody = memo(function SpineBody({
+  spine,
+  rung,
+  setRung,
+  openSettings,
+  openShortcuts,
+  collapsed = false,
+}: SpineProps & { spine: SpineState | null }) {
   // The macOS traffic lights are drawn by AppKit, outside the zoomed document,
   // so they can't left-align themselves to the wordmark — nothing native knows
   // where it is. Measure it here and hand Rust the answer in WINDOW POINTS
@@ -100,12 +124,6 @@ export default function Spine({
   // the same measurement just gets re-scaled rather than re-measured.
   const wordmarkCssLeft = useRef<number | null>(null);
   const { scale: uiScale } = useUiScale();
-  // Reads from the same cached vertical snapshot the floors use — no extra
-  // fetch. Until it's loaded the rail stays a plain table of contents (no
-  // half-empty meters flashing during the first paint).
-  const { data, ready } = useVertical();
-  const spine: SpineState | null = ready ? readSpine(data) : null;
-
   const [railed, setRailed] = useState(readRail);
   const [tip, setTip] = useState<Tip>(null);
 
@@ -475,4 +493,4 @@ export default function Spine({
         )}
     </div>
   );
-}
+});

@@ -138,7 +138,14 @@ export default function MobileDeck({
   });
   // `col: null` composes into the pool — a thing named before it has a week.
   const [compose, setCompose] = useState<{ col: number | null; domain: Domain | null } | null>(null);
-  const [drag, setDrag] = useState<{ id: string; name: string; dot: string; x: number; y: number } | null>(null);
+  // Ghost identity is state (set once, at pickup); its position is a direct
+  // transform write per rAF — the same pattern as Sheet.tsx, so following the
+  // finger never re-renders the deck.
+  const [drag, setDrag] = useState<{ id: string; name: string; dot: string } | null>(null);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
+  const ghostPos = useRef({ x: 0, y: 0 });
+  const ghostTransform = (x: number, y: number) =>
+    `translate3d(${Math.min(x - 40, window.innerWidth - 232)}px, ${y - 56}px, 0) rotate(-2deg)`;
   const [target, setTarget] = useState<number | "pool" | null>(null);
   // The card being held but not yet picked up — drives the visible arming ramp
   // so the long-press wait reads as "keep holding" instead of a dead delay.
@@ -218,14 +225,16 @@ export default function MobileDeck({
       return Number.isFinite(n) ? n : null;
     };
 
-    const move = (ev: PointerEvent) => {
-      if (!held) {
-        if (Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) > CANCEL_PX) {
-          cancelled = true;
-          end();
-        }
-        return;
-      }
+    // rAF-coalesced: the finger position lands as a transform write, and the
+    // hit-test (elementFromPoint) runs once per frame instead of per event.
+    let lastEv: PointerEvent | null = null;
+    let raf = 0;
+    const flush = () => {
+      raf = 0;
+      const ev = lastEv;
+      if (!ev || !held) return;
+      ghostPos.current = { x: ev.clientX, y: ev.clientY };
+      if (ghostRef.current) ghostRef.current.style.transform = ghostTransform(ev.clientX, ev.clientY);
       const t = hitTest(ev.clientX, ev.clientY);
       if (t !== targetRef.current) {
         targetRef.current = t;
@@ -235,10 +244,22 @@ export default function MobileDeck({
         if (t === "pool") goto(0);
         else if (typeof t === "number") goto(t + 1);
       }
-      setDrag((d) => (d ? { ...d, x: ev.clientX, y: ev.clientY } : d));
+    };
+    const move = (ev: PointerEvent) => {
+      if (!held) {
+        if (Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) > CANCEL_PX) {
+          cancelled = true;
+          end();
+        }
+        return;
+      }
+      lastEv = ev;
+      if (!raf) raf = requestAnimationFrame(flush);
     };
 
     const up = () => {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      flush(); // land the drop on the final finger position
       const from = dragRef.current?.from ?? null;
       const t = targetRef.current;
       end();
@@ -266,7 +287,8 @@ export default function MobileDeck({
       window.addEventListener("touchmove", blockScroll, { passive: false });
       navigator.vibrate?.(8);
       setArming(null);
-      setDrag({ id: card.id, name: card.name, dot: card.dot, x: origin.x, y: origin.y });
+      ghostPos.current = { x: origin.x, y: origin.y };
+      setDrag({ id: card.id, name: card.name, dot: card.dot });
       setTarget(card.col ?? "pool");
       targetRef.current = card.col ?? "pool";
     }, LONG_PRESS_MS);
@@ -484,11 +506,11 @@ export default function MobileDeck({
           visible pickup confirmation (iOS has no haptics to lean on). */}
       {drag && (
         <div
-          className="glass-grab pop-in pointer-events-none fixed z-[70] w-56 rounded-xl border border-line bg-surface px-3 py-2.5"
+          ref={ghostRef}
+          className="glass-grab pop-in pointer-events-none fixed left-0 top-0 z-[70] w-56 rounded-xl border border-line bg-surface px-3 py-2.5"
           style={{
-            left: Math.min(drag.x - 40, window.innerWidth - 232),
-            top: drag.y - 56,
-            transform: "rotate(-2deg)",
+            transform: ghostTransform(ghostPos.current.x, ghostPos.current.y),
+            willChange: "transform",
           }}
         >
           <div className="flex items-center gap-2">

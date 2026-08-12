@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Icon } from "./Icon";
-import ReactMarkdown from "react-markdown";
+// react-markdown (plus its unified/remark tail) is ~107 KB that only chat
+// replies render — lazy so opening the app doesn't parse it. The fallback is
+// the raw text, so a reply streaming in before the chunk lands is still
+// readable, just unformatted for a frame.
+const ReactMarkdown = lazy(() => import("react-markdown"));
 import AgentActions from "./AgentRecordCards";
 import AgentInviteCard from "./AgentInviteCard";
 import type { AgentMessage } from "../lib/agentTypes";
@@ -141,7 +145,9 @@ export default function AgentMessageBubble({
 
       {message.content && (
         <div className={`agent-markdown leading-relaxed ${textSize}`}>
-          <ReactMarkdown>{message.content}</ReactMarkdown>
+          <Suspense fallback={<span className="whitespace-pre-wrap">{message.content}</span>}>
+            <ReactMarkdown>{message.content}</ReactMarkdown>
+          </Suspense>
         </div>
       )}
 

@@ -1,0 +1,158 @@
+/* Blueprint — drafting print material.
+   Split out of index.css: every rule here is guarded by [data-skin="blueprint"],
+   and useSkin loads this file on demand the first time the material is
+   chosen — the default Warm Paper boot never downloads it (P2-11).
+   tests/token-contrast.test.ts reads this file alongside index.css. */
+
+/* ── BLUEPRINT — cyanotype: drafting-blue ground under a graph-paper grid,
+      amber ink. Theme-independent (always deep blue). */
+html[data-skin="blueprint"][data-theme="light"],
+html[data-skin="blueprint"][data-theme="dark"] {
+  --bg: #0e2c46;
+  --surface: #143a56;
+  --surface-2: #1a4160;
+  --line: #2c5a7a;
+  --line-strong: #3d6d90;
+  --text: #eaf3fb;
+  --muted: #7fa6c4;
+  --accent: #ffd166;
+  --accent-2: #ffdd8a;
+  --accent-soft: rgba(255, 209, 102, 0.12);
+  --accent-glow: rgba(255, 209, 102, 0.28);
+  --on-accent: #0e2c46;
+  --signal: #ff8f5e;
+  --signal-soft: rgba(255, 143, 94, 0.16);
+  --slot: #7ee0d0;
+  --event-default: #6f9dc0;
+  --radius-sm: 2px;
+  --radius: 3px;
+  --radius-lg: 4px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 6px 20px -6px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 20px 50px -16px rgba(0, 0, 0, 0.6);
+  --shadow-lift: 0 24px 56px -16px rgba(0, 0, 0, 0.66);
+  color-scheme: dark;
+}
+
+html[data-skin="blueprint"] .glass-lift {
+  border-color: var(--accent) !important;
+  box-shadow: var(--shadow-3);
+}
+
+/* ── BLUEPRINT — prints (theme-independent) ──────────────────────────────── */
+html[data-skin="blueprint"][data-palette="whiteprint"][data-theme] {
+  --bg: #eef3f8; --surface: #ffffff; --surface-2: #f5f8fb;
+  --line: #ccdcea; --line-strong: #b0c8de; --text: #143a52; --muted: #4d6b82;
+  --accent: #1c5a8a; --accent-2: #2b74ab; --on-accent: #ffffff;
+  --accent-soft: rgba(28, 90, 138, 0.09); --accent-glow: rgba(28, 90, 138, 0.16);
+  --signal: #c1440e; --signal-soft: rgba(193, 68, 14, 0.14);
+  --slot: #1f716c; --event-default: #4a7ba8;
+  --shadow-1: 0 1px 2px rgba(20, 50, 80, 0.05);
+  --shadow-2: 0 6px 20px -6px rgba(20, 50, 80, 0.12), 0 1px 2px rgba(20, 50, 80, 0.05);
+  --shadow-3: 0 24px 60px -16px rgba(20, 50, 80, 0.20);
+  --shadow-lift: 0 30px 60px -18px rgba(20, 50, 80, 0.28);
+  color-scheme: light;
+}
+
+html[data-skin="blueprint"][data-palette="sepia"][data-theme] {
+  --bg: #241c12; --surface: #2e2416; --surface-2: #362a1a;
+  --line: #453a26; --line-strong: #574828; --text: #ecdcc0; --muted: #a5906f;
+  --accent: #e0a850; --accent-2: #edbf72; --on-accent: #241c12;
+  --accent-soft: rgba(224, 168, 80, 0.12); --accent-glow: rgba(224, 168, 80, 0.26);
+  --signal: #e07b3c; --signal-soft: rgba(224, 123, 60, 0.16);
+  --slot: #8bab7a; --event-default: #b89a6f;
+}
+
+html[data-skin="blueprint"] .fc-event:not(.evt-slot) {
+  /* duotone → a single blueprint ink */
+  filter: grayscale(1) sepia(1) hue-rotate(178deg) saturate(1.5) brightness(0.95);
+}
+
+/* Blueprint: a plotter — even and linear, never bouncy.
+
+   The durations MUST come with the easing. The Warm Paper defaults
+   (130/220/340/540) are tuned for `--ease-out: cubic-bezier(0.22, 1, 0.36, 1)`,
+   an expo curve that is ~75% done at a fifth of its duration — a 540ms
+   `.moment` *looks* like 150ms. Swap in linear and nothing is front-loaded any
+   more: the surface is honestly at half opacity at the halfway mark, so every
+   modal, popover, Settings and create-record open read as a slow-motion fade
+   at 3-4x the other materials. Blueprint shipped with the linear easing and
+   the paper durations, which is exactly that bug; Terminal above got this
+   right, and its shortened numbers are the precedent. A plotter is
+   deliberate, not sluggish — so: quicker than paper, a step calmer than the
+   console. (D-096) */
+html[data-skin="blueprint"] {
+  --d-fast: 70ms; --d-base: 115ms; --d-slow: 165ms; --d-moment: 210ms;
+  --ease-out: cubic-bezier(0, 0, 1, 1); --ease-in-out: cubic-bezier(0, 0, 1, 1); --ease-spring: cubic-bezier(0, 0, 1, 1);
+}
+
+/* Blueprint: a drafting callout — wider tracking. */
+html[data-skin="blueprint"] .section-label {
+  letter-spacing: 0.18em;
+}
+
+/* — CURSOR: a blueprint is drafted under crosshairs (over the bare canvas). ── */
+html[data-skin="blueprint"] .atmosphere {
+  cursor: crosshair;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BLUEPRINT CHROME — the drawing.
+
+   Cyanotype blue with amber ink is a palette; a blueprint is a DOCUMENT. The
+   identity comes from the marks a drawing carries — dimension ticks down the
+   time gutter, a node marker on every callout — not from its ground.
+
+   NO GRAPH PAPER. Two-weight graph paper on the ground was tried here and cut
+   — REJECTED by eye, the second time this idea has failed. Ruled paper behind
+   a dense planner competes with every hairline the interface draws with, and
+   the app has a lot of them; the ground has to stay quiet for the drafting
+   marks on top of it to read at all. Don't bring it back a third time.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* The clean cyanotype ground — a whisper of light from above, nothing else. */
+html[data-skin="blueprint"] .atmosphere {
+  background:
+    radial-gradient(130% 100% at 50% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 55%),
+    var(--bg);
+}
+
+/* — DIMENSION TICKS. A drawing measures its own extents: the hour gutter stops
+     being a list of numbers and becomes a dimension rule, ticked at every hour
+     against a heavier edge. */
+html[data-skin="blueprint"] .fc-timegrid-slot-label {
+  position: relative;
+}
+
+html[data-skin="blueprint"] .fc-timegrid-slot-label::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+html[data-skin="blueprint"] .fc-timegrid-axis,
+html[data-skin="blueprint"] .fc-timegrid-slot-label {
+  border-right: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+html[data-skin="blueprint"] .fc-timegrid-slot-label-cushion {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+/* — CALLOUT NODES. Every label on a drawing is tied to the thing it names by a
+     leader with a node at the end. The eyebrow gets that node: a small hollow
+     diamond in ink, which is the drafting mark, not decoration. */
+html[data-skin="blueprint"] .section-label::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-right: 7px;
+  vertical-align: 1px;
+  border: 1px solid var(--accent);
+  transform: rotate(45deg);
+}

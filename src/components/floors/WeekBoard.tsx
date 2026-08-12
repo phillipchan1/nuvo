@@ -268,7 +268,13 @@ export default function WeekBoard({
   // day), or back into the rail ([data-rail-drop] → Inbox). A plain click on a
   // board chip (no movement) opens it; clicks on rail rows fall through to the
   // rail's own handlers.
-  const [drag, setDrag] = useState<{ task: Task; x: number; y: number } | null>(null);
+  // Ghost identity is state (set once per grab); its position is a direct
+  // transform write per rAF — same pattern as Sheet.tsx / OnDeckPlanner, so a
+  // 120Hz pointer can't out-run the frame budget.
+  const [drag, setDrag] = useState<{ task: Task } | null>(null);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
+  const ghostPos = useRef({ x: 0, y: 0 });
+  const ghostTransform = (x: number, y: number) => `translate3d(${x + 12}px, ${y + 10}px, 0)`;
   type DropTarget = { kind: "day"; day: string } | { kind: "tray" } | { kind: "inbox" } | null;
   const [dropTarget, setDropTarget] = useState<DropTarget>(null);
   const boardRef = useRef<HTMLDivElement | null>(null);
@@ -315,13 +321,24 @@ export default function WeekBoard({
       document.body.classList.add("wb-noselect");
       window.getSelection()?.removeAllRanges();
 
-      const move = (ev: PointerEvent) => {
+      // rAF-coalesced: stash the latest pointer event, derive once per frame,
+      // and only touch React state when the drop target actually changed.
+      let lastEv: PointerEvent | null = null;
+      let raf = 0;
+      let prevTargetKey = "";
+
+      const flush = () => {
+        raf = 0;
+        const ev = lastEv;
+        if (!ev) return;
         if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 5) return;
         if (!moved) {
           moved = true;
           document.body.style.cursor = "grabbing";
+          setDrag({ task });
         }
-        setDrag({ task, x: ev.clientX, y: ev.clientY });
+        ghostPos.current = { x: ev.clientX, y: ev.clientY };
+        if (ghostRef.current) ghostRef.current.style.transform = ghostTransform(ev.clientX, ev.clientY);
         const hit = document.elementFromPoint(ev.clientX, ev.clientY);
         const dayEl = hit?.closest("[data-day]");
         if (dayEl) target = { kind: "day", day: dayEl.getAttribute("data-day") ?? "" };
@@ -330,12 +347,22 @@ export default function WeekBoard({
         // reorder hook owns its tab-strip acts, chip and Undo included.
         else if (hit?.closest("[data-rail-drop]")) target = fromRail ? null : { kind: "inbox" };
         else target = null;
-        setDropTarget(target);
-        rail?.classList.toggle("rail-drop-active", !fromRail && target?.kind === "inbox");
+        const key = target ? (target.kind === "day" ? `day:${target.day}` : target.kind) : "";
+        if (key !== prevTargetKey) {
+          prevTargetKey = key;
+          setDropTarget(target);
+          rail?.classList.toggle("rail-drop-active", !fromRail && target?.kind === "inbox");
+        }
+      };
+      const move = (ev: PointerEvent) => {
+        lastEv = ev;
+        if (!raf) raf = requestAnimationFrame(flush);
       };
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+        flush(); // land the drop on the last pointer position, not the last painted frame
         document.body.style.cursor = "";
         document.body.classList.remove("wb-noselect");
         rail?.classList.remove("rail-drop-active");
@@ -563,8 +590,9 @@ export default function WeekBoard({
       {drag &&
         createPortal(
           <div
-            className="glass-grab pointer-events-none fixed z-[100] max-w-[220px] truncate rounded-md px-2 py-1.5 text-caption text-ink"
-            style={{ left: drag.x + 12, top: drag.y + 10 }}
+            ref={ghostRef}
+            className="glass-grab pointer-events-none fixed left-0 top-0 z-[100] max-w-[220px] truncate rounded-md px-2 py-1.5 text-caption text-ink"
+            style={{ transform: ghostTransform(ghostPos.current.x, ghostPos.current.y), willChange: "transform" }}
           >
             {drag.task.title}
           </div>,

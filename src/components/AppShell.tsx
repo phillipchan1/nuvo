@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, startTransition, Suspense, useCallback, useEffect, useState } from "react";
 import {
   initiativeById,
   initiativesOf,
@@ -9,25 +9,32 @@ import { VerticalProvider, useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useEventRouter } from "../hooks/useEventRouter";
-import MobileShell from "./mobile/MobileShell";
+// Split points: the phone shell never executes on desktop (and vice versa),
+// and the rituals are open-on-demand ceremony — none of them belong in the
+// entry chunk both shells parse at boot.
+const MobileShell = lazy(() => import("./mobile/MobileShell"));
 import ErrorBoundary from "./ErrorBoundary";
 import FirstRun from "./FirstRun";
 import Planner from "./Planner";
 import Spine from "./Spine";
-import FloorPane from "./FloorPane";
-import RecordModal from "./record/RecordModal";
 import ShortcutsModal from "./ShortcutsModal";
 import AgentSidebar from "./AgentSidebar";
 import Marquee from "./Marquee";
 import { useAgentContext } from "../hooks/useAgentContext";
-import SundayRitual from "./rituals/SundayRitual";
-import SummitRitual from "./rituals/SummitRitual";
-import CapacityRun from "./capacity/CapacityRun";
-import CreateRecord from "./floors/CreateRecord";
-import Orientation from "./orientation/Orientation";
-import { OrientationProvider } from "../hooks/useOrientation";
+import { OrientationProvider, useOrientation } from "../hooks/useOrientation";
 import { TrialBanner } from "./billing/TrialBanner";
 import { useParkedAlert } from "./SyncPanel";
+
+const SundayRitual = lazy(() => import("./rituals/SundayRitual"));
+const SummitRitual = lazy(() => import("./rituals/SummitRitual"));
+// The floors and the record/create/capacity/orientation surfaces are all
+// conditionally rendered — boot lands on the Schedule, so none of this code
+// runs before the user asks for it.
+const FloorPane = lazy(() => import("./FloorPane"));
+const RecordModal = lazy(() => import("./record/RecordModal"));
+const CreateRecord = lazy(() => import("./floors/CreateRecord"));
+const CapacityRun = lazy(() => import("./capacity/CapacityRun"));
+const Orientation = lazy(() => import("./orientation/Orientation"));
 import StatusBar from "./terminal/StatusBar";
 import { zoomIn, zoomOut, zoomReset } from "../hooks/useUiScale";
 
@@ -101,7 +108,11 @@ function ResponsiveShell() {
   // recovery card without also unmounting the app-level providers above it.
   return isMobile ? (
     <ErrorBoundary label="mobile shell">
-      <MobileShell />
+      {/* null fallback: the atmosphere canvas is already painted underneath,
+          so the split chunk loads behind the same warm paper as the splash */}
+      <Suspense fallback={null}>
+        <MobileShell />
+      </Suspense>
     </ErrorBoundary>
   ) : (
     <AppShellInner />
@@ -134,6 +145,7 @@ function AppShellInner() {
 
   const { rung, projectView, initiativeView, focus, flow, flowStep, agentOpen } = nav;
   const { agent, setNavFocus } = useAgentContext();
+  const { visible: orientationVisible } = useOrientation();
 
   useEffect(() => {
     setNavFocus({
@@ -162,6 +174,12 @@ function AppShellInner() {
     };
   }, []);
   const effectiveAgentOpen = agentOpen && !narrowViewport;
+
+  // Stable identities for the Spine's two door props — the Spine body is
+  // memoized (it renders on every desktop surface), and an inline closure here
+  // would hand it a fresh prop on every AppShell render.
+  const openSettings = useCallback(() => openOverlay("settings"), [openOverlay]);
+  const openShortcuts = useCallback(() => openOverlay("shortcuts"), [openOverlay]);
 
   // Focus mode: collapse the spine + the inbox·today rail to give the calendar
   // the whole workspace. Lives here (the common ancestor of Spine and Planner)
@@ -240,14 +258,18 @@ function AppShellInner() {
         e.preventDefault();
         const i = LADDER.indexOf(rung);
         const next = e.key === "ArrowDown" ? Math.min(LADDER.length - 1, i + 1) : Math.max(0, i - 1);
-        goRung(LADDER[next]);
+        // Transition: mounting a floor is tens of milliseconds of render — as a
+        // synchronous discrete update it blocked the keydown handler for ~51ms
+        // (every other handler in the app is ~0.1ms). The nav write is all that
+        // happens before paint; React renders the floor without blocking input.
+        startTransition(() => goRung(LADDER[next]));
         return;
       }
 
       const num = Number(e.key);
       if (num >= 1 && num <= LADDER.length) {
         e.preventDefault();
-        goRung(LADDER[num - 1]);
+        startTransition(() => goRung(LADDER[num - 1]));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -350,8 +372,8 @@ function AppShellInner() {
         collapsed={focusMode}
         rung={rung}
         setRung={goRung}
-        openSettings={() => openOverlay("settings")}
-        openShortcuts={() => openOverlay("shortcuts")}
+        openSettings={openSettings}
+        openShortcuts={openShortcuts}
       />
 
       <div className="flex min-w-0 flex-1">
@@ -364,17 +386,21 @@ function AppShellInner() {
             // never "peers through" during the floor-enter fade — only the inner
             // content rises/fades over the opaque canvas.
             <div className="atmosphere absolute inset-0 z-[41]">
+              {/* Suspense inside the opaque atmosphere backdrop: the fallback
+                  frame shows the same warm paper the floor fades in over. */}
               <div className="floor-enter h-full">
-                <FloorPane
-                  rung={rung}
-                  focus={focus}
-                  focusDomain={focusDomain}
-                  goRung={goRung}
-                  projectView={projectView}
-                  setProjectView={setProjectView}
-                  initiativeView={initiativeView}
-                  setInitiativeView={setInitiativeView}
-                />
+                <Suspense fallback={null}>
+                  <FloorPane
+                    rung={rung}
+                    focus={focus}
+                    focusDomain={focusDomain}
+                    goRung={goRung}
+                    projectView={projectView}
+                    setProjectView={setProjectView}
+                    initiativeView={initiativeView}
+                    setInitiativeView={setInitiativeView}
+                  />
+                </Suspense>
               </div>
             </div>
           )}
@@ -404,65 +430,89 @@ function AppShellInner() {
       {/* the plan's step rides nav history, so browser/mouse back-forward walks
           the sources instead of dropping out of the flow */}
       {flow === "sunday" && (
-        <SundayRitual step={flowStep} setStep={(s) => navigate({ flowStep: s })} onClose={closeFlow} />
+        <Suspense fallback={null}>
+          <SundayRitual step={flowStep} setStep={(s) => navigate({ flowStep: s })} onClose={closeFlow} />
+        </Suspense>
       )}
       {flow === "summit" && (
-        <SummitRitual
-          step={flowStep}
-          setStep={(s) => navigate({ flowStep: s })}
-          onClose={closeFlow}
-          onNewBet={() => openFloorModal("new-initiative")}
-        />
+        <Suspense fallback={null}>
+          <SummitRitual
+            step={flowStep}
+            setStep={(s) => navigate({ flowStep: s })}
+            onClose={closeFlow}
+            onNewBet={() => openFloorModal("new-initiative")}
+          />
+        </Suspense>
       )}
-      {flow === "capacity" && <CapacityRun onClose={closeFlow} />}
+      {flow === "capacity" && (
+        <Suspense fallback={null}>
+          <CapacityRun onClose={closeFlow} />
+        </Suspense>
+      )}
 
       {/* Create — summoned by P / I or any "＋ new" button, mounted globally so it
           works from any rung. It is the RECORD's frame with a draft inside it, so
           committing doesn't hand you a different-looking sheet. */}
       {nav.floorModal === "new-project" && (
-        <CreateRecord
-          kind="project"
-          initialDomainId={focus.domainId || null}
-          onClose={closeCreate}
-          onCreated={openProjectDetail}
-        />
+        <Suspense fallback={null}>
+          <CreateRecord
+            kind="project"
+            initialDomainId={focus.domainId || null}
+            onClose={closeCreate}
+            onCreated={openProjectDetail}
+          />
+        </Suspense>
       )}
       {nav.floorModal === "new-initiative" && (
-        <CreateRecord
-          kind="initiative"
-          initialDomainId={focus.domainId || null}
-          onClose={closeCreate}
-          onCreated={openInitiativeDetail}
-        />
+        <Suspense fallback={null}>
+          <CreateRecord
+            kind="initiative"
+            initialDomainId={focus.domainId || null}
+            onClose={closeCreate}
+            onCreated={openInitiativeDetail}
+          />
+        </Suspense>
       )}
 
       {/* The Record command center — a project / initiative opened as a modal. */}
       {(nav.overlay === "project-record" || nav.overlay === "initiative-record") && nav.overlayId && (
-        <RecordModal
-          kind={nav.overlay === "project-record" ? "project" : "initiative"}
-          id={nav.overlayId}
-          onClose={closeOverlay}
-          onOpenProject={(pid) => openRecord("project", pid)}
-          onOpenInitiative={(iid) => openRecord("initiative", iid)}
-        />
+        <Suspense fallback={null}>
+          <RecordModal
+            kind={nav.overlay === "project-record" ? "project" : "initiative"}
+            id={nav.overlayId}
+            onClose={closeOverlay}
+            onOpenProject={(pid) => openRecord("project", pid)}
+            onOpenInitiative={(iid) => openRecord("initiative", iid)}
+          />
+        </Suspense>
       )}
 
-      {nav.overlay === "shortcuts" && <ShortcutsModal onClose={closeOverlay} />}
+      {nav.overlay === "shortcuts" && (
+        // Transition for the same reason as the rung hotkeys: Escape here ran a
+        // 20ms synchronous close-render inside the keydown handler.
+        <ShortcutsModal onClose={() => startTransition(() => closeOverlay())} />
+      )}
 
       {/* Marquee — lets Nuvo drive this canvas (navigate + spotlight) in step
           with its reply. Desktop only; the orb portals above everything. */}
       <Marquee messages={agent.messages} />
 
       {/* First-run welcome — portals above everything; the Calendars CTA drops
-          the user into Settings › Connections. */}
-      <Orientation
-        onAction={(action) => {
-          if (action === "connect-calendars") {
-            setSettingsSection("connections");
-            openOverlay("settings");
-          }
-        }}
-      />
+          the user into Settings › Connections. Gated on `visible` here (not
+          just inside the component) so an onboarded account never fetches the
+          walkthrough chunk at all. */}
+      {orientationVisible && (
+        <Suspense fallback={null}>
+          <Orientation
+            onAction={(action) => {
+              if (action === "connect-calendars") {
+                setSettingsSection("connections");
+                openOverlay("settings");
+              }
+            }}
+          />
+        </Suspense>
+      )}
       </div>
     </div>
   );

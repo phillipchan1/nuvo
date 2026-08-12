@@ -157,6 +157,16 @@ function RecurrenceDialog({
   );
 }
 
+// The Schedule unmounts while a floor is open — keeping a live FullCalendar
+// under every surface taxed every interaction in the app — so the anchor date
+// and the time-grid scroll offset survive at module scope, and the remount
+// reopens where the user left rather than at today, scrolled to now. One
+// CalendarPane per shell, so a single slot is enough.
+const remountCache: { dateISO: string | null; scrollTop: number | null } = {
+  dateISO: null,
+  scrollTop: null,
+};
+
 // ── Main component ─────────────────────────────────────────────────────────
 export default function CalendarPane({
   view,
@@ -286,7 +296,8 @@ export default function CalendarPane({
   const { keys: hiddenKeys, isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const [showHidden, setShowHidden] = useState(false);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent } | null>(null);
-  const { data: eventMenuDetails } = useEventDetails(eventMenu?.event.id ?? null);
+  const eventMenuAccountEmail = accounts.find((a) => a.id === eventMenu?.event.account_id)?.email;
+  const { data: eventMenuDetails } = useEventDetails(eventMenu?.event.id ?? null, eventMenuAccountEmail);
   const eventMenuOtherGuests = useMemo(
     () => (eventMenuDetails?.attendees ?? []).filter((a) => !a.self),
     [eventMenuDetails],
@@ -778,6 +789,31 @@ export default function CalendarPane({
     if (view === "board") return; // the board isn't a FullCalendar view
     const api = calRef.current?.getApi();
     if (api && api.view.type !== view) api.changeView(view);
+  }, [view]);
+
+  // Restore the remembered time-grid scroll on (re)mount, then keep the cache
+  // current so the next remount lands where the user left. rAF because the FC
+  // React wrapper builds its DOM after our effect runs; when the scroller isn't
+  // found this quietly falls back to `scrollTime` (open at now).
+  useEffect(() => {
+    if (view === "board" || view === "dayGridMonth") return;
+    let detach: (() => void) | undefined;
+    const raf = requestAnimationFrame(() => {
+      const scroller = wrapRef.current?.querySelector<HTMLElement>(
+        ".fc-scroller-liquid-absolute",
+      );
+      if (!scroller) return;
+      if (remountCache.scrollTop != null) scroller.scrollTop = remountCache.scrollTop;
+      const onScroll = () => {
+        remountCache.scrollTop = scroller.scrollTop;
+      };
+      scroller.addEventListener("scroll", onScroll, { passive: true });
+      detach = () => scroller.removeEventListener("scroll", onScroll);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      detach?.();
+    };
   }, [view]);
 
   // Document CSS zoom breaks FullCalendar pointer → date math. The calendar host
@@ -1794,6 +1830,9 @@ export default function CalendarPane({
   const isMonth = view === "dayGridMonth";
 
   const handleDatesSet = (arg: DatesSetArg) => {
+    // currentStart, not start: the month grid's `start` is the previous month's
+    // tail, and reopening on it would show the wrong month.
+    remountCache.dateISO = arg.view.currentStart.toISOString();
     onRangeChange(arg.start.toISOString(), arg.end.toISOString());
     if (arg.view.type === "dayGridMonth") setMonthTitle(arg.view.title);
   };
@@ -2430,6 +2469,7 @@ export default function CalendarPane({
           ref={calRef}
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
           initialView={view}
+          initialDate={remountCache.dateISO ?? undefined}
           headerToolbar={false}
           allDaySlot={!isMonth}
           allDayText="anytime"

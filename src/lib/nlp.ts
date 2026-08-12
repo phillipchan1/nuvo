@@ -1,4 +1,13 @@
-import * as chrono from "chrono-node";
+// chrono-node is ~45 KB of parser tables the boot path never executes — capture
+// is the only consumer. Loaded off the entry chunk the moment this module
+// evaluates; in the sliver before it lands, parseCapture still handles every
+// deterministic token and only skips natural-language dates (the next keystroke
+// re-parses, so a capture preview self-heals).
+let chrono: typeof import("chrono-node") | null = null;
+/** Resolves once natural-language date parsing is available (tests await it). */
+export const nlpReady = import("chrono-node").then((m) => {
+  chrono = m;
+});
 import type { TaskPriority } from "./types";
 import { snapMinutes, toDateISO } from "./dates";
 import { parseRecurrencePhrase, describeRule, type RecurrenceRule } from "./recurrence";
@@ -196,7 +205,7 @@ export function parseCapture(input: string, refDate: Date = new Date()): ParsedC
   working = expandDateAliases(working);
   let doDate: string | null = null;
   let startTime: Date | null = null;
-  const results = chrono.parse(working, refDate, { forwardDate: true });
+  const results = chrono ? chrono.parse(working, refDate, { forwardDate: true }) : [];
   if (results.length > 0) {
     const r = results[0];
     const d = r.start.date();

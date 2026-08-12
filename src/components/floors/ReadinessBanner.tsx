@@ -5,7 +5,7 @@
 // action. See docs/readiness-model.md §4–§6.
 
 import type { FloorCue } from "../../lib/readiness";
-import { PROJECT_STATUS_COLORS } from "./parts";
+import { PROJECT_STATUS_COLORS } from "./statusColors";
 
 // The meter's "ready/ripe" fill — the same green the RipenessPip ramps toward,
 // so "ready" reads consistently across the spine, the floors, and here.

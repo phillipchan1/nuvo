@@ -99,5 +99,19 @@ export default defineConfig({
   build: {
     target: ["es2021", "chrome100", "safari13"],
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        // The two vendor slabs that would otherwise sit inside the entry chunk.
+        // Splitting them keeps every initial file well under the workbox 2 MiB
+        // precache ceiling and lets them cache independently of app code —
+        // react/supabase change on dependency bumps, the entry on every deploy.
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "vendor-react";
+          if (id.includes("node_modules/@supabase/")) return "vendor-supabase";
+          return undefined;
+        },
+      },
+    },
   },
 });

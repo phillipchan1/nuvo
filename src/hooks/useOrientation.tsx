@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useSettings } from "./useSettings";
 import { makeOp, OWNER_ROW, queueWrite } from "../lib/sync";
-import { ORIENTATION_VERSION } from "../components/orientation/steps";
+import { ORIENTATION_VERSION } from "../components/orientation/version";
 
 // The first-run welcome walkthrough is app chrome, not a route — it lives in its
 // own tiny provider (like focus mode) rather than nav history, so Esc/Skip can't

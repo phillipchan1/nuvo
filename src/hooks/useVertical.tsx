@@ -4,14 +4,14 @@
 // localStorage prototype had — now writing real rows. One task world: the
 // floors edit the same rows the calendar blocks.
 
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { useOptionalUndoStack } from "./useUndoStack";
-import { patchCaches } from "./useTasks";
+import { fetchAllTasks, patchCaches } from "./useTasks";
 import { invalidateWhenSafe, makeOp, queueWrite, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
 import { upsertPushVerdict } from "../lib/priorities";
@@ -342,19 +342,11 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
   });
 
   // Every non-trashed task, done included: completed blocks are the time
-  // ledger the presence/gain numbers derive from.
+  // ledger the presence/gain numbers derive from. Shares useTasks' paged
+  // fetcher — one definition of "all tasks", complete past the max_rows cap.
   const tasksQ = useQuery({
     queryKey: ["tasks", "all"],
-    queryFn: async (): Promise<Task[]> => {
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("*")
-        .neq("status", "trashed")
-        .order("sort_order")
-        .order("created_at");
-      if (error) throw error;
-      return data as Task[];
-    },
+    queryFn: fetchAllTasks,
   });
 
   const sprintQ = useQuery({
@@ -424,6 +416,27 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
   const ready = Boolean(domainsQ.data && initiativesQ.data && projectsQ.data && tasksQ.data);
 
+  // buildVertical reads the clock (today's ledger column, staleness, "has this
+  // event ended"). It used to be handed a raw `new Date()` that was NOT in the
+  // dependency array, so the memo froze whatever instant the last data change
+  // happened — an app left open overnight kept deriving yesterday's "today"
+  // until some unrelated refetch shook it loose. A 5-minute tick (kicked
+  // immediately when the tab returns) is precise enough for every read
+  // buildVertical does, and cheap enough to rebuild on.
+  const [buildNow, setBuildNow] = useState(() => new Date());
+  useEffect(() => {
+    const tick = () => setBuildNow(new Date());
+    const t = window.setInterval(tick, 5 * 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
   const data = useMemo<VerticalData>(
     () =>
       buildVertical(
@@ -432,14 +445,14 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         projectsQ.data ?? [],
         tasksQ.data ?? [],
         sprintQ.data ?? null,
-        new Date(),
+        buildNow,
         eventsQ.data ?? [],
         calendarDomainMap,
         eventRouting,
         lastActivityByProject,
         actualsFilter,
       ),
-    [domainsQ.data, initiativesQ.data, projectsQ.data, tasksQ.data, sprintQ.data, eventsQ.data, calendarDomainMap, eventRouting, lastActivityByProject, actualsFilter],
+    [domainsQ.data, initiativesQ.data, projectsQ.data, tasksQ.data, sprintQ.data, buildNow, eventsQ.data, calendarDomainMap, eventRouting, lastActivityByProject, actualsFilter],
   );
 
   const store = useMemo<VerticalStore>(() => {

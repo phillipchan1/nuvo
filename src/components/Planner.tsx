@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { addDays, format, startOfWeek } from "date-fns";
 import { todayISO, toDateISO, planningWeekStartISO } from "../lib/dates";
 import { useWeekReport } from "../hooks/useWeekReport";
-import WeekPlanFloor from "./floors/WeekPlanFloor";
 import { readRevealConfig, isRevealReady, isAcknowledged, acknowledge, wasToasted, markToasted } from "../lib/weekReveal";
 import { fallbackPanelAnchor } from "../lib/appNav";
 import { MARQUEE_OPEN_EVENT, MARQUEE_CLOSE_EVENT } from "../lib/marquee";
@@ -26,13 +25,22 @@ import {
 } from "../lib/spotlightNav";
 import { deriveSlotTitle } from "../lib/slots";
 import { writeAgentOpen } from "./AgentSidebar";
-import RecurringUpkeepPanel from "./RecurringUpkeepPanel";
 import LeftRail from "./LeftRail";
 import type { FlowName } from "./Spine";
-import CalendarPane from "./CalendarPane";
-import NuvoSpotlight, { type Command, type SearchHit } from "./NuvoSpotlight";
-import { EventPopover, SlotPopover, TaskPopover } from "./SlideOver";
-import SettingsModal from "./SettingsModal";
+
+import type { Command, SearchHit } from "./NuvoSpotlight";
+
+// Split points: FullCalendar (inside CalendarPane) is a quarter-megabyte the
+// phone never runs, and the popovers/Settings are open-on-demand. Keeping them
+// out of the entry chunk is most of P0-4's desktop win.
+const CalendarPane = lazy(() => import("./CalendarPane"));
+const WeekPlanFloor = lazy(() => import("./floors/WeekPlanFloor"));
+const NuvoSpotlight = lazy(() => import("./NuvoSpotlight"));
+const RecurringUpkeepPanel = lazy(() => import("./RecurringUpkeepPanel"));
+const SettingsModal = lazy(() => import("./SettingsModal"));
+const TaskPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.TaskPopover })));
+const EventPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.EventPopover })));
+const SlotPopover = lazy(() => import("./SlideOver").then((m) => ({ default: m.SlotPopover })));
 import ReconnectBanner from "./ReconnectBanner";
 import { EveningShutdown } from "./Rituals";
 import { useAgentContext } from "../hooks/useAgentContext";
@@ -507,6 +515,14 @@ export default function Planner({
           Today (the ribbon) for now; a dedicated dashboard view is TBD. */}
 
       <div className="relative flex min-h-0 flex-1">
+        {/* The Schedule surface mounts only while the day rung is on screen.
+            It used to stay live under every floor — a full FullCalendar, the
+            rail and its TaskRows re-rendering beneath Settings — and the rail's
+            hotkeys kept acting on tasks you couldn't see. Planner itself stays
+            mounted for its app-global tenants (realtime, rollover, ⌘K,
+            Settings, the week plan); CalendarPane remembers its date + scroll
+            across the unmount. */}
+        {onSchedule && (
         <LeftRail
           tab={tab}
           setTab={setTab}
@@ -519,24 +535,23 @@ export default function Planner({
           now={now}
           railRef={railRef}
           collapsed={focusMode}
-          weekDoor={
-            onSchedule
-              ? {
-                  mode: weekDoorMode,
-                  title: weekButtonTitle,
-                  glow: weekDoorMode === "review",
-                  glyph: glyphReport.emblem,
-                  onOpen: openWeekDoor,
-                }
-              : undefined
-          }
+          weekDoor={{
+            mode: weekDoorMode,
+            title: weekButtonTitle,
+            glow: weekDoorMode === "review",
+            glyph: glyphReport.emblem,
+            onOpen: openWeekDoor,
+          }}
         />
+        )}
+        {onSchedule && (
         <div className="relative flex min-h-0 flex-1 min-w-[280px]">
           {/* The week door lives on the rail's Week's Plan header — on top of the
               priorities it opens. The toolbar's right cluster acts on the canvas
               (zone · view · tools); the door acts on the plan, so it was the one
               stranger there. It stays here ONLY in focus mode, where the rail is
               slid shut: one door, always visible, never two opposite corners. */}
+          <Suspense fallback={<div className="min-h-0 flex-1" />}>
           <CalendarPane
             view={view}
             onViewChange={setCalView}
@@ -576,8 +591,10 @@ export default function Planner({
             domains={vertical.domains}
             onOpenUpkeep={() => openOverlay("upkeep")}
           />
+          </Suspense>
 
           {onSchedule && openTask && taskPanel && (
+            <Suspense fallback={null}>
             <TaskPopover
               task={openTask}
               anchor={panelRect}
@@ -588,8 +605,10 @@ export default function Planner({
               onClose={closeOverlay}
               onConvertToEvent={() => handleConvertTaskToEvent(openTask)}
             />
+            </Suspense>
           )}
           {onSchedule && openEvent && eventPanel && !openTask && (
+            <Suspense fallback={null}>
             <EventPopover
               event={openEvent}
               anchor={panelRect}
@@ -603,8 +622,10 @@ export default function Planner({
               onClose={closeOverlay}
               onConvertToTask={() => handleConvertEventToTask(openEvent)}
             />
+            </Suspense>
           )}
           {onSchedule && openSlot && slotPanel && !openTask && (
+            <Suspense fallback={null}>
             <SlotPopover
               slot={openSlot}
               anchor={panelRect}
@@ -616,12 +637,15 @@ export default function Planner({
               onOpenTask={(t) => openOverlay("task", t.id, panelRect)}
               onClose={closeOverlay}
             />
+            </Suspense>
           )}
         </div>
+        )}
 
         {/* The Week's Plan / Review covers the whole work area (rail included) —
             a moment to receive, not to triage. */}
         {onSchedule && weekPlanOpen && (
+          <Suspense fallback={null}>
           <WeekPlanFloor
             report={viewedReport}
             state={viewedState}
@@ -644,10 +668,12 @@ export default function Planner({
             story={weekPlanStory}
             onJumpToWeek={(iso) => setViewedWeekISO(iso)}
           />
+          </Suspense>
         )}
       </div>
 
       {showCmd && (
+        <Suspense fallback={null}>
         <NuvoSpotlight
           labels={labels}
           commands={commands}
@@ -658,8 +684,10 @@ export default function Planner({
           onRunCommand={runCommand}
           contextLabel={contextLabel}
         />
+        </Suspense>
       )}
       {recordTask && (
+        <Suspense fallback={null}>
         <TaskPopover
           task={recordTask}
           anchor={panelRect}
@@ -670,8 +698,10 @@ export default function Planner({
           recurrenceMutations={recurrenceMutations}
           onClose={closeOverlay}
         />
+        </Suspense>
       )}
       {showSettings && (
+        <Suspense fallback={null}>
         <SettingsModal
           settings={settings}
           updateSettings={updateSettings}
@@ -679,11 +709,16 @@ export default function Planner({
           section={settingsSection}
           onClose={closeOverlay}
         />
+        </Suspense>
       )}
       {showEvening && (
         <EveningShutdown todayTasks={todayTasks} taskAccent={taskAccent} mutations={mutations} onClose={closeOverlay} />
       )}
-      {showUpkeep && <RecurringUpkeepPanel onClose={closeOverlay} />}
+      {showUpkeep && (
+        <Suspense fallback={null}>
+          <RecurringUpkeepPanel onClose={closeOverlay} />
+        </Suspense>
+      )}
     </div>
   );
 }

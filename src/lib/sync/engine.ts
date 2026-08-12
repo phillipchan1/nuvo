@@ -19,7 +19,7 @@
  */
 
 import { pendingOps, ack, recordFailure, refreshOutboxStatus, setOutboxStatus } from "./outbox";
-import type { Op } from "./ops";
+import type { Op, SyncTable } from "./ops";
 
 export type SendResult =
   | { ok: true }
@@ -35,6 +35,11 @@ export interface Transport {
 export interface DrainReport {
   sent: number;
   parked: number;
+  /** Tables an op was actually delivered for this pass — the precise scope for
+   *  post-drain refetches. The pre-drain `owing` snapshot can't provide this:
+   *  an op queued after the snapshot but delivered by this drain is in neither
+   *  the before- nor the after-set. */
+  sentTables: ReadonlySet<SyncTable>;
   /** True when the drain stopped early because the network went away. */
   interrupted: boolean;
 }
@@ -54,7 +59,8 @@ export function drain(transport: Transport): Promise<DrainReport> {
 }
 
 async function runDrain(transport: Transport): Promise<DrainReport> {
-  const report: DrainReport = { sent: 0, parked: 0, interrupted: false };
+  const sentTables = new Set<SyncTable>();
+  const report: DrainReport = { sent: 0, parked: 0, sentTables, interrupted: false };
   const ops = await pendingOps();
   if (!ops.length) {
     setOutboxStatus({ syncing: false, lastError: undefined });
@@ -78,6 +84,7 @@ async function runDrain(transport: Transport): Promise<DrainReport> {
     if (result.ok) {
       delivered.push(op);
       report.sent++;
+      sentTables.add(op.table);
       continue;
     }
 

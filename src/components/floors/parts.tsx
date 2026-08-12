@@ -118,13 +118,8 @@ export const PROJECT_STATUS: ProjectStatus[] = ["backlog", "in_progress", "waiti
 // to have none) and into the editor schemes (which publish their own ramp).
 // READY — the readiness meter's ripe fill — is `complete`, so this is also the
 // one place that decides what "done" looks like across the whole app.
-export const PROJECT_STATUS_COLORS: Record<ProjectStatus, string> = {
-  backlog: "var(--muted)",
-  in_progress: "var(--accent)",
-  waiting: "var(--warn)",
-  cancelled: "var(--signal)",
-  complete: "var(--ok)",
-};
+import { PROJECT_STATUS_COLORS } from "./statusColors";
+export { PROJECT_STATUS_COLORS };
 export const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
   backlog: "Backlog",
   in_progress: "In progress",

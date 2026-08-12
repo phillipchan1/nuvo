@@ -28,7 +28,7 @@
 // directly (index.css), so Terminal stamps fast+mechanical, Blueprint draws
 // linear, and e-ink collapses to its "no smooth motion" identity for free.
 import { useEffect, useId, useRef, useState } from "react";
-import { PROJECT_STATUS_COLORS } from "./floors/parts";
+import { PROJECT_STATUS_COLORS } from "./floors/statusColors";
 
 const INK = PROJECT_STATUS_COLORS.complete; // var(--ok)
 

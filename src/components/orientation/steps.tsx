@@ -4,7 +4,7 @@ import type { TeachTargetKey } from "./teachTargets";
 
 // Bump when a launch is big enough that returning users should see the tour again.
 // The stored user_settings.onboarding_completed_version is compared against this.
-export const ORIENTATION_VERSION = 4;
+export { ORIENTATION_VERSION } from "./version";
 
 // A step's optional call-to-action. `action` is a semantic verb the shell wires to
 // something real (desktop/mobile open their own Settings surface for "connect-calendars").

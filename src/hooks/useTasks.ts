@@ -115,19 +115,35 @@ export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: strin
 /** Every non-trashed task, done included — same query key the vertical store
  *  fills, so this shares its cache (no second fetch). The Plan flow needs the
  *  raw rows to feed the composer; `VTask` drops the deadline ISO it relies on. */
+/** Every non-trashed task, paged to completion. A bare select is silently
+ *  capped at PostgREST's max_rows (1000 on this project) — the same silent
+ *  truncation that produced the D-085 wrong-ledger bug — so this walks
+ *  .range() pages until a short page proves the set is complete. The id
+ *  tiebreak makes the page order total, so rows can't dup or skip across a
+ *  page seam when sort_order values collide. */
+const TASK_PAGE = 1000;
+export async function fetchAllTasks(): Promise<Task[]> {
+  const out: Task[] = [];
+  for (let from = 0; ; from += TASK_PAGE) {
+    const { data, error } = await supabase
+      .from("tasks")
+      .select("*")
+      .neq("status", "trashed")
+      .order("sort_order")
+      .order("created_at")
+      .order("id")
+      .range(from, from + TASK_PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as Task[];
+    out.push(...rows);
+    if (rows.length < TASK_PAGE) return out;
+  }
+}
+
 export function useAllTasks() {
   return useQuery({
     queryKey: ["tasks", "all"],
-    queryFn: async (): Promise<Task[]> => {
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("*")
-        .neq("status", "trashed")
-        .order("sort_order")
-        .order("created_at");
-      if (error) throw error;
-      return data as Task[];
-    },
+    queryFn: fetchAllTasks,
   });
 }
 

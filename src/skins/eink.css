@@ -1,0 +1,299 @@
+/* E-Ink — restful paper material.
+   Split out of index.css: every rule here is guarded by [data-skin="eink"],
+   and useSkin loads this file on demand the first time the material is
+   chosen — the default Warm Paper boot never downloads it (P2-11).
+   tests/token-contrast.test.ts reads this file alongside index.css. */
+
+/* ── E-INK — near-monochrome warm grey (light) / charcoal (dark). No colour but
+      a desaturated signal, and NO shadows at all: selection reads by border +
+      the small rise alone, like electronic paper. Restful, anti-glare.
+
+      This is a READER — but a reader's *interface* is a sans, and the app is
+      all interface, so the identity is in how type is SET rather than which
+      family it is set in: see E-INK CHROME (greyscale rendering, a flat weight
+      band, rank carried by size). --ok / --warn are pulled to ink as well: a
+      real e-ink panel has no colour to spend on a status. */
+html[data-skin="eink"][data-theme="light"] {
+  --bg: #e9e6de;
+  --surface: #f2efe8;
+  --surface-2: #eae7df;
+  --line: #d5d0c3;
+  --line-strong: #bab4a4;
+  --text: #2b2824;
+  --muted: #8c877c;
+  --accent: #3a3733;
+  --accent-2: #57534c;
+  --accent-soft: rgba(58, 55, 51, 0.07);
+  --accent-glow: rgba(58, 55, 51, 0.12);
+  --on-accent: #f2efe8;
+  --signal: #5a5550;
+  --signal-soft: rgba(90, 85, 80, 0.12);
+  --slot: #6b6660;
+  --event-default: #8c877c;
+  /* Derived, not fixed, so every tint (sepia, carta) keeps its own cast. */
+  --ok: color-mix(in srgb, var(--text) 55%, var(--muted));
+  --warn: color-mix(in srgb, var(--muted) 80%, var(--text));
+  /* One face, and it is the sans. A book face was tried here and cut — an
+     e-reader sets the BOOK in a serif and its own interface in a sans, and Nuvo
+     is all interface. --font-serif is pointed at the sans too, so the
+     ceremonial hooks flatten with it and the device has a single voice. */
+  --font-serif: var(--font-sans);
+  --radius-sm: 3px;
+  --radius: 5px;
+  --radius-lg: 7px;
+  --shadow-1: none;
+  --shadow-2: none;
+  --shadow-3: none;
+  --shadow-lift: none;
+}
+
+html[data-skin="eink"][data-theme="dark"] {
+  --bg: #1a1a18;
+  --surface: #242320;
+  --surface-2: #2a2926;
+  --line: #33322e;
+  --line-strong: #48463f;
+  --text: #dad6cc;
+  --muted: #8c877c;
+  --accent: #cbc6ba;
+  --accent-2: #dad6cc;
+  --accent-soft: rgba(203, 198, 186, 0.10);
+  --accent-glow: rgba(203, 198, 186, 0.16);
+  --on-accent: #1a1a18;
+  --signal: #b0a99e;
+  --signal-soft: rgba(176, 169, 158, 0.14);
+  --slot: #9a948a;
+  --event-default: #8c877c;
+  /* Derived, not fixed, so every tint (sepia, carta) keeps its own cast. */
+  --ok: color-mix(in srgb, var(--text) 55%, var(--muted));
+  --warn: color-mix(in srgb, var(--muted) 80%, var(--text));
+  /* One face, and it is the sans. A book face was tried here and cut — an
+     e-reader sets the BOOK in a serif and its own interface in a sans, and Nuvo
+     is all interface. --font-serif is pointed at the sans too, so the
+     ceremonial hooks flatten with it and the device has a single voice. */
+  --font-serif: var(--font-sans);
+  --radius-sm: 3px;
+  --radius: 5px;
+  --radius-lg: 7px;
+  --shadow-1: none;
+  --shadow-2: none;
+  --shadow-3: none;
+  --shadow-lift: none;
+  color-scheme: dark;
+}
+
+/* E-Ink: a faint paper grain — the matte tooth of electronic paper. */
+html[data-skin="eink"] .atmosphere {
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.035'/%3E%3C/svg%3E");
+}
+
+html[data-skin="eink"] .glass-lift {
+  /* no shadow on paper — selection is the border + the small rise */
+  border-color: var(--line-strong) !important;
+  box-shadow: none;
+}
+
+/* ── E-INK — tints (theme-aware, no shadows inherited from base) ─────────── */
+html[data-skin="eink"][data-palette="sepia"][data-theme="light"] {
+  --bg: #e4d9c3; --surface: #efe6d3; --surface-2: #e7dcc6;
+  --line: #d3c4a3; --line-strong: #bfad86; --text: #4a3c28; --muted: #8a7659;
+  --accent: #5a4a2f; --accent-2: #75603f; --on-accent: #efe6d3;
+  --accent-soft: rgba(90, 74, 47, 0.08); --accent-glow: rgba(90, 74, 47, 0.12);
+  --signal: #7a5a2f; --signal-soft: rgba(122, 90, 47, 0.12);
+  --slot: #6b6047; --event-default: #9a8a6a;
+}
+
+html[data-skin="eink"][data-palette="sepia"][data-theme="dark"] {
+  --bg: #211c14; --surface: #2a251b; --surface-2: #322c20;
+  --line: #3a3324; --line-strong: #4d442f; --text: #d8c9a8; --muted: #9a8a6a;
+  --accent: #c9b98f; --accent-2: #d8c9a8; --on-accent: #211c14;
+  --accent-soft: rgba(201, 185, 143, 0.10); --accent-glow: rgba(201, 185, 143, 0.16);
+  --signal: #b09a70; --signal-soft: rgba(176, 154, 112, 0.14);
+  --slot: #8a7a5a; --event-default: #9a8a6a;
+}
+
+html[data-skin="eink"][data-palette="carta"][data-theme="light"] {
+  --bg: #ecedf0; --surface: #f6f7f9; --surface-2: #e9eaee;
+  --line: #d7dbe0; --line-strong: #c0c5cd; --text: #33363c; --muted: #7c8189;
+  --accent: #3a3d42; --accent-2: #565a61; --on-accent: #f6f7f9;
+  --accent-soft: rgba(58, 61, 66, 0.07); --accent-glow: rgba(58, 61, 66, 0.12);
+  --signal: #5a5d63; --signal-soft: rgba(90, 93, 99, 0.12);
+  --slot: #6a6f76; --event-default: #8a8f96;
+}
+
+html[data-skin="eink"][data-palette="carta"][data-theme="dark"] {
+  --bg: #191a1c; --surface: #232527; --surface-2: #2a2c2f;
+  --line: #323538; --line-strong: #454952; --text: #ccd0d5; --muted: #868b93;
+  --accent: #c6cace; --accent-2: #d6dade; --on-accent: #191a1c;
+  --accent-soft: rgba(198, 202, 206, 0.10); --accent-glow: rgba(198, 202, 206, 0.16);
+  --signal: #a0a5ac; --signal-soft: rgba(160, 165, 172, 0.14);
+  --slot: #7a7f86; --event-default: #8a8f96;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   MATERIAL FLATTEN — the content submits to the skin, not just the chrome.
+   Calendar events carry their own identity colour inline (blockColors mixes the
+   calendar/domain hue), so tokens can't reach them. On PAPER and FLAT that's
+   right — colour is identity there. But a MONO material (e-ink / blueprint /
+   terminal) reading full Google-blue is a broken illusion, so we push the event
+   through the material's own finish with a filter. `.fc-event` already animates
+   `filter`, so the flatten eases in. Slots keep their themed --slot accent.
+   ════════════════════════════════════════════════════════════════════════ */
+html[data-skin="eink"] .fc-event:not(.evt-slot) {
+  /* electronic paper: everything in grey ink */
+  filter: grayscale(1) contrast(1.02);
+}
+
+/* E-Ink: the display just refreshes — no smooth motion at all, like real paper. */
+html[data-skin="eink"] {
+  --d-fast: 1ms; --d-base: 1ms; --d-slow: 1ms; --d-moment: 1ms;
+  --ease-out: cubic-bezier(0, 0, 1, 1); --ease-spring: cubic-bezier(0, 0, 1, 1);
+}
+
+/* E-Ink: a reader doesn't shout — drop the caps and the tracking. */
+html[data-skin="eink"] .section-label {
+  text-transform: none;
+  letter-spacing: 0.005em;
+  font-weight: 650;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   E-INK CHROME — the reader.
+
+   The tokens make e-ink grey; grey alone makes it a *desaturated app*, not a
+   device. What separates a Kindle from a greyscale screenshot is how type sits
+   on the panel, and none of it is the typeface:
+
+     · IT IS RENDERED GREYSCALE. An e-ink panel has no RGB subpixels, so it
+       cannot do subpixel antialiasing — every glyph is resolved in shades of
+       the one pigment. Asking the browser for the same thing is not a stylistic
+       choice, it is the actual physics, and it visibly evens out every stroke.
+     · IT SITS IN A NARROW WEIGHT BAND. Electronic paper blooms under heavy
+       weight, so readers keep the whole interface between regular and medium.
+     · SO RANK IS CARRIED BY SIZE, NOT WEIGHT — the exact inverse of terminal,
+       which collapses every size to one cell and ranks by weight and colour.
+       A chapter title on a reader is bigger, never bolder.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* — RENDERING: greyscale, the way the panel would. */
+html[data-skin="eink"] body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* — WEIGHT: one band, 400–500. Nuvo leans on 600/650 for hierarchy in ~200
+     places, as a UI should; a reader doesn't have that lever, so the top of the
+     ladder is folded down to 500. Both spellings are covered because weight
+     arrives as a Tailwind utility in most surfaces and as an inline style in
+     the chrome (React serialises it as `font-weight: 600;`), and inline can
+     only be beaten with !important. */
+html[data-skin="eink"] .font-semibold,
+html[data-skin="eink"] .font-bold,
+html[data-skin="eink"] [style*="font-weight: 6"],
+html[data-skin="eink"] [style*="font-weight: 7"] {
+  font-weight: 500 !important;
+}
+
+/* The heroes fold down with everything else and lead on size alone — the
+     masthead is 23px against a 14px body, which is rank enough. */
+html[data-skin="eink"] .masthead,
+html[data-skin="eink"] .serif {
+  font-variation-settings: normal;
+  font-weight: 500;
+  letter-spacing: -0.012em;
+}
+
+/* — TYPE: a reader's ladder. Everything breathes one notch wider than a dense
+     UI's, and the tracking comes back to zero (the base scale's negative
+     tracking tightens a UI up; a panel read at arm's length wants the room). */
+html[data-skin="eink"] {
+  --text-display: 23px;
+  --text-display--line-height: 1.2;
+  --text-display--letter-spacing: -0.01em;
+
+  --text-lead: 18px;
+  --text-lead--line-height: 1.3;
+  --text-lead--letter-spacing: -0.005em;
+
+  --text-head: 15px;
+  --text-head--line-height: 1.35;
+  --text-head--letter-spacing: 0em;
+
+  --text-body: 14px;
+  --text-body--line-height: 1.55;
+  --text-body--letter-spacing: 0em;
+
+  --text-caption: 13px;
+  --text-caption--line-height: 1.45;
+  --text-caption--letter-spacing: 0em;
+
+  --text-label: 12px;
+  --text-label--line-height: 1.4;
+  --text-label--letter-spacing: 0em;
+
+  --text-meta: 11.5px;
+  --text-meta--line-height: 1.35;
+  --text-meta--letter-spacing: 0em;
+
+  --text-micro: 10.5px;
+  --text-micro--line-height: 1.3;
+  --text-micro--letter-spacing: 0.01em;
+}
+
+html[data-skin="eink"] .mono {
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: 0em;
+}
+
+/* — ONE PIGMENT. An e-ink panel holds a single pigment in a clear fluid: it has
+     exactly one hue, and everything on it is a value of that hue. The tokens are
+     already ink-only, but identity colour arrives inline (domain hues on task
+     rings, project spines, board tints) where no token can reach it.
+
+     One fixed pane does both halves of the physics. `backdrop-filter` greys its
+     own backdrop — the whole app at once, including anything added later — and
+     then the pane's own fill is composited back over it in `color` blend mode,
+     which takes hue and saturation from the fill and luminosity from what's
+     underneath. The result is a true duotone in the scheme's pigment, so the
+     Tint axis (warm grey · sepia · cool grey) survives the desaturation instead
+     of being flattened by it.
+
+     Unlike a filter on a root element this creates no containing block, so fixed
+     positioning and popovers are untouched. The universal "no frost outside
+     paper" rule kills backdrop-filter with !important, so this has to shout
+     back; it is the one deliberate exception. */
+html[data-skin="eink"] {
+  --eink-pigment: #7d7566; /* Paperwhite — warm grey */
+}
+
+html[data-skin="eink"][data-palette="sepia"] {
+  --eink-pigment: #8a6b40;
+}
+
+html[data-skin="eink"][data-palette="carta"] {
+  --eink-pigment: #6e737c;
+}
+
+html[data-skin="eink"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  -webkit-backdrop-filter: grayscale(1) !important;
+  backdrop-filter: grayscale(1) !important;
+  background: var(--eink-pigment);
+  mix-blend-mode: color;
+}
+
+/* — LINE ART. A reader has no fills to spare: the whole UI is rules and type.
+     Chips, pills and tinted grounds go hollow, and the rule that's left carries
+     the weight (e-ink cannot render a 4%-alpha wash — it dithers it into
+     nothing, which is why every low-contrast fill on this material was simply
+     invisible). */
+html[data-skin="eink"] .glass-card,
+html[data-skin="eink"] .glass-tint {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}

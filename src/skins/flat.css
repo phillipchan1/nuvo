@@ -1,0 +1,548 @@
+/* Flat — crisp UI material.
+   Split out of index.css: every rule here is guarded by [data-skin="flat"],
+   and useSkin loads this file on demand the first time the material is
+   chosen — the default Warm Paper boot never downloads it (P2-11).
+   tests/token-contrast.test.ts reads this file alongside index.css. */
+
+/* ════════════════════════════════════════════════════════════════════════
+   SKINS — the MATERIAL axis (set on <html data-skin>, see useSkin.ts).
+   Orthogonal to light/dark (data-theme) and the warmth moods (data-palette):
+   a palette changes colour, a skin changes the *material* — glass vs. flat vs.
+   mono, shadow vs. border, round vs. sharp. "paper" is the base language (no
+   data-skin attribute at all), so the whole file above IS the paper skin.
+
+   Each skin below declares a COMPLETE identity and deliberately overrides the
+   palette, so it reads the same in any mood. Two mechanics:
+     1. TOKENS — redefined on `html[data-skin=X][data-theme=…]`. The two
+        attributes are required: the palette selectors are (0,2,0), so a token
+        override needs (0,2,1) to win. Skins with a real light/dark split list
+        both themes separately; theme-independent skins (terminal, blueprint)
+        list both with identical values.
+     2. MATERIAL — the ~6 frost hooks (.atmosphere, .glass-*) are re-skinned to
+        solid surface + border, so every component that floats on glass turns
+        flat for free, with no component edits.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── FLAT — a conventional product UI: Notion / Linear / Akiflow register.
+      Deliberately the *least* Nuvo-ish material — no ceremony, no frost, no
+      editorial serif. Everything that carries voice in paper is traded for the
+      things a workhorse app is judged on: a legible rule between regions, one
+      sans in every size, a real ground under white sheets, tight radii.
+      Keeps the mulberry accent so it still reads as Nuvo, just flattened.
+
+      Four levers do the work (the rest is inherited):
+        · --font-serif → the sans, so every masthead/serif surface flattens for
+          free (`.masthead` weight is corrected in the MATERIAL section below).
+        · lines a full step darker than paper's — a flat UI has no shadow or
+          gradient to separate regions, so the rule has to actually be visible.
+        · --bg is a real GROUND, a step below --surface, restoring the ramp every
+          other material keeps (bg < surface-2 < surface). This block used to set
+          both --bg and --surface to #ffffff, which flattened the ramp: a white
+          card on a white canvas has only its hairline left, and the ~80 places
+          that hover to `bg-bg` had nothing to show. That, not the missing frost,
+          is what read as "cold and dry".
+        · the neutrals carry a few degrees of the accent's own hue. A #ffffff /
+          #f6f6f7 / #e3e3e6 ramp is literally hueless, which is exactly what
+          "cold" describes — these are chosen greys, not default ones.
+      The material language built on top is in FLAT CHROME, below. */
+html[data-skin="flat"][data-theme="light"] {
+  --bg: #f4f2f7;
+  --surface: #ffffff;
+  --surface-2: #faf8fc;
+  --line: #e5e1ec;
+  --line-strong: #c7c1d3;
+  --text: #191621;
+  --muted: #6e6879;
+  --accent: #92568a;
+  --accent-2: #b07fa8;
+  --accent-soft: rgba(146, 86, 138, 0.08);
+  --accent-glow: rgba(146, 86, 138, 0.16);
+  --on-accent: #ffffff;
+  --slot: #0b747e;
+  --event-default: #9aa0ac;
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-serif: var(--font-sans);
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --shadow-1: 0 1px 2px rgba(28, 20, 40, 0.05);
+  --shadow-2: 0 2px 8px -2px rgba(28, 20, 40, 0.10), 0 0 0 1px var(--line);
+  --shadow-3: 0 8px 24px -8px rgba(28, 20, 40, 0.14);
+  --shadow-lift: 0 10px 26px -10px rgba(28, 20, 40, 0.20);
+}
+
+html[data-skin="flat"][data-theme="dark"] {
+  --bg: #0d0c11;
+  --surface: #18161e;
+  --surface-2: #221f2a;
+  --line: #302c3a;
+  --line-strong: #47414f;
+  --text: #f1eff5;
+  --muted: #918b9d;
+  --accent: #c692bf;
+  --accent-2: #d6abce;
+  --accent-soft: rgba(198, 146, 191, 0.13);
+  --accent-glow: rgba(198, 146, 191, 0.24);
+  --on-accent: #0d0c11;
+  --slot: #37b1a4;
+  --event-default: #7a7f8c;
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-serif: var(--font-sans);
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 10px -2px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line);
+  --shadow-3: 0 10px 28px -10px rgba(0, 0, 0, 0.6);
+  --shadow-lift: 0 12px 30px -12px rgba(0, 0, 0, 0.66);
+}
+
+/* ── MATERIAL: re-skin the frost hooks to solid surfaces. One selector list for
+      all flat skins keeps the resting-surface rule DRY — the glass becomes an
+      opaque token surface with the blur removed; borders/shadows come from the
+      tokens above. .atmosphere is per-skin because each ground differs. */
+
+/* The canvas: kill the dawn/dusk gradient; each skin paints its own ground. */
+html[data-skin="flat"] .atmosphere {
+  background: var(--bg);
+}
+
+html[data-skin="flat"] .glass-lift {
+  border-color: var(--line-strong) !important;
+  box-shadow: var(--shadow-lift);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   FLAT CHROME — the workspace furniture.
+
+   Flat used to be the only material defined by SUBTRACTION: it took paper's
+   frost, serif, gradient and lift away and put nothing in their place, so it
+   read as paper with the voice removed. Terminal is the counter-example — its
+   tokens make the console *pretty*, but what makes it read as an EDITOR is a
+   status bar, tabs with an active edge, a gutter and a current-line wash. Flat
+   needs the same treatment in its own register, and it comes down to three
+   ideas the token block can't state on its own:
+
+     1. GROUND vs SHEET — grey where work waits (chrome, pools, decks), white
+        where work happens (the calendar grid, cards). Paper runs one gradient
+        under everything; flat can't, so THIS is its structural continuity.
+     2. THE ACCENT CARRIES STATE — what is selected, current or focused is
+        coloured, not grey. Paper's law is "focus lifts, it doesn't outline";
+        flat deliberately inverts it to "focus FILLS", which is the one law
+        every app in this register actually runs on.
+     3. THE SURFACE ANSWERS THE POINTER — paper's aliveness is frost and lift;
+        flat deleted both, so hover has to carry it. Most of this is free now
+        that --bg is a real ground: the ~80 existing `hover:bg-bg` /
+        `hover:bg-surface-2` utilities finally have somewhere to travel to.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* One sans, all sizes. --font-serif already points at the sans, but Fraunces'
+   settings came with it: an optical-sizing axis the sans doesn't have, and a
+   500 weight that reads limp on a hero. A conventional app leads with weight —
+   so heroes get 650, the ceremonial voice 600, and the tracking loosens back to
+   normal (the -0.014em was cut for Fraunces' tight fit). */
+html[data-skin="flat"] .masthead {
+  font-variation-settings: normal;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+html[data-skin="flat"] .serif {
+  font-variation-settings: normal;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+/* ── 1. GROUND vs SHEET ──────────────────────────────────────────────────
+   The canvas is the ground (set in the MATERIAL section above: .atmosphere →
+   --bg). The chrome and the pools ride it transparently, exactly as they do on
+   paper — so flat no longer needs its old opaque-sidebar hack, which was the
+   "frost seam" the design language forbids, just in grey.
+
+   The calendar is the one surface that is not a pool: it IS the work, so it
+   gets the sheet. `cal-sheet` is set on the CalendarPane root. */
+html[data-skin="flat"] .cal-sheet {
+  background: var(--surface);
+}
+
+/* …and the floor's top band becomes a real HEADER BAR. On paper it's a
+   transparent strip with a hairline under it; over a ground, filling it is what
+   turns "some controls up there" into chrome above the work. */
+html[data-skin="flat"] .app-topbar {
+  background: var(--surface);
+}
+
+/* The mark is always branded. Paper dims the wordmark to a grey whisper when
+   you are off the Schedule, because its chrome is meant to recede into the
+   paper; a product's logo doesn't grey out because you changed tab.
+   (.wordmark-grad clips a gradient into transparent text — leave that alone.) */
+html[data-skin="flat"] .wordmark:not(.wordmark-grad) {
+  color: var(--accent) !important;
+  opacity: 1 !important;
+}
+
+/* ── 2. THE ACCENT CARRIES STATE ─────────────────────────────────────────
+   The active chapter's inline pill is 72%-translucent glass with a hairline —
+   over a ground, that's a barely-there smudge. A workspace nav fills the
+   selected row with the accent and marks its leading edge; you can find your
+   place in a 200px thumbnail. (The inline style is the documented hook — it
+   has to be beaten with !important.) */
+html[data-skin="flat"] .spine [style*="backdrop-filter"],
+html[data-skin="flat"] .chapter-active {
+  background: var(--accent-soft) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-skin="flat"] .spine nav button[aria-current="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+}
+
+/* …and the row's ink comes with it. The glyph and the label are inline-styled
+   (var(--text) / var(--muted)), so they need !important; the pair is targeted
+   precisely so the readiness meter and cue below keep their own colours. */
+html[data-skin="flat"] .spine nav button[aria-current="true"] .spine-rung-n,
+html[data-skin="flat"] .spine nav button[aria-current="true"] .spine-rung-n + span {
+  color: var(--accent) !important;
+}
+
+/* Selection doesn't levitate here — it fills. The -3px rise + 1.5% scale is a
+   paper gesture, and the grey border that replaced it said "disabled" more than
+   "selected". An accent edge over an accent wash is unambiguous, in place, and
+   costs no motion. (Drag ghosts keep their lift — a thing in your hand should
+   look picked up in any material.) */
+html[data-skin="flat"] .glass-lift,
+html[data-skin="flat"] .glass-lift-row {
+  transform: none;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Keyboard focus is a RING. Paper never draws one (it lifts instead), but a
+   workspace app is judged on exactly this, and :focus-visible only fires for
+   the keyboard — the pointer never sees it. */
+html[data-skin="flat"] :focus-visible {
+  outline: 2px solid var(--accent-glow);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── 3. THE SURFACE ANSWERS THE POINTER ──────────────────────────────────
+   `.row-hover` is a fraction of --surface, tuned so paper's rows whisper. On a
+   ground with a white sheet above it that fraction is nearly invisible, so flat
+   takes a wash of its own INK instead — which is what the register actually
+   runs on, and the only formulation that survives every tone. --surface-2 was
+   the old answer and it fails on a neutral ground: a #fbfbfa row over a #f7f7f5
+   pool is a 1.5% step, i.e. no hover at all. A wash darkens whatever it lands
+   on, so it reads identically on the ground, on the sheet, and in dark. */
+html[data-skin="flat"] .row-hover:hover {
+  background-color: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* Nav rows light up under the cursor — the chrome's own hover, which paper gets
+   from the frost and flat had nowhere to get. Same wash, a touch lighter: the
+   chrome should answer the pointer without competing with the filled active
+   row sitting next to it. */
+html[data-skin="flat"] .spine nav button:not([aria-current="true"]):hover,
+html[data-skin="flat"] .spine button:hover {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+/* ── 4. VOICE — the eyebrow drops its ceremony ───────────────────────────
+   Tracked micro-caps are an editorial device (and terminal's ▾-prefixed caps
+   are a console one). A workspace labels a group the way it would say it out
+   loud: small, bold, sentence case. */
+html[data-skin="flat"] .section-label {
+  text-transform: none;
+  font-size: 11px;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+/* The toolbar's centre stacks an eyebrow over a 22px dateline — a masthead. A
+   workspace names the current view small and bold, the way a header bar does,
+   and spends the room on the controls instead. */
+html[data-skin="flat"] [data-breadcrumb] .masthead {
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+/* Density: the register's rows are tighter than paper's, which is meant to
+   breathe. Not terminal-tight — just a notch. */
+html[data-skin="flat"] .spine nav button {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+/* Calendar blocks: paper wants tinted glass (the frost above is already gone
+   here) — flat wants a squarer chip, closer to a calendar app's. */
+html[data-skin="flat"] .fc .fc-event {
+  border-radius: 4px;
+}
+
+/* The hour guides. Paper draws them at 34% of --line because it has a gradient
+   underneath doing the structural work and a strong rule would fight it. Flat
+   has no gradient — §1's whole idea is that a visible rule IS the structure —
+   so at 34% over a white sheet the grid nearly vanishes and the day reads as
+   floating chips on nothing. Full --line is what a calendar app draws.
+   (The 15-minute minors stay invisible; only the hour is a real guide.) */
+html[data-skin="flat"] .fc .fc-timegrid-slot {
+  border-top-color: var(--line);
+}
+
+html[data-skin="flat"] .fc .fc-timegrid-slot-minor {
+  border-top-color: transparent;
+}
+
+/* …and the DAY columns, which were at 22% — so the week read as a set of
+   horizontal rules with the days only implied by where the events happened to
+   sit. A week grid is a grid in both axes; the column rule is what says
+   "Tuesday ends here". Same weight as the hour guide. */
+html[data-skin="flat"] .fc .fc-timegrid-col {
+  border-left-color: var(--line);
+}
+
+/* Type in the grid. The axis ran at 10px and events at 10.2px, which is where
+   the surface stopped reading as a calendar app and started reading as a dense
+   dashboard — the reference sets both a size larger and lets the grid breathe.
+   The events' own colour still comes from the identity token; only the size
+   and weight change. */
+html[data-skin="flat"] .fc .fc-timegrid-slot-label,
+html[data-skin="flat"] .fc .fc-timegrid-axis-cushion {
+  font-size: 11px;
+}
+
+html[data-skin="flat"] .fc .fc-event {
+  font-size: 11.5px;
+}
+
+html[data-skin="flat"] .fc .fc-col-header-cell {
+  font-size: 12px;
+}
+
+/* Event chips composite to a SOLID pastel. `blockColors` paints them
+   `color-mix(hue 23%, transparent)` — translucent on purpose, so that on paper
+   the block is a pane of tinted glass with the gridlines reading through it,
+   frosted by the .fc-event backdrop blur. Flat deletes that blur, and what's
+   left is a 23% wash sitting directly on the sheet with the hour rules striping
+   straight through every event: pale, and busy in exactly the way a calendar
+   app must not be.
+
+   The fill is INLINE, so it can't be recoloured from here — but backing it with
+   an opaque layer composites to the same colour it would have had if it were
+   mixed with --surface instead of transparent. A calendar chip in this register
+   is a solid tint, not glass.
+
+   The opaque layer goes on the HARNESS, the wrapper FullCalendar positions each
+   event with — not on a ::before inside the event. A negative-z-index pseudo
+   paints above its own parent's background (painting order puts the element's
+   background first, then negative-z children), so backing the fill from inside
+   just covers it: the events went white. Only a real ancestor can sit under an
+   inline background. */
+html[data-skin="flat"] .fc .fc-timegrid-event-harness,
+html[data-skin="flat"] .fc .fc-daygrid-event-harness {
+  background: var(--surface);
+  border-radius: 4px;
+}
+
+/* ── 5. THE CHROME HAS GEOMETRY ──────────────────────────────────────────
+   Everything above is colour, weight and voice. What was still missing is the
+   SHAPE of the furniture, which is most of what makes a workspace toolbar read
+   as one: a control in this register is a ~28px rounded-RECTANGLE with real
+   padding, sitting in a recessed grey trough. Paper's toolbar is a row of 24px
+   pills that float on the gradient and are meant to barely exist — correct for
+   paper, and the thing that reads as "unfinished" here.
+
+   Deliberately geometry only: none of these rules touch a colour token. The
+   accent still carries state (§2) and the ink still carries hover (§3). */
+
+/* EVERY segmented control, not just the calendar's — `[data-tabs]` is on the
+   view switcher, the floor tabs (On Deck · Groom · Table · Shipped) and the
+   phone's day switcher, which are the same control three times and were
+   drifting apart. Two structural problems: the container is `rounded-full` +
+   `bg-surface-2`, and on a neutral tone surface-2 (#fbfbfa) over the white
+   topbar is a 1.5% step — the trough is invisible, so the segments read as
+   loose floating words rather than one control. --bg IS the ground, which is
+   exactly what a recessed trough should be, on every tone. */
+html[data-skin="flat"] [data-tabs] {
+  border-radius: var(--radius);
+  /* A WHITE SHEET WITH A HAIRLINE, not a recessed grey trough. The trough is
+     the register's other segmented idiom and it is the wrong one here: the
+     reference calendar's controls are all one family — white, 1px rule, ~30px,
+     6px radius — and a grey well reads as a different kind of object sitting
+     next to them. */
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 2px;
+}
+
+html[data-skin="flat"] [data-tabs] button {
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0 10px;
+  min-height: 24px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The active segment is a quiet INK wash, not an accent-coloured raised chip.
+   This is the one place flat's §2 ("the accent carries state") is deliberately
+   set aside: in this register the accent belongs to navigation and links, and a
+   view switcher marks its current segment with a neutral fill. Colouring it
+   here is what made the cluster read as an app-specific control rather than
+   standard toolbar furniture. The inline style sets background, colour and
+   box-shadow, so all three have to be beaten. */
+html[data-skin="flat"] [data-tabs] button[data-on="true"] {
+  background: color-mix(in srgb, var(--text) 8%, transparent) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+
+/* The paging arrows and Today sit at 24px and 21px beside a 30px control — the
+   kind of half-step that reads as misalignment rather than hierarchy. One
+   height for every control in the bar.
+
+   `.titlebar-pad` is the calendar toolbar's own row (the grid that reserves the
+   macOS traffic-light inset); `.app-topbar` is the FLOOR header above the other
+   surfaces. Both are chrome and both get the same geometry. */
+html[data-skin="flat"] .titlebar-pad button.fast.h-6,
+html[data-skin="flat"] .app-topbar button.fast.h-6 {
+  height: 30px;
+  width: 30px;
+  border-radius: var(--radius);
+}
+
+/* Today is bordered, so it needs padding to match the height it just gained,
+   or it reads as a tall thin sliver. 13px to sit with the switcher — the
+   reference's toolbar text is a full size larger than the 11px `text-label`
+   these controls inherited, which is most of why they read as "small app
+   chrome" rather than as buttons. */
+html[data-skin="flat"] .titlebar-pad button.fast.border,
+html[data-skin="flat"] .app-topbar button.fast.border {
+  min-height: 30px;
+  padding-inline: 10px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+/* The spine's rows are 14px-radius PILLS — the roundest thing in the app and
+   the loudest non-workspace tell left in the chrome. Every workspace sidebar
+   in this register uses a soft rectangle at the same radius as everything
+   else, so the nav reads as a list of rows rather than a stack of lozenges. */
+html[data-skin="flat"] .spine button {
+  border-radius: var(--radius);
+}
+
+/* Group labels ("Execute", "Build") sit flush against their first row with no
+   space at all, so the label reads as part of the row beneath it instead of as
+   a heading over the group. A workspace gives it a little air below and none
+   above — the gap belongs BETWEEN groups, not inside one. */
+html[data-skin="flat"] .spine .section-label {
+  margin-bottom: 4px;
+}
+
+/* MODALS ARE SHEETS. The record and create frames paint themselves `bg-bg`,
+   which on paper is harmless — the atmosphere gradient runs under everything
+   and --bg is simply "the paper". Under §1 it is not harmless at all: --bg is
+   specifically the GROUND, the grey where work waits, and --surface is the
+   SHEET, the white where work happens. A modal is the most unambiguously
+   floating sheet in the app, so painting it the ground colour makes an open
+   record read as an empty grey panel instead of a page — with its own white
+   cards sitting on it looking like they belong to something else.
+
+   Scoped to flat rather than fixed in the component, because on paper the
+   class is correct. */
+html[data-skin="flat"] .moment.elev-3 {
+  background: var(--surface);
+}
+
+/* ── FLAT — tones (theme-aware) ──────────────────────────────────────────
+   Each tone keeps the base block's GROUND-then-SHEET ramp (bg < surface-2 <
+   surface): the tone changes the temperature of the ground, never the fact that
+   the work sits on a sheet above it. */
+html[data-skin="flat"][data-palette="arctic"][data-theme="light"] {
+  --bg: #eef2fa; --surface: #ffffff; --surface-2: #f7f9fd;
+  --line: #dde4f1; --line-strong: #c2cce1; --text: #1a1f2b; --muted: #656d80;
+  --accent: #4f46e5; --accent-2: #6d64f0; --on-accent: #ffffff;
+  --accent-soft: rgba(79, 70, 229, 0.08); --accent-glow: rgba(79, 70, 229, 0.16);
+  --slot: #0b7568; --event-default: #94a3b8;
+}
+
+html[data-skin="flat"][data-palette="arctic"][data-theme="dark"] {
+  --bg: #0b0d13; --surface: #141720; --surface-2: #1b1f2b;
+  --line: #2a3142; --line-strong: #3d4658; --text: #eaecf3; --muted: #949cb0;
+  --accent: #8b93ff; --accent-2: #a6acff; --on-accent: #0b0d13;
+  --accent-soft: rgba(139, 147, 255, 0.13); --accent-glow: rgba(139, 147, 255, 0.24);
+  --slot: #2dd4bf; --event-default: #7a869c;
+}
+
+html[data-skin="flat"][data-palette="linen"][data-theme="light"] {
+  --bg: #f7f2e8; --surface: #ffffff; --surface-2: #fdfaf4;
+  --line: #e2d9c8; --line-strong: #cfc3ab; --text: #26211a; --muted: #766c5b;
+  --accent: #b06a3c; --accent-2: #c9885c; --on-accent: #0d0602;
+  --accent-soft: rgba(176, 106, 60, 0.09); --accent-glow: rgba(176, 106, 60, 0.16);
+  --slot: #25706b; --event-default: #a98a6f;
+}
+
+html[data-skin="flat"][data-palette="linen"][data-theme="dark"] {
+  --bg: #100f0b; --surface: #1a1714; --surface-2: #221e18;
+  --line: #322d25; --line-strong: #453f33; --text: #efe9dd; --muted: #ac9f88;
+  --accent: #d69b6a; --accent-2: #e3b489; --on-accent: #100f0b;
+  --accent-soft: rgba(214, 155, 106, 0.14); --accent-glow: rgba(214, 155, 106, 0.24);
+  --slot: #37b1a4; --event-default: #b89a7e;
+}
+
+/* CHALK — the tone that takes flat all the way into the workspace register the
+   base block only gestures at. Two things separate it from the other tones:
+
+     · The greys are HUELESS. Snow/Arctic/Linen each carry a few degrees of
+       their accent's hue, because a tinted neutral is what stops a flat UI
+       reading as default-CSS cold. Chalk gives that up on purpose — the
+       register it's imitating runs on a warm near-black ink (#37352f) over
+       genuinely neutral paper, and the warmth lives in the INK, not the walls.
+     · The accent is azure and it is doing a different job. Mulberry is Nuvo's
+       identity colour; here the accent is pure UI state — what is selected,
+       linked, focused — which is why it can be the one saturated thing on
+       screen without the app looking branded-blue.
+
+   The ground→sheet ramp is the base block's and is untouched: chrome and pools
+   ride the ground (#f7f7f5), work happens on the white sheet. */
+html[data-skin="flat"][data-palette="chalk"][data-theme="light"] {
+  --bg: #f7f7f5; --surface: #ffffff; --surface-2: #fbfbfa;
+  --line: #eae9e7; --line-strong: #dcdbd8; --text: #37352f; --muted: #787774;
+  /* One step deeper than the azure this tone is modelled on. That azure is
+     #2383e2, and white on it is 3.88:1 — under AA, which the token-contrast
+     test caught the moment the scheme was added. It survives as --accent-2
+     (the lighter step, used for hovers and gradients, never under text);
+     --accent carries the ink and the fills, so it has to clear 4.5. */
+  --accent: #1b72c9; --accent-2: #2383e2; --on-accent: #ffffff;
+  --accent-soft: rgba(27, 114, 201, 0.09); --accent-glow: rgba(27, 114, 201, 0.18);
+  --slot: #0f7b6c; --event-default: #9b9a97;
+}
+
+/* Dark keeps the ramp's DIRECTION (ground below sheet) rather than the
+   reference's inversion, where the sidebar is lighter than the page. Flat's
+   chrome is transparent over the ground, so lifting the ground above the sheet
+   would put the pools in front of the work — the one structural idea this
+   material has. Ink is a soft off-white, never #fff: full white on near-black
+   is the classic dark-mode glare. */
+html[data-skin="flat"][data-palette="chalk"][data-theme="dark"] {
+  --bg: #191919; --surface: #202020; --surface-2: #252525;
+  --line: #2f2f2f; --line-strong: #414141; --text: #d4d4d4; --muted: #979797;
+  --accent: #529cca; --accent-2: #6fb3dd; --on-accent: #191919;
+  --accent-soft: rgba(82, 156, 202, 0.14); --accent-glow: rgba(82, 156, 202, 0.26);
+  --slot: #4dab9a; --event-default: #7f7f7f;
+}
+
+/* Flat: quick and smooth — the modern-app snap. */
+html[data-skin="flat"] {
+  --d-fast: 90ms; --d-base: 150ms;
+}

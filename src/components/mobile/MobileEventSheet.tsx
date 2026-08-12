@@ -14,7 +14,7 @@ import {
   tomorrowISO,
 } from "../../lib/dates";
 import { isReadOnlyCalendarId, isWritableAccount } from "../../lib/calendarWrite";
-import { plainTextFromHtml } from "../SlideOver";
+import { plainTextFromHtml } from "../../lib/text";
 import Sheet from "./Sheet";
 
 // The shape passed from MobileCalendar when the user taps an event row.
@@ -57,10 +57,13 @@ export default function MobileEventSheet({
 }) {
   const { rsvpEvent, updateEvent, deleteEvent } = useExternalEventMutations();
   const { data: accounts = [] } = useCalendarAccounts();
+  // Same write-back rule as desktop's EventPopover: a two-way Google/iCloud
+  // account, and not a read-only mirror/holiday/subscription calendar.
+  const account = tap.kind === "event" ? accounts.find((a) => a.id === tap.accountId) : undefined;
   // The phone is where a video meeting actually gets joined, so the sheet pulls
   // the raw event for its conference link the same way the desktop inspector
   // does. Null for a task block — hooks can't hide behind the branch below.
-  const { data: raw } = useEventDetails(tap.kind === "event" ? tap.id : null);
+  const { data: raw } = useEventDetails(tap.kind === "event" ? tap.id : null, account?.email);
   const meetLink = joinUrl(raw);
   const [rsvping, setRsvping] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);
@@ -81,9 +84,6 @@ export default function MobileEventSheet({
     setNotes(plainTextFromHtml(raw?.description ?? ""));
   }, [raw?.description]);
 
-  // Same write-back rule as desktop's EventPopover: a two-way Google/iCloud
-  // account, and not a read-only mirror/holiday/subscription calendar.
-  const account = tap.kind === "event" ? accounts.find((a) => a.id === tap.accountId) : undefined;
   const editable =
     tap.kind === "event" &&
     isWritableAccount(account) &&

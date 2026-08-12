@@ -3,8 +3,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { invokeQuiet, supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
-import type { AttendeeStatus, CalendarAccount, CalendarProvider, ExternalEvent, GoogleRawEvent, HiddenEvent, Label, RecurrenceScope } from "../lib/types";
-import { eventInstanceKey, eventSeriesKey, isEventHidden } from "../lib/now";
+import {
+  normalizeRawEvent,
+  type AttendeeStatus,
+  type CalendarAccount,
+  type CalendarProvider,
+  type ExternalEvent,
+  type GoogleRawEvent,
+  type HiddenEvent,
+  type Label,
+  type ProviderRawEvent,
+  type RecurrenceScope,
+} from "../lib/types";
+import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
 import { eventsFunctionFor } from "../lib/calendarWrite";
 import { useSettings } from "./useSettings";
 
@@ -98,7 +109,7 @@ export function useHiddenEvents() {
 
   /** The hidden key responsible for an event being hidden (series wins), for unhide. */
   const hiddenKeyFor = (e: HidableEvent): string | null => {
-    const instance = eventInstanceKey(e);
+    const instance = eventKey(e);
     if (keys.has(instance)) return instance;
     const series = eventSeriesKey(e);
     return series && keys.has(series) ? series : null;
@@ -107,7 +118,7 @@ export function useHiddenEvents() {
   const hide = (e: HidableEvent, scope: RecurrenceScope = "THIS") => {
     // "All events" needs the synced master id; without it, fall back to just this one.
     const seriesKey = eventSeriesKey(e);
-    const key = scope === "ALL" && seriesKey ? seriesKey : eventInstanceKey(e);
+    const key = scope === "ALL" && seriesKey ? seriesKey : eventKey(e);
     if (keys.has(key)) return;
     update({ hidden_events: [...hidden, { key, title: e.title }] });
   };
@@ -513,9 +524,13 @@ export function useExternalEventMutations() {
   };
 }
 
-/** Fetch the raw Google event payload for a single event — attendees,
- *  organizer, conference link, etc. Only called when a slide-over is open. */
-export function useEventDetails(id: string | null) {
+/** Fetch the raw event payload for a single event — attendees, organizer,
+ *  conference link, etc. Only called when a slide-over is open.
+ *  `accountEmail` (the connected account's own address) is required to
+ *  normalize a Microsoft Graph payload into Google's shape — pass the
+ *  email of the account that owns this event (`accounts.find(a => a.id ===
+ *  event.account_id)?.email`); omit it for a Google/ICS/iCloud event. */
+export function useEventDetails(id: string | null, accountEmail?: string | null) {
   return useQuery({
     queryKey: ["event_details", id],
     enabled: Boolean(id),
@@ -528,7 +543,7 @@ export function useEventDetails(id: string | null) {
         .eq("id", id)
         .single();
       if (error) throw error;
-      return (data?.raw as GoogleRawEvent) ?? null;
+      return normalizeRawEvent(data?.raw as ProviderRawEvent | null, accountEmail);
     },
   });
 }

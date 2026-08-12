@@ -68,22 +68,71 @@ export interface DayCtx {
   now: Date;
 }
 
+// Per-ctx day index. Every caller builds plans for a whole span (21 agenda
+// days, 42 month cells), and the naive shape re-filtered EVERY event and block
+// — with fresh Date allocations per row — once per day: at a real data volume
+// (1,400+ events) that was ~120ms of self time on a single tab switch. The
+// buckets are built once per ctx identity (the callers already memoize ctx)
+// and the WeakMap keeps this invisible to call sites.
+interface SpanningEvent {
+  e: ExternalEvent;
+  start: number;
+  end: number;
+}
+interface DayIndex {
+  allDay: SpanningEvent[];
+  eventsByDay: Map<string, ExternalEvent[]>;
+  blocksByDay: Map<string, Task[]>;
+}
+const dayIndexCache = new WeakMap<DayCtx, DayIndex>();
+
+function indexOf(ctx: DayCtx): DayIndex {
+  const cached = dayIndexCache.get(ctx);
+  if (cached) return cached;
+  const allDay: SpanningEvent[] = [];
+  const eventsByDay = new Map<string, ExternalEvent[]>();
+  for (const e of ctx.visibleEvents) {
+    if (e.all_day) {
+      // All-day events span days, so they stay a list — but with the dates
+      // parsed once instead of twice per event per day.
+      allDay.push({ e, start: new Date(e.start_at).getTime(), end: new Date(e.end_at).getTime() });
+    } else {
+      const k = dayKey(new Date(e.start_at));
+      const arr = eventsByDay.get(k);
+      if (arr) arr.push(e);
+      else eventsByDay.set(k, [e]);
+    }
+  }
+  const blocksByDay = new Map<string, Task[]>();
+  for (const t of ctx.blocks) {
+    if (!t.start_time) continue;
+    const k = dayKey(new Date(t.start_time));
+    const arr = blocksByDay.get(k);
+    if (arr) arr.push(t);
+    else blocksByDay.set(k, [t]);
+  }
+  const idx = { allDay, eventsByDay, blocksByDay };
+  dayIndexCache.set(ctx, idx);
+  return idx;
+}
+
 // The one place a calendar date becomes a plan — used by the month grid (for
 // its free/busy density), the schedule agenda (the full read) and the Day lens.
 export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
-  const { visibleEvents, blocks, hidden, workStart, workEnd, now } = ctx;
+  const { hidden, workStart, workEnd, now } = ctx;
+  const idx = indexOf(ctx);
   const dStart = startOfDay(date);
   const dEnd = new Date(dStart.getTime() + DAY_MS);
   const startNow = startOfDay(now);
   const isToday = isSameDay(date, now);
   const isBygone = dStart.getTime() < startNow.getTime();
 
-  const allDay = visibleEvents.filter(
-    (e) => e.all_day && new Date(e.start_at) < dEnd && new Date(e.end_at) > dStart,
-  );
+  const allDay = idx.allDay
+    .filter((p) => p.start < dEnd.getTime() && p.end > dStart.getTime())
+    .map((p) => p.e);
 
-  const dayEvents = visibleEvents.filter((e) => !e.all_day && dayKey(new Date(e.start_at)) === dayKey(date));
-  const dayBlocks = blocks.filter((t: Task) => t.start_time && dayKey(new Date(t.start_time)) === dayKey(date));
+  const dayEvents = idx.eventsByDay.get(dayKey(date)) ?? [];
+  const dayBlocks = idx.blocksByDay.get(dayKey(date)) ?? [];
   const busy = toBusyBlocks(dayEvents, dayBlocks, hidden);
 
   const ws = new Date(dStart);
