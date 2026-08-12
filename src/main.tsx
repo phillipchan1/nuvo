@@ -45,7 +45,7 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek / ?daycal / ?domains / ?meet / ?invite / ?chat, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?daycal / ?domains / ?build / ?meet / ?invite / ?chat, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
@@ -53,6 +53,7 @@ const showDayCalHarness = import.meta.env.DEV && params.has("daycal");
 const showMeetHarness = import.meta.env.DEV && params.has("meet");
 const showInviteHarness = import.meta.env.DEV && params.has("invite");
 const showDomainHarness = import.meta.env.DEV && params.has("domains");
+const showBuildHarness = import.meta.env.DEV && params.has("build");
 const showPickHarness = import.meta.env.DEV && params.has("chat");
 
 if (showPickHarness) {
@@ -100,6 +101,14 @@ if (showPickHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <DomainHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showBuildHarness) {
+  void import("./components/mobile/BuildFacesHarness").then(({ default: BuildFacesHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <BuildFacesHarness />
       </React.StrictMode>,
     );
   });

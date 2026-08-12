@@ -5,13 +5,10 @@ import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import {
-  initiativeById,
-  projectById,
-  type Initiative,
-  type Project,
-  type ProjectStatus,
-  type VerticalData,
-} from "../lib/vertical";
+  buildRecordActions,
+  type RecordAction,
+  type RecordKind,
+} from "../lib/recordActions";
 
 /**
  * One right-click menu for the vertical's records (projects · initiatives), shared
@@ -31,7 +28,10 @@ import {
  *   {menu}
  */
 
-type Kind = "project" | "initiative";
+// The acts themselves live in `lib/recordActions` — shared with the phone's
+// long-press sheet (`mobile/MobileRecordActions`). This file is only the
+// right-click *presentation* of them.
+type Kind = RecordKind;
 
 interface OpenState {
   kind: Kind;
@@ -40,17 +40,7 @@ interface OpenState {
   y: number;
 }
 
-type Item =
-  | {
-      kind: "action";
-      label: string;
-      key?: string;
-      danger?: boolean;
-      /** When set, the click swaps the menu to a confirm step with this prompt. */
-      confirm?: string;
-      action: () => void;
-    }
-  | { kind: "sep" };
+type Item = RecordAction;
 
 export function useRecordContextMenu() {
   const [state, setState] = useState<OpenState | null>(null);
@@ -91,7 +81,7 @@ function RecordMenu({ state, onClose, onShip }: { state: OpenState; onClose: () 
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const items = buildItems(state, data, {
+  const items = buildRecordActions(state.kind, state.id, data, {
     openRecord,
     updateProject,
     deleteProject,
@@ -171,61 +161,4 @@ function MenuButton({ item, onRun }: { item: Extract<Item, { kind: "action" }>; 
       {item.key && <span className="mono text-meta text-muted">{item.key}</span>}
     </button>
   );
-}
-
-interface Actions {
-  openRecord: (kind: Kind, id: string) => void;
-  updateProject: (id: string, patch: Partial<Project>) => void;
-  deleteProject: (id: string) => void;
-  updateInitiative: (id: string, patch: Partial<Initiative>) => void;
-  deleteInitiative: (id: string) => void;
-  /** projects only — hand off to the ship assessment instead of writing */
-  onShip: (id: string) => void;
-  onClose: () => void;
-}
-
-function buildItems(state: OpenState, data: VerticalData, a: Actions): Item[] {
-  const { kind, id } = state;
-  const record = kind === "project" ? projectById(data, id) : initiativeById(data, id);
-  if (!record) return [];
-
-  const done = record.status === "complete";
-  const parked = record.status === "waiting";
-  const noun = kind === "project" ? "project" : "initiative";
-
-  const setStatus = (status: ProjectStatus) =>
-    kind === "project" ? a.updateProject(id, { status }) : a.updateInitiative(id, { status });
-  const del = () => (kind === "project" ? a.deleteProject(id) : a.deleteInitiative(id));
-
-  const act = (fn: () => void) => () => {
-    fn();
-    a.onClose();
-  };
-
-  return [
-    { kind: "action", label: "Open", key: "↵", action: act(() => a.openRecord(kind, id)) },
-    { kind: "sep" },
-    // Reopening is instant (reversible, not a judgment); shipping a project opens
-    // the assessment — the "…" says a moment follows rather than a silent seal.
-    {
-      kind: "action",
-      label: done ? "Reopen" : kind === "project" ? "Ship it…" : "Mark complete",
-      action: act(() =>
-        done ? setStatus("in_progress") : kind === "project" ? a.onShip(id) : setStatus("complete"),
-      ),
-    },
-    {
-      kind: "action",
-      label: parked ? "Resume" : "Park (waiting)",
-      action: act(() => setStatus(parked ? "in_progress" : "waiting")),
-    },
-    { kind: "sep" },
-    {
-      kind: "action",
-      label: `Delete ${noun}`,
-      danger: true,
-      confirm: `Delete "${record.name}"?`,
-      action: act(del),
-    },
-  ];
 }
