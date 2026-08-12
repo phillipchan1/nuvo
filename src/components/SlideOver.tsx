@@ -2331,7 +2331,6 @@ export function SlotPopover({
           width: SLOT_POP_W + paneW,
           maxHeight: Math.min(560, pos.maxHeight),
           boxShadow: "var(--shadow-3)",
-          transition: "width 180ms ease-out",
         }}
       >
         {/* Slot column — fixed width; position is owned by the shell, not this pane */}
@@ -2599,10 +2598,11 @@ export function SlotPopover({
 
         {/* Task slide-out — same shell, slides open to the right */}
         <div
-          className={`fast flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface transition-[width,opacity] duration-200 ease-out ${
-            openTask
-              ? `opacity-100 ${paneSide === "right" ? "border-l" : "border-r"} border-line`
-              : "opacity-0"
+          // No transition: this is a click-to-open inspector, and on the
+          // Schedule those land instantly (same rule as the block lift and
+          // `pop-in`). An eased unfold made every drill-in wait ~200ms.
+          className={`flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface ${
+            openTask ? `${paneSide === "right" ? "border-l" : "border-r"} border-line` : ""
           }`}
           style={{ width: paneW }}
         >
