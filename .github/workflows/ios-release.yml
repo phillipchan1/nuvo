@@ -95,13 +95,19 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
-          # Manual signing fallback — Tauri reads these when automatic signing
-          # cannot resolve a profile. See v2.tauri.app/distribute/sign/ios/
           IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
         run: |
           set -euo pipefail
+          # Empty IOS_* secrets become "" in GHA and Tauri still tries security
+          # import — which fails. Unset unless all three manual-signing values exist.
+          if [ -z "${IOS_CERTIFICATE:-}" ] || [ -z "${IOS_CERTIFICATE_PASSWORD:-}" ] || [ -z "${IOS_MOBILE_PROVISION:-}" ]; then
+            unset IOS_CERTIFICATE IOS_CERTIFICATE_PASSWORD IOS_MOBILE_PROVISION
+            echo "Using automatic signing (App Store Connect API key)."
+          else
+            echo "Using manual signing (IOS_CERTIFICATE + provisioning profile)."
+          fi
           npm run tauri ios build -- --export-method app-store-connect --ci --build-number "$BUILD_NUMBER"
 
       - name: Upload to TestFlight
