@@ -294,16 +294,16 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
         <div className="serif mt-3 text-[42px]" style={{ fontWeight: 500 }}>
           <InlineText value={domain.name} onChange={(v) => updateDomain(domain.id, { name: v })} inputClassName="serif text-[42px] text-center" />
         </div>
+        <div className="mt-1.5 text-meta uppercase" style={{ letterSpacing: "0.1em", color: lit ? "color-mix(in srgb, var(--text) 55%, var(--muted))" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}>
+          {st.short}
+        </div>
         <div className="my-3.5"><Flourish color={accent} /></div>
         <InlineTextarea
           value={domain.intention}
           onChange={(v) => updateDomain(domain.id, { intention: v })}
           placeholder="State the standing mandate for this domain…"
-          className="serif text-display italic"
+          className="serif line-clamp-1 text-body italic text-muted"
         />
-        <div className="mt-5 text-label uppercase" style={{ letterSpacing: "0.16em", color: lit ? "color-mix(in srgb, var(--text) 55%, var(--muted))" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}>
-          {st.line}
-        </div>
       </div>
 
       {/* ── the last quarter — the pulse ── */}

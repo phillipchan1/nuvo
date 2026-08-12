@@ -791,13 +791,21 @@ export function AreaField({
   placeholder,
   className = "",
   style,
+  clampUntilFocus = false,
 }: {
   value: string;
   onCommit: (v: string) => void;
   placeholder?: string;
   className?: string;
   style?: React.CSSProperties;
+  /** Sits as a single ellipsis-truncated line until focused, then grows to
+   *  the full editable text on tap. Domain mandate only — a caption, not a
+   *  second headline. */
+  clampUntilFocus?: boolean;
 }) {
+  const [focused, setFocused] = useState(false);
+  const expanded = !clampUntilFocus || focused;
+
   return (
     <textarea
       key={value}
@@ -807,21 +815,26 @@ export function AreaField({
       // grow with the text — a one-line box that hides the second line of an
       // outcome is why the outcome went unread
       ref={(el) => {
-        if (el) {
+        if (!el) return;
+        if (expanded) {
           el.style.height = "auto";
           el.style.height = `${el.scrollHeight}px`;
+        } else {
+          el.style.height = "";
         }
       }}
+      onFocus={() => setFocused(true)}
       onInput={(e) => {
         const el = e.currentTarget;
         el.style.height = "auto";
         el.style.height = `${el.scrollHeight}px`;
       }}
       onBlur={(e) => {
+        setFocused(false);
         const next = e.target.value.trim();
         if (next !== value) onCommit(next);
       }}
-      className={`w-full resize-none bg-transparent leading-relaxed outline-none placeholder:text-muted/60 ${className}`}
+      className={`w-full resize-none bg-transparent leading-relaxed outline-none placeholder:text-muted/60 ${expanded ? "" : "truncate"} ${className}`}
       style={style}
     />
   );
@@ -868,6 +881,8 @@ export function RecordHead({
   flourish,
   shipped = false,
   sealSize = 22,
+  stateTag,
+  captionOutcome = false,
 }: {
   name: string;
   onName: (v: string) => void;
@@ -887,6 +902,14 @@ export function RecordHead({
   /** A bet outweighs a project (D-048's "scope reads as mass") — initiatives pass
    *  a bigger seal than the default project size. */
   sealSize?: number;
+  /** A short presence tag (`stateOf().short`) shown as a quiet mark under the
+   *  name. Domain hero only — the full sentence stays in the last-quarter
+   *  panel below (say it once, D-087). */
+  stateTag?: string;
+  /** Demote the outcome from an inscription to a caption: single line until
+   *  focused, small and muted. Domain mandate only — projects/initiatives
+   *  keep today's one-line outcome unchanged. */
+  captionOutcome?: boolean;
 }) {
   return (
     <div className={`pb-1 ${center ? "text-center" : ""}`}>
@@ -903,13 +926,23 @@ export function RecordHead({
           style={{ caretColor: accent }}
         />
       </div>
+      {stateTag && (
+        <div className="mt-1 text-meta uppercase" style={{ letterSpacing: "0.1em", color: "var(--muted)" }}>
+          {stateTag}
+        </div>
+      )}
       {flourish && <div className="my-2 flex justify-center">{flourish}</div>}
       <AreaField
-        className={`mt-1 leading-snug ${center ? "serif text-head italic" : "text-head"}`}
-        style={{ color: "color-mix(in srgb, var(--ink) 72%, var(--muted))", caretColor: accent, ...(center ? { textAlign: "center" as const } : {}) }}
+        className={`mt-1 leading-snug ${captionOutcome ? "serif text-caption italic text-muted" : center ? "serif text-head italic" : "text-head"}`}
+        style={{
+          color: captionOutcome ? undefined : "color-mix(in srgb, var(--ink) 72%, var(--muted))",
+          caretColor: accent,
+          ...(center ? { textAlign: "center" as const } : {}),
+        }}
         value={outcome}
         placeholder={outcomePlaceholder}
         onCommit={onOutcome}
+        clampUntilFocus={captionOutcome}
       />
     </div>
   );

@@ -218,8 +218,11 @@ the rule that keeps a dense screen calm.
 1. **One anchor, in the surface's own voice.** Each surface has a single element at the top
    of its hierarchy, and nothing else competes with it. **The voice matches the surface:**
    a *ceremony/identity* surface anchors with a Fraunces `masthead` — a floor's
-   `text-display masthead` name, the Review's date, a domain's mandate (serif is for a *name*,
-   never a *number*). An *execution* surface anchors with a **functional header** — a
+   `text-display masthead` name, the Review's date, a domain's name (serif is for a *name*,
+   never a *number*). A domain's mandate sits **below** that one hero, demoted to a muted
+   single-line caption (`text-body`/`text-caption` italic, `line-clamp-1` until tapped) —
+   stacking it at hero size made two headlines, which this rule forbids. An *execution*
+   surface anchors with a **functional header** — a
    tracked-caps eyebrow over a quiet status line, numbers in `mono`, the meter idiom the
    spine and Standing gauges use. The Schedule rail's crown is execution: "THIS WEEK · JUL
    13–19" over "0 of 2 landed" + a thin landed meter — **not** a serif scoreboard (a count

@@ -95,7 +95,6 @@ export default function MobileDomainScreen({
 
   const accent = dom.color;
   const st = stateOf(dom);
-  const lit = st.tone === "lit";
   const spec = domainSigilSpec(dom, form);
   const pickForm = (f: SigilForm) => { setDomainForm(dom.id, f); setForm(f); };
 
@@ -140,13 +139,9 @@ export default function MobileDomainScreen({
             outcomePlaceholder="State the standing mandate for this domain…"
             center
             flourish={<Flourish color={accent} width={96} />}
+            stateTag={st.short}
+            captionOutcome
           />
-        </div>
-        <div
-          className="mt-3 text-micro uppercase"
-          style={{ letterSpacing: "0.14em", color: lit ? "color-mix(in srgb, var(--ink) 55%, var(--muted))" : "color-mix(in srgb, var(--ink) 45%, var(--muted))" }}
-        >
-          {st.line}
         </div>
         <div className="mt-2.5">
           <ClarityMark domain={dom} />
