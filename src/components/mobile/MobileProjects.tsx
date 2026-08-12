@@ -14,6 +14,11 @@
 //
 // "All" stays what it was: the flat browse list, reaching backlog/complete work
 // the deck (in-flight only) leaves out.
+//
+// The tab now carries the desktop's FOUR faces, in the desktop's order — On Deck
+// (when) · Groom (what) · All (everything) · Shipped (what landed). Groom and
+// Shipped were desktop-only, which left the phone able to place work it could
+// not shape, and unable to look at what it had finished.
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -30,6 +35,9 @@ import { Hint, PHONE_WEEK_HORIZON, VerticalList } from "./detail/verticalDetail"
 import PlannerCard, { deckWeight } from "../ondeck/DeckCard";
 import { PIP_TONE, projectCardStatus } from "../ondeck/deckStatus";
 import { pressable } from "../../lib/a11y";
+import MobileGroom from "./MobileGroom";
+import MobileShipped from "./MobileShipped";
+import { useRecordActions } from "./MobileRecordActions";
 
 // How far out the phone plans. Six weeks is a month and a half — far enough
 // that "not this month" still has somewhere to land, which four weeks didn't
@@ -40,7 +48,7 @@ const HORIZON_SPRINTS = PHONE_WEEK_HORIZON;
 const clampIdx = (i: number, H: number) => Math.max(0, Math.min(i, H - 1));
 
 const SEG_KEY = "nuvo-mobile-projects-seg";
-type Seg = "ondeck" | "all";
+type Seg = "ondeck" | "groom" | "all" | "shipped";
 
 export default function MobileProjects({
   onOpenItem,
@@ -48,6 +56,11 @@ export default function MobileProjects({
   onOpenItem: (kind: "project" | "initiative" | "domain", id: string) => void;
 }) {
   const { data: d, ready, updateProject, addProject } = useVertical();
+  // The All list is a document surface, so a hold there means "what can I do to
+  // this" — the phone's right-click. (On the deck below, a hold means "pick it
+  // up"; that surface is a drag surface, and its records reach the same acts
+  // through the ⋯ in the record itself.)
+  const { actionProps, sheet: actionSheet } = useRecordActions(onOpenItem);
   const { byWeek, weeklyAvgMins } = useCapacity();
   const [maxPerWeek] = useMaxPerWeek();
   const now = useMemo(() => new Date(), []);
@@ -58,7 +71,8 @@ export default function MobileProjects({
 
   const [seg, setSegState] = useState<Seg>(() => {
     try {
-      return localStorage.getItem(SEG_KEY) === "all" ? "all" : "ondeck";
+      const v = localStorage.getItem(SEG_KEY);
+      return v === "groom" || v === "all" || v === "shipped" ? v : "ondeck";
     } catch {
       return "ondeck";
     }
@@ -203,6 +217,10 @@ export default function MobileProjects({
 
       {!ready ? (
         <SkeletonRows rows={4} />
+      ) : seg === "groom" ? (
+        <MobileGroom scope="project" onOpenItem={onOpenItem} />
+      ) : seg === "shipped" ? (
+        <MobileShipped scope="project" onOpenItem={onOpenItem} />
       ) : seg === "all" ? (
         <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto fab-clear">
           <VerticalList
@@ -211,7 +229,9 @@ export default function MobileProjects({
             onOpenProject={(id) => onOpenItem("project", id)}
             onOpenInitiative={(id) => onOpenItem("initiative", id)}
             onOpenDomain={(id) => onOpenItem("domain", id)}
+            hold={actionProps}
           />
+          {actionSheet}
         </div>
       ) : (
         <MobileDeck
@@ -319,9 +339,13 @@ function CapacityGauge({ blocks, demand, over }: { blocks: number; demand: numbe
 }
 
 function SegHeader({ seg, setSeg }: { seg: Seg; setSeg: (s: Seg) => void }) {
+  // The desktop's four faces, in the desktop's order (FloorPane's RungTabs):
+  // when · what · everything · what landed.
   const items: { id: Seg; label: string }[] = [
     { id: "ondeck", label: "On Deck" },
+    { id: "groom", label: "Groom" },
     { id: "all", label: "All" },
+    { id: "shipped", label: "Shipped" },
   ];
   return (
     <div className="flex shrink-0 gap-1 border-b border-line px-3 py-2">

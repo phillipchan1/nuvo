@@ -132,8 +132,21 @@ it needs to work on a phone.
   **Never re-derive "is this domain quiet" in a surface** — import it. Verify both at once
   at `?domains` (`mobile/DomainHarness.tsx`), which renders the wall, the open domain and
   the desktop floor over the same fixtures — see D-086.
-- **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), Record
-  screens, Project/Initiative floors, Collection board/table/timeline, and
+- **The Build rungs wear the same four faces on both shells** — **On Deck · Groom · All
+  (Table) · Shipped**, in that order, at the project *and* initiative altitudes. Desktop:
+  `FloorPane`'s `RungTabs`. Phone: the segmented header in `MobileProjects` /
+  `MobileInitiatives`. The phone's Groom and Shipped (`mobile/MobileGroom.tsx`,
+  `mobile/MobileShipped.tsx`) are **layouts over the same read models** the desktop floors
+  use (`readOnDeck` · `allOpenInitiativeLanes` · `readShipped`) — a wall of columns becomes
+  a thinnest-first stack of cards. Never re-derive "how shaped is this" in a surface.
+  Verify both at `?build` (`mobile/BuildFacesHarness.tsx`) — see D-099.
+- **A record's lifecycle acts live in one vocabulary** — `src/lib/recordActions.ts`
+  (Open · Ship/Reopen · Park/Resume · Delete). The desktop reaches it by right-click
+  (`RecordContextMenu`), the phone by long-press *and* the record sheet's visible ⋯
+  (`mobile/MobileRecordActions`). **Never build a second menu** — that copy is how Delete
+  ended up desktop-only. A hidden gesture is never the only path to an act.
+- **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), the Record
+  *modal* (the phone has its own detail Sheet), Collection board/table/timeline, and
   the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** instead of
   FullCalendar: month grid → drill into **List** (agenda + Free chips) or **Day** (one
   day as a proportional time grid), both over one `buildDayPlan` (`dayPlan.ts`) — see

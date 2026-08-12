@@ -99,12 +99,16 @@ export function VerticalList({
   onOpenProject,
   onOpenInitiative,
   onOpenDomain,
+  hold,
 }: {
   d: VerticalData;
   lens: Lens;
   onOpenProject: (id: string) => void;
   onOpenInitiative: (id: string) => void;
   onOpenDomain: (id: string) => void;
+  /** `useRecordActions().actionProps` — long-press a project/initiative row for
+   *  its lifecycle acts, the way right-click works on the desktop table. */
+  hold?: (kind: "project" | "initiative", id: string) => Record<string, unknown>;
 }) {
   if (lens === "projects") {
     const projects = [...d.projects].sort(
@@ -117,6 +121,7 @@ export function VerticalList({
           <Row
             key={p.id}
             onClick={() => onOpenProject(p.id)}
+            hold={hold?.("project", p.id)}
             chevron
             leading={<StatusDot status={p.status} />}
             title={p.name}
@@ -146,6 +151,7 @@ export function VerticalList({
             <Row
               key={i.id}
               onClick={() => onOpenInitiative(i.id)}
+              hold={hold?.("initiative", i.id)}
               chevron
               leading={<StatusDot status={i.status} />}
               title={i.name}
@@ -516,7 +522,11 @@ export function TaskComposer({
   };
 
   return (
-    <div className="tap mt-2 flex items-center gap-3 rounded-xl border border-dashed border-line px-3">
+    // A <label>, not a <div>: the input itself computes to ~41px (16px text +
+    // py-2.5), so the row wore `.tap`'s 44px while the actual focus target was
+    // short and the padding around it was dead. Wrapping in a label makes the
+    // whole 44px band — including the ＋ — focus the field.
+    <label className="tap mt-2 flex items-center gap-3 rounded-xl border border-dashed border-line px-3">
       <span className="shrink-0 text-body" style={{ color: accent }}>＋</span>
       <input
         ref={ref}
@@ -532,7 +542,7 @@ export function TaskComposer({
         placeholder={placeholder}
         className="min-w-0 flex-1 bg-transparent py-2.5 text-body outline-none placeholder:text-muted/60"
       />
-    </div>
+    </label>
   );
 }
 
@@ -616,6 +626,7 @@ export function Row({
   meta,
   onClick,
   chevron,
+  hold,
 }: {
   leading?: ReactNode;
   title: string;
@@ -623,10 +634,15 @@ export function Row({
   meta?: ReactNode;
   onClick?: () => void;
   chevron?: boolean;
+  /** Long-press handlers (`useRecordActions().actionProps`) — the phone's
+   *  right-click. Spread rather than baked in, because only rows that stand
+   *  for a record have lifecycle acts. */
+  hold?: Record<string, unknown>;
 }) {
   return (
     <button
       onClick={onClick}
+      {...hold}
       className="tap fast flex w-full items-center gap-3 border-b border-line px-4 py-3 text-left last:border-b-0 active:bg-surface-2"
     >
       {leading}

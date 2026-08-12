@@ -3110,3 +3110,50 @@ macOS stays `com.nuvo.app`. First green TestFlight upload pending GitHub secrets
 | **Q-07** | Where do timezone and working hours come from for a new account? | Rollover is LA-anchored and hours default to 480/990. Both are silent wrongness for anyone else — and capacity math depends on them | Reading how the rollover cron and `user_settings` actually resolve per user |
 | **Q-11** | Where does Monday's reader for `note_to_monday` live? | The Find has written this column since migration 33 and **nothing reads it** — the surface that did went with the Today rung. It's a letter from Friday-you to Monday-you that never arrives, and it's the precedent D-062 was written against. Either give it a reader or cut the field; leaving it is the one thing that shouldn't continue | Deciding which surface Monday actually opens on |
 | **Q-12** | Does an initiative get a completion stamp (`initiatives.shipped_at`)? | D-087 gave projects an honest ship date and folded them into the domain ledger. Initiatives have no stamp at all — `status === "complete"` and nothing else — so a finished bet neither keeps its domain warm nor files under the quarter it actually landed in; it files under the quarter it was *due*. The fallback is honest about being a fallback, which is why this is a question and not a bug | Whether a migration is worth it, or whether the bet's finish line is close enough at quarter grain |
+
+**D-099 · 2026-08-12 · The phone gets the Build altitudes' other two faces — and the acts a
+record has, including the one it could not perform.** *(A desktop→mobile parity audit,
+`docs/mobile-parity-audit-2026-08-12.md`.)*
+
+The audit found the mechanical passes essentially clean — `.tap` / `.tap-icon`, the safe-area
+classes, `.fab-clear` and the device-level 16px input floor were already doing their job. What
+it found instead were **whole faces** and **one missing act**.
+
+→ **Two of four faces were desktop-only.** The Build rungs each wear four faces (On Deck ·
+Groom · Table · Shipped); the phone wore two. So the phone could *place* a project on a week
+and never *say what done meant*, and the one surface in the app whose whole job is to feel
+good — Shipped — could only be read at a desk, which is the opposite of where you have the
+idle minute to look. Both are now `MobileGroom` / `MobileShipped`, over the **same** read
+models (`readOnDeck`, `allOpenInitiativeLanes`, `readShipped`) — a translation, not a port:
+the desktop's horizontal wall of columns becomes a vertical stack of cards, thinnest-first,
+each carrying only the fields that close its own open checks.
+
+→ **The real find: right-click had no touch equivalent at all, so Delete was desktop-only.**
+Not a decision — a pattern that never got translated. A project started on the phone could be
+renamed, shipped, parked and re-homed there, but never removed: **the phone could make a mess
+it could not clean up.** Now a long-press on a document row, and a visible **⋯** in the
+record's title row, open the same acts. The ⋯ matters as much as the hold: a hidden gesture
+must never be the only path to an act.
+
+→ **One vocabulary, not two menus.** The acts lived in a private function inside
+`RecordContextMenu.tsx`. A second menu would have meant a second copy — the drift `CLAUDE.md`
+legislates against for planning rules, arriving by the same route. They now live in
+`lib/recordActions.ts` and both shells build from it, so the two can't disagree about what you
+may do to a project, or about the wording, the order, or which act asks first.
+
+→ **One gesture, two meanings — deliberately.** On a **document** surface a hold means *what
+can I do to this*; on the **deck** a hold means *pick it up* (D-030's gesture, already taught).
+Every record reaches the same acts through its ⋯ either way. This strains "one pattern applied
+consistently" and is logged rather than left as an artifact.
+
+→ **Declined for now, with reasons:** multi-select + bulk delete on the phone (long-press is
+spent twice already; a third meaning is worse than the gap, and bulk editing is a
+filing-cabinet act), and Summit on the phone (a quarter is decided at a desk once every 13
+weeks). **Left open:** Evening shutdown on the phone — genuinely a phone-shaped ritual, needs
+an anchor pass — and *commands* in mobile search, which needs a curated subset rather than a
+port of the 15 desktop commands.
+
+*Status: standing. Verified at 375px with touch emulation via the new `?build` harness
+(`BuildFacesHarness`): the acts sheet, its confirm step, the delete, and the Groom fields all
+driven; 0 overflows, 0 sub-44px hit areas, 0 inputs under 16px. Desktop untouched — the
+extracted action builder diffs byte-identical against its original.*
