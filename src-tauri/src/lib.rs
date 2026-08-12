@@ -92,8 +92,10 @@ fn install_spotlight_panel(app: &tauri::AppHandle) {
 // `getCurrentWebviewWindow().hide()` no-ops against it (and desyncs
 // `panel.is_visible()`, breaking the next ⌥Space toggle). So capture / Esc /
 // backdrop dismissal all route here, to the same `panel.hide()` the
+#[cfg(desktop)]
 #[tauri::command]
 fn open_devtools(app: tauri::AppHandle) {
+    use tauri::Manager;
     if let Some(win) = app.get_webview_window("main") {
         win.open_devtools();
     }
@@ -110,7 +112,7 @@ fn hide_spotlight(app: tauri::AppHandle) {
 }
 
 // Other desktops use a plain window (no NSPanel) — hide it directly.
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(desktop, not(target_os = "macos")))]
 #[tauri::command]
 fn hide_spotlight(app: tauri::AppHandle) {
     use tauri::Manager;
@@ -137,7 +139,7 @@ fn surface_main(app: tauri::AppHandle) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(desktop, not(target_os = "macos")))]
 #[tauri::command]
 fn surface_main(app: tauri::AppHandle) {
     use tauri::Manager;
@@ -172,24 +174,27 @@ fn align_traffic_lights(app: tauri::AppHandle, x: f64) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-fn align_traffic_lights(_x: f64) {}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build());
+        .plugin(tauri_plugin_process::init());
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(target_os = "macos")]
-    {
-        builder = builder.plugin(tauri_nspanel::init());
-    }
+    let builder = builder.plugin(tauri_nspanel::init());
+
+    #[cfg(desktop)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        open_devtools,
+        hide_spotlight,
+        surface_main,
+        align_traffic_lights
+    ]);
 
     builder
-        .invoke_handler(tauri::generate_handler![open_devtools, hide_spotlight, surface_main, align_traffic_lights])
         .setup(|app| {
             // Reskin the spotlight window into a non-activating NSPanel.
             #[cfg(target_os = "macos")]
@@ -433,6 +438,7 @@ fn place_traffic_lights<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>, log: b
     });
 }
 
+#[cfg(target_os = "macos")]
 fn position_spotlight<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
     use tauri_nspanel::objc2_app_kit::{NSEvent, NSScreen, NSWindow};
     use tauri_nspanel::objc2_foundation::{MainThreadMarker, NSPoint};
