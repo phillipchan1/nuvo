@@ -24,6 +24,7 @@ import { deriveSlotTitle } from "../lib/slots";
 import { rulesEqual, type RecurrenceRule } from "../lib/recurrence";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import { supabase } from "../lib/supabase";
+import { toast } from "sonner";
 import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
 import { RecurrenceDeleteButton, RepeatControl, SlotDeleteButton, type SlotDeleteScope } from "./RecurrencePicker";
 import { Btn, RollBadge } from "./ui";
@@ -1810,6 +1811,7 @@ export function SlotPopover({
   recurrence,
   recurrenceMutations,
   onOpenTask,
+  focusTitle = false,
   onClose,
 }: {
   slot: Slot;
@@ -1817,6 +1819,9 @@ export function SlotPopover({
   /** Live trigger element (e.g. the clicked calendar block) — when given, the
    *  popover follows it on scroll/resize instead of freezing at `anchor`. */
   anchorEl?: HTMLElement | null;
+  /** Open with the name selected — set when a drop just made this block, so
+   *  naming it is part of that gesture and not a second trip. */
+  focusTitle?: boolean;
   childTasks: Task[];
   taskMutations: ReturnType<typeof useTaskMutations>;
   slotMutations: ReturnType<typeof useSlotMutations>;
@@ -1827,6 +1832,8 @@ export function SlotPopover({
 }) {
   const [title, setTitle] = useState(slot.title);
   const [newTitle, setNewTitle] = useState("");
+  const [naming, setNaming] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // Live reorder state: { id: dragged, index: target insertion slot }.
@@ -1870,6 +1877,43 @@ export function SlotPopover({
   };
 
   useEffect(() => setTitle(slot.title), [slot.id, slot.title]);
+
+  // A block that was just made opens on its name. Selected, not just focused —
+  // the derived name is a placeholder, so typing should replace it outright.
+  useEffect(() => {
+    if (!focusTitle) return;
+    const el = titleRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [focusTitle, slot.id]);
+
+  /**
+   * Ask Nuvo for the through-line of what's inside.
+   *
+   * The suggestion lands in the INPUT, not the row — nothing AI-written reaches
+   * the calendar until you accept it (P3). The block already has a name before
+   * this is ever tapped, so a failure here costs nothing.
+   */
+  const suggestName = async () => {
+    if (naming || childTasks.length === 0) return;
+    setNaming(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("agent", {
+        body: { nameSlot: { taskIds: childTasks.map((t) => t.id) } },
+      });
+      if (error) throw error;
+      const name = String(data?.name ?? "").trim();
+      if (!name) throw new Error("Nothing came back");
+      setTitle(name);
+      titleRef.current?.focus();
+      titleRef.current?.select();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't think of a name");
+    } finally {
+      setNaming(false);
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -2106,6 +2150,7 @@ export function SlotPopover({
               🗂 Time slot
             </div>
             <input
+              ref={titleRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onBlur={commitTitle}
@@ -2114,7 +2159,19 @@ export function SlotPopover({
               placeholder={derivedTitle}
             />
             {!slot.title.trim() && (
-              <div className="mono mt-0.5 text-meta text-muted/70">✦ auto-named — type to override</div>
+              <div className="mono mt-0.5 flex items-center gap-2 text-meta text-muted/70">
+                <span>✦ auto-named — type to override</span>
+                {childTasks.length > 0 && (
+                  <button
+                    onClick={suggestName}
+                    disabled={naming}
+                    className="fast rounded text-meta text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
+                    title="Ask Nuvo for the through-line of what's inside"
+                  >
+                    {naming ? "thinking…" : "suggest a name"}
+                  </button>
+                )}
+              </div>
             )}
           </div>
           <button

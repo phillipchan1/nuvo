@@ -32,6 +32,9 @@ import TimeZoneChip from "./TimeZoneChip";
 import { fixedCssPx, useUiScale } from "../hooks/useUiScale";
 import { useOptionalUndoStack } from "../hooks/useUndoStack";
 import { consumeCalendarClickHandled } from "../lib/calendarDismissGuard";
+import { toast } from "sonner";
+// One rule for "how big is this block", shared with the chat's `create_slot`.
+import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
 
@@ -178,6 +181,7 @@ export default function CalendarPane({
   settings,
   now,
   taskAccent,
+  taskDomain,
   slotTitle,
   mutations,
   eventMutations,
@@ -241,7 +245,17 @@ export default function CalendarPane({
   refreshingCalendars?: boolean;
   onOpenTask: (t: Task, anchor: DOMRect, anchorEl?: HTMLElement | null) => void;
   onOpenEvent: (e: ExternalEvent, anchor: DOMRect, anchorEl?: HTMLElement | null) => void;
-  onOpenSlot: (s: Slot, anchor: DOMRect, anchorEl?: HTMLElement | null) => void;
+  /** `focusTitle` opens the popover with the name selected — used when a drop
+   *  just MADE the block, so naming it is the same gesture, not a second one. */
+  onOpenSlot: (
+    s: Slot,
+    anchor: DOMRect,
+    anchorEl?: HTMLElement | null,
+    opts?: { focusTitle?: boolean },
+  ) => void;
+  /** Where a task's hours actually count (`taskDomainId`) — the affinity a
+   *  block picks up from its contents. Never `task.domain_id` (D-088). */
+  taskDomain: (t: Task) => string | null;
   onRangeChange: (startISO: string, endISO: string) => void;
   railRef: React.MutableRefObject<HTMLDivElement | null>;
   /** Rows carrying `data-task-week` are this week's project work being placed by
@@ -282,8 +296,25 @@ export default function CalendarPane({
   // onReceive reads this to prefer the visually-highlighted slot over time-range math,
   // which breaks when FC snaps the ghost adjacent to the slot to avoid overlap.
   const overSlotIdRef = useRef<string | null>(null);
+  // The multi-selection being dragged, captured at drag START rather than read
+  // off the DOM at drop time. The rail clears `selectedIds` when the gesture
+  // ends, which re-renders the rows without their `data-task-drag-group` — a
+  // race that made a four-row drag land as one task. What the user picked up is
+  // decided once, when they pick it up.
+  const dragGroupRef = useRef<string[] | null>(null);
+  // Where the pointer last was during a drag — `eventReceive` carries no mouse
+  // event, and a popover opened by a drop has to appear where the drop landed.
+  const dropPointRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const mutationsRef = useRef(mutations);
   mutationsRef.current = mutations;
+  const resolveDropTaskRef = useRef(resolveDropTask);
+  resolveDropTaskRef.current = resolveDropTask;
+
+  /** A dropped id → its task. The render set first, then the wider lookup for
+   *  rows that live outside it (project backlog offered by the week crown).
+   *  Reads only refs, so it's safe to call from a long-lived drag listener. */
+  const resolveDroppedTask = (id: string): Task | undefined =>
+    tasksRef.current.find((t) => t.id === id) ?? resolveDropTaskRef.current?.(id);
 
   // Month view has no other orientation cue (Week/Day are covered by the
   // "THIS WEEK" rail label) — without a title, paging ‹ › leaves no way to
@@ -590,16 +621,25 @@ export default function CalendarPane({
       eventData: (el) => {
         const taskId = el.getAttribute("data-task-drag");
         const groupAttr = el.getAttribute("data-task-drag-group");
-        const groupCount = groupAttr?.split(",").length ?? 1;
+        const groupIds = groupAttr?.split(",").filter(Boolean) ?? [];
+        // Remember the selection now, while the rows are still rendered with it.
+        dragGroupRef.current = groupIds.length > 1 ? groupIds : null;
+        const group = dragGroupRef.current;
         return {
           // For single-task drops, give the FC event the same id that fcEvents
           // will generate ("task:<id>"). That way FC keeps the event exactly where
           // the user dropped it and fcEvents reconciles it in-place — no snap-back.
-          ...(!groupAttr && taskId ? { id: `task:${taskId}` } : {}),
-          title:
-            groupCount > 1 ? `${groupCount} tasks` : (el.getAttribute("data-task-title") ?? "task"),
+          ...(!group && taskId ? { id: `task:${taskId}` } : {}),
+          title: group ? `${group.length} tasks` : (el.getAttribute("data-task-title") ?? "task"),
+          // The ghost has to be the size of the block you're about to get, or it
+          // lies about how much of the morning this claims. A group is one slot
+          // sized to its contents; a single row is its own length.
           duration: minutesToDuration(
-            Number(el.getAttribute("data-task-duration")) || DEFAULT_DURATION_MINUTES,
+            group
+              ? sizeSlotToContents(
+                  group.map((id) => resolveDroppedTask(id)?.duration_minutes ?? null),
+                )
+              : Number(el.getAttribute("data-task-duration")) || DEFAULT_DURATION_MINUTES,
           ),
           create: true,
         };
@@ -667,6 +707,7 @@ export default function CalendarPane({
         active = true;
         document.body.classList.add("cal-dragging");
       }
+      dropPointRef.current = { x: e.clientX, y: e.clientY };
       // Hit-test slots by geometry, not elementFromPoint: FullCalendar stacks the
       // .fc-highlight selection box and the drag mirror *above* the slot event, so
       // elementFromPoint+closest never sees the slot and the drop lands beside it.
@@ -735,6 +776,13 @@ export default function CalendarPane({
         }
         // onReceive fires after onUp in the same task. Clear overSlotIdRef after a
         // microtask so onReceive can read it; if no drop occurred it clears itself.
+        //
+        // dragGroupRef is deliberately NOT cleared here. FullCalendar does not
+        // promise to fire `eventReceive` in this task — it can land an animation
+        // frame (or longer) after the release — and a group nulled on pointerup
+        // is the whole bug: the drop then sees one id and places one task out of
+        // four. The next drag overwrites it in `eventData`, and `onReceive`
+        // consumes it, so there is nothing stale to leak.
         Promise.resolve().then(() => { overSlotIdRef.current = null; });
         reset();
       } else if (!moved) {
@@ -764,6 +812,7 @@ export default function CalendarPane({
       calTask = false;
       overRail = false;
       overSlotIdRef.current = null;
+      dragGroupRef.current = null;
       reset();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -845,7 +894,14 @@ export default function CalendarPane({
           start: t.start_time!,
           end: endOf({ start_time: t.start_time!, duration_minutes: t.duration_minutes }).toISOString(),
           editable: true,
-          classNames: ["evt-task", t.status === "done" ? "evt-done" : ""].filter(Boolean),
+          // evt-overdue carries the ember to CSS: the inline `fill` above is
+          // enough on Warm Paper, but a mono skin restyles the block wholesale
+          // (!important), so without a class the "this is late" signal is lost.
+          classNames: [
+            "evt-task",
+            overdue ? "evt-overdue" : "",
+            t.status === "done" ? "evt-done" : "",
+          ].filter(Boolean),
           ...blockColors(fill, 22),
           extendedProps: {
             kind: "task" as const,
@@ -1171,16 +1227,19 @@ export default function CalendarPane({
     const el = info.draggedEl;
     const start = info.event.start;
     const allDay = info.event.allDay;
-    // A multi-selection drags as a group (data-task-drag-group); a single row is
-    // just its own id. Resolve to the list of tasks being dropped.
-    const group = el.getAttribute("data-task-drag-group");
-    const ids = group ? group.split(",") : [el.getAttribute("data-task-drag") ?? ""];
-    // Fall back to the resolver for rows outside the render set — project
-    // backlog work dragged out of the week crown lives in none of the six task
-    // queries this pane is given.
-    const tasks = ids
-      .map((id) => findTask(id) ?? resolveDropTask?.(id))
-      .filter((t): t is Task => Boolean(t));
+    // A multi-selection drags as a group, captured at drag start (dragGroupRef);
+    // a single row is just its own id. The DOM attribute is only a fallback —
+    // by drop time the rail may already have re-rendered without it.
+    const group = dragGroupRef.current ?? el.getAttribute("data-task-drag-group")?.split(",") ?? null;
+    dragGroupRef.current = null;
+    const ids = group ?? [el.getAttribute("data-task-drag") ?? ""];
+    const tasks = ids.map(resolveDroppedTask).filter((t): t is Task => Boolean(t));
+    // A partial placement must never look like a whole one — say what didn't
+    // land rather than quietly dropping it.
+    if (tasks.length < ids.filter(Boolean).length) {
+      const missing = ids.filter(Boolean).length - tasks.length;
+      toast.error(`${missing} of these couldn't be placed — reopen the Schedule and try again`);
+    }
     if (!tasks.length || !start) {
       // Unknown item — revert as a safety fallback.
       info.revert();
@@ -1237,12 +1296,25 @@ export default function CalendarPane({
       }
       return;
     }
-    // Otherwise time-block them — a group stacks back-to-back from the drop time.
-    let cursor = new Date(start);
-    tasks.forEach((t) => {
-      mutations.block(t, cursor);
-      cursor = new Date(cursor.getTime() + (t.duration_minutes ?? DEFAULT_DURATION_MINUTES) * 60_000);
-    });
+    // Several things dropped on open time are ONE block that holds them all —
+    // a slot, sized to its contents and named from what's inside. Tiling them
+    // back-to-back gave four anonymous blocks for one decision; the block is
+    // the decision, and its contents are its detail. The popover opens on the
+    // name so it can be yours in the same gesture.
+    if (tasks.length > 1) {
+      const { x, y } = dropPointRef.current;
+      const point = new DOMRect(x, y, 0, 0);
+      void slotMutations
+        .createSlotWith(tasks, start, taskDomain)
+        .then((made) => made && onOpenSlot(made, point, null, { focusTitle: true }))
+        .catch((e) => {
+          console.warn("[nuvo] block-together failed:", e);
+          toast.error("Couldn't hold that block — the tasks are unchanged");
+        });
+      return;
+    }
+    // A single task is its own block.
+    tasks.forEach((t) => mutations.block(t, start));
   };
 
   const onDrop = (info: EventDropArg) => {
@@ -1672,6 +1744,7 @@ export default function CalendarPane({
       return (
         <div className="flex min-w-0 items-center gap-1 px-1.5 py-[2px]">
           <span
+            data-evt-bar=""
             className="h-[6px] w-[6px] shrink-0 rounded-full"
             style={{ backgroundColor: dotColor, opacity: kind === "m365" ? 0.55 : 1 }}
           />
@@ -1717,6 +1790,10 @@ export default function CalendarPane({
 
     const Bar = (
       <span
+        // data-evt-bar: the skin hook. This colour is inline (a domain/provider
+        // hex), which no stylesheet can override without a handle — see
+        // terminal.css, where a mono material repaints it from the syntax ramp.
+        data-evt-bar=""
         className="shrink-0 self-stretch rounded-l-[5px]"
         style={{
           width: isProject ? 4 : 3,

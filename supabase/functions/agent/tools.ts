@@ -1,5 +1,8 @@
 import { admin } from "../_shared/admin.ts";
 import { parseCapture } from "../_shared/nlp.ts";
+// One rule for "how big is this block", shared with the Schedule's multi-drop —
+// see docs/planning-kernel.md §3.
+import { sizeSlotToCount } from "../_shared/slotSizing.ts";
 import {
   accountPrimary,
   buildWritableCalendars,
@@ -508,14 +511,6 @@ function normalizeSlotTasks(raw: unknown): SlotTaskInput[] {
     }
   }
   return out;
-}
-
-/** How long a block should hold when the model didn't say. A slot exists to
- *  cover its contents, so an unstated length follows the work rather than
- *  defaulting to an hour that truncates it. */
-function sizeToContents(count: number): number {
-  const mins = Math.max(count, 1) * DEFAULT_DURATION;
-  return Math.ceil(mins / 30) * 30;
 }
 
 /** Put work inside a block: existing tasks move in, new ones are created there.
@@ -1375,7 +1370,7 @@ export async function executeTool(
 
       // Size the block to what's in it when the model didn't say — a stated
       // length always wins, but "9am, three things" is not a 30-minute block.
-      const duration = (args.duration_minutes as number | undefined) ?? sizeToContents(newTasks.length + taskIds.length);
+      const duration = (args.duration_minutes as number | undefined) ?? sizeSlotToCount(newTasks.length + taskIds.length);
 
       const doDate = dateInTz(startTime, tz);
       const { data: slot, error } = await admin

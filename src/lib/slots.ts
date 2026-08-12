@@ -4,7 +4,7 @@
 // its project, its children's shared domain, or just the hour of day.
 
 import type { Slot, Task } from "./types";
-import { domainById, projectById, type VerticalData } from "./vertical";
+import { domainById, projectById, taskDomainId, type VerticalData } from "./vertical";
 
 /** Morning / Midday / Afternoon / Evening from a start instant. */
 export function partOfDay(start: Date): string {
@@ -42,7 +42,11 @@ export function deriveSlotTitle(
   const slotDomain = domainById(vertical, slot.domain_id);
   if (slotDomain) return `${slotDomain.name} block`;
   if (open.length > 0) {
-    const ids = open.map((c) => c.domain_id ?? null);
+    // `taskDomainId`, never the row's own `domain_id` — that column is a
+    // denormalized copy of the parent's domain and goes stale the moment a
+    // project is re-homed (D-088). A slot full of one project's tasks would
+    // otherwise take its name from whichever domain the copy last remembered.
+    const ids = open.map((c) => taskDomainId(vertical, c));
     const first = ids[0];
     if (first && ids.every((d) => d === first)) {
       const dom = domainById(vertical, first);

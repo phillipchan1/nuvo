@@ -78,6 +78,7 @@ zero-import module beside it (e.g. `_shared/conferencing.ts`) and is cited inlin
 | Take a project off the week | `takeOffWeekPatch` | `MobilePlanWeek.takeOff`, `SundayRitual`, **Week's Plan row** | `delete_priority` |
 | It doesn't fit the week | `spanAnotherWeekPatch` / `pushToNextWeekPatch` | **`RemedyPanel`** — one shell shared by the Sunday Projects step and each Week's Plan row (D-039, extended mid-week by D-060) | — |
 | Where a placement lands | `weekSpanFor` | `sprintSpanFor` (deck drag, sprint picker) | `create_priority` |
+| How big is a block that holds work | `sizeSlotToContents` / `sizeSlotToCount` (`_shared/slotSizing.ts`) | the Schedule's **multi-drop** (`createSlotWith`, `useSlots.ts`) · `applySlots` | `create_slot` |
 | Does this meeting get a video link | `shouldAddMeet` (`_shared/conferencing.ts`) | `DraftComposer` Meet toggle · Settings → Calendars | `create_calendar_event` (`add_meet`) |
 | Who is "Matt", and does mail go out | `pickRecipient` / `inviteConsentPrompt` (`_shared/invites.ts`) | `GuestsInput` + the composer's confirm step · **`AgentInviteCard`** (the send itself) | `propose_invite` — stages an `InviteDraft`, **never sends** (D-069) |
 

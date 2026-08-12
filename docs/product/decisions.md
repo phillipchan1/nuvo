@@ -3018,6 +3018,57 @@ uses a flexible unit. Put the gutter on the child, never on the shared grid.
 *Status: standing — typechecked, `npm test` green (552), built; measured per card per skin
 in the running dev app.*
 ---
+
+**D-098 · 2026-08-12 · Several things dropped on one hour are one block, not a tiling.
+And a drop handler may not read the DOM at drop time.**
+
+Selecting three rail rows and dragging them onto the Schedule placed **one** of them. The
+selection was already there (`selectedIds`), it already rode the drag (`data-task-drag-group`),
+and `onReceive` already knew how to fan out — so this read like a UI gap and was a timing
+bug.
+
+→ **Why one landed.** `onReceive` read the group off `info.draggedEl` *at drop time*.
+FullCalendar does not promise to fire `eventReceive` in the same task as the release — it
+can land a frame or more later — and by then the rail has re-rendered without the attribute
+(the drag end clears the selection). Reproduced in the dev app with instrumentation:
+`eventData` saw all three ids at drag start; `onReceive` saw `{ref: null, attr: null}`. The
+first fix — stashing the group in a ref — was *also* wrong for the same reason, because the
+ref was cleared in the pointer tracker's `onUp` microtask. **The rule: what the user picked
+up is decided when they pick it up.** The group is captured in `eventData`, survives the
+release, and is consumed by the drop. A partial placement now also says so, instead of
+looking like a whole one.
+
+→ **What the drop should do, which is the real decision.** Fanning out was never right
+either: four tasks became four anonymous blocks tiled back-to-back — four answers to one
+decision. Nuvo already had the answer and had already named it. A **slot** (migration 8, the
+chat's `create_slot`, D-066) is a block of time that owns N tasks and mirrors to Google as one
+busy block. The Schedule — the one surface where you are looking at the hours — could not make
+one. It can now: a multi-selection dropped on open time is one slot, sized to its contents,
+carrying whatever affinity its contents agree on (one project, else one domain via
+`taskDomainId` — never the stale copy, D-088), and the whole gesture is **one** undo entry.
+Dropping onto an existing slot, onto the all-day row, or dropping a single task are all
+unchanged. There is no modifier to get the old tiling back; you split a block by dragging
+work out of it.
+
+→ **Naming, and the principle it strains.** The block is named the moment it exists, by
+`deriveSlotTitle` — project name, domain, or "Evening block" — so it works with an empty
+account, no network and no AI (P7). Its popover opens with the name selected, and **✦ suggest
+a name** (new `agent/nameSlot.ts`) puts Nuvo's read **in the input, not on the row**. That is
+the whole payment for **P3**: an AI-written name never reaches the calendar without a
+promote step. The rubric it writes to is the one `create_slot` already had, now a shared
+`SLOT_NAMING_RUBRIC` — one product, one naming voice.
+
+→ **Kernel:** "how big is a block" was living only in `agent/tools.ts`. It is now
+`_shared/slotSizing.ts` (`sizeSlotToContents` — sum the pieces, 30m floor, quarter-hour snap),
+imported by both ends with a row in the acts registry, so a tap and a chat message build the
+same block. Ledger: **D3** ("I have 40 minutes — what fits?") — claiming a window with
+several pieces of work is now one gesture; deliberately not re-scored to ✅ until it has been
+used on a real week. Secondary: **D2**.
+
+*Status: standing — typechecked, `npm test` green (780), built; driven in the running dev
+app on throwaway captures: three rows → one 90-minute block holding all three, popover open
+on the name, one ⌘Z restoring all three to the inbox and removing the block.*
+---
 ---
 ## 3 · Open questions (decide these deliberately)
 

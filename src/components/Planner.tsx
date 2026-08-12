@@ -15,7 +15,7 @@ import { useRealtime } from "../hooks/useRealtime";
 import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { taskDomainColor } from "../lib/vertical";
+import { taskDomainColor, taskDomainId } from "../lib/vertical";
 import { isReadOnlyCalendarId, isWritableAccount } from "../lib/calendarWrite";
 import {
   applySpotlightNav,
@@ -356,6 +356,12 @@ export default function Planner({
   }, [inbox, weekTasks, todayTasks, scheduled, anytime, slotChildTasks]);
 
   const taskAccent = useCallback((t: Task) => taskDomainColor(vertical, t), [vertical]);
+  const taskDomain = useCallback((t: Task) => taskDomainId(vertical, t), [vertical]);
+
+  // A block the Schedule just MADE opens on its name, so naming it is part of
+  // the same gesture rather than a second trip. Cleared when the popover closes,
+  // so re-opening that same block later doesn't grab the caret again.
+  const [focusSlotTitle, setFocusSlotTitle] = useState(false);
 
   const allTasksArray = useMemo(() => [...allKnownTasks.values()], [allKnownTasks]);
 
@@ -565,6 +571,7 @@ export default function Planner({
             settings={settings}
             now={now}
             taskAccent={taskAccent}
+            taskDomain={taskDomain}
             slotTitle={slotTitle}
             mutations={mutations}
             eventMutations={eventMutations}
@@ -575,7 +582,10 @@ export default function Planner({
             refreshingCalendars={refreshingCalendars}
             onOpenTask={(t, anchor, anchorEl) => openOverlay("task", t.id, anchor, anchorEl)}
             onOpenEvent={(e, anchor, anchorEl) => openOverlay("event", e.id, anchor, anchorEl)}
-            onOpenSlot={(s, anchor, anchorEl) => openOverlay("slot", s.id, anchor, anchorEl)}
+            onOpenSlot={(s, anchor, anchorEl, opts) => {
+              setFocusSlotTitle(Boolean(opts?.focusTitle));
+              openOverlay("slot", s.id, anchor, anchorEl);
+            }}
             onRangeChange={syncRange}
             railRef={railRef}
             onWeekWorkPlaced={commitTasksToSprint}
@@ -639,7 +649,11 @@ export default function Planner({
               recurrence={openSlot.recurrence_id ? recurrenceById.get(openSlot.recurrence_id) ?? null : null}
               recurrenceMutations={recurrenceMutations}
               onOpenTask={(t) => openOverlay("task", t.id, panelRect)}
-              onClose={closeOverlay}
+              focusTitle={focusSlotTitle}
+              onClose={() => {
+                setFocusSlotTitle(false);
+                closeOverlay();
+              }}
             />
             </Suspense>
           )}

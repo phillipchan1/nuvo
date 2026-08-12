@@ -12,6 +12,14 @@
 // verticalTools.ts; the map of what the chat can do at all in
 // docs/agent-conformance.md.
 
+/** How a block of time gets named — stated once, so the chat's `create_slot`
+ *  and the Schedule's "suggest a name" (see `slotNaming.ts`) can't drift into
+ *  two naming voices. */
+export const SLOT_NAMING_RUBRIC =
+  "2–4 words naming the through-line of the work, in the user's own vocabulary, " +
+  'sentence case ("Ship & fix", "Dayspring push"). Never "Work block", never the ' +
+  "items joined by commas, never the user's sentence echoed back.";
+
 export interface MarqueeDirective {
   spotlight?: { target: string; ref?: string; label?: string }[];
   caption?: string;
@@ -456,7 +464,7 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "create_slot",
       description:
-        "Hold ONE block of time that owns several tasks. Use this when the user names a single window and more than one piece of work for it (\"9am slot where I'll update the docs, deploy Dayspring and fix the subdomains\", \"block 2–4 for the Meridian work\") — NOT one scheduled task per item. YOU write the title: 2–4 words naming the through-line of the work, in the user's own vocabulary, sentence case (\"Ship & fix\", \"Dayspring push\"). Never \"Work block\", never the items joined by commas, never the user's sentence echoed back. One thing at a stated time is schedule_task instead.",
+        `Hold ONE block of time that owns several tasks. Use this when the user names a single window and more than one piece of work for it ("9am slot where I'll update the docs, deploy Dayspring and fix the subdomains", "block 2–4 for the Meridian work") — NOT one scheduled task per item. YOU write the title: ${SLOT_NAMING_RUBRIC} One thing at a stated time is schedule_task instead.`,
       parameters: {
         type: "object",
         properties: {

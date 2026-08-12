@@ -7,6 +7,7 @@ import { refineProject } from "./refine.ts";
 import { blueprintInitiative } from "./blueprint.ts";
 import { draftOutcome } from "./draftOutcome.ts";
 import { clusterInbox } from "./clusterInbox.ts";
+import { nameSlot } from "./nameSlot.ts";
 import { enrichInboxBatch } from "./enrichInbox.ts";
 import { enrichDomain } from "./enrichDomain.ts";
 import { verifyItem } from "./verify.ts";
@@ -119,6 +120,11 @@ Deno.serve(async (req) => {
     // client can place as focus blocks across the week's open time.
     if (body.clusterInbox) {
       return json(await clusterInbox(user.id, body.clusterInbox));
+    }
+    // The Schedule's "suggest a name": one block, named from what's inside it.
+    // Proposes only — the name lands in the popover's input, not on the row.
+    if (body.nameSlot) {
+      return json(await nameSlot(user.id, body.nameSlot));
     }
     // Passive grooming: guess a batch of inbox captures' homes (project/
     // initiative/domain), duration and energy in one call. Persists

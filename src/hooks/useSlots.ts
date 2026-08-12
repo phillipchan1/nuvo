@@ -2,6 +2,12 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { invokeQuiet, supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../lib/types";
+import { toDateISO } from "../lib/dates";
+import { useTaskMutations } from "./useTasks";
+import { useOptionalUndoStack } from "./useUndoStack";
+// One rule for "how big is this block", shared with the chat's `create_slot` —
+// see docs/planning-kernel.md §3.
+import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 
 const SLOT_COLS =
   "id, user_id, created_at, updated_at, title, do_date, start_time, duration_minutes, project_id, domain_id, color, google_event_id, recurrence_id, recurrence_date, recurrence_overridden";
@@ -64,6 +70,8 @@ export interface NewSlotInput {
 
 export function useSlotMutations() {
   const qc = useQueryClient();
+  const taskMutations = useTaskMutations();
+  const { recordUndo } = useOptionalUndoStack();
 
   /**
    * Create a standing slot.
@@ -147,6 +155,77 @@ export function useSlotMutations() {
     })();
   };
 
+  /**
+   * Several pieces of work + a time → **one block that holds them all.**
+   *
+   * The Schedule's twin of the chat's `create_slot` (D-066). Dropping four
+   * selected rows on the grid used to tile four anonymous back-to-back blocks
+   * across the morning — four answers to one question. It is one block now.
+   *
+   * Three things this deliberately does:
+   *  - **Sizes to the contents**, through the shared kernel rule, so the block
+   *    the browser makes and the block the chat makes are the same size.
+   *  - **Leaves `title` blank**, so it stays *derived* (`deriveSlotTitle`) and
+   *    wears the existing "auto-named — type to override" affordance. A block
+   *    is never nameless, with no network and no AI involved.
+   *  - **Takes the affinity the contents agree on** — one project, or failing
+   *    that one domain (via `taskDomainId`, never the stale `domain_id` copy —
+   *    D-088) — which is what makes the derived name good and keeps the hours
+   *    attributed to the right domain.
+   *
+   * The whole gesture is ONE undo entry: four undo steps for one drag is a bug.
+   */
+  const createSlotWith = async (
+    tasks: Task[],
+    start: Date,
+    /** Where a task's hours actually count — pass `taskDomainId(vertical, t)`. */
+    domainOf: (t: Task) => string | null,
+  ): Promise<Slot | null> => {
+    if (tasks.length === 0) return null;
+
+    const only = <T,>(values: (T | null)[]): T | null => {
+      const set = new Set(values);
+      const first = [...set][0];
+      return set.size === 1 && first != null ? first : null;
+    };
+    const projectId = only(tasks.map((t) => t.project_id ?? null));
+    const domainId = only(tasks.map((t) => domainOf(t)));
+
+    // Snapshot where each task was BEFORE anything moves — the same four
+    // fields every other place-act restores (D-063a).
+    const before = tasks.map((t) => ({
+      id: t.id,
+      status: t.status,
+      do_date: t.do_date,
+      start_time: t.start_time,
+      slot_id: t.slot_id,
+    }));
+
+    const slot = await createSlot({
+      title: "",
+      do_date: toDateISO(start),
+      start_time: start.toISOString(),
+      duration_minutes: sizeSlotToContents(tasks.map((t) => t.duration_minutes)),
+      project_id: projectId,
+      domain_id: domainId,
+    });
+
+    tasks.forEach((t) => taskMutations.assignToSlot(t, slot, { undo: false }));
+
+    const n = tasks.length;
+    recordUndo({
+      label: `Blocked ${n} task${n === 1 ? "" : "s"} together`,
+      shortLabel: "Blocked together",
+      tier: "toast",
+      undo: () => {
+        before.forEach(({ id, ...snap }) => taskMutations.patchTask(id, snap, { undo: false }));
+        removeSlot(slot);
+      },
+    });
+
+    return slot;
+  };
+
   const removeSlot = (slot: Slot) => {
     qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
       old?.filter((s) => s.id !== slot.id),
@@ -165,5 +244,5 @@ export function useSlotMutations() {
     invalidateWhenSafe(qc, "tasks", ["tasks"]); // orphaned children
   };
 
-  return { createSlot, updateSlot, removeSlot };
+  return { createSlot, createSlotWith, updateSlot, removeSlot };
 }
