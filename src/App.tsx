@@ -3,6 +3,7 @@ import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Toaster, toast } from "sonner";
 import { supabase } from "./lib/supabase";
+import { isMobileTauri } from "./lib/platform";
 import { configureSync, createSupabaseTransport, teardownSync } from "./lib/sync";
 import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
@@ -112,6 +113,8 @@ const IS_SPOTLIGHT = (() => {
   if (import.meta.env.DEV && new URLSearchParams(globalThis.location?.search).has("spotlight")) {
     return true;
   }
+  // iOS ships one full-screen window — never the desktop ⌥Space panel.
+  if (isMobileTauri()) return false;
   if (!("__TAURI_INTERNALS__" in globalThis)) return false;
   try {
     // Lazy require avoids touching the Tauri API outside the shell.

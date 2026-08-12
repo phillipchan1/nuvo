@@ -2,17 +2,18 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import { isTauri as isTauriShell, isMac } from "./lib/platform";
+import { isTauri as isTauriShell, isMac, isMobileTauri } from "./lib/platform";
 // Side effect: captures beforeinstallprompt before React mounts (Settings →
 // About surfaces it as an "Install Nuvo" row).
 import "./lib/installPrompt";
 
 const isTauri = isTauriShell();
 
-// Reserve left inset for macOS traffic lights when running in Tauri.
+// Reserve left inset for macOS traffic lights when running in Tauri desktop.
 if (isTauri) {
   document.documentElement.classList.add("tauri");
-  if (isMac()) document.documentElement.classList.add("tauri-macos");
+  if (isMobileTauri()) document.documentElement.classList.add("tauri-ios");
+  else if (isMac()) document.documentElement.classList.add("tauri-macos");
 }
 
 // Register the PWA service worker — web/installed only. Never inside the Tauri

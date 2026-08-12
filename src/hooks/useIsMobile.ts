@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isMobileTauri } from "../lib/platform";
 
 // The breakpoint below which the app switches from the desktop spine/rail/calendar
 // layout to the single-column mobile shell. 768px keeps tablets in portrait on
@@ -15,6 +16,8 @@ const QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px), ((max-height: 500px) and
 
 function read(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;
+  // Native iOS Tauri always runs MobileShell — viewport alone can lie on iPad.
+  if (isMobileTauri()) return true;
   return window.matchMedia(QUERY).matches;
 }
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Icon } from "./Icon";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 import { signInWithGoogle } from "../lib/googleAuth";
+import { isMobileTauri } from "../lib/platform";
 
 /** True in an installed iOS/Android PWA. In iOS standalone mode a cross-origin
  *  OAuth redirect can strand the session in Safari (the standalone app and the
@@ -16,9 +17,9 @@ function isStandalone(): boolean {
 export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const nativePhone = isMobileTauri();
   // The email-code fallback: never leaves this window, so the session always
-  // lands in the standalone app. Offered up-front when installed; reachable
-  // from the browser too (it's a link, not a mode).
+  // lands in the standalone app. Offered up-front when installed native or PWA.
   const [emailMode, setEmailMode] = useState(false);
   const [email, setEmail] = useState("");
   const [codeSent, setCodeSent] = useState(false);
@@ -58,8 +59,20 @@ export default function Login() {
   };
 
   return (
-    <div className="atmosphere flex h-full items-center justify-center px-4">
-      <div className="moment elev-3 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-7">
+    <div
+      className={
+        nativePhone
+          ? "atmosphere flex min-h-dvh flex-col justify-center px-5 pt-safe pb-safe"
+          : "atmosphere flex h-full items-center justify-center px-4"
+      }
+    >
+      <div
+        className={
+          nativePhone
+            ? "w-full max-w-md mx-auto"
+            : "moment elev-3 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-7"
+        }
+      >
         <div className="mb-5 flex items-center gap-2.5">
           <TwilightMark />
           <span className="wordmark wordmark-grad text-display leading-none">Nuvo</span>
@@ -83,7 +96,7 @@ export default function Login() {
               <GoogleMark />
               {busy ? "Redirecting…" : "Continue with Google"}
             </button>
-            {isStandalone() && (
+            {isStandalone() || nativePhone ? (
               <button
                 type="button"
                 disabled={!supabaseConfigured}
@@ -95,7 +108,7 @@ export default function Login() {
               >
                 Sign in with an email code instead
               </button>
-            )}
+            ) : null}
           </>
         ) : !codeSent ? (
           <>

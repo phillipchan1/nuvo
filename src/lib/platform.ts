@@ -10,12 +10,17 @@ export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/** True inside the Tauri app on a touch device. Nuvo only ships a macOS desktop
- *  Tauri app today (iOS is a PWA, not a Tauri build), but iPadOS masquerades as
- *  "Macintosh" in the UA, so multi-touch is the tell if that ever changes. */
+/** True inside the Tauri iOS shell (TestFlight / native iPhone app). */
+export function isTauriIOS(): boolean {
+  if (!isTauri()) return false;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+/** True inside the Tauri app on a touch device. iPadOS can masquerade as
+ *  "Macintosh" in the UA, so multi-touch is the tell on iPad. */
 export function isMobileTauri(): boolean {
   if (!isTauri()) return false;
-  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1;
+  return isTauriIOS() || /Android/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1;
 }
 
 /** Tauri on an actual desktop (macOS) — the only place the overlay title bar,

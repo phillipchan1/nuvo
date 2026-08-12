@@ -355,6 +355,11 @@ html.tauri:not(.spotlight-window) #root {
   inset: 0;
   overflow: hidden;
 }
+html.tauri-ios:not(.spotlight-window),
+html.tauri-ios:not(.spotlight-window) body,
+html.tauri-ios:not(.spotlight-window) #root {
+  min-height: 100dvh;
+}
 
 /* The canvas behind the safe-area insets (e.g. the iOS PWA home-indicator strip
    under the bottom bar). Painted with --surface so those insets match the top

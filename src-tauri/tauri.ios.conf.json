@@ -1,3 +1,15 @@
 {
-  "identifier": "day.nuvo.app"
+  "identifier": "day.nuvo.app",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Nuvo",
+        "width": 390,
+        "height": 844,
+        "fullscreen": true,
+        "resizable": false
+      }
+    ]
+  }
 }
