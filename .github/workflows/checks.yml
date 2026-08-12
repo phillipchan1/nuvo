@@ -1,8 +1,9 @@
 # The cheap gate: typecheck, the conformance suite, and a parse of the edge
 # functions (which `tsc` can't see — they're Deno, with remote imports).
 #
-# Deliberately small (~1 min). The desktop release (release.yml) runs in parallel
-# on every push to master — see docs/desktop-releases.md.
+# Deliberately small (~1 min). The desktop release (release.yml) and iOS TestFlight
+# upload (ios-release.yml) run in parallel on every push to master — see
+# docs/desktop-releases.md and docs/ios-releases.md.
 name: checks
 
 on:

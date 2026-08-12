@@ -45,9 +45,13 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
+    "category": "Productivity",
     "createUpdaterArtifacts": true,
     "macOS": {
       "signingIdentity": "-"
+    },
+    "iOS": {
+      "minimumSystemVersion": "14.0"
     },
     "icon": [
       "icons/32x32.png",

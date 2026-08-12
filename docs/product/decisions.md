@@ -72,7 +72,7 @@ supported. *Status: standing.*
 
 **D-012 · One SPA, two shells, no router.** Auth-gated single `index.html`; `ResponsiveShell`
 picks `MobileShell` (<768px) or the desktop shell. → One `dist/` serves the Tauri app and
-the iOS PWA. *Status: standing — Principle 15.*
+the iOS PWA. *Status: standing — Principle 15. Extended by D-099 (native iOS shell).*
 
 **D-013 · Pointer events for all drag.** The Tauri webview swallows HTML5 drag-and-drop.
 *Status: standing — non-negotiable.*
@@ -3068,6 +3068,33 @@ used on a real week. Secondary: **D2**.
 *Status: standing — typechecked, `npm test` green (780), built; driven in the running dev
 app on throwaway captures: three rows → one 90-minute block holding all three, popover open
 on the name, one ⌘Z restoring all three to the inbox and removing the block.*
+
+---
+
+**D-099 · 2026-08-12 · iPhone ships as a Tauri shell on TestFlight, not PWA-only for
+personal dogfooding.**
+
+The PWA covers install-without-App-Review and instant SW updates, but cannot do lock-screen
+widgets, App Intents, or Siri phrases — Apple reserves those for native extensions. Personal
+iPhone use wants a home-screen app that updates on every merge without thinking about deploy.
+
+→ **One repo, three delivery channels, zero fork:** merge to `master` runs Vercel (PWA),
+`release.yml` (macOS DMG + updater), and `ios-release.yml` (signed IPA → TestFlight) in
+parallel. Same `dist/`, same `MobileShell`; Tauri iOS wraps the WKWebView. Documented in
+[`docs/ios-releases.md`](../ios-releases.md).
+
+→ **Phased native work:** phase 1 = TestFlight shell + CI; phase 2 = deep links
+(`nuvo://capture`, `nuvo://chat`); phase 3 = WidgetKit + App Intents for lock-screen glance,
+background capture via existing `/capture` edge fn (connection bearer token in Keychain), and
+Siri. Does not reopen N-08 (native watchOS) — wrist capture stays Shortcuts → agent; iPhone
+lock screen is a different surface.
+
+→ **Principle strained:** **P7** — widget snapshots go stale; show age honestly. **P15**
+holds — one SPA, shells are layout/runtime wrappers.
+
+*Status: spec — CI scaffolded; iOS bundle `day.nuvo.app` (App Store **Nuvo Day**);
+macOS stays `com.nuvo.app`. First green TestFlight upload pending GitHub secrets.*
+
 ---
 ---
 ## 3 · Open questions (decide these deliberately)

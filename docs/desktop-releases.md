@@ -4,6 +4,9 @@ How the native macOS app is built, signed, published, and auto-updated. The app
 is a Tauri v2 build of the same `dist/` the web/PWA ships; CI produces a
 **notarized universal** DMG and the app updates itself in the background.
 
+For the **iPhone TestFlight** pipeline (same repo, same `dist/`), see
+[`ios-releases.md`](./ios-releases.md).
+
 ## The three repos
 
 1. **`nuvo`** (this repo) — source + the release workflow (`.github/workflows/release.yml`).

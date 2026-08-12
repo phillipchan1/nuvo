@@ -1,0 +1,124 @@
+name: iOS TestFlight
+
+# Builds a signed iOS IPA and uploads to TestFlight on every push to master.
+# One-time Apple + GitHub secrets setup: docs/ios-releases.md
+#
+# Runs in parallel with release.yml (macOS) and Vercel (PWA). Same version
+# stamp scheme: <major>.<minor>.<run_number> from package.json + run counter.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CI: true
+
+jobs:
+  testflight:
+    concurrency:
+      group: ios-testflight
+      cancel-in-progress: true
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Compute version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            MAJOR_MINOR=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+            VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+          fi
+          node -e "for (const p of ['src-tauri/tauri.conf.json','package.json']) { const fs=require('fs'); const c=JSON.parse(fs.readFileSync(p)); c.version='$VERSION'; fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n'); }"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "Building iOS version $VERSION (build ${{ github.run_number }})"
+
+      - name: Configure App Store Connect API key
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPSTORE_KEY_ID:-}" ] || [ -z "${APPSTORE_ISSUER_ID:-}" ] || [ -z "${APPSTORE_PRIVATE_KEY:-}" ]; then
+            echo "::error::Missing App Store Connect API secrets. See docs/ios-releases.md § One-time setup."
+            exit 1
+          fi
+          KEY_DIR="${HOME}/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          KEY_PATH="${KEY_DIR}/AuthKey_${APPSTORE_KEY_ID}.p8"
+          echo "$APPSTORE_PRIVATE_KEY" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "APPLE_API_KEY=${APPSTORE_KEY_ID}" >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER=${APPSTORE_ISSUER_ID}" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=${KEY_PATH}" >> "$GITHUB_ENV"
+
+      - name: Initialize iOS project
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_DEVELOPMENT_TEAM:-}" ]; then
+            echo "::error::Missing APPLE_TEAM_ID secret. See docs/ios-releases.md."
+            exit 1
+          fi
+          npm run tauri ios init -- --ci
+          bash scripts/ios-postinit.sh
+
+      - name: Build signed IPA
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          # Manual signing fallback — Tauri reads these when automatic signing
+          # cannot resolve a profile. See v2.tauri.app/distribute/sign/ios/
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
+        run: |
+          set -euo pipefail
+          npm run tauri ios build -- --export-method app-store-connect --ci --build-number "$BUILD_NUMBER"
+
+      - name: Upload to TestFlight
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          IPA=$(find src-tauri/gen/apple/build -name '*.ipa' -print | head -1)
+          if [ -z "$IPA" ]; then
+            echo "::error::No IPA found under src-tauri/gen/apple/build"
+            find src-tauri/gen/apple -name '*.ipa' -o -name '*.xcarchive' 2>/dev/null || true
+            exit 1
+          fi
+          echo "Uploading $IPA (v${APP_VERSION}, build ${BUILD_NUMBER})"
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA" \
+            --apiKey "$APPSTORE_KEY_ID" \
+            --apiIssuer "$APPSTORE_ISSUER_ID"
