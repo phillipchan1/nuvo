@@ -41,8 +41,9 @@ cp -f "${ICON_SRC}"/*.png "${ICON_DST}/"
 echo "ios-postinit: copied Nuvo icons into ${ICON_DST}"
 
 # App Store Connect rejects any iOS app icon carrying an alpha channel (90717).
-# `npm run tauri:icon` strips it (scripts/strip-ios-icon-alpha.sh), but guard
-# here too so a regenerated-and-recommitted icon can't silently reintroduce it.
+# `npm run tauri:icon` renders these alpha-free (scripts/gen-ios-icons.sh),
+# but guard here too so a regenerated-and-recommitted icon can't silently
+# reintroduce it.
 python3 - "$ICON_DST" <<'PY'
 import glob
 import struct

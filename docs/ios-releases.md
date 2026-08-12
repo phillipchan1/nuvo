@@ -207,7 +207,14 @@ for App Group plumbing once phase 3 starts.
 
 ## App icons
 
-Source of truth: `src-tauri/app-icon.svg` (Warm Paper twilight **N**).
+Two SVG sources, both hand-drawn (no font dependency):
+
+- `src-tauri/app-icon.svg` — the desktop/.icns variant. macOS doesn't mask
+  app icons for you, so the squircle + transparent-corner margin is baked in.
+- `src-tauri/app-icon-ios.svg` — full-bleed, no corner radius, no
+  transparency. iOS (native app icon *and* Safari's "Add to Home Screen"
+  webclip) always applies its own mask on top of whatever you give it; this
+  is what Apple's HIG asks you to provide.
 
 Regenerate all platform icons (including iOS):
 
@@ -215,23 +222,41 @@ Regenerate all platform icons (including iOS):
 npm run tauri:icon
 ```
 
+This runs `tauri icon` against `app-icon.svg` for the desktop/Windows/Android
+outputs, then `scripts/gen-ios-icons.sh` renders `app-icon-ios.svg` directly
+to every `icons/ios/*.png` size (overwriting whatever `tauri icon` put there),
+then `scripts/sync-pwa-icons.sh` copies the results into `public/` — including
+`apple-touch-icon.png`, sourced from `icons/ios/AppIcon-60x60@3x.png`, so the
+PWA home-screen icon gets the same fix automatically.
+
+`gen-ios-icons.sh` needs `cairosvg` + `Pillow` (`pip3 install cairosvg
+pillow`; cairosvg needs the system Cairo library — `brew install cairo` on
+macOS).
+
 CI runs `tauri ios init` fresh each build, which emits Tauri's **default**
 placeholder catalog. `scripts/ios-postinit.sh` copies `src-tauri/icons/ios/*.png`
 into `gen/apple/Assets.xcassets/AppIcon.appiconset/` before the Xcode build, then
 verifies none of the copied PNGs carry an alpha channel (see below) before
 letting the build continue.
 
-After changing `app-icon.svg`, run `npm run tauri:icon` and commit the updated
-`src-tauri/icons/` tree and `public/` PWA icons (the script syncs both).
+After changing either SVG, run `npm run tauri:icon` and commit the updated
+`src-tauri/icons/` tree and `public/` PWA icons.
 
 **Alpha channel.** `tauri icon --ios-color` fills transparent pixels but still
-writes RGBA PNGs (alpha ~254–255 — opaque in practice, but the channel is still
-present), and App Store Connect rejects **any** iOS app icon that carries an
-alpha channel, not just the 1024pt one (error 90717). `npm run tauri:icon`
-chains `scripts/strip-ios-icon-alpha.sh` after `tauri icon` to flatten every
-`icons/ios/*.png` onto the Warm Paper ground (`#fdf6ec`) and drop the channel.
-Always regenerate through `npm run tauri:icon` — never run `tauri icon` alone
-and commit the result.
+writes RGBA PNGs (alpha ~254–255 — opaque in practice, but the channel is
+still present), and App Store Connect rejects **any** iOS app icon that
+carries an alpha channel, not just the 1024pt one (error 90717).
+`gen-ios-icons.sh` renders straight to RGB, so there's no channel to strip.
+
+**Corner radius / "white border" around the icon.** Filling `app-icon.svg`'s
+transparent corners in for iOS (which is what an earlier version of this
+pipeline did, via `--ios-color`) doesn't remove the problem, it relocates it:
+iOS applies its own squircle mask on top, and its curve doesn't line up with
+our hand-drawn `rx="226"` corners, so the filled-in corners peek out from
+behind iOS's mask as a visible ring. `app-icon-ios.svg` has no corner radius
+at all — a plain full-bleed square — so there's no seam regardless of which
+mask curve iOS uses. Never point `gen-ios-icons.sh` (or any future iOS icon
+step) at `app-icon.svg` directly.
 
 ---
 
@@ -244,7 +269,8 @@ and commit the result.
 | Upload rejected (SDK too old) | Bump `runs-on:` to `macos-26` in `ios-release.yml` |
 | Build not in TestFlight | App Store Connect → Activity; check email for compliance questions |
 | Wrong icon in TestFlight (Tauri circles) | Run `npm run tauri:icon`; ensure `ios-postinit.sh` copies `icons/ios/` |
-| Upload fails: "Invalid large app icon...alpha channel" (90717) | An `icons/ios/*.png` was committed without going through `npm run tauri:icon` (which strips alpha). Rerun it and recommit; `ios-postinit.sh` now fails the build before upload if this regresses. |
+| Upload fails: "Invalid large app icon...alpha channel" (90717) | An `icons/ios/*.png` was committed without going through `npm run tauri:icon` (which renders alpha-free via `gen-ios-icons.sh`). Rerun it and recommit; `ios-postinit.sh` now fails the build before upload if this regresses. |
+| Visible white/cream ring around the installed icon | `icons/ios/*.png` was generated from `app-icon.svg` (has its own rounded corners) instead of `app-icon-ios.svg` (full-bleed). Rerun `npm run tauri:icon` and recommit. |
 | Encryption export questionnaire | `ITSAppUsesNonExemptEncryption=false` set by `ios-postinit.sh` (HTTPS only) |
 
 ---
