@@ -29,6 +29,12 @@ jobs:
           # also declare `node >= 22`, so 20 was already the wrong floor.
           node-version: 22
           cache: npm
+      # npm 11 is what WRITES the lockfile on the dev machine, so it has to be
+      # what reads it here. Node 22 still ships npm 10, and npm 10 reads the
+      # bundleDependencies of @tailwindcss/oxide-wasm32-wasi as unresolved
+      # (@emnapi/core, @emnapi/runtime) and refuses to install. Bumping Node
+      # alone did not fix it — the version that matters is npm's, not Node's.
+      - run: npm install -g npm@11
       - run: npm ci
       - name: Typecheck (SPA)
         run: npm run typecheck
