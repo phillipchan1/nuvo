@@ -33,6 +33,7 @@ async function syncAccount(account: IcsAccount): Promise<void> {
     windowStart: new Date(Date.now() - WINDOW_PAST_DAYS * 86400_000),
     windowEnd: new Date(Date.now() + WINDOW_FUTURE_DAYS * 86400_000),
     runStamp,
+    ownerEmail: account.email,
   });
 
   // Write only what actually changed and delete only what the feed stopped

@@ -7,6 +7,7 @@ import { defineConfig } from "vitest/config";
 // behaviour. See tests/agent/ for the fakes those aliases point at.
 export const ALIASES = [
   { find: "npm:chrono-node@2.7.7", replacement: "chrono-node" },
+  { find: "npm:ical.js@2", replacement: "ical.js" },
   {
     find: "npm:@supabase/supabase-js@2",
     replacement: new URL("./tests/agent/stubSupabaseJs.ts", import.meta.url).pathname,

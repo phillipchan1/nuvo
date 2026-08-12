@@ -327,7 +327,36 @@ export default function MobileEventSheet({
             </Section>
           )}
 
-          {editable && (
+          {(raw?.organizer || (raw?.attendees?.length ?? 0) > 0) && (
+            <Section label="Guests">
+              <div className="space-y-1.5">
+                {raw?.organizer && (
+                  <div className="flex items-center gap-2 text-body text-ink">
+                    <span className="mono w-3 shrink-0 text-center text-label text-muted">·</span>
+                    <span className="min-w-0 truncate">
+                      {raw.organizer.displayName ?? raw.organizer.email}
+                      <span className="ml-1 text-meta text-muted">(organizer)</span>
+                    </span>
+                  </div>
+                )}
+                {raw?.attendees
+                  ?.filter((a) => !a.organizer)
+                  .map((a) => (
+                    <div key={a.email} className="flex items-center gap-2 text-body text-ink">
+                      <span className={`mono w-3 shrink-0 text-center text-label font-bold ${attendeeStatusColor(a.responseStatus)}`}>
+                        {attendeeStatusGlyph(a.responseStatus)}
+                      </span>
+                      <span className="min-w-0 truncate">
+                        {a.displayName ?? a.email}
+                        {a.optional && <span className="ml-1 text-meta text-muted">(optional)</span>}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </Section>
+          )}
+
+          {editable ? (
             <Section label="Notes">
               <textarea
                 value={notes}
@@ -338,6 +367,14 @@ export default function MobileEventSheet({
                 className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-body outline-none placeholder:text-muted/60 focus:border-accent"
               />
             </Section>
+          ) : (
+            raw?.description && (
+              <Section label="Notes">
+                <div className="whitespace-pre-wrap text-body leading-relaxed text-text">
+                  {plainTextFromHtml(raw.description)}
+                </div>
+              </Section>
+            )
           )}
 
           <div className={`space-y-2 ${showRsvp || editable ? "mt-4" : ""}`}>
@@ -461,6 +498,20 @@ export default function MobileEventSheet({
       </div>
     </Sheet>
   );
+}
+
+function attendeeStatusGlyph(s: AttendeeStatus): string {
+  if (s === "accepted") return "✓";
+  if (s === "declined") return "✗";
+  if (s === "tentative") return "?";
+  return "·";
+}
+
+function attendeeStatusColor(s: AttendeeStatus): string {
+  if (s === "accepted") return "text-green-600 dark:text-green-400";
+  if (s === "declined") return "text-signal";
+  if (s === "tentative") return "text-yellow-600 dark:text-yellow-400";
+  return "text-muted";
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {

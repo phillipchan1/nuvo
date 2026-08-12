@@ -67,9 +67,10 @@ async function syncAccount(account: IcloudAccount): Promise<void> {
         windowEnd,
         runStamp,
         calendarId: cal.url,
+        ownerEmail: account.email,
       });
       for (const row of parsed) {
-        row.raw = { caldav_href: ev.href, caldav_etag: ev.etag };
+        row.raw = { ...row.raw, caldav_href: ev.href, caldav_etag: ev.etag };
         rows.push(row);
       }
     }

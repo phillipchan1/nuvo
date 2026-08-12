@@ -34,6 +34,94 @@ export interface ExternalEventRow {
   last_synced_at: string;
 }
 
+// ── Attendees / organizer / description ───────────────────────────────────
+// RFC 5545 has no equivalent of Google's `raw` blob, so this hand-builds one
+// in the *same* shape the client already reads off a Google event
+// (attendees[].email/displayName/responseStatus, organizer.email/displayName,
+// description) — `normalizeRawEvent` (src/lib/types.ts) passes anything
+// without Graph's `bodyPreview` key straight through, so writing this shape
+// here means the SlideOver/MobileEventSheet UI needs no changes to show it.
+
+function stripMailto(uri: string | null | undefined): string {
+  return (uri ?? "").replace(/^mailto:/i, "").trim();
+}
+
+function mapPartstat(v: unknown): "needsAction" | "accepted" | "declined" | "tentative" {
+  switch (String(v ?? "").toUpperCase()) {
+    case "ACCEPTED":
+      return "accepted";
+    case "DECLINED":
+      return "declined";
+    case "TENTATIVE":
+      return "tentative";
+    default:
+      return "needsAction";
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// deno-lint-ignore no-explicit-any
+function readAttendees(event: any, ownerEmail: string | null | undefined, organizerEmail: string | null) {
+  const owner = ownerEmail?.toLowerCase();
+  const organizer = organizerEmail?.toLowerCase();
+  // deno-lint-ignore no-explicit-any
+  const attendees = (event.attendees ?? []).map((prop: any) => {
+    const email = stripMailto(prop.getFirstValue());
+    const role = String(prop.getParameter("role") ?? "").toUpperCase();
+    return {
+      email,
+      displayName: prop.getParameter("cn") || undefined,
+      responseStatus: mapPartstat(prop.getParameter("partstat")),
+      self: owner ? email.toLowerCase() === owner : undefined,
+      organizer: organizer ? email.toLowerCase() === organizer : undefined,
+      optional: role === "OPT-PARTICIPANT",
+    };
+  }).filter((a: { email: string }) => a.email);
+  return attendees.length ? attendees : undefined;
+}
+
+// deno-lint-ignore no-explicit-any
+function readOrganizer(event: any, ownerEmail: string | null | undefined) {
+  // deno-lint-ignore no-explicit-any
+  const prop = event.component.getFirstProperty("organizer") as any;
+  const email = stripMailto(prop?.getFirstValue());
+  if (!email) return { organizer: undefined, organizerEmail: null as string | null };
+  const owner = ownerEmail?.toLowerCase();
+  return {
+    organizer: {
+      email,
+      displayName: prop.getParameter("cn") || undefined,
+      self: owner ? email.toLowerCase() === owner : undefined,
+    },
+    organizerEmail: email,
+  };
+}
+
+// deno-lint-ignore no-explicit-any
+function readDescription(event: any): string | undefined {
+  const text = event.description as string | undefined;
+  if (!text) return undefined;
+  // ical.js already unescapes the TEXT value (\n → real newline); render it
+  // through the same safe whitelist path as Google/Graph descriptions —
+  // escape, then turn newlines into <br> so a bare Teams/Zoom URL still gets
+  // auto-linkified by the client's description renderer.
+  return escapeHtml(text).replace(/\r?\n/g, "<br>");
+}
+
+/** Attendees + organizer + description for one occurrence, in the shape
+ *  `normalizeRawEvent` and every UI reader already expect. */
+// deno-lint-ignore no-explicit-any
+function readEventRaw(event: any, ownerEmail: string | null | undefined): Record<string, unknown> | null {
+  const { organizer, organizerEmail } = readOrganizer(event, ownerEmail);
+  const attendees = readAttendees(event, ownerEmail, organizerEmail);
+  const description = readDescription(event);
+  if (!organizer && !attendees && !description) return null;
+  return { organizer, attendees, description };
+}
+
 // deno-lint-ignore no-explicit-any
 function busyFromVevent(ve: any): boolean {
   // Exchange marks free/busy with X-MICROSOFT-CDO-BUSYSTATUS; fall back to the
@@ -103,9 +191,12 @@ export function parseIcs(
     runStamp: string;
     /** Calendar collection id to stamp on every row (CalDAV has many); "primary" for ICS. */
     calendarId?: string;
+    /** The connected account's own address — resolves "is this me" on an
+     *  ATTENDEE/ORGANIZER line the same way Google's `self` flag does. */
+    ownerEmail?: string | null;
   },
 ): { calName: string | null; rows: ExternalEventRow[] } {
-  const { userId, accountId, windowStart, windowEnd, runStamp, calendarId = "primary" } = opts;
+  const { userId, accountId, windowStart, windowEnd, runStamp, calendarId = "primary", ownerEmail } = opts;
   const slimmed = slimFeed(icsText, windowStart, windowEnd);
   const comp = new ICAL.Component(ICAL.parse(slimmed));
 
@@ -132,6 +223,7 @@ export function parseIcs(
     // deno-lint-ignore no-explicit-any
     endTime: any,
     suffix: string | null,
+    raw: Record<string, unknown> | null,
   ) => {
     // Organizer-cancelled meetings linger in the feed titled "Canceled: …"
     // (their STATUS isn't CANCELLED). Filter here so per-occurrence overrides
@@ -150,7 +242,7 @@ export function parseIcs(
       all_day: Boolean(startTime.isDate),
       location: location || null,
       busy,
-      raw: null,
+      raw,
       last_synced_at: runStamp,
     });
   };
@@ -213,13 +305,14 @@ export function parseIcs(
           det.startDate,
           det.endDate,
           next.toICALString(),
+          readEventRaw(det.item, ownerEmail),
         );
       }
     } else {
       const s = event.startDate.toJSDate().getTime();
       const e = (event.endDate ? event.endDate.toJSDate() : event.startDate.toJSDate()).getTime();
       if (e < startMs || s > endMs) continue; // outside window
-      add(uid, title, location, busy, event.startDate, event.endDate, null);
+      add(uid, title, location, busy, event.startDate, event.endDate, null, readEventRaw(event, ownerEmail));
     }
   }
 
