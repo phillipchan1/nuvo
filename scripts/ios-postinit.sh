@@ -40,4 +40,30 @@ fi
 cp -f "${ICON_SRC}"/*.png "${ICON_DST}/"
 echo "ios-postinit: copied Nuvo icons into ${ICON_DST}"
 
+# App Store Connect rejects any iOS app icon carrying an alpha channel (90717).
+# `npm run tauri:icon` strips it (scripts/strip-ios-icon-alpha.sh), but guard
+# here too so a regenerated-and-recommitted icon can't silently reintroduce it.
+python3 - "$ICON_DST" <<'PY'
+import glob
+import struct
+import sys
+
+dst = sys.argv[1]
+# PNG color type lives at byte 25 of the IHDR chunk; 4 = grayscale+alpha, 6 = RGBA.
+bad = []
+for path in sorted(glob.glob(f"{dst}/*.png")):
+    with open(path, "rb") as f:
+        header = f.read(26)
+    color_type = header[25]
+    if color_type in (4, 6):
+        bad.append(path)
+
+if bad:
+    print("ios-postinit: these icons carry an alpha channel (App Store will reject them):")
+    for path in bad:
+        print(f"  {path}")
+    print("ios-postinit: run 'npm run tauri:icon' (which strips alpha) and recommit src-tauri/icons/ios/")
+    sys.exit(1)
+PY
+
 echo "ios-postinit: patched $PLIST"

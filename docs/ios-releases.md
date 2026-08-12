@@ -217,10 +217,21 @@ npm run tauri:icon
 
 CI runs `tauri ios init` fresh each build, which emits Tauri's **default**
 placeholder catalog. `scripts/ios-postinit.sh` copies `src-tauri/icons/ios/*.png`
-into `gen/apple/Assets.xcassets/AppIcon.appiconset/` before the Xcode build.
+into `gen/apple/Assets.xcassets/AppIcon.appiconset/` before the Xcode build, then
+verifies none of the copied PNGs carry an alpha channel (see below) before
+letting the build continue.
 
 After changing `app-icon.svg`, run `npm run tauri:icon` and commit the updated
 `src-tauri/icons/` tree and `public/` PWA icons (the script syncs both).
+
+**Alpha channel.** `tauri icon --ios-color` fills transparent pixels but still
+writes RGBA PNGs (alpha ~254–255 — opaque in practice, but the channel is still
+present), and App Store Connect rejects **any** iOS app icon that carries an
+alpha channel, not just the 1024pt one (error 90717). `npm run tauri:icon`
+chains `scripts/strip-ios-icon-alpha.sh` after `tauri icon` to flatten every
+`icons/ios/*.png` onto the Warm Paper ground (`#fdf6ec`) and drop the channel.
+Always regenerate through `npm run tauri:icon` — never run `tauri icon` alone
+and commit the result.
 
 ---
 
@@ -233,6 +244,7 @@ After changing `app-icon.svg`, run `npm run tauri:icon` and commit the updated
 | Upload rejected (SDK too old) | Bump `runs-on:` to `macos-26` in `ios-release.yml` |
 | Build not in TestFlight | App Store Connect → Activity; check email for compliance questions |
 | Wrong icon in TestFlight (Tauri circles) | Run `npm run tauri:icon`; ensure `ios-postinit.sh` copies `icons/ios/` |
+| Upload fails: "Invalid large app icon...alpha channel" (90717) | An `icons/ios/*.png` was committed without going through `npm run tauri:icon` (which strips alpha). Rerun it and recommit; `ios-postinit.sh` now fails the build before upload if this regresses. |
 | Encryption export questionnaire | `ITSAppUsesNonExemptEncryption=false` set by `ios-postinit.sh` (HTTPS only) |
 
 ---
