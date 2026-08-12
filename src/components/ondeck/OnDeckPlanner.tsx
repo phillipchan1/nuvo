@@ -31,6 +31,7 @@ import PlannerRail from "./PlannerRail";
 import DeckCard, { deckWeight } from "./DeckCard";
 import { PIP_TONE, projectCardStatus } from "./deckStatus";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
+import { pressable } from "../../lib/a11y";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 
@@ -494,6 +495,14 @@ export default function OnDeckPlanner() {
                     key={w.idx}
                     data-week={w.idx}
                     onClick={() => { setComposeDomain(null); setComposeWeek(w.idx); }}
+                    // A grid cell, so it stays a div — a <button> here would drop
+                    // out of the column track. `pressable` gives it the tab stop
+                    // and Enter/Space it was missing, without touching layout.
+                    // Without this, starting a project *in a chosen week* was a
+                    // mouse-only act.
+                    {...pressable(() => { setComposeDomain(null); setComposeWeek(w.idx); }, {
+                      label: `New project — ${weekName(w.weekStart).toLowerCase()}`,
+                    })}
                     title={composeWeek === w.idx ? undefined : `New project — ${weekName(w.weekStart).toLowerCase()}`}
                     className="group/col slot-col relative cursor-pointer border-l border-line transition-colors"
                     style={{ background: cellBg(w.idx) }}

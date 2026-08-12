@@ -44,6 +44,7 @@
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { READY } from "../floors/ReadinessBanner";
+import { pressable } from "../../lib/a11y";
 import { PROJECT_STATUS_COLORS } from "../floors/parts";
 import { ShipStamp } from "../ShipStamp";
 
@@ -127,7 +128,8 @@ export default function DeckCard({
   dragAttr?: Record<string, string>;
   onContextMenu?: (e: React.MouseEvent) => void;
   onPointerDown?: (e: ReactPointerEvent) => void;
-  onClick?: (e: React.MouseEvent) => void;
+  /** Fires for a click *and* for Enter/Space, so the event is either kind. */
+  onClick?: (e: React.MouseEvent | React.KeyboardEvent) => void;
   /** absolutely-positioned siblings (the project deck's resize handles). */
   children?: ReactNode;
 }) {
@@ -141,6 +143,10 @@ export default function DeckCard({
       onContextMenu={onContextMenu}
       onPointerDown={onPointerDown}
       onClick={onClick}
+      // The card is a div because it hosts the deck's press-and-hold placement
+      // gesture and absolutely-positioned resize handles. Enter/Space still has
+      // to open it — only when there is something to open.
+      {...(onClick ? pressable(onClick, { label: title }) : {})}
       className={`group/card deck-card ${shipped ? "glass-tint" : "glass-card"} lift-anim fast relative flex select-none flex-col border pl-4 pr-3 ${
         shipped ? "" : "border-line"
       } ${phone ? "rounded-xl py-3" : "rounded-lg py-2.5"} ${className}`}

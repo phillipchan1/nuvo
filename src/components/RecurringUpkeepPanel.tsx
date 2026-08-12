@@ -10,6 +10,7 @@ import { useVertical } from "../hooks/useVertical";
 import { domainById, projectById } from "../lib/vertical";
 import { Modal, SectionLabel } from "./ui";
 import { RepeatControl } from "./RecurrencePicker";
+import { useEscape } from "../hooks/useEscape";
 import type { RecurrenceRule } from "../lib/recurrence";
 import { useIsMobile } from "../hooks/useIsMobile";
 import Sheet from "./mobile/Sheet";
@@ -173,6 +174,7 @@ function UpkeepRow({
   onDelete: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  useEscape(menuOpen, () => setMenuOpen(false));
   const rule = ruleOf(series);
   const domain = domainById(vertical, series.domain_id);
   const project = projectById(vertical, series.project_id);

@@ -1532,6 +1532,71 @@ button {
     background-color var(--d-fast) var(--ease-out);
 }
 
+/* ── Keyboard focus ─────────────────────────────────────────────────────────
+   The language says focus *lifts*, it doesn't outline — and that stays true for
+   selection, hover, drag and open state, which are mouse-driven and carry their
+   own weight (`.glass-lift`, `.glass-lift-row`, `.glass-grab`).
+
+   Keyboard focus is a different question, and the lift cannot answer it. WCAG
+   2.4.7 asks "where am I right now", and a keyboard user moving through a
+   hairline list has no cursor to answer it with — a shadow that reads as depth
+   under a pointer reads as nothing at all when it's the *only* mark on screen.
+   So there is exactly one ring in the app, and it is spent here.
+
+   `:focus-visible`, never `:focus` — the browser only matches it for keyboard
+   (and other non-pointer) interaction, so clicking a button still gets the
+   quiet lift the language asks for.
+
+   `outline`, not `box-shadow`: it sits outside the box without touching layout,
+   it already follows the element's own `border-radius`, and — the reason it has
+   to be outline — it does not fight the shadows the language paints with. A
+   focused glass card keeps `--shadow-lift` and gains the ring; a box-shadow
+   ring would have replaced the lift. `outline-offset` opens a gap so the ring
+   never sits flush against a fill, which is what keeps it legible on a tinted
+   calendar block and on an accent-filled primary button alike.
+
+   Text inputs are left out on purpose: they carry a blinking caret plus the
+   `--accent-soft` ring below, which is already an unambiguous "you are here".
+   A second mark on top of those reads as an error state. */
+:root {
+  --ring: var(--accent);
+}
+:where(
+  a[href],
+  button,
+  summary,
+  [tabindex]:not([tabindex="-1"]),
+  [role="button"],
+  [role="menuitem"],
+  [role="option"],
+  [role="switch"],
+  [role="tab"],
+  [role="checkbox"],
+  [role="radio"]
+):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Anything that hides until hover must come back for the keyboard. Row actions
+   (delete ✕, → inbox, drag grips) are `opacity-0 group-hover:opacity-100`, which
+   leaves them focusable but *invisible* — you tab onto a control you cannot see.
+   One rule instead of chasing every `group-hover/x` variant at 25 call sites:
+   reveal when the hidden thing itself takes keyboard focus, or when it wraps
+   something that does. Unlayered, so it beats Tailwind's `opacity-0` utility. */
+.opacity-0:focus-visible,
+.opacity-0:focus-within,
+.opacity-0:has(:focus-visible) {
+  opacity: 1;
+}
+
+/* A focused row lights its own actions, so Tab reveals the whole row's verbs at
+   once rather than one at a time as you pass through them. */
+.group:focus-within .opacity-0,
+[class*="group/"]:focus-within .opacity-0 {
+  opacity: 1;
+}
+
 /* Inputs earn a soft focus ring in the accent rather than a hard border swap. */
 input:focus,
 textarea:focus {
@@ -1824,7 +1889,16 @@ select.field { appearance: none; -webkit-appearance: none; }
     box-shadow var(--d-fast) var(--ease-out),
     transform var(--d-fast) var(--ease-out);
 }
+/* Mouse focus on an event is silent — clicking one already lifts it inline
+   (`evt-focused`), and FullCalendar's own outline was a hard edge on a tinted
+   pane. Keyboard focus still has to say where it is, so the ring survives
+   `:focus-visible`. Offset by 1px only: events butt against their neighbours in
+   a packed column, and the standard 2px gap let the ring overlap the next block. */
 .fc .fc-event:focus { outline: none; box-shadow: none; }
+.fc .fc-event:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
 .fc .fc-event .fc-event-main {
   padding: 0;
   height: 100%;

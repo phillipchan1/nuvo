@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { useVertical, type TaskParent } from "../../hooks/useVertical";
 import type { KeyResult, VTask } from "../../lib/vertical";
 import { parseCapture } from "../../lib/nlp";
+import { isTypingIn } from "../../lib/a11y";
 import { DEFAULT_PROJECT_DURATION_MINUTES } from "../../lib/types";
 import { InlineText, KrPicker } from "./parts";
 import TaskRefine from "./TaskRefine";
@@ -64,13 +65,10 @@ export function whenText(t: VTask): string | null {
   return t.slotId ? `${day} · in a sitting` : day;
 }
 
-/** Is the user typing? Every bare-letter binding is gated on this — otherwise
- *  "t" in a title jumps the caret out of the title. */
-export function isTypingIn(el: EventTarget | null): boolean {
-  const n = el as HTMLElement | null;
-  if (!n || !n.tagName) return false;
-  return n.tagName === "INPUT" || n.tagName === "TEXTAREA" || n.tagName === "SELECT" || n.isContentEditable;
-}
+/** Moved to `lib/a11y.ts` — the gate belongs with the other keyboard rules, not
+ *  in a list component that half the app imports it from. Re-exported so the
+ *  existing call sites keep their import. */
+export { isTypingIn } from "../../lib/a11y";
 
 export default function TaskList({
   tasks,

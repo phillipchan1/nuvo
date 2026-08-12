@@ -5,6 +5,7 @@ import { ENERGY_META } from "../lib/energy";
 import { liveSuggestion } from "../lib/grooming";
 import { fmtDuration, fmtLateness, fmtTime, isOverdue, todayISO, tomorrowISO } from "../lib/dates";
 import { RecurMark } from "./ui";
+import { pressable } from "../lib/a11y";
 
 /** Row exit + checkbox bloom — keep in sync with `--d-task-complete` in index.css. */
 const COMPLETE_MS = 640;
@@ -490,6 +491,18 @@ export default function TaskRow({
       onClick={handleClick}
       onContextMenu={onContextMenu}
       {...swipeHandlers}
+      // The row is a div (it carries a drag handle, a context menu, swipe
+      // gestures and nested buttons — none of which survive a <button>), so it
+      // has to be told how to be one. Enter/Space opens, same as the click.
+      {...pressable(
+        (e) => onOpen((e.currentTarget as HTMLElement).getBoundingClientRect()),
+        { label: task.title },
+      )}
+      // `aria-current`, not `aria-selected`: the row announces itself as a
+      // button (Enter opens it), and `aria-selected` is only meaningful on an
+      // option inside a listbox. Claiming it here would describe a listbox the
+      // rail doesn't implement.
+      aria-current={selected || multiSelected ? "true" : undefined}
       title={rowHint}
       className={`fast group cursor-pointer select-none border-b border-line px-3.5 py-2.5 last:border-b-0 ${
         completing ? "task-completing" : ""

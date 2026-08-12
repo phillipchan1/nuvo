@@ -51,6 +51,7 @@ import SourceSwitch, { CapacityMeter } from "./WeekIntake";
 import { RemedyPanel } from "../floors/RemedyPanel";
 import type { ExternalEvent, Slot, Task } from "../../lib/types";
 import { Btn } from "../ui";
+import { pressable } from "../../lib/a11y";
 
 const CONTEXT_CYCLE: DayContext[] = ["normal", "light", "travel", "off"];
 const DAY_GLYPH = ["S", "M", "T", "W", "T", "F", "S"]; // Sun…Sat, for working-day chips
@@ -1979,6 +1980,14 @@ function WeekGrid({
                       data-block
                       onPointerDown={canToggle ? (e) => e.stopPropagation() : undefined}
                       onClick={canToggle ? () => onToggleEvent!(it.event!) : undefined}
+                      // Setting a meeting aside is the one edit step 1 offers, so
+                      // it cannot be mouse-only. A block that can't be toggled
+                      // stays inert — no tab stop for a thing with no action.
+                      {...(canToggle
+                        ? pressable(() => onToggleEvent!(it.event!), {
+                            label: `${it.title || "Meeting"} — ${aside ? "bring back" : "set aside"}`,
+                          })
+                        : {})}
                       className={`group/ev absolute overflow-hidden rounded-[5px] py-0.5 ${aside ? "pl-1" : "px-1.5"} ${canToggle ? "fast cursor-pointer" : ""}`}
                       style={{
                         top, height, ...laneStyle(lanes.get(it.id)),

@@ -29,6 +29,7 @@ import { Hint, PHONE_WEEK_HORIZON, VerticalList } from "./detail/verticalDetail"
 // One card across both shells — the phone must not invent its own grammar (D-048).
 import PlannerCard, { deckWeight } from "../ondeck/DeckCard";
 import { PIP_TONE, projectCardStatus } from "../ondeck/deckStatus";
+import { pressable } from "../../lib/a11y";
 
 // How far out the phone plans. Six weeks is a month and a half — far enough
 // that "not this month" still has somewhere to land, which four weeks didn't
@@ -284,7 +285,11 @@ function ProjectCard({
 // ── a pool card — no sprint yet, so no meter noise: name and where it belongs ──
 function PoolCard({ p, dot, onOpen }: { p: Project; dot: string; onOpen: () => void }) {
   return (
-    <div onClick={onOpen} className="glass-card fast relative rounded-xl border border-line py-3 pl-4 pr-3">
+    <div
+      onClick={onOpen}
+      {...pressable(onOpen, { label: p.name })}
+      className="glass-card fast relative rounded-xl border border-line py-3 pl-4 pr-3"
+    >
       <span className="pointer-events-none absolute inset-y-3 left-1.5 w-[3px] rounded-full" style={{ background: dot }} />
       <div className="flex items-center gap-2.5">
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} />

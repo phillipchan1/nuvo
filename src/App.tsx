@@ -21,6 +21,7 @@ const SpotlightHost = lazy(() =>
   import("./components/SpotlightWindow").then((m) => ({ default: m.SpotlightHost })),
 );
 import UpdateToast from "./components/UpdateToast";
+import LiveRegion from "./components/LiveRegion";
 import { AppNavigationProvider } from "./hooks/useAppNavigation";
 import { AgentProvider } from "./hooks/useAgentContext";
 import { UndoProvider } from "./hooks/useUndoStack";
@@ -251,6 +252,9 @@ function Shell() {
       </AppNavigationProvider>
       <UpdateToast />
       <AppToaster />
+      {/* One polite live region for the whole app — keyboard acts that move
+          something off-screen say so here (lib/announce.ts). */}
+      <LiveRegion />
     </>
   );
 }

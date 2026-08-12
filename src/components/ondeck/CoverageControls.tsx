@@ -5,6 +5,7 @@
 
 import type { Domain } from "../../lib/vertical";
 import { Icon } from "../Icon";
+import { useEscape } from "../../hooks/useEscape";
 
 export default function CoverageControls({
   collapsed,
@@ -29,6 +30,7 @@ export default function CoverageControls({
   setOpen: (v: boolean) => void;
 }) {
   const shown = domains.length - domains.filter((d) => hidden.has(d.id)).length;
+  useEscape(open, () => setOpen(false));
 
   return (
     <div className="flex items-center justify-between gap-3">

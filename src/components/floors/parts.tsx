@@ -4,6 +4,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { Icon } from "../Icon";
+import { pressable } from "../../lib/a11y";
 import { createPortal } from "react-dom";
 import {
   addDays,
@@ -372,7 +373,13 @@ export function InlineNumber({
     );
   }
   return (
-    <span onClick={() => setEditing(true)} className={`fast mono cursor-text rounded-sm hover:bg-accent-soft ${className}`} title="Click to edit">
+    // The editor it opens already handles Enter/Escape — but until now there was
+    // no keyboard way to *reach* it, so the whole field was mouse-only.
+    <span
+      {...pressable(() => setEditing(true), { label: `Edit — currently ${value}${suffix ?? ""}` })}
+      className={`fast mono cursor-text rounded-sm hover:bg-accent-soft ${className}`}
+      title="Click to edit"
+    >
       {value}{suffix}
     </span>
   );
@@ -1320,6 +1327,15 @@ export function Timeline({
                     <div
                       onPointerDown={editable ? (ev) => startBarDrag(it, "move", ev) : undefined}
                       onClick={!editable ? it.onClick : undefined}
+                      // A read-only bar opens its record, so it gets the tab stop
+                      // and Enter. An *editable* bar is a drag handle for dates —
+                      // that gesture has no keyboard equivalent here, and the
+                      // record's own date fields are the keyboard path to it, so
+                      // this deliberately stays a pointer affordance rather than
+                      // becoming a tab stop that does nothing.
+                      {...(!editable && it.onClick
+                        ? pressable(() => it.onClick!(), { label: it.label })
+                        : {})}
                       className={`fast relative flex h-full items-center overflow-hidden rounded px-2 ${editable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                       style={{ background: it.dim ? softTint("var(--muted)", 10) : softTint(it.color, 20), border: `1px solid ${it.color}`, opacity: it.dim ? 0.6 : 1 }}
                       title={`${it.label}${it.start ? ` · ${fmtDate(it.start)}` : ""}${it.end ? ` → ${fmtDate(it.end)}` : ""} · ${it.progress}%${editable ? " · drag to move, edges to resize" : ""}`}
@@ -1437,6 +1453,11 @@ function UnassignedTray({
                 data-no-select
                 onPointerDown={editable ? (e) => onStart(it, e) : undefined}
                 onClick={!editable ? it.onClick : undefined}
+                // Same split as the bars above: a chip that opens gets a tab
+                // stop, a chip that is only a drag source doesn't.
+                {...(!editable && it.onClick
+                  ? pressable(() => it.onClick!(), { label: it.label || "Untitled" })
+                  : {})}
                 className={`rise fast group flex shrink-0 items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 ${editable ? "cursor-grab active:cursor-grabbing hover:-translate-y-px hover:border-line-strong" : "cursor-pointer"} ${draggingId === it.id ? "opacity-40" : ""}`}
                 style={{ animationDelay: `${i * 40}ms` }}
                 title={editable ? `${it.label} — drag onto the grid to schedule` : it.label}
