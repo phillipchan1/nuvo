@@ -20,7 +20,7 @@
     "tauri:ios:init": "tauri ios init --ci",
     "tauri:ios:dev": "tauri ios dev",
     "tauri:ios:build": "tauri ios build -- --export-method app-store-connect --ci",
-    "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons --ios-color '#fdf6ec' && bash scripts/strip-ios-icon-alpha.sh && bash scripts/sync-pwa-icons.sh",
+    "tauri:icon": "tauri icon src-tauri/app-icon.svg -o src-tauri/icons --ios-color '#fdf6ec' && bash scripts/gen-ios-icons.sh && bash scripts/sync-pwa-icons.sh",
     "app:install": "npm run tauri build && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app",
     "app:install:live": "tauri build --config '{\"build\":{\"frontendDist\":\"http://localhost:5717\",\"beforeBuildCommand\":\"\"},\"bundle\":{\"targets\":[\"app\"]}}' && (pkill -x Nuvo || true) && rm -rf /Applications/Nuvo.app && cp -R src-tauri/target/release/bundle/macos/Nuvo.app /Applications/ && open /Applications/Nuvo.app",
     "check:sql": "node scripts/check-apply-patch.mjs"

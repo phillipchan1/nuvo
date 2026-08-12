@@ -36,6 +36,48 @@ export default function ChatPane({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const kbInset = useKeyboardInset();
 
+  // Swipe-down-to-dismiss on the handle + header — the ✕ sits top-right,
+  // opposite the ✦ launcher that opened this (bottom-right thumb zone), so
+  // it's a full-screen reach to close on a big phone. Same pointer-drag
+  // technique as Sheet.tsx's grab pill (Tauri's webview swallows HTML5
+  // drag-and-drop — pointer events only), kept local to this one overlay
+  // rather than sharing Sheet's gesture code, since this panel is full-
+  // screen with no scrim of its own to coordinate.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ startY: number } | null>(null);
+
+  const onHandlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { startY: e.clientY };
+  };
+  const onHandlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current || !panelRef.current) return;
+    const down = Math.max(0, e.clientY - drag.current.startY);
+    panelRef.current.style.transition = "none";
+    panelRef.current.style.transform = `translateY(${down}px)`;
+  };
+  const onHandlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current || !panelRef.current) return;
+    const delta = Math.max(0, e.clientY - drag.current.startY);
+    drag.current = null;
+    const threshold = panelRef.current.offsetHeight * 0.25;
+    if (delta > threshold) {
+      panelRef.current.style.transition = "transform 0.22s ease-in";
+      panelRef.current.style.transform = "translateY(100%)";
+      setTimeout(() => onClose?.(), 220);
+    } else {
+      panelRef.current.style.transition = "transform 0.22s ease-out";
+      panelRef.current.style.transform = "translateY(0)";
+    }
+  };
+  const dragHandleProps = {
+    onPointerDown: onHandlePointerDown,
+    onPointerMove: onHandlePointerMove,
+    onPointerUp: onHandlePointerUp,
+    onPointerCancel: onHandlePointerUp,
+    style: { touchAction: "none" as const },
+  };
+
   const addFiles = useCallback(async (files: File[]) => {
     const { attachments: next } = await filesToAttachments(files);
     if (next.length) setAttachments((prev) => [...prev, ...next].slice(0, 6));
@@ -85,25 +127,42 @@ export default function ChatPane({
 
   return (
     <div
+      ref={panelRef}
       className="relative flex min-h-0 flex-1 flex-col"
       data-agent-drop=""
       {...dropHandlers}
     >
       {dragging && <AgentDropOverlay compact />}
 
-      <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1 pt-2">
+      {/* Grab handle — swipe down anywhere here (or the header row below) to
+          close. Reaching the ✕ means crossing the whole screen from the ✦
+          launcher's bottom-right thumb zone; this puts dismissal within
+          reach of wherever a thumb already is after opening the chat. */}
+      {onClose && (
+        <div {...dragHandleProps} className="flex shrink-0 cursor-grab flex-col items-center pb-1 pt-1.5">
+          <span className="h-1 w-9 rounded-full bg-line-strong" />
+        </div>
+      )}
+
+      <div {...(onClose ? dragHandleProps : {})} className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1 pt-1">
         <span className="mono text-label text-muted">{ASSISTANT_NAME} · your planner</span>
         <div className="flex items-center gap-3">
           {messages.length > 0 && (
-            <button onClick={clear} className="fast text-caption text-muted hover:text-ink">
+            <button
+              onClick={clear}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="fast text-caption text-muted hover:text-ink"
+            >
               Clear
             </button>
           )}
           {onClose && (
             <button
               onClick={onClose}
+              onPointerDown={(e) => e.stopPropagation()}
               aria-label="Close chat"
               className="tap-icon fast flex h-8 w-8 items-center justify-center rounded-full text-lead text-muted active:bg-surface-2"
+              style={{ cursor: "default" }}
             >
               ✕
             </button>
