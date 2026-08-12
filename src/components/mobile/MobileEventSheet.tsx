@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../Icon";
-import type { AttendeeStatus, Task } from "../../lib/types";
+import type { AttendeeStatus, RecurrenceScope, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
-import { useCalendarAccounts, useEventDetails, useExternalEventMutations } from "../../hooks/useCalendar";
+import { useCalendarAccounts, useEventDetails, useExternalEventMutations, useHiddenEvents } from "../../hooks/useCalendar";
 import { conferenceName, joinUrl } from "../../../supabase/functions/_shared/conferencing.ts";
 import {
   allDayInclusiveEnd,
@@ -30,6 +30,8 @@ export type CalendarTap =
       self_rsvp: AttendeeStatus | null | undefined;
       accountId?: string;
       calendarId?: string;
+      providerEventId?: string;
+      recurringEventId?: string | null;
     }
   | { kind: "block"; taskId: string; title: string; start: Date; end: Date; done: boolean };
 
@@ -56,6 +58,7 @@ export default function MobileEventSheet({
   onEditTask?: (taskId: string) => void;
 }) {
   const { rsvpEvent, updateEvent, deleteEvent } = useExternalEventMutations();
+  const { isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
   const { data: accounts = [] } = useCalendarAccounts();
   // Same write-back rule as desktop's EventPopover: a two-way Google/iCloud
   // account, and not a read-only mirror/holiday/subscription calendar.
@@ -77,6 +80,7 @@ export default function MobileEventSheet({
   const [endAt, setEndAt] = useState(tap.kind === "event" ? tap.end.toISOString() : "");
   const [allDay, setAllDay] = useState(tap.kind === "event" ? Boolean(tap.allDay) : false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [hideMode, setHideMode] = useState(false);
 
   // Seed notes once the raw payload (with the description) arrives — same
   // plain-text flattening the desktop inspector uses for a Google HTML body.
@@ -203,6 +207,26 @@ export default function MobileEventSheet({
     };
     const handleDelete = () => {
       deleteEvent({ id: tap.id, scope: "THIS" });
+      onClose();
+    };
+
+    // Hide / show — same "stays on the server, just out of the way" contract
+    // as desktop's CalendarPane/SlideOver, keyed off account_id + provider_event_id
+    // (or the whole recurring series) so it works for read-only calendars too.
+    const hidable = tap.providerEventId
+      ? { account_id: tap.accountId ?? "", provider_event_id: tap.providerEventId, title: tap.title, recurring_event_id: tap.recurringEventId }
+      : null;
+    const hiddenNow = hidable ? isHidden(hidable) : false;
+    const canHideSeries = Boolean(tap.recurringEventId);
+    const handleHide = (scope: RecurrenceScope) => {
+      if (!hidable) return;
+      hide(hidable, scope);
+      onClose();
+    };
+    const handleShow = () => {
+      if (!hidable) return;
+      const key = hiddenKeyFor(hidable);
+      if (key) unhide(key);
       onClose();
     };
 
@@ -394,6 +418,45 @@ export default function MobileEventSheet({
               <span className="text-lead">⎘</span>
               <span>Copy details</span>
             </button>
+            {hidable &&
+              (hideMode ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setHideMode(false)}
+                    className="tap fast flex-1 rounded-xl border border-line px-3 py-3 text-body text-muted"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleHide("THIS")}
+                    className="tap fast flex-1 rounded-xl border border-line px-3 py-3 text-body"
+                  >
+                    This event
+                  </button>
+                  <button
+                    onClick={() => handleHide("ALL")}
+                    className="tap fast flex-1 rounded-xl border border-line px-3 py-3 text-body"
+                  >
+                    Whole series
+                  </button>
+                </div>
+              ) : hiddenNow ? (
+                <button
+                  onClick={handleShow}
+                  className="tap fast flex w-full items-center gap-3 rounded-xl border border-line px-4 py-3 text-body"
+                >
+                  <Icon name="eye" size={16} />
+                  <span className="font-medium">Show on calendar</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => (canHideSeries ? setHideMode(true) : handleHide("THIS"))}
+                  className="tap fast flex w-full items-center gap-3 rounded-xl border border-line px-4 py-3 text-body text-muted"
+                >
+                  <Icon name="eye-off" size={16} />
+                  <span>Hide from calendar</span>
+                </button>
+              ))}
             {editable && (
               confirmDelete ? (
                 <div className="flex gap-2">

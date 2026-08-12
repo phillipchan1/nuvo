@@ -359,6 +359,8 @@ export default function MobileDayView({
                       self_rsvp: e.self_rsvp ?? null,
                       accountId: e.account_id,
                       calendarId: e.calendar_id,
+                      providerEventId: e.provider_event_id,
+                      recurringEventId: e.recurring_event_id,
                     })
                   }
                   className="tap fast mono rounded-md border border-line bg-surface-2 px-2 py-0.5 text-label text-muted active:bg-surface"
@@ -434,6 +436,8 @@ export default function MobileDayView({
                       self_rsvp: b.self_rsvp,
                       accountId: b.accountId,
                       calendarId: b.calendarId,
+                      providerEventId: b.providerEventId,
+                      recurringEventId: b.recurringEventId,
                     }
                   : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
               return (
