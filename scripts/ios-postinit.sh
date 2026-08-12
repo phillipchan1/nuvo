@@ -29,4 +29,15 @@ fi
 /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PLIST"
 
+# `tauri ios init` emits Tauri's default asset catalog; overlay the Nuvo icons
+# generated from src-tauri/app-icon.svg (npm run tauri:icon).
+ICON_SRC="${ROOT}/src-tauri/icons/ios"
+ICON_DST="${ROOT}/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset"
+if [ ! -d "$ICON_SRC" ]; then
+  echo "ios-postinit: missing $ICON_SRC — run 'npm run tauri:icon' first"
+  exit 1
+fi
+cp -f "${ICON_SRC}"/*.png "${ICON_DST}/"
+echo "ios-postinit: copied Nuvo icons into ${ICON_DST}"
+
 echo "ios-postinit: patched $PLIST"

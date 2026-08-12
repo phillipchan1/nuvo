@@ -52,7 +52,8 @@ On every push to `master` (and manual **Run workflow**):
 
 1. Stamps version `<major>.<minor>.<run_number>` (same scheme as desktop).
 2. `npm ci` → `tauri ios init --ci` (regenerate `gen/apple/`).
-3. `scripts/ios-postinit.sh` — encryption export flag, deep-link URL scheme.
+3. `scripts/ios-postinit.sh` — encryption export flag, deep-link URL scheme,
+   **Nuvo app icons** (copies `src-tauri/icons/ios/` over Tauri's default catalog).
 4. `tauri ios build --export-method app-store-connect` — signed IPA.
 5. `xcrun altool --upload-app` → App Store Connect → TestFlight.
 
@@ -204,6 +205,25 @@ for App Group plumbing once phase 3 starts.
 
 ---
 
+## App icons
+
+Source of truth: `src-tauri/app-icon.svg` (Warm Paper twilight **N**).
+
+Regenerate all platform icons (including iOS):
+
+```bash
+npm run tauri:icon
+```
+
+CI runs `tauri ios init` fresh each build, which emits Tauri's **default**
+placeholder catalog. `scripts/ios-postinit.sh` copies `src-tauri/icons/ios/*.png`
+into `gen/apple/Assets.xcassets/AppIcon.appiconset/` before the Xcode build.
+
+After changing `app-icon.svg`, run `npm run tauri:icon` and commit the updated
+`src-tauri/icons/` tree and `public/` PWA icons (the script syncs both).
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -212,6 +232,7 @@ for App Group plumbing once phase 3 starts.
 | "No profiles for day.nuvo.app" | Create App Store provisioning profile; wait for App ID propagation |
 | Upload rejected (SDK too old) | Bump `runs-on:` to `macos-26` in `ios-release.yml` |
 | Build not in TestFlight | App Store Connect → Activity; check email for compliance questions |
+| Wrong icon in TestFlight (Tauri circles) | Run `npm run tauri:icon`; ensure `ios-postinit.sh` copies `icons/ios/` |
 | Encryption export questionnaire | `ITSAppUsesNonExemptEncryption=false` set by `ios-postinit.sh` (HTTPS only) |
 
 ---
