@@ -561,9 +561,9 @@ export default function OnDeckPlanner() {
                           style={{
                             gridColumn: `${start + 2} / ${end + 3}`,
                             gridRow: 1,
-                            borderColor: dragging ? dot : undefined,
-                            boxShadow: dragging ? "var(--shadow-lift)" : beyond ? `5px 0 0 -1px ${dot}` : undefined,
-                            transform: dragging ? "translateY(-3px)" : undefined,
+                            ...(dragging
+                              ? { borderColor: dot, boxShadow: "var(--shadow-lift)", transform: "translateY(-3px)" }
+                              : { boxShadow: beyond ? `5px 0 0 -1px ${dot}` : undefined }),
                           }}
                           spine={dot}
                           eyebrow={domainById(data, l.project.domainId)?.name ?? "no area"}
