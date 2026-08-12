@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 import { signInWithGoogle } from "../lib/googleAuth";
 import { isMobileTauri } from "../lib/platform";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 /** True in an installed iOS/Android PWA. In iOS standalone mode a cross-origin
  *  OAuth redirect can strand the session in Safari (the standalone app and the
@@ -14,12 +15,24 @@ function isStandalone(): boolean {
   );
 }
 
+/** The guide's authority, three short lines — straight from the brandscript
+ *  (docs/product/brandscript.md §3): every calendar you own, the one funnel,
+ *  and the Review's evidence closing the loop back to Sunday. */
+const PROMISE: { icon: IconName; text: string }[] = [
+  { icon: "calendar", text: "Every calendar you own, on one surface." },
+  { icon: "arrow-right", text: "One funnel, from your commitments to your calendar." },
+  { icon: "repeat", text: "Friday tells the truth. Sunday plans with it." },
+];
+
 export default function Login() {
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const isMobile = useIsMobile();
   const nativePhone = isMobileTauri();
   // The email-code fallback: never leaves this window, so the session always
   // lands in the standalone app. Offered up-front when installed native or PWA.
+  const showEmailFallback = isStandalone() || nativePhone;
+
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [emailMode, setEmailMode] = useState(false);
   const [email, setEmail] = useState("");
   const [codeSent, setCodeSent] = useState(false);
@@ -58,132 +71,198 @@ export default function Login() {
     // On success useAuth's onAuthStateChange takes over.
   };
 
-  return (
-    <div
-      className={
-        nativePhone
-          ? "atmosphere flex min-h-dvh flex-col justify-center px-5 pt-safe pb-safe"
-          : "atmosphere flex h-full items-center justify-center px-4"
-      }
-    >
-      <div
-        className={
-          nativePhone
-            ? "w-full max-w-md mx-auto"
-            : "moment elev-3 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-7"
-        }
-      >
-        <div className="mb-5 flex items-center gap-2.5">
-          <TwilightMark />
-          <span className="wordmark wordmark-grad text-display leading-none">Nuvo</span>
+  const form = (
+    <>
+      {!supabaseConfigured && (
+        <div className="mb-4 rounded-md border border-signal bg-signal-soft p-2 text-caption text-signal">
+          Supabase is not configured. Copy <span className="mono">.env.example</span> to{" "}
+          <span className="mono">.env</span> and restart.
         </div>
-        <div className="mb-6 text-caption leading-relaxed text-muted">Your day, on one surface.</div>
-        {!supabaseConfigured && (
-          <div className="mb-4 rounded-md border border-signal bg-signal-soft p-2 text-caption text-signal">
-            Supabase is not configured. Copy <span className="mono">.env.example</span> to{" "}
-            <span className="mono">.env</span> and restart.
-          </div>
-        )}
+      )}
 
-        {!emailMode ? (
-          <>
+      {!emailMode ? (
+        <>
+          <button
+            type="button"
+            disabled={busy || !supabaseConfigured}
+            onClick={withGoogle}
+            className="tap fast flex w-full items-center justify-center gap-2.5 rounded-md border border-line bg-surface-2 px-3 py-3 text-body font-medium text-ink hover:bg-surface active:translate-y-px disabled:opacity-50"
+          >
+            <GoogleMark />
+            {busy ? "Redirecting…" : "Continue with Google"}
+          </button>
+          {showEmailFallback && (
             <button
               type="button"
-              disabled={busy || !supabaseConfigured}
-              onClick={withGoogle}
-              className="tap fast flex w-full items-center justify-center gap-2.5 rounded-md border border-line bg-surface-2 px-3 py-3 text-body font-medium text-ink hover:bg-surface active:translate-y-px disabled:opacity-50"
-            >
-              <GoogleMark />
-              {busy ? "Redirecting…" : "Continue with Google"}
-            </button>
-            {isStandalone() || nativePhone ? (
-              <button
-                type="button"
-                disabled={!supabaseConfigured}
-                onClick={() => {
-                  setEmailMode(true);
-                  setError(null);
-                }}
-                className="tap fast mt-3 w-full text-center text-caption text-muted underline-offset-2 hover:text-ink hover:underline"
-              >
-                Sign in with an email code instead
-              </button>
-            ) : null}
-          </>
-        ) : !codeSent ? (
-          <>
-            <label className="mb-1.5 block text-caption text-muted" htmlFor="login-email">
-              Your email
-            </label>
-            <input
-              id="login-email"
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              autoCapitalize="none"
-              enterKeyHint="send"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void sendCode()}
-              placeholder="you@example.com"
-              className="field w-full"
-            />
-            <button
-              type="button"
-              disabled={busy || !email.trim()}
-              onClick={() => void sendCode()}
-              className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
-            >
-              {busy ? "Sending…" : "Email me a code"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setEmailMode(false)}
-              className="tap fast mt-2 w-full text-center text-caption text-muted hover:text-ink"
-            >
-              ‹ Back
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="mb-2 text-caption leading-relaxed text-muted">
-              We sent a 6-digit code to <span className="text-ink">{email.trim()}</span>. It signs
-              you in right here — no need to leave the app.
-            </div>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              enterKeyHint="done"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void verifyCode()}
-              placeholder="123456"
-              aria-label="Sign-in code"
-              className="field mono w-full text-center tracking-[0.3em]"
-            />
-            <button
-              type="button"
-              disabled={busy || code.trim().length < 6}
-              onClick={() => void verifyCode()}
-              className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
-            >
-              {busy ? "Checking…" : "Sign in"}
-            </button>
-            <button
-              type="button"
+              disabled={!supabaseConfigured}
               onClick={() => {
-                setCodeSent(false);
-                setCode("");
+                setEmailMode(true);
+                setError(null);
               }}
-              className="tap fast mt-2 w-full text-center text-caption text-muted hover:text-ink"
+              className="tap fast mt-3 flex w-full items-center justify-center gap-1.5 text-center text-caption text-muted hover:text-ink"
             >
-              ‹ Different email
+              Sign in with an email code instead
             </button>
-          </>
-        )}
+          )}
+        </>
+      ) : !codeSent ? (
+        <>
+          <label className="mb-1.5 block text-caption text-muted" htmlFor="login-email">
+            Your email
+          </label>
+          <input
+            id="login-email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            enterKeyHint="send"
+            autoFocus
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void sendCode()}
+            placeholder="you@example.com"
+            className="field w-full"
+          />
+          <button
+            type="button"
+            disabled={busy || !email.trim()}
+            onClick={() => void sendCode()}
+            className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
+          >
+            {busy ? "Sending…" : "Email me a code"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setEmailMode(false)}
+            className="tap fast mt-2 flex w-full items-center justify-center gap-1 text-center text-caption text-muted hover:text-ink"
+          >
+            <Icon name="chevron-left" size={12} />
+            Back
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="mb-2 text-caption leading-relaxed text-muted">
+            We sent a 6-digit code to <span className="text-ink">{email.trim()}</span>. It signs
+            you in right here — no need to leave the app.
+          </div>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            enterKeyHint="done"
+            autoFocus
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void verifyCode()}
+            placeholder="123456"
+            aria-label="Sign-in code"
+            className="field mono w-full text-center tracking-[0.3em]"
+          />
+          <button
+            type="button"
+            disabled={busy || code.trim().length < 6}
+            onClick={() => void verifyCode()}
+            className="tap fast mt-3 w-full rounded-md border border-accent bg-accent px-3 py-3 text-body font-semibold text-on-accent active:translate-y-px disabled:border-line disabled:bg-surface-2 disabled:text-muted"
+          >
+            {busy ? "Checking…" : "Sign in"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCodeSent(false);
+              setCode("");
+            }}
+            className="tap fast mt-2 flex w-full items-center justify-center gap-1 text-center text-caption text-muted hover:text-ink"
+          >
+            <Icon name="chevron-left" size={12} />
+            Different email
+          </button>
+        </>
+      )}
 
-        {error && <div className="mt-3 text-caption text-signal">{error}</div>}
+      {error && <div className="mt-3 text-caption text-signal">{error}</div>}
+    </>
+  );
+
+  // A whisper of accent light behind the mark — the same glow token the rest
+  // of the app uses for "in focus," here just announcing where to look first.
+  const glow = (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 top-0 h-72"
+      style={{ background: "radial-gradient(55% 60% at 50% 0%, var(--accent-glow), transparent 70%)" }}
+    />
+  );
+
+  if (isMobile) {
+    return (
+      <div className="atmosphere relative flex min-h-dvh flex-col overflow-hidden px-6 pt-safe pb-safe">
+        {glow}
+        <div className="relative flex flex-1 flex-col justify-center">
+          <div className="moment mx-auto w-full max-w-sm">
+            <div className="mb-9 flex flex-col items-center gap-3 text-center">
+              <TwilightMark size={44} />
+              <span className="wordmark wordmark-grad text-display text-[26px] leading-none">Nuvo</span>
+              <p className="serif text-lead leading-snug text-ink/90">Know your week is the right week.</p>
+            </div>
+            {form}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="atmosphere relative flex h-full overflow-hidden">
+      {/* The guide's side — brand, ceremony line, the authority bullets from
+          the brandscript. Full-bleed and transparent so the atmosphere reads
+          continuously across both panes; only a hairline separates them. */}
+      <div className="hidden flex-1 flex-col justify-center border-r border-line px-16 xl:flex">
+        {glow}
+        <div className="relative max-w-sm">
+          <div className="mb-7 flex items-center gap-3">
+            <TwilightMark size={36} />
+            <span className="wordmark wordmark-grad text-display text-[24px] leading-none">Nuvo</span>
+          </div>
+          <h1 className="masthead text-[30px] leading-[1.16] text-ink">
+            Know your week is the right week.
+          </h1>
+          <p className="mt-4 text-body leading-relaxed text-muted">
+            A daily planner with a conscience — one funnel from what you're responsible for
+            down to the hour on your calendar.
+          </p>
+          <div className="mt-10 flex flex-col">
+            {PROMISE.map((row, i) => (
+              <div
+                key={row.text}
+                className={`flex items-center gap-3 py-3 text-caption text-muted ${i > 0 ? "border-t border-line" : ""}`}
+              >
+                <Icon name={row.icon} size={15} className="shrink-0 text-accent" />
+                <span>{row.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* The sign-in card — a real, floating moment on the paper. */}
+      <div className="relative flex flex-1 items-center justify-center px-4">
+        <div className="moment elev-3 w-full max-w-sm rounded-lg border border-line bg-surface p-8">
+          <div className="mb-6 flex items-center gap-2.5">
+            <TwilightMark size={32} />
+            <span className="wordmark wordmark-grad text-display leading-none">Nuvo</span>
+          </div>
+          <div className="mb-6 text-caption leading-relaxed text-muted xl:hidden">
+            Your day, on one surface.
+          </div>
+          <div className="mb-1 hidden text-head font-medium text-ink xl:block">Welcome back</div>
+          <div className="mb-6 hidden text-caption leading-relaxed text-muted xl:block">
+            Sign in to pick up where the week left off.
+          </div>
+          {form}
+        </div>
       </div>
     </div>
   );
@@ -213,13 +292,17 @@ function GoogleMark() {
 }
 
 /** The mark: a sun cresting the horizon — the arc of the day, Nuvo's metaphor. */
-function TwilightMark() {
+function TwilightMark({ size = 32 }: { size?: number }) {
   return (
     <span
-      className="flex h-8 w-8 items-center justify-center rounded-lg"
-      style={{ background: "linear-gradient(140deg, var(--accent), var(--accent-2) 70%, var(--signal))" }}
+      className="flex shrink-0 items-center justify-center rounded-lg"
+      style={{
+        width: size,
+        height: size,
+        background: "linear-gradient(140deg, var(--accent), var(--accent-2) 70%, var(--signal))",
+      }}
     >
-      <Icon name="sun" size={18} />
+      <Icon name="sun" size={Math.round(size * 0.56)} style={{ color: "var(--on-accent)" }} />
     </span>
   );
 }
