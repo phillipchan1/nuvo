@@ -987,6 +987,17 @@ body.odp-dragging [data-resize] {
     border-color var(--d-fast) var(--ease-out),
     opacity var(--d-fast) var(--ease-out);
 }
+/* The deck card (project + initiative decks share one component) lifts on hover
+   like every other focal element does — was border-brighten only, the one place
+   `.lift-anim` cards didn't get `.glass-lift`'s shadow + rise. Fixed once here so
+   both altitudes pick it up identically. */
+.deck-card:hover {
+  border-color: transparent !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 34%, transparent),
+    var(--shadow-lift);
+  transform: translateY(-2px);
+}
 /* The vacated slot left behind while a card is being dragged. */
 .is-dragging {
   opacity: 0.4;

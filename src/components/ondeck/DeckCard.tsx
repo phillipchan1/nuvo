@@ -141,7 +141,7 @@ export default function DeckCard({
       onContextMenu={onContextMenu}
       onPointerDown={onPointerDown}
       onClick={onClick}
-      className={`group/card ${shipped ? "glass-tint" : "glass-card"} lift-anim fast relative flex select-none flex-col border pl-4 pr-3 hover:border-line-strong ${
+      className={`group/card deck-card ${shipped ? "glass-tint" : "glass-card"} lift-anim fast relative flex select-none flex-col border pl-4 pr-3 ${
         shipped ? "" : "border-line"
       } ${phone ? "rounded-xl py-3" : "rounded-lg py-2.5"} ${className}`}
       style={{
