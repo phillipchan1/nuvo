@@ -312,12 +312,67 @@ html[data-skin="terminal"][data-palette="catppuccin"][data-theme="light"] {
    active scheme's published ramp, keyed on the calendar id (see synClass in
    src/lib/syntax.ts). Each calendar keeps a stable distinct ink, and every ink
    is one the theme actually ships. Tasks are exempt below: your own work is
-   one voice, like the keyword colour in a buffer. */
+   one voice, like the keyword colour in a buffer.
+
+   The colour lives in the INK, not in a wash. This block used to tint the
+   ground 17% and then mute the label 38% toward --text, which on a near-black
+   scheme is the one operation that destroys the palette: mixing a hue into a
+   dark ground moves lightness, not chroma, so Ayu's #ffb454 landed as #41382F
+   brown-grey and a whole week read washed out. That's backwards for this
+   material — an editor paints a near-black ground and vivid ink, and the two
+   numbers below say so. Raising the ground instead (17% → 32%) was rejected:
+   forty tinted blocks on a dark grid is fruit salad, and it buries --signal
+   and --accent, which have to stay the loudest marks on the Schedule.
+
+   The ground mixes against --bg, not --surface: an editor's line ground IS the
+   window ground, not a raised card (and it's what "dissolve, don't frame"
+   asks for). --syn-ink stops at 88% rather than going raw because on a dark
+   scheme --text is LIGHT, so a little of it lifts contrast — the dim inks
+   (Solarized's #6c71c4, One-dark's greys) need that margin, and at 88% Ayu is
+   visually indistinguishable from full. The four light schemes fork below. */
 html[data-skin="terminal"] .fc-event:not(.evt-slot) {
   --syn: var(--accent);
-  background: color-mix(in srgb, var(--syn) 17%, var(--surface)) !important;
+  --syn-ground: 14%;
+  --syn-base: var(--bg);
+  --syn-ink: 88%;
+  background: color-mix(in srgb, var(--syn) var(--syn-ground), var(--syn-base)) !important;
+  /* A ground this dark stops being an EDGE: at 10% over --bg a stack of
+     back-to-back events merged into one dark mass and only the left bar said
+     where each began. The hairline restores the boundary without re-tinting
+     the fill (which is what would bring the wash back). inset box-shadow, not
+     border, so it costs no layout inside FullCalendar's absolute positioning —
+     and an inline shadow still wins on focus/drag, which is correct. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--syn) 26%, transparent);
+  /* No border-left: the inline bar span (data-evt-bar, painted in CalendarPane)
+     is the single edge, recoloured to --syn below. Setting both stacked a 2px
+     CSS rule against a 3px inline bar carrying a raw domain hex. */
+  border-left: none !important;
+  color: color-mix(in srgb, var(--syn) var(--syn-ink), var(--text)) !important;
+  /* index.css gives every event backdrop-filter: blur() saturate(1.2) — that
+     lifts Warm Paper's translucent fill, but this fill is opaque, so the
+     filter is pure cost with nothing to see through. */
+  backdrop-filter: none;
+}
+
+/* The four schemes that ship a genuinely LIGHT ground keep the old pair — it is
+   load-bearing for legibility, not decoration: Gruvbox-light's --syn-1 #b57614
+   at full chroma on #f9f5d7 is 3.44:1 (fails AA), while mixing 38% toward the
+   DARK --text darkens it to 5.20:1 (passes). Listed by name rather than keyed
+   on [data-theme="dark"] because the dark-only schemes (Ayu, Dracula, Nord,
+   Tokyo Night, Monokai, Ocean, CRT, Nocturne, Phosphor) declare a bare
+   [data-theme] and can legitimately sit on <html data-theme="light">. Same
+   four-selector shape as .term-status-branch below. */
+html[data-skin="terminal"][data-palette="gruvbox"][data-theme="light"] .fc-event:not(.evt-slot),
+html[data-skin="terminal"][data-palette="one"][data-theme="light"] .fc-event:not(.evt-slot),
+html[data-skin="terminal"][data-palette="solarized"][data-theme="light"] .fc-event:not(.evt-slot),
+html[data-skin="terminal"][data-palette="catppuccin"][data-theme="light"] .fc-event:not(.evt-slot) {
+  --syn-ground: 17%;
+  --syn-base: var(--surface);
+  --syn-ink: 62%;
   border-left: 2px solid var(--syn) !important;
-  color: color-mix(in srgb, var(--syn) 62%, var(--text)) !important;
+  /* A 17% tint on a light ground already reads as a block — the hairline is
+     only needed where the ground went near-black. Left exactly as it shipped. */
+  box-shadow: none;
 }
 
 html[data-skin="terminal"] .fc-event.syn-1 { --syn: var(--syn-1); }
@@ -332,9 +387,19 @@ html[data-skin="terminal"] .fc-event.syn-5 { --syn: var(--syn-5); }
 
 html[data-skin="terminal"] .fc-event.syn-6 { --syn: var(--syn-6); }
 
+/* The event's left edge is an inline-styled span (CalendarPane paints it from
+   the domain / provider hex, which a mono material can't host), so the skin has
+   to reach it through the data hook and win against the inline style. It keeps
+   its own width — 4px doubled for a project-backed "project slot". */
+html[data-skin="terminal"] .fc-event [data-evt-bar] {
+  background: var(--syn) !important;
+}
+
 /* Your own work overrides the ramp — one ink for "mine", the way a buffer gives
    every keyword the same colour. Overdue keeps --signal (the error hue). */
 html[data-skin="terminal"] .fc-event.evt-task { --syn: var(--accent); }
+
+html[data-skin="terminal"] .fc-event.evt-task.evt-overdue { --syn: var(--signal); }
 
 html[data-skin="terminal"] .fc-event.evt-task.evt-done {
   --syn: var(--muted);
