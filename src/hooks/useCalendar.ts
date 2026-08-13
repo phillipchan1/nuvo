@@ -71,6 +71,9 @@ export function useCalendarAccounts() {
 export function useExternalEvents(rangeStartISO: string, rangeEndISO: string) {
   return useQuery({
     queryKey: ["external_events", rangeStartISO, rangeEndISO],
+    // See useSlots: an empty bound means "not yet", not "everything". Sending
+    // it produced `start_at=lt.` with no value, which PostgREST 400s.
+    enabled: Boolean(rangeStartISO && rangeEndISO),
     queryFn: async (): Promise<ExternalEvent[]> => {
       const PAGE = 1000;
       const all: ExternalEvent[] = [];

@@ -16,6 +16,11 @@ const SLOT_COLS =
 export function useSlots(rangeStartISO: string, rangeEndISO: string) {
   return useQuery({
     queryKey: ["slots", rangeStartISO, rangeEndISO],
+    // An empty bound is a caller saying "not yet" (a range that depends on
+    // something still loading, or a feature that is switched off). Without this
+    // it still went to the network as `start_time=gte.` — no value after the
+    // dot — which PostgREST rejects with a 400 rather than an empty result.
+    enabled: Boolean(rangeStartISO && rangeEndISO),
     queryFn: async (): Promise<Slot[]> => {
       const { data, error } = await supabase
         .from("slots")
