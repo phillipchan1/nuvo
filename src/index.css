@@ -486,6 +486,12 @@ html:not([data-skin]) .app-shell {
   -webkit-backdrop-filter: blur(26px) saturate(1.35);
   backdrop-filter: blur(26px) saturate(1.35);
 }
+/* Same dark-theme correction as .app-canvas below — a --line-relative white
+   mix tuned for the light theme's near-white line reads as a lit edge once
+   --line itself goes dark. */
+html[data-theme="dark"]:not([data-skin]) .app-shell {
+  border-color: color-mix(in srgb, white 7%, var(--line));
+}
 
 /* The sheet is glass too — airy, not a solid slab. --atmosphere-base lets the
    warm-paper gradient stay exactly as it is while its base goes translucent, so
@@ -515,6 +521,17 @@ html:not([data-skin]) .app-canvas {
   overflow: hidden;
   -webkit-backdrop-filter: blur(20px) saturate(1.25);
   backdrop-filter: blur(20px) saturate(1.25);
+}
+/* The 46%/40% white mixes above are tuned for Aurora's LIGHT --line, which is
+   already near-white — mixed with white it stays a whisper. In dark mode
+   --line is dark, so the same mix jumps several times further toward white
+   and reads as a lit ring around the whole canvas instead of a glass edge.
+   Pull both back to the same felt weight the light theme has. */
+html[data-theme="dark"]:not([data-skin]) .app-canvas {
+  border-color: color-mix(in srgb, white 10%, var(--line));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
+    var(--shadow-2);
 }
 
 /* Aurora's chat furniture is glass too. The chat is printed on the shell, so a

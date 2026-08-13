@@ -2409,7 +2409,7 @@ export default function CalendarPane({
             drag-region gap between. Also fills the macOS titlebar zone (titlebar-pad). */}
       <div
         data-tauri-drag-region="deep"
-        className="titlebar-pad grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5"
+        className="titlebar-pad grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-4 py-2"
       >
         {/* Left — Show panels (focus exit only) + period nav */}
         <div className="flex min-w-0 items-center gap-1">
