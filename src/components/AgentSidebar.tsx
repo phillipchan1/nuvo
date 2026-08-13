@@ -118,7 +118,7 @@ export default function AgentSidebar({
   if (!open) {
     return (
       <aside
-        className="agent-rail-collapsed flex h-full w-11 shrink-0 flex-col items-center"
+        className="agent-rail-collapsed flex h-full w-16 shrink-0 flex-col items-center"
         onDragEnter={(e) => {
           if (isFileDrag(e)) {
             e.preventDefault();

@@ -454,7 +454,7 @@ function AppShellInner() {
           pattern) so nothing squashes mid-slide. */}
       <div
         className="app-chat-slot"
-        style={{ width: effectiveAgentOpen ? 380 : 44 }}
+        style={{ width: effectiveAgentOpen ? 380 : 64 }}
         aria-hidden={false}
       >
         <AgentSidebar agent={agent} open={effectiveAgentOpen} onToggle={toggleAgent} />
