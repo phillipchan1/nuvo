@@ -3200,16 +3200,26 @@ a widget must never be able to cost us the app's release train.
 purpose, for the same acts. It would be a violation if they opened anything else, which is
 what the shared parser prevents.
 
-*Status: shipped, one manual step outstanding. SPA half verified in the running dev app at
-375px (`?shortcut=chat` opens the chat overlay, `?shortcut=capture` opens the quick-task
-sheet, the param is stripped, no page errors); `npm test` 750 green; typecheck and
-`npm run build` clean. The native half was then driven on real CI (iOS TestFlight run #10,
-dispatched against the branch rather than merged): `ios-widgets.rb` patched the spec and
-xcodegen regenerated, `NuvoWidgets.swift` compiled clean for arm64-apple-ios16.0, and the
-`.appex` was embedded into `Nuvo.app/PlugIns` — **BUILD SUCCEEDED**. Export then failed on
-`Automatic signing cannot register bundle identifier "day.nuvo.app.widgets"`: an app
-extension is a separate signed bundle, and CI's API key can create a *profile* but not a
-new *identifier*. Registering `day.nuvo.app.widgets` once in the developer portal unblocks
-it; no code change. The same run also proved `agvtool new-version -all` reaches the widget
-plist, so the script now stamps the plain version and lets the archive add the build number
-to both. The deep-link leg still needs a device or simulator.*
+*Status: shipped and building green. SPA half verified in the running dev app at 375px
+(`?shortcut=chat` opens the chat overlay, `?shortcut=capture` opens the quick-task sheet,
+the param is stripped, no page errors); `npm test` 750 green, typecheck and `npm run build`
+clean. The native half was driven on real CI, dispatched against the branch rather than
+merged, and took three runs to land:
+
+- **#10** — `ios-widgets.rb` patched the spec, xcodegen regenerated, `NuvoWidgets.swift`
+  compiled clean for `arm64-apple-ios16.0`, the `.appex` embedded into `Nuvo.app/PlugIns`,
+  **BUILD SUCCEEDED**. Export failed: `Automatic signing cannot register bundle identifier
+  "day.nuvo.app.widgets"`. An app extension is a separate signed bundle, and
+  `-allowProvisioningUpdates` can create a *profile* but not register a new *identifier*
+  through an App Store Connect API key. Fixed by registering `day.nuvo.app.widgets` once in
+  the developer portal — now step 3 of the one-time setup in [`ios-releases.md`](../ios-releases.md).
+  The same run also proved `agvtool new-version -all` reaches the widget plist, so the
+  script stamps the plain version and lets the archive add the build number to both.
+- **#12** — cancelled mid-build, not failed: a push to `master` took the `ios-testflight`
+  concurrency group, which is `cancel-in-progress`. Worth knowing before reading a vanished
+  branch run as a break.
+- **#14** — green end to end on the merged commit, uploaded to TestFlight.
+
+**Still unverified: the `nuvo://` leg itself.** No CI run can prove it — it needs a tap on a
+device, or `xcrun simctl openurl booted nuvo://capture` on a simulator. Until someone does
+that, "the widget opens the capture sheet" is a claim, not an observation.*

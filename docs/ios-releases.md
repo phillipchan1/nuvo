@@ -220,8 +220,10 @@ xcrun simctl openurl booted nuvo://chat
 
 ## Phase 3 — Widgets — **shipped (launchers)**
 
-*Status: shipped 2026-08-13 (D-100) — the launcher half. Siri, App Intents and
-the glance snapshot are still ahead; see "Still ahead" below.*
+*Status: shipped 2026-08-13 (D-100) — the launcher half, green through
+TestFlight upload on iOS run #14. Siri, App Intents and the glance snapshot are
+still ahead; see "Still ahead" below. The `nuvo://` tap itself is still unproven
+— it needs a device or `xcrun simctl openurl`.*
 
 Three widgets in one WidgetKit extension, sources in
 [`src-tauri/ios/NuvoWidgets/`](../src-tauri/ios/NuvoWidgets/NuvoWidgets.swift):
