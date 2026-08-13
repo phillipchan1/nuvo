@@ -78,10 +78,10 @@ targets[TARGET_NAME] = {
   # the same executable — a stub copy and our link — and the build dies with
   # "Multiple commands produce .../NuvoWatch.app/NuvoWatch" (verified locally).
   #
-  # Because the type is plain `application`, XcodeGen will not infer the "Embed
-  # Watch Content" destination — which is exactly why the app target's dependency
-  # below names `copy:` explicitly. `supportedDestinations` is not an option
-  # either: XcodeGen refuses watchOS there.
+  # Nothing embeds this automatically, by design — see the long note below the
+  # target: it is built separately and copied in by a script phase, because a
+  # dependency edge would get it compiled for iOS. `supportedDestinations` is
+  # not an option either: XcodeGen refuses watchOS there.
   'type' => 'application',
   'platform' => 'watchOS',
   'sources' => [{ 'path' => SOURCE_PATH }],
@@ -160,22 +160,28 @@ app_target['postBuildScripts'] << {
   'script' => <<~SH
     set -euo pipefail
 
-    # Unset means this build carries no watch app — the normal case for
-    # `tauri ios dev`. Only the release path sets it.
-    if [ -z "${NUVO_WATCH_APP:-}" ]; then
-      echo "note: NUVO_WATCH_APP unset — building without the watch app"
+    # The location is DERIVED, not inherited. A script phase does not see the
+    # environment of whatever invoked xcodebuild — the first attempt exported
+    # NUVO_WATCH_APP from the workflow step and this phase still logged it as
+    # unset, so the IPA shipped with no watch app (run 31721460405). SRCROOT is
+    # src-tauri/gen/apple, and ios-watch-build.sh always writes its product to
+    # build/watch/Products underneath it. The env var stays as an override for
+    # anyone building the watch app somewhere else.
+    WATCH_APP="${NUVO_WATCH_APP:-${SRCROOT}/build/watch/Products/NuvoWatch.app}"
+
+    # Absent is the normal case for `tauri ios dev` — no watch app was built.
+    # A release that *expected* one is caught by the IPA check in the workflow,
+    # which is the right place for it: only that step knows what was intended.
+    if [ ! -d "$WATCH_APP" ]; then
+      echo "note: no watch app at $WATCH_APP — building without it"
       exit 0
-    fi
-    if [ ! -d "$NUVO_WATCH_APP" ]; then
-      echo "error: NUVO_WATCH_APP=$NUVO_WATCH_APP does not exist. Run scripts/ios-watch-build.sh first."
-      exit 1
     fi
 
     DEST="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Watch"
-    NAME="$(basename "$NUVO_WATCH_APP")"
+    NAME="$(basename "$WATCH_APP")"
     mkdir -p "$DEST"
     rm -rf "${DEST:?}/${NAME}"
-    cp -R "$NUVO_WATCH_APP" "$DEST/"
+    cp -R "$WATCH_APP" "$DEST/"
 
     # Re-sign with the host app's identity so the nested bundle matches the
     # archive it now lives in. --preserve-metadata keeps the watch app's OWN
