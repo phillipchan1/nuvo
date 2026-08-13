@@ -15,8 +15,10 @@ fi
 /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$PLIST"
 
-# Deep links for widgets / Siri / home-screen shortcuts (phase 2 handlers in MobileShell).
-# nuvo://capture → ?shortcut=capture, nuvo://chat → ?shortcut=chat
+# Deep links for widgets / Siri / home-screen shortcuts. tauri-plugin-deep-link
+# delivers the opened URL to the webview; MobileShell's applyShortcut opens the
+# matching overlay (src/lib/shortcuts.ts). nuvo://capture → the capture sheet,
+# nuvo://chat → the Nuvo chat.
 /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$PLIST" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
@@ -68,3 +70,13 @@ if bad:
 PY
 
 echo "ios-postinit: patched $PLIST"
+
+# Lock-screen / Home Screen widgets — adds the WidgetKit extension target to the
+# generated project and regenerates it. Last, because it re-runs xcodegen and
+# everything above edits files xcodegen doesn't own. NUVO_IOS_WIDGETS=0 ships the
+# plain app if the extension ever blocks a build.
+if [ "${NUVO_IOS_WIDGETS:-1}" = "1" ]; then
+  ruby "${ROOT}/scripts/ios-widgets.rb"
+else
+  echo "ios-widgets: skipped (NUVO_IOS_WIDGETS=0)"
+fi

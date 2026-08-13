@@ -58,6 +58,12 @@ const pwa = VitePWA({
         icons: [{ src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" }],
       },
       {
+        name: "Ask Nuvo",
+        short_name: "Ask Nuvo",
+        url: "/?shortcut=chat",
+        icons: [{ src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" }],
+      },
+      {
         name: "Today",
         short_name: "Today",
         url: "/?shortcut=today",

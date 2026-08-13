@@ -115,6 +115,14 @@ it needs to work on a phone.
   are a segmented control inside the Tasks screen; the week's readiness, the **Plan the
   week** card (`MobilePlanWeek` — the phone's weekly ritual: Slate → Pull → Shape) and the
   week's plan card ride the top of the **Week** segment.
+- **Every door into the phone shares one launch vocabulary** — `src/lib/shortcuts.ts`.
+  The PWA's icon shortcuts (`?shortcut=capture|chat|today`), the iOS lock-screen widgets
+  (`nuvo://capture`, `nuvo://chat` — Swift in `src-tauri/ios/NuvoWidgets/`, injected into
+  the Xcode project by `scripts/ios-widgets.rb`) and whatever App Intents land next all
+  parse through it, and `MobileShell`'s `applyShortcut` is the only thing that acts on
+  it. **Never add a second parser or a second applier** — a widget's ＋ and a long-pressed
+  icon's ＋ opening different things is the failure. Widgets carry **no data** (P7): a
+  glance ships with its "as of" stamp or not at all. See `docs/ios-releases.md`.
 - **Shared "floors"** render in both shells. Keep them responsive with Tailwind
   `md:`/`xl:` collapse; add *optional* mobile-routing props (e.g. `onAskNuvo`) rather than
   forking the component. Desktop behavior must stay unchanged when the prop is omitted.
