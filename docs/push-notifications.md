@@ -1,6 +1,7 @@
 # Background reminders — how they work, and how to turn them on
 
-**Status:** built, **not yet live** — needs the VAPID secrets below · 2026-08-13
+**Status:** live — VAPID secrets set and verified 2026-08-13. Untested against a
+real device; see §4's checklist and §6.
 **Decisions:** [D-102](./product/decisions.md) (what may be said) ·
 [D-105](./product/decisions.md) (push is allowed with consent)
 **Rules:** [`_shared/reminderRules.ts`](../supabase/functions/_shared/reminderRules.ts)
@@ -122,6 +123,29 @@ supabase functions deploy push-dispatch
 **The private key never goes in the repo, in `.env.local`, or in the browser.**
 It lives only in Supabase secrets — the same rule as the Tauri updater key.
 
+### Checking the setup before you test on a phone
+
+Two questions the CLI can't answer — the secrets live only in the function's
+environment, so the function is the only thing that can say. Ask it:
+
+```bash
+curl -s -X POST "$SUPABASE_URL/functions/v1/push-dispatch" -H "Authorization: Bearer $SUPABASE_ANON_KEY" -H "Content-Type: application/json" -d "{\"selfTest\":true,\"clientPublicKey\":\"$VITE_VAPID_PUBLIC_KEY\"}"
+```
+
+`{"ok":true,"matchesClient":true}` means both of the things that usually go
+wrong are fine:
+
+- **`ok`** — the pair genuinely signs. It imports the private key as a JWK using
+  the public key's x/y coordinates, so a public and private key from two
+  *different* `generate-vapid-keys` runs fail here rather than 403-ing at 8:50am
+  when a reminder doesn't arrive.
+- **`matchesClient`** — the key baked into the browser bundle is the same one the
+  server signs with. A public key is shipped in every bundle by design, so
+  comparing it discloses nothing.
+
+`matchesClient: false` after a Vercel deploy almost always means Vercel's
+`VITE_VAPID_PUBLIC_KEY` is stale — rebuild after changing it.
+
 ### Checking it worked
 
 1. Open the deployed app **on a phone, installed to the Home Screen**.
@@ -155,9 +179,11 @@ one.
   need `tauri-plugin-notification`; quit-state delivery on iOS would need APNs,
   an Apple push certificate and a native plugin. Neither is built. The Mac app
   being usually-open makes this much less pressing than it sounds.
-- **Never exercised against a live push service.** The crypto is written to the
-  RFCs and typechecks under Deno, but no real notification has been delivered —
-  there are no VAPID keys yet. Treat §4's checklist as the first real test.
+- **Never exercised against a live push service.** The keypair is set and
+  *proven to sign* (§4's self-test passes, and the client/server keys match),
+  but no notification has actually been delivered to a device — that needs a
+  phone with the PWA installed and permission granted. Treat §4's checklist as
+  the first real test.
 - **One timezone per person.** `user_settings.time_zone` is kept fresh from
   whichever device last ran the app. Deadlines therefore speak at 9am in the
   zone you were most recently in, which is right for travel and slightly odd if

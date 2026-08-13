@@ -51,6 +51,51 @@ export function webPushConfigured(): boolean {
   return VAPID_PUBLIC.length > 0 && VAPID_PRIVATE.length > 0;
 }
 
+/**
+ * Prove the keys actually work, rather than merely existing.
+ *
+ * `webPushConfigured()` only asks whether two strings are non-empty, and the
+ * failure this guards against is subtler than a missing secret: a public and a
+ * private key from two different `generate-vapid-keys` runs are both perfectly
+ * well-formed, and every send fails later with a 403 that reads like an
+ * unrelated auth problem.
+ *
+ * Signing exercises the whole path — the JWK import (which needs the public
+ * key's x/y to match the private scalar) and an ECDSA signature. If the pair is
+ * mismatched or malformed, this throws here, at a moment someone is looking,
+ * instead of silently at 8:50am when a meeting reminder doesn't arrive.
+ */
+export async function webPushSelfTest(clientPublicKey?: string): Promise<{
+  ok: boolean;
+  error?: string;
+  /** Whether the browser bundle's key is the same one the server signs with.
+   *  The most common misconfiguration, and invisible until a send 403s. */
+  matchesClient?: boolean;
+}> {
+  if (!webPushConfigured()) return { ok: false, error: "VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY not set" };
+  try {
+    // A real push origin, so the audience is shaped exactly as a live send.
+    // Nothing is transmitted — only the Authorization header is built.
+    const headers = await vapidHeaders("https://fcm.googleapis.com/fcm/send/self-test");
+    if (!headers.Authorization?.startsWith("vapid t=")) {
+      return { ok: false, error: "signed, but the header came out malformed" };
+    }
+    // Comparing a PUBLIC key is not a disclosure — it is shipped in every
+    // browser bundle by design. What it catches is the pair being split across
+    // two generate-vapid-keys runs, which nothing else notices.
+    const matchesClient = clientPublicKey ? clientPublicKey.trim() === VAPID_PUBLIC.trim() : undefined;
+    return { ok: true, matchesClient };
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      error:
+        `${raw} — this almost always means the public and private keys are from ` +
+        "different generate-vapid-keys runs, or one was pasted with whitespace.",
+    };
+  }
+}
+
 // ── base64url ───────────────────────────────────────────────────────────────
 
 function b64urlToBytes(s: string): Bytes {

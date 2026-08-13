@@ -33,7 +33,7 @@ import {
   type PlannedReminder,
 } from "../_shared/reminderRules.ts";
 import { buildReminderAnchors, REMINDER_WINDOW_MS } from "../_shared/reminderAnchors.ts";
-import { sendWebPush, type PushSubscriptionRow } from "../_shared/webpush.ts";
+import { sendWebPush, webPushConfigured, webPushSelfTest, type PushSubscriptionRow } from "../_shared/webpush.ts";
 
 /**
  * How far past due a reminder must be before the server will claim it.
@@ -65,6 +65,16 @@ Deno.serve(async (req) => {
   let considered = 0;
 
   try {
+    // `{"selfTest":true}` — prove the VAPID pair actually signs, on demand.
+    // Not run on the cron path: it is a setup question, asked once, and a
+    // per-minute ECDSA for nobody's benefit is the kind of thing that quietly
+    // becomes load. See docs/push-notifications.md §4.
+    const body = await req.json().catch(() => ({}));
+    const probe = body as { selfTest?: boolean; clientPublicKey?: string };
+    if (probe?.selfTest) {
+      return json({ ok: true, selfTest: await webPushSelfTest(probe.clientPublicKey) });
+    }
+
     // The opening read is the cheap one: almost nobody has reminders on, and
     // those who don't cost a single indexed row each.
     const { data: settingsRows, error: settingsErr } = await admin
@@ -77,8 +87,14 @@ Deno.serve(async (req) => {
       .map((row) => ({ row, prefs: normalizeReminderPrefs(row.reminder_prefs) }))
       .filter(({ prefs }) => prefs.enabled);
 
+    // Reported on every response, because "are the VAPID secrets actually set?"
+    // is otherwise unanswerable without a phone and a six-minute wait — the
+    // secrets live only in the function's env, so the function is the only thing
+    // that can say. See docs/push-notifications.md §4.
+    const configured = webPushConfigured();
+
     if (!accounts.length) {
-      return json({ ok: true, accounts: 0, notified: 0 });
+      return json({ ok: true, configured, accounts: 0, notified: 0 });
     }
 
     const nowMs = Date.now();
@@ -167,7 +183,7 @@ Deno.serve(async (req) => {
     }
 
     await logSync("push", "dispatch", "ok", `${notified}/${considered} in ${Date.now() - startedAt}ms`);
-    return json({ ok: true, accounts: accounts.length, considered, notified });
+    return json({ ok: true, configured, accounts: accounts.length, considered, notified });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await logSync("push", "dispatch", "error", message);
