@@ -74,10 +74,16 @@ function errMsg(e: unknown) {
 // (no ⌘Z) — so it rides top-center under the safe area and stays up longer.
 function AppToaster() {
   const isMobile = useIsMobile();
+  // Sonner switches to a separate --mobile-offset-* CSS var (not --offset-*)
+  // below its own 600px breakpoint — every phone qualifies — so the safe-area
+  // offset has to be set on BOTH props or the mobile one silently falls back
+  // to sonner's flat 16px default and the toast lands under the Dynamic Island.
+  const topOffset = "calc(env(safe-area-inset-top, 0px) + 12px)";
   return (
     <Toaster
       position={isMobile ? "top-center" : "bottom-right"}
-      offset={isMobile ? "calc(env(safe-area-inset-top, 0px) + 12px)" : undefined}
+      offset={isMobile ? topOffset : undefined}
+      mobileOffset={isMobile ? topOffset : undefined}
       duration={isMobile ? 9000 : undefined}
       richColors
       closeButton
