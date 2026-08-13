@@ -11,6 +11,21 @@ if [ ! -f "$PLIST" ]; then
   exit 1
 fi
 
+# Lock-screen / Home Screen widgets — adds the WidgetKit extension target to the
+# generated project and regenerates it via `xcodegen generate`. Must run FIRST:
+# xcodegen owns nuvo_iOS/Info.plist (project.yml declares `info.path` +
+# `info.properties` for that target), so regenerating rewrites the file from
+# project.yml's properties and silently drops anything patched below it —
+# ITSAppUsesNonExemptEncryption, CFBundleURLTypes, the orientation lock all
+# vanished this way (App Store Connect kept flagging every build "Missing
+# Compliance" because of it). NUVO_IOS_WIDGETS=0 ships the plain app if the
+# extension ever blocks a build.
+if [ "${NUVO_IOS_WIDGETS:-1}" = "1" ]; then
+  ruby "${ROOT}/scripts/ios-widgets.rb"
+else
+  echo "ios-widgets: skipped (NUVO_IOS_WIDGETS=0)"
+fi
+
 # App Store export compliance — Nuvo uses HTTPS only (Supabase); no custom crypto.
 /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$PLIST"
@@ -70,13 +85,3 @@ if bad:
 PY
 
 echo "ios-postinit: patched $PLIST"
-
-# Lock-screen / Home Screen widgets — adds the WidgetKit extension target to the
-# generated project and regenerates it. Last, because it re-runs xcodegen and
-# everything above edits files xcodegen doesn't own. NUVO_IOS_WIDGETS=0 ships the
-# plain app if the extension ever blocks a build.
-if [ "${NUVO_IOS_WIDGETS:-1}" = "1" ]; then
-  ruby "${ROOT}/scripts/ios-widgets.rb"
-else
-  echo "ios-widgets: skipped (NUVO_IOS_WIDGETS=0)"
-fi
