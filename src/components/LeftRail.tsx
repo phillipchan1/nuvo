@@ -174,6 +174,16 @@ export default function LeftRail({
         const next = visible[Math.min(visible.length - 1, Math.max(0, idx + delta))];
         if (next) { setSelectedId(next.id); setSelectedIds(new Set()); }
       };
+      // Complete/reopen, then — single row, and it was a completion rather than
+      // a reopen — step the cursor to the next row. Without this, a second press
+      // of the same key just reopened the row you'd already finished, because
+      // nothing ever moved the cursor off it (the row it disappeared into "N done
+      // today" read as the keyboard having gone dead).
+      const completeAndAdvance = () => {
+        const advancing = targets.length === 1 && targets[0].status !== "done";
+        targets.forEach((t) => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t)));
+        if (advancing) move(1);
+      };
 
       switch (e.key) {
         case "Escape":
@@ -198,7 +208,11 @@ export default function LeftRail({
           }
           break;
         case "e":
-          targets.forEach((t) => mutations.planFor(t, todayISO(), TRIAGE_UNDO));
+          // A Today row already has today's date, so "plan for today" is a
+          // no-op there — `e` does the row's actual most-used act instead:
+          // complete/reopen, freeing `f` up (still the Inbox binding below).
+          if (tab === "today") completeAndAdvance();
+          else targets.forEach((t) => mutations.planFor(t, todayISO(), TRIAGE_UNDO));
           break;
         case "t":
           targets.forEach((t) => mutations.planFor(t, tomorrowISO(), TRIAGE_UNDO));
@@ -209,9 +223,8 @@ export default function LeftRail({
           targets.forEach((t) => mutations.planFor(t, nextWeekISO(), TRIAGE_UNDO));
           break;
         case "f":
-          targets.forEach((t) =>
-            t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t),
-          );
+          // On Today, `e` owns complete/reopen — `f` is spent there.
+          if (tab !== "today") completeAndAdvance();
           break;
         case "x":
           // On the trash face `x` is already spent — the row IS trashed. Purging

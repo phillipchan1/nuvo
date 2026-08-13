@@ -183,6 +183,10 @@ export default function TaskList({
       } else if (e.key === " ") {
         e.preventDefault();
         toggleTask(t.id);
+        // Completing (not reopening) steps the cursor to the next row, so
+        // holding Space down a list checks off one task after another —
+        // Todoist-style — instead of re-toggling the same row every press.
+        if (t.status !== "done") setSel((i) => Math.min(tasks.length - 1, i + 1));
       } else if (e.key === "Backspace" || e.key === "Delete") {
         e.preventDefault();
         remove(t);
