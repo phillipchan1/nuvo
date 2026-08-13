@@ -132,6 +132,30 @@ jobs:
           echo "APPLE_API_ISSUER=${APPSTORE_ISSUER_ID}" >> "$GITHUB_ENV"
           echo "APPLE_API_KEY_PATH=${KEY_PATH}" >> "$GITHUB_ENV"
 
+      - name: Resolve build number against App Store Connect
+        # BUILD_NUMBER is the commit count, matching desktop's version — but
+        # a manual re-run of this workflow on a commit that already uploaded
+        # successfully would reuse that same number, which App Store Connect
+        # rejects (CFBundleVersion must strictly increase per marketing
+        # version). scripts/appstore-next-build-number.mjs checks the highest
+        # build already on file for $APP_VERSION and bumps past it if needed;
+        # it's a no-op (prints BUILD_NUMBER back unchanged) for the normal
+        # case of a version with no prior upload, and best-effort — any API
+        # problem falls back to the commit-count value rather than failing
+        # the build.
+        run: |
+          set -euo pipefail
+          BUNDLE_ID=$(node -p "require('./src-tauri/tauri.ios.conf.json').identifier")
+          RESOLVED=$(node scripts/appstore-next-build-number.mjs \
+            --bundle-id "$BUNDLE_ID" \
+            --version "$APP_VERSION" \
+            --proposed "$BUILD_NUMBER" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer-id "$APPLE_API_ISSUER" \
+            --key-path "$APPLE_API_KEY_PATH")
+          echo "BUILD_NUMBER=$RESOLVED" >> "$GITHUB_ENV"
+          echo "Resolved iOS build number: $RESOLVED"
+
       - name: Initialize iOS project
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}

@@ -55,11 +55,16 @@ On every push to `master` (and manual **Run workflow**):
    same scheme `release.yml` (desktop) uses, so a desktop build and an iOS
    build cut from the same commit always carry the same version and build
    number, regardless of which workflow(s) actually ran for a given push.
-2. `npm ci` → `tauri ios init --ci` (regenerate `gen/apple/`).
-3. `scripts/ios-postinit.sh` — encryption export flag, deep-link URL scheme,
+2. Checks that build number against App Store Connect
+   (`scripts/appstore-next-build-number.mjs`) and bumps past it if a build
+   for this exact version was already uploaded — only matters on a manual
+   re-run of a commit that already shipped; the normal per-commit case is a
+   no-op and iOS stays numbered identically to desktop.
+3. `npm ci` → `tauri ios init --ci` (regenerate `gen/apple/`).
+4. `scripts/ios-postinit.sh` — encryption export flag, deep-link URL scheme,
    **Nuvo app icons** (copies `src-tauri/icons/ios/` over Tauri's default catalog).
-4. `tauri ios build --export-method app-store-connect` — signed IPA.
-5. `xcrun altool --upload-app` → App Store Connect → TestFlight.
+5. `tauri ios build --export-method app-store-connect` — signed IPA.
+6. `xcrun altool --upload-app` → App Store Connect → TestFlight.
 
 ~15–20 min on `macos-latest`. Concurrency group `ios-testflight` — newer
 builds cancel in-progress ones.
