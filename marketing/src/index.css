@@ -674,3 +674,262 @@ body {
     min-width: 520px;
   }
 }
+
+/* ── Scroll reveal ───────────────────────────────────────────────────────────
+   A section rises as it arrives. Deliberately one beat and deliberately small
+   (10px, 0.7s): the page is an argument made of screens, and a reader who is
+   waiting for content to finish moving isn't reading it. The `.is-in` class is
+   added by an IntersectionObserver (useReveal), never by scroll position, so
+   the cost is one observer callback per section for the life of the page.
+
+   The un-observed default is *visible*, not hidden. This page is prerendered
+   and the crawler runs no JS — an opacity:0 default would ship a blank page to
+   Google's OAuth reviewer. The hook adds `.rise` itself on mount, which is the
+   only moment we know JS is running. */
+.rise {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.7s var(--ease-out),
+    transform 0.7s var(--ease-out);
+  will-change: opacity, transform;
+}
+
+.rise.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .rise.is-in {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ── The stack that can't answer the question ────────────────────────────────
+   A DIAGRAM on the paper — no card, no glass. The scrub drives one class per
+   source; everything else is a transition, so scrolling costs a class swap and
+   never a layout. */
+.scatter-track {
+  position: relative;
+  height: var(--scatter-vh, 260vh);
+}
+
+.scatter-frame {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2rem;
+  padding: 3rem 0;
+}
+
+/* The question is the subject of the section, so it sits at display size and
+   never as a caption. It arrives muted, sharpens the moment the first tool is
+   asked, and is left standing — `is-open` is the unanswered state, and it's the
+   only place on this page where --signal (the "now" colour) marks a *problem*,
+   which is deliberate: it's the one thing on the page that is genuinely wrong. */
+.scatter-q {
+  max-width: 34ch;
+  font-size: clamp(1.35rem, 2.9vw, 1.95rem);
+  line-height: 1.28;
+  font-style: italic;
+  color: var(--muted);
+  transition:
+    color 0.6s var(--ease-out),
+    opacity 0.6s var(--ease-out);
+}
+
+.scatter-q.is-asked {
+  color: var(--text);
+}
+
+.scatter-q.is-open {
+  color: var(--text);
+  border-left: 2px solid var(--signal);
+  padding-left: 1rem;
+  margin-left: -1rem;
+}
+
+.scatter-desk {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 1.75rem;
+  align-items: start;
+}
+
+.scatter-src {
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition:
+    border-color 0.5s var(--ease-out),
+    transform 0.55s var(--ease-out);
+}
+
+.scatter-src.is-answering {
+  border-top-color: var(--accent);
+  transform: translateY(-4px);
+}
+
+.scatter-src.is-answered {
+  border-top-color: var(--line-strong);
+}
+
+.scatter-kind {
+  color: var(--muted);
+  transition: color 0.5s var(--ease-out);
+}
+
+.scatter-src.is-answering .scatter-kind {
+  color: var(--accent);
+}
+
+/* The interface fragment. It dims once it has answered — the tool is still
+   there, it just stops being where the reader is looking. */
+.scatter-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  opacity: 0.9;
+  transition: opacity 0.55s var(--ease-out);
+}
+
+.scatter-src.is-answered .scatter-rows {
+  opacity: 0.32;
+}
+
+.scatter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+
+.scatter-box {
+  flex: none;
+  height: 10px;
+  width: 10px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 3px;
+}
+
+.scatter-box.is-done {
+  background: var(--line-strong);
+}
+
+.scatter-dot {
+  flex: none;
+  height: 7px;
+  width: 7px;
+  border-radius: 9999px;
+}
+
+.scatter-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.scatter-text.is-done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.scatter-meta {
+  margin-left: auto;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* The reply. Held at zero height until asked so the desk reads as four tools
+   rather than four paragraphs, then stays once answered — by the end of the
+   scrub all four verdicts are on screen together, which is the argument. */
+.scatter-reply {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.55s var(--ease-out),
+    opacity 0.5s var(--ease-out);
+}
+
+.scatter-src.is-answering .scatter-reply,
+.scatter-src.is-answered .scatter-reply {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.scatter-reply > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scatter-knows {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.scatter-stops {
+  margin-top: 0.4rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.scatter-verdict {
+  max-width: 46ch;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--muted);
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.6s var(--ease-out),
+    transform 0.6s var(--ease-out);
+}
+
+.scatter-verdict.is-open {
+  opacity: 1;
+  transform: none;
+}
+
+/* Phone: no scrub, no sticky. The section is simply true on arrival — four
+   tools, four verdicts, one open question — which is also the prerendered
+   state and the reduced-motion state. */
+@media (max-width: 767px) {
+  .scatter-track {
+    height: auto;
+  }
+  .scatter-frame {
+    position: static;
+    min-height: 0;
+    padding: 0;
+    gap: 1.75rem;
+  }
+  .scatter-desk {
+    grid-template-columns: 1fr;
+    gap: 1.5rem 0;
+  }
+  .scatter-q {
+    font-size: 1.3rem;
+  }
+}
