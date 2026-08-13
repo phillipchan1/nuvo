@@ -28,6 +28,19 @@ function localDateISO(iso: string): string {
   return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
 }
 
+/** A short label from the RRULE lines the invite carries — good enough to
+ *  confirm "yes, this repeats" before sending; the full picker lives on the
+ *  calendar once the series exists. */
+function recurrenceLabel(rrule: string[] | undefined): string | null {
+  const line = rrule?.[0];
+  if (!line) return null;
+  const freq = /FREQ=(\w+)/.exec(line)?.[1];
+  if (!freq) return null;
+  const interval = Number(/INTERVAL=(\d+)/.exec(line)?.[1] ?? 1);
+  const unit = freq === "DAILY" ? "day" : freq === "WEEKLY" ? "week" : "month";
+  return interval > 1 ? `Every ${interval} ${unit}s` : `Every ${unit}`;
+}
+
 function whenLine(draft: InviteDraft): string | null {
   if (!draft.startAt) return null;
   const day = fmtDayLabel(localDateISO(draft.startAt));
@@ -63,6 +76,7 @@ export default function AgentInviteCard({ draft }: { draft: InviteDraft }) {
           title: draft.title,
           start_at: draft.startAt!,
           end_at: draft.endAt!,
+          recurrence: draft.recurrence,
           attendees,
           accountId: draft.accountId,
           calendarId: draft.calendarId,
@@ -114,6 +128,7 @@ export default function AgentInviteCard({ draft }: { draft: InviteDraft }) {
           <div className="truncate text-caption font-medium text-ink">{draft.title}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-micro text-muted">
             {when && <span>{when}</span>}
+            {recurrenceLabel(draft.recurrence) && <span>· {recurrenceLabel(draft.recurrence)}</span>}
             {draft.calendarName && <span>· {draft.calendarName}</span>}
             {draft.location && <span>· {draft.location}</span>}
             {draft.addMeet && <span>· Google Meet</span>}

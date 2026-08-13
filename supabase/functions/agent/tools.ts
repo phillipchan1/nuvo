@@ -24,6 +24,7 @@ export type { MarqueeDirective, MarqueeTargetSpec } from "./toolDefs.ts";
 // agent's "bring it into the week" is byte-for-byte the UI's.
 import {
   bringIntoWeekPatch,
+  dayOfWeek,
   fromProjectRow,
   planningWeekStart,
   spansWeek,
@@ -37,6 +38,8 @@ import {
   expandRule,
   HORIZON_DAYS,
   nextOccurrenceDate,
+  toGoogleRRULE,
+  type RecurrenceFreq,
   type RecurrenceRule,
 } from "../_shared/recurrence.ts";
 import { hasConference, shouldAddMeet } from "../_shared/conferencing.ts";
@@ -909,6 +912,26 @@ async function meetPreference(userId: string): Promise<unknown> {
 
 type RawAttendee = { email?: string };
 
+/** `args.recurrence` (RECURRENCE_PARAM_SCHEMA's shape, toolDefs.ts) → a
+ *  RecurrenceRule, or undefined when the model didn't ask for a series.
+ *  `byweekday` defaults to the anchor's own weekday, same as the calendar
+ *  UI's repeat presets (`presetsFor` in _shared/recurrence.ts). */
+function recurrenceRuleFromArgs(args: Record<string, unknown>, startLocal: string): RecurrenceRule | undefined {
+  const raw = args.recurrence as
+    | { freq?: string; interval?: number; byweekday?: number[]; count?: number; until?: string }
+    | undefined;
+  if (!raw?.freq) return undefined;
+  const freq = raw.freq as RecurrenceFreq;
+  if (freq !== "daily" && freq !== "weekly" && freq !== "monthly") return undefined;
+  const rule: RecurrenceRule = { freq, interval: Math.max(1, raw.interval || 1) };
+  if (freq === "weekly") {
+    rule.byweekday = raw.byweekday?.length ? raw.byweekday : [dayOfWeek(startLocal.slice(0, 10))];
+  }
+  if (raw.count) rule.count = Math.max(1, raw.count);
+  else if (raw.until) rule.until = raw.until;
+  return rule;
+}
+
 /**
  * Stage an invite — resolve who, work out where and when, send nothing.
  *
@@ -1046,6 +1069,9 @@ async function stageInvite(
       ? (args.add_meet as boolean)
       : shouldAddMeet(await meetPreference(userId), recipients.length);
 
+  const recurrenceRule = recurrenceRuleFromArgs(args, startLocal);
+  const recurrence = recurrenceRule ? toGoogleRRULE(recurrenceRule) : undefined;
+
   const invite: InviteDraft = {
     mode: "create",
     title,
@@ -1058,6 +1084,7 @@ async function stageInvite(
     calendarId: target.calendarId,
     ...(args.location ? { location: String(args.location) } : {}),
     addMeet,
+    ...(recurrence ? { recurrence } : {}),
     ...(unresolved.length ? { unresolved } : {}),
   };
 
@@ -1070,6 +1097,7 @@ async function stageInvite(
       calendar: target.name,
       account: target.accountEmail,
       addMeet,
+      recurring: recurrenceRule ? describeRule(recurrenceRule, startLocal.slice(0, 10)) : undefined,
       recipients: recipients.map((r) => r.name ?? r.email),
       unresolved,
       note: inviteNote(INVITE_STAGED_NOTE, unresolved.length),
@@ -1717,6 +1745,11 @@ export async function executeTool(
 
       const provider = target.provider;
       const fn = eventsFnFor(provider);
+      // Both write-back providers accept RRULE lines on create (Google expands
+      // the series natively; icloud-events writes them into the VEVENT) — same
+      // shape the calendar UI's repeat picker sends via toGoogleRRULE.
+      const recurrenceRule = recurrenceRuleFromArgs(args, startLocal);
+      const recurrence = recurrenceRule ? toGoogleRRULE(recurrenceRule) : undefined;
       const res = await invokeFnJson(
         fn,
         {
@@ -1725,6 +1758,7 @@ export async function executeTool(
           start_at,
           end_at,
           ...(location ? { location } : {}),
+          ...(recurrence ? { recurrence } : {}),
           // No attendees ever reach here — a guest list is routed to
           // stageInvite above, so this call can never put mail on the wire.
           // Omitted → the account's auto_add_meet preference decides, the same
@@ -1756,10 +1790,11 @@ export async function executeTool(
           // Told, not assumed: the model can only say "with a Meet link" when
           // Google actually returned one.
           ...(meetUrl ? { meetUrl } : {}),
+          ...(recurrenceRule ? { recurring: describeRule(recurrenceRule, startLocal.slice(0, 10)) } : {}),
         }),
         action: {
           tool: name,
-          summary: `Added "${title}" to ${target.name} at ${fmtZonedTime(start_at, tz)}`,
+          summary: `Added "${title}" to ${target.name} at ${fmtZonedTime(start_at, tz)}${recurrenceRule ? ` (${describeRule(recurrenceRule, startLocal.slice(0, 10))})` : ""}`,
           verb: "created",
           ...(eventId ? { ref: { kind: "event" as const, id: eventId } } : {}),
         },
