@@ -37,6 +37,20 @@ struct WatchStatusPayload: Encodable {
 class NuvoWatchPlugin: Plugin, WCSessionDelegate {
     private var activated = false
 
+    /// A payload that arrived before WCSession finished activating.
+    ///
+    /// This exists because of a race that is easy to lose: activation is async
+    /// and starts at launch, while the webview calls pushSession the moment the
+    /// SPA mounts with a session in hand. Rejecting on "not activated yet" meant
+    /// the credential was dropped — and because the JS side only pushes when the
+    /// access token *changes*, nothing retried for the best part of an hour.
+    /// So the last payload is held and flushed on activation instead.
+    ///
+    /// Only ever touched under `lock`: the delegate callbacks arrive on a
+    /// background queue, the invoke comes from the webview's.
+    private var pending: [String: Any]?
+    private let lock = NSLock()
+
     public override func load(webview: WKWebView) {
         activate()
     }
@@ -72,8 +86,14 @@ class NuvoWatchPlugin: Plugin, WCSessionDelegate {
         }
         let session = WCSession.default
         guard session.activationState == .activated else {
+            // Queued, not failed. Holding the newest payload is the whole point
+            // of updateApplicationContext semantics anyway — one value, latest
+            // wins — so a second push before activation simply replaces this.
+            lock.lock()
+            pending = context
+            lock.unlock()
             activate()
-            return invoke.reject("WCSession is not activated yet — try again in a moment")
+            return invoke.resolve(status(session))
         }
         do {
             try session.updateApplicationContext(context)
@@ -116,6 +136,21 @@ class NuvoWatchPlugin: Plugin, WCSessionDelegate {
 
     func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
         activated = state == .activated
+        guard state == .activated else { return }
+
+        // Flush whatever arrived while we were still activating.
+        lock.lock()
+        let queued = pending
+        pending = nil
+        lock.unlock()
+
+        guard let queued else { return }
+        do {
+            try session.updateApplicationContext(queued)
+            NSLog("[nuvo-watch] flushed a queued credential on activation")
+        } catch {
+            NSLog("[nuvo-watch] flush failed: \(error.localizedDescription)")
+        }
     }
 
     func sessionDidBecomeInactive(_ session: WCSession) {}

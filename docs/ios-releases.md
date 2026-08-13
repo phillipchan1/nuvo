@@ -120,6 +120,19 @@ to be *prefixed by its companion's* — that part is a rule, not a convention.
 Same failure mode and same fix as the widgets; `NUVO_IOS_WATCH=0` ships without
 it meanwhile.
 
+**And the watch face complications need a third: `day.nuvo.app.watchkitapp.complications`.**
+Same place, description `Nuvo Watch Complications`, bundle ID **explicit**, no
+capabilities. A WidgetKit extension is its own signed bundle, so it needs its own
+identifier even though it lives inside the watch app, which lives inside the
+phone app. Four identifiers in total:
+
+| Identifier | What it signs |
+|---|---|
+| `day.nuvo.app` | the iPhone app |
+| `day.nuvo.app.widgets` | its lock-screen / Home Screen widgets |
+| `day.nuvo.app.watchkitapp` | the watch app |
+| `day.nuvo.app.watchkitapp.complications` | the watch face complications |
+
 There is **no separate App Store record.** A companion watch app rides inside
 the existing IPA at `Payload/Nuvo.app/Watch/NuvoWatch.app` — one `day.nuvo.app`
 record, one TestFlight build, one version stamp, and it installs onto a paired

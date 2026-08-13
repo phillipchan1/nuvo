@@ -24,7 +24,86 @@
 import { useEffect } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isTauriIOS } from "../lib/platform";
-import { supabaseAnonKey, supabaseUrl } from "../lib/supabase";
+import { supabase, supabaseAnonKey, supabaseUrl } from "../lib/supabase";
+
+/** The app key for the watch's own row in `connections`. One per account. */
+const WATCH_APP = "apple_watch";
+/** Where the raw token lives between mint and push. It is shown once and never
+ *  stored server-side (only sha256), so if this is lost the watch needs a new
+ *  one — hence keeping it, rather than minting a fresh row on every launch. */
+const TOKEN_KEY = "nuvo.watch.connectionToken";
+
+function mintToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/** Must match `sha256Hex` in supabase/functions/capture/index.ts. */
+async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * The watch's durable credential.
+ *
+ * A Supabase access token lasts about an hour, and the phone can only refresh
+ * it while the app is running — so a watch holding one is dead most of the time,
+ * which is exactly when you want to capture something. The refresh token can't
+ * cross either: rotation plus reuse detection would revoke the whole family and
+ * sign the user out on their phone.
+ *
+ * So the watch gets a `connections` bearer token — the same mechanism Settings →
+ * Apps & devices mints by hand, and the one `/capture` authenticates. It never
+ * expires, is revocable from that screen, and can't collide with the session.
+ *
+ * Minted once and reused: the raw token is unrecoverable after creation (only
+ * its hash is stored), so it is kept locally and a new row is created only when
+ * there isn't one.
+ */
+async function watchConnectionToken(userId: string): Promise<string | null> {
+  try {
+    const held = localStorage.getItem(TOKEN_KEY);
+    const { data: rows } = await supabase
+      .from("connections")
+      .select("id")
+      .eq("app", WATCH_APP)
+      .is("revoked_at", null)
+      .limit(1);
+
+    // A held token is only good if its row is still live — revoking on the
+    // Settings screen has to actually take the watch offline.
+    if (held && rows && rows.length > 0) return held;
+    if (!held && rows && rows.length > 0) {
+      // The row outlived the token (reinstall, cleared storage). It can never be
+      // recovered, so retire it and mint again rather than pushing nothing.
+      await supabase
+        .from("connections")
+        .update({ revoked_at: new Date().toISOString() })
+        .eq("app", WATCH_APP)
+        .is("revoked_at", null);
+    }
+
+    const token = mintToken();
+    const { error } = await supabase.from("connections").insert({
+      user_id: userId,
+      app: WATCH_APP,
+      name: "Apple Watch",
+      scopes: ["inbox:write"],
+      token_hash: await sha256Hex(token),
+      last_four: token.slice(-4),
+    });
+    if (error) return null;
+    localStorage.setItem(TOKEN_KEY, token);
+    return token;
+  } catch {
+    return null;
+  }
+}
 
 export interface WatchStatus {
   supported: boolean;
@@ -58,6 +137,12 @@ export function useWatchSession(session: Session | null): void {
           return;
         }
 
+        // Both travel: the connection token is durable and carries capture; the
+        // access token is what reaches the agent and /day, and is refreshed here
+        // every time the phone renews it.
+        const connectionToken = await watchConnectionToken(userId);
+        if (cancelled) return;
+
         await invoke("plugin:nuvo-watch|push_session", {
           payload: {
             url: supabaseUrl,
@@ -65,7 +150,7 @@ export function useWatchSession(session: Session | null): void {
             // Shipped in the payload so the watch needs no build-time env
             // injection — VITE_* is a Vite-time substitution Swift can't see.
             accessToken,
-            connectionToken: null,
+            connectionToken,
             userId,
             issuedAt: Math.floor(Date.now() / 1000),
           },

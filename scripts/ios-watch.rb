@@ -33,6 +33,9 @@ TARGET_NAME = 'NuvoWatch'
 # Sources live outside gen/apple (gitignored) so the Swift is committed and
 # reviewable; XcodeGen is happy to reference a path above the project.
 SOURCE_PATH = '../../ios/NuvoWatch'
+# The watch face complications, embedded in the watch app (not the phone's).
+WIDGET_TARGET = 'NuvoWatchWidgets'
+WIDGET_SOURCE_PATH = '../../ios/NuvoWatchWidgets'
 # watchOS 10 is where the SwiftUI idioms this app is written in are native.
 DEPLOYMENT_TARGET = '10.0'
 
@@ -99,7 +102,16 @@ targets[TARGET_NAME] = {
       # Single-target watch app (Xcode 14+): no companion watchkit2-extension,
       # WKApplication rather than the retired WKWatchKitApp.
       'WKApplication' => true,
-      'WKCompanionAppBundleIdentifier' => app_bundle_id
+      'WKCompanionAppBundleIdentifier' => app_bundle_id,
+      # A complication tap opens `nuvo://capture` / `nuvo://chat`, the same
+      # vocabulary src/lib/shortcuts.ts parses and the iPhone widgets fire. The
+      # watch app has to declare the scheme or onOpenURL never sees it.
+      'CFBundleURLTypes' => [
+        {
+          'CFBundleURLName' => watch_bundle_id,
+          'CFBundleURLSchemes' => ['nuvo']
+        }
+      ]
     }
   },
   'settings' => {
@@ -134,7 +146,47 @@ targets[TARGET_NAME] = {
     { 'sdk' => 'SwiftUI.framework' },
     # The phone hands the watch its credential over WCSession — see the token
     # bridge in the plan. Linked now so the target doesn't change shape later.
-    { 'sdk' => 'WatchConnectivity.framework' }
+    { 'sdk' => 'WatchConnectivity.framework' },
+    # The complications ride INSIDE the watch app, not the iPhone app. This one
+    # is a normal embed: both targets are watchOS, so the SDK conflict that
+    # forced the app-side dance below doesn't arise here.
+    { 'target' => WIDGET_TARGET, 'embed' => true }
+  ]
+}
+
+# The watch face complications — Capture and Ask Nuvo, the same two acts as the
+# iPhone's widgets. A WidgetKit extension on watchOS, embedded in the watch app.
+targets[WIDGET_TARGET] = {
+  'type' => 'app-extension',
+  'platform' => 'watchOS',
+  'sources' => [{ 'path' => WIDGET_SOURCE_PATH }],
+  'info' => {
+    'path' => "#{WIDGET_TARGET}/Info.plist",
+    'properties' => {
+      'CFBundleDisplayName' => 'Nuvo',
+      'CFBundleShortVersionString' => short_version,
+      'CFBundleVersion' => short_version,
+      'NSExtension' => {
+        'NSExtensionPointIdentifier' => 'com.apple.widgetkit-extension'
+      }
+    }
+  },
+  'settings' => {
+    'base' => {
+      'PRODUCT_NAME' => WIDGET_TARGET,
+      'PRODUCT_BUNDLE_IDENTIFIER' => "#{watch_bundle_id}.complications",
+      'WATCHOS_DEPLOYMENT_TARGET' => DEPLOYMENT_TARGET,
+      'TARGETED_DEVICE_FAMILY' => '4',
+      'SWIFT_VERSION' => '5.0',
+      'SKIP_INSTALL' => 'YES',
+      'ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES' => 'NO',
+      'CODE_SIGN_STYLE' => 'Automatic',
+      'GENERATE_INFOPLIST_FILE' => 'NO'
+    }.tap { |s| s['DEVELOPMENT_TEAM'] = team if team && !team.empty? }
+  },
+  'dependencies' => [
+    { 'sdk' => 'SwiftUI.framework' },
+    { 'sdk' => 'WidgetKit.framework' }
   ]
 }
 
