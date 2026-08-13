@@ -25,7 +25,9 @@ struct AskView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 if let answer {
-                    Text(answer)
+                    // Rendered, not printed — the reply is markdown and the
+                    // wrist should see the words, never the asterisks.
+                    Text(AgentText.render(answer))
                         .font(.footnote)
                         .foregroundStyle(Paper.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -66,8 +68,13 @@ struct AskView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("Ask Nuvo")
-        .containerBackground(Paper.bg.gradient, for: .navigation)
-        .onAppear { if answer == nil && !asking { focused = true } }
+        .task {
+            // Same reason as CaptureView: focus has to wait until the field is
+            // really in the hierarchy or watchOS drops it.
+            guard answer == nil, !asking else { return }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            focused = true
+        }
     }
 
     private func ask() {

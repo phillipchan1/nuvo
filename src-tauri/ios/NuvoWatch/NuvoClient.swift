@@ -14,6 +14,10 @@ import Foundation
 
 enum NuvoClientError: LocalizedError {
     case notSignedIn
+    /// Signed in, but the phone hasn't handed over a capture token yet — it is
+    /// minted on the iPhone app's next launch. Worth its own message: "not
+    /// signed in" would send the user hunting for a login that isn't the problem.
+    case needsPairing
     case sessionExpired
     case http(Int, String)
     case empty
@@ -21,6 +25,7 @@ enum NuvoClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notSignedIn: return "Open Nuvo on your iPhone first."
+        case .needsPairing: return "Open Nuvo on your iPhone once to finish setting up capture."
         case .sessionExpired: return "Open Nuvo on your iPhone to refresh."
         case .http(let code, let msg): return msg.isEmpty ? "Failed (\(code))" : msg
         case .empty: return "No reply."
@@ -49,7 +54,7 @@ struct NuvoClient {
     func capture(_ text: String) async throws -> String {
         guard let token = creds.connectionToken, !token.isEmpty else {
             // No durable token yet. The phone mints one on its next launch.
-            throw NuvoClientError.notSignedIn
+            throw NuvoClientError.needsPairing
         }
         guard var r = request("/functions/v1/capture", bearer: token) else {
             throw NuvoClientError.notSignedIn

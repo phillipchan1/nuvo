@@ -67,11 +67,14 @@ struct CaptureView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle("Capture")
-        .containerBackground(Paper.bg.gradient, for: .navigation)
-        .onAppear {
-            // Straight into dictation — a capture surface you have to tap into
-            // first has already lost to the Notes app.
-            if case .idle = phase { focused = true }
+        .task {
+            // Straight into dictation. Focusing in onAppear is too early —
+            // the field isn't in the hierarchy yet and watchOS silently ignores
+            // it, which is what left a menu-then-tap-then-type sequence on a
+            // surface whose whole job is to be faster than remembering.
+            guard case .idle = phase else { return }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            focused = true
         }
     }
 

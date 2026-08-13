@@ -68,28 +68,24 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(spacing: 8) {
                 if session.isSignedIn {
-                    // The two acts, in the order they are reached for.
-                    Button {
-                        route = .capture
-                    } label: {
-                        Label("Capture", systemImage: "plus")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .tint(Paper.accent)
+                    // Two acts, equal weight, both full-width taps. The first
+                    // build tinted only one, which read as "Capture is the
+                    // button and Ask Nuvo is a link" — they are the same kind
+                    // of thing and should look it.
+                    ActButton(title: "Capture", symbol: "plus") { route = .capture }
+                    ActButton(title: "Ask Nuvo", symbol: "sparkles") { route = .chat }
 
-                    Button {
-                        route = .chat
-                    } label: {
-                        Label("Ask Nuvo", systemImage: "sparkle")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    // Deliberately says nothing about the day yet. A glance that
-                    // looks live when it has no data is the Principle 7 failure
-                    // the lock-screen widgets refused to ship; the day arrives
-                    // here when it arrives from GET /day, with its "as of".
+                    // Says nothing about the day yet, deliberately: a glance
+                    // that looks live before it has data is the Principle 7
+                    // failure the lock-screen widgets refused to ship. The day
+                    // arrives from GET /day, with its "as of".
+                    Text("Add these to your watch face")
+                        .font(.caption2)
+                        .foregroundStyle(Paper.muted)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 2)
                 } else {
                     Text("Not signed in yet")
                         .font(.footnote)
@@ -97,6 +93,7 @@ struct RootView: View {
                     Text("Open Nuvo on your iPhone to hand this watch a credential.")
                         .font(.caption2)
                         .foregroundStyle(Paper.muted)
+                        .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -107,9 +104,34 @@ struct RootView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity)
             .navigationTitle("Nuvo")
-            .containerBackground(Paper.bg.gradient, for: .navigation)
         }
+    }
+}
+
+/// One act. Full width, generous height — this is a wrist, and the two things
+/// this app does should both be hittable without looking.
+private struct ActButton: View {
+    let title: String
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.body)
+                    .foregroundStyle(Paper.accent)
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(Paper.ink)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .tint(Paper.surface)
     }
 }
