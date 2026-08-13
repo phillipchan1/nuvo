@@ -33,7 +33,8 @@
  * prerendered HTML contains for a crawler that runs no JS.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
+import { steps, useScrollProgress } from '../useScrollProgress'
 import { COMMUNITY, CRAFT, FAMILY, WORK } from './hues'
 
 /** The question every one of these tools is about to fail. Deliberately one
@@ -111,56 +112,15 @@ const SOURCES: Source[] = [
 const TRACK_VH = 340
 
 export default function ScatterVisual() {
-  /** -1 = nothing asked yet; 0..3 = this source is answering; 4 = all done. */
-  const [asked, setAsked] = useState(-1)
   const wrapRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const el = wrapRef.current
-    if (!el) return
+  /** 'sticky': the interrogation has to hold still while four beats play, so it
+   *  buys its own scroll distance. This is the one section on the page allowed
+   *  to do that — see useScrollProgress for why never two. */
+  const p = useScrollProgress(wrapRef, { mode: 'sticky', from: 0.12, to: 0.82 })
 
-    const reduced = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    /** The scrub needs vertical room the phone doesn't have, and a sticky frame
-     *  fighting iOS's address-bar resize is worse than no motion at all. Below
-     *  the app's own mobile breakpoint the section is simply true on arrival. */
-    const narrow = window.matchMedia?.('(max-width: 767px)').matches
-
-    if (reduced || narrow) {
-      setAsked(SOURCES.length)
-      return
-    }
-
-    let frame = 0
-    const measure = () => {
-      frame = 0
-      const r = el.getBoundingClientRect()
-      const travel = r.height - window.innerHeight
-      if (travel <= 0) {
-        setAsked(SOURCES.length)
-        return
-      }
-      /** 0 at the moment the frame sticks, 1 when it releases. */
-      const p = Math.min(1, Math.max(0, -r.top / travel))
-      /** A lead-in so the reader sees the untouched desk before anything is
-       *  asked, and a tail so the unanswered question holds on screen. */
-      const t = (p - 0.12) / 0.7
-      setAsked(t <= 0 ? -1 : Math.min(SOURCES.length, Math.floor(t * (SOURCES.length + 1))))
-    }
-
-    const onScroll = () => {
-      if (frame) return
-      frame = window.requestAnimationFrame(measure)
-    }
-
-    measure()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('resize', onScroll)
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame)
-      window.removeEventListener('scroll', onScroll)
-      window.removeEventListener('resize', onScroll)
-    }
-  }, [])
+  /** -1 = nothing asked yet; 0..3 = this source is answering; 4 = all done. */
+  const asked = p <= 0 ? -1 : steps(p, SOURCES.length)
 
   const done = asked >= SOURCES.length
 
