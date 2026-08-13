@@ -7,8 +7,14 @@ import {
   type RecurrenceFreq,
   type RecurrenceRule,
   rulesEqual,
+  SETPOS_VALUES,
+  setposOf,
   WEEKDAY_LABELS,
 } from "../lib/recurrence";
+
+/** The positional labels, short enough for a five-up segmented control. */
+const SETPOS_SHORT: Record<number, string> = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", [-1]: "Last" };
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 import { parseDateISO } from "../lib/dates";
 import { Btn } from "./ui";
 import { useEscape } from "../hooks/useEscape";
@@ -297,6 +303,7 @@ export default function RecurrencePicker({
 }) {
   const presets = useMemo(() => presetsFor(anchorISO), [anchorISO]);
   const anchorWeekday = parseDateISO(anchorISO).getDay();
+  const anchorMonth = parseDateISO(anchorISO).getMonth() + 1;
   const anchorDay = parseDateISO(anchorISO).getDate();
 
   // Does `current` match one of the presets? If not, the custom builder opens.
@@ -314,6 +321,11 @@ export default function RecurrencePicker({
   );
   const [untilDate, setUntilDate] = useState(current?.until ?? "");
   const [count, setCount] = useState(current?.count ?? 10);
+  // Monthly / yearly answer "which day" one of two ways, never both: by date
+  // ("the 14th") or by position ("the 3rd Tuesday"). One control, two states —
+  // see the recurrence kernel's `bysetpos`.
+  const [dayRule, setDayRule] = useState<"date" | "position">(current?.bysetpos ? "position" : "date");
+  const [setpos, setSetpos] = useState<number>(current?.bysetpos ?? setposOf(anchorISO));
 
   const popRef = useRef<HTMLDivElement>(null);
   // The popover is only mounted while open, so it is always active here.
@@ -341,7 +353,15 @@ export default function RecurrencePicker({
   const buildCustom = (): RecurrenceRule => {
     const rule: RecurrenceRule = { freq, interval: Math.max(1, interval) };
     if (freq === "weekly") rule.byweekday = weekdays.length ? [...weekdays].sort((a, b) => a - b) : [anchorWeekday];
-    if (freq === "monthly") rule.bymonthday = anchorDay;
+    if (freq === "monthly" || freq === "yearly") {
+      if (dayRule === "position") {
+        rule.bysetpos = setpos;
+        rule.byweekday = [anchorWeekday];
+      } else {
+        rule.bymonthday = anchorDay;
+      }
+      if (freq === "yearly") rule.bymonth = anchorMonth;
+    }
     if (endMode === "on" && untilDate) rule.until = untilDate;
     if (endMode === "after") rule.count = Math.max(1, count);
     return rule;
@@ -407,9 +427,9 @@ export default function RecurrencePicker({
                 className="w-12 rounded-md border border-line bg-surface-2 px-1.5 py-1 text-center text-caption outline-none focus:border-accent"
               />
               <div className="flex flex-1 gap-1 rounded-[var(--radius)] bg-bg p-0.5">
-                {(["daily", "weekly", "monthly"] as const).map((f) => (
+                {(["daily", "weekly", "monthly", "yearly"] as const).map((f) => (
                   <button key={f} onClick={() => setFreq(f)} className={seg(freq === f)}>
-                    {f === "daily" ? "Day" : f === "weekly" ? "Week" : "Month"}
+                    {f === "daily" ? "Day" : f === "weekly" ? "Week" : f === "monthly" ? "Month" : "Year"}
                   </button>
                 ))}
               </div>
@@ -434,8 +454,29 @@ export default function RecurrencePicker({
               </div>
             )}
 
-            {freq === "monthly" && (
-              <p className="text-label text-muted">On the {anchorDay}{ordinalSuffix(anchorDay)} of the month</p>
+            {/* The control that used to be a sentence. "On the 14th" was
+                stated, never chosen — so "the last Friday of the month", the
+                shape most standing commitments take, could not be said at all. */}
+            {(freq === "monthly" || freq === "yearly") && (
+              <div className="space-y-1.5">
+                <div className="flex gap-1 rounded-[var(--radius)] bg-bg p-0.5">
+                  <button onClick={() => setDayRule("date")} className={seg(dayRule === "date")}>
+                    {freq === "yearly" ? `${MONTH_SHORT[anchorMonth - 1]} ${anchorDay}` : `On the ${anchorDay}${ordinalSuffix(anchorDay)}`}
+                  </button>
+                  <button onClick={() => setDayRule("position")} className={seg(dayRule === "position")}>
+                    On the {SETPOS_SHORT[setpos] ?? setpos} {WEEKDAY_LABELS[anchorWeekday]}
+                  </button>
+                </div>
+                {dayRule === "position" && (
+                  <div className="flex gap-1 rounded-[var(--radius)] bg-bg p-0.5">
+                    {SETPOS_VALUES.map((p) => (
+                      <button key={p} onClick={() => setSetpos(p)} className={seg(setpos === p)}>
+                        {SETPOS_SHORT[p]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* End condition */}

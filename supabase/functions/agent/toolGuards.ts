@@ -25,6 +25,8 @@ export const REQUIRES_TARGET: Record<string, string[]> = {
   update_task: ["task_id", "task_title"],
   cancel_event: ["event_id", "event_title"],
   decline_event: ["event_id", "event_title"],
+  rsvp_event: ["event_id", "event_title"],
+  duplicate_event: ["event_id", "event_title"],
   update_priority: ["priority_id", "priority_title", "project_id"],
   complete_priority: ["priority_id", "priority_title", "project_id"],
   delete_priority: ["priority_id", "priority_title", "project_id"],
@@ -44,6 +46,18 @@ export const REQUIRES_TARGET: Record<string, string[]> = {
   schedule_task: ["task_id", "task_title"],
   plan_task: ["task_id", "task_title"],
   reschedule_task: ["task_id", "task_title"],
+  // A reminder with no subject would attach to nothing; `set_reminder` also
+  // requires lead_minutes in its schema, so this is the other half of its pair.
+  set_reminder: ["task_id", "task_title", "event_id", "event_title", "slot_id"],
+  restore_task: ["task_id", "task_title"],
+  // A checklist with no task to hang on is nothing at all.
+  add_step: ["task_id", "task_title"],
+  complete_step: ["task_id", "task_title"],
+  list_steps: ["task_id", "task_title"],
+  remove_step: ["task_id", "task_title"],
+  // Permanent and unrecoverable — it must never fire on a guess.
+  purge_task: ["task_id", "task_title"],
+  clear_reminder: ["task_id", "task_title", "event_id", "event_title", "slot_id"],
 };
 
 function present(args: Record<string, unknown>, key: string): boolean {

@@ -5,20 +5,33 @@ import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { captureTitle, parseCapture } from "../lib/nlp";
 import { acceptPatch, dismissPatch } from "../lib/grooming";
-import type { NewTaskInput, useTaskMutations } from "../hooks/useTasks";
+import { TRASH_LIMIT, useTrashedTasks, type NewTaskInput, type useTaskMutations } from "../hooks/useTasks";
 import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useListReorder } from "../hooks/useListReorder";
 import { announce } from "../lib/announce";
-import { isTypingIn } from "../lib/a11y";
+import { isTypingIn, pressable } from "../lib/a11y";
 import { domainById, initiativeById, projectById, taskDomainColor, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { useOptionalUndoStack } from "../hooks/useUndoStack";
+import { useReminderFor, useReminderMutations } from "../hooks/useReminders";
+import {
+  describeLead,
+  describeLeadShort,
+  REMINDER_LEADS,
+  type ReminderAnchorKind,
+} from "../../supabase/functions/_shared/reminderRules.ts";
 import TaskRow, { type TaskMeta } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import { SectionLabel } from "./ui";
 
-export type RailTab = "inbox" | "today";
+/**
+ * The rail's faces. `trash` is the floor under delete (audit rank 8: a trashed
+ * task was unrecoverable once its six-second toast expired). It is deliberately
+ * NOT a sixth navigation destination — Principle 10 — just a third face on the
+ * strip that already exists, and it only appears when it holds something.
+ */
+export type RailTab = "inbox" | "today" | "trash";
 type Mutations = ReturnType<typeof useTaskMutations>;
 
 /** Keyboard / menu / tab-drop triage: destination may vanish from the rail, so
@@ -91,6 +104,7 @@ export default function LeftRail({
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ task: Task; x: number; y: number } | null>(null);
   const [labelPickerFor, setLabelPickerFor] = useState<Task | null>(null);
+  const [remindPickerFor, setRemindPickerFor] = useState<Task | null>(null);
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);
   const captureRef = useRef<HTMLInputElement>(null);
   const [railWidth, setRailWidth] = useState(readRailWidth);
@@ -108,6 +122,7 @@ export default function LeftRail({
     setContextMenu(null);
     setLabelPickerFor(null);
     setSchedulePickerFor(null);
+    setRemindPickerFor(null);
   }, [nav]);
 
   const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
@@ -120,10 +135,24 @@ export default function LeftRail({
     [inbox],
   );
 
+  // The trash — its own query, because every other read deliberately excludes
+  // `status = "trashed"`. Empty until something is deleted, and the tab that
+  // reveals it appears only then.
+  const { data: trashedRows } = useTrashedTasks();
+  const trashed = useMemo(() => trashedRows ?? [], [trashedRows]);
+
+  // The tab can vanish under the user (restore the last row, empty the trash),
+  // and a rail left on a face that no longer exists renders nothing at all.
+  useEffect(() => {
+    if (tab === "trash" && trashed.length === 0) setTab("today");
+  }, [tab, trashed.length, setTab]);
+
   const visible: Task[] =
     tab === "inbox"
       ? inboxOrdered
-      : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
+      : tab === "trash"
+        ? trashed
+        : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
 
   const selected = visible.find((t) => t.id === selectedId) ?? null;
 
@@ -185,9 +214,23 @@ export default function LeftRail({
           );
           break;
         case "x":
+          // On the trash face `x` is already spent — the row IS trashed. Purging
+          // is the one act with no undo, so it never rides a bare keystroke; the
+          // row's own confirm-then-commit button is the only path.
+          if (tab === "trash") break;
           targets.forEach((t) => mutations.trash(t));
           setSelectedId(null);
           setSelectedIds(new Set());
+          break;
+        // Restore — only means anything on the trash face, so it costs no letter
+        // anywhere else.
+        case "u":
+          if (tab === "trash" && targets.length) {
+            e.preventDefault();
+            targets.forEach((t) => mutations.restore(t));
+            setSelectedId(null);
+            setSelectedIds(new Set());
+          }
           break;
         case "i":
           targets.filter((t) => t.status !== "inbox").forEach((t) => mutations.backToInbox(t, TRIAGE_UNDO));
@@ -199,6 +242,15 @@ export default function LeftRail({
           if (targets.length === 1) {
             e.preventDefault();
             setLabelPickerFor(targets[0]);
+          }
+          break;
+        // `m` is the Schedule's Month, so Remind lives on `b` (bell). Only
+        // offered when the row has a moment to be early for — a reminder on a
+        // task with neither a block nor a deadline has no anchor to hang on.
+        case "b":
+          if (targets.length === 1 && (targets[0].start_time || targets[0].deadline)) {
+            e.preventDefault();
+            setRemindPickerFor(targets[0]);
           }
           break;
         case "1":
@@ -215,7 +267,7 @@ export default function LeftRail({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hotkeysEnabled, selected, selectedIds, visible, mutations, onOpenTask, setTab]);
+  }, [hotkeysEnabled, selected, selectedIds, visible, mutations, onOpenTask, setTab, tab]);
 
   const submitCapture = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -509,7 +561,11 @@ export default function LeftRail({
   });
 
   const tabCount = (t: RailTab) =>
-    t === "inbox" ? inbox.length : today.filter((x) => x.status !== "done").length;
+    t === "inbox"
+      ? inbox.length
+      : t === "trash"
+        ? trashed.length
+        : today.filter((x) => x.status !== "done").length;
 
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -575,7 +631,7 @@ export default function LeftRail({
         {/* The strip carries one continuous baseline so the active underline sits ON
             a line instead of floating between the crown's divider and nothing. */}
         <div className="flex border-b border-line">
-          {(["today", "inbox"] as const).map((t) => {
+          {(trashed.length ? (["today", "inbox", "trash"] as const) : (["today", "inbox"] as const)).map((t) => {
             // Three states, because "you could drop here" and "you are about to"
             // are different promises: resting · armed (a compatible row is in
             // hand) · ready (the pointer is on it, release commits).
@@ -587,13 +643,20 @@ export default function LeftRail({
                 onClick={() => setTab(t)}
                 {...(t === "inbox"
                   ? { "data-inbox-tab": "", "data-teach": "inbox-tab" }
-                  : { "data-today-tab": "" })}
+                  : t === "trash"
+                    ? {}
+                    : { "data-today-tab": "" })}
                 className={`fast -mb-px flex-1 border-b-2 px-3 py-2 text-caption font-semibold ${
                   tab === t ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"
                 } ${ready ? "rail-tab-ready" : armed ? "rail-tab-armed" : ""}`}
               >
-                {t === "inbox" ? "Inbox" : "Today"}
-                <span className="mono ml-1.5 text-meta text-muted">{tabCount(t)}</span>
+                {t === "inbox" ? "Inbox" : t === "trash" ? "Trash" : "Today"}
+                {/* The trash query is capped, so its count is a floor, not a
+                    total — say "100+" rather than claiming exactly 100. */}
+                <span className="mono ml-1.5 text-meta text-muted">
+                  {tabCount(t)}
+                  {t === "trash" && trashed.length >= TRASH_LIMIT ? "+" : ""}
+                </span>
               </button>
             );
           })}
@@ -620,6 +683,16 @@ export default function LeftRail({
             ))}
             {inboxOrdered.length === 0 && <EmptyState text="Inbox zero. Capture with C or ⌘K." />}
           </>
+        )}
+
+        {tab === "trash" && (
+          <TrashList
+            tasks={trashed}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onRestore={(t) => mutations.restore(t)}
+            onPurge={(t) => void mutations.purge(t)}
+          />
         )}
 
         {tab === "today" && (
@@ -792,6 +865,9 @@ export default function LeftRail({
           onClose={() => setSchedulePickerFor(null)}
           mutations={mutations}
         />
+      )}
+      {remindPickerFor && (
+        <RemindPicker task={remindPickerFor} onClose={() => setRemindPickerFor(null)} />
       )}
 
       {contextMenu && (
@@ -1063,6 +1139,170 @@ function LabelPicker({
           <span style={{ color: l.color }}>{l.name}</span>
         </label>
       ))}
+    </Popover>
+  );
+}
+
+/**
+ * The trash.
+ *
+ * Hairline rows on the paper, not cards — nothing here floats (P14). Two acts
+ * per row, and the destructive one asks: **Delete forever** is the only act in
+ * the app with no undo, so it turns `--signal` only once it is confirming,
+ * exactly as the popovers' footer does.
+ *
+ * Deliberately NOT a TaskRow: a trashed task has no checkbox, no drag handle,
+ * no schedule chip and no context menu — every one of those would offer an act
+ * that can't apply to something already deleted.
+ */
+function TrashList({
+  tasks,
+  selectedId,
+  onSelect,
+  onRestore,
+  onPurge,
+}: {
+  tasks: Task[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onRestore: (t: Task) => void;
+  onPurge: (t: Task) => void;
+}) {
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  if (tasks.length === 0) {
+    return <EmptyState text="Nothing in the trash." />;
+  }
+
+  return (
+    <>
+      <div className="border-b border-line px-4 py-2 text-meta leading-snug text-muted">
+        Deleted tasks rest here. Restoring puts one back where it belongs; deleting forever
+        can't be undone.
+      </div>
+      {tasks.map((t) => {
+        const isConfirming = confirming === t.id;
+        return (
+          <div
+            key={t.id}
+            data-task-id={t.id}
+            onClick={() => onSelect(t.id)}
+            {...pressable(() => onSelect(t.id), { role: "option", label: t.title || "Untitled" })}
+            aria-selected={selectedId === t.id}
+            className={`fast group flex items-center gap-2 border-b border-line px-4 py-2 ${
+              selectedId === t.id ? "bg-accent-soft" : "hover:bg-surface-2"
+            }`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-body text-muted">{t.title || "Untitled"}</div>
+              {t.trashed_at && (
+                <div className="mono text-micro text-muted/70">{deletedWhen(t.trashed_at)}</div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRestore(t);
+              }}
+              className="tap fast shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label text-muted hover:text-ink"
+            >
+              Restore
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isConfirming) {
+                  onPurge(t);
+                  setConfirming(null);
+                } else {
+                  setConfirming(t.id);
+                }
+              }}
+              onBlur={() => isConfirming && setConfirming(null)}
+              className={`tap fast shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label ${
+                isConfirming ? "font-medium text-signal" : "text-muted hover:text-signal"
+              }`}
+            >
+              {isConfirming ? "Sure?" : "Delete forever"}
+            </button>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** "Deleted 2 hours ago" — the one fact a trash row owes you beyond its name. */
+function deletedWhen(iso: string): string {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (!Number.isFinite(mins)) return "Deleted";
+  if (mins < 1) return "Deleted just now";
+  if (mins < 60) return `Deleted ${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `Deleted ${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "Deleted yesterday" : `Deleted ${days}d ago`;
+}
+
+/**
+ * Remind, from the keyboard (`b` on the focused row).
+ *
+ * Plain buttons rather than the popovers' `<select>` on purpose: this one is
+ * reached by a key, so the leads have to be *visible* to be discoverable, and a
+ * list of buttons is arrow/Tab-navigable with Enter to pick and Esc to leave —
+ * no custom roving focus to get wrong.
+ */
+function RemindPicker({ task, onClose }: { task: Task; onClose: () => void }) {
+  const { setReminder, clearReminder } = useReminderMutations();
+  const anchor: ReminderAnchorKind = task.start_time ? "start" : "deadline";
+  const target = { targetKind: "task" as const, targetId: task.id, anchor };
+  const { lead, defaultLead, source, enabled } = useReminderFor(target);
+
+  const pick = async (next: "default" | "off" | number) => {
+    if (next === "default") await clearReminder(target);
+    else await setReminder(target, next === "off" ? null : next);
+    onClose();
+  };
+
+  const Opt = ({ on, onPick, children }: { on: boolean; onPick: () => void; children: React.ReactNode }) => (
+    <button
+      type="button"
+      onClick={onPick}
+      aria-pressed={on}
+      className={`fast tap flex w-full items-center justify-between rounded-md px-1.5 py-1 text-left text-body hover:bg-bg ${
+        on ? "font-medium text-ink" : "text-muted"
+      }`}
+    >
+      {children}
+      {on && <span aria-hidden>✓</span>}
+    </button>
+  );
+
+  return (
+    <Popover onClose={onClose} title={`Remind — ${task.title}`}>
+      {!enabled && (
+        <div className="px-1.5 pb-1 text-caption text-muted">
+          Reminders are off. Turn them on in Settings → Reminders; this still saves.
+        </div>
+      )}
+      {anchor === "deadline" && (
+        <div className="px-1.5 pb-1 text-micro text-muted/80">Before its deadline.</div>
+      )}
+      <div className="max-h-64 overflow-y-auto">
+        <Opt on={source === "default"} onPick={() => void pick("default")}>
+          {defaultLead == null ? "Default (off)" : `Default (${describeLeadShort(defaultLead)})`}
+        </Opt>
+        {REMINDER_LEADS.map((m) => (
+          <Opt key={m} on={source === "override" && lead === m} onPick={() => void pick(m)}>
+            {describeLead(m)}
+          </Opt>
+        ))}
+        <Opt on={source === "override" && lead == null} onPick={() => void pick("off")}>
+          No reminder
+        </Opt>
+      </div>
     </Popover>
   );
 }

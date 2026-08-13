@@ -9,6 +9,8 @@ import { VerticalProvider, useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useEventRouter } from "../hooks/useEventRouter";
+import { useReminderDelivery } from "../hooks/useReminders";
+import type { PlannedReminder } from "../../supabase/functions/_shared/reminderRules.ts";
 // Split points: the phone shell never executes on desktop (and vice versa),
 // and the rituals are open-on-demand ceremony — none of them belong in the
 // entry chunk both shells parse at boot.
@@ -89,12 +91,25 @@ function ResponsiveShell() {
 
   // The sync queue's only interruption, mounted once for both shells: a write
   // the server *refused*. Everything else it does is silent (D-095).
-  const { openOverlay, setSettingsSection } = useAppNavigation();
+  const { openOverlay, setSettingsSection, navigate } = useAppNavigation();
   const openSync = useCallback(() => {
     setSettingsSection("about");
     openOverlay("settings");
   }, [openOverlay, setSettingsSection]);
   useParkedAlert(openSync);
+
+  // The one place the app speaks first. Mounted here so both shells share it —
+  // a phone and a desktop must not disagree about whether you were told.
+  // Clicking a reminder lands on the thing it named, never on a generic screen.
+  useReminderDelivery({
+    onOpen: useCallback(
+      (r: PlannedReminder) => {
+        if (r.targetKind === "task") openOverlay("task-record", r.targetId);
+        else navigate({ rung: "day", overlay: "none", overlayId: null });
+      },
+      [openOverlay, navigate],
+    ),
+  });
 
   // Signup seeds no domains (migration 42), so zero domains means a brand-new
   // account. One gate for both shells — the picker is single-column by design.

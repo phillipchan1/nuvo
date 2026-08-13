@@ -14,7 +14,9 @@ import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
 import type { useRecurrenceMutations, SeriesTemplate } from "../hooks/useRecurrence";
 import { useEventDetails, useEventSeriesRule, useHiddenEvents } from "../hooks/useCalendar";
-import { eventSeriesKey } from "../lib/now";
+import { eventKey, eventSeriesKey } from "../lib/now";
+import ReminderSelect from "./ReminderSelect";
+import TaskSteps from "./TaskSteps";
 import { plainTextFromHtml } from "../lib/text";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
@@ -802,6 +804,25 @@ export function TaskPopover({
                 )}
               </PopField>
 
+              {/* Remind — only offered once the task has a moment to be early
+                  for. A task with neither a block nor a deadline has nothing to
+                  remind about, and an empty control there would be a lie. */}
+              {(task.start_time || task.deadline) && (
+                <PopField label="Remind">
+                  <div className="flex flex-col gap-1">
+                    {task.start_time && (
+                      <ReminderSelect block target={{ targetKind: "task", targetId: task.id, anchor: "start" }} />
+                    )}
+                    {task.deadline && (
+                      <div className="flex items-baseline gap-2">
+                        <ReminderSelect block target={{ targetKind: "task", targetId: task.id, anchor: "deadline" }} />
+                        <span className="shrink-0 text-micro text-muted/70">deadline</span>
+                      </div>
+                    )}
+                  </div>
+                </PopField>
+              )}
+
               <PopField label="Priority">
                 <div className="flex items-center gap-1.5">
                   {(["high", "medium", "low", "none"] as const).map((p) => {
@@ -870,6 +891,10 @@ export function TaskPopover({
                   pre-work still have to be reachable, just stacked. */}
               {!twoCol && (
                 <>
+                  <PopField label="Steps">
+                    <TaskSteps task={task} mutations={mutations} />
+                  </PopField>
+
                   <PopField label="Notes">
                     <textarea
                       value={notes}
@@ -890,7 +915,13 @@ export function TaskPopover({
 
           {twoCol && (
             <PopCol side="right">
-              <PopSection label="Notes">
+              {/* Steps above Notes: the checklist IS the work, notes are
+                  commentary on it. A step is not a task — see TaskSteps. */}
+              <PopSection label="Steps">
+                <TaskSteps task={task} mutations={mutations} />
+              </PopSection>
+
+              <PopSection label="Notes" divider>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -1776,6 +1807,16 @@ export function EventPopover({
                   )}
                 </PopField>
               )}
+
+              {/* Remind — the only thing on this card that makes the app speak
+                  first. It sits with the facts, not in the strip: it is a
+                  property of the meeting, not the act you opened the card for. */}
+              <PopField label="Remind">
+                <ReminderSelect
+                  block
+                  target={{ targetKind: "event", eventKey: eventKey(event) }}
+                />
+              </PopField>
 
               {(editable || event.location) && (
                 <PopField label="Where">
@@ -2726,6 +2767,10 @@ export function SlotPopover({
                     A standing slot — the weekly plan routes this domain's work here.
                   </div>
                 )}
+              </PopField>
+
+              <PopField label="Remind">
+                <ReminderSelect block target={{ targetKind: "slot", targetId: slot.id }} />
               </PopField>
             </PopStack>
           </PopCol>

@@ -20,13 +20,17 @@ type Vertical = ReturnType<typeof useVertical>["data"];
 
 const TRIAGE_UNDO = { undo: "toast" as const };
 
-export type MobileTab = "today" | "week" | "inbox";
+/** The Tasks screen's lenses. `trash` is the phone's half of the floor under
+ *  delete — the same act as the desktop rail's Trash face, over the same query,
+ *  and it appears only when it holds something. */
+export type MobileTab = "today" | "week" | "inbox" | "trash";
 
 export default function MobileTaskList({
   tab,
   inbox,
   today,
   week,
+  trashed,
   labels,
   vertical,
   mutations,
@@ -38,6 +42,7 @@ export default function MobileTaskList({
   inbox: Task[];
   today: Task[];
   week: Task[];
+  trashed: Task[];
   labels: Label[];
   vertical: Vertical;
   mutations: Mutations;
@@ -79,6 +84,10 @@ export default function MobileTaskList({
   const [todayOpen, setTodayOpen] = useState({ planned: true, scheduled: true, done: true });
   const toggleToday = (key: keyof typeof todayOpen) =>
     setTodayOpen((s) => ({ ...s, [key]: !s[key] }));
+
+  if (tab === "trash") {
+    return <MobileTrash tasks={trashed} onRestore={(t) => mutations.restore(t)} onPurge={(t) => void mutations.purge(t)} />;
+  }
 
   if (tab === "inbox") {
     if (pending && inbox.length === 0) return <SkeletonRows />;
@@ -216,6 +225,64 @@ export default function MobileTaskList({
 
 function Empty({ text }: { text: string }) {
   return <div className="px-4 py-10 text-center text-body text-muted">{text}</div>;
+}
+
+/**
+ * The phone's trash — the same two acts as the desktop rail's, in the thumb's
+ * idiom: full-width 44px buttons rather than hover-revealed text, and the
+ * destructive one asks in place (a hidden gesture must never be the only path
+ * to an act, and this act has no undo at all).
+ */
+function MobileTrash({
+  tasks,
+  onRestore,
+  onPurge,
+}: {
+  tasks: Task[];
+  onRestore: (t: Task) => void;
+  onPurge: (t: Task) => void;
+}) {
+  const [confirming, setConfirming] = useState<string | null>(null);
+  if (tasks.length === 0) return <Empty text="Nothing in the trash." />;
+  return (
+    <div>
+      <div className="border-b border-line px-4 py-3 text-caption leading-snug text-muted">
+        Deleted tasks rest here. Restoring puts one back where it belongs; deleting forever
+        can't be undone.
+      </div>
+      {tasks.map((t) => {
+        const asking = confirming === t.id;
+        return (
+          <div key={t.id} className="border-b border-line px-4 py-3">
+            <div className="truncate text-body text-muted">{t.title || "Untitled"}</div>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onRestore(t)}
+                className="tap-h fast flex-1 rounded-lg border border-line bg-surface px-3 text-body font-medium text-ink active:bg-surface-2"
+              >
+                Restore
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (asking) {
+                    onPurge(t);
+                    setConfirming(null);
+                  } else setConfirming(t.id);
+                }}
+                className={`tap-h fast flex-1 rounded-lg border px-3 text-body font-medium ${
+                  asking ? "border-signal text-signal" : "border-line text-muted active:bg-surface-2"
+                }`}
+              >
+                {asking ? "Delete forever?" : "Delete forever"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function buildTodaySections(today: Task[], now: Date) {

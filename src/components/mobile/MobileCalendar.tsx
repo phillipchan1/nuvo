@@ -16,6 +16,8 @@ import { useSettings, firstDayOfWeek } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
 import { fmtMins, isEventHidden } from "../../lib/now";
+import { parseDateISO } from "../../lib/dates";
+import { clearCalendarReveal, onCalendarReveal, pendingCalendarReveal } from "../../lib/calendarReveal";
 import type { CalendarTap } from "./MobileEventSheet";
 import { useWeather, indexWeather } from "../../hooks/useWeather";
 import WeatherIcon from "../WeatherIcon";
@@ -107,6 +109,31 @@ export default function MobileCalendar({
   // The month the grid is showing, and the day the schedule is anchored to.
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(now));
   const [selected, setSelected] = useState(() => startOfDay(now));
+
+  // "Take me to that day" — landing here from a calendar search hit. The bus
+  // rather than a prop, for the reason in lib/calendarReveal.ts; and the pending
+  // drain matters more here than on the desktop, because search *switches tabs*
+  // and this component mounts a frame after the publish.
+  useEffect(() => {
+    const go = (dateISO: string) => {
+      const d = startOfDay(parseDateISO(dateISO));
+      setSelected(d);
+      setMonthCursor(startOfMonth(d));
+      // Day is the only mode that shows a specific moment; a month grid that
+      // merely scrolled would leave the user hunting for what they searched for.
+      setMode("day");
+    };
+    const pending = pendingCalendarReveal();
+    if (pending) {
+      go(pending.dateISO);
+      clearCalendarReveal();
+    }
+    return onCalendarReveal((r) => {
+      go(r.dateISO);
+      clearCalendarReveal();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // How many days of history are loaded above the anchor in the schedule. Starts
   // at 0 so the schedule always opens ON the anchor day (top of the list); the
   // "Earlier" control grows it. Reset to 0 on each entry.

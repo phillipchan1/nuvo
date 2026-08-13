@@ -42,3 +42,27 @@ export function invokeQuiet(fn: string, body: Record<string, unknown>) {
     if (error) console.warn(`[nuvo] edge fn ${fn} failed:`, error.message);
   });
 }
+
+/**
+ * Push a task's mirrored calendar block, carrying THIS device's zone.
+ *
+ * One helper rather than a bare `invokeQuiet` at each call site, because the
+ * zone is the kind of argument every new call site forgets — and the last time
+ * it was forgotten the edge function fell back to a hardcoded
+ * `America/Los_Angeles`, stamping one operator's zone on every user's blocks
+ * (Principle 16; see the device-zone-not-home-zone doctrine, D-082).
+ *
+ * Fire-and-forget by design: the mirror is a server-side echo of a block, not
+ * user data. Offline it simply re-syncs after the drain, so there is nothing to
+ * queue and nothing lost by skipping it.
+ */
+export function mirrorTask(taskId: string) {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return;
+  let tz = "UTC";
+  try {
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    /* keep UTC */
+  }
+  invokeQuiet("task-mirror", { taskId, tz });
+}

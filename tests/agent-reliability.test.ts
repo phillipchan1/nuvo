@@ -188,6 +188,11 @@ describe("tool schemas", () => {
     // An empty query returns the people they meet most — "who do I meet with?"
     // is a real request, and a target error on it would be nonsense.
     "find_contact",
+    // "will you remind me about anything?" is answered by the defaults, which
+    // belong to the account, not to an item. Read-only.
+    "list_reminders",
+    // "what did I delete?" has no target — the trash IS the target. Read-only.
+    "list_trashed_tasks",
   ]);
 
   it("guards every tool whose schema would otherwise accept an empty call", () => {

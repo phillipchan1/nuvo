@@ -49,6 +49,8 @@ export function useSlotTasks(slotIds: string[]) {
         .select("*, task_labels(label_id)")
         .in("slot_id", ids)
         .neq("status", "trashed")
+        // Steps are not tasks — see NOT_A_STEP in useTasks.ts.
+        .is("parent_task_id", null)
         .order("sort_order")
         .order("created_at");
       if (error) throw error;

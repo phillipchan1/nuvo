@@ -16,6 +16,7 @@ import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useEventDetails, useHiddenEvents, usePrefetchEventDetails, type useExternalEventMutations } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
+import { clearCalendarReveal, onCalendarReveal, pendingCalendarReveal } from "../lib/calendarReveal";
 import { synClass } from "../lib/syntax";
 import { isReadOnlyCalendarId, isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
 import type { useSlotMutations } from "../hooks/useSlots";
@@ -1934,6 +1935,23 @@ export default function CalendarPane({
 
   const isMonth = view === "dayGridMonth";
 
+  // "Take me to that day" — search landing on a calendar event. The grid owns
+  // its date, so the intent arrives on the reveal bus rather than as a prop
+  // (lib/calendarReveal.ts explains why). Also drains a reveal published just
+  // before this pane mounted, which is the ⌘K-from-a-floor path.
+  useEffect(() => {
+    const go = (dateISO: string) => calRef.current?.getApi().gotoDate(`${dateISO}T12:00:00`);
+    const pending = pendingCalendarReveal();
+    if (pending) {
+      go(pending.dateISO);
+      clearCalendarReveal();
+    }
+    return onCalendarReveal((r) => {
+      go(r.dateISO);
+      clearCalendarReveal();
+    });
+  }, []);
+
   const handleDatesSet = (arg: DatesSetArg) => {
     // currentStart, not start: the month grid's `start` is the previous month's
     // tail, and reopening on it would show the wrong month.
@@ -2087,6 +2105,28 @@ export default function CalendarPane({
                 )}
               </>
             )}
+            {/* Duplicate — tasks and slots have had it all along; an external
+                event was the one thing on this grid you had to retype. Guests
+                and recurrence deliberately do NOT carry: a copy that silently
+                re-invited eight people would be the app mailing on the user's
+                behalf, and a copied series is two series. */}
+            {writable && (
+              <EventMenuItem onClick={() => {
+                setEventMenu(null);
+                void eventMutations.createEvent({
+                  title: `${ev.title} (copy)`,
+                  start_at: ev.start_at,
+                  end_at: ev.end_at,
+                  all_day: ev.all_day,
+                  location: ev.location ?? undefined,
+                  accountId: ev.account_id,
+                  calendarId: ev.calendar_id,
+                  notifyGuests: false,
+                });
+              }}>
+                Duplicate
+              </EventMenuItem>
+            )}
             {account?.provider === "google" && ev.provider_event_id && ev.calendar_id && (
               <EventMenuItem onClick={() => {
                 setEventMenu(null);
@@ -2115,7 +2155,18 @@ export default function CalendarPane({
                           : `Cancel for ${eventMenuOtherGuests.length} ${eventMenuOtherGuests.length === 1 ? "guest" : "guests"}?`
                         : `Delete ${eventDeleteConfirm === "ALL" ? "all events in this series" : "this event"}?`}
                     </p>
-                    <p className="mt-0.5 text-meta text-muted">This can't be undone.</p>
+                    {/* The copy has to track what's true. A single occurrence
+                        now records an undo (useCalendar's `del`), so saying
+                        otherwise would be a lie that costs the user a decision.
+                        A whole series still can't be put back from one row, and
+                        a guest who has already been mailed stays mailed. */}
+                    <p className="mt-0.5 text-meta text-muted">
+                      {eventDeleteConfirm === "ALL"
+                        ? "This can't be undone."
+                        : eventMenuCancelNotifies
+                          ? "Undoable — but the cancellation notice can't be recalled."
+                          : "You can undo this."}
+                    </p>
                     <div className={`mt-2.5 flex gap-1.5 ${eventMenuCancelNotifies && !series ? "flex-col" : "items-center"}`}>
                       {eventMenuCancelNotifies && !series ? (
                         <>

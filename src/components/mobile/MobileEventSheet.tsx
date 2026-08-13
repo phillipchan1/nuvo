@@ -19,6 +19,8 @@ import { isReadOnlyCalendarId, isWritableAccount } from "../../lib/calendarWrite
 import { plainTextFromHtml } from "../../lib/text";
 import { fromGoogleRRULE, rulesEqual, toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
+import ReminderSelect from "../ReminderSelect";
+import { eventKey } from "../../lib/now";
 import Sheet from "./Sheet";
 
 // The shape passed from MobileCalendar when the user taps an event row.
@@ -320,6 +322,18 @@ export default function MobileEventSheet({
                 )}
               </div>
             </div>
+          )}
+
+          {/* Remind. Shown whether or not the event is writable — a reminder is
+              Nuvo's own, so a read-only subscription calendar can still carry
+              one. The control is a native <select>, which is iOS's own wheel:
+              no cursor-anchored popover, and a 44px row. */}
+          {cachedEvent && (
+            <Section label="Remind">
+              <div className="tap-h flex items-center rounded-xl border border-line bg-surface px-3">
+                <ReminderSelect block target={{ targetKind: "event", eventKey: eventKey(cachedEvent) }} />
+              </div>
+            </Section>
           )}
 
           {/* Join — the one thing you open a meeting for on a phone, so it sits

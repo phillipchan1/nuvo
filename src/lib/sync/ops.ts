@@ -42,6 +42,10 @@ export const SYNC_TABLES = [
   "week_reviews",
   "sprints",
   "recurrences",
+  // Overrides only ("remind me 30 before this one", "never this one") — the
+  // common reminder is derived from settings and is never a row. Writing one
+  // needs no server read, which is the test N-15 set for joining this list.
+  "reminders",
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];

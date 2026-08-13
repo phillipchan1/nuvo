@@ -5,16 +5,41 @@ import { dayMs, dayOfWeek, isoOf } from "./planningRules.ts";
 
 const DAY_MS = 86_400_000;
 
-export type RecurrenceFreq = "daily" | "weekly" | "monthly";
+export type RecurrenceFreq = "daily" | "weekly" | "monthly" | "yearly";
 
 export interface RecurrenceRule {
   freq: RecurrenceFreq;
   interval: number;
   byweekday?: number[];
   bymonthday?: number | null;
+  /**
+   * The nth weekday of the month (or of the anchor's month, yearly): 1–4, or
+   * -1 for "last". Combined with a single `byweekday`, this is how the shapes
+   * most real standing commitments take are expressed — "the last Friday of the
+   * month", "the 2nd Tuesday". Mutually exclusive with `bymonthday`: a rule
+   * carrying both would have two answers for the same question, so the picker
+   * clears one when it sets the other and `expandRule` prefers `bysetpos`.
+   */
+  bysetpos?: number | null;
+  /** 1–12, yearly only. Omitted = the anchor's own month. */
+  bymonth?: number | null;
   until?: string | null;
   count?: number | null;
 }
+
+/** RRULE's BYSETPOS values we support, in the order a picker offers them. */
+export const SETPOS_VALUES = [1, 2, 3, 4, -1] as const;
+const SETPOS_LABEL: Record<number, string> = {
+  1: "first",
+  2: "second",
+  3: "third",
+  4: "fourth",
+  [-1]: "last",
+};
+const MONTH_LONG = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 const WD_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const WD_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -57,6 +82,10 @@ function addMonthsISO(iso: string, months: number): string {
 
 function domFromISO(iso: string): number {
   return new Date(dayMs(iso)).getUTCDate();
+}
+
+function monthFromISO(iso: string): number {
+  return new Date(dayMs(iso)).getUTCMonth() + 1;
 }
 
 function startOfWeekSunISO(iso: string): string {
@@ -126,10 +155,32 @@ export function expandRule(
     return out;
   }
 
+  const anchorDate = new Date(dayMs(anchorISO));
+
+  if (rule.freq === "yearly") {
+    // Same month + day as the anchor unless told otherwise, every `interval`
+    // years — birthdays, renewals, anniversaries. With `bysetpos` it becomes
+    // "the third Thursday of November" instead.
+    const month = (rule.bymonth ?? anchorDate.getUTCMonth() + 1) - 1;
+    const dom = rule.bymonthday ?? anchorDate.getUTCDate();
+    let year = anchorDate.getUTCFullYear();
+    for (let i = 0; i < MAX_ITERS; i++) {
+      if (i % interval === 0) {
+        const iso = rule.bysetpos
+          ? nthWeekdayOfMonth(year, month, rule.byweekday?.[0] ?? dayOfWeek(anchorISO), rule.bysetpos)
+          : dayOfMonthISO(year, month, dom);
+        if (iso && emit(iso) === "stop") break;
+      }
+      year += 1;
+      if (Date.UTC(year, month, 1) > hardEndMs) break;
+    }
+    return out;
+  }
+
   const dom = rule.bymonthday ?? domFromISO(anchorISO);
   let monthISO = isoOf(Date.UTC(
-    new Date(dayMs(anchorISO)).getUTCFullYear(),
-    new Date(dayMs(anchorISO)).getUTCMonth(),
+    anchorDate.getUTCFullYear(),
+    anchorDate.getUTCMonth(),
     1,
   ));
   for (let i = 0; i < MAX_ITERS; i++) {
@@ -138,17 +189,45 @@ export function expandRule(
       if (parts) {
         const y = Number(parts[1]);
         const mo = Number(parts[2]) - 1;
-        const daysInMonth = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
-        if (dom <= daysInMonth) {
-          const iso = isoOf(Date.UTC(y, mo, dom));
-          if (emit(iso) === "stop") break;
-        }
+        const iso = rule.bysetpos
+          ? nthWeekdayOfMonth(y, mo, rule.byweekday?.[0] ?? dayOfWeek(anchorISO), rule.bysetpos)
+          : dayOfMonthISO(y, mo, dom);
+        if (iso && emit(iso) === "stop") break;
       }
     }
     monthISO = addMonthsISO(monthISO, 1);
     if (dayMs(monthISO) > hardEndMs) break;
   }
   return out;
+}
+
+/** A day-of-month that exists — null for Feb 30, so a "31st" rule simply skips
+ *  the short months rather than silently landing on the 1st of the next. */
+function dayOfMonthISO(year: number, month: number, dom: number): string | null {
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return dom <= daysInMonth ? isoOf(Date.UTC(year, month, dom)) : null;
+}
+
+/**
+ * The nth `weekday` of a month — `pos` 1–4, or -1 for the last one.
+ *
+ * "Last Friday" is not "the 4th Friday": five-Friday months exist, and a rule
+ * that quietly meant the fourth would drift a week eight times a year. So -1
+ * counts back from the end rather than forward from the start. A 5th-weekday
+ * request that the month can't satisfy returns null and is skipped.
+ */
+function nthWeekdayOfMonth(year: number, month: number, weekday: number, pos: number): string | null {
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  if (pos < 0) {
+    const lastDow = new Date(Date.UTC(year, month, daysInMonth)).getUTCDay();
+    const back = (lastDow - weekday + 7) % 7;
+    const day = daysInMonth - back - (Math.abs(pos) - 1) * 7;
+    return day >= 1 ? isoOf(Date.UTC(year, month, day)) : null;
+  }
+  const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  const forward = (weekday - firstDow + 7) % 7;
+  const day = 1 + forward + (pos - 1) * 7;
+  return day <= daysInMonth ? isoOf(Date.UTC(year, month, day)) : null;
 }
 
 export function describeRule(rule: RecurrenceRule, anchorISO?: string): string {
@@ -169,6 +248,27 @@ export function describeRule(rule: RecurrenceRule, anchorISO?: string): string {
       const lbl = days.slice().sort((a, b) => a - b).map((d) => WD_SHORT[d]).join(", ");
       base = interval === 1 ? `Weekly on ${lbl}` : `Every ${interval} weeks on ${lbl}`;
     }
+  } else if (rule.bysetpos) {
+    // "the last Friday" — the shape most standing commitments actually take,
+    // and the one the picker could not express before.
+    const wd = WD_LONG[rule.byweekday?.[0] ?? (anchorISO ? dayOfWeek(anchorISO) : 1)];
+    const which = `${SETPOS_LABEL[rule.bysetpos] ?? ordinal(rule.bysetpos)} ${wd}`;
+    if (rule.freq === "yearly") {
+      const mo = MONTH_LONG[(rule.bymonth ?? (anchorISO ? monthFromISO(anchorISO) : 1)) - 1];
+      base = interval === 1
+        ? `Every year on the ${which} of ${mo}`
+        : `Every ${interval} years on the ${which} of ${mo}`;
+    } else {
+      base = interval === 1
+        ? `Monthly on the ${which}`
+        : `Every ${interval} months on the ${which}`;
+    }
+  } else if (rule.freq === "yearly") {
+    const mo = MONTH_LONG[(rule.bymonth ?? (anchorISO ? monthFromISO(anchorISO) : 1)) - 1];
+    const dom = rule.bymonthday ?? (anchorISO ? domFromISO(anchorISO) : 1);
+    base = interval === 1
+      ? `Every year on ${mo} ${dom}`
+      : `Every ${interval} years on ${mo} ${dom}`;
   } else {
     const dom = rule.bymonthday ?? (anchorISO ? domFromISO(anchorISO) : 1);
     base = interval === 1
@@ -190,7 +290,28 @@ export function presetsFor(anchorISO: string): { label: string; rule: Recurrence
     { label: `Weekly on ${WD_LONG[wd]}`, rule: { freq: "weekly", interval: 1, byweekday: [wd] } },
     { label: `Every 2 weeks on ${WD_SHORT[wd]}`, rule: { freq: "weekly", interval: 2, byweekday: [wd] } },
     { label: `Monthly on the ${ordinal(domFromISO(anchorISO))}`, rule: { freq: "monthly", interval: 1 } },
+    {
+      // The shape most standing commitments actually take, offered by name so
+      // it doesn't need the custom controls to be discovered.
+      label: `Monthly on the ${SETPOS_LABEL[setposOf(anchorISO)] ?? ordinal(setposOf(anchorISO))} ${WD_LONG[wd]}`,
+      rule: { freq: "monthly", interval: 1, byweekday: [wd], bysetpos: setposOf(anchorISO) },
+    },
+    { label: `Annually on ${MONTH_LONG[monthFromISO(anchorISO) - 1]} ${domFromISO(anchorISO)}`, rule: { freq: "yearly", interval: 1 } },
   ];
+}
+
+/**
+ * Which occurrence of its weekday the anchor is — 1st…4th, or -1 when it is the
+ * LAST one in the month. Preferring "last" over "fourth" for a 4th-that-is-also-
+ * last date is the honest read: someone anchoring on the 29th of a 29-day month
+ * means the last one, and offering "fourth" would drift in longer months.
+ */
+export function setposOf(anchorISO: string): number {
+  const d = new Date(dayMs(anchorISO));
+  const dom = d.getUTCDate();
+  const nth = Math.floor((dom - 1) / 7) + 1;
+  const daysInMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  return dom + 7 > daysInMonth ? -1 : nth;
 }
 
 export function rulesEqual(a: RecurrenceRule | null, b: RecurrenceRule | null): boolean {
@@ -200,6 +321,8 @@ export function rulesEqual(a: RecurrenceRule | null, b: RecurrenceRule | null): 
     (a.interval || 1) === (b.interval || 1) &&
     sameSet(a.byweekday ?? [], b.byweekday ?? []) &&
     (a.bymonthday ?? null) === (b.bymonthday ?? null) &&
+    (a.bysetpos ?? null) === (b.bysetpos ?? null) &&
+    (a.bymonth ?? null) === (b.bymonth ?? null) &&
     (a.until ?? null) === (b.until ?? null) &&
     (a.count ?? null) === (b.count ?? null)
   );
@@ -213,7 +336,17 @@ export function toGoogleRRULE(rule: RecurrenceRule): string[] {
   if (rule.freq === "weekly" && rule.byweekday?.length) {
     parts.push(`BYDAY=${rule.byweekday.slice().sort((a, b) => a - b).map((d) => WD_RRULE[d]).join(",")}`);
   }
-  if (rule.freq === "monthly" && rule.bymonthday) parts.push(`BYMONTHDAY=${rule.bymonthday}`);
+  const positional = rule.freq === "monthly" || rule.freq === "yearly";
+  if (positional && rule.bysetpos && rule.byweekday?.length) {
+    // BYDAY + BYSETPOS, not the `BYDAY=-1FR` shorthand: both are legal, but the
+    // pair is what every provider we read back from emits, and round-tripping
+    // through one form keeps `fromGoogleRRULE` from having to know two.
+    parts.push(`BYDAY=${WD_RRULE[rule.byweekday[0]]}`);
+    parts.push(`BYSETPOS=${rule.bysetpos}`);
+  } else if (positional && rule.bymonthday) {
+    parts.push(`BYMONTHDAY=${rule.bymonthday}`);
+  }
+  if (rule.freq === "yearly" && rule.bymonth) parts.push(`BYMONTH=${rule.bymonth}`);
   if (rule.count) parts.push(`COUNT=${rule.count}`);
   else if (rule.until) {
     const ms = dayMs(rule.until);
@@ -241,7 +374,9 @@ export function fromGoogleRRULE(lines: string[] | null | undefined): RecurrenceR
   }
 
   const freqRaw = parts.get("FREQ")?.toLowerCase();
-  if (freqRaw !== "daily" && freqRaw !== "weekly" && freqRaw !== "monthly") return null;
+  if (freqRaw !== "daily" && freqRaw !== "weekly" && freqRaw !== "monthly" && freqRaw !== "yearly") {
+    return null;
+  }
 
   const rule: RecurrenceRule = {
     freq: freqRaw,
@@ -257,6 +392,29 @@ export function fromGoogleRRULE(lines: string[] | null | undefined): RecurrenceR
 
   const bymonthday = parts.get("BYMONTHDAY");
   if (bymonthday) rule.bymonthday = Number(bymonthday) || null;
+
+  // Two spellings of the same idea reach us: BYSETPOS alongside a plain BYDAY,
+  // and the shorthand that folds the position into the day (`BYDAY=-1FR`).
+  // Reading only the first is what made an inbound Google series lossy on an
+  // ALL-scope edit — the position was dropped and the rule silently became
+  // "every Friday". Both are normalized to `bysetpos` here.
+  const bysetpos = parts.get("BYSETPOS");
+  if (bysetpos) {
+    const n = Number(bysetpos);
+    if (Number.isFinite(n) && n !== 0) rule.bysetpos = n;
+  } else if (byday) {
+    const m = /^\s*(-?\d+)\s*(SU|MO|TU|WE|TH|FR|SA)\s*$/i.exec(byday);
+    if (m) {
+      rule.bysetpos = Number(m[1]);
+      rule.byweekday = [RRULE_WD[m[2].toUpperCase()]];
+    }
+  }
+
+  const bymonth = parts.get("BYMONTH");
+  if (bymonth) {
+    const n = Number(bymonth);
+    if (n >= 1 && n <= 12) rule.bymonth = n;
+  }
 
   const count = parts.get("COUNT");
   if (count) rule.count = Math.max(1, Number(count) || 1);
@@ -303,6 +461,10 @@ export function cadenceGroupKey(rule: RecurrenceRule): CadenceGroupMeta {
     if (interval === 1) return { key: "weekly", label: "Weekly", sortOrder: 30 };
     return { key: `weeks-${interval}`, label: `Every ${interval} weeks`, sortOrder: 40 + interval };
   }
+  if (rule.freq === "yearly") {
+    if (interval === 1) return { key: "yearly", label: "Yearly", sortOrder: 80 };
+    return { key: `years-${interval}`, label: `Every ${interval} years`, sortOrder: 90 + interval };
+  }
   if (interval === 1) return { key: "monthly", label: "Monthly", sortOrder: 50 };
   return { key: `months-${interval}`, label: `Every ${interval} months`, sortOrder: 60 + interval };
 }
@@ -316,6 +478,8 @@ export interface RecurrenceSeriesRow {
   interval: number;
   byweekday: number[];
   bymonthday: number | null;
+  bysetpos?: number | null;
+  bymonth?: number | null;
 }
 
 export interface CadenceGroup<T extends RecurrenceSeriesRow = RecurrenceSeriesRow> {
@@ -335,6 +499,8 @@ export function groupSeriesByCadence<T extends RecurrenceSeriesRow>(
     interval: s.interval,
     byweekday: s.byweekday?.length ? s.byweekday : undefined,
     bymonthday: s.bymonthday,
+    bysetpos: s.bysetpos ?? null,
+    bymonth: s.bymonth ?? null,
   });
 
   const buckets = new Map<string, CadenceGroup<T>>();

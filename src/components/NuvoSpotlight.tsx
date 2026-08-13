@@ -9,7 +9,10 @@ import AgentMessageBubble from "./AgentMessageBubble";
 import AgentSuggestionChips from "./AgentSuggestionChips";
 import AgentThinking from "./AgentThinking";
 import { Keycap, Modal } from "./ui";
-import { AltitudeIcon, type AltitudeKind } from "./icons";
+import { AltitudeIcon } from "./icons";
+import { Icon } from "./Icon";
+import { useEventSearch } from "../hooks/useEventSearch";
+import { eventHitSubtitle, type EventHit } from "../lib/eventSearch";
 
 const NAME = "Phil";
 
@@ -44,7 +47,7 @@ export interface Command {
 /** A found record — structurally a Command (so it runs through the same close
  *  path) plus the metadata to render it grouped under its kind. */
 export interface SearchHit extends Command {
-  kind: "task" | "project" | "initiative" | "domain";
+  kind: "task" | "project" | "initiative" | "domain" | "event";
   subtitle?: string;
 }
 
@@ -55,7 +58,18 @@ const HIT_SECTIONS: { kind: SearchHit["kind"]; label: string; cap: number }[] = 
   { kind: "project", label: "Projects", cap: 6 },
   { kind: "initiative", label: "Initiatives", cap: 6 },
   { kind: "domain", label: "Domains", cap: 4 },
+  // Last on purpose: calendar hits arrive from the server a beat after the
+  // local ones, so putting them at the end means nothing above the cursor ever
+  // shifts under the finger when they land.
+  { kind: "event", label: "Calendar", cap: 10 },
 ];
+
+/** An event isn't an altitude, so it doesn't get an AltitudeIcon — the funnel's
+ *  five glyphs stay the funnel's. It wears the calendar mark instead. */
+function HitGlyph({ kind }: { kind: SearchHit["kind"] }) {
+  if (kind === "event") return <Icon name="calendar" size={13} />;
+  return <AltitudeIcon kind={kind} size={14} />;
+}
 
 // A hit's kind is drawn with the shared altitude family (`components/icons.tsx`)
 // — the same glyphs as the spine and the phone's bottom bar, so a result looks
@@ -87,6 +101,14 @@ export interface SpotlightProps {
   /** When set, a small "context pill" is shown above the chat input so the user
    *  knows the agent is pointed at a specific entity. */
   contextLabel?: string;
+  /**
+   * Land on a calendar event. Optional because the two hosts land differently:
+   * the in-app palette drives the live nav, the standalone ⌥Space window
+   * serializes the intent across the Tauri window boundary. Omit it and the
+   * Calendar group simply isn't searched — which is what the ⌥Space panel wants
+   * when it has no way to act on a hit.
+   */
+  onEventHit?: (hit: EventHit) => void;
 }
 
 // What Nuvo can answer in Ask mode — phrased as the things you'd actually
@@ -116,7 +138,7 @@ export default function NuvoSpotlight(props: SpotlightProps) {
 // runs a command; Ask hands the same text to the Nuvo agent. Space on an empty
 // capture field flips to Ask; Backspace on an empty Ask field flips back.
 // Renders bare (no scrim / no card chrome) so a Modal or a window can wrap it.
-export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, agent, onClose, onRunCommand, onModeChange, onLayoutChange, contextLabel }: SpotlightProps) {
+export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, agent, onClose, onRunCommand, onModeChange, onLayoutChange, contextLabel, onEventHit }: SpotlightProps) {
   // Whether there's horizontal room for the column deck. Keys off the surface's
   // own width, not the phone breakpoint — the ⌥Space panel is a legitimately
   // narrow (~680px) *desktop* surface that should still get the deck, while a
@@ -248,15 +270,41 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
 
   // Found records, grouped by kind and capped per section. Only when searching —
   // an empty field shows the command palette, not the whole vertical.
+  // Calendar hits — the async half. They come from the server (see
+  // lib/eventSearch.ts), so they join the list when they land rather than
+  // holding the keystroke. `onEventHit` gates the query entirely: a host with
+  // no way to open an event never asks for one.
+  const { hits: eventHits } = useEventSearch(onEventHit ? captureText : "");
+  const eventSearchHits = useMemo<SearchHit[]>(
+    () =>
+      onEventHit
+        ? eventHits.map((e) => ({
+            id: `event:${e.id}`,
+            kind: "event" as const,
+            title: e.title || "Untitled event",
+            subtitle: eventHitSubtitle(e),
+            run: () => onEventHit(e),
+          }))
+        : [],
+    [eventHits, onEventHit],
+  );
+
   const hitGroups = useMemo(() => {
-    if (!query || !searchHits?.length) return [] as { label: string; hits: SearchHit[] }[];
+    if (!query) return [] as { label: string; hits: SearchHit[] }[];
+    const pool = [...(searchHits ?? []), ...eventSearchHits];
+    if (!pool.length) return [] as { label: string; hits: SearchHit[] }[];
     const match = (h: SearchHit) =>
-      h.title.toLowerCase().includes(query) || h.subtitle?.toLowerCase().includes(query);
+      // Event hits were matched by the server against title AND location; the
+      // subtitle it renders is a formatted date, so re-filtering them locally
+      // would drop every hit whose match was in the location.
+      h.kind === "event" ||
+      h.title.toLowerCase().includes(query) ||
+      h.subtitle?.toLowerCase().includes(query);
     return HIT_SECTIONS.map(({ kind, label, cap }) => ({
       label,
-      hits: searchHits.filter((h) => h.kind === kind && match(h)).slice(0, cap),
+      hits: pool.filter((h) => h.kind === kind && match(h)).slice(0, cap),
     })).filter((g) => g.hits.length > 0);
-  }, [query, searchHits]);
+  }, [query, searchHits, eventSearchHits]);
 
   // One flat, ordered list of everything selectable (capture row, then command
   // matches, then found records) — the single source of truth for ↑/↓ + Enter.
@@ -275,7 +323,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
   // so the whole result set is visible at once instead of one tall scroll. Each
   // item is a Command (SearchHit extends Command), so the column runs through the
   // same close path. Commands lead as their own column when matched.
-  type DeckItem = { run: () => void; title: string; subtitle?: string; kind?: AltitudeKind };
+  type DeckItem = { run: () => void; title: string; subtitle?: string; kind?: SearchHit["kind"] };
   const columns = useMemo(() => {
     const cols: { key: string; label: string; items: DeckItem[] }[] = [];
     if (query && matches.length) {
@@ -681,7 +729,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
                         active ? "glass-lift bg-accent-soft text-ink" : "text-ink/75 hover:bg-accent-soft/50"
                       }`}
                     >
-                      {it.kind && <span className="shrink-0 text-muted/60"><AltitudeIcon kind={it.kind} size={14} /></span>}
+                      {it.kind && <span className="shrink-0 text-muted/60"><HitGlyph kind={it.kind} /></span>}
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-body">{it.title}</div>
                         {it.subtitle && (
@@ -802,7 +850,7 @@ export function NuvoSpotlightPanel({ labels, commands, searchHits, onCreate, age
                           highlight === idx ? "bg-accent-soft text-ink" : "text-ink/75 hover:bg-accent-soft/50"
                         }`}
                       >
-                        <span className="shrink-0 text-muted/60"><AltitudeIcon kind={h.kind} size={14} /></span>
+                        <span className="shrink-0 text-muted/60"><HitGlyph kind={h.kind} /></span>
                         <span className="min-w-0 flex-1 truncate text-body">{h.title}</span>
                         {h.subtitle && (
                           <span className="mono shrink-0 truncate text-meta text-muted/60">{h.subtitle}</span>

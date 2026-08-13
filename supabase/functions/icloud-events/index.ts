@@ -11,7 +11,9 @@ import { admin, handleOptions, json, logSync, readSecret, requireUser } from "..
 import {
   addExdate,
   buildEvent,
+  partstatFor,
   patchMaster,
+  setPartstat,
   shiftMaster,
   upsertOverride,
 } from "../_shared/icalwrite.ts";
@@ -183,6 +185,32 @@ Deno.serve(async (req) => {
         .update({ raw: { ...raw, caldav_href: newHref, caldav_etag: newEtag } })
         .eq("id", eventId);
       await logSync("icloud", "event-move", "ok", undefined, user.id);
+      return json({ ok: true });
+    }
+
+    // ── RSVP: answer an invite ────────────────────────────────────────────
+    // Google has an endpoint for this; CalDAV does not. Answering IS rewriting
+    // your own ATTENDEE line's PARTSTAT and PUTting the resource back — which
+    // is why RSVP was Google-only until now even though iCloud is a writable
+    // provider (the 2026-08-12 audit, rank 9).
+    if (action === "rsvp") {
+      const partstat = partstatFor(String(body.responseStatus ?? ""));
+      if (!partstat) return json({ error: "invalid responseStatus" }, 400);
+
+      const { ics, etag } = await getEvent(href, account.email, password);
+      const next = setPartstat(ics, account.email, partstat);
+      if (next === ics) {
+        // No ATTENDEE line for this address: it isn't an invite the user was
+        // asked to. Say so rather than silently reporting success.
+        return json({ error: "You're not listed as a guest on this event" }, 400);
+      }
+      await putEvent(href, next, account.email, password, etag);
+
+      // Mirror the answer locally so the grid de-dims immediately, exactly as
+      // the Google path does. `self_rsvp` is the column every surface reads.
+      const selfRsvp = body.responseStatus as string;
+      await admin.from("external_events").update({ self_rsvp: selfRsvp }).eq("id", eventId);
+      await logSync("icloud", "event-rsvp", "ok", undefined, user.id);
       return json({ ok: true });
     }
 

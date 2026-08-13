@@ -1,5 +1,6 @@
 import type { Focus } from "../components/AppShell";
 import type { AppNavState, OverlayKind } from "./appNav";
+import { revealOnCalendar } from "./calendarReveal";
 import {
   domainById,
   initiativesOf,
@@ -17,11 +18,15 @@ export type SpotlightNav =
   | { kind: "task"; taskId: string }
   | { kind: "project"; focus: Focus }
   | { kind: "initiative"; focus: Focus }
-  | { kind: "domain"; focus: Focus };
+  | { kind: "domain"; focus: Focus }
+  // A calendar event: land on its day and open it. Carries the DATE as well as
+  // the id because the grid has to travel there before the row is even loaded —
+  // the event query is windowed to what's on screen.
+  | { kind: "event"; eventId: string; dateISO: string };
 
 export interface SearchHitData {
   id: string;
-  kind: "task" | "project" | "initiative" | "domain";
+  kind: "task" | "project" | "initiative" | "domain" | "event";
   title: string;
   subtitle?: string;
   nav: SpotlightNav;
@@ -98,6 +103,13 @@ export function applySpotlightNav(target: SpotlightNav, api: SpotlightNavApi) {
       break;
     case "domain":
       api.navigate({ focus: target.focus, rung: "domain", overlay: "none", overlayId: null });
+      break;
+    case "event":
+      // Two halves: the grid travels (through the reveal bus, since the date is
+      // the grid's own state), and the popover is asked for. The popover renders
+      // as soon as the newly-loaded range contains the row.
+      revealOnCalendar({ dateISO: target.dateISO, eventId: target.eventId });
+      api.navigate({ rung: "day", overlay: "event", overlayId: target.eventId });
       break;
   }
 }

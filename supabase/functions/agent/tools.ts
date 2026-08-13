@@ -43,6 +43,18 @@ import {
   type RecurrenceRule,
 } from "../_shared/recurrence.ts";
 import { hasConference, shouldAddMeet } from "../_shared/conferencing.ts";
+// One reminder vocabulary for the app and the chat — the leads the picker
+// offers are the leads the chat may set, and both read them from here.
+import {
+  defaultLeadFor,
+  describeLead,
+  normalizeReminderPrefs,
+  parseLead,
+  reminderKey,
+  REMINDER_LEADS,
+  type ReminderAnchorKind,
+  type ReminderTargetKind,
+} from "../_shared/reminderRules.ts";
 import { resolveRecipients, searchContacts } from "../_shared/contacts.ts";
 // Staging an invite is the agent's half of D-046: it resolves who, and stops.
 // The send is a tap on the card, through the client's own mutation.
@@ -89,6 +101,8 @@ async function createRecurringTaskSeries(
       interval: Math.max(1, rule.interval || 1),
       byweekday: rule.byweekday ?? [],
       bymonthday: rule.bymonthday ?? null,
+      bysetpos: rule.bysetpos ?? null,
+      bymonth: rule.bymonth ?? null,
       anchor_date: anchorISO,
       until_date: rule.until ?? null,
       max_count: rule.count ?? null,
@@ -359,8 +373,16 @@ async function invokeFnJson(
   return await res.json().catch(() => ({}));
 }
 
-async function mirrorTask(taskId: string) {
-  await invokeFn("task-mirror", { taskId });
+/**
+ * Push a task's mirrored Google block.
+ *
+ * `tz` matters: the mirror used to stamp a hardcoded `America/Los_Angeles` on
+ * every user's block. It now takes the zone from the request, and the agent's
+ * requests carry the DEVICE's zone (D-082) — so a block the chat creates and a
+ * block a tap creates render identically on the native calendar.
+ */
+async function mirrorTask(taskId: string, tz?: string) {
+  await invokeFn("task-mirror", tz ? { taskId, tz } : { taskId });
 }
 
 async function getTask(userId: string, taskId: string) {
@@ -418,6 +440,148 @@ async function resolveTaskId(
   throw new Error("Provide task_id or task_title");
 }
 
+/**
+ * Resolve a task IN THE TRASH.
+ *
+ * Separate from `resolveTaskId` on purpose: that one searches live tasks, and a
+ * trashed row is deliberately invisible to it. Searching the wrong pool would
+ * make "restore the thing I deleted" fail with "no such task" while the task sat
+ * right there — and, worse, could point `purge_task` at a live one.
+ */
+async function resolveTrashedTask(
+  userId: string,
+  args: Record<string, unknown>,
+): Promise<{ id: string; title: string; project_id: string | null; initiative_id: string | null; domain_id: string | null; sprint_id: string | null }> {
+  const cols = "id, title, project_id, initiative_id, domain_id, sprint_id";
+  const a = args as { task_id?: string; task_title?: string };
+  if (a.task_id) {
+    const { data } = await admin
+      .from("tasks")
+      .select(cols)
+      .eq("id", a.task_id)
+      .eq("user_id", userId)
+      .eq("status", "trashed")
+      .maybeSingle();
+    if (!data) throw new Error(`No trashed task with id ${a.task_id}. It may not be deleted at all.`);
+    return data as Awaited<ReturnType<typeof resolveTrashedTask>>;
+  }
+  if (a.task_title) {
+    const { data } = await admin
+      .from("tasks")
+      .select(cols)
+      .eq("user_id", userId)
+      .eq("status", "trashed")
+      .ilike("title", `%${a.task_title}%`)
+      .limit(5);
+    const rows = (data ?? []) as { id: string; title: string }[];
+    if (rows.length === 0) throw new Error(`Nothing in the trash matches "${a.task_title}".`);
+    if (rows.length > 1) {
+      throw new Error(
+        `Several trashed tasks match "${a.task_title}": ${rows.map((r) => `"${r.title}" (${r.id})`).join(", ")}. Use task_id.`,
+      );
+    }
+    return rows[0] as Awaited<ReturnType<typeof resolveTrashedTask>>;
+  }
+  throw new Error("Provide task_id or task_title — look it up with list_trashed_tasks.");
+}
+
+// ── reminders ───────────────────────────────────────────────────────────────
+
+interface ReminderTarget {
+  kind: ReminderTargetKind;
+  anchor: ReminderAnchorKind;
+  /** tasks.id / slots.id — null for an event. */
+  id: string | null;
+  /** `account_id:provider_event_id` — the resync-stable key for an event. */
+  eventKey: string | null;
+  title: string;
+}
+
+/**
+ * Which thing the user meant. Exactly one target may be named — "remind me
+ * about the standup" is ambiguous when it is both a task and a meeting, and
+ * guessing would set the reminder on the wrong one silently.
+ */
+async function resolveReminderTarget(
+  userId: string,
+  args: Record<string, unknown>,
+): Promise<ReminderTarget> {
+  const a = args as {
+    task_id?: string;
+    task_title?: string;
+    event_id?: string;
+    event_title?: string;
+    slot_id?: string;
+    anchor?: string;
+  };
+  const named = [
+    a.task_id || a.task_title ? "task" : null,
+    a.event_id || a.event_title ? "event" : null,
+    a.slot_id ? "slot" : null,
+  ].filter(Boolean);
+  if (named.length === 0) throw new Error("Name what to remind about: a task, an event, or a slot.");
+  if (named.length > 1) {
+    throw new Error(`Name only one target — you named ${named.join(" and ")}.`);
+  }
+  const anchor: ReminderAnchorKind = a.anchor === "deadline" ? "deadline" : "start";
+
+  if (named[0] === "task") {
+    const t = await resolveTaskId(userId, a);
+    if (anchor === "deadline" && !t.deadline) {
+      throw new Error(`"${t.title}" has no deadline to remind about. Set one first, or use anchor "start".`);
+    }
+    if (anchor === "start" && !t.start_time) {
+      throw new Error(`"${t.title}" isn't scheduled, so there is no start to be early for. Schedule it first.`);
+    }
+    return { kind: "task", anchor, id: t.id, eventKey: null, title: t.title };
+  }
+
+  if (named[0] === "slot") {
+    const { data, error } = await admin
+      .from("slots")
+      .select("id, title")
+      .eq("id", a.slot_id!)
+      .eq("user_id", userId)
+      .single();
+    if (error || !data) throw new Error(`Slot not found: ${a.slot_id}`);
+    return { kind: "slot", anchor: "start", id: data.id, eventKey: null, title: data.title || "Block" };
+  }
+
+  const ev = await resolveEventId(userId, a);
+  const { data, error } = await admin
+    .from("external_events")
+    .select("account_id, provider_event_id, title")
+    .eq("id", ev.id)
+    .eq("user_id", userId)
+    .single();
+  if (error || !data) throw new Error(`Event not found: ${ev.id}`);
+  return {
+    kind: "event",
+    anchor: "start",
+    id: null,
+    // Keyed by the provider, not the mirror row: a resync renumbers
+    // external_events.id and would orphan the reminder.
+    eventKey: `${data.account_id}:${data.provider_event_id}`,
+    title: data.title || ev.title,
+  };
+}
+
+/** The existing override for a target, if any — the upsert's read half. */
+async function findReminderRow(
+  userId: string,
+  target: ReminderTarget,
+): Promise<{ id: string; lead_minutes: number | null } | null> {
+  let q = admin
+    .from("reminders")
+    .select("id, lead_minutes")
+    .eq("user_id", userId)
+    .eq("target_kind", target.kind)
+    .eq("anchor", target.anchor);
+  q = target.kind === "event" ? q.eq("event_key", target.eventKey!) : q.eq("target_id", target.id!);
+  const { data } = await q.maybeSingle();
+  return (data as { id: string; lead_minutes: number | null } | null) ?? null;
+}
+
 /** The inverse of a write: the touched fields as they were. Undoing is then one
  *  blind `update` on the client — no re-derivation, no second guess at intent. */
 function undoTask(before: TaskRow, ...fields: string[]): AgentUndo {
@@ -429,6 +593,16 @@ function undoTask(before: TaskRow, ...fields: string[]): AgentUndo {
 /** The calendar date an instant falls on in `tz` — the user's day, not the
  *  server's. Deno runs in UTC, so deriving this from the server clock put an
  *  evening block on tomorrow's date. */
+/** Wall-clock time of an instant in `tz` ("2:30 PM") — the other half of
+ *  `dateInTz`, and for the same reason: Deno runs in UTC. */
+function localTimeInTz(isoUtc: string, tz: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(isoUtc));
+}
+
 function dateInTz(isoUtc: string, tz: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
@@ -565,6 +739,37 @@ async function fillSlot(
   }
 
   return placed;
+}
+
+/**
+ * Which edge function owns write-back for an event — the agent's copy of the
+ * app's `eventsFunctionFor`. Google and Apple/iCloud are both writable; M365
+ * and subscriptions are not, and saying so by name beats a generic failure.
+ */
+async function eventsFunctionForEvent(userId: string, eventId: string): Promise<string> {
+  const { data } = await admin
+    .from("external_events")
+    .select("account_id")
+    .eq("id", eventId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const accountId = (data as { account_id?: string } | null)?.account_id;
+  if (!accountId) return "google-events";
+  const { data: acct } = await admin
+    .from("calendar_accounts")
+    .select("provider")
+    .eq("id", accountId)
+    .maybeSingle();
+  const provider = (acct as { provider?: string } | null)?.provider;
+  if (provider === "icloud") return "icloud-events";
+  if (provider === "m365" || provider === "ics") {
+    throw new Error(
+      provider === "ics"
+        ? "That's a subscribed calendar — it's read-only, so it can't be answered or changed from here."
+        : "Microsoft 365 calendars are read-only in Nuvo, so this has to be done in Outlook.",
+    );
+  }
+  return "google-events";
 }
 
 async function resolveEventId(
@@ -1221,7 +1426,7 @@ export async function executeTool(
           .insert(labelIds.map((label_id) => ({ task_id: data.id, label_id })));
       }
 
-      if (startTime) await mirrorTask(data.id);
+      if (startTime) await mirrorTask(data.id, tz);
 
       const when = startTime
         ? `scheduled for ${fmtZonedTime(startTime, tz)}`
@@ -1265,7 +1470,7 @@ export async function executeTool(
       }
 
       if (!title?.trim()) throw new Error("Task title is required");
-      if (!freq) throw new Error("Recurrence freq is required (daily, weekly, or monthly)");
+      if (!freq) throw new Error("Recurrence freq is required (daily, weekly, monthly or yearly)");
 
       const today = new Intl.DateTimeFormat("en-CA", {
         timeZone: tz,
@@ -1282,6 +1487,19 @@ export async function executeTool(
       if (freq === "weekly") {
         rule.byweekday = [new Date(dayMs(anchorISO)).getUTCDay()];
       }
+      // "The last Friday of the month" — positional rather than by-date. The
+      // two are mutually exclusive (the DB enforces it), so setting one is
+      // enough; the weekday comes from the anchor unless the caller named one.
+      const setpos = args.bysetpos as number | undefined;
+      if (setpos && (freq === "monthly" || freq === "yearly")) {
+        rule.bysetpos = setpos;
+        rule.byweekday = [
+          typeof args.byweekday === "number"
+            ? (args.byweekday as number)
+            : new Date(dayMs(anchorISO)).getUTCDay(),
+        ];
+      }
+      if (freq === "yearly") rule.bymonth = new Date(dayMs(anchorISO)).getUTCMonth() + 1;
 
       let projectId = args.project_id as string | undefined;
       let initiativeId: string | undefined;
@@ -1332,7 +1550,7 @@ export async function executeTool(
         .update({ status: "planned", do_date: doDate, start_time: null })
         .eq("id", id);
       if (error) throw new Error(error.message);
-      await mirrorTask(id);
+      await mirrorTask(id, tz);
       return {
         result: JSON.stringify({ id, doDate }),
         action: {
@@ -1365,7 +1583,7 @@ export async function executeTool(
         })
         .eq("id", id);
       if (error) throw new Error(error.message);
-      await mirrorTask(id);
+      await mirrorTask(id, tz);
       return {
         result: JSON.stringify({ id, startTime, duration }),
         action: {
@@ -1529,7 +1747,7 @@ export async function executeTool(
       const { id, title } = before;
       const { error } = await admin.from("tasks").update({ start_time: null }).eq("id", id);
       if (error) throw new Error(error.message);
-      await mirrorTask(id);
+      await mirrorTask(id, tz);
       return {
         result: JSON.stringify({ id }),
         action: {
@@ -1557,7 +1775,7 @@ export async function executeTool(
       if (args.duration_minutes != null) patch.duration_minutes = args.duration_minutes;
       const { error } = await admin.from("tasks").update(patch).eq("id", id);
       if (error) throw new Error(error.message);
-      await mirrorTask(id);
+      await mirrorTask(id, tz);
       return {
         result: JSON.stringify({ id, ...patch }),
         action: {
@@ -1578,7 +1796,7 @@ export async function executeTool(
         .update({ status: "done", completed_at: new Date().toISOString() })
         .eq("id", id);
       if (error) throw new Error(error.message);
-      await mirrorTask(id);
+      await mirrorTask(id, tz);
       return {
         result: JSON.stringify({ id }),
         action: {
@@ -1596,7 +1814,7 @@ export async function executeTool(
       const { id, title } = before;
       const { error } = await admin.from("tasks").update({ status: "trashed" }).eq("id", id);
       if (error) throw new Error(error.message);
-      await mirrorTask(id);
+      await mirrorTask(id, tz);
       return {
         result: JSON.stringify({ id }),
         action: {
@@ -1617,7 +1835,7 @@ export async function executeTool(
         .update({ status: "inbox", do_date: null, start_time: null })
         .eq("id", id);
       if (error) throw new Error(error.message);
-      await mirrorTask(id);
+      await mirrorTask(id, tz);
       return {
         result: JSON.stringify({ id }),
         action: {
@@ -1638,10 +1856,40 @@ export async function executeTool(
       if (args.notes !== undefined) patch.notes = args.notes;
       if (args.priority) patch.priority = args.priority;
       if (args.deadline !== undefined) patch.deadline = args.deadline || null;
+      if (args.duration_minutes !== undefined) {
+        const mins = Number(args.duration_minutes);
+        if (!Number.isFinite(mins) || mins <= 0) throw new Error("duration_minutes must be a positive number");
+        patch.duration_minutes = Math.round(mins);
+      }
+      if (args.energy !== undefined) patch.energy = args.energy || null;
+      // Filing carries the whole chain. Setting project_id and leaving the
+      // initiative/domain stale is the exact shape of D-088 — four projects'
+      // hours credited to the wrong domains because a denormalized copy went
+      // stale — so the parent's values are read and written together.
+      if (args.project_id !== undefined) {
+        const pid = String(args.project_id || "");
+        if (pid) {
+          const { data: proj } = await admin
+            .from("projects")
+            .select("initiative_id, domain_id")
+            .eq("id", pid)
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (!proj) throw new Error(`Project not found: ${pid}`);
+          patch.project_id = pid;
+          patch.initiative_id = proj.initiative_id ?? null;
+          patch.domain_id = proj.domain_id ?? null;
+        } else {
+          patch.project_id = null;
+          patch.initiative_id = null;
+        }
+      } else if (args.domain_id !== undefined) {
+        patch.domain_id = String(args.domain_id || "") || null;
+      }
       if (!Object.keys(patch).length) throw new Error("No fields to update");
       const { error } = await admin.from("tasks").update(patch).eq("id", id);
       if (error) throw new Error(error.message);
-      if (Object.keys(patch).some((k) => MIRROR_FIELDS.has(k))) await mirrorTask(id);
+      if (Object.keys(patch).some((k) => MIRROR_FIELDS.has(k))) await mirrorTask(id, tz);
       return {
         result: JSON.stringify({ id, patch }),
         action: {
@@ -1897,21 +2145,430 @@ export async function executeTool(
 
     case "decline_event": {
       const { id, title } = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+      const fn = await eventsFunctionForEvent(userId, id);
       const ok = await invokeFn(
-        "google-events",
+        fn,
         { eventId: id, action: "rsvp", responseStatus: "declined", sendNotifications: Boolean(args.notify) },
         userToken,
       );
-      if (!ok) throw new Error(`Couldn't decline "${title}" — only Google events can be declined.`);
+      if (!ok) throw new Error(`Couldn't decline "${title}".`);
       return {
         result: JSON.stringify({ id, declined: true }),
         action: { tool: name, summary: `Declined "${title}"${args.notify ? " (organizer notified)" : ""}` },
       };
     }
 
+    case "duplicate_event": {
+      const { id } = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+      const { data: src } = await admin
+        .from("external_events")
+        .select("account_id, calendar_id, title, start_at, end_at, all_day, location, raw")
+        .eq("id", id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!src) throw new Error("Event not found");
+      const row = src as {
+        account_id: string; calendar_id: string; title: string;
+        start_at: string; end_at: string; all_day: boolean; location: string | null;
+        raw: { description?: string } | null;
+      };
+
+      const lengthMs = Date.parse(row.end_at) - Date.parse(row.start_at);
+      const start_at = args.start_local ? localToUtc(args.start_local as string, tz) : row.start_at;
+      const end_at = args.end_local
+        ? localToUtc(args.end_local as string, tz)
+        : new Date(Date.parse(start_at) + lengthMs).toISOString();
+
+      const title = ((args.title as string | undefined) ?? row.title ?? "").trim() || "(no title)";
+      const fn = await eventsFunctionForEvent(userId, id);
+      // No attendees, no recurrence — see the tool description. `notifyGuests`
+      // is moot with no guests, and passing false makes that explicit.
+      const created = await invokeFnJson(
+        fn,
+        {
+          action: "create",
+          title,
+          start_at,
+          end_at,
+          all_day: row.all_day,
+          location: row.location ?? undefined,
+          description: row.raw?.description,
+          accountId: row.account_id,
+          calendarId: row.calendar_id,
+          // No `notifyGuests`: the copy carries no attendees, so there is
+          // nobody to mail — and whether guests get told is a decision that
+          // belongs to a human on the invite card, never to a tool argument
+          // (tests/invites.test.ts enforces that the agent can't name it).
+        },
+        userToken,
+      );
+      if (!created) throw new Error(`Couldn't duplicate "${row.title}"`);
+      return {
+        result: JSON.stringify({ copiedFrom: id, title, start_local: args.start_local ?? null }),
+        action: {
+          tool: name,
+          summary: `Copied "${row.title}"`,
+          verb: "created",
+        },
+      };
+    }
+
+    case "rsvp_event": {
+      // The counterpart the agent never had: it could say no and never yes.
+      const response = String(args.response ?? "");
+      if (response !== "accepted" && response !== "tentative") {
+        throw new Error('response must be "accepted" or "tentative" — to decline, call decline_event.');
+      }
+      const { id, title } = await resolveEventId(userId, args as { event_id?: string; event_title?: string });
+      const fn = await eventsFunctionForEvent(userId, id);
+      const ok = await invokeFn(
+        fn,
+        { eventId: id, action: "rsvp", responseStatus: response, sendNotifications: args.notify !== false },
+        userToken,
+      );
+      if (!ok) throw new Error(`Couldn't answer "${title}".`);
+      return {
+        result: JSON.stringify({ id, response }),
+        action: {
+          tool: name,
+          summary: response === "accepted" ? `Accepted "${title}"` : `Marked "${title}" tentative`,
+          verb: "updated",
+        },
+      };
+    }
+
     case "list_tasks": {
       const matches = await findTaskByTitle(userId, args.query as string);
       return { result: JSON.stringify(matches) };
+    }
+
+    case "add_step": {
+      const parent = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const titles = ((args.steps as string[] | undefined) ?? [])
+        .map((t) => String(t ?? "").trim())
+        .filter(Boolean);
+      if (!titles.length) throw new Error("Give at least one step title.");
+      // A step is not a task: it carries a title, a done state and an order, and
+      // NOTHING that would make it schedulable. The DB enforces this (migration
+      // 60) — the omission here is deliberate, not an oversight.
+      const { data: existing } = await admin
+        .from("tasks")
+        .select("sort_order")
+        .eq("parent_task_id", parent.id)
+        .eq("user_id", userId)
+        .order("sort_order", { ascending: false })
+        .limit(1);
+      const base = ((existing?.[0] as { sort_order?: number } | undefined)?.sort_order ?? -1) + 1;
+      const rows = titles.map((title, i) => ({
+        user_id: userId,
+        parent_task_id: parent.id,
+        title,
+        status: "backlog" as const,
+        sort_order: base + i,
+      }));
+      const { error } = await admin.from("tasks").insert(rows);
+      if (error) throw new Error(error.message);
+      return {
+        result: JSON.stringify({ task: parent.title, added: titles }),
+        action: {
+          tool: name,
+          summary: titles.length === 1 ? `Added a step to "${parent.title}"` : `Added ${titles.length} steps to "${parent.title}"`,
+          verb: "updated",
+          ref: { kind: "task", id: parent.id },
+        },
+      };
+    }
+
+    case "list_steps": {
+      const parent = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const { data } = await admin
+        .from("tasks")
+        .select("id, title, status")
+        .eq("parent_task_id", parent.id)
+        .eq("user_id", userId)
+        .neq("status", "trashed")
+        .order("sort_order");
+      const steps = (data ?? []) as { id: string; title: string; status: string }[];
+      return {
+        result: JSON.stringify({
+          task: parent.title,
+          steps: steps.map((s) => ({ title: s.title, done: s.status === "done" })),
+          note: steps.length ? undefined : "This task has no steps yet.",
+        }),
+      };
+    }
+
+    case "complete_step":
+    case "remove_step": {
+      const parent = await resolveTaskId(userId, args as { task_id?: string; task_title?: string });
+      const wanted = ((args.step_title as string | undefined) ?? "").trim();
+      if (!wanted) throw new Error("Which step? Pass step_title.");
+      // Scoped to THIS task's steps — a title match across the whole account
+      // could tick a step of someone else's checklist entirely.
+      const { data } = await admin
+        .from("tasks")
+        .select("id, title")
+        .eq("parent_task_id", parent.id)
+        .eq("user_id", userId)
+        .neq("status", "trashed")
+        .ilike("title", `%${wanted}%`)
+        .limit(5);
+      const matches = (data ?? []) as { id: string; title: string }[];
+      if (!matches.length) throw new Error(`"${parent.title}" has no step matching "${wanted}".`);
+      if (matches.length > 1) {
+        throw new Error(`Several steps match "${wanted}": ${matches.map((m) => m.title).join(", ")}. Be more specific.`);
+      }
+      const step = matches[0];
+
+      if (name === "remove_step") {
+        const { error } = await admin.from("tasks").delete().eq("id", step.id).eq("user_id", userId);
+        if (error) throw new Error(error.message);
+        return {
+          result: JSON.stringify({ task: parent.title, removed: step.title }),
+          action: { tool: name, summary: `Removed "${step.title}"`, verb: "updated", ref: { kind: "task", id: parent.id } },
+        };
+      }
+
+      const done = args.done !== false;
+      const { error } = await admin
+        .from("tasks")
+        .update({ status: done ? "done" : "backlog", completed_at: done ? new Date().toISOString() : null })
+        .eq("id", step.id)
+        .eq("user_id", userId);
+      if (error) throw new Error(error.message);
+      return {
+        result: JSON.stringify({ task: parent.title, step: step.title, done }),
+        action: {
+          tool: name,
+          summary: done ? `Ticked "${step.title}"` : `Unticked "${step.title}"`,
+          verb: "updated",
+          ref: { kind: "task", id: parent.id },
+        },
+      };
+    }
+
+    case "list_trashed_tasks": {
+      const limit = Math.min(50, Math.max(1, Number(args.limit) || 20));
+      let q = admin
+        .from("tasks")
+        .select("id, title, trashed_at, updated_at")
+        .eq("user_id", userId)
+        .eq("status", "trashed")
+        .order("trashed_at", { ascending: false, nullsFirst: false })
+        .limit(limit);
+      const query = ((args.query as string | undefined) ?? "").trim();
+      if (query) q = q.ilike("title", `%${query}%`);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as { id: string; title: string; trashed_at: string | null }[];
+      return {
+        result: JSON.stringify({
+          trashed: rows.map((t) => ({
+            id: t.id,
+            title: t.title,
+            deleted_on: t.trashed_at ? dateInTz(t.trashed_at, tz) : null,
+          })),
+          note: rows.length
+            ? "restore_task brings one back. purge_task deletes it forever and cannot be undone."
+            : "The trash is empty — nothing was deleted, so nothing is recoverable this way.",
+        }),
+      };
+    }
+
+    case "restore_task": {
+      const before = await resolveTrashedTask(userId, args);
+      // The destination is the resting status, not "wherever it was" — the same
+      // rule the UI's Restore uses (restingStatus in lib/types.ts). A task
+      // deleted three weeks ago must not come back dated to a day that passed.
+      const resting = before.project_id || before.initiative_id || before.domain_id || before.sprint_id
+        ? "backlog"
+        : "inbox";
+      const { error } = await admin
+        .from("tasks")
+        .update({ status: resting, trashed_at: null })
+        .eq("id", before.id)
+        .eq("user_id", userId);
+      if (error) throw new Error(error.message);
+      return {
+        result: JSON.stringify({ id: before.id, title: before.title, status: resting }),
+        action: {
+          tool: name,
+          summary: `Restored "${before.title}"`,
+          verb: "updated",
+          ref: { kind: "task", id: before.id },
+          undo: { kind: "task", patch: { status: "trashed" } },
+        },
+      };
+    }
+
+    case "purge_task": {
+      const before = await resolveTrashedTask(userId, args);
+      const { error } = await admin.from("tasks").delete().eq("id", before.id).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+      // No `undo` on the action, deliberately: there is nothing to undo to, and
+      // offering an Undo button that silently fails would be worse than none.
+      return {
+        result: JSON.stringify({ id: before.id, title: before.title, permanent: true }),
+        action: {
+          tool: name,
+          summary: `Deleted "${before.title}" permanently`,
+          verb: "deleted",
+        },
+      };
+    }
+
+    case "search_events": {
+      const raw = ((args.query as string | undefined) ?? "").trim();
+      // The same sanitize the app does: PostgREST's `or()` reads commas and
+      // parens as filter syntax, so they cannot reach it as search text.
+      const q = raw.replace(/[,()%*\\]/g, " ").replace(/\s+/g, " ").trim();
+      if (q.length < 2) throw new Error("Give at least two characters to search for.");
+      const direction = (args.direction as string | undefined) ?? "both";
+      const limit = Math.min(25, Math.max(1, Number(args.limit) || 10));
+      const nowISO = new Date().toISOString();
+      const filter = `title.ilike.%${q}%,location.ilike.%${q}%`;
+      const cols = "id, title, start_at, end_at, all_day, location";
+
+      const wants = (d: string) => direction === "both" || direction === d;
+      const [ahead, behind] = await Promise.all([
+        wants("upcoming")
+          ? admin.from("external_events").select(cols).eq("user_id", userId).or(filter)
+              .gte("start_at", nowISO).order("start_at", { ascending: true }).limit(limit)
+          : Promise.resolve({ data: [], error: null }),
+        wants("past")
+          ? admin.from("external_events").select(cols).eq("user_id", userId).or(filter)
+              .lt("start_at", nowISO).order("start_at", { ascending: false }).limit(limit)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (ahead.error) throw new Error(ahead.error.message);
+      if (behind.error) throw new Error(behind.error.message);
+
+      // Times go back in the USER's zone, not the server's — Deno runs in UTC
+      // and an evening meeting would otherwise read as tomorrow (D-082).
+      const shape = (rows: unknown[]) =>
+        (rows as { id: string; title: string; start_at: string; end_at: string; all_day: boolean; location: string | null }[])
+          .map((e) => ({
+            id: e.id,
+            title: e.title,
+            date: dateInTz(e.start_at, tz),
+            start_local: e.all_day ? null : localTimeInTz(e.start_at, tz),
+            all_day: e.all_day,
+            location: e.location,
+          }));
+
+      const upcoming = shape(ahead.data ?? []);
+      const past = shape(behind.data ?? []);
+      return {
+        result: JSON.stringify({
+          query: q,
+          upcoming,
+          past,
+          note:
+            upcoming.length + past.length === 0
+              ? "Nothing on their calendar matches. Say so plainly — don't guess a date."
+              : "Dates are in the user's own time zone. Name the date, not just that it exists.",
+        }),
+      };
+    }
+
+    case "set_reminder": {
+      const lead = parseLead(args.lead_minutes);
+      if (lead === undefined) {
+        throw new Error(
+          `lead_minutes must be one of ${REMINDER_LEADS.join(", ")} or "off" — got "${String(args.lead_minutes)}"`,
+        );
+      }
+      const target = await resolveReminderTarget(userId, args);
+      const existing = await findReminderRow(userId, target);
+
+      if (existing) {
+        const { error } = await admin
+          .from("reminders")
+          .update({ lead_minutes: lead })
+          .eq("id", existing.id)
+          .eq("user_id", userId);
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await admin.from("reminders").insert({
+          id: crypto.randomUUID(),
+          user_id: userId,
+          target_kind: target.kind,
+          anchor: target.anchor,
+          target_id: target.kind === "event" ? null : target.id,
+          event_key: target.kind === "event" ? target.eventKey : null,
+          lead_minutes: lead,
+        });
+        if (error) throw new Error(error.message);
+      }
+
+      const said = lead == null ? `No reminder for "${target.title}"` : `${describeLead(lead)} — "${target.title}"`;
+      return {
+        result: JSON.stringify({ target: target.kind, title: target.title, anchor: target.anchor, lead_minutes: lead }),
+        action: {
+          tool: name,
+          summary: said,
+          verb: "updated",
+          ref: target.kind === "task" ? { kind: "task", id: target.id! } : undefined,
+        },
+      };
+    }
+
+    case "clear_reminder": {
+      const target = await resolveReminderTarget(userId, args);
+      const existing = await findReminderRow(userId, target);
+      if (!existing) {
+        return {
+          result: JSON.stringify({
+            title: target.title,
+            changed: false,
+            note: "No override on this one — it already follows the defaults.",
+          }),
+        };
+      }
+      const { error } = await admin.from("reminders").delete().eq("id", existing.id).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+      return {
+        result: JSON.stringify({ title: target.title, changed: true }),
+        action: {
+          tool: name,
+          summary: `"${target.title}" follows your default reminder again`,
+          verb: "updated",
+          ref: target.kind === "task" ? { kind: "task", id: target.id! } : undefined,
+        },
+      };
+    }
+
+    case "list_reminders": {
+      const { data: settings } = await admin
+        .from("user_settings")
+        .select("reminder_prefs")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const prefs = normalizeReminderPrefs(settings?.reminder_prefs);
+      const { data: rows } = await admin
+        .from("reminders")
+        .select("target_kind, anchor, target_id, event_key, lead_minutes")
+        .eq("user_id", userId);
+      return {
+        result: JSON.stringify({
+          enabled: prefs.enabled,
+          defaults: {
+            before_a_meeting: describeLead(prefs.event_lead),
+            before_a_block: describeLead(prefs.block_lead),
+            on_a_deadline: describeLead(prefs.deadline_lead),
+            deadline_speaks_at_minutes_after_midnight: prefs.deadline_time_minutes,
+          },
+          overrides: (rows ?? []).map((r) => ({
+            kind: r.target_kind,
+            anchor: r.anchor,
+            id: r.target_id ?? r.event_key,
+            lead: describeLead(r.lead_minutes),
+          })),
+          note: prefs.enabled
+            ? "Everything not listed as an override follows the defaults."
+            : "Reminders are OFF. Nothing will fire until the user turns them on in Settings → Reminders.",
+        }),
+      };
     }
 
     case "create_priority": {

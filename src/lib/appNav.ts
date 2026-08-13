@@ -29,7 +29,7 @@ export type OverlayKind =
   | "week-plan"
   | "upkeep";
 
-export type SettingsSection = "appearance" | "schedule" | "connections" | "labels" | "desktop" | "account" | "billing" | "about";
+export type SettingsSection = "appearance" | "schedule" | "reminders" | "connections" | "labels" | "desktop" | "account" | "billing" | "about";
 
 export type FloorModal = null | "new-initiative" | "new-project";
 

@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import {
   ArrowRight,
+  Bell,
   Calendar,
   Check,
   ChevronDown,
@@ -65,6 +66,7 @@ import { useSkin } from "../hooks/useSkin";
 
 export type IconName =
   | "arrow-right"
+  | "bell"
   | "calendar"
   | "card"
   | "check"
@@ -105,6 +107,20 @@ type PaperGlyph = { vb: string; body: ReactNode; filled?: boolean };
 // at — same paths, same weights, same grids. Stroke widths are tuned per grid,
 // which is why the viewBox travels with the glyph instead of being normalised.
 const PAPER: Record<IconName, PaperGlyph> = {
+  bell: {
+    vb: "0 0 12 12",
+    body: (
+      <>
+        <path
+          d="M3 8.3h6l-.85-1.15V5.3a2.15 2.15 0 0 0-4.3 0v1.85L3 8.3Z"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          strokeLinejoin="round"
+        />
+        <path d="M5.05 9.6a1.05 1.05 0 0 0 1.9 0" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      </>
+    ),
+  },
   calendar: {
     vb: "0 0 12 12",
     body: (
@@ -391,6 +407,7 @@ const PAPER: Record<IconName, PaperGlyph> = {
 // render at, 2 reads chunky, so the component thins it to 1.75 by default.
 const FLAT: Record<IconName, LucideIcon> = {
   "arrow-right": ArrowRight,
+  bell: Bell,
   calendar: Calendar,
   card: CreditCard,
   check: Check,

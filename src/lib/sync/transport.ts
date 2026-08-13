@@ -109,6 +109,7 @@ const NEEDS_USER_ID: SyncTable[] = [
   "week_reviews",
   "sprints",
   "recurrences",
+  "reminders",
 ];
 
 let patchRpcAvailable: boolean | null = null;

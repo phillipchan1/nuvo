@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, OWNER_ROW, queueWrite } from "../lib/sync";
 import type { UserSettings } from "../lib/types";
 import { DEFAULT_MEET_PREFERENCE, normalizeMeetPreference } from "../../supabase/functions/_shared/conferencing.ts";
+import { DEFAULT_REMINDER_PREFS, normalizeReminderPrefs } from "../../supabase/functions/_shared/reminderRules.ts";
 
 const KEY = ["settings"];
 
@@ -23,6 +24,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   default_calendar_account_id: null,
   auto_add_meet: DEFAULT_MEET_PREFERENCE,
   onboarding_completed_version: null,
+  reminder_prefs: DEFAULT_REMINDER_PREFS,
 };
 
 /**
@@ -66,6 +68,10 @@ export function useSettings() {
           // the same default the edge function uses, so the composer's toggle
           // and what Google actually gets can't disagree.
           auto_add_meet: normalizeMeetPreference(data.auto_add_meet),
+          // Same reason as auto_add_meet: a row written before the column
+          // existed reads back `{}`, and a half-filled prefs object would mean
+          // "off" for one anchor and "default" for another.
+          reminder_prefs: normalizeReminderPrefs(data.reminder_prefs),
         };
       }
       const { data: u } = await supabase.auth.getUser();

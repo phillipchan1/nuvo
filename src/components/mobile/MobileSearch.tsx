@@ -8,6 +8,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { domainById, initiativeById, projectById, taskDomainColor, type VerticalData } from "../../lib/vertical";
 import type { Task } from "../../lib/types";
+import { useEventSearch } from "../../hooks/useEventSearch";
+import { eventHitSubtitle, type EventHit } from "../../lib/eventSearch";
 import Sheet from "./Sheet";
 
 export type JumpKind = "domain" | "initiative" | "project";
@@ -17,12 +19,16 @@ export default function MobileSearch({
   tasks,
   onOpenItem,
   onOpenTask,
+  onOpenEvent,
   onClose,
 }: {
   vertical: VerticalData;
   tasks: Task[];
   onOpenItem: (kind: JumpKind, id: string) => void;
   onOpenTask: (id: string) => void;
+  /** Land on a calendar event's day. Optional so the sheet still works in a
+   *  host that has no calendar to land on. */
+  onOpenEvent?: (hit: EventHit) => void;
   onClose: () => void;
 }) {
   const [q, setQ] = useState("");
@@ -79,6 +85,13 @@ export default function MobileSearch({
     return { projects, initiatives, domains, tasks: taskItems, total };
   }, [query, vertical, tasks]);
 
+  // Calendar hits are a server read, not part of the local snapshot — they
+  // arrive after the local groups and never hold the keystroke. See
+  // lib/eventSearch.ts for why the mirror isn't cached locally.
+  const { hits: events, loading: eventsLoading, offline: eventsOffline } = useEventSearch(
+    onOpenEvent ? q : "",
+  );
+
   const taskContext = (t: Task): string => {
     if (t.project_id) return projectById(vertical, t.project_id)?.name ?? "Project";
     if (t.initiative_id) return initiativeById(vertical, t.initiative_id)?.name ?? "Initiative";
@@ -97,7 +110,7 @@ export default function MobileSearch({
             enterKeyHint="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search projects, initiatives, domains, tasks…"
+            placeholder="Search work and your calendar…"
             aria-label="Search"
             className="tap-h min-w-0 flex-1 appearance-none bg-transparent py-2 outline-none [&::-webkit-search-cancel-button]:hidden"
             autoCapitalize="none"
@@ -117,8 +130,8 @@ export default function MobileSearch({
 
       <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto pb-4">
         {!results ? (
-          <Note>Type to jump to anything — a project, an initiative, a domain, or a task.</Note>
-        ) : results.total === 0 ? (
+          <Note>Type to jump to anything — a project, an initiative, a domain, a task, or a meeting.</Note>
+        ) : results.total === 0 && events.length === 0 && !eventsLoading ? (
           <Note>No matches for “{q.trim()}”.</Note>
         ) : (
           <>
@@ -168,6 +181,30 @@ export default function MobileSearch({
                 />
               )}
             </Group>
+            {/* Calendar last: it lands a beat after the local groups, so nothing
+                already under the thumb moves when it does. */}
+            {onOpenEvent && (eventsOffline || eventsLoading || events.length > 0) && (
+              <div className="mt-3">
+                <div className="section-label px-4 pb-1">Calendar</div>
+                {eventsOffline ? (
+                  <div className="px-4 py-2 text-caption text-muted">
+                    Your calendar needs a connection to search.
+                  </div>
+                ) : events.length === 0 ? (
+                  <div className="px-4 py-2 text-caption text-muted">Looking…</div>
+                ) : (
+                  events.map((e) => (
+                    <ResultRow
+                      key={e.id}
+                      title={e.title || "Untitled event"}
+                      subtitle={eventHitSubtitle(e)}
+                      past={e.when === "past"}
+                      onClick={() => onOpenEvent(e)}
+                    />
+                  ))
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -200,13 +237,18 @@ function ResultRow({
   title,
   subtitle,
   dim,
+  past,
   onClick,
 }: {
   accent?: string;
   glyph?: string;
   title: string;
   subtitle?: string;
+  /** Done — struck through. */
   dim?: boolean;
+  /** Behind us — quieter, but NOT struck: a meeting that happened isn't a
+   *  meeting that was cancelled. */
+  past?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -225,7 +267,7 @@ function ResultRow({
         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent ?? "var(--line-strong)" }} />
       )}
       <div className="min-w-0 flex-1">
-        <div className={`truncate text-head font-medium ${dim ? "text-muted line-through" : ""}`}>{title}</div>
+        <div className={`truncate text-head font-medium ${dim ? "text-muted line-through" : past ? "text-muted" : ""}`}>{title}</div>
         {subtitle && <div className="truncate text-caption text-muted">{subtitle}</div>}
       </div>
     </button>

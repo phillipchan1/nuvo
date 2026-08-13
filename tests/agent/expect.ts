@@ -30,6 +30,13 @@ export const WRITE_TOOLS = [
   "create_initiative", "update_initiative", "delete_initiative",
   "create_project", "update_project", "delete_project",
   "create_key_result", "update_key_result", "delete_key_result",
+  // Reminders, the trash, and a task's checklist. `clear_reminder` and
+  // `restore_task` are writes even though they *undo* something — a scenario
+  // asserting "propose, don't act" must count them.
+  "set_reminder", "clear_reminder",
+  "restore_task", "purge_task",
+  "add_step", "complete_step", "remove_step",
+  "rsvp_event", "duplicate_event",
 ];
 
 export function called(

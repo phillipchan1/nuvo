@@ -1931,6 +1931,111 @@ cheaper than an account that quietly accumulates twins. Ledger: no new row — t
 duplicate guard is the kind of thing P7 asks for, since ambiguity is exactly what a
 not-clean account produces. *Status: standing.*
 
+
+---
+
+**D-102 · 2026-08-13 · Nuvo may speak first — but only about the next few
+minutes, and only when asked to.**
+
+N-07 refused notifications and wrote its own escape clause: *time-critical **now**
+signals only, opt-in*. Principle 9 reserves signal for `now`. The 2026-08-12
+audit ranked "no reminders of any kind" as the single largest absolute gap: a
+planner that holds your deadlines and your meetings and never speaks is a planner
+you must remember to open, which quietly puts the phone's reminder system back in
+the loop.
+
+**What we built is the narrow thing the clause allows, and the narrowness is
+encoded rather than promised.** `_shared/reminderRules.ts` takes an anchor
+instant and a lead, and has no input that could express a nudge — no count, no
+streak, no re-engagement window. Three anchors exist and no more: a meeting
+starting, a block you scheduled starting, a deadline arriving. `enabled` defaults
+false; a fresh account is silent. A reminder staler than five minutes is dropped
+rather than delivered, so a woken laptop cannot empty the morning into the
+notification centre.
+
+**What we gave up:** the app now speaks first, which it never did. That is a real
+change to the identity, which is why it is logged here rather than shipped
+quietly. Strains **P9**. The kill switch is one setting, and if it reads as
+theater in use, the honest move is to turn it off and re-score A2 back to ◐.
+*Status: standing. Off by default; nobody has lived with it yet.*
+*Amended same day by D-105 — see below.*
+
+---
+
+**D-105 · 2026-08-13 · Push is allowed with consent. The nudge still isn't.**
+
+D-102 built reminders inside N-07's escape clause and, out of caution, delivered
+them **only while the app is open** — an OS notification when permission is
+granted, an in-app `--signal` toast otherwise. Phil's ruling on reading it:
+*"I'm okay with push notifications if user agreed."*
+
+**So the line moves, and it moves in one specific place.** What N-07 was
+protecting against was never the transport — it was the app deciding, on its own
+schedule, that you ought to be thinking about your planning. That is still
+refused, and consent does not buy it: a user who says yes to reminders has
+consented to being told a meeting starts in ten minutes, not to being told they
+have four overdue tasks.
+
+What consent now unlocks is **background delivery** — the same three anchors,
+reaching a phone whose app is closed. Concretely:
+
+- The bar is **explicit, per-device, revocable consent** — the OS permission
+  prompt, asked at the moment the user turns reminders on and never on a cold
+  open. A granted permission is not a licence to widen what may be said.
+- `reminderRules.ts` stays the only door. It takes an anchor instant and a lead,
+  and it must keep having no input that could express a nudge — that structural
+  fact is what makes this ruling safe to hold over time rather than a promise
+  someone re-reads in a year.
+- **Not built yet.** Background push needs a `push_subscriptions` table, VAPID
+  keys, a `push` handler in the service worker, and a dispatcher on a cron. It
+  is unblocked, not done, and it is the next thing in this area.
+
+*Status: standing. Supersedes the delivery half of D-102; the "what may be said"
+half of D-102 is unchanged and load-bearing.*
+
+---
+
+**D-103 · 2026-08-13 · A step is not a task — the checklist is paid for by
+subtraction, not by a fifth pool.**
+
+Tasks had no subtasks (audit rank 5), and the obvious fix — a `steps` table —
+would be a fifth pool with its own lifecycle, sync entry and rollups, which
+Principle 10 refuses.
+
+**So a step reuses the `tasks` table and pays by restriction.** It may have a
+title, a done state and an order. Migration 60 forbids it, in the schema, every
+field that would make it schedulable: no date, no time, no duration, no deadline,
+no project/initiative/domain/sprint/priority, no recurrence, no slot. A trigger
+keeps steps one level deep. Every task read filters them out, and a test walks
+the query files rather than trusting anyone to remember — because one forgotten
+`.is("parent_task_id", null)` puts checklist lines in the inbox and on the
+calendar, and the symptom shows up far from the edit.
+
+The restriction IS the payment. If it ever softens, the trade stops being paid
+and the fifth pool arrives by accident. Strains **P10**; consistent with **P1**
+(one row of truth). *Status: standing.*
+
+---
+
+**D-104 · 2026-08-13 · Deleting is reversible, and the app says which kind of
+delete it is.**
+
+`status = "trashed"` had been written since the beginning and listed nowhere: once
+the six-second toast expired, a deleted task was unrecoverable from inside the
+app (audit rank 8). One real account was holding **100+ tasks in that state**,
+invisible.
+
+The trash is **not** a sixth destination (P10) — it is a face on the tab strip
+that already exists, on both shells, and it appears only when it holds something.
+Restore lands via `restingStatus()`, never on a date that has since passed.
+Permanent deletion is the one act in Nuvo with no undo, so it confirms in place,
+never rides a bare keystroke, and the agent's version is confirm-token gated and
+searches the trash rather than live tasks.
+
+The same honesty applies to calendar deletes: the confirmation used to say "This
+can't be undone" and now says so only when it is true — a whole series, or a
+cancellation notice that has already been mailed. *Status: standing.*
+
 ---
 
 ## 2 · Things we decided **not** to do
@@ -1943,7 +2048,7 @@ not-clean account produces. *Status: standing.*
 | **N-04** | Streaks, scores, karma, debt ledgers | Serves *optimizer*; we serve *steward* | Never |
 | **N-05** | Notion-style databases / custom fields | A blank canvas is a product you have to finish | Never |
 | **N-06** | A fifth pool | The funnel's power is its small vocabulary (Principle 10) | Two independent instances prove the need |
-| **N-07** | Push notifications for planning nudges | The app reports, you decide (Principle 4) | Time-critical *now* signals only, opt-in |
+| **N-07** | Push notifications for planning **nudges** | The app reports, you decide (Principle 4) | ⚠️ **Narrowed and partly overturned, 2026-08-13 (D-102, D-105).** Push itself is no longer refused — Phil ruled it acceptable **with explicit user consent**. What this row still refuses is the *nudge*: an unprompted message about your planning rather than about a commitment that is about to happen. That refusal stands regardless of consent |
 | **N-08** | A native watchOS app for capture | Shortcuts → the `agent` endpoint already works on every watch, today, with dictation ([`APPLE_WATCH.md`](../APPLE_WATCH.md)) | We want a complication or an offline queue |
 | **N-09** | Extracting `packages/design` fully now | Stub is enough while there are two consumers | A third consumer appears |
 | **N-10** | Folding marketing into the SPA | D-018 | Never |

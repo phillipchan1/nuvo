@@ -8,6 +8,8 @@ import { todayISO, tomorrowISO, nextWeekISO, fmtDuration } from "../../lib/dates
 import { isProjectComplete, projectById, taskDomainId } from "../../lib/vertical";
 import type { RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
+import ReminderSelect from "../ReminderSelect";
+import TaskSteps from "../TaskSteps";
 import Sheet from "./Sheet";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
@@ -213,6 +215,25 @@ export default function MobileTaskSheet({
           </div>
         </Section>
 
+        {/* Remind — only when the task has a moment to be early for. */}
+        {(task.start_time || task.deadline) && (
+          <Section label="Remind">
+            <div className="flex flex-col gap-1.5">
+              {task.start_time && (
+                <div className="tap-h flex items-center rounded-xl border border-line bg-surface px-3">
+                  <ReminderSelect block target={{ targetKind: "task", targetId: task.id, anchor: "start" }} />
+                </div>
+              )}
+              {task.deadline && (
+                <div className="tap-h flex items-center gap-2 rounded-xl border border-line bg-surface px-3">
+                  <ReminderSelect block target={{ targetKind: "task", targetId: task.id, anchor: "deadline" }} />
+                  <span className="shrink-0 text-micro text-muted/70">deadline</span>
+                </div>
+              )}
+            </div>
+          </Section>
+        )}
+
         <Section label="Repeat">
           <RepeatControl
             anchorISO={anchorISO}
@@ -251,6 +272,10 @@ export default function MobileTaskSheet({
                 </Chip>
               ))}
           </div>
+        </Section>
+
+        <Section label="Steps">
+          <TaskSteps task={task} mutations={mutations} touch />
         </Section>
 
         <Section label="Notes">

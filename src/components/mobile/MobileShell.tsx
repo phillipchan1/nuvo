@@ -13,6 +13,8 @@ import {
   useAllTasks,
   useTaskMutations,
   useRolloverGuard,
+  useTrashedTasks,
+  TRASH_LIMIT,
 } from "../../hooks/useTasks";
 import { useLabels, useCalendarAccounts } from "../../hooks/useCalendar";
 import { useRecurrenceMutations } from "../../hooks/useRecurrence";
@@ -38,6 +40,8 @@ import MobileReadiness from "./MobileReadiness";
 import { WeekCompanions } from "./WeekPlanCard";
 import MobilePlanWeek from "./MobilePlanWeek";
 import MobileSearch, { type JumpKind } from "./MobileSearch";
+import { revealOnCalendar } from "../../lib/calendarReveal";
+import { eventHitDateISO, type EventHit } from "../../lib/eventSearch";
 import PullIndicator from "./PullIndicator";
 import MobileDetailSheet from "./detail/MobileDetailSheet";
 import type { DetailTarget, Frame } from "./detail/verticalDetail";
@@ -79,6 +83,11 @@ const SUBTABS: { id: MobileTab; label: string }[] = [
   { id: "week", label: "Week" },
   { id: "inbox", label: "Inbox" },
 ];
+
+// Trash is the fourth lens, and it only exists when it holds something — a
+// permanently visible fourth segment would tax a three-segment control for a
+// face most days never need (P9, P10).
+const TRASH_SUBTAB: { id: MobileTab; label: string } = { id: "trash", label: "Trash" };
 
 const isTab = (v: string | null): v is Tab => !!v && NAV.some((t) => t.id === v);
 
@@ -162,6 +171,7 @@ export default function MobileShell() {
       /* ignore */
     }
   };
+
 
   const [quickOpen, setQuickOpen] = useState(false);
   // Plan the week — the phone's weekly ritual, a full-screen overlay like the chat.
@@ -275,6 +285,17 @@ export default function MobileShell() {
   const { data: todayTasks = [], isPending: todayPending } = useDayTasks(today);
   const { data: weekTasks = [], isPending: weekPending } = useSprintTasks(vertical.sprint?.id ?? null);
   const { data: allTasks = [] } = useAllTasks();
+  // The floor under delete. Its own query (every other read excludes trashed
+  // rows), and the lens that reveals it appears only when it holds something.
+  const { data: trashed = [] } = useTrashedTasks();
+  // The trash lens can vanish under the thumb — restore the last row, or empty
+  // it — and a segmented control left on a segment that no longer exists shows
+  // an empty screen with no way back.
+  useEffect(() => {
+    if (sub === "trash" && trashed.length === 0) setSub("today");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sub, trashed.length]);
+
   const { labels } = useLabels();
   const { data: accounts = [] } = useCalendarAccounts();
   const mutations = useTaskMutations();
@@ -343,9 +364,11 @@ export default function MobileShell() {
   const subCount = (s: MobileTab) =>
     s === "inbox"
       ? inbox.length
-      : s === "week"
-        ? weekTasks.filter((x) => x.status !== "done").length
-        : todayTasks.filter((x) => x.status !== "done").length;
+      : s === "trash"
+        ? trashed.length
+        : s === "week"
+          ? weekTasks.filter((x) => x.status !== "done").length
+          : todayTasks.filter((x) => x.status !== "done").length;
 
   // Per-tab scroll restoration: leaving a tab remembers your place; returning
   // restores it. Only re-tapping the ACTIVE tab scrolls to top (the platform
@@ -420,6 +443,14 @@ export default function MobileShell() {
   const openTaskFromSearch = (id: string) => {
     setSearchOpen(false);
     setTaskId(id);
+  };
+  // A calendar hit lands on the Calendar tab, on that day. The reveal is
+  // published BEFORE the tab switch so `MobileCalendar` finds it pending when it
+  // mounts — the same drain the desktop pane does (lib/calendarReveal.ts).
+  const openEventFromSearch = (hit: EventHit) => {
+    revealOnCalendar({ dateISO: eventHitDateISO(hit), eventId: hit.id });
+    setSearchOpen(false);
+    setTab("calendar");
   };
 
   // Route a readiness "turn" to the surface that resolves it.
@@ -504,7 +535,7 @@ export default function MobileShell() {
           <MobileDomains onOpenItem={openDetail} />
         ) : (
           <div className="fab-clear">
-            <TaskSubtabs sub={sub} setSub={setSub} count={subCount} />
+            <TaskSubtabs sub={sub} setSub={setSub} count={subCount} showTrash={trashed.length > 0} />
             {/* The week's read, above the week's list — both are week-scoped, so
                 they sit at the top of the Week segment rather than on an
                 execution screen. */}
@@ -521,6 +552,7 @@ export default function MobileShell() {
               inbox={inbox}
               today={todayTasks}
               week={weekTasks}
+              trashed={trashed}
               labels={labels}
               vertical={vertical}
               mutations={mutations}
@@ -628,6 +660,7 @@ export default function MobileShell() {
           tasks={allTasks}
           onOpenItem={openPlanItem}
           onOpenTask={openTaskFromSearch}
+          onOpenEvent={openEventFromSearch}
           onClose={() => setSearchOpen(false)}
         />
       )}
@@ -705,7 +738,10 @@ function liveHintFor(
     case "domains":
       return { rung: "domain" };
     default:
-      return { rung: "day", mobileTab: sub };
+      // Trash has no agent hints of its own — nothing there is work to plan, so
+      // the chat's starters stay the Today ones rather than inventing a voice
+      // for a face that only holds deleted rows.
+      return { rung: "day", mobileTab: sub === "trash" ? "today" : sub };
   }
 }
 
@@ -763,14 +799,17 @@ function TaskSubtabs({
   sub,
   setSub,
   count,
+  showTrash = false,
 }: {
   sub: MobileTab;
   setSub: (s: MobileTab) => void;
   count: (s: MobileTab) => number;
+  /** The trash holds something, so its lens is reachable. */
+  showTrash?: boolean;
 }) {
   return (
     <div className="sticky top-0 z-10 flex gap-1 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
-      {SUBTABS.map((t) => {
+      {(showTrash ? [...SUBTABS, TRASH_SUBTAB] : SUBTABS).map((t) => {
         const on = sub === t.id;
         const c = count(t.id);
         return (
@@ -796,7 +835,10 @@ function TaskSubtabs({
                   border: on ? "none" : "1px solid var(--line-strong)",
                 }}
               >
+                {/* The trash query is capped, so its count is a floor, not a
+                    total — "100+", never a false exact 100. */}
                 {c}
+                {t.id === "trash" && c >= TRASH_LIMIT ? "+" : ""}
               </span>
             )}
           </button>

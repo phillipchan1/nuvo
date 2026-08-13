@@ -1,6 +1,12 @@
 import type { Energy } from "./energy";
 import type { RecurrenceRule } from "./recurrence";
 import type { MeetPreference } from "../../supabase/functions/_shared/conferencing.ts";
+import type {
+  LeadMinutes,
+  ReminderAnchorKind,
+  ReminderPrefs,
+  ReminderTargetKind,
+} from "../../supabase/functions/_shared/reminderRules.ts";
 
 // inbox = raw capture · backlog = processed, deliberately undated (never in
 // inbox, never on Today, never rolls) · planned = dated · done/trashed.
@@ -44,6 +50,8 @@ export interface Task {
   priority: TaskPriority;
   roll_count: number;
   completed_at: string | null;
+  /** When it was trashed. Sorts the trash view; cleared on restore. */
+  trashed_at: string | null;
   project_id: string | null;
   initiative_id: string | null;
   domain_id: string | null;
@@ -61,6 +69,16 @@ export interface Task {
   google_event_id: string | null;
   sort_order: number;
   slot_id: string | null;
+  /**
+   * Set when this row is a STEP of another task — a checklist item, not a task.
+   *
+   * A step is deliberately less than a task: it has a title, a done state and an
+   * order, and is forbidden every field that would make it schedulable (the DB
+   * enforces this — migration 60). It never appears on the calendar, in the
+   * inbox, in capacity, or in any funnel rollup, which is what keeps the funnel
+   * at four pools rather than five (Principle 10). One level only.
+   */
+  parent_task_id: string | null;
   /** Set when this row is one occurrence of a repeating series. */
   recurrence_id: string | null;
   recurrence_date: string | null; // the occurrence's date, 'YYYY-MM-DD'
@@ -105,6 +123,11 @@ export interface Recurrence {
   interval: number;
   byweekday: number[];
   bymonthday: number | null;
+  /** Positional rule: the nth weekday of the month (1-4, or -1 = last).
+   *  Mutually exclusive with `bymonthday` — see the recurrence kernel. */
+  bysetpos: number | null;
+  /** Yearly only: 1-12. Null = the anchor's own month. */
+  bymonth: number | null;
   anchor_date: string; // 'YYYY-MM-DD'
   until_date: string | null;
   max_count: number | null;
@@ -127,6 +150,8 @@ export function ruleOf(r: Recurrence): RecurrenceRule {
     interval: r.interval,
     byweekday: r.byweekday,
     bymonthday: r.bymonthday,
+    bysetpos: r.bysetpos,
+    bymonth: r.bymonth,
     until: r.until_date,
     count: r.max_count,
   };
@@ -256,6 +281,33 @@ export interface UserSettings {
   /** The ORIENTATION_VERSION the user last finished/skipped. Null = never seen. The
    *  welcome re-surfaces when this is null or below the current version in code. */
   onboarding_completed_version: number | null;
+  /** When the app is allowed to speak first, and how far ahead. Defaults are
+   *  silent (`enabled: false`); the rules live in _shared/reminderRules.ts. */
+  reminder_prefs: ReminderPrefs;
+}
+
+/**
+ * A reminder OVERRIDE — the only reminders that are rows.
+ *
+ * The common case (every meeting gets a 10-minute heads-up) is derived from
+ * `user_settings.reminder_prefs` and never stored, so this table holds only what
+ * the user said about one specific item: a different lead, or `lead_minutes:
+ * null` meaning "not this one". See `planReminders` in _shared/reminderRules.ts.
+ */
+export interface Reminder {
+  id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  target_kind: ReminderTargetKind;
+  anchor: ReminderAnchorKind;
+  /** tasks.id / slots.id — null for an external event. */
+  target_id: string | null;
+  /** `account_id:provider_event_id` — the resync-stable key for an event. */
+  event_key: string | null;
+  /** Minutes before the anchor; null = silenced for this item. */
+  lead_minutes: LeadMinutes;
+  fire_at: string | null;
 }
 
 /** One hidden calendar event. `key` is `account_id:provider_event_id` for a single

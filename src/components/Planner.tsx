@@ -23,6 +23,7 @@ import {
   SPOTLIGHT_NAVIGATE_EVENT,
   type SpotlightNav,
 } from "../lib/spotlightNav";
+import { eventHitDateISO, type EventHit } from "../lib/eventSearch";
 import { deriveSlotTitle } from "../lib/slots";
 import { writeAgentOpen } from "./AgentSidebar";
 import LeftRail from "./LeftRail";
@@ -415,6 +416,17 @@ export default function Planner({
   // as a SearchHit whose `run` navigates to it. Built from the shared builder
   // (the same one the ⌥Space panel uses), each serialized intent applied through
   // the live nav API so in-window search and cross-window pull-up stay identical.
+  // Landing on a calendar hit — the same serialized intent the ⌥Space panel
+  // emits, replayed here, so in-window search and cross-window pull-up agree.
+  const openEventHit = useCallback(
+    (hit: EventHit) =>
+      applySpotlightNav(
+        { kind: "event", eventId: hit.id, dateISO: eventHitDateISO(hit) },
+        { openOverlay, openProject, openInitiative, navigate },
+      ),
+    [openOverlay, openProject, openInitiative, navigate],
+  );
+
   const searchHits = useMemo<SearchHit[]>(
     () =>
       buildSearchHits(vertical).map((h) => ({
@@ -713,6 +725,7 @@ export default function Planner({
           onClose={closeOverlay}
           onRunCommand={runCommand}
           contextLabel={contextLabel}
+          onEventHit={openEventHit}
         />
         </Suspense>
       )}

@@ -14,7 +14,8 @@ Deno.serve(async (req) => {
   if (pre) return pre;
 
   try {
-    const { taskId } = await req.json();
+    const body_ = await req.json();
+    const { taskId } = body_;
     if (!taskId) return json({ error: "taskId required" }, 400);
 
     const { data: task, error } = await admin
@@ -63,11 +64,18 @@ Deno.serve(async (req) => {
 
     const start = new Date(task.start_time);
     const end = new Date(start.getTime() + (task.duration_minutes ?? 30) * 60_000);
+    // The zone rides the request from the device, and falls back to UTC rather
+    // than to a home zone. It used to be hardcoded `America/Los_Angeles` — which
+    // is one operator's own zone stamped on every user's mirrored block
+    // (Principle 16), and the exact class of bug the device-zone-not-home-zone
+    // doctrine was locked in for (D-082). `dateTime` is a UTC instant either
+    // way, so this only decides how Google renders and DST-shifts the block.
+    const tz = typeof body_.tz === "string" && body_.tz ? body_.tz : "UTC";
     const body = JSON.stringify({
       summary: task.status === "done" ? `✓ ${task.title}` : task.title,
       description: task.notes || undefined,
-      start: { dateTime: start.toISOString(), timeZone: "America/Los_Angeles" },
-      end: { dateTime: end.toISOString(), timeZone: "America/Los_Angeles" },
+      start: { dateTime: start.toISOString(), timeZone: tz },
+      end: { dateTime: end.toISOString(), timeZone: tz },
     });
 
     if (task.google_event_id) {

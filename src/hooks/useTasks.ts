@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { invokeQuiet, supabase } from "../lib/supabase";
+import { mirrorTask, supabase } from "../lib/supabase";
 import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, restingStatus, type Recurrence, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
@@ -16,6 +16,19 @@ import {
 } from "../lib/undoTiers";
 
 const TASK_COLS = "*, task_labels(label_id)";
+
+/**
+ * Steps are not tasks.
+ *
+ * Every list below applies this. It is the single most load-bearing line of the
+ * checklist feature: a step is an ordinary `tasks` row, so a query that forgets
+ * it would put checklist items in the inbox, on the calendar, in capacity and in
+ * the funnel's rollups — which is exactly the fifth pool Principle 10 refuses.
+ * `tests/task-steps.test.ts` walks this file and fails when a task query
+ * appears without it.
+ */
+/** The filter every list applies, named so a search finds all of them. */
+export const NOT_A_STEP_FILTER = '.is("parent_task_id", null)';
 
 /** Fields a place/triage act moves — same four D-063a restores. */
 type PlaceSnapshot = Pick<Task, "status" | "do_date" | "start_time" | "slot_id">;
@@ -42,6 +55,7 @@ export function useInboxTasks() {
         .from("tasks")
         .select(TASK_COLS)
         .eq("status", "inbox")
+        .is("parent_task_id", null)
         .order("sort_order")
         .order("created_at");
       if (error) throw error;
@@ -60,6 +74,7 @@ export function useDayTasks(dateISO: string) {
         .select(TASK_COLS)
         .eq("do_date", dateISO)
         .in("status", ["planned", "done"])
+        .is("parent_task_id", null)
         .is("slot_id", null) // slot children show inside their slot, not here
         .order("sort_order")
         .order("created_at");
@@ -79,6 +94,7 @@ export function useScheduledTasks(rangeStartISO: string, rangeEndISO: string) {
         .select(TASK_COLS)
         .not("start_time", "is", null)
         .in("status", ["planned", "done"])
+        .is("parent_task_id", null)
         .gte("start_time", rangeStartISO)
         .lt("start_time", rangeEndISO);
       if (error) throw error;
@@ -101,6 +117,7 @@ export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: strin
         .from("tasks")
         .select(TASK_COLS)
         .is("start_time", null)
+        .is("parent_task_id", null)
         .is("slot_id", null) // slot children ride their slot, not the anytime row
         .not("do_date", "is", null)
         .in("status", ["planned"])
@@ -129,6 +146,7 @@ export async function fetchAllTasks(): Promise<Task[]> {
       .from("tasks")
       .select("*")
       .neq("status", "trashed")
+      .is("parent_task_id", null)
       .order("sort_order")
       .order("created_at")
       .order("id")
@@ -147,6 +165,64 @@ export function useAllTasks() {
   });
 }
 
+/** How many trashed rows the trash face will ever show. A trash that scrolls
+ *  forever is an archive, and this isn't one — it is a floor under delete. */
+export const TRASH_LIMIT = 100;
+
+/**
+ * The trash.
+ *
+ * Deliberately its OWN query rather than a widening of `fetchAllTasks`: every
+ * other surface's correctness depends on `neq("status","trashed")`, and the one
+ * screen that wants them is the one screen that asks for them. Newest first —
+ * a trash view is read from the top ("where did the thing I just deleted go").
+ */
+export function useTrashedTasks() {
+  return useQuery({
+    queryKey: ["tasks", "trashed"],
+    queryFn: async (): Promise<Task[]> => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(TASK_COLS)
+        .eq("status", "trashed")
+        .is("parent_task_id", null)
+        // `trashed_at` is null for rows trashed before migration 58 backfilled
+        // it; `nullsFirst: false` keeps those at the bottom instead of on top.
+        .order("trashed_at", { ascending: false, nullsFirst: false })
+        .order("updated_at", { ascending: false })
+        .limit(TRASH_LIMIT);
+      if (error) throw error;
+      return data as Task[];
+    },
+  });
+}
+
+/**
+ * The steps of one task — its checklist, in order.
+ *
+ * Its own query for the same reason `useSlotTasks` is: every other list
+ * deliberately excludes these rows, and the one surface that wants them asks
+ * for them. Keyed under ["tasks", …] so the realtime `tasks` invalidation
+ * refreshes it like everything else.
+ */
+export function useTaskSteps(parentId: string | null) {
+  return useQuery({
+    queryKey: ["tasks", "steps", parentId],
+    enabled: Boolean(parentId),
+    queryFn: async (): Promise<Task[]> => {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(TASK_COLS)
+        .eq("parent_task_id", parentId!)
+        .neq("status", "trashed")
+        .order("sort_order")
+        .order("created_at");
+      if (error) throw error;
+      return data as Task[];
+    },
+  });
+}
+
 /** Every task committed to a sprint (the Week pool), done included. */
 export function useSprintTasks(sprintId: string | null) {
   return useQuery({
@@ -158,6 +234,7 @@ export function useSprintTasks(sprintId: string | null) {
         .select(TASK_COLS)
         .eq("sprint_id", sprintId!)
         .neq("status", "trashed")
+        .is("parent_task_id", null)
         .order("sort_order")
         .order("created_at");
       if (error) throw error;
@@ -254,8 +331,30 @@ export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
         // rail doesn't flash empty while the slot query refetches.
         updated = [...data, next];
       }
+    } else if (kind === "steps") {
+      const parentId = key[2] as string | null;
+      const belongs = next != null && next.parent_task_id === parentId && next.status !== "trashed";
+      if (!belongs) updated = data.filter((t) => t.id !== id);
+      else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+      else if (next) updated = [...data, next];
+    } else if (kind === "trashed") {
+      // The trash is membership-sensitive in BOTH directions: a task that is
+      // trashed has to appear here (so the face isn't empty right after the
+      // delete), and a restored one has to leave (so Restore doesn't leave a
+      // ghost row you can restore twice).
+      const belongs = next != null && next.status === "trashed";
+      if (!belongs) updated = data.filter((t) => t.id !== id);
+      else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
+      else if (next) updated = [next, ...data];
     } else {
       // "all" / "sprint" / "record" — same pool, just patch in place.
+      //
+      // Note the deliberate asymmetry with the branches above: a trashed row is
+      // left IN the unfiltered pool rather than dropped. Downstream reads
+      // already filter it (`buildVertical` does so explicitly, and says why),
+      // and dropping it here would break undo — a restore patch has to find the
+      // row in SOME cache to rebuild it from, and the trash face may not be
+      // mounted to hold it.
       if (existing) updated = data.map((t) => (t.id === id ? { ...t, ...patch } : t));
     }
 
@@ -322,6 +421,9 @@ export interface NewTaskInput {
   project_id?: string | null;
   initiative_id?: string | null;
   domain_id?: string | null;
+  /** Creates this row as a STEP of another task rather than as a task. */
+  parent_task_id?: string | null;
+  sort_order?: number;
   /** Internal: the optimistic temp id, so the wrapper can track this create's
    *  promise and defer any patch fired before the row is persisted. Stripped
    *  before the insert. */
@@ -352,7 +454,10 @@ export function useTaskMutations() {
   const createTask = async (input: NewTaskInput): Promise<Task> => {
     const id = input.clientId ?? crypto.randomUUID();
     const { labelIds, clientId: _clientId, ...fields } = input;
-    const status: TaskStatus = input.do_date ? "planned" : "inbox";
+    // A step is never an inbox capture: it is already filed, on its parent. Any
+    // other status would put a checklist line in triage.
+    const isStep = Boolean(input.parent_task_id);
+    const status: TaskStatus = isStep ? "backlog" : input.do_date ? "planned" : "inbox";
     const duration =
       input.start_time != null
         ? (input.duration_minutes ?? DEFAULT_DURATION_MINUTES)
@@ -373,6 +478,7 @@ export function useTaskMutations() {
       priority: input.priority ?? "none",
       roll_count: 0,
       completed_at: null,
+      trashed_at: null,
       project_id: input.project_id ?? null,
       initiative_id: input.initiative_id ?? null,
       domain_id: input.domain_id ?? null,
@@ -386,7 +492,8 @@ export function useTaskMutations() {
       suggestion: null,
       suggested_at: null,
       google_event_id: null,
-      sort_order: 9999,
+      parent_task_id: input.parent_task_id ?? null,
+      sort_order: input.sort_order ?? 9999,
       slot_id: input.slot_id ?? null,
       recurrence_id: null,
       recurrence_date: null,
@@ -394,9 +501,20 @@ export function useTaskMutations() {
       task_labels: labelIds?.map((label_id) => ({ label_id })) ?? [],
     };
 
-    qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-      old ? [...old, optimistic] : [optimistic],
-    );
+    if (isStep) {
+      // Only its parent's checklist. The blanket append below is right for a
+      // capture — every task list is a plausible home for one — but a step
+      // belongs to exactly one list, and seeding it into the others would flash
+      // a checklist line in the inbox until the refetch corrected it (and, if
+      // the write were queued offline, leave it there).
+      qc.setQueryData<Task[]>(["tasks", "steps", input.parent_task_id], (old) =>
+        old ? [...old, optimistic] : [optimistic],
+      );
+    } else {
+      qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+        old ? [...old, optimistic] : [optimistic],
+      );
+    }
 
     await queueWrite(
       makeOp("tasks", "insert", id, {
@@ -413,7 +531,7 @@ export function useTaskMutations() {
     // The Google mirror is a server-side echo of a time block, not user data —
     // if we are offline it simply re-syncs after the drain, so there is nothing
     // to queue and nothing to lose by skipping it.
-    if (optimistic.start_time && navigator.onLine) invokeQuiet("task-mirror", { taskId: id });
+    if (optimistic.start_time && navigator.onLine) mirrorTask(id);
 
     invalidateWhenSafe(qc, "tasks", ["tasks"]);
     return optimistic;
@@ -450,7 +568,7 @@ export function useTaskMutations() {
     );
 
     if (MIRROR_FIELDS.some((f) => f in patch) && navigator.onLine) {
-      invokeQuiet("task-mirror", { taskId: id });
+      mirrorTask(id);
     }
 
     // Field edits default to no undo (native input undo wins). Callers that
@@ -470,19 +588,30 @@ export function useTaskMutations() {
         tier,
         coalesceKey: opts.coalesceKey,
         undo: () => patchTask(id, before, { undo: false }),
+        // Every task act is a patch, so its redo is free: re-apply the same
+        // patch. ⇧⌘Z therefore works for the whole task vocabulary rather than
+        // for a hand-picked few.
+        redo: () => patchTask(id, patch, { undo: false }),
       });
     }
   };
 
+  /**
+   * Apply a named task act, and record BOTH directions.
+   *
+   * It takes the forward patch rather than a closure that applies it, because
+   * redo needs the patch itself — a closure can only be run, not inverted, and
+   * ⇧⌘Z has to re-apply exactly what ⌘Z took back.
+   */
   const track = (
     kind: keyof typeof TASK_UNDO_DEFAULT,
     t: Task,
     before: Partial<Task>,
-    apply: () => void,
+    patch: Partial<Task>,
     opts?: UndoOpts,
   ) => {
     const tier = resolveUndoTier(TASK_UNDO_DEFAULT[kind], opts);
-    apply();
+    patchTask(t.id, patch, { undo: false });
     if (tier === false) return;
     recordUndo({
       label: opts?.label ?? undoLabel(kind, t.title),
@@ -498,6 +627,7 @@ export function useTaskMutations() {
             : COALESCE.move
       ),
       undo: () => patchTask(t.id, before, { undo: false }),
+      redo: () => patchTask(t.id, patch, { undo: false }),
     });
   };
 
@@ -507,43 +637,38 @@ export function useTaskMutations() {
 
     /** Plan a task for a day without a time block (and out of any slot). */
     planFor: (t: Task, dateISO: string, opts?: UndoOpts) =>
-      track("planFor", t, placeSnap(t), () =>
-        patchTask(t.id, { status: "planned", do_date: dateISO, start_time: null, slot_id: null }, { undo: false }),
+      track("planFor", t, placeSnap(t), { status: "planned", do_date: dateISO, start_time: null, slot_id: null },
       opts),
 
     /** Block a task on the calendar at a concrete start (and out of any slot). */
     block: (t: Task, start: Date, durationMinutes?: number, opts?: UndoOpts) =>
-      track("block", t, scheduleSnap(t), () =>
-        patchTask(t.id, {
+      track("block", t, scheduleSnap(t), {
           status: "planned",
           do_date: todayLocalISO(start),
           start_time: start.toISOString(),
           slot_id: null,
           duration_minutes: durationMinutes ?? t.duration_minutes ?? DEFAULT_DURATION_MINUTES,
-        }, { undo: false }),
+        },
       opts),
 
     /** Remove from calendar but keep planned for its day. */
     unblock: (t: Task, opts?: UndoOpts) =>
-      track("unblock", t, placeSnap(t), () =>
-        patchTask(t.id, { start_time: null }, { undo: false }),
+      track("unblock", t, placeSnap(t), { start_time: null },
       opts),
 
     /** Move a task into a slot: it drops its own block and rides the slot's day. */
     assignToSlot: (t: Task, slot: Slot, opts?: UndoOpts) =>
-      track("assignToSlot", t, placeSnap(t), () =>
-        patchTask(t.id, {
+      track("assignToSlot", t, placeSnap(t), {
           slot_id: slot.id,
           start_time: null,
           do_date: slot.do_date,
           status: "planned",
-        }, { undo: false }),
+        },
       opts),
 
     /** Pull a task out of its slot — keeps its day, still has no time block. */
     removeFromSlot: (t: Task, opts?: UndoOpts) =>
-      track("removeFromSlot", t, placeSnap(t), () =>
-        patchTask(t.id, { slot_id: null }, { undo: false }),
+      track("removeFromSlot", t, placeSnap(t), { slot_id: null },
       opts),
 
     /** Create a fresh task already inside a slot (no block of its own). */
@@ -557,19 +682,39 @@ export function useTaskMutations() {
       }),
 
     complete: (t: Task, opts?: UndoOpts) =>
-      track("complete", t, completeSnap(t), () =>
-        patchTask(t.id, { status: "done", completed_at: new Date().toISOString() }, { undo: false }),
+      track("complete", t, completeSnap(t), { status: "done", completed_at: new Date().toISOString() },
       opts),
 
     uncomplete: (t: Task, opts?: UndoOpts) =>
-      track("uncomplete", t, completeSnap(t), () =>
-        patchTask(t.id, { status: restingStatus(t), completed_at: null }, { undo: false }),
+      track("uncomplete", t, completeSnap(t), { status: restingStatus(t), completed_at: null },
       opts),
 
     trash: (t: Task, opts?: UndoOpts) =>
-      track("trash", t, { status: t.status }, () =>
-        patchTask(t.id, { status: "trashed" }, { undo: false }),
+      track("trash", t, { status: t.status, trashed_at: t.trashed_at }, { status: "trashed", trashed_at: new Date().toISOString() },
       opts),
+
+    /**
+     * Bring a trashed task back.
+     *
+     * The destination is `restingStatus`, not "wherever it was" — a task
+     * deleted from Today three weeks ago should not reappear dated to a day
+     * that has passed. The state machine already knows where an undated,
+     * unparented task belongs, and there is exactly one of it.
+     */
+    restore: (t: Task, opts?: UndoOpts) =>
+      track("restore", t, { status: t.status, trashed_at: t.trashed_at }, { status: restingStatus(t), trashed_at: null },
+      opts),
+
+    /**
+     * Delete for real. The one act in the app with no undo, so every caller
+     * confirms first — and the trash face says so in words before it offers it.
+     */
+    purge: async (t: Task) => {
+      patchCaches(qc, t.id, { status: "trashed" }); // keep it out of every list…
+      qc.setQueryData<Task[]>(["tasks", "trashed"], (old) => old?.filter((x) => x.id !== t.id));
+      await queueWrite(makeOp("tasks", "delete", t.id));
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+    },
 
     /** Release a task from its time. A task inside a PROJECT has a home and rests
      *  there — it must never land in the inbox, which is for captures with no home
@@ -582,32 +727,64 @@ export function useTaskMutations() {
      *  parented ("parked on a domain = someday"). That older model hasn't been
      *  reconciled, so don't swap this for restingStatus() without settling it. */
     backToInbox: (t: Task, opts?: UndoOpts) =>
-      track("backToInbox", t, placeSnap(t), () =>
-        patchTask(t.id, {
+      track("backToInbox", t, placeSnap(t), {
           status: t.project_id ? "backlog" : "inbox",
           do_date: null,
           start_time: null,
           slot_id: null,
-        }, { undo: false }),
+        },
       opts),
 
     /** Reverse of backToInbox: file an inbox task back under its project/initiative/domain. */
     fileToProject: (t: Task, opts?: UndoOpts) =>
-      track("fileToProject", t, { status: t.status }, () =>
-        patchTask(t.id, { status: "backlog" }, { undo: false }),
+      track("fileToProject", t, { status: t.status }, { status: "backlog" },
       opts),
 
     /** An over-planned day degrades into the week pool, not into guilt-rolling:
      *  drop the date (and any slot), keep the sprint commitment. */
     backToWeek: (t: Task, opts?: UndoOpts) =>
-      track("backToWeek", t, placeSnap(t), () =>
-        patchTask(t.id, {
+      track("backToWeek", t, placeSnap(t), {
           status: restingStatus({ ...t, do_date: null }),
           do_date: null,
           start_time: null,
           slot_id: null,
-        }, { undo: false }),
+        },
       opts),
+
+    // ── Steps — the checklist inside a task ───────────────────────────────
+    // Deliberately a small, closed set of acts. A step can be added, renamed,
+    // ticked and removed, and that is all: every other verb a task has would
+    // make it the fifth pool this design exists to avoid (see migration 60).
+
+    /** Add a step to the end of a task's checklist. */
+    addStep: (parent: Task, title: string, position: number) =>
+      createTask({
+        title: title.trim(),
+        parent_task_id: parent.id,
+        sort_order: position,
+      }),
+
+    toggleStep: (step: Task) =>
+      patchTask(
+        step.id,
+        step.status === "done"
+          ? { status: "backlog", completed_at: null }
+          : { status: "done", completed_at: new Date().toISOString() },
+        { undo: false },
+      ),
+
+    renameStep: (step: Task, title: string) => patchTask(step.id, { title }, { undo: false }),
+
+    /** Remove a step outright. Steps are not archived — a checklist line you
+     *  didn't need is not a deleted task, and routing them to the trash would
+     *  fill it with fragments nobody is ever looking for. */
+    removeStep: async (step: Task) => {
+      qc.setQueriesData<Task[]>({ queryKey: ["tasks", "steps"] }, (old) =>
+        old?.filter((t) => t.id !== step.id),
+      );
+      await queueWrite(makeOp("tasks", "delete", step.id));
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+    },
 
     /**
      * Replace a task's labels.

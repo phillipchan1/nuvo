@@ -23,6 +23,15 @@ export interface RecordUndoInput {
   batchLabel?: (count: number) => string;
   batchShortLabel?: (count: number) => string;
   undo: () => void | Promise<void>;
+  /**
+   * Re-apply, for ⇧⌘Z.
+   *
+   * Optional because it is not always cheap or safe to name: a delete that
+   * cannot be recreated with its original id has no honest redo, and an entry
+   * without one is simply skipped rather than faked. Every act that IS a patch
+   * supplies it, which is most of them.
+   */
+  redo?: () => void | Promise<void>;
   tier: UndoTier;
   coalesceKey?: string;
 }
@@ -34,6 +43,7 @@ interface StackEntry {
   batchLabel?: (count: number) => string;
   batchShortLabel?: (count: number) => string;
   undo: () => void | Promise<void>;
+  redo?: () => void | Promise<void>;
   tier: UndoTier;
   coalesceKey?: string;
   count: number;
@@ -45,7 +55,10 @@ interface UndoContextValue {
   recordUndo: (input: RecordUndoInput) => void;
   /** Pop and run the top entry (or a specific id from a toast button). */
   performUndo: (id?: string) => void;
+  /** Re-apply the last undone act (⇧⌘Z). */
+  performRedo: () => void;
   canUndo: () => boolean;
+  canRedo: () => boolean;
 }
 
 const UndoContext = createContext<UndoContextValue | null>(null);
@@ -60,6 +73,14 @@ function isTextEditing(target: EventTarget | null): boolean {
 
 export function UndoProvider({ children }: { children: ReactNode }) {
   const stackRef = useRef<StackEntry[]>([]);
+  /**
+   * Undone entries, newest last.
+   *
+   * Cleared by any NEW action — the model every editor uses and the one users
+   * predict. Keeping a redo alive across an unrelated edit is how you end up
+   * re-applying a change to a row that has moved on.
+   */
+  const redoRef = useRef<StackEntry[]>([]);
   // While an undo is running, suppress nested recordUndo from the restore write.
   const undoingRef = useRef(false);
 
@@ -104,6 +125,10 @@ export function UndoProvider({ children }: { children: ReactNode }) {
       }
       if (idx < 0 || !stack.length) return;
       const [entry] = stack.splice(idx, 1);
+      if (entry.redo) {
+        redoRef.current.push(entry);
+        while (redoRef.current.length > MAX_STACK) redoRef.current.shift();
+      }
       dismissToast(entry);
       undoingRef.current = true;
       try {
@@ -121,9 +146,32 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /**
+   * ⇧⌘Z — put back what ⌘Z took away.
+   *
+   * The re-applied act goes straight back onto the undo stack, so ⌘Z / ⇧⌘Z
+   * walk the same history rather than fighting over it.
+   */
+  const performRedo = useCallback(() => {
+    const entry = redoRef.current.pop();
+    if (!entry?.redo) return;
+    undoingRef.current = true;
+    try {
+      void Promise.resolve(entry.redo()).finally(() => {
+        undoingRef.current = false;
+      });
+    } catch {
+      undoingRef.current = false;
+    }
+    stackRef.current.push(entry);
+    toast(`Redid: ${entry.shortLabel}`, { duration: CONFIRM_MS });
+  }, []);
+
   const recordUndo = useCallback(
     (input: RecordUndoInput) => {
       if (undoingRef.current) return;
+      // A new act invalidates the redo branch.
+      redoRef.current = [];
 
       const now = Date.now();
       const stack = stackRef.current;
@@ -143,6 +191,14 @@ export function UndoProvider({ children }: { children: ReactNode }) {
             const b = prevUndo();
             return Promise.all([a, b]).then(() => undefined);
           };
+          // Redo replays in the ORIGINAL order, and only survives while every
+          // folded act had one — a batch that is half-redoable is not redoable.
+          const prevRedo = last.redo;
+          const nextRedo = input.redo;
+          last.redo =
+            prevRedo && nextRedo
+              ? () => Promise.resolve(prevRedo()).then(() => nextRedo()).then(() => undefined)
+              : undefined;
           last.count += 1;
           last.at = now;
           if (input.batchLabel) last.batchLabel = input.batchLabel;
@@ -161,6 +217,7 @@ export function UndoProvider({ children }: { children: ReactNode }) {
         batchLabel: input.batchLabel,
         batchShortLabel: input.batchShortLabel,
         undo: input.undo,
+        redo: input.redo,
         tier: input.tier,
         coalesceKey: input.coalesceKey,
         count: 1,
@@ -181,23 +238,30 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       if (e.key !== "z" && e.key !== "Z") return;
-      if (e.shiftKey) return; // redo — not in v1
       if (isTextEditing(e.target)) return;
+      if (e.shiftKey) {
+        if (!redoRef.current.length) return;
+        e.preventDefault();
+        performRedo();
+        return;
+      }
       if (!stackRef.current.length) return;
       e.preventDefault();
       performUndo();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [performUndo]);
+  }, [performUndo, performRedo]);
 
   const value = useMemo<UndoContextValue>(
     () => ({
       recordUndo,
       performUndo,
+      performRedo,
       canUndo: () => stackRef.current.length > 0,
+      canRedo: () => redoRef.current.length > 0,
     }),
-    [recordUndo, performUndo],
+    [recordUndo, performUndo, performRedo],
   );
 
   return <UndoContext.Provider value={value}>{children}</UndoContext.Provider>;
@@ -217,7 +281,9 @@ export function useOptionalUndoStack(): UndoContextValue {
     ctx ?? {
       recordUndo: () => {},
       performUndo: () => {},
+      performRedo: () => {},
       canUndo: () => false,
+      canRedo: () => false,
     }
   );
 }

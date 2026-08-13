@@ -6,7 +6,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { invokeQuiet, supabase } from "../lib/supabase";
+import { invokeQuiet, mirrorTask, supabase } from "../lib/supabase";
 import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
@@ -285,6 +285,8 @@ function optimisticTask(input: {
     priority: "none",
     roll_count: 0,
     completed_at: null,
+    trashed_at: null,
+    parent_task_id: null,
     project_id: input.projectId ?? null,
     initiative_id: input.initiativeId ?? null,
     domain_id: input.domainId ?? null,
@@ -707,7 +709,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       patchCaches(qc, id, rowPatch);
       await writeTable("tasks", id, rowPatch);
       // keep the Google "Nuvo" mirror in sync, same contract as useTasks
-      if (MIRROR_FIELDS.some((f) => f in rowPatch)) invokeQuiet("task-mirror", { taskId: id });
+      if (MIRROR_FIELDS.some((f) => f in rowPatch)) mirrorTask(id);
       invalidate(["tasks"]);
     };
 
@@ -1395,7 +1397,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           if (opts?.sprintId) patch.sprint_id = opts.sprintId;
           patchCaches(qc, p.id, patch as Partial<Task>);
           await queueWrite(makeOp("tasks", "update", p.id, patch));
-          if (navigator.onLine) invokeQuiet("task-mirror", { taskId: p.id });
+          if (navigator.onLine) mirrorTask(p.id);
         }
         invalidateWhenSafe(qc, "tasks", ["tasks"]);
       },
@@ -1529,7 +1531,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
                 sprint_id: sprint.id,
               }),
             );
-            if (navigator.onLine) invokeQuiet("task-mirror", { taskId: childId });
+            if (navigator.onLine) mirrorTask(childId);
             continue;
           }
           const patch: Record<string, unknown> = {
@@ -1541,7 +1543,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           };
           patchCaches(qc, p.id, patch as Partial<Task>);
           await queueWrite(makeOp("tasks", "update", p.id, patch));
-          if (navigator.onLine) invokeQuiet("task-mirror", { taskId: p.id });
+          if (navigator.onLine) mirrorTask(p.id);
         }
 
         // 3 · stamp the week: goal + reviewed (focus/contexts persist live as

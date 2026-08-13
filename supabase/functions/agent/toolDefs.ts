@@ -438,14 +438,23 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "create_recurring_task",
       description:
-        "Create a repeating upkeep task series (e.g. every 5 months, weekly). Use when the user names a cadence — NOT create_task.",
+        "Create a repeating upkeep task series (e.g. every 5 months, weekly, every year, the last Friday of the month). Use when the user names a cadence — NOT create_task.",
       parameters: {
         type: "object",
         properties: {
           capture: { type: "string", description: "Natural language with repeat phrase" },
           title: { type: "string" },
-          freq: { type: "string", enum: ["daily", "weekly", "monthly"] },
+          freq: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"] },
           interval: { type: "integer", description: "Every N units (default 1)" },
+          bysetpos: {
+            type: "integer",
+            description:
+              "Monthly/yearly only: which occurrence of the weekday — 1, 2, 3, 4, or -1 for LAST. Use this for 'the last Friday of the month', 'every second Tuesday of the month'. Without it the series repeats on the anchor's date.",
+          },
+          byweekday: {
+            type: "integer",
+            description: "0=Sun … 6=Sat. Only with bysetpos; defaults to the anchor date's own weekday.",
+          },
           anchor_date: { type: "string", description: "First occurrence YYYY-MM-DD; default today" },
           duration_minutes: { type: "integer" },
           priority: { type: "string", enum: ["none", "low", "medium", "high"] },
@@ -653,7 +662,8 @@ const RAW_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "update_task",
-      description: "Update task fields (title, notes, priority, deadline).",
+      description:
+        "Update a task's fields. Use plan_task / schedule_task to place it on a day or a time — those carry the placement rules; this is for the task's own attributes.",
       parameters: {
         type: "object",
         properties: {
@@ -662,7 +672,22 @@ const RAW_TOOL_DEFINITIONS = [
           title: { type: "string" },
           notes: { type: "string" },
           priority: { type: "string", enum: ["none", "low", "medium", "high"] },
-          deadline: { type: "string", description: "YYYY-MM-DD or null to clear" },
+          deadline: { type: "string", description: "YYYY-MM-DD, or empty string to clear" },
+          duration_minutes: { type: "integer", description: "How long it takes." },
+          energy: {
+            type: "string",
+            enum: ["deep", "shallow", "quick", "social"],
+            description: "The register the work needs.",
+          },
+          project_id: {
+            type: "string",
+            description:
+              "File it under a project. Its initiative and domain follow automatically — never set those by hand alongside this. Empty string unfiles it.",
+          },
+          domain_id: {
+            type: "string",
+            description: "Only for a task with no project. Empty string clears it.",
+          },
         },
       },
     },
@@ -786,6 +811,242 @@ const RAW_TOOL_DEFINITIONS = [
               "The token from this tool's own previous result. Omit on the first call — that call only PROPOSES and changes nothing. Confirm on a later message, after the user has actually answered.",
           },
         },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "add_step",
+      description:
+        "Add a step to a task's checklist — the small ordered list INSIDE one task. Use this when the user breaks a single task into parts ('split that into…', 'the steps are…', 'add a checklist'). A step is not a task: it can never be scheduled, dated, filed under a project, or given a priority of its own. If what they described is really separate work, make tasks instead.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string", description: "Search by title if id unknown." },
+          steps: {
+            type: "array",
+            items: { type: "string" },
+            description: "One or more step titles, in order. Send them all in ONE call.",
+          },
+        },
+        required: ["steps"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "complete_step",
+      description: "Tick (or untick) one step of a task's checklist.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "The PARENT task." },
+          task_title: { type: "string" },
+          step_title: { type: "string", description: "Which step — matched against that task's steps only." },
+          done: { type: "boolean", description: "Default true. Pass false to untick." },
+        },
+        required: ["step_title"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_steps",
+      description: "Read a task's checklist — its steps and which are done. Steps are invisible to list_tasks and to your context snapshot, so this is the only way to see them.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "remove_step",
+      description: "Remove one step from a task's checklist. Steps are not archived — this is immediate, but it only ever removes a checklist line, never a task.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+          step_title: { type: "string" },
+        },
+        required: ["step_title"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_trashed_tasks",
+      description:
+        "List tasks in the trash, newest first. Use this for 'I deleted something by mistake', 'what did I delete', 'where did X go' — a trashed task is invisible to list_tasks and to your context, so without this you would wrongly tell them it's gone.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Optional title filter." },
+          limit: { type: "number", description: "Default 20, cap 50." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "restore_task",
+      description:
+        "Bring a trashed task back. It returns to where the funnel says it belongs (its project's backlog, or the inbox if it has no home) — NOT to a date that has since passed. Find the id with list_trashed_tasks first.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string", description: "Search the TRASH by title if id unknown." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "purge_task",
+      description:
+        "Delete a trashed task PERMANENTLY. The only act in Nuvo with no undo — nothing brings it back. Only ever for a task already in the trash, only when the user asked for exactly this, and never as tidying you thought of yourself. Ordinary deleting is trash_task.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string", description: "Search the TRASH by title if id unknown." },
+          confirm_token: {
+            type: "string",
+            description:
+              "The token from this tool's own previous result. Omit on the first call — that call only PROPOSES and changes nothing. Confirm on a later message, after the user has actually answered.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "search_events",
+      description:
+        "Search the user's calendar by title or location — the only way to answer 'when did I last meet Sam', 'when is my next 1:1', 'have I got anything with Acme this month'. Your context only carries a narrow window around today, so use this for anything outside it rather than saying you can't see it. Returns both the next matches ahead and the most recent behind; say WHEN, not just that it exists.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Words from the event's title or location." },
+          direction: {
+            type: "string",
+            enum: ["both", "upcoming", "past"],
+            description: "Default 'both'. 'past' for 'when did I last…', 'upcoming' for 'when is my next…'.",
+          },
+          limit: { type: "number", description: "Max results, default 10, cap 25." },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "set_reminder",
+      description:
+        "Set how long before something Nuvo should speak: a meeting, a block the user scheduled, or a deadline. Name ONE target — task_id/task_title, or event_id/event_title, or slot_id. `lead_minutes` is minutes before; 0 means at the time; pass \"off\" to silence just this one item while leaving the user's defaults alone. Reminders are the app's only unprompted voice and they only ever announce something about to happen — never a planning nudge. If the user is asking for reminders in general rather than for one thing, tell them Settings → Reminders holds the defaults; do not set one per item to fake it.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string", description: "Search by title if id unknown." },
+          event_id: { type: "string" },
+          event_title: { type: "string", description: "Search by title if id unknown." },
+          slot_id: { type: "string" },
+          anchor: {
+            type: "string",
+            enum: ["start", "deadline"],
+            description: "Which fact to hang it on. 'deadline' is tasks only; defaults to 'start'.",
+          },
+          lead_minutes: {
+            type: "string",
+            description:
+              'Minutes before: "0", "5", "10", "15", "30", "60", "120", "1440" — or "off" to silence this one item.',
+          },
+        },
+        required: ["lead_minutes"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "clear_reminder",
+      description:
+        "Drop a per-item reminder override, so this item goes back to whatever the user's defaults say. Different from silencing it (set_reminder with lead_minutes \"off\") — say which one you did.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          task_title: { type: "string" },
+          event_id: { type: "string" },
+          event_title: { type: "string" },
+          slot_id: { type: "string" },
+          anchor: { type: "string", enum: ["start", "deadline"] },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_reminders",
+      description:
+        "Read the user's reminder defaults and every per-item override they have set. Use it before answering 'will you remind me…' — the answer is usually the defaults, not a row.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "duplicate_event",
+      description:
+        "Copy an existing event to a new time — 'same again next Tuesday', 'book another one Thursday at 2'. Guests and recurrence do NOT carry: a copy that re-invited everyone would be mail the user didn't ask to send, and a copied series is two series. Say so when it matters.",
+      parameters: {
+        type: "object",
+        properties: {
+          event_id: { type: "string" },
+          event_title: { type: "string", description: "Search by title if id unknown" },
+          start_local: { type: "string", description: "YYYY-MM-DDTHH:mm in the user's zone. Omit to copy onto the same time." },
+          end_local: { type: "string", description: "YYYY-MM-DDTHH:mm. Omit to keep the original's length." },
+          title: { type: "string", description: "A new title. Omit to reuse the original's." },
+        },
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "rsvp_event",
+      description:
+        "Say YES or MAYBE to an invite — 'accept that meeting', 'I'll be there', 'put me down as tentative'. Saying NO is decline_event, which confirms first because it tells the organizer something they'd rather hear from a person; accepting needs no confirmation. Works on Google and Apple/iCloud invites alike.",
+      parameters: {
+        type: "object",
+        properties: {
+          event_id: { type: "string" },
+          event_title: { type: "string", description: "Search by title if id unknown" },
+          response: {
+            type: "string",
+            enum: ["accepted", "tentative"],
+            description: "To decline, call decline_event instead.",
+          },
+          notify: { type: "boolean", description: "Tell the organizer. Default true — an answer nobody receives isn't an answer." },
+        },
+        required: ["response"],
       },
     },
   },

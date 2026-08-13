@@ -295,6 +295,10 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Domain routing from `routingContext` | `create_task` | ◐ covered via `structure-routes-by-domain` |
 | Voice / dictated capture | `create_task` | ◐ same path, no transcription scenario |
 | Image attachments (a screenshot of a schedule) | — | ○ no scenario; the harness sends text only |
+| "What did I delete?" reads the trash, not the live list | `list_trashed_tasks` | ◐ no scenario |
+| Bringing a deleted task back to where it belongs | `restore_task` | ◐ no scenario |
+| Permanent delete confirms first, and only from the trash | `purge_task` | ◐ mechanism pinned in `tests/agent-reliability.test.ts` |
+| Searching the calendar outside the context window | `search_events` | ◐ no scenario |
 
 ### B · Slots — one block of time that holds several tasks — `slots`
 
@@ -322,6 +326,14 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | A confirmed cancel executes at once | `cancel_event` | ✅ `cal-confirmed-cancel-executes` |
 | Reschedule an existing event | `reschedule_event` | ◐ no scenario |
 | A booked meeting carries a real Meet link | `create_calendar_event` | ◐ pinned in `tests/conferencing.test.ts` |
+| Set a lead on one meeting / block / deadline | `set_reminder` | ◐ rules pinned in `tests/reminders.test.ts` |
+| Silence one item without touching the defaults | `set_reminder` (`"off"`) | ◐ rules pinned in `tests/reminders.test.ts` |
+| Drop an override so it follows the defaults again | `clear_reminder` | ◐ no scenario |
+| "Will you remind me?" is answered from the defaults | `list_reminders` | ◐ no scenario |
+| Refuses a nagging / motivational reminder | — | ◐ prompt-only; no scenario |
+| Saying YES / MAYBE to an invite (not only no) | `rsvp_event` | ◐ no scenario |
+| RSVP reaches Apple/iCloud, not just Google | `rsvp_event` · `decline_event` | ◐ CalDAV PARTSTAT; needs a live-account check |
+| Copying an event to a new time, guests NOT carried | `duplicate_event` | ◐ no scenario |
 
 ### D · The week — `week`
 

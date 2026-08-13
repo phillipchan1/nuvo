@@ -19,17 +19,20 @@
 //
 // Zero imports, zero Deno globals.
 
-export const CONFIRMABLE_TOOLS = ["cancel_event", "decline_event"] as const;
+export const CONFIRMABLE_TOOLS = ["cancel_event", "decline_event", "purge_task"] as const;
 export type ConfirmableTool = (typeof CONFIRMABLE_TOOLS)[number];
 
 export function isConfirmable(name: string): name is ConfirmableTool {
   return (CONFIRMABLE_TOOLS as readonly string[]).includes(name);
 }
 
-/** What the call is acting on, however the model named it. */
+/** What the call is acting on, however the model named it. Every confirmable
+ *  tool's target vocabulary is read here, so a token minted for one thing can
+ *  never be spent on another. */
 export function targetKeyFor(args: Record<string, unknown>): string {
-  const id = typeof args.event_id === "string" ? args.event_id.trim() : "";
-  const title = typeof args.event_title === "string" ? args.event_title.trim().toLowerCase() : "";
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const id = str(args.event_id) || str(args.task_id);
+  const title = (str(args.event_title) || str(args.task_title)).toLowerCase();
   return id || title;
 }
 

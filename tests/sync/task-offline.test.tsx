@@ -96,6 +96,9 @@ vi.mock("../../src/lib/supabase", () => ({
     functions: { invoke: () => Promise.resolve({ error: null }) },
   },
   invokeQuiet: () => {},
+  // The Google mirror is a server-side echo of a block, not user data — the
+  // offline tests are about what the OUTBOX does, so it no-ops here.
+  mirrorTask: () => {},
   supabaseConfigured: true,
   supabaseUrl: "http://localhost",
   supabaseAnonKey: "anon",

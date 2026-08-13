@@ -13,6 +13,7 @@ import {
   SPOTLIGHT_NAVIGATE_EVENT,
   type SpotlightNav,
 } from "../lib/spotlightNav";
+import { eventHitDateISO, type EventHit } from "../lib/eventSearch";
 import { NuvoSpotlightPanel, type Command, type Mode, type SearchHit } from "./NuvoSpotlight";
 
 // Tauri-only wiring (NSPanel hide, window events) is skipped in the browser, so
@@ -216,6 +217,18 @@ export default function SpotlightWindow() {
     [vertical, focusMain, hide],
   );
 
+  // A calendar hit crosses the window boundary as the same serialized intent as
+  // every other kind — the main window replays it on its live nav.
+  const openEventHit = useCallback(
+    (hit: EventHit) => {
+      const nav: SpotlightNav = { kind: "event", eventId: hit.id, dateISO: eventHitDateISO(hit) };
+      if (IS_TAURI) void emit(SPOTLIGHT_NAVIGATE_EVENT, nav);
+      focusMain();
+      hide();
+    },
+    [focusMain, hide],
+  );
+
   return (
     <SpotlightFrame className={mode === "ask" ? "max-w-2xl" : wide ? "max-w-4xl" : "max-w-xl"}>
       <NuvoSpotlightPanel
@@ -223,6 +236,7 @@ export default function SpotlightWindow() {
         labels={labels}
         commands={commands}
         searchHits={searchHits}
+        onEventHit={openEventHit}
         onCreate={mutations.create}
         agent={agent}
         onClose={hide}

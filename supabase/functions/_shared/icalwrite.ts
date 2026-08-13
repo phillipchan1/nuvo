@@ -222,3 +222,58 @@ function icalToDate(v: string): Date {
   const [, y, mo, d, h = "0", mi = "0", se = "0"] = m;
   return new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +se));
 }
+
+
+/**
+ * Set the user's own PARTSTAT on every VEVENT in a resource.
+ *
+ * RSVP over CalDAV is not an API call — it is the attendee rewriting their own
+ * ATTENDEE line in the .ics and PUTting it back. Two shapes have to be handled:
+ * the parameter may already be there (replace it) or not (append it), and iCal
+ * lines fold at 75 octets, so the ATTENDEE property can be spread over several
+ * physical lines with a leading space.
+ *
+ * Only the line whose address matches `email` is touched. Rewriting anyone
+ * else's PARTSTAT would be answering on their behalf.
+ */
+export function setPartstat(ics: string, email: string, partstat: string): string {
+  const target = email.trim().toLowerCase();
+  if (!target) return ics;
+
+  // Unfold first so a folded ATTENDEE line is one string to work on, then
+  // re-fold nothing — servers accept long lines, and re-folding by hand is how
+  // you corrupt a UTF-8 sequence mid-octet.
+  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
+
+  const out = unfolded
+    .split(/\r?\n/)
+    .map((line) => {
+      if (!/^ATTENDEE[;:]/i.test(line)) return line;
+      const mailto = line.match(/mailto:([^;:,\s]+)/i);
+      if (!mailto || mailto[1].trim().toLowerCase() !== target) return line;
+      const [head, ...rest] = line.split(":");
+      const value = rest.join(":");
+      const params = /PARTSTAT=[^;:]*/i.test(head)
+        ? head.replace(/PARTSTAT=[^;:]*/i, `PARTSTAT=${partstat}`)
+        : `${head};PARTSTAT=${partstat}`;
+      // An answered invite is no longer awaiting one.
+      return `${params.replace(/;RSVP=[^;:]*/i, "")}:${value}`;
+    })
+    .join("\r\n");
+
+  return out;
+}
+
+/** iCalendar's spelling of an RSVP. */
+export function partstatFor(responseStatus: string): string | null {
+  switch (responseStatus) {
+    case "accepted":
+      return "ACCEPTED";
+    case "declined":
+      return "DECLINED";
+    case "tentative":
+      return "TENTATIVE";
+    default:
+      return null;
+  }
+}

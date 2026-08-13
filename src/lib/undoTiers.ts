@@ -26,6 +26,7 @@ export const TASK_UNDO_DEFAULT: Record<
   | "complete"
   | "uncomplete"
   | "trash"
+  | "restore"
   | "planFor"
   | "block"
   | "assignToSlot"
@@ -39,6 +40,9 @@ export const TASK_UNDO_DEFAULT: Record<
   complete: "toast",
   uncomplete: "toast",
   trash: "toast",
+  // Undoing a restore puts the task back in the trash — recoverable either way,
+  // but the toast is the phone's only ⌘Z, so it gets one.
+  restore: "toast",
   // Calendar-heavy by default; LeftRail keyboard / tab drop pass `undo: "toast"`.
   planFor: "silent",
   block: "silent",
@@ -78,6 +82,8 @@ export function undoLabel(
         return `${count} tasks reopened`;
       case "trash":
         return `${count} tasks deleted`;
+      case "restore":
+        return `${count} tasks restored`;
       case "planFor":
         return `${count} tasks planned`;
       case "backToInbox":
@@ -93,6 +99,8 @@ export function undoLabel(
       return `Reopened — ${title}`;
     case "trash":
       return `Task deleted`;
+    case "restore":
+      return `Restored — ${title}`;
     case "planFor":
       return `Planned — ${title}`;
     case "block":
@@ -122,6 +130,8 @@ export function undoShortLabel(kind: keyof typeof TASK_UNDO_DEFAULT, count = 1):
         return `${count} reopened`;
       case "trash":
         return `${count} deleted`;
+      case "restore":
+        return `${count} restored`;
       default:
         return `${count} changes`;
     }
@@ -133,6 +143,8 @@ export function undoShortLabel(kind: keyof typeof TASK_UNDO_DEFAULT, count = 1):
       return "Reopened";
     case "trash":
       return "Task deleted";
+    case "restore":
+      return "Restored";
     case "planFor":
       return "Planned";
     case "block":

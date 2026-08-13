@@ -18,6 +18,7 @@ import {
 import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
 import { eventsFunctionFor } from "../lib/calendarWrite";
 import { fromGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
+import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 
 function throwIfInvokeFailed(data: unknown, error: Error | null) {
@@ -138,6 +139,11 @@ export function useHiddenEvents() {
  *  scope="ALL" patches the master recurring event in Google instead of just this instance. */
 export function useExternalEventMutations() {
   const qc = useQueryClient();
+  // Calendar writes recorded nothing at all until now: the audit found undo
+  // covering drag and resize (which CalendarPane records itself) but not
+  // create, delete, RSVP, move-to-calendar or a field edit — and delete said in
+  // words that it could not be undone. Every act below now names its inverse.
+  const { recordUndo } = useOptionalUndoStack();
 
   // Route write-back to the provider that owns the event. Google → google-events,
   // iCloud → icloud-events (CalDAV). Resolved from the query cache so callers keep
@@ -231,7 +237,17 @@ export function useExternalEventMutations() {
           old ? { ...old, description } : old,
         );
       }
-      return { snapshot, detailSnapshot, hadDescription, id };
+      // The pre-edit values of exactly the fields being changed — the inverse
+      // patch, captured before the optimistic write overwrites them.
+      const current = snapshot.flatMap(([, data]) => data ?? []).find((e) => e.id === id);
+      const before: Record<string, unknown> = {};
+      if (current) {
+        for (const k of Object.keys(columns) as (keyof ExternalEvent)[]) {
+          before[k as string] = current[k];
+        }
+      }
+      if (hadDescription) before.description = detailSnapshot?.description ?? "";
+      return { snapshot, detailSnapshot, hadDescription, id, before };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.snapshot) {
@@ -240,6 +256,32 @@ export function useExternalEventMutations() {
       if (ctx?.hadDescription) {
         qc.setQueryData(["event_details", ctx.id], ctx.detailSnapshot);
       }
+    },
+    onSuccess: (_d, vars, ctx) => {
+      // Geometry (start/end) is deliberately excluded: a drag or a resize records
+      // its own undo in CalendarPane, where the gesture is, and recording a
+      // second one here would make ⌘Z take two presses to move a block back.
+      // What was missing — and what this records — is the FIELD edit: a retitle,
+      // a location, an all-day flip, a note.
+      const before = ctx?.before ?? {};
+      const fields = Object.keys(before).filter((k) => k !== "start_at" && k !== "end_at");
+      if (!fields.length || vars.scope === "ALL") return;
+      const inverse: Record<string, unknown> = {};
+      const forward: Record<string, unknown> = {};
+      for (const k of fields) {
+        inverse[k] = before[k];
+        forward[k] = (vars.patch as Record<string, unknown>)[k];
+      }
+      if (JSON.stringify(inverse) === JSON.stringify(forward)) return;
+      recordUndo({
+        label: "Edited event",
+        shortLabel: "Event edit",
+        // Silent: a text field that pops a toast on every blur is noise. ⌘Z is
+        // the path, and it now exists.
+        tier: "silent",
+        undo: () => update.mutate({ id: vars.id, patch: inverse }),
+        redo: () => update.mutate({ id: vars.id, patch: forward }),
+      });
     },
     onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: ["external_events"] });
@@ -263,15 +305,37 @@ export function useExternalEventMutations() {
     onMutate: async ({ id, calendarId }) => {
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
+      // Where it came from, captured before the optimistic retag overwrites it.
+      let fromCalendarId: string | undefined;
+      for (const [, data] of snapshot) {
+        const found = data?.find((e) => e.id === id);
+        if (found) {
+          fromCalendarId = found.calendar_id;
+          break;
+        }
+      }
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old?.map((e) => (e.id === id ? { ...e, calendar_id: calendarId } : e)),
       );
-      return { snapshot };
+      return { snapshot, fromCalendarId };
     },
     onError: (_e, _v, ctx) => {
       if (ctx?.snapshot) {
         for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
       }
+    },
+    onSuccess: (_d, vars, ctx) => {
+      // Moving between your own calendars is quiet and reversible — the inverse
+      // is the same act, pointed back at where it came from.
+      const from = ctx?.fromCalendarId;
+      if (!from || from === vars.calendarId) return;
+      recordUndo({
+        label: "Moved to another calendar",
+        shortLabel: "Moved calendar",
+        tier: "silent",
+        undo: () => move.mutate({ id: vars.id, calendarId: from }),
+        redo: () => move.mutate({ id: vars.id, calendarId: vars.calendarId }),
+      });
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });
@@ -286,33 +350,56 @@ export function useExternalEventMutations() {
       responseStatus: AttendeeStatus;
       sendNotifications?: boolean;
     }) => {
-      const { error } = await supabase.functions.invoke("google-events", {
+      // Was hardcoded to google-events, which made RSVP Google-only even though
+      // iCloud is a writable provider — the audit's rank 9. Routed like every
+      // other write now.
+      const { data, error } = await supabase.functions.invoke(eventsFunctionFor(await resolveProviderForEvent(id)), {
         body: { action: "rsvp", eventId: id, responseStatus, sendNotifications },
       });
-      if (error) throw error;
+      throwIfInvokeFailed(data, error);
     },
     // Optimistically flip self_rsvp in the grid cache so the event de-dims
     // immediately without waiting for the edge function round-trip.
     onMutate: async ({ id, responseStatus }) => {
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const previous = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
+      let priorStatus: AttendeeStatus | null | undefined;
+      for (const [, data] of previous) {
+        const found = data?.find((e) => e.id === id);
+        if (found) {
+          priorStatus = found.self_rsvp ?? null;
+          break;
+        }
+      }
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old?.map((e) => (e.id === id ? { ...e, self_rsvp: responseStatus } : e)),
       );
-      return { previous };
+      return { previous, priorStatus };
     },
     onError: (_e, _v, ctx) => {
       if (ctx?.previous) {
         ctx.previous.forEach(([key, data]) => qc.setQueryData(key, data));
       }
     },
-    onSuccess: (_d, vars) => {
+    onSuccess: (_d, vars, ctx) => {
       // Confirm the optimistic value directly — don't invalidate external_events,
       // which would trigger a re-fetch that could race with the DB write and
       // flash the event back to its old opacity.
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old?.map((e) => (e.id === vars.id ? { ...e, self_rsvp: vars.responseStatus } : e)),
       );
+      // An answer to an invite is a message to another human, so it gets the
+      // toast channel rather than a silent stack entry: the user should SEE
+      // that it can be taken back, and undoing re-notifies the organiser.
+      const prior = ctx?.priorStatus;
+      if (prior === undefined || prior === vars.responseStatus) return;
+      recordUndo({
+        label: `Replied ${vars.responseStatus}`,
+        shortLabel: "RSVP",
+        tier: "toast",
+        undo: () => void rsvp.mutateAsync({ id: vars.id, responseStatus: prior ?? "needsAction" }),
+        redo: () => void rsvp.mutateAsync({ id: vars.id, responseStatus: vars.responseStatus }),
+      });
     },
     onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: ["event_details", vars.id] });
@@ -347,16 +434,50 @@ export function useExternalEventMutations() {
     onMutate: async ({ id }) => {
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
+      // The row as it was, so the delete can be put back rather than merely
+      // regretted. Captured here because after the write there is nothing left
+      // to read it from.
+      const deleted = snapshot.flatMap(([, data]) => data ?? []).find((e) => e.id === id);
+      const description = qc.getQueryData<GoogleRawEvent | null>(["event_details", id])?.description;
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old?.filter((e) => e.id !== id),
       );
-      return { snapshot };
+      return { snapshot, deleted, description };
     },
     onError: (err, _vars, ctx) => {
       if (ctx?.snapshot) {
         for (const [key, data] of ctx.snapshot) qc.setQueryData(key, data);
       }
       toast.error(err instanceof Error ? err.message : "Couldn't delete event");
+    },
+    onSuccess: (_d, vars, ctx) => {
+      const gone = ctx?.deleted;
+      // A whole-series delete is not restorable from one instance's row, and a
+      // half-restored series is worse than an honest "no". Single occurrences
+      // — which is nearly every delete — are.
+      if (!gone || vars.scope === "ALL") return;
+      recordUndo({
+        label: `Deleted "${gone.title || "event"}"`,
+        shortLabel: "Deleted event",
+        // Toast: a delete is the one act where the offer to take it back has to
+        // be visible, not remembered.
+        tier: "toast",
+        undo: () =>
+          void create.mutateAsync({
+            title: gone.title,
+            start_at: gone.start_at,
+            end_at: gone.end_at,
+            all_day: gone.all_day,
+            location: gone.location ?? undefined,
+            description: ctx?.description,
+            accountId: gone.account_id || undefined,
+            calendarId: gone.calendar_id || undefined,
+            // Recreating must not mail anyone: the guests were already told it
+            // was cancelled, and a second notice would be the app talking on
+            // the user's behalf about a mistake they just corrected.
+            notifyGuests: false,
+          }),
+      });
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });
@@ -436,6 +557,22 @@ export function useExternalEventMutations() {
       qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
         old?.filter((e) => e.id !== ctx.tempId),
       );
+    },
+    onSuccess: (data, vars) => {
+      // The edge function returns the row it wrote; without an id there is
+      // nothing honest to undo TO, so we record nothing rather than guess.
+      const created = (data as { event?: { id?: string } } | null)?.event?.id
+        ?? (data as { id?: string } | null)?.id;
+      if (!created) return;
+      // A created event with guests has already mailed them. Undoing cancels
+      // for everyone, which is a bigger act than it looks — so it takes the
+      // toast channel, where the offer is visible and short-lived.
+      recordUndo({
+        label: `Added "${vars.title}"`,
+        shortLabel: "Added event",
+        tier: "toast",
+        undo: () => del.mutate({ id: created, scope: "THIS", notifyGuests: false }),
+      });
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
   });

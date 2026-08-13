@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { invokeQuiet, supabase } from "../lib/supabase";
+import { invokeQuiet, mirrorTask, supabase } from "../lib/supabase";
 import { makeOp, queueWrite } from "../lib/sync";
 import { patchCaches } from "./useTasks";
 import {
@@ -17,7 +17,7 @@ import { parseDateISO, toDateISO, todayISO } from "../lib/dates";
 export { HORIZON_DAYS } from "../lib/recurrence";
 
 const REC_COLS =
-  "id, user_id, kind, freq, interval, byweekday, bymonthday, anchor_date, until_date, max_count, exdates, title, duration_minutes, time_of_day_minutes, project_id, domain_id, priority, color, active, last_materialized";
+  "id, user_id, kind, freq, interval, byweekday, bymonthday, bysetpos, bymonth, anchor_date, until_date, max_count, exdates, title, duration_minutes, time_of_day_minutes, project_id, domain_id, priority, color, active, last_materialized";
 
 /** Local ISO instant for a date + minutes-after-midnight (app lives in APP_TZ). */
 function occurrenceStartISO(dateISO: string, minutes: number): string {
@@ -233,6 +233,10 @@ export function useRecurrenceMutations() {
         interval: rule.interval,
         byweekday: rule.byweekday ?? [],
         bymonthday: rule.bymonthday ?? null,
+        // Positional and by-date are exclusive; writing both would leave a row
+        // the DB check rejects and the engine would have to guess about.
+        bysetpos: rule.bysetpos ?? null,
+        bymonth: rule.bymonth ?? null,
         anchor_date: anchorISO,
         until_date: rule.until ?? null,
         max_count: rule.count ?? null,
@@ -330,7 +334,7 @@ export function useRecurrenceMutations() {
           recurrence_date: null,
         }),
       );
-      if (t.google_event_id && navigator.onLine) invokeQuiet("task-mirror", { taskId: t.id });
+      if (t.google_event_id && navigator.onLine) mirrorTask(t.id);
     }
 
     // slots → delete (children orphan back to normal tasks via FK)
@@ -358,6 +362,10 @@ export function useRecurrenceMutations() {
         interval: rule.interval,
         byweekday: rule.byweekday ?? [],
         bymonthday: rule.bymonthday ?? null,
+        // Positional and by-date are exclusive; writing both would leave a row
+        // the DB check rejects and the engine would have to guess about.
+        bysetpos: rule.bysetpos ?? null,
+        bymonth: rule.bymonth ?? null,
         until_date: rule.until ?? null,
         max_count: rule.count ?? null,
         ...(template ?? {}),

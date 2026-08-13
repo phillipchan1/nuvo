@@ -31,6 +31,8 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { useSkin, useScheme, SKIN_LABELS, SCHEMES, SCHEME_GROUP, schemeModes, type Skin, type Scheme, type SchemeModes } from "../hooks/useSkin";
 import { useUiScale, UI_SCALE_MIN, UI_SCALE_MAX } from "../hooks/useUiScale";
 import { useHomeTimezone } from "../hooks/useHomeTimezone";
+import { useNotifyPermission } from "../hooks/useReminders";
+import { DEFAULT_REMINDER_PREFS, describeLead, REMINDER_LEADS } from "../../supabase/functions/_shared/reminderRules.ts";
 import { detectDeviceTz, supportedTimeZones, tzAbbrev, tzCity, tzStatus } from "../lib/timezone";
 import { useUpdater } from "../hooks/useUpdater";
 import { isDesktopTauri } from "../lib/platform";
@@ -41,7 +43,7 @@ const DOWNLOAD_MAC_URL =
   "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "connections" | "labels" | "account" | "billing" | "about";
+type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "labels" | "account" | "billing" | "about";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   {
@@ -56,6 +58,13 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
     label: "Schedule",
     icon: (
       <Icon name="clock" size={15} />
+    ),
+  },
+  {
+    id: "reminders",
+    label: "Reminders",
+    icon: (
+      <Icon name="bell" size={15} />
     ),
   },
   {
@@ -1150,6 +1159,107 @@ function formatReleaseDate(iso: string): string {
   return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
+/**
+ * Reminders — the opt-in, and the three leads that are allowed to exist.
+ *
+ * The copy here is load-bearing. N-07 refused notifications and Principle 9
+ * refuses notification theater; what shipped is the narrow thing N-07's own
+ * escape clause allows, and this pane has to be honest about that rather than
+ * selling a feature. Hence: off by default, three anchors, and a line saying
+ * plainly what Nuvo will never do with the permission.
+ */
+function RemindersPane({
+  settings,
+  updateSettings,
+}: {
+  settings: UserSettings | undefined;
+  updateSettings: (patch: Partial<UserSettings>) => void;
+}) {
+  const prefs = settings?.reminder_prefs ?? DEFAULT_REMINDER_PREFS;
+  const { permission, request } = useNotifyPermission();
+
+  const patch = (p: Partial<typeof prefs>) => updateSettings({ reminder_prefs: { ...prefs, ...p } });
+
+  const setEnabled = async (on: boolean) => {
+    patch({ enabled: on });
+    // Ask the OS at the moment of consent, never on a cold open.
+    if (on && permission === "default") await request();
+  };
+
+  const leadSelect = (
+    key: "event_lead" | "block_lead" | "deadline_lead",
+  ) => (
+    <Select
+      value={prefs[key] == null ? "off" : String(prefs[key])}
+      disabled={!prefs.enabled}
+      onChange={(e) => patch({ [key]: e.target.value === "off" ? null : Number(e.target.value) } as Partial<typeof prefs>)}
+      className="w-full sm:w-56"
+    >
+      {REMINDER_LEADS.map((m) => (
+        <option key={m} value={m}>
+          {describeLead(m)}
+        </option>
+      ))}
+      <option value="off">Never</option>
+    </Select>
+  );
+
+  return (
+    <div>
+      <PaneHeader
+        title="Reminders"
+        sub="The only time Nuvo speaks first — and only about something that is about to happen."
+      />
+      <div className="grid grid-cols-1 gap-x-12 gap-y-7 lg:grid-cols-2">
+        <Row
+          title="Remind me"
+          desc="Off until you ask. Nuvo will never nudge you about planning, streaks, or a backlog — only about a commitment that is minutes away."
+        >
+          <Toggle checked={prefs.enabled} onChange={(v) => void setEnabled(v)} label="Reminders" />
+        </Row>
+
+        {prefs.enabled && permission === "denied" && (
+          <Row layout="stack" title="Notifications are blocked" desc="Your browser or OS is refusing them for Nuvo. Reminders still appear inside the app while it's open; allow notifications in your system settings to hear them when it isn't.">
+            <span className="text-caption text-muted">Nothing to change here.</span>
+          </Row>
+        )}
+        {prefs.enabled && permission === "default" && (
+          <Row layout="stack" title="Allow notifications" desc="Without permission, reminders can only appear while Nuvo is open.">
+            <Btn onClick={() => void request()}>Allow notifications</Btn>
+          </Row>
+        )}
+
+        <Row layout="stack" title="Before a meeting" desc="Events from your connected calendars.">
+          {leadSelect("event_lead")}
+        </Row>
+
+        <Row layout="stack" title="Before a block you scheduled" desc="Your own time blocks and slots.">
+          {leadSelect("block_lead")}
+        </Row>
+
+        <Row layout="stack" title="When a deadline lands" desc="Measured from the time of day below.">
+          {leadSelect("deadline_lead")}
+        </Row>
+
+        <Row layout="stack" title="Deadline time of day" desc="When a deadline speaks on its day.">
+          <TextInput
+            type="time"
+            step={900}
+            disabled={!prefs.enabled}
+            value={toMinLabel(prefs.deadline_time_minutes)}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              const [h, mm] = e.target.value.split(":").map(Number);
+              patch({ deadline_time_minutes: h * 60 + mm });
+            }}
+            className="mono w-full sm:w-36"
+          />
+        </Row>
+      </div>
+    </div>
+  );
+}
+
 function LabelsPane() {
   const { labels, createLabel, updateLabel, deleteLabel } = useLabels();
   const [newLabel, setNewLabel] = useState("");
@@ -1412,6 +1522,7 @@ export default function SettingsModal({
     <>
       {active === "appearance" && <AppearancePane settings={settings} updateSettings={updateSettings} />}
       {active === "schedule" && <SchedulePane settings={settings} updateSettings={updateSettings} />}
+      {active === "reminders" && <RemindersPane settings={settings} updateSettings={updateSettings} />}
       {active === "connections" && (
         <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
       )}
