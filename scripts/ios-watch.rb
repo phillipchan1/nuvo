@@ -91,6 +91,11 @@ targets[TARGET_NAME] = {
       'CFBundleDisplayName' => 'Nuvo',
       'CFBundleShortVersionString' => short_version,
       'CFBundleVersion' => short_version,
+      # App Store validation rejects a watch app without an icon, twice over:
+      # "A value for the Info.plist key 'CFBundleIconName' is missing" (90713)
+      # and "No icons found for watch application" (90391). GENERATE_INFOPLIST_FILE
+      # is NO, so nothing writes this key for us — see run 31721830337.
+      'CFBundleIconName' => 'AppIcon',
       # Single-target watch app (Xcode 14+): no companion watchkit2-extension,
       # WKApplication rather than the retired WKWatchKitApp.
       'WKApplication' => true,
@@ -115,6 +120,9 @@ targets[TARGET_NAME] = {
       'ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES' => 'NO',
       'CODE_SIGN_STYLE' => 'Automatic',
       'GENERATE_INFOPLIST_FILE' => 'NO',
+      # Compiles src-tauri/ios/NuvoWatch/Assets.xcassets (picked up with the
+      # rest of that directory) and names the icon set to ship.
+      'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
       'INFOPLIST_KEY_WKCompanionAppBundleIdentifier' => app_bundle_id
       # Deliberately NOT inheriting the app target's ARCHS/EXCLUDED_ARCHS: those
       # live in nuvo_iOS.settings.base and name arm64 only. A watch target needs

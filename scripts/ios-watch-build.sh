@@ -80,17 +80,40 @@ OUT="${DERIVED}/Products"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
+build_watch() {
+  xcodebuild \
+    -project "$PROJECT" \
+    -target NuvoWatch \
+    -configuration "$CONFIG" \
+    -sdk watchos \
+    CONFIGURATION_BUILD_DIR="$OUT" \
+    ${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"} \
+    ${TEAM_ARGS[@]+"${TEAM_ARGS[@]}"} \
+    ${VERSION_ARGS[@]+"${VERSION_ARGS[@]}"} \
+    build
+}
+
 echo "ios-watch-build: building NuvoWatch ($CONFIG, watchos)…"
-xcodebuild \
-  -project "$PROJECT" \
-  -target NuvoWatch \
-  -configuration "$CONFIG" \
-  -sdk watchos \
-  CONFIGURATION_BUILD_DIR="$OUT" \
-  ${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"} \
-  ${TEAM_ARGS[@]+"${TEAM_ARGS[@]}"} \
-  ${VERSION_ARGS[@]+"${VERSION_ARGS[@]}"} \
-  build
+LOG="${DERIVED}/build.log"
+mkdir -p "$DERIVED"
+if ! build_watch 2>&1 | tee "$LOG"; then
+  # The app icon is compiled by actool, which refuses to run unless a SIMULATOR
+  # runtime matching the watchOS SDK is installed — even for a device build:
+  #   "No simulator runtime version from [...] available to use with
+  #    watchsimulator SDK version 23T570"
+  # A machine can have the watchOS SDK and not that runtime (mine does). The
+  # platform download is idempotent and quick when it's already there, so heal
+  # and retry once rather than failing on a missing component.
+  if grep -q "No simulator runtime version" "$LOG"; then
+    echo "ios-watch-build: missing a matching watchOS simulator runtime — downloading the platform…"
+    xcodebuild -downloadPlatform watchOS
+    echo "ios-watch-build: retrying the build…"
+    build_watch
+  else
+    echo "::error::NuvoWatch build failed — see the log above."
+    exit 1
+  fi
+fi
 
 APP="${OUT}/NuvoWatch.app"
 if [ ! -d "$APP" ]; then
