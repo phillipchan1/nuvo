@@ -2515,6 +2515,67 @@ select.field { appearance: none; -webkit-appearance: none; }
 .sheet-h-tall { height: 92vh; height: 92dvh; }
 .sheet-h-max { max-height: 88vh; max-height: 88dvh; }
 
+/* The action toast (sonner) — themed onto Warm Paper tokens instead of
+   sonner's stock white-card + neon richColors, and tightened down from its
+   16px/13px default chrome so it reads as a quiet aside, not an alert.
+   richColors still distinguishes success/warning/error, but through the same
+   low-saturation semantic tokens every other surface uses, not raw HSL reds. */
+/* Sonner bakes its own light/dark values into [data-sonner-toaster][data-sonner-theme=…],
+   which outranks a plain [data-sonner-toaster] rule on specificity — !important is the
+   only reliable way to win regardless of load order between this stylesheet and sonner's
+   runtime-injected one. */
+[data-sonner-toaster] {
+  --normal-bg: var(--surface) !important;
+  --normal-border: var(--line) !important;
+  --normal-text: var(--ink) !important;
+  --success-bg: var(--surface) !important;
+  --success-border: color-mix(in srgb, var(--ok) 35%, var(--line)) !important;
+  --success-text: var(--ok) !important;
+  --info-bg: var(--surface) !important;
+  --info-border: var(--line) !important;
+  --info-text: var(--ink) !important;
+  --warning-bg: var(--surface) !important;
+  --warning-border: color-mix(in srgb, var(--warn) 35%, var(--line)) !important;
+  --warning-text: var(--warn) !important;
+  --error-bg: var(--surface) !important;
+  --error-border: color-mix(in srgb, var(--signal) 35%, var(--line)) !important;
+  --error-text: var(--signal) !important;
+  --border-radius: var(--radius) !important;
+}
+[data-sonner-toast][data-styled="true"] {
+  padding: 10px 12px !important;
+  gap: 8px !important;
+  font-size: 12.5px !important;
+  box-shadow: var(--shadow-2) !important;
+}
+[data-sonner-toast][data-styled="true"] [data-title] {
+  font-size: 12.5px !important;
+  line-height: 1.4 !important;
+}
+[data-sonner-toast][data-styled="true"] [data-description] {
+  color: var(--muted) !important;
+  font-size: 12px !important;
+}
+[data-sonner-toast][data-styled="true"] [data-icon] {
+  height: 14px !important;
+  width: 14px !important;
+}
+[data-sonner-toast][data-styled="true"] [data-button] {
+  background: var(--accent) !important;
+  color: var(--surface) !important;
+  height: 22px !important;
+  font-size: 11.5px !important;
+}
+[data-sonner-toast][data-styled="true"] [data-cancel] {
+  color: var(--muted) !important;
+  background: color-mix(in srgb, var(--ink) 8%, transparent) !important;
+}
+[data-sonner-toast][data-styled="true"] [data-close-button] {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+  color: var(--muted) !important;
+}
+
 @media (max-width: 767px), ((max-height: 500px) and (orientation: landscape) and (pointer: coarse)) {
   /* Comfortable momentum scrolling inside the column. */
   .mobile-scroll {
