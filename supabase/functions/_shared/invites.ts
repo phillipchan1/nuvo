@@ -73,6 +73,10 @@ export interface InviteDraft {
   /** Whether this event will carry a Meet link, already decided by
    *  `shouldAddMeet` — the card says so because the link rides the invite. */
   addMeet: boolean;
+  /** Google RRULE lines when this is a repeating series — set on `create` only;
+   *  a recurrence on an event that already exists is a separate, later edit,
+   *  not something `add_guests` takes on. */
+  recurrence?: string[];
   /** Names that stayed ambiguous. The agent asks about these instead of
    *  picking; the card shows them as unfinished business, never as recipients. */
   unresolved?: InviteAmbiguity[];

@@ -46,6 +46,16 @@ export default function ChatPane({
   const panelRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ startY: number } | null>(null);
 
+  useEffect(() => {
+    // Opening the chat is a deliberate tap — land straight in "type now" like
+    // Claude/ChatGPT do, rather than making that a second tap on the composer.
+    // Delay tied to the same gesture (same pattern as QuickTaskSheet) so iOS
+    // Safari still raises the keyboard instead of silently no-op'ing a focus()
+    // called too late after the tap.
+    const t = window.setTimeout(() => inputRef.current?.focus(), 120);
+    return () => window.clearTimeout(t);
+  }, []);
+
   const onHandlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { startY: e.clientY };

@@ -77,10 +77,13 @@ export default function MobileCalendar({
   now,
   onTapEvent,
   onOpenUpkeep,
+  onNewEvent,
 }: {
   now: Date;
   onTapEvent?: (tap: CalendarTap) => void;
   onOpenUpkeep?: () => void;
+  /** Opens the new-event sheet, seeded on the day the user was looking at. */
+  onNewEvent?: (date: Date) => void;
 }) {
   const { settings } = useSettings();
 
@@ -206,6 +209,7 @@ export default function MobileCalendar({
           onPick={pickDay}
           onOpenSchedule={openSchedule}
           onOpenUpkeep={onOpenUpkeep}
+          onNewEvent={onNewEvent ? () => onNewEvent(selected) : undefined}
         />
       ) : mode === "day" ? (
         <MobileDayView
@@ -218,6 +222,7 @@ export default function MobileCalendar({
           onLens={(l) => setLens(l)}
           onBack={backToMonth}
           onTapEvent={onTapEvent}
+          onNewEvent={onNewEvent ? () => onNewEvent(selected) : undefined}
         />
       ) : (
         <ScheduleView
@@ -230,6 +235,7 @@ export default function MobileCalendar({
           onTapEvent={onTapEvent}
           onBack={backToMonth}
           onDayLens={(d) => setLens("day", d)}
+          onNewEvent={onNewEvent ? () => onNewEvent(selected) : undefined}
           onJumpTo={(d) => {
             const day = startOfDay(d);
             setSelected(day);
@@ -259,6 +265,7 @@ function MonthView({
   onPick,
   onOpenSchedule,
   onOpenUpkeep,
+  onNewEvent,
 }: {
   monthCursor: Date;
   ctx: DayCtx;
@@ -272,6 +279,7 @@ function MonthView({
   onPick: (d: Date) => void;
   onOpenSchedule: () => void;
   onOpenUpkeep?: () => void;
+  onNewEvent?: () => void;
 }) {
   const gridStart = useMemo(
     () => startOfWeek(startOfMonth(monthCursor), { weekStartsOn }),
@@ -346,6 +354,16 @@ function MonthView({
             className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-label text-muted active:bg-surface-2"
           >
             ···
+          </button>
+        )}
+        {onNewEvent && (
+          <button
+            type="button"
+            onClick={onNewEvent}
+            aria-label="New event"
+            className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-head text-accent active:bg-surface-2"
+          >
+            <Icon name="plus" size={16} />
           </button>
         )}
       </div>
@@ -513,6 +531,7 @@ export function ScheduleView({
   onBack,
   onDayLens,
   onJumpTo,
+  onNewEvent,
 }: {
   anchor: Date;
   ctx: DayCtx;
@@ -526,6 +545,7 @@ export function ScheduleView({
   /** Jump the schedule's anchor to an arbitrary date (the header's picker).
    *  Optional so the ?daycal harness keeps working unchanged. */
   onJumpTo?: (d: Date) => void;
+  onNewEvent?: () => void;
 }) {
   const days = useMemo<DayPlan[]>(() => {
     const start = addDays(startOfDay(anchor), -pastDays);
@@ -671,6 +691,16 @@ export function ScheduleView({
         )}
         <CalLensPill lens="schedule" onLens={(l) => l === "day" && onDayLens(topDay())} />
         <TimeZoneChip now={ctx.now} />
+        {onNewEvent && (
+          <button
+            type="button"
+            onClick={onNewEvent}
+            aria-label="New event"
+            className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-head text-accent active:bg-surface-2"
+          >
+            <Icon name="plus" size={16} />
+          </button>
+        )}
       </div>
 
       {/* Date strip — tap a day to jump to it. Past days read muted. */}
