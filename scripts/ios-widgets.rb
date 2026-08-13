@@ -61,15 +61,19 @@ app_bundle_id = app_settings['PRODUCT_BUNDLE_IDENTIFIER'] || spec.dig('options',
 fail!('could not read the app bundle identifier from project.yml') if app_bundle_id.nil?
 team = app_settings['DEVELOPMENT_TEAM'] || ENV['APPLE_DEVELOPMENT_TEAM']
 
-# App Store validation rejects an extension whose version strings differ from
-# its host app's. The app's short version is stamped from tauri.conf.json and its
-# build number from the CLI's --build-number, so compose the same pair here.
-# (`xcrun agvtool new-version -all`, which Tauri runs at archive time, then
-# rewrites CFBundleVersion across every target — this keeps us correct either way.)
+# App Store validation rejects an extension whose version strings differ from its
+# host app's, so stamp exactly what the app carries at build time: the version in
+# tauri.conf.json, which the Tauri CLI merges into the app's Info.plist.
+#
+# Do NOT fold the build number in here. Tauri runs `xcrun agvtool new-version -all`
+# between the build and the archive, and `-all` reaches every Info.plist in the
+# project — the widget's included (verified in CI run #10: "Updated CFBundleVersion
+# in .../NuvoWidgets/Info.plist"). Pre-stamping `<version>.<build>` only made the
+# widget run *ahead* of the app for the length of the build, which Xcode flags as
+# "CFBundleVersion of an app extension must match that of its containing parent app".
 tauri_conf = JSON.parse(File.read(File.join(ROOT, 'src-tauri', 'tauri.conf.json')))
 short_version = tauri_conf['version'] || '0.1.0'
-build_number = ENV['BUILD_NUMBER'].to_s.strip
-bundle_version = build_number.empty? ? short_version : "#{short_version}.#{build_number}"
+bundle_version = short_version
 
 targets[TARGET_NAME] = {
   'type' => 'app-extension',
@@ -117,7 +121,7 @@ app_target['dependencies'].unshift({ 'target' => TARGET_NAME, 'embed' => true })
 File.write(SPEC_PATH, spec.to_yaml)
 FileUtils.mkdir_p(File.join(PROJECT_DIR, TARGET_NAME))
 
-puts "ios-widgets: added #{TARGET_NAME} (#{app_bundle_id}.widgets, v#{short_version} build #{bundle_version}) to #{app_name}"
+puts "ios-widgets: added #{TARGET_NAME} (#{app_bundle_id}.widgets, v#{short_version}) to #{app_name}"
 
 # Same invocation cargo-mobile2 uses, so the regenerated project matches what
 # `tauri ios init` would have produced — plus our target.

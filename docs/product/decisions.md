@@ -3200,9 +3200,16 @@ a widget must never be able to cost us the app's release train.
 purpose, for the same acts. It would be a violation if they opened anything else, which is
 what the shared parser prevents.
 
-*Status: shipped — SPA half verified in the running dev app at 375px (`?shortcut=chat`
-opens the chat overlay, `?shortcut=capture` opens the quick-task sheet, the param is
-stripped, no page errors); `npm test` 750 green; typecheck and `npm run build` clean. The
-Swift, the target injection and the deep-link leg are **unverified** — they need macOS
-(Xcode/xcodegen) or a device, so the first TestFlight build after this merge is the real
-test.*
+*Status: shipped, one manual step outstanding. SPA half verified in the running dev app at
+375px (`?shortcut=chat` opens the chat overlay, `?shortcut=capture` opens the quick-task
+sheet, the param is stripped, no page errors); `npm test` 750 green; typecheck and
+`npm run build` clean. The native half was then driven on real CI (iOS TestFlight run #10,
+dispatched against the branch rather than merged): `ios-widgets.rb` patched the spec and
+xcodegen regenerated, `NuvoWidgets.swift` compiled clean for arm64-apple-ios16.0, and the
+`.appex` was embedded into `Nuvo.app/PlugIns` — **BUILD SUCCEEDED**. Export then failed on
+`Automatic signing cannot register bundle identifier "day.nuvo.app.widgets"`: an app
+extension is a separate signed bundle, and CI's API key can create a *profile* but not a
+new *identifier*. Registering `day.nuvo.app.widgets` once in the developer portal unblocks
+it; no code change. The same run also proved `agvtool new-version -all` reaches the widget
+plist, so the script now stamps the plain version and lets the archive add the build number
+to both. The deep-link leg still needs a device or simulator.*

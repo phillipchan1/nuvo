@@ -77,7 +77,7 @@ this for TestFlight even for personal use.
    (must match `src-tauri/tauri.ios.conf.json` → `identifier`).
 3. SKU: anything (e.g. `nuvo-ios`). User access: Full Access for yourself.
 
-#### 3 · Register the bundle ID (if not auto-created)
+#### 3 · Register the bundle IDs (if not auto-created)
 
 [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources)
 → **Identifiers** → **+** → App IDs → **`day.nuvo.app`**.
@@ -85,6 +85,23 @@ this for TestFlight even for personal use.
 Capabilities for phase 1+: **Push Notifications** and **App Groups**
 (`group.day.nuvo.app`). macOS desktop keeps `com.nuvo.app` in the base
 `tauri.conf.json`; iOS overrides via `tauri.ios.conf.json`.
+
+**The widget extension needs its own App ID: `day.nuvo.app.widgets`.** Same
+place, **+** → App IDs → **App**, description `Nuvo Widgets`, bundle ID
+**explicit** `day.nuvo.app.widgets`, no capabilities. An app extension is a
+separate signed bundle, so it needs a separate identifier and profile —
+`-allowProvisioningUpdates` will happily *create the profile*, but registering a
+brand-new identifier through an App Store Connect API key fails in CI:
+
+```
+error: exportArchive Automatic signing cannot register bundle identifier "day.nuvo.app.widgets".
+error: exportArchive No profiles for 'day.nuvo.app.widgets' were found
+```
+
+The app builds and the extension embeds fine — only the export step fails, and
+only until the identifier exists. Register it once and re-run; nothing in the
+repo needs to change. (If you'd rather ship without widgets in the meantime, set
+`NUVO_IOS_WIDGETS=0` on the build step.)
 
 #### 4 · App Store Connect API key (upload + automatic signing in CI)
 
@@ -349,7 +366,8 @@ step) at `app-icon.svg` directly.
 | Encryption export questionnaire | `ITSAppUsesNonExemptEncryption=false` set by `ios-postinit.sh` (HTTPS only) |
 | Widgets don't appear in the gallery | The extension wasn't embedded. Check the build log for `ios-widgets: added NuvoWidgets…`, and that `nuvo_iOS`'s dependencies in `gen/apple/project.yml` include `target: NuvoWidgets, embed: true` |
 | Upload rejected: extension bundle version mismatch | `scripts/ios-widgets.rb` stamps the widget plist from `tauri.conf.json` + `BUILD_NUMBER`. If CI computes the version differently, that script has to learn the same rule |
-| Signing fails only for `day.nuvo.app.widgets` | Automatic signing hasn't created the extension's App ID yet — re-run; with manual `IOS_*` secrets you must add a second provisioning profile |
+| `exportArchive Automatic signing cannot register bundle identifier "day.nuvo.app.widgets"` / `No profiles for 'day.nuvo.app.widgets' were found` | The extension's App ID doesn't exist yet and CI can't create it through the API key. Register `day.nuvo.app.widgets` by hand — § One-time setup step 3 — then re-run. With manual `IOS_*` secrets you also need a second App Store provisioning profile for it |
+| `CFBundleVersion of an app extension must match that of its containing parent app` | `scripts/ios-widgets.rb` must stamp the widget with the plain `tauri.conf.json` version, *not* `<version>.<build>` — Tauri's `agvtool new-version -all` adds the build number to both plists between build and archive |
 | Anything widget-related blocking a TestFlight build | Set `NUVO_IOS_WIDGETS=0` on the workflow step to ship the plain app while you fix it |
 | Widget taps open the app but nothing happens | The deep link isn't arriving: check `deep-link:default` is in `capabilities/default.json` and the plugin is registered in `src-tauri/src/lib.rs`; reproduce with `xcrun simctl openurl booted nuvo://capture` |
 
