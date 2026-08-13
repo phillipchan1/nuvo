@@ -31,16 +31,14 @@ fi
 # scripts are commutative with each other (each re-reads project.yml from disk),
 # so this order is only for readability.
 #
-# ⚠️ OPT-IN (default 0) until the SDK conflict is solved — set NUVO_IOS_WATCH=1.
-# `tauri ios build` drives xcodebuild with an explicit
-# `-sdk .../iPhoneOS<ver>.sdk`, and a command-line -sdk overrides every target's
-# own SDKROOT. So the watch target — a build dependency of the app — compiles
-# against the iOS SDK, where WCSessionDelegate has different requirements
-# (sessionDidBecomeInactive/sessionDidDeactivate are iOS-only) and
-# containerBackground(for:) needs iOS 17 against our 15.0 floor. It fails the
-# TestFlight build (run 31719213175). Building the target alone with
-# `-sdk watchsimulator` succeeds, which is why this passed locally.
-if [ "${NUVO_IOS_WATCH:-0}" = "1" ]; then
+# Injecting the target is safe on its own: it is deliberately NOT a dependency
+# of the app (see ios-watch.rb — `tauri ios build` forces `-sdk iPhoneOS` on
+# every target it builds, which miscompiled the watch app and reddened CI run
+# 31719213175). Nothing builds it here. The release path builds it separately
+# via scripts/ios-watch-build.sh and the app's "Embed Nuvo Watch" phase copies
+# the product in; with NUVO_WATCH_APP unset that phase is a no-op, so a local
+# `tauri ios dev` is unaffected. NUVO_IOS_WATCH=0 leaves the target out entirely.
+if [ "${NUVO_IOS_WATCH:-1}" = "1" ]; then
   ruby "${ROOT}/scripts/ios-watch.rb"
 else
   echo "ios-watch: skipped (NUVO_IOS_WATCH=0)"

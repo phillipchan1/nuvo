@@ -787,7 +787,7 @@ const RAW_TOOL_DEFINITIONS = [
           confirm_token: {
             type: "string",
             description:
-              "The token from this tool's own previous result. Omit on the first call — that call only PROPOSES and changes nothing. Confirm on a later message, after the user has actually answered.",
+              "The token from this tool's own previous result. Ask the user FIRST, in words, and wait for their answer — do not call this tool to do the asking. Calling without a token is a safety backstop, not the way to raise the question: it changes nothing and only returns a proposal. Send the token on a later message, once they have actually answered.",
           },
         },
       },
@@ -808,7 +808,7 @@ const RAW_TOOL_DEFINITIONS = [
           confirm_token: {
             type: "string",
             description:
-              "The token from this tool's own previous result. Omit on the first call — that call only PROPOSES and changes nothing. Confirm on a later message, after the user has actually answered.",
+              "The token from this tool's own previous result. Ask the user FIRST, in words, and wait for their answer — do not call this tool to do the asking. Calling without a token is a safety backstop, not the way to raise the question: it changes nothing and only returns a proposal. Send the token on a later message, once they have actually answered.",
           },
         },
       },
@@ -926,7 +926,7 @@ const RAW_TOOL_DEFINITIONS = [
           confirm_token: {
             type: "string",
             description:
-              "The token from this tool's own previous result. Omit on the first call — that call only PROPOSES and changes nothing. Confirm on a later message, after the user has actually answered.",
+              "The token from this tool's own previous result. Ask the user FIRST, in words, and wait for their answer — do not call this tool to do the asking. Calling without a token is a safety backstop, not the way to raise the question: it changes nothing and only returns a proposal. Send the token on a later message, once they have actually answered.",
           },
         },
       },

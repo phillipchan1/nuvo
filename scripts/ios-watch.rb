@@ -130,22 +130,66 @@ targets[TARGET_NAME] = {
   ]
 }
 
-# Embed it in the app. A watch app rides inside the iOS .app at
-# Payload/Nuvo.app/Watch/Nuvo.app — one IPA, one App Store record, no separate
-# submission. The explicit `copy:` is belt-and-braces: XcodeGen infers the Watch
-# destination from the product type, but naming it means a wrong inference shows
-# up as a build error rather than as an archive that silently has no watch app.
+# Embedding — and why it can't be a dependency.
+#
+# The obvious shape is `dependencies: [{target: NuvoWatch, embed: true}]`, and
+# it is wrong here. `tauri ios build` drives xcodebuild with an explicit
+# `-sdk .../iPhoneOS<ver>.sdk`, and a command-line -sdk overrides EVERY target's
+# own SDKROOT. A watch app that is a build dependency of the iOS app therefore
+# compiles against the iOS SDK, where WCSessionDelegate has different
+# requirements (sessionDidBecomeInactive/sessionDidDeactivate are iOS-only) and
+# the watchOS SwiftUI surface isn't available. That reddened CI run 31719213175,
+# and no target-level setting can win against a command-line -sdk.
+#
+# So there is no dependency edge at all. scripts/ios-watch-build.sh builds
+# NuvoWatch on its own against the watchOS SDK, and the script phase below
+# copies the finished product in during the app's build. Tauri never compiles
+# it, so Tauri's SDK cannot reach it.
 app_target['dependencies'] ||= []
-already = app_target['dependencies'].any? { |d| d.is_a?(Hash) && d['target'] == TARGET_NAME }
-unless already
-  app_target['dependencies'].unshift(
-    {
-      'target' => TARGET_NAME,
-      'embed' => true,
-      'copy' => { 'destination' => 'productsDirectory', 'subpath' => '$(CONTENTS_FOLDER_PATH)/Watch' }
-    }
-  )
-end
+app_target['dependencies'].reject! { |d| d.is_a?(Hash) && d['target'] == TARGET_NAME }
+
+embed_phase = 'Embed Nuvo Watch'
+app_target['postBuildScripts'] ||= []
+app_target['postBuildScripts'].reject! { |s| s.is_a?(Hash) && s['name'] == embed_phase }
+app_target['postBuildScripts'] << {
+  'name' => embed_phase,
+  # Never skipped: the input lives outside the project, so Xcode's dependency
+  # analysis can't see it and a cached "up to date" would silently ship an app
+  # with no watch inside it.
+  'basedOnDependencyAnalysis' => false,
+  'script' => <<~SH
+    set -euo pipefail
+
+    # Unset means this build carries no watch app — the normal case for
+    # `tauri ios dev`. Only the release path sets it.
+    if [ -z "${NUVO_WATCH_APP:-}" ]; then
+      echo "note: NUVO_WATCH_APP unset — building without the watch app"
+      exit 0
+    fi
+    if [ ! -d "$NUVO_WATCH_APP" ]; then
+      echo "error: NUVO_WATCH_APP=$NUVO_WATCH_APP does not exist. Run scripts/ios-watch-build.sh first."
+      exit 1
+    fi
+
+    DEST="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Watch"
+    NAME="$(basename "$NUVO_WATCH_APP")"
+    mkdir -p "$DEST"
+    rm -rf "${DEST:?}/${NAME}"
+    cp -R "$NUVO_WATCH_APP" "$DEST/"
+
+    # Re-sign with the host app's identity so the nested bundle matches the
+    # archive it now lives in. --preserve-metadata keeps the watch app's OWN
+    # identifier and entitlements, which are not the phone app's.
+    if [ "${CODE_SIGNING_REQUIRED:-YES}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+      codesign --force --timestamp=none \\
+        --preserve-metadata=identifier,entitlements,flags \\
+        --sign "$EXPANDED_CODE_SIGN_IDENTITY" "${DEST}/${NAME}"
+      echo "ios-watch: embedded and re-signed ${NAME}"
+    else
+      echo "ios-watch: embedded ${NAME} (unsigned build)"
+    fi
+  SH
+}
 
 File.write(SPEC_PATH, spec.to_yaml)
 FileUtils.mkdir_p(File.join(PROJECT_DIR, TARGET_NAME))

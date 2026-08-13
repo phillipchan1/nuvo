@@ -168,6 +168,17 @@ jobs:
           npm run tauri ios init -- --ci
           bash scripts/ios-postinit.sh
 
+      # Built on its own, against the watchOS SDK, BEFORE the app is archived.
+      # It cannot be a dependency of the app target: `tauri ios build` passes an
+      # explicit `-sdk .../iPhoneOS<ver>.sdk`, which overrides every target's own
+      # SDKROOT and compiled the watch app for iOS (run 31719213175). This step
+      # exports NUVO_WATCH_APP; the app's "Embed Nuvo Watch" phase copies that
+      # product into Nuvo.app/Watch/ during the archive below.
+      - name: Build the watchOS companion
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/ios-watch-build.sh
+
       - name: Build signed IPA
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
@@ -199,6 +210,18 @@ jobs:
             echo "::error::No IPA found under src-tauri/gen/apple/build"
             find src-tauri/gen/apple -name '*.ipa' -o -name '*.xcarchive' 2>/dev/null || true
             exit 1
+          fi
+          # The watch app is copied in by a script phase whose input Xcode can't
+          # see, so a silent miss would look exactly like a normal build. Fail
+          # here instead of shipping a watch-less build that reads as a success.
+          if [ -n "${NUVO_WATCH_APP:-}" ]; then
+            if unzip -l "$IPA" | grep -q 'Payload/.*\.app/Watch/NuvoWatch\.app/'; then
+              echo "Watch app present in the IPA."
+            else
+              echo "::error::NUVO_WATCH_APP was set but the IPA contains no Watch/NuvoWatch.app — the embed phase did not run."
+              unzip -l "$IPA" | head -40
+              exit 1
+            fi
           fi
           echo "Uploading $IPA (v${APP_VERSION}, build ${BUILD_NUMBER})"
           xcrun altool --upload-app \
