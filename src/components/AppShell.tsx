@@ -101,6 +101,24 @@ function ResponsiveShell() {
   // The one place the app speaks first. Mounted here so both shells share it —
   // a phone and a desktop must not disagree about whether you were told.
   // Clicking a reminder lands on the thing it named, never on a generic screen.
+  // A reminder tapped from the OS while the app was already open arrives as a
+  // message from the service worker, not as a click on a Notification we hold a
+  // handle to. Same landing either way — a reminder should behave identically
+  // whether it reached you in the app or on the lock screen.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as { type?: string; url?: string } | null;
+      if (data?.type !== "nuvo:reminder-open") return;
+      const params = new URLSearchParams((data.url ?? "").split("?")[1] ?? "");
+      const id = params.get("id");
+      if (params.get("reminder") === "task" && id) openOverlay("task-record", id);
+      else navigate({ rung: "day", overlay: "none", overlayId: null });
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [openOverlay, navigate]);
+
   useReminderDelivery({
     onOpen: useCallback(
       (r: PlannedReminder) => {

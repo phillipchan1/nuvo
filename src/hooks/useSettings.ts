@@ -25,6 +25,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   auto_add_meet: DEFAULT_MEET_PREFERENCE,
   onboarding_completed_version: null,
   reminder_prefs: DEFAULT_REMINDER_PREFS,
+  time_zone: null,
 };
 
 /**

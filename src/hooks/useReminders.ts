@@ -15,6 +15,23 @@
  *     changes when the day actually changes.
  *   • A woken laptop stays quiet: `dueNow` drops anything past its grace
  *     window rather than emptying the morning into the notification centre.
+ *
+ * ── Reconciliation: claim, then show ────────────────────────────────────────
+ *
+ * Since background delivery landed (D-105), this is no longer the only voice.
+ * A Mac app, a phone, a stray browser tab and a cron dispatcher could all decide
+ * to announce the same standup, and being told four times is not four times as
+ * useful — it is the theater Principle 9 refuses, arriving by accident.
+ *
+ * So nothing here shows a reminder it has not CLAIMED. `claim_reminder` is an
+ * atomic insert against a unique key of (user, reminder, fire instant), so
+ * exactly one channel wins and the rest find out immediately. The unit is the
+ * PERSON, not the device — which is the whole point.
+ *
+ * An open app reliably wins, because the dispatcher deliberately ignores
+ * anything less than `DISPATCH_LAG_MS` past due. And if the claim can't be
+ * reached at all (offline), we show anyway: a duplicate is a smaller failure
+ * than silence about a meeting starting in ten minutes.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,6 +54,8 @@ import {
   type ReminderTargetKind,
 } from "../../supabase/functions/_shared/reminderRules.ts";
 import { buildReminderAnchors, keyOfOverride, REMINDER_WINDOW_MS } from "../lib/reminders";
+import { subscribeToPush, unsubscribeFromPush } from "../lib/push";
+import { detectDeviceTz } from "../lib/timezone";
 import { useSettings } from "./useSettings";
 import { useAllTasks } from "./useTasks";
 import { useSlots } from "./useSlots";
@@ -177,6 +196,44 @@ export function notifyPermission(): NotifyPermission {
   return Notification.permission as NotifyPermission;
 }
 
+/**
+ * Keep this device subscribed to background reminders — or not.
+ *
+ * Driven by the two facts that decide it: reminders are on, and the OS said
+ * yes. Re-runs cheaply on every launch, which is also what keeps the stored
+ * timezone fresh when someone travels (a deadline has to speak at 9am somewhere,
+ * and the server needs to know where).
+ */
+export function usePushRegistration(enabled: boolean, permission: NotifyPermission) {
+  const { settings, update } = useSettings();
+  const storedTz = settings?.time_zone ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!enabled || permission !== "granted") {
+        // Turning reminders off should stop the pushes, not merely stop showing
+        // them — otherwise a phone in a drawer keeps buzzing.
+        if (!enabled) await unsubscribeFromPush();
+        return;
+      }
+      if (cancelled) return;
+      await subscribeToPush();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, permission]);
+
+  // One zone per person, for the dispatcher's deadline math. Written through
+  // only when it actually changes — this runs on every launch.
+  useEffect(() => {
+    if (!enabled || !settings) return;
+    const deviceTz = detectDeviceTz();
+    if (deviceTz && deviceTz !== storedTz) update({ time_zone: deviceTz });
+  }, [enabled, settings, storedTz, update]);
+}
+
 export function useNotifyPermission() {
   const [permission, setPermission] = useState<NotifyPermission>(notifyPermission);
   const request = useCallback(async () => {
@@ -215,6 +272,28 @@ function writeFired(map: FiredMap) {
     localStorage.setItem(FIRED_KEY, JSON.stringify(map));
   } catch {
     /* private mode — reminders still fire, they just may repeat after a reload */
+  }
+}
+
+/**
+ * Claim a reminder before speaking. True = ours to show.
+ *
+ * The failure mode is chosen deliberately. If the RPC can't be reached — offline,
+ * a blip, or a deployment where the migration hasn't landed — we return true and
+ * show it. Silence about a meeting that starts in ten minutes is a worse failure
+ * than the same meeting announced twice on two devices.
+ */
+async function claimReminder(r: PlannedReminder): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc("claim_reminder", {
+      p_key: r.key,
+      p_fire_at: new Date(r.fireAtMs).toISOString(),
+      p_channel: "foreground",
+    });
+    if (error) return true;
+    return data !== false;
+  } catch {
+    return true;
   }
 }
 
@@ -285,11 +364,17 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
     );
   }, [enabled, nowBucket, allTasks, slots, events, hiddenKeys, prefs, overrides]);
 
-  const deliver = useCallback((r: PlannedReminder) => {
+  const deliver = useCallback(async (r: PlannedReminder) => {
+    // Mark locally FIRST, before the await. Two ticks of this loop must not both
+    // reach the claim for one reminder, and the local set is the cheap guard.
     const fired = firedRef.current ?? {};
     fired[r.key] = Date.now();
     firedRef.current = fired;
     writeFired(fired);
+
+    // Claim it across every channel this person has. `false` means another
+    // device (or the dispatcher) already told them.
+    if (!(await claimReminder(r))) return;
 
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       try {
@@ -326,7 +411,7 @@ export function useReminderDelivery(options: ReminderDeliveryOptions = {}) {
       if (cancelled) return;
       const now = Date.now();
       const firedKeys = new Set(Object.keys(firedRef.current ?? {}));
-      for (const r of dueNow(plan, now, firedKeys)) deliver(r);
+      for (const r of dueNow(plan, now, firedKeys)) void deliver(r);
 
       const next = nextFireAt(plan, now, new Set(Object.keys(firedRef.current ?? {})));
       if (next == null) return;

@@ -1986,9 +1986,13 @@ reaching a phone whose app is closed. Concretely:
   and it must keep having no input that could express a nudge — that structural
   fact is what makes this ruling safe to hold over time rather than a promise
   someone re-reads in a year.
-- **Not built yet.** Background push needs a `push_subscriptions` table, VAPID
-  keys, a `push` handler in the service worker, and a dispatcher on a cron. It
-  is unblocked, not done, and it is the next thing in this area.
+- **Built the same day** — see [`push-notifications.md`](../push-notifications.md).
+  The reconciliation is the part worth knowing: nothing speaks without winning an
+  atomic claim on `(user, reminder, fire instant)`, so a Mac, a phone and the
+  dispatcher cannot all announce the same standup. The unit is the PERSON, not
+  the device. An open app always wins, because the dispatcher gives it a 30s head
+  start — so someone sitting in front of Nuvo gets the in-app notification and no
+  push at all. Live once the VAPID secrets are set.
 
 *Status: standing. Supersedes the delivery half of D-102; the "what may be said"
 half of D-102 is unchanged and load-bearing.*

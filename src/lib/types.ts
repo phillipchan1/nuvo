@@ -284,6 +284,10 @@ export interface UserSettings {
   /** When the app is allowed to speak first, and how far ahead. Defaults are
    *  silent (`enabled: false`); the rules live in _shared/reminderRules.ts. */
   reminder_prefs: ReminderPrefs;
+  /** IANA zone, kept fresh from the device. The server reads it to resolve a
+   *  deadline DATE into an instant — a cron has no device to ask. Null = UTC,
+   *  never a hardcoded home zone. */
+  time_zone: string | null;
 }
 
 /**

@@ -31,7 +31,8 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { useSkin, useScheme, SKIN_LABELS, SCHEMES, SCHEME_GROUP, schemeModes, type Skin, type Scheme, type SchemeModes } from "../hooks/useSkin";
 import { useUiScale, UI_SCALE_MIN, UI_SCALE_MAX } from "../hooks/useUiScale";
 import { useHomeTimezone } from "../hooks/useHomeTimezone";
-import { useNotifyPermission } from "../hooks/useReminders";
+import { useNotifyPermission, usePushRegistration } from "../hooks/useReminders";
+import { hasPushSubscription, pushConfigured, pushSupported } from "../lib/push";
 import { DEFAULT_REMINDER_PREFS, describeLead, REMINDER_LEADS } from "../../supabase/functions/_shared/reminderRules.ts";
 import { detectDeviceTz, supportedTimeZones, tzAbbrev, tzCity, tzStatus } from "../lib/timezone";
 import { useUpdater } from "../hooks/useUpdater";
@@ -1177,6 +1178,19 @@ function RemindersPane({
 }) {
   const prefs = settings?.reminder_prefs ?? DEFAULT_REMINDER_PREFS;
   const { permission, request } = useNotifyPermission();
+  // Subscribing this device to background delivery follows the toggle; the row
+  // it writes is what the dispatcher pushes to.
+  usePushRegistration(prefs.enabled, permission);
+  const [pushState, setPushState] = useState<"unknown" | "on" | "off">("unknown");
+  useEffect(() => {
+    let cancelled = false;
+    void hasPushSubscription().then((on) => {
+      if (!cancelled) setPushState(on ? "on" : "off");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [prefs.enabled, permission]);
 
   const patch = (p: Partial<typeof prefs>) => updateSettings({ reminder_prefs: { ...prefs, ...p } });
 
@@ -1226,6 +1240,32 @@ function RemindersPane({
         {prefs.enabled && permission === "default" && (
           <Row layout="stack" title="Allow notifications" desc="Without permission, reminders can only appear while Nuvo is open.">
             <Btn onClick={() => void request()}>Allow notifications</Btn>
+          </Row>
+        )}
+
+        {/* Where reminders can reach you. Deliberately states the limit rather
+            than implying background delivery works everywhere: on iOS it needs
+            the app installed to the home screen, and the desktop app has no
+            service worker by design. */}
+        {prefs.enabled && permission === "granted" && (
+          <Row
+            layout="stack"
+            title="When Nuvo is closed"
+            desc={
+              !pushConfigured()
+                ? "Background reminders aren't set up on this deployment — reminders will only appear while Nuvo is open."
+                : !pushSupported()
+                  ? isDesktopTauri()
+                    ? "The desktop app shows reminders while it's running. Install Nuvo on your phone to be told when everything is closed."
+                    : "This browser can't receive background reminders. On iPhone, add Nuvo to your Home Screen first."
+                  : pushState === "on"
+                    ? "This device will be told even when Nuvo is closed."
+                    : "Setting this device up…"
+            }
+          >
+            <span className="text-caption text-muted">
+              {pushState === "on" && pushConfigured() && pushSupported() ? "On" : "Foreground only"}
+            </span>
           </Row>
         )}
 

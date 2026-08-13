@@ -28,6 +28,13 @@ const pwa = VitePWA({
   registerType: "autoUpdate",
   // We register the SW ourselves in main.tsx, guarded against the Tauri webview.
   injectRegister: false,
+  // `injectManifest`, not the default `generateSW`: reminders have to reach a
+  // CLOSED app (D-105), and a `push` handler can only live in the worker — which
+  // generateSW writes for you and gives you no seam in. `src/sw.ts` restates the
+  // precaching generateSW was emitting; read its header before touching either.
+  strategies: "injectManifest",
+  srcDir: "src",
+  filename: "sw.ts",
   includeAssets: ["apple-touch-icon.png", "favicon.png"],
   manifest: {
     id: "/",
@@ -71,16 +78,18 @@ const pwa = VitePWA({
       },
     ],
   },
-  workbox: {
-    // SPA: serve index.html for any navigation so a cold standalone launch works
-    // offline. Supabase API/realtime live on another origin, so same-origin
-    // navigateFallback never intercepts them.
-    navigateFallback: "/index.html",
+  // Under injectManifest this configures what gets INJECTED, not a generated
+  // worker: `navigateFallback` and `cleanupOutdatedCaches` are now stated in
+  // src/sw.ts instead. The glob rules stay here because they decide the manifest.
+  injectManifest: {
     globPatterns: ["**/*.{js,css,html,woff,woff2,png,svg,ico}"],
     // Startup images are fetched once by iOS at install time — precaching all
     // twenty into every visitor's SW cache is pure weight.
     globIgnores: ["splash/**"],
-    cleanupOutdatedCaches: true,
+    // The entry chunk is the largest precached file; the default ceiling is
+    // 2 MiB and silently DROPS anything over it, which would mean an installed
+    // app that can't launch offline. Raised deliberately, with the reason.
+    maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
   },
 });
 
