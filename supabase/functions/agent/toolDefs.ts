@@ -379,6 +379,35 @@ export function hardenToolDefs<T extends { function: { parameters?: any } }>(def
   );
 }
 
+// Shared by create_calendar_event and propose_invite — a repeating series is the
+// same shape whether or not the event has guests. Mirrors RecurrenceRule
+// (_shared/recurrence.ts) so a value built here converts straight to a Google
+// RRULE via toGoogleRRULE; the calendar UI's repeat picker builds the same shape.
+const RECURRENCE_PARAM_SCHEMA = {
+  type: "object",
+  description:
+    "Set when the user wants this to repeat — 'every week', 'weekly', 'every 2 weeks', 'daily standup', 'monthly'. Omit entirely for a one-time event.",
+  properties: {
+    freq: {
+      type: "string",
+      enum: ["daily", "weekly", "monthly"],
+      description: "How often it repeats.",
+    },
+    interval: {
+      type: "number",
+      description: "Repeat every N units, e.g. 2 for 'every 2 weeks'. Default 1.",
+    },
+    byweekday: {
+      type: "array",
+      items: { type: "number" },
+      description: "Weekly only. Days it repeats on, 0=Sunday..6=Saturday. Defaults to the day of start_local.",
+    },
+    count: { type: "number", description: "Stop after this many occurrences. Omit for no end." },
+    until: { type: "string", description: "Stop after this date, 'YYYY-MM-DD'. Omit for no end." },
+  },
+  required: ["freq"],
+};
+
 const RAW_TOOL_DEFINITIONS = [
   {
     type: "function" as const,
@@ -664,7 +693,7 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "create_calendar_event",
       description:
-        "Create a NEW calendar event (Google or Apple/iCloud). Only for first-time adds — NOT for 'put it on X calendar' when the event already exists (use move_event). Pass calendar_name ONLY when the user named a calendar or account; otherwise omit it and the event goes to their default. NEVER infer a calendar from what the event is about or who it's with. Always tell the user which calendar you used.",
+        "Create a NEW calendar event (Google or Apple/iCloud). Only for first-time adds — NOT for 'put it on X calendar' when the event already exists (use move_event). Pass calendar_name ONLY when the user named a calendar or account; otherwise omit it and the event goes to their default. NEVER infer a calendar from what the event is about or who it's with. Always tell the user which calendar you used. Pass recurrence for a repeating series ('every week', 'daily standup') — it applies in the same call, whether or not there are attendees.",
       parameters: {
         type: "object",
         properties: {
@@ -683,6 +712,7 @@ const RAW_TOOL_DEFINITIONS = [
             items: { type: "string" },
             description: "Email addresses of attendees to invite (optional; Google only).",
           },
+          recurrence: RECURRENCE_PARAM_SCHEMA,
           calendar_name: {
             type: "string",
             description:
@@ -860,7 +890,7 @@ const RAW_TOOL_DEFINITIONS = [
     function: {
       name: "propose_invite",
       description:
-        "Stage an invite for the user to approve. Use this for ANY event that involves other people — a new meeting with guests, or adding guests to an event that already exists. You CANNOT send invites yourself and create_calendar_event will refuse a guest list: this puts a confirmation card in the chat naming exactly who would be emailed, and the user taps Send invite or Add without emailing. Nothing reaches another human until they do. Pass attendees as the user said them ('Matt', 'the Hansens', 'dave@acme.com') — names are resolved against their contacts. If the result comes back with unresolved names, ASK the user about those (use a <suggestions> block listing the candidates) instead of guessing. Google calendars only.",
+        "Stage an invite for the user to approve. Use this for ANY event that involves other people — a new meeting with guests, or adding guests to an event that already exists. You CANNOT send invites yourself and create_calendar_event will refuse a guest list: this puts a confirmation card in the chat naming exactly who would be emailed, and the user taps Send invite or Add without emailing. Nothing reaches another human until they do. Pass attendees as the user said them ('Matt', 'the Hansens', 'dave@acme.com') — names are resolved against their contacts. If the result comes back with unresolved names, ASK the user about those (use a <suggestions> block listing the candidates) instead of guessing. Google calendars only. Pass recurrence for a repeating series with guests ('weekly meeting with the team') — the staged card carries the series, and it goes out in the same invite, not a second step.",
       parameters: {
         type: "object",
         properties: {
@@ -878,6 +908,7 @@ const RAW_TOOL_DEFINITIONS = [
             type: "string",
             description: "End in the user's local time — 'YYYY-MM-DDTHH:MM' (24h, no offset). New events only.",
           },
+          recurrence: RECURRENCE_PARAM_SCHEMA,
           event_id: {
             type: "string",
             description: "Add guests to THIS existing event instead of creating one. Omit for a new event.",

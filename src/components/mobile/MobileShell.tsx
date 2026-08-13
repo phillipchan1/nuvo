@@ -43,6 +43,7 @@ import QuickTaskSheet from "./QuickTaskSheet";
 import ChatPane from "./ChatPane";
 import MobileTaskSheet from "./MobileTaskSheet";
 import MobileEventSheet, { type CalendarTap } from "./MobileEventSheet";
+import MobileNewEventSheet from "./MobileNewEventSheet";
 
 // Top-level destinations — the five surfaces you work from on the phone, the
 // desktop altitudes in order: Calendar · Tasks, then the three strategic ones —
@@ -167,6 +168,7 @@ export default function MobileShell() {
   const [chatOpen, setChatOpen] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [calendarTap, setCalendarTap] = useState<CalendarTap | null>(null);
+  const [newEventDate, setNewEventDate] = useState<Date | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upkeepOpen, setUpkeepOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -185,6 +187,7 @@ export default function MobileShell() {
   useMobileOverlayHistory(quickOpen, () => setQuickOpen(false), "quick");
   useMobileOverlayHistory(Boolean(taskId), () => setTaskId(null), "task");
   useMobileOverlayHistory(Boolean(calendarTap), () => setCalendarTap(null), "event");
+  useMobileOverlayHistory(Boolean(newEventDate), () => setNewEventDate(null), "new-event");
   useMobileOverlayHistory(settingsOpen, () => setSettingsOpen(false), "settings");
   useMobileOverlayHistory(upkeepOpen, () => setUpkeepOpen(false), "upkeep");
   useMobileOverlayHistory(searchOpen, () => setSearchOpen(false), "search");
@@ -441,7 +444,12 @@ export default function MobileShell() {
       <main ref={scrollRef} onScroll={recordScroll} className="mobile-scroll relative min-h-0 flex-1 overflow-y-auto">
         <PullIndicator pulling={pulling} refreshing={refreshing} />
         {tab === "calendar" ? (
-          <MobileCalendar now={now} onTapEvent={setCalendarTap} onOpenUpkeep={() => setUpkeepOpen(true)} />
+          <MobileCalendar
+            now={now}
+            onTapEvent={setCalendarTap}
+            onOpenUpkeep={() => setUpkeepOpen(true)}
+            onNewEvent={setNewEventDate}
+          />
         ) : tab === "projects" ? (
           <MobileProjects onOpenItem={openDetail} />
         ) : tab === "initiatives" ? (
@@ -564,6 +572,9 @@ export default function MobileShell() {
           onAskNuvo={openChat}
           onEditTask={(id) => { setCalendarTap(null); setTaskId(id); }}
         />
+      )}
+      {newEventDate && (
+        <MobileNewEventSheet initialDate={newEventDate} onClose={() => setNewEventDate(null)} />
       )}
       {searchOpen && (
         <MobileSearch

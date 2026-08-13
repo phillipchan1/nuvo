@@ -19,6 +19,7 @@ import type { CalendarTap } from "./MobileEventSheet";
 import type { indexWeather } from "../../hooks/useWeather";
 import WeatherIcon from "../WeatherIcon";
 import TimeZoneChip from "../TimeZoneChip";
+import { Icon } from "../Icon";
 import {
   at,
   buildDayPlan,
@@ -137,6 +138,7 @@ export default function MobileDayView({
   onLens,
   onBack,
   onTapEvent,
+  onNewEvent,
 }: {
   selected: Date;
   /** First day of the week for the date strip — user_settings.week_start. */
@@ -148,6 +150,7 @@ export default function MobileDayView({
   onLens: (l: CalLens) => void;
   onBack: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
+  onNewEvent?: () => void;
 }) {
   const plan = useMemo(() => buildDayPlan(selected, ctx), [selected, ctx]);
   const readout = dayReadout(plan);
@@ -247,6 +250,16 @@ export default function MobileDayView({
         <div className="flex-1" />
         <CalLensPill lens="day" onLens={onLens} />
         <TimeZoneChip now={ctx.now} />
+        {onNewEvent && (
+          <button
+            type="button"
+            onClick={onNewEvent}
+            aria-label="New event"
+            className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-head text-accent active:bg-surface-2"
+          >
+            <Icon name="plus" size={16} />
+          </button>
+        )}
       </div>
 
       {/* Date strip — tap a day to show it. Today is pinned back when you've
