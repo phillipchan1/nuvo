@@ -8,7 +8,7 @@
 
 export const HOME_TITLE = 'Nuvo — One system for everything you run'
 export const HOME_DESC =
-  'For people running more than one life at once. Nuvo is one continuous system from the year you’re planning down to the hour you’re working — capture anything with ⌥Space on Mac, and land it on a real day.'
+  'You’re running three or four lives at once out of apps that have never been introduced. Nuvo is one line from everything you’re responsible for down to what you’re doing at 2pm today — so you always know where you stand.'
 export const HOME_CANONICAL = 'https://nuvo.day/'
 
 export type RouteHead = { title: string; desc: string; canonical: string }

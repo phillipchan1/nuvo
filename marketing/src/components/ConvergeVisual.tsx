@@ -17,12 +17,21 @@
  * sell what doesn't ship — the same rule the INVENTORY list in Home.tsx keeps.
  * "From another app" is honest: `supabase/functions/capture` is live.
  *
- * The gather runs once on entry. A still frame of this is just two columns of
+ * The gather is SCRUBBED, not played. A still frame of this is two columns of
  * text; the *travel* is the whole point, because "nothing stays loose" is a
- * motion, not a state.
+ * motion rather than a state — and the reader's own scroll is what performs it,
+ * which is the section's argument acted out rather than asserted. It used to
+ * fire once on entry off a 420ms timer, which meant a reader who arrived a
+ * beat late met a finished, motionless column and never saw a thing move.
+ *
+ * 'through', not 'sticky': the beats can play while the diagram is still
+ * travelling up the screen, so it costs no page height and no layout. Scatter
+ * two sections above already spends the page's one sticky budget — see
+ * useScrollProgress.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
+import { steps, useScrollProgress } from '../useScrollProgress'
 
 /** Six things a person actually carries — not six input methods. The one
  *  mechanism named outright is ⌥Space, because a global hotkey is the single
@@ -43,56 +52,52 @@ const HELD_X = 'var(--converge-held-x)'
 const heldY = (i: number) => 6 + i * 16
 
 export default function ConvergeVisual() {
-  const [held, setHeld] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setHeld(true)
-      return
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          window.setTimeout(() => setHeld(true), 420)
-          io.disconnect()
-        }
-      },
-      { threshold: 0.4 },
-    )
-    io.observe(el)
-    return () => io.disconnect()
-  }, [])
+  /** The window is tight and late (0.28 → 0.68) so the gather happens while the
+   *  diagram sits mid-viewport, where the reader is actually looking — not as
+   *  it enters from the bottom edge, which is where an untuned scrub finishes
+   *  its whole story off screen. */
+  const p = useScrollProgress(ref, { mode: 'through', from: 0.28, to: 0.68 })
+
+  /** One chip lands per beat, so the column assembles in front of you instead
+   *  of snapping into place all at once. */
+  const gathered = steps(p, CARRIED.length)
+  const held = gathered >= CARRIED.length
 
   return (
     <div ref={ref} className="converge" aria-hidden="true">
       {/* The line they find. Dashed where things are still loose, solid the
           moment they're held — the funnel, drawn as one stroke. */}
-      <div className="converge-rule" style={{ opacity: held ? 1 : 0.25 }} />
+      <div className="converge-rule" style={{ opacity: 0.25 + 0.75 * (gathered / CARRIED.length) }} />
 
-      {CARRIED.map((c, i) => (
-        <span
-          key={c.text}
-          className="converge-chip"
-          style={{
-            left: held ? HELD_X : `${c.loose.x}%`,
-            top: `${held ? heldY(i) : c.loose.y}%`,
-            opacity: held ? 1 : 0.5,
-            borderColor: held ? 'var(--line)' : 'transparent',
-            background: held ? 'var(--surface)' : 'transparent',
-            color: held ? 'var(--text)' : 'var(--muted)',
-            transitionDelay: `${i * 90}ms`,
-          }}
-        >
+      {CARRIED.map((c, i) => {
+        /* Each chip owns one beat. No transitionDelay any more — the stagger
+           used to come from CSS because one boolean flipped everything at once;
+           now the scrub IS the stagger, and a delay on top of it would make a
+           chip lag the scroll that moved it. */
+        const on = i < gathered
+        return (
           <span
-            className="converge-dot"
-            style={{ background: held ? 'var(--accent)' : 'var(--line-strong)' }}
-          />
-          {c.text}
-        </span>
-      ))}
+            key={c.text}
+            className="converge-chip"
+            style={{
+              left: on ? HELD_X : `${c.loose.x}%`,
+              top: `${on ? heldY(i) : c.loose.y}%`,
+              opacity: on ? 1 : 0.5,
+              borderColor: on ? 'var(--line)' : 'transparent',
+              background: on ? 'var(--surface)' : 'transparent',
+              color: on ? 'var(--text)' : 'var(--muted)',
+            }}
+          >
+            <span
+              className="converge-dot"
+              style={{ background: on ? 'var(--accent)' : 'var(--line-strong)' }}
+            />
+            {c.text}
+          </span>
+        )
+      })}
 
       <span className="converge-caption" style={{ opacity: held ? 1 : 0 }}>
         One inbox
