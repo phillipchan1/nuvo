@@ -94,7 +94,13 @@ jobs:
 
       - name: Compute version
         # Tag push (vX.Y.Z) → that exact version. Push / manual dispatch →
-        # <major>.<minor> from package.json + the run number as a monotonic patch.
+        # <major>.<minor> from package.json + the commit count on this ref
+        # (git rev-list --count HEAD) as a monotonic patch. Commit count, not
+        # this workflow's own github.run_number: ios-release.yml has an
+        # independent run counter and either workflow can be skipped by the
+        # platform-reachability check, so run_number drifts between them —
+        # commit count is identical for both on the same commit, keeping
+        # desktop and iOS build numbers in sync on every push.
         # Written into BOTH tauri.conf.json (the app's real version, what the
         # updater compares) and package.json (what the __APP_VERSION__ Vite define
         # bakes in for display) — CI working tree only, never committed.
@@ -103,7 +109,7 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
           else
             MAJOR_MINOR=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
-            VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+            VERSION="${MAJOR_MINOR}.$(git rev-list --count HEAD)"
           fi
           node -e "for (const p of ['src-tauri/tauri.conf.json','package.json']) { const fs=require('fs'); const c=JSON.parse(fs.readFileSync(p)); c.version='$VERSION'; fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n'); }"
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"

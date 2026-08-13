@@ -33,10 +33,16 @@ Every push to **`master`** builds and publishes a new desktop release automatica
 (~6–8 min on macOS). You can also:
 
 - **Version tag:** `git tag v0.2.0 && git push origin v0.2.0` → releases exactly `0.2.0`.
-- **Manual:** Actions tab → **Release** → **Run workflow** → releases `<major>.<minor>.<run>`.
+- **Manual:** Actions tab → **Release** → **Run workflow** → releases `<major>.<minor>.<commit_count>`.
 
-Non-tag pushes get version `<major>.<minor>.<run_number>` from `package.json` + the
-workflow run counter. Release notes are AI-generated from the commit range by
+Non-tag pushes get version `<major>.<minor>.<commit_count>` from `package.json` + the
+total commit count on the built ref (`git rev-list --count HEAD`) — the same scheme
+`ios-release.yml` uses, so a desktop and an iOS build cut from the same commit always
+carry the same version/build number (see [`ios-releases.md`](./ios-releases.md)).
+It's deliberately **not** each workflow's own `github.run_number`: `release.yml` and
+`ios-release.yml` have independent run counters and either can be skipped by the
+platform-reachability check, so `run_number` alone would drift between them.
+Release notes are AI-generated from the commit range by
 `scripts/release-notes.mjs` (OpenAI, with a deterministic commit-filter fallback if
 `OPENAI_API_KEY` is absent).
 

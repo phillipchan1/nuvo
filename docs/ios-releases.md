@@ -50,7 +50,11 @@ Goal: install Nuvo from TestFlight; every merge ships a new build to your phone.
 
 On every push to `master` (and manual **Run workflow**):
 
-1. Stamps version `<major>.<minor>.<run_number>` (same scheme as desktop).
+1. Stamps version `<major>.<minor>.<commit_count>` — the patch number is the
+   total commit count on the built ref (`git rev-list --count HEAD`), the
+   same scheme `release.yml` (desktop) uses, so a desktop build and an iOS
+   build cut from the same commit always carry the same version and build
+   number, regardless of which workflow(s) actually ran for a given push.
 2. `npm ci` → `tauri ios init --ci` (regenerate `gen/apple/`).
 3. `scripts/ios-postinit.sh` — encryption export flag, deep-link URL scheme,
    **Nuvo app icons** (copies `src-tauri/icons/ios/` over Tauri's default catalog).
