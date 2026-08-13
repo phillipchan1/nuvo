@@ -81,8 +81,13 @@ try {
   const appId = apps.data?.[0]?.id
   if (!appId) throw new Error(`no app found for bundle id ${bundleId}`)
 
+  // The app-nested relationship listing (/v1/apps/{id}/preReleaseVersions)
+  // only accepts a narrow filter set and rejects filter[version] outright
+  // ("A given parameter is not allowed for this request") — confirmed live
+  // against App Store Connect. The top-level collection endpoint supports
+  // filtering by both app and version together.
   const preReleaseVersions = await get(
-    `${base}/apps/${appId}/preReleaseVersions?filter[version]=${encodeURIComponent(version)}&limit=1`,
+    `${base}/preReleaseVersions?filter[app]=${appId}&filter[version]=${encodeURIComponent(version)}&limit=1`,
     token
   )
   const preReleaseVersionId = preReleaseVersions.data?.[0]?.id
