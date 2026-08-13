@@ -9,6 +9,14 @@ name: Release
 # releases/latest/download/latest.json (baked into src-tauri/tauri.conf.json) and
 # auto-update. The marketing "Download for Mac" link resolves the same repo's
 # latest Nuvo.dmg.
+#
+# The `changes` job below decides whether this push can only have affected
+# mobile — if so, the (expensive, macOS-runner) build is skipped. It's driven
+# entirely by scripts/platform-reachability.mjs, which traces the real static
+# import graph from the two shell entry points rather than a hand-maintained
+# path list, so it self-updates as the app grows — see that script's header
+# for the full explanation. Tag pushes and workflow_dispatch always build
+# regardless (a real release cut should never be silently skipped).
 on:
   push:
     branches: [master]
@@ -22,7 +30,39 @@ env:
   RELEASES_REPO: phillipchan1/nuvo-releases
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.decide.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: decide
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "push" ] || [ "${{ github.ref_type }}" != "branch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Tag push or manual dispatch — always building."
+            exit 0
+          fi
+          BEFORE="${{ github.event.before }}"
+          ZEROS="0000000000000000000000000000000000000000"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZEROS" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "No usable base commit to diff — building to be safe."
+            exit 0
+          fi
+          if git diff --name-only "$BEFORE" "${{ github.sha }}" \
+              | node scripts/platform-reachability.mjs check desktop; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: changes
+    if: needs.changes.outputs.should_run == 'true'
     # If two pushes land close together, the newer build wins.
     concurrency:
       group: release-build
