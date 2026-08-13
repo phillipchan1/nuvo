@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { format } from "date-fns";
 import { todayISO } from "../../lib/dates";
@@ -19,6 +19,8 @@ import { useRecurrenceMutations } from "../../hooks/useRecurrence";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
+import { isTauri } from "../../lib/platform";
+import { shortcutFromUrl, type Shortcut } from "../../lib/shortcuts";
 import type { Floor } from "../../lib/readiness";
 import type { AgentHintContext } from "../../lib/agentHints";
 import type { Task } from "../../lib/types";
@@ -198,23 +200,67 @@ export default function MobileShell() {
     return () => window.clearInterval(t);
   }, []);
 
-  // Manifest shortcuts (long-press the installed app's icon): land directly in
-  // capture or on Today. Consumed once, then stripped from the URL.
+  // Every door that opens the phone somewhere other than your last tab lands
+  // here — the PWA manifest shortcuts, the iOS widgets' `nuvo://` links, and
+  // whatever App Intents add next. One applier, so a lock-screen ＋ and a
+  // long-pressed icon can't drift into meaning different things.
+  const applyShortcut = useCallback((act: Shortcut) => {
+    if (act === "capture") {
+      setChatOpen(false);
+      setQuickOpen(true);
+    } else if (act === "chat") {
+      setQuickOpen(false);
+      setChatOpen(true);
+    } else {
+      setTabState("tasks");
+      setSubState("today");
+    }
+  }, []);
+
+  // Manifest shortcuts (long-press the installed app's icon). Consumed once,
+  // then stripped from the URL so a reload doesn't re-open the overlay.
   const shortcutDone = useRef(false);
   useEffect(() => {
     if (shortcutDone.current) return;
     shortcutDone.current = true;
     const url = new URL(window.location.href);
-    const shortcut = url.searchParams.get("shortcut");
-    if (!shortcut) return;
+    if (!url.searchParams.has("shortcut")) return;
+    const act = shortcutFromUrl(url.href);
     url.searchParams.delete("shortcut");
     window.history.replaceState(history.state, "", url);
-    if (shortcut === "capture") setQuickOpen(true);
-    else if (shortcut === "today") {
-      setTabState("tasks");
-      setSubState("today");
-    }
-  }, []);
+    if (act) applyShortcut(act);
+  }, [applyShortcut]);
+
+  // The native shell's deep links — what the lock-screen widgets actually fire
+  // (`nuvo://capture`, `nuvo://chat`). Two paths, because a cold launch and a
+  // resume deliver the URL differently: `getCurrent()` reads the link the app
+  // was *started* by, `onOpenUrl` catches every one after that. Loaded lazily so
+  // the PWA/web bundle never pulls the Tauri plugin in.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let done = false;
+    const open = (urls: string[] | null) => {
+      if (done || !urls?.length) return;
+      const act = shortcutFromUrl(urls[urls.length - 1]);
+      if (!act) return;
+      done = true;
+      applyShortcut(act);
+    };
+    void (async () => {
+      try {
+        const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
+        unlisten = await onOpenUrl((urls) => {
+          done = false; // a fresh tap is a fresh act
+          open(urls);
+        });
+        open(await getCurrent());
+      } catch {
+        /* no deep-link plugin (older shell / web) — the ＋ and ✦ still work */
+      }
+    })();
+    return () => unlisten?.();
+  }, [applyShortcut]);
 
   const today = todayISO(now);
   const range = useMemo(() => {

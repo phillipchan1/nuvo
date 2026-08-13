@@ -193,7 +193,7 @@ clean data) · ○ unanswered · ✳ answered by a spec that isn't built.
 |---|---|---|---|
 | A1 | What am I forgetting? | inbox = one place, nothing lost | ✅ |
 | A2 | What's about to blow up? | On Deck collisions · deadline-first compose | ◐ |
-| A3 | Is there a promise I made that's nowhere in the system? | — | ○ *the hardest one; capture only catches what you remember to capture* |
+| A3 | Is there a promise I made that's nowhere in the system? | — | ○ *the hardest one; capture only catches what you remember to capture. Still ○ after the iOS lock-screen widgets (D-100): they shorten the distance from thought to inbox to one tap, which raises the odds a remembered promise gets written down — but nothing yet notices the ones you never wrote.* |
 | A4 | Am I lying to myself about this week? | calibration (planned vs proven) | ✅ **rare and valuable — protect it** |
 
 ### Arrival & trust — *the questions a stranger asks*

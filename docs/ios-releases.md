@@ -86,7 +86,7 @@ this for TestFlight even for personal use.
    (must match `src-tauri/tauri.ios.conf.json` → `identifier`).
 3. SKU: anything (e.g. `nuvo-ios`). User access: Full Access for yourself.
 
-#### 3 · Register the bundle ID (if not auto-created)
+#### 3 · Register the bundle IDs (if not auto-created)
 
 [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources)
 → **Identifiers** → **+** → App IDs → **`day.nuvo.app`**.
@@ -94,6 +94,23 @@ this for TestFlight even for personal use.
 Capabilities for phase 1+: **Push Notifications** and **App Groups**
 (`group.day.nuvo.app`). macOS desktop keeps `com.nuvo.app` in the base
 `tauri.conf.json`; iOS overrides via `tauri.ios.conf.json`.
+
+**The widget extension needs its own App ID: `day.nuvo.app.widgets`.** Same
+place, **+** → App IDs → **App**, description `Nuvo Widgets`, bundle ID
+**explicit** `day.nuvo.app.widgets`, no capabilities. An app extension is a
+separate signed bundle, so it needs a separate identifier and profile —
+`-allowProvisioningUpdates` will happily *create the profile*, but registering a
+brand-new identifier through an App Store Connect API key fails in CI:
+
+```
+error: exportArchive Automatic signing cannot register bundle identifier "day.nuvo.app.widgets".
+error: exportArchive No profiles for 'day.nuvo.app.widgets' were found
+```
+
+The app builds and the extension embeds fine — only the export step fails, and
+only until the identifier exists. Register it once and re-run; nothing in the
+repo needs to change. (If you'd rather ship without widgets in the meantime, set
+`NUVO_IOS_WIDGETS=0` on the build step.)
 
 #### 4 · App Store Connect API key (upload + automatic signing in CI)
 
@@ -172,45 +189,122 @@ npm run tauri:ios:build
 
 ---
 
-## Phase 2 — Deep links (capture + chat)
+## Phase 2 — Deep links (capture + chat) — **shipped**
 
-The PWA already routes `?shortcut=capture` and `?shortcut=today` in
-`MobileShell`. Phase 2 adds:
+*Status: shipped 2026-08-13 (D-100). Verified in the dev app on both query
+spellings; the `nuvo://` leg needs a device or simulator.*
 
-- URL scheme `nuvo://capture` and `nuvo://chat` (patched in `ios-postinit.sh`).
-- `?shortcut=chat` handler → opens Nuvo chat overlay.
-- `isTauriIOS()` in `src/lib/platform.ts` — always mount `MobileShell` in the
-  native shell (iPad width safety).
+One launch vocabulary, three doors into it:
+
+| Door | URL |
+|---|---|
+| PWA manifest shortcut (long-press the installed icon) | `/?shortcut=capture` · `/?shortcut=chat` · `/?shortcut=today` |
+| iOS widget (below) | `nuvo://capture` · `nuvo://chat` |
+| Siri / App Intents (later) | either spelling |
+
+- **`src/lib/shortcuts.ts`** parses both forms into one `Shortcut` union;
+  `tests/shortcuts.test.ts` holds it. **Add a door → add it here**, never a second
+  parser.
+- **`MobileShell.applyShortcut`** is the only applier — capture opens the
+  `QuickTaskSheet`, chat opens the Nuvo overlay, today lands on the Tasks/Today
+  segment.
+- The scheme is registered in `Info.plist` by `ios-postinit.sh`;
+  **`tauri-plugin-deep-link`** (registered in `src-tauri/src/lib.rs`, granted in
+  `capabilities/default.json`) delivers it. On Apple platforms the plugin listens
+  for `RunEvent::Opened`, which is exactly how iOS hands over a custom-scheme URL
+  — the plugin's own README talks about universal links, but the custom scheme
+  path is the same event.
+- Cold launch and resume are **both** handled: `getCurrent()` reads the URL the
+  app was started by, `onOpenUrl` catches every one after that. The plugin is
+  imported lazily, so the PWA/web bundle never loads it.
+
+Test on a simulator without touching the lock screen:
+
+```bash
+xcrun simctl openurl booted nuvo://capture
+xcrun simctl openurl booted nuvo://chat
+```
 
 ---
 
-## Phase 3 — Widgets, Siri, background capture
+## Phase 3 — Widgets — **shipped (launchers)**
 
-Lock screen widgets and Siri **cannot** be built in React. They need Swift
-extensions in `src-tauri/ios/`:
+*Status: shipped 2026-08-13 (D-100) — the launcher half, green through
+TestFlight upload on iOS run #14. Siri, App Intents and the glance snapshot are
+still ahead; see "Still ahead" below. The `nuvo://` tap itself is still unproven
+— it needs a device or `xcrun simctl openurl`.*
+
+Three widgets in one WidgetKit extension, sources in
+[`src-tauri/ios/NuvoWidgets/`](../src-tauri/ios/NuvoWidgets/NuvoWidgets.swift):
+
+| Widget | Families | Opens |
+|---|---|---|
+| **Capture** | `accessoryCircular` · `accessoryInline` · `systemSmall` | `nuvo://capture` |
+| **Ask Nuvo** | `accessoryCircular` · `accessoryInline` · `systemSmall` | `nuvo://chat` |
+| **Capture · Ask** | `accessoryRectangular` · `systemMedium` | both, as two tap targets |
+
+They are **launchers, not readouts** — they carry no data at all, so there is
+nothing on your lock screen that can go quietly stale (P7). The lock-screen faces
+are glyph-only because iOS renders accessory widgets in its own monochrome; the
+Home Screen faces carry a transcription of the Warm Paper tokens (the CSS
+variables can't be read from Swift, so `Paper` in the Swift file is a copy — if
+`--accent` moves, move it there too).
+
+### How the target gets into the Xcode project
+
+`gen/apple/` is regenerated on every CI run and Tauri has no hook for extra
+targets — but cargo-mobile2 leaves `project.yml` behind and builds the project by
+running `xcodegen` against it. So:
+
+1. `tauri ios init --ci` → writes `gen/apple/project.yml`, runs xcodegen.
+2. `scripts/ios-postinit.sh` → plist patches, icons, then
+   **`scripts/ios-widgets.rb`**.
+3. `ios-widgets.rb` adds a `NuvoWidgets` app-extension target to `project.yml`,
+   adds it to the app target's dependencies with `embed: true` (that's the
+   "Embed App Extensions" phase — without it the extension builds and never
+   ships, which looks exactly like a widget that won't appear), and re-runs the
+   same `xcodegen generate --no-env --spec project.yml` cargo-mobile2 uses.
+4. `tauri ios build` re-uses the existing project — its `ensure_init` only
+   regenerates when the app name changed — so the patch survives to the archive.
+
+Details that are load-bearing:
+
+- **Bundle id** is the app's + `.widgets` (`day.nuvo.app.widgets`), read from the
+  spec so it can never drift from the app's.
+- **Versions must match the host app** or App Store validation rejects the build.
+  The script stamps `CFBundleShortVersionString` from `tauri.conf.json` and
+  `CFBundleVersion` as `<version>.<BUILD_NUMBER>` — the same pair Tauri gives the
+  app (it then runs `xcrun agvtool new-version -all` at archive time, which
+  covers every target).
+- **Signing** is automatic: Tauri archives with `-allowProvisioningUpdates` and
+  the App Store Connect API key, so the extension's App ID and profile are
+  created on first upload. Manual signing (the `IOS_*` secrets fallback) would
+  need a *second* provisioning profile for `day.nuvo.app.widgets`.
+- **Deployment target** is iOS 16 for the extension (accessory families) while
+  the app stays at 15. An extension may sit higher than its host.
+- **Escape hatch:** `NUVO_IOS_WIDGETS=0` skips the whole step and ships the plain
+  app. Nothing else in the build depends on the extension.
+
+### Still ahead
 
 | Feature | Apple API | Nuvo backend |
 |---|---|---|
-| Lock screen glance ("33m till standup") | WidgetKit + App Group | Main app writes snapshot from `readDay` / `nowContext` |
-| ＋ Capture button on widget | App Intent | `POST /functions/v1/capture` with connection bearer token |
-| ✦ Open chat | App Intent → `nuvo://chat` | Opens app |
+| Lock screen glance ("33m till standup") | WidgetKit + App Group | Main app writes a snapshot from `readDay` / `nowContext` — **with its "as of" stamp visible** (P7) |
+| ＋ Capture *without* opening the app | App Intent | `POST /functions/v1/capture` with a connection bearer token |
 | "Hey Siri, add to Nuvo" | App Intent + dictation | Same `/capture` endpoint (fast, no LLM) |
-| "Hey Siri, ask Nuvo…" | App Intent → `/agent` | Optional; v1 opens app instead |
+| "Hey Siri, ask Nuvo…" | App Intent → `/agent` | Optional; today it opens the app |
 
 **Auth for background capture:** mint a **"This iPhone"** connection in Settings
-(inbox:write scope), store bearer token in Keychain (shared with widget
-extension). Reuses existing `supabase/functions/capture` — same NLP as in-app
-capture, no agent round-trip.
-
-**Principle note (P7):** widget data goes stale when the app is closed; show
-*when* it was updated — don't pretend it's live.
+(inbox:write scope), store the bearer token in the Keychain (shared with the
+widget extension via an App Group). Reuses `supabase/functions/capture` — the
+same NLP as in-app capture, no agent round-trip.
 
 **Decision N-08** rejected a native watchOS app in favor of Shortcuts → agent.
 Native iPhone widgets/Siri are the upgrade path for lock-screen affordances Apple
 doesn't give PWAs — not a contradiction.
 
 Evaluate [`tauri-plugin-widgets`](https://github.com/s00d/tauri-plugin-widgets)
-for App Group plumbing once phase 3 starts.
+for App Group plumbing when the glance lands.
 
 ---
 
@@ -281,6 +375,12 @@ step) at `app-icon.svg` directly.
 | Upload fails: "Invalid large app icon...alpha channel" (90717) | An `icons/ios/*.png` was committed without going through `npm run tauri:icon` (which renders alpha-free via `gen-ios-icons.sh`). Rerun it and recommit; `ios-postinit.sh` now fails the build before upload if this regresses. |
 | Visible white/cream ring around the installed icon | `icons/ios/*.png` was generated from `app-icon.svg` (has its own rounded corners) instead of `app-icon-ios.svg` (full-bleed). Rerun `npm run tauri:icon` and recommit. |
 | Encryption export questionnaire | `ITSAppUsesNonExemptEncryption=false` set by `ios-postinit.sh` (HTTPS only) |
+| Widgets don't appear in the gallery | The extension wasn't embedded. Check the build log for `ios-widgets: added NuvoWidgets…`, and that `nuvo_iOS`'s dependencies in `gen/apple/project.yml` include `target: NuvoWidgets, embed: true` |
+| Upload rejected: extension bundle version mismatch | `scripts/ios-widgets.rb` stamps the widget plist from `tauri.conf.json` + `BUILD_NUMBER`. If CI computes the version differently, that script has to learn the same rule |
+| `exportArchive Automatic signing cannot register bundle identifier "day.nuvo.app.widgets"` / `No profiles for 'day.nuvo.app.widgets' were found` | The extension's App ID doesn't exist yet and CI can't create it through the API key. Register `day.nuvo.app.widgets` by hand — § One-time setup step 3 — then re-run. With manual `IOS_*` secrets you also need a second App Store provisioning profile for it |
+| `CFBundleVersion of an app extension must match that of its containing parent app` | `scripts/ios-widgets.rb` must stamp the widget with the plain `tauri.conf.json` version, *not* `<version>.<build>` — Tauri's `agvtool new-version -all` adds the build number to both plists between build and archive |
+| Anything widget-related blocking a TestFlight build | Set `NUVO_IOS_WIDGETS=0` on the workflow step to ship the plain app while you fix it |
+| Widget taps open the app but nothing happens | The deep link isn't arriving: check `deep-link:default` is in `capabilities/default.json` and the plugin is registered in `src-tauri/src/lib.rs`; reproduce with `xcrun simctl openurl booted nuvo://capture` |
 
 ---
 

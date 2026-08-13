@@ -178,7 +178,11 @@ fn align_traffic_lights(app: tauri::AppHandle, x: f64) {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        // Deep links. On iOS this is what carries a widget tap into the app:
+        // the OS opens `nuvo://capture`, tao raises RunEvent::Opened, and the
+        // plugin emits it to the webview (MobileShell → applyShortcut).
+        .plugin(tauri_plugin_deep_link::init());
 
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());

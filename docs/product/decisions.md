@@ -3157,3 +3157,69 @@ port of the 15 desktop commands.
 (`BuildFacesHarness`): the acts sheet, its confirm step, the delete, and the Groom fields all
 driven; 0 overflows, 0 sub-44px hit areas, 0 inputs under 16px. Desktop untouched — the
 extracted action builder diffs byte-identical against its original.*
+
+---
+
+**D-100 · 2026-08-13 · The lock screen gets Nuvo's two floating actions — as launchers
+that carry no data.**
+
+D-099 shipped the iPhone as a TestFlight app and named widgets as phase 3. The gap they
+close is the distance between a thought and the inbox: on a locked phone, capture is
+unlock → find app → wait for the webview → tap ＋ — long enough that the thought is what's
+lost, not the tap. That's Question Ledger **A3** ("is there a promise I made that's nowhere
+in the system?") — scored ○ with the note *capture only catches what you remember to
+capture*. Nothing about the model catches more; only the distance can shrink.
+
+→ **Three widgets, all launchers:** **Capture** → `nuvo://capture`, **Ask Nuvo** →
+`nuvo://chat`, and **Capture · Ask** — a rectangular face carrying both, so the choice is
+made at the moment of the tap rather than when the widget was placed. Circular and inline
+for the lock screen, small/medium for the Home Screen. Sources in
+`src-tauri/ios/NuvoWidgets/`.
+
+→ **They show nothing, deliberately.** A widget can only render what the app wrote the last
+time it ran. **P7** says a surface must not only work on clean data — its lock-screen form
+is that a glance must not look live when it's hours old. The "33m till standup" glance is
+still wanted, but it ships *with* an App Group snapshot and a visible "as of" stamp, not
+before. Until then the lock screen says nothing about your day, which is honest.
+
+→ **One launch vocabulary, not two.** `src/lib/shortcuts.ts` parses both the PWA's
+`?shortcut=…` and the widgets' `nuvo://…` into one union, and `MobileShell.applyShortcut`
+is the only place that acts on it. This is the same rule the planning kernel and
+`recordActions` are under: a widget's ＋ and a long-pressed icon's ＋ must not be able to
+drift into meaning different things. The PWA gained an **Ask Nuvo** manifest shortcut in
+the same move, so both shells have both doors.
+
+→ **The extension arrives through Tauri's own pipeline, not beside it.** `gen/apple/` is
+regenerated on every CI run and Tauri has no hook for extra targets — but cargo-mobile2
+leaves `project.yml` and builds by running xcodegen against it, so `scripts/ios-widgets.rb`
+patches that spec and re-runs the same command. `NUVO_IOS_WIDGETS=0` skips the whole step:
+a widget must never be able to cost us the app's release train.
+
+→ **Principle strained: P11 (no overlapping names).** The widget gallery now shows
+"Capture" and "Ask Nuvo" beside an app whose ＋ and ✦ mean exactly that — the same names on
+purpose, for the same acts. It would be a violation if they opened anything else, which is
+what the shared parser prevents.
+
+*Status: shipped and building green. SPA half verified in the running dev app at 375px
+(`?shortcut=chat` opens the chat overlay, `?shortcut=capture` opens the quick-task sheet,
+the param is stripped, no page errors); `npm test` 750 green, typecheck and `npm run build`
+clean. The native half was driven on real CI, dispatched against the branch rather than
+merged, and took three runs to land:
+
+- **#10** — `ios-widgets.rb` patched the spec, xcodegen regenerated, `NuvoWidgets.swift`
+  compiled clean for `arm64-apple-ios16.0`, the `.appex` embedded into `Nuvo.app/PlugIns`,
+  **BUILD SUCCEEDED**. Export failed: `Automatic signing cannot register bundle identifier
+  "day.nuvo.app.widgets"`. An app extension is a separate signed bundle, and
+  `-allowProvisioningUpdates` can create a *profile* but not register a new *identifier*
+  through an App Store Connect API key. Fixed by registering `day.nuvo.app.widgets` once in
+  the developer portal — now step 3 of the one-time setup in [`ios-releases.md`](../ios-releases.md).
+  The same run also proved `agvtool new-version -all` reaches the widget plist, so the
+  script stamps the plain version and lets the archive add the build number to both.
+- **#12** — cancelled mid-build, not failed: a push to `master` took the `ios-testflight`
+  concurrency group, which is `cancel-in-progress`. Worth knowing before reading a vanished
+  branch run as a break.
+- **#14** — green end to end on the merged commit, uploaded to TestFlight.
+
+**Still unverified: the `nuvo://` leg itself.** No CI run can prove it — it needs a tap on a
+device, or `xcrun simctl openurl booted nuvo://capture` on a simulator. Until someone does
+that, "the widget opens the capture sheet" is a claim, not an observation.*
