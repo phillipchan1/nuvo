@@ -21,6 +21,7 @@ import { useEscape } from "../hooks/useEscape";
 export function RecurrenceDeleteButton({
   recurring,
   label = "Trash",
+  quiet,
   onSimple,
   onThis,
   onFollowing,
@@ -28,6 +29,10 @@ export function RecurrenceDeleteButton({
 }: {
   recurring: boolean;
   label?: string;
+  /** Footer voice: plain text that only turns `--signal` on hover / when the
+   *  scope menu is open. A permanently-red button in a detail card's footer
+   *  outshouts the act the card is actually for. */
+  quiet?: boolean;
   onSimple: () => void;
   onThis: () => void;
   onFollowing: () => void;
@@ -36,15 +41,27 @@ export function RecurrenceDeleteButton({
   const [open, setOpen] = useState(false);
   // Declared before the early return — a hook can't sit behind a condition.
   useEscape(open, () => setOpen(false));
-  if (!recurring) return <Btn kind="signal" onClick={onSimple}>{label}</Btn>;
+  const quietCls = `fast tap shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label ${
+    open ? "text-signal" : "text-muted hover:text-signal"
+  }`;
+  if (!recurring)
+    return quiet ? (
+      <button type="button" onClick={onSimple} className={quietCls}>{label}</button>
+    ) : (
+      <Btn kind="signal" onClick={onSimple}>{label}</Btn>
+    );
   const items: { label: string; fn: () => void }[] = [
     { label: "This occurrence", fn: onThis },
     { label: "This & following", fn: onFollowing },
     { label: "Whole series", fn: onSeries },
   ];
   return (
-    <div className="relative">
-      <Btn kind="signal" onClick={() => setOpen((o) => !o)}>{label} ▾</Btn>
+    <div className="relative shrink-0">
+      {quiet ? (
+        <button type="button" onClick={() => setOpen((o) => !o)} className={quietCls}>{label} ▾</button>
+      ) : (
+        <Btn kind="signal" onClick={() => setOpen((o) => !o)}>{label} ▾</Btn>
+      )}
       {open && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
@@ -80,20 +97,32 @@ export function SlotDeleteButton({
   recurring,
   taskCount,
   dayLabel,
+  quiet,
   onDelete,
 }: {
   recurring: boolean;
   taskCount: number;
   dayLabel: string;
+  /** Footer voice — see RecurrenceDeleteButton. */
+  quiet?: boolean;
   onDelete: (scope: SlotDeleteScope, deleteTasks: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [deleteTasks, setDeleteTasks] = useState(false);
   useEscape(open, () => setOpen(false));
+  const quietCls = `fast tap shrink-0 rounded-[var(--radius-sm)] px-1.5 py-1 text-label ${
+    open ? "text-signal" : "text-muted hover:text-signal"
+  }`;
 
   // Nothing to decide — a plain, empty, non-recurring slot deletes outright.
   if (!recurring && taskCount === 0) {
-    return <Btn kind="signal" onClick={() => onDelete("simple", false)}>Delete slot</Btn>;
+    return quiet ? (
+      <button type="button" onClick={() => onDelete("simple", false)} className={quietCls}>
+        Delete
+      </button>
+    ) : (
+      <Btn kind="signal" onClick={() => onDelete("simple", false)}>Delete slot</Btn>
+    );
   }
 
   const scopes: { scope: SlotDeleteScope; label: string }[] = recurring
@@ -105,8 +134,12 @@ export function SlotDeleteButton({
     : [{ scope: "simple", label: "Delete slot" }];
 
   return (
-    <div className="relative">
-      <Btn kind="signal" onClick={() => setOpen((o) => !o)}>Delete slot ▾</Btn>
+    <div className="relative shrink-0">
+      {quiet ? (
+        <button type="button" onClick={() => setOpen((o) => !o)} className={quietCls}>Delete ▾</button>
+      ) : (
+        <Btn kind="signal" onClick={() => setOpen((o) => !o)}>Delete slot ▾</Btn>
+      )}
       {open && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />

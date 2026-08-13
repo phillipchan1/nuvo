@@ -4,7 +4,11 @@ name: iOS TestFlight
 # One-time Apple + GitHub secrets setup: docs/ios-releases.md
 #
 # Runs in parallel with release.yml (macOS) and Vercel (PWA). Same version
-# stamp scheme: <major>.<minor>.<run_number> from package.json + run counter.
+# stamp scheme: <major>.<minor>.<commit_count> from package.json + the total
+# commit count on this ref (git rev-list --count HEAD) — identical to
+# release.yml's, so a desktop and an iOS build cut from the same commit
+# always carry the same version/build number, even though each workflow can
+# be independently skipped by the platform-reachability check.
 #
 # The `changes` job below decides whether this push can only have affected
 # desktop — if so, the (expensive, macOS-runner) TestFlight build is skipped.
@@ -65,6 +69,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v5
@@ -86,17 +92,25 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Compute version
+        # BUILD_NUMBER comes from the commit count on this ref (git rev-list
+        # --count HEAD), not this workflow's own github.run_number. This
+        # workflow and release.yml (desktop) each have an independent run
+        # counter and each can be skipped by the platform-reachability check,
+        # so run_number drifts between them over pushes. Commit count is the
+        # same for both workflows on the same commit, so desktop and iOS
+        # builds cut from the same commit always carry the same number.
         run: |
+          BUILD_NUMBER=$(git rev-list --count HEAD)
           if [ "${{ github.ref_type }}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
             MAJOR_MINOR=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
-            VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+            VERSION="${MAJOR_MINOR}.${BUILD_NUMBER}"
           fi
           node -e "for (const p of ['src-tauri/tauri.conf.json','package.json']) { const fs=require('fs'); const c=JSON.parse(fs.readFileSync(p)); c.version='$VERSION'; fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n'); }"
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
-          echo "Building iOS version $VERSION (build ${{ github.run_number }})"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "Building iOS version $VERSION (build $BUILD_NUMBER)"
 
       - name: Configure App Store Connect API key
         env:
@@ -117,6 +131,30 @@ jobs:
           echo "APPLE_API_KEY=${APPSTORE_KEY_ID}" >> "$GITHUB_ENV"
           echo "APPLE_API_ISSUER=${APPSTORE_ISSUER_ID}" >> "$GITHUB_ENV"
           echo "APPLE_API_KEY_PATH=${KEY_PATH}" >> "$GITHUB_ENV"
+
+      - name: Resolve build number against App Store Connect
+        # BUILD_NUMBER is the commit count, matching desktop's version — but
+        # a manual re-run of this workflow on a commit that already uploaded
+        # successfully would reuse that same number, which App Store Connect
+        # rejects (CFBundleVersion must strictly increase per marketing
+        # version). scripts/appstore-next-build-number.mjs checks the highest
+        # build already on file for $APP_VERSION and bumps past it if needed;
+        # it's a no-op (prints BUILD_NUMBER back unchanged) for the normal
+        # case of a version with no prior upload, and best-effort — any API
+        # problem falls back to the commit-count value rather than failing
+        # the build.
+        run: |
+          set -euo pipefail
+          BUNDLE_ID=$(node -p "require('./src-tauri/tauri.ios.conf.json').identifier")
+          RESOLVED=$(node scripts/appstore-next-build-number.mjs \
+            --bundle-id "$BUNDLE_ID" \
+            --version "$APP_VERSION" \
+            --proposed "$BUILD_NUMBER" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer-id "$APPLE_API_ISSUER" \
+            --key-path "$APPLE_API_KEY_PATH")
+          echo "BUILD_NUMBER=$RESOLVED" >> "$GITHUB_ENV"
+          echo "Resolved iOS build number: $RESOLVED"
 
       - name: Initialize iOS project
         env:

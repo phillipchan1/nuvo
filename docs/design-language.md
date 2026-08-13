@@ -574,6 +574,50 @@ horizontal scroll of larger chips you drag onto the grid.
 
 ---
 
+## Detail popovers — one grammar (D-101)
+
+The event, task and slot popovers are the **same card** at three subjects. The parts live in
+`src/components/PopoverParts.tsx` — build the next one out of them, don't hand-roll a fourth
+stack of `border-t` sections.
+
+```
+┌───────────────────────────────────────────────┐
+│ ● Title                                     ✕ │  PopMast — dot + title +
+│   Thu Aug 13 · 9:00 – 9:30 AM · ↻ Weekly      │  ONE muted meta line
+├───────────────────────────────────────────────┤
+│ [ Join Google Meet ]   Going? [✓Yes][?][✕]    │  PopStrip — at most TWO acts
+├──────────────────────┬────────────────────────┤
+│ WHEN · WHERE · FILING│ GUESTS · NOTES         │  PopBody → PopCol left/right
+│ (the facts)          │ (the people and words) │  each scrolls on its own
+├──────────────────────┴────────────────────────┤
+│ ↗ Google Cal  Hide  → Task           Delete   │  PopFooter — quiet left,
+└───────────────────────────────────────────────┘  destructive right
+```
+
+- **The meta line is the read; the fields are the edit.** They deliberately overlap — the
+  masthead says "↻ Weekly on Thursday" even on a read-only feed, and the chip that *changes*
+  it lives in the When field. A fact the card knows must never go unsaid because you can't
+  edit it.
+- **The strip holds at most two acts**, and the filled one is the reason the card was opened
+  (Join · Done). A rarely-touched control (All day) is a chip in its own field, never a
+  full-width switch — that inversion is what made the old event card unreadable.
+- **Width is earned:** `POP_W_WIDE` (560) when there's something for the right column,
+  `POP_W_NARROW` (380) when there isn't. Decide it from something known *synchronously* so
+  the card never resizes under the cursor.
+- **Destructive acts are text** (`PopFootAct danger`, or `quiet` on the recurrence delete
+  buttons) and turn `--signal` only once they ask which occurrences you meant.
+- **A card that has been put somewhere stays there.** It centres on its anchor *once*, then
+  follows the anchor and is only nudged to stay on screen (`src/lib/anchoredTop.ts`). Async
+  content extends a card downward; it never re-positions it. Anything that arrives late gets
+  a `PopSkeleton` holding its shape, and the width is decided before the card is on screen —
+  never from data still in flight.
+- **Verdict tokens mark, they don't label.** `--ok` / `--warn` carry an RSVP or a priority as
+  the tint, border and dot; the label stays `--ink`. They're ~3.3:1 on the light paper grounds
+  — a legible *mark* (1.4.11 wants 3:1), illegible 11px *text*. This is why the control needs
+  no per-skin exception.
+
+---
+
 ## Layout signatures
 
 - **Spine left, Nuvo right, work between** — all the same paper, divided only by

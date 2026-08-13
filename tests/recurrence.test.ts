@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   cadenceGroupKey,
   expandRule,
+  fromGoogleRRULE,
   groupSeriesByCadence,
   nextOccurrenceDate,
   parseRecurrencePhrase,
+  toGoogleRRULE,
 } from "../supabase/functions/_shared/recurrence.ts";
 
 describe("recurrence kernel", () => {
@@ -73,5 +75,25 @@ describe("recurrence kernel", () => {
   it("cadenceGroupKey distinguishes long monthly intervals", () => {
     expect(cadenceGroupKey({ freq: "monthly", interval: 5 }).label).toBe("Every 5 months");
     expect(cadenceGroupKey({ freq: "monthly", interval: 1 }).label).toBe("Monthly");
+  });
+
+  it("round-trips Google RRULE lines", () => {
+    const rule = { freq: "weekly" as const, interval: 2, byweekday: [1, 3] };
+    const lines = toGoogleRRULE(rule);
+    expect(fromGoogleRRULE(lines)).toEqual(rule);
+  });
+
+  it("parses RRULE with COUNT and UNTIL", () => {
+    expect(fromGoogleRRULE(["RRULE:FREQ=DAILY;INTERVAL=1;COUNT=10"])).toEqual({
+      freq: "daily",
+      interval: 1,
+      count: 10,
+    });
+    expect(fromGoogleRRULE(["RRULE:FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=20261231T235959Z"])).toEqual({
+      freq: "monthly",
+      interval: 1,
+      bymonthday: 15,
+      until: "2026-12-31",
+    });
   });
 });

@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "../Icon";
-import type { AttendeeStatus, Task } from "../../lib/types";
+import type { AttendeeStatus, ExternalEvent, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
-import { useCalendarAccounts, useEventDetails, useExternalEventMutations } from "../../hooks/useCalendar";
+import { useCalendarAccounts, useEventDetails, useEventSeriesRule, useExternalEventMutations } from "../../hooks/useCalendar";
 import { conferenceName, joinUrl } from "../../../supabase/functions/_shared/conferencing.ts";
 import {
   allDayInclusiveEnd,
@@ -10,11 +11,14 @@ import {
   defaultTimedRange,
   nextWeekISO,
   parseDateISO,
+  toDateISO,
   todayISO,
   tomorrowISO,
 } from "../../lib/dates";
 import { isReadOnlyCalendarId, isWritableAccount } from "../../lib/calendarWrite";
 import { plainTextFromHtml } from "../../lib/text";
+import { fromGoogleRRULE, rulesEqual, toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
+import { RepeatControl } from "../RecurrencePicker";
 import Sheet from "./Sheet";
 
 // The shape passed from MobileCalendar when the user taps an event row.
@@ -55,6 +59,7 @@ export default function MobileEventSheet({
   onAskNuvo?: (seed: string, say?: string) => void;
   onEditTask?: (taskId: string) => void;
 }) {
+  const qc = useQueryClient();
   const { rsvpEvent, updateEvent, deleteEvent } = useExternalEventMutations();
   const { data: accounts = [] } = useCalendarAccounts();
   // Same write-back rule as desktop's EventPopover: a two-way Google/iCloud
@@ -64,6 +69,22 @@ export default function MobileEventSheet({
   // the raw event for its conference link the same way the desktop inspector
   // does. Null for a task block — hooks can't hide behind the branch below.
   const { data: raw } = useEventDetails(tap.kind === "event" ? tap.id : null, account?.email);
+  const cachedEvent = useMemo(() => {
+    if (tap.kind !== "event") return undefined;
+    for (const [, data] of qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] })) {
+      const found = data?.find((e) => e.id === tap.id);
+      if (found) return found;
+    }
+    return undefined;
+  }, [qc, tap]);
+  const recurring =
+    tap.kind === "event" &&
+    (Boolean((raw as { recurringEventId?: string } | null)?.recurringEventId) ||
+      Boolean(cachedEvent?.recurring_event_id) ||
+      Boolean(cachedEvent?.provider_event_id.includes("::")));
+  const inlineRule = fromGoogleRRULE((raw as { recurrence?: string[] } | null)?.recurrence);
+  const { data: seriesRule } = useEventSeriesRule(tap.kind === "event" ? tap.id : null, recurring);
+  const repeatRule = inlineRule ?? seriesRule ?? null;
   const meetLink = joinUrl(raw);
   const [rsvping, setRsvping] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);
@@ -181,6 +202,17 @@ export default function MobileEventSheet({
       commitSchedule({ all_day: false, ...defaultTimedRange(parseDateISO(toDateInput(startAt))) });
     };
 
+    const applyRepeat = (rule: RecurrenceRule | null) => {
+      if (rulesEqual(repeatRule, rule)) return;
+      if (rule && !recurring) {
+        updateEvent({ id: tap.id, patch: { recurrence: toGoogleRRULE(rule) } });
+      } else if (rule && recurring) {
+        updateEvent({ id: tap.id, patch: { recurrence: toGoogleRRULE(rule) }, scope: "ALL" });
+      } else if (!rule && recurring) {
+        updateEvent({ id: tap.id, patch: { recurrence: null }, scope: "ALL" });
+      }
+    };
+
     const commitTitle = () => {
       const next = title.trim();
       if (next && next !== tap.title) updateEvent({ id: tap.id, patch: { title: next } });
@@ -253,6 +285,12 @@ export default function MobileEventSheet({
                   All day
                 </Chip>
               </div>
+              <RepeatControl
+                anchorISO={toDateISO(new Date(startAt))}
+                value={repeatRule}
+                onChange={applyRepeat}
+                variant="block"
+              />
               <input
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}

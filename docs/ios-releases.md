@@ -50,12 +50,21 @@ Goal: install Nuvo from TestFlight; every merge ships a new build to your phone.
 
 On every push to `master` (and manual **Run workflow**):
 
-1. Stamps version `<major>.<minor>.<run_number>` (same scheme as desktop).
-2. `npm ci` → `tauri ios init --ci` (regenerate `gen/apple/`).
-3. `scripts/ios-postinit.sh` — encryption export flag, deep-link URL scheme,
+1. Stamps version `<major>.<minor>.<commit_count>` — the patch number is the
+   total commit count on the built ref (`git rev-list --count HEAD`), the
+   same scheme `release.yml` (desktop) uses, so a desktop build and an iOS
+   build cut from the same commit always carry the same version and build
+   number, regardless of which workflow(s) actually ran for a given push.
+2. Checks that build number against App Store Connect
+   (`scripts/appstore-next-build-number.mjs`) and bumps past it if a build
+   for this exact version was already uploaded — only matters on a manual
+   re-run of a commit that already shipped; the normal per-commit case is a
+   no-op and iOS stays numbered identically to desktop.
+3. `npm ci` → `tauri ios init --ci` (regenerate `gen/apple/`).
+4. `scripts/ios-postinit.sh` — encryption export flag, deep-link URL scheme,
    **Nuvo app icons** (copies `src-tauri/icons/ios/` over Tauri's default catalog).
-4. `tauri ios build --export-method app-store-connect` — signed IPA.
-5. `xcrun altool --upload-app` → App Store Connect → TestFlight.
+5. `tauri ios build --export-method app-store-connect` — signed IPA.
+6. `xcrun altool --upload-app` → App Store Connect → TestFlight.
 
 ~15–20 min on `macos-latest`. Concurrency group `ios-testflight` — newer
 builds cancel in-progress ones.
