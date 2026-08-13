@@ -164,8 +164,8 @@ const INVENTORY = [
 // we'd disappoint anyway (personas.md §4). Straight from landscape.md §4.
 const LIMITS = [
   ['No team boards.', 'Single-player on purpose. Nobody else is ever in your funnel.'],
-  ['Fewer integrations than Akiflow.', 'Capture is fast, but it doesn’t reach into every app yet.'],
-  ['The phone is capture and your agenda.', 'Planning the week, projects and the review are desktop today.'],
+  ['Fewer integrations than Akiflow.', 'Capture is fast. It doesn’t reach into every app yet.'],
+  ['The phone is capture and your agenda.', 'Planning, projects and the review are desktop today.'],
 ] as const
 
 // The four reasons a switcher bounces, answered before they're asked. Straight
@@ -175,16 +175,16 @@ const LIMITS = [
 const TRUST = [
   [
     'It won’t run your day for you.',
-    'It composes a week and waits. Every block drags, every number says where it came from, and you promote the work — never the software.',
+    'It composes a week and waits. Every block drags. You promote the work, never the software.',
   ],
-  ['It won’t nag you.', 'No streaks, no red badges, no debt ledger. It reports; you decide.'],
+  ['It won’t nag you.', 'No streaks. No red badges. No debt ledger. It reports; you decide.'],
   [
     'It won’t show anyone else.',
-    'Nobody else is ever in your funnel. No shared board, no manager’s dashboard, no one watching your calendar.',
+    'No shared board. No manager’s dashboard. Nobody watching your calendar.',
   ],
   [
     'It won’t make you migrate.',
-    'Useful on day one with an empty backlog. Nothing to import, nothing to set up before it earns its place.',
+    'Useful on day one with an empty backlog. Nothing to import.',
   ],
 ] as const
 
@@ -381,9 +381,8 @@ export default function Home() {
                 thing never goes quiet") isn't lost — it's §5's headline, where it
                 has a screen behind it. */}
             <p className="reveal reveal-delay-1 mt-4 max-w-2xl text-pretty hero-support text-[var(--muted)]">
-              You’re running three or four lives at once, out of apps that have never been
-              introduced. Nuvo is one line from everything you’re responsible for down to what
-              you’re doing at 2pm today.
+              Four lives. Four apps that have never met. Nuvo is one line — from what you’re
+              responsible for, down to 2pm today.
             </p>
             <CtaGroup className="reveal reveal-delay-2 mt-6" />
             <p className="reveal reveal-delay-2 mt-4 text-[0.8125rem] text-[var(--muted)]">
@@ -417,8 +416,7 @@ export default function Home() {
               Four apps. None of them have ever been introduced.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Every one of them is good at its job. Ask any of them the only question that
-              actually matters and watch what happens.
+              Each one is good at its job. Now ask the only question that matters.
             </p>
           </div>
           <div className="mt-10">
@@ -442,12 +440,11 @@ export default function Home() {
                 All of it goes in before you can forget it.
               </h2>
               <p className="mt-5 text-body text-[var(--muted)]">
-                ⌥Space from anywhere on the Mac. ⌘K inside it. Your voice. Another app, over the
-                API. Type it like a text message —{' '}
+                ⌥Space anywhere on the Mac. ⌘K inside it. Your voice. Type it like a text —{' '}
                 <span className="mono text-[var(--text)]">
                   call David tomorrow 9am 30m #church !high
                 </span>{' '}
-                — and it arrives as structure, in one inbox, out of your head.
+                — and it lands as structure, in one inbox.
               </p>
               <p className="mt-5 text-body text-[var(--muted)]">
                 That’s the last time you have to hold it.
@@ -476,16 +473,12 @@ export default function Home() {
               And it comes back out onto a Tuesday.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              A board is where work goes to be admired. Here, a scheduled task <em>is</em> the
-              block — one row, on one grid, beside the meetings you can’t move. Nothing gets
-              re-typed into a calendar, and nothing sits in a column called “In progress” for
-              three weeks pretending to be alive.
+              A board is where work goes to be admired. Here a scheduled task <em>is</em> the
+              block. One row, one grid, beside the meetings you can’t move.
             </p>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Work on Google. Family on Apple. Corp on Microsoft. The youth-group ICS feed nobody
-              owns. Nuvo reads every one of them, subtracts what’s already spoken for, and plans
-              into what’s genuinely open — so the hour you took for the gym is as real as the
-              board call.
+              Work on Google. Family on Apple. Corp on Microsoft. The youth-group ICS feed.
+              Nuvo reads all of them and plans into what’s actually open.
             </p>
           </div>
 
@@ -517,10 +510,8 @@ export default function Home() {
                 It tells you when the week doesn’t fit — then lets you carry it anyway.
               </h2>
               <p className="mt-5 text-body text-[var(--muted)]">
-                Everything you’ve committed to, against the hours you actually have left, checked
-                against the pace you’ve <em>proven</em> — not the pace you hoped for. When there
-                isn’t room for the thing that matters, it says so, and hands you the choice
-                instead of a footnote.
+                Everything you’ve committed to, against the hours you have left, at the pace
+                you’ve <em>proven</em>. Not the pace you hoped for.
               </p>
               <p className="mt-5 text-body text-[var(--muted)]">
                 It never refuses you. It just refuses to pretend.
@@ -549,14 +540,11 @@ export default function Home() {
               The thing you committed to in January doesn’t go quiet while you’re busy.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Nothing goes wrong on any given day — that’s exactly how a quarter disappears. So
-              every project carries a required pace: remaining effort over the weeks left. Time-box
-              them onto the weeks ahead and the collision shows up while it’s still cheap, two big
-              things landing on the same week with a month to move one.
+              Nothing goes wrong on any given day. That’s how a quarter disappears.
             </p>
             <p className="mt-5 text-body text-[var(--muted)]">
-              You execute today <em>and</em> you can see the quarter. That’s the part no list app
-              has ever been able to do.
+              So every project carries a pace, and collisions surface three weeks out — while
+              moving one is still cheap. You run today <em>and</em> you can see the quarter.
             </p>
           </div>
           <div className="mt-10">
@@ -579,9 +567,8 @@ export default function Home() {
               Not a feeling about the week. Evidence.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Every meeting you attended and every block you finished is proof. Nuvo assigns each
-              one to the part of your life it belonged to — automatically, and it says so when it
-              isn’t sure. Nobody types a timesheet.
+              Every meeting you attended and every block you finished, assigned to the life it
+              belonged to. Nobody types a timesheet.
             </p>
           </div>
 
@@ -621,13 +608,11 @@ export default function Home() {
                 Or ask, and watch it show its work.
               </h2>
               <p className="mt-5 text-body text-[var(--muted)]">
-                Say it the way you’d say it to a person. Nuvo can capture, schedule, reschedule,
-                start a project, set a key result, decline the meeting — and every time it touches
-                something, it hands back the actual row it changed, with an undo on it.
+                Say it the way you’d say it to a person. Capture, schedule, reschedule, start a
+                project, decline the meeting. It hands back the row it changed, with an undo on it.
               </p>
               <p className="mt-5 text-body text-[var(--muted)]">
-                It drafts into quiet places and waits. Nothing reaches your calendar because the
-                assistant felt strongly about it.
+                Nothing reaches your calendar because the assistant felt strongly about it.
               </p>
             </div>
             <ChatVisual />
@@ -657,16 +642,15 @@ export default function Home() {
               You already own the parts. The answer isn’t in any of them.
             </h2>
             <p className="mt-6 text-body text-[var(--muted)]">
-              A list app that’s genuinely good at lists. A board where the projects live. A
-              calendar that tells the truth about your day. Four good tools — and the thing you
-              actually want to know isn’t inside any of them, because it isn’t a feature. It’s a
-              relationship between four things that have never met.
+              A good list. A board where the projects live. A calendar that tells the truth.
+              What you actually want to know isn’t in any of them. It’s the relationship
+              between them.
             </p>
             <p className="mt-6 serif text-[1.25rem] italic leading-snug text-[var(--text)]">
               No amount of syncing turns a stack into a system.
             </p>
             <p className="mt-6 text-body text-[var(--muted)]">
-              That’s the whole reason this exists. Not a better list — the single line the question
+              That’s the whole reason this exists. Not a better list — the one line the question
               can travel down.
             </p>
           </div>
@@ -679,13 +663,12 @@ export default function Home() {
               I used Motion. It decided too much for me.
             </h3>
             <p className="mt-5 serif text-[1.125rem] italic leading-relaxed text-[var(--text)]">
-              It built my day for me, and when it was wrong about the thing that mattered most,
-              there was nothing to argue with. The screen kept getting more complicated and the
-              week kept getting less mine.
+              It built my day for me. When it was wrong about the thing that mattered most, there
+              was nothing to argue with.
             </p>
             <p className="mt-5 text-body text-[var(--muted)]">
-              So Nuvo does the labor and leaves the judgment. It composes a week and waits. Every
-              block drags. When it says you can’t carry the week, it still lets you.
+              So Nuvo does the labor and leaves the judgment. Every block drags. When it says you
+              can’t carry the week, it still lets you.
             </p>
             <p className="mt-6 text-[0.9375rem] text-[var(--muted)]">
               — Phil, who’s running four lives and built this for the Sunday night it kept ruining.
@@ -736,8 +719,8 @@ export default function Home() {
             <p className="section-label text-[var(--muted)]">Everything included</p>
             <h2 className="masthead mt-3 text-lead text-[var(--text)]">One price. All of it.</h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              No tiers, no add-ons, nothing saved back for a “pro” plan. This is the whole product,
-              on the Mac, in any browser, and installed on your phone.
+              No tiers. No add-ons. Nothing held back for a “pro” plan. Mac, browser, and your
+              phone.
             </p>
           </div>
 
@@ -773,9 +756,7 @@ export default function Home() {
               Less than the four tools it replaces.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              You’re already paying for a task app, a project tool, a calendar add-on and a planner
-              that don’t talk to each other. This is one system, one price, and one week that
-              finally adds up.
+              You’re already paying for four tools that don’t talk to each other. This is one.
             </p>
           </div>
 
@@ -847,8 +828,7 @@ export default function Home() {
               went.
             </h2>
             <p className="mt-5 text-body text-[var(--muted)]">
-              Three answers, at the same time, from one place. Nothing else you’ve tried has given
-              you all three — because nothing else you’ve tried was one system.
+              Three answers. At the same time. From one place.
             </p>
             <CtaGroup className="mt-10 justify-center" />
           </div>

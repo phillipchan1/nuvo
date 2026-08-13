@@ -64,7 +64,7 @@ const SOURCES: Source[] = [
       { text: 'Look at the Q3 thing', done: false },
     ],
     knows: 'Knows everything you wrote down.',
-    stops: 'Has no idea which of them is the one that matters, or when any of it happens.',
+    stops: 'Not which one matters. Not when any of it happens.',
   },
   {
     kind: 'The board',
@@ -73,8 +73,8 @@ const SOURCES: Source[] = [
       { text: 'Fall series', meta: 'In progress', color: COMMUNITY },
       { text: 'Dayspring v2', meta: 'Backlog', color: CRAFT },
     ],
-    knows: 'Knows the project exists, and that you moved it to “In progress”.',
-    stops: 'Last touched three weeks ago. It has never once seen your Thursday.',
+    knows: 'Knows the project exists.',
+    stops: 'Last touched three weeks ago. It has never seen your Thursday.',
   },
   {
     kind: 'The calendar',
@@ -84,8 +84,8 @@ const SOURCES: Source[] = [
       { text: '—', meta: '1:30' },
       { text: 'Pickup', meta: '3:15', color: FAMILY },
     ],
-    knows: 'Knows Thursday exactly, down to the minute.',
-    stops: 'Doesn’t know what a single hour of it was for, or what it cost you.',
+    knows: 'Knows Thursday, to the minute.',
+    stops: 'Not what a single hour of it was for.',
   },
   {
     kind: 'The note',
@@ -94,8 +94,8 @@ const SOURCES: Source[] = [
       { text: 'ask about the contract?' },
       { text: 'idea: split the onboarding' },
     ],
-    knows: 'Knows you were worried about it at 11pm.',
-    stops: 'That is the entire extent of what it knows.',
+    knows: 'Knows you were worried at 11pm.',
+    stops: 'That’s the whole of it.',
   },
 ]
 
@@ -213,8 +213,7 @@ export default function ScatterVisual() {
         </ul>
 
         <p className={`scatter-verdict ${done ? 'is-open' : ''}`}>
-          Four good tools. Not one of them can answer it — because the answer isn’t inside any of
-          them.
+          Four good tools. Not one of them can answer it.
         </p>
       </div>
     </div>
