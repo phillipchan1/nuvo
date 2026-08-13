@@ -223,6 +223,53 @@ export function toGoogleRRULE(rule: RecurrenceRule): string[] {
   return [`RRULE:${parts.join(";")}`];
 }
 
+const RRULE_WD: Record<string, number> = {
+  SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6,
+};
+
+/** Parse Google / iCalendar RRULE lines back into our RecurrenceRule shape. */
+export function fromGoogleRRULE(lines: string[] | null | undefined): RecurrenceRule | null {
+  if (!lines?.length) return null;
+  const line = lines.find((l) => /^RRULE:/i.test(l) || /^FREQ=/i.test(l));
+  if (!line) return null;
+  const body = line.replace(/^RRULE:/i, "");
+  const parts = new Map<string, string>();
+  for (const piece of body.split(";")) {
+    const i = piece.indexOf("=");
+    if (i === -1) continue;
+    parts.set(piece.slice(0, i).toUpperCase(), piece.slice(i + 1));
+  }
+
+  const freqRaw = parts.get("FREQ")?.toLowerCase();
+  if (freqRaw !== "daily" && freqRaw !== "weekly" && freqRaw !== "monthly") return null;
+
+  const rule: RecurrenceRule = {
+    freq: freqRaw,
+    interval: Math.max(1, Number(parts.get("INTERVAL")) || 1),
+  };
+
+  const byday = parts.get("BYDAY");
+  if (byday) {
+    rule.byweekday = byday.split(",")
+      .map((d) => RRULE_WD[d.trim().slice(-2).toUpperCase()])
+      .filter((d): d is number => d !== undefined);
+  }
+
+  const bymonthday = parts.get("BYMONTHDAY");
+  if (bymonthday) rule.bymonthday = Number(bymonthday) || null;
+
+  const count = parts.get("COUNT");
+  if (count) rule.count = Math.max(1, Number(count) || 1);
+
+  const until = parts.get("UNTIL");
+  if (until && !count) {
+    const m = until.match(/^(\d{4})(\d{2})(\d{2})/);
+    if (m) rule.until = `${m[1]}-${m[2]}-${m[3]}`;
+  }
+
+  return rule;
+}
+
 /** First occurrence on or after `afterISO`, searching up to ~2 years ahead. */
 export function nextOccurrenceDate(
   rule: RecurrenceRule,

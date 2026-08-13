@@ -186,7 +186,18 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
-    // ── Move / resize / retitle / relocate / re-note ─────────────────────
+    // ── Series rule: read RRULE from the master VEVENT ───────────────────
+    if (action === "series_rule") {
+      const { ics } = await getEvent(href, account.email, password);
+      const master = (ics.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) ?? [])
+        .find((ve) => !/\bRECURRENCE-ID\b/i.test(ve));
+      const recurrence = master
+        ? (master.match(/^RRULE:.*$/gim) ?? [])
+        : [];
+      return json({ ok: true, recurrence: recurrence.length ? recurrence : null });
+    }
+
+    // ── Move / resize / retitle / relocate / re-note / re-rule ───────────
     const p = patch as {
       title?: string;
       start_at?: string;
@@ -194,8 +205,21 @@ Deno.serve(async (req) => {
       all_day?: boolean;
       location?: string | null;
       description?: string | null;
+      recurrence?: string[] | null;
     };
     const { ics, etag } = await getEvent(href, account.email, password);
+
+    // Recurrence always edits the master VEVENT — never a per-occurrence override.
+    if (p.recurrence !== undefined) {
+      const next = patchMaster(ics, {
+        recurrence: p.recurrence === null || (Array.isArray(p.recurrence) && p.recurrence.length === 0)
+          ? null
+          : p.recurrence,
+      });
+      await putEvent(href, next, account.email, password, etag);
+      await logSync("icloud", "event-recurrence", "ok", undefined, user.id);
+      return json({ ok: true });
+    }
 
     let next: string;
     if (isOccurrence && scope === "ALL") {

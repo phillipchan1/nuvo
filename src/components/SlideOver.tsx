@@ -13,7 +13,7 @@ import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
 import type { useRecurrenceMutations, SeriesTemplate } from "../hooks/useRecurrence";
-import { useEventDetails, useHiddenEvents } from "../hooks/useCalendar";
+import { useEventDetails, useEventSeriesRule, useHiddenEvents } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
 import { plainTextFromHtml } from "../lib/text";
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,67 +21,51 @@ import { useVertical } from "../hooks/useVertical";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { deriveSlotTitle } from "../lib/slots";
-import { rulesEqual, type RecurrenceRule } from "../lib/recurrence";
+import { rulesEqual, describeRule, fromGoogleRRULE, toGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
+import {
+  POP_INPUT_CLS,
+  POP_W_NARROW,
+  POP_W_WIDE,
+  PopBody,
+  PopCol,
+  PopField,
+  PopFootAct,
+  PopFooter,
+  PopLabel,
+  PopMast,
+  PopMetaDot,
+  PopPrimary,
+  PopSection,
+  PopSegmented,
+  PopSkeleton,
+  PopStack,
+  PopStrip,
+} from "./PopoverParts";
 import { ASSISTANT_NAME } from "../lib/assistant";
 import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import { markCalendarClickHandled } from "../lib/calendarDismissGuard";
+import { anchoredTop } from "../lib/anchoredTop";
 import { RecurrenceDeleteButton, RepeatControl, SlotDeleteButton, type SlotDeleteScope } from "./RecurrencePicker";
-import { Btn, RollBadge } from "./ui";
+import { Btn } from "./ui";
 import { isTypingIn } from "./floors/TaskList";
+
+/**
+ * Priority as tokens, not raw Tailwind — `bg-amber-400` for "medium" was one
+ * of two colours on the Schedule no skin could answer for. High is the same
+ * `--signal` the now-line uses; medium is the "waiting on something" warn.
+ */
+const PRIORITY_TOKEN: Record<"high" | "medium" | "low" | "none", string> = {
+  high: "var(--signal)",
+  medium: "var(--warn)",
+  low: "var(--accent)",
+  none: "var(--muted)",
+};
 
 /** Minutes after local midnight for an ISO instant (for series templates). */
 function localMinutes(iso: string): number {
   const d = new Date(iso);
   return d.getHours() * 60 + d.getMinutes();
-}
-
-/**
- * Quiet overflow for rare transforms (→ Inbox, → Event, …). Keeps the popover
- * footer to one primary + one secondary so Trash never spills the 380px card.
- */
-function PopoverMoreMenu({
-  items,
-}: {
-  items: { label: string; title?: string; onClick: () => void }[];
-}) {
-  const [open, setOpen] = useState(false);
-  if (items.length === 0) return null;
-  return (
-    <div className="relative shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label="More actions"
-        aria-expanded={open}
-        title="More actions"
-        className="fast flex h-9 w-9 items-center justify-center rounded-md border border-line text-muted hover:border-line-strong hover:bg-surface-2 hover:text-ink"
-      >
-        <Icon name="more" size={14} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full right-0 z-[61] mb-1 w-44 overflow-hidden rounded-md border border-line bg-surface elev-3">
-            {items.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                title={item.title}
-                onClick={() => {
-                  item.onClick();
-                  setOpen(false);
-                }}
-                className="fast block w-full px-3 py-2 text-left text-caption text-text hover:bg-bg"
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
 }
 
 /**
@@ -136,6 +120,11 @@ function useAnchoredPosition({
     width: number;
     left: number;
     side: "right" | "left";
+    /** Where the card was put for this anchor, and where the anchor was then —
+     *  the pair that lets a later placement FOLLOW the anchor without ever
+     *  re-deriving the card's position from its own (changing) height. */
+    top: number;
+    anchorTop: number;
   } | null>(null);
   const heldHeightRef = useRef(0);
 
@@ -173,7 +162,6 @@ function useAnchoredPosition({
         side = "left";
       }
       left = Math.max(8, left);
-      frozenRef.current = { el: anchorEl ?? null, rect: anchorRect, vw, width, left, side };
     }
     // Vertical DOES track the anchor live (the popover has to follow its block
     // when the time grid scrolls), but the height it budgets for itself is held
@@ -182,23 +170,69 @@ function useAnchoredPosition({
     // up the screen as it opens.
     if (!holdHeight || !heldHeightRef.current) heldHeightRef.current = h;
     const budget = heldHeightRef.current;
-    let top = align === "top" ? rect.top : rect.top + rect.height / 2 - budget / 2;
-    top = Math.max(8, Math.min(top, vh - budget - 8));
-    setState({
-      top,
-      left,
-      side,
+    // Centre on the anchor ONCE, when this anchor is first placed. After that the
+    // card follows the anchor's own movement (scrolling the grid) and is only
+    // ever nudged to stay on screen. Re-centring on every placement meant every
+    // height change re-derived the position — so a detail popover visibly jumped
+    // the moment its async details landed and the card grew. A card that has
+    // been put somewhere stays there; growth extends it downward.
+    const top = anchoredTop({
+      align,
       anchorTop: rect.top,
       anchorHeight: rect.height,
-      maxHeight: vh - top - 8,
-      viewportWidth: vw,
+      height: budget,
+      viewportHeight: vh,
+      previous: sameAnchor && frozen ? { top: frozen.top, anchorTop: frozen.anchorTop } : undefined,
     });
+    frozenRef.current = {
+      el: anchorEl ?? null,
+      rect: anchorRect,
+      vw,
+      width,
+      left,
+      side,
+      top,
+      anchorTop: rect.top,
+    };
+    setState((prev) =>
+      prev.top === top &&
+      prev.left === left &&
+      prev.side === side &&
+      prev.anchorTop === rect.top &&
+      prev.anchorHeight === rect.height &&
+      prev.maxHeight === vh - top - 8 &&
+      prev.viewportWidth === vw
+        ? prev
+        : {
+            top,
+            left,
+            side,
+            anchorTop: rect.top,
+            anchorHeight: rect.height,
+            maxHeight: vh - top - 8,
+            viewportWidth: vw,
+          },
+    );
   }, [anchorEl, anchorRect, popRef, width, gap, onDismiss, align, holdHeight]);
 
   useLayoutEffect(() => {
     if (!disabled) place();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled, place]);
+
+  // The card's own height changes under it — details arrive, a guest list fills,
+  // a confirm row opens. Re-place on that too, so a card that grew past the
+  // bottom edge lifts by exactly the overflow instead of hanging off-screen
+  // until the next scroll. With the "placed once, then followed" rule above,
+  // a height change that still fits moves the card by nothing at all.
+  useEffect(() => {
+    if (disabled) return;
+    const el = popRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => place());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [disabled, place, popRef]);
 
   useEffect(() => {
     if (disabled) return;
@@ -258,7 +292,10 @@ export function TaskPopover({
   const qc = useQueryClient();
   const { data: vertical, toggleTaskSprint } = useVertical();
   const popRef = useRef<HTMLDivElement>(null);
-  const TASK_POP_W = 380;
+  // Two columns wherever the card floats on its own. Inside the slot popover
+  // the card IS the second column already, so it stays single there.
+  const twoCol = !slideout;
+  const TASK_POP_W = twoCol ? POP_W_WIDE : POP_W_NARROW;
 
   const pos = useAnchoredPosition({
     anchorEl,
@@ -421,6 +458,57 @@ export function TaskPopover({
 
   const dismiss = onBack ?? onClose;
 
+  // The masthead's one line — the same read the chips below let you change.
+  const whenSummary = task.do_date
+    ? `${doDateLabel}${task.start_time ? ` · ${format(new Date(task.start_time), "h:mm a")}` : ""} · ${fmtDuration(task.duration_minutes ?? 30)}`
+    : task.status === "inbox"
+      ? "in the inbox — no date yet"
+      : "no date";
+  const repeatLabel = recurrence
+    ? describeRule(ruleOf(recurrence), task.do_date ?? todayISO())
+    : null;
+
+  // Delegation and the record's stamps read the same in both layouts — they
+  // move column, they never disappear (the slide-out lost them once).
+  const prework = (
+    <>
+      {task.prework && task.prework_at ? (
+        <div className="rounded-lg bg-bg px-3 py-2.5">
+          <div className="max-h-[200px] overflow-y-auto text-caption leading-relaxed text-text [&_h1]:mb-1 [&_h1]:text-body [&_h1]:font-semibold [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-caption [&_h2]:font-semibold [&_h3]:mb-0.5 [&_h3]:mt-1.5 [&_h3]:text-label [&_h3]:font-semibold [&_li]:ml-3 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc">
+            <ReactMarkdown>{task.prework ?? ""}</ReactMarkdown>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Btn onClick={() => void prepare()} disabled={preparing}>
+              {preparing ? "✦ thinking…" : "✦ redo"}
+            </Btn>
+            <Btn onClick={() => mutations.patchTask(task.id, { prework: "", prework_at: null })}>
+              clear
+            </Btn>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => void prepare()}
+          disabled={preparing}
+          className="fast w-full rounded-lg border border-dashed border-line px-3 py-2.5 text-left text-caption text-muted hover:border-accent/50 hover:text-accent disabled:opacity-50"
+        >
+          {preparing
+            ? "✦ preparing — approach, drafts, pitfalls…"
+            : `✦ delegate pre-work to ${ASSISTANT_NAME}`}
+        </button>
+      )}
+      {prepError && <div className="text-label text-signal">{prepError}</div>}
+    </>
+  );
+  const stamps = (
+    <>
+      created {format(new Date(task.created_at), "MMM d yyyy")}
+      {task.completed_at && (
+        <span className="ml-2.5">completed {format(new Date(task.completed_at), "MMM d yyyy")}</span>
+      )}
+    </>
+  );
+
   const card = (
       <div
         ref={slideout ? undefined : popRef}
@@ -459,339 +547,392 @@ export function TaskPopover({
         />
         )}
 
-        {/* ── Title + close ── */}
-        <div className="flex shrink-0 items-start gap-2 px-4 pt-4 pb-2">
-          <div className="min-w-0 flex-1">
-            {onBack && backLabel && (
-              <button
-                type="button"
-                onClick={onBack}
-                className="fast mono mb-1.5 flex max-w-full items-center gap-1 truncate text-meta text-muted hover:text-ink"
-              >
-                <span aria-hidden>←</span>
-                <span className="truncate">{backLabel}</span>
-              </button>
-            )}
-            {(domain || initiative || project) && (
-              <div className="mono mb-1.5 flex items-center gap-1 text-meta">
-                {domain && <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span>}
-                {initiative && <><span className="text-muted">›</span><span className="text-muted">{initiative.name}</span></>}
-                {project && <><span className="text-muted">›</span><span className="text-muted">{project.name}</span></>}
-              </div>
-            )}
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={(e) => e.key === "Enter" && commitTitle()}
-              className="w-full border-0 bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted"
-              placeholder="Task title…"
-            />
-          </div>
-          <button
-            onClick={onClose}
-            className="fast mt-0.5 shrink-0 rounded p-0.5 text-muted hover:bg-bg hover:text-ink"
-            aria-label="Close"
-          >
-            <Icon name="close" size={14} />
-          </button>
-        </div>
+        {/* Masthead — the thread up the vertical, the name, then ONE line of
+            when. The chips below edit it; this line is the read. */}
+        <PopMast
+          dot={domain?.color ?? undefined}
+          onClose={onClose}
+          eyebrow={
+            <>
+              {onBack && backLabel && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="fast mono mb-1 flex max-w-full items-center gap-1 truncate text-meta text-muted hover:text-ink"
+                >
+                  <span aria-hidden>←</span>
+                  <span className="truncate">{backLabel}</span>
+                </button>
+              )}
+              {(domain || initiative || project) && (
+                <div className="mono mb-1 flex items-center gap-1 truncate text-meta">
+                  {domain && <span style={{ color: domain.color }}>{domain.icon} {domain.name}</span>}
+                  {initiative && <><span className="text-muted">›</span><span className="truncate text-muted">{initiative.name}</span></>}
+                  {project && <><span className="text-muted">›</span><span className="truncate text-muted">{project.name}</span></>}
+                </div>
+              )}
+            </>
+          }
+          meta={
+            <>
+              <span className="mono">{whenSummary}</span>
+              {repeatLabel && (
+                <>
+                  <PopMetaDot />
+                  <span title="Repeats">↻ {repeatLabel}</span>
+                </>
+              )}
+              {task.deadline && (
+                <>
+                  <PopMetaDot />
+                  <span className="text-signal">⚑ due {format(new Date(task.deadline + "T12:00:00"), "MMM d")}</span>
+                </>
+              )}
+              {task.roll_count > 0 && (
+                <>
+                  <PopMetaDot />
+                  <span>rolled {task.roll_count}×</span>
+                </>
+              )}
+            </>
+          }
+        >
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => e.key === "Enter" && commitTitle()}
+            className="w-full border-0 bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted"
+            placeholder="Task title…"
+            aria-label="Task title"
+          />
+        </PopMast>
 
-        {/* ── Domain › Project  +  priority dots ── */}
-        <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-line px-3 py-2">
-          {/* Domain chip wrapping invisible select */}
-          <label
-            className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
-            style={{ color: domain?.color ?? "var(--muted)" }}
-          >
-            {domain ? <><span>{domain.icon}</span><span>{domain.name}</span></> : <span>+ domain</span>}
-            <select
-              value={domain?.id ?? ""}
-              onChange={(e) => setDomain(e.target.value)}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            >
-              <option value="">— none —</option>
-              {vertical.domains.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <span className="text-meta text-muted">›</span>
-
-          {/* Project chip */}
-          <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label text-muted hover:bg-bg hover:text-ink">
-            <span>{project?.name ?? "+ project"}</span>
-            <select
-              value={task.project_id ?? ""}
-              onChange={(e) => setProject(e.target.value)}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            >
-              <option value="">— none —</option>
-              {vertical.projects
-                .filter((p) => !isProjectComplete(p.status) || p.id === task.project_id)
-                .map((p) => {
-                  const d = domainById(vertical, p.domainId);
-                  return <option key={p.id} value={p.id}>{d ? `${d.name} · ` : ""}{p.name}</option>;
-                })}
-            </select>
-          </label>
-
-          {task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id) && (
+        {/* Action strip — the acts you opened it for: finish it, or claim it
+            for this week. Everything else is a field. */}
+        <PopStrip>
+          {task.status === "done" ? (
             <button
-              onClick={() => mutations.fileToProject(task)}
-              className="fast rounded-full border border-accent/30 px-2 py-0.5 text-label text-accent hover:bg-accent-soft"
+              type="button"
+              onClick={() => mutations.uncomplete(task)}
+              className="fast tap inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-line bg-surface px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
             >
-              File to project
+              Reopen
+            </button>
+          ) : (
+            <PopPrimary onClick={() => { mutations.complete(task); dismiss(); }} icon={<Icon name="check" size={11} />}>
+              Done
+            </PopPrimary>
+          )}
+          {task.start_time && (
+            <button
+              type="button"
+              onClick={() => mutations.unblock(task)}
+              title="Take it off the clock — it stays planned for the day"
+              className="fast tap inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-line bg-surface px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
+            >
+              Unblock
             </button>
           )}
-
-          <div className="flex-1" />
-          <RollBadge count={task.roll_count} />
-
-          {/* Priority dots */}
-          <div className="flex items-center gap-1 pl-1">
-            {(["high", "medium", "low", "none"] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => mutations.patchTask(task.id, { priority: p })}
-                title={p}
-                className={`fast h-[7px] w-[7px] rounded-full ${
-                  task.priority === p
-                    ? p === "high" ? "bg-signal scale-110"
-                      : p === "medium" ? "bg-amber-400 scale-110"
-                      : p === "low" ? "bg-accent scale-110"
-                      : "bg-muted scale-110"
-                    : "bg-line hover:bg-line-strong"
-                }`}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* ── Schedule chips ── */}
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-line px-3 py-2.5">
-          {/* Date chip */}
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-            <Icon name="calendar" size={10} className="shrink-0 text-muted/70" />
-            <span className={task.do_date ? "text-ink" : "text-muted"}>{doDateLabel ?? "no date"}</span>
-            <input
-              type="date"
-              value={task.do_date ?? ""}
-              onChange={(e) =>
-                e.target.value
-                  ? mutations.planFor(task, e.target.value)
-                  : task.project_id || task.initiative_id || task.domain_id
-                    ? mutations.backToWeek(task)
-                    : mutations.backToInbox(task)
-              }
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            />
-          </label>
-
-          {/* Time chip */}
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-            <Icon name="clock" size={10} className="shrink-0 text-muted/70" />
-            <span className={task.start_time ? "text-ink" : "text-muted"}>
-              {task.start_time ? format(new Date(task.start_time), "h:mm a") : "no time"}
-            </span>
-            <input
-              type="time"
-              step={900}
-              value={startHHMM}
-              onChange={(e) => setStart(e.target.value)}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            />
-          </label>
-
-          {/* Duration chip */}
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-            <Icon name="duration" size={10} className="shrink-0 text-muted/70" />
-            <span className="text-ink">{fmtDuration(task.duration_minutes ?? 30)}</span>
-            <Icon name="chevron-down" size={7} className="text-muted/50" />
-            <select
-              value={task.duration_minutes ?? DEFAULT_DURATION_MINUTES}
-              onChange={(e) => mutations.patchTask(task.id, { duration_minutes: Number(e.target.value) })}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            >
-              {DURATION_PRESETS.map((m) => (
-                <option key={m} value={m}>{fmtDuration(m)}</option>
-              ))}
-            </select>
-          </label>
-
-          {/* Deadline chip */}
-          <label className={`relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-label hover:bg-signal-soft ${task.deadline ? "text-signal" : "text-muted hover:text-signal"}`}>
-            <span>⚑</span>
-            <span>{task.deadline ? task.deadline.slice(5).replace("-", "/") : "deadline"}</span>
-            <input
-              type="date"
-              value={task.deadline ?? ""}
-              onChange={(e) => mutations.patchTask(task.id, { deadline: e.target.value || null })}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            />
-          </label>
-
-          {/* Repeat */}
-          <RepeatControl
-            anchorISO={task.do_date ?? todayISO()}
-            value={recurrence ? ruleOf(recurrence) : null}
-            onChange={applyRepeat}
-            disabled={!task.do_date}
-          />
-
-          <div className="flex-1" />
-
-          {/* This week star */}
           <button
+            type="button"
             onClick={() => toggleTaskSprint(task.id)}
+            aria-pressed={inWeek}
             title={inWeek ? "In this week — click to release" : "Commit to this week"}
-            className={`fast text-head leading-none ${inWeek ? "text-signal" : "text-muted hover:text-ink"}`}
+            className={`fast tap ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-label font-medium ${
+              inWeek
+                ? "border-signal/35 bg-signal-soft text-signal"
+                : "border-line text-muted hover:border-line-strong hover:text-ink"
+            }`}
           >
-            {inWeek ? "★" : "☆"}
+            <span aria-hidden>{inWeek ? "★" : "☆"}</span>
+            This week
           </button>
-        </div>
+        </PopStrip>
 
-        {/* ── Scrollable body ── */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* Notes — borderless */}
-          <div className="border-t border-line px-4 py-3">
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              onBlur={commitNotes}
-              rows={3}
-              className="w-full resize-none border-0 bg-transparent text-body leading-relaxed text-text outline-none placeholder:text-muted/50"
-              placeholder="Notes…"
-            />
-          </div>
+        {/* Left = the task's facts · right = its words and Nuvo's pre-work. */}
+        <PopBody>
+          <PopCol side={twoCol ? "left" : "only"}>
+            <PopStack>
+              <PopField label="When">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* Date chip */}
+                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                    <Icon name="calendar" size={10} className="shrink-0 text-muted/70" />
+                    <span className={task.do_date ? "text-ink" : "text-muted"}>{doDateLabel ?? "no date"}</span>
+                    <input
+                      type="date"
+                      aria-label="Do date"
+                      value={task.do_date ?? ""}
+                      onChange={(e) =>
+                        e.target.value
+                          ? mutations.planFor(task, e.target.value)
+                          : task.project_id || task.initiative_id || task.domain_id
+                            ? mutations.backToWeek(task)
+                            : mutations.backToInbox(task)
+                      }
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    />
+                  </label>
 
-          {/* ✦ Nuvo agentic section */}
-          <div className="space-y-2 border-t border-line px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="mono text-micro font-semibold tracking-widest text-accent">✦ NUVO</span>
-              <div className="h-px flex-1 bg-line" />
-            </div>
+                  {/* Time chip */}
+                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                    <Icon name="clock" size={10} className="shrink-0 text-muted/70" />
+                    <span className={task.start_time ? "text-ink" : "text-muted"}>
+                      {task.start_time ? format(new Date(task.start_time), "h:mm a") : "no time"}
+                    </span>
+                    <input
+                      type="time"
+                      step={900}
+                      aria-label="Start time"
+                      value={startHHMM}
+                      onChange={(e) => setStart(e.target.value)}
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    />
+                  </label>
 
-            {/* Auto-domain suggestion */}
-            {suggestedDomain && (
-              <div className="flex items-center gap-2 rounded-lg border border-line bg-bg px-3 py-2">
-                <span className="flex-1 text-label text-muted">Assign to</span>
-                <button
-                  onClick={() => setDomain(suggestedDomain.id)}
-                  className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-label font-medium"
-                  style={{
-                    borderColor: suggestedDomain.color + "50",
-                    color: suggestedDomain.color,
-                    background: suggestedDomain.color + "15",
-                  }}
-                >
-                  {suggestedDomain.icon && <span>{suggestedDomain.icon}</span>}
-                  {suggestedDomain.name}
-                </button>
-                <span className="text-label text-muted">?</span>
-              </div>
-            )}
+                  {/* Duration chip */}
+                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                    <Icon name="duration" size={10} className="shrink-0 text-muted/70" />
+                    <span className="text-ink">{fmtDuration(task.duration_minutes ?? 30)}</span>
+                    <Icon name="chevron-down" size={7} className="text-muted/50" />
+                    <select
+                      aria-label="Duration"
+                      value={task.duration_minutes ?? DEFAULT_DURATION_MINUTES}
+                      onChange={(e) => mutations.patchTask(task.id, { duration_minutes: Number(e.target.value) })}
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    >
+                      {DURATION_PRESETS.map((m) => (
+                        <option key={m} value={m}>{fmtDuration(m)}</option>
+                      ))}
+                    </select>
+                  </label>
 
-            {/* Pre-work */}
-            {task.prework && task.prework_at ? (
-              <div className="rounded-lg bg-bg px-3 py-2.5">
-                <div className="max-h-[160px] overflow-y-auto text-caption leading-relaxed text-text [&_h1]:mb-1 [&_h1]:text-body [&_h1]:font-semibold [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-caption [&_h2]:font-semibold [&_h3]:mb-0.5 [&_h3]:mt-1.5 [&_h3]:text-label [&_h3]:font-semibold [&_li]:ml-3 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:my-1 [&_ul]:list-disc">
-                  <ReactMarkdown>{task.prework ?? ""}</ReactMarkdown>
+                  {/* Deadline chip */}
+                  <label className={`relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-label hover:bg-signal-soft ${task.deadline ? "text-signal" : "text-muted hover:text-signal"}`}>
+                    <span aria-hidden>⚑</span>
+                    <span>{task.deadline ? task.deadline.slice(5).replace("-", "/") : "deadline"}</span>
+                    <input
+                      type="date"
+                      aria-label="Deadline"
+                      value={task.deadline ?? ""}
+                      onChange={(e) => mutations.patchTask(task.id, { deadline: e.target.value || null })}
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    />
+                  </label>
+
+                  <RepeatControl
+                    anchorISO={task.do_date ?? todayISO()}
+                    value={recurrence ? ruleOf(recurrence) : null}
+                    onChange={applyRepeat}
+                    disabled={!task.do_date}
+                  />
                 </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Btn onClick={() => void prepare()} disabled={preparing}>
-                    {preparing ? "✦ thinking…" : "✦ redo"}
-                  </Btn>
-                  <Btn onClick={() => mutations.patchTask(task.id, { prework: "", prework_at: null })}>
-                    clear
-                  </Btn>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => void prepare()}
-                disabled={preparing}
-                className="fast w-full rounded-lg border border-dashed border-line px-3 py-2.5 text-left text-caption text-muted hover:border-accent/50 hover:text-accent disabled:opacity-50"
-              >
-                {preparing
-                  ? "✦ preparing — approach, drafts, pitfalls…"
-                  : `✦ delegate pre-work to ${ASSISTANT_NAME}`}
-              </button>
-            )}
-            {prepError && <div className="text-label text-signal">{prepError}</div>}
-          </div>
+              </PopField>
 
-          {/* Labels */}
-          {labels.length > 0 && (
-            <div className="flex flex-wrap gap-1 border-t border-line px-4 py-3">
-              {labels.map((l) => {
-                const on = labelIds.has(l.id);
-                return (
-                  <button
-                    key={l.id}
-                    onClick={() => {
-                      const next = new Set(labelIds);
-                      on ? next.delete(l.id) : next.add(l.id);
-                      void mutations.setLabels(task.id, [...next]);
-                    }}
-                    className="fast rounded-full border px-2 py-0.5 text-label"
-                    style={{
-                      borderColor: on ? l.color : "var(--line)",
-                      color: on ? l.color : "var(--muted)",
-                      background: on ? l.color + "15" : "transparent",
-                    }}
+              <PopField label="Filed under">
+                <div className="flex flex-wrap items-center gap-1">
+                  {/* Domain chip wrapping invisible select */}
+                  <label
+                    className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
+                    style={{ color: domain?.color ?? "var(--muted)" }}
                   >
-                    {l.name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                    {domain ? <><span>{domain.icon}</span><span>{domain.name}</span></> : <span>+ domain</span>}
+                    <select
+                      aria-label="Domain"
+                      value={domain?.id ?? ""}
+                      onChange={(e) => setDomain(e.target.value)}
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    >
+                      <option value="">— none —</option>
+                      {vertical.domains.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </label>
 
-          {/* Timestamps */}
-          <div className="mono border-t border-line px-4 py-2.5 text-meta text-muted">
-            created {format(new Date(task.created_at), "MMM d yyyy")}
-            {task.completed_at && (
-              <span className="ml-3">completed {format(new Date(task.completed_at), "MMM d yyyy")}</span>
-            )}
-            {task.roll_count > 0 && <span className="ml-3">rolled {task.roll_count}×</span>}
-          </div>
-        </div>
+                  <span className="text-meta text-muted">›</span>
 
-        {/* ── Footer ──
-            Hierarchy: Done is the only primary. Unblock stays as a peer secondary
-            when the task is blocked. Rare transforms (→ Inbox, → Event) live in
-            ⋯ so they don't compete — and so Trash stays inside the card. */}
-        <div className="flex min-w-0 shrink-0 items-center gap-1.5 border-t border-line px-3 py-2.5">
-          {task.status === "done" ? (
-            <Btn onClick={() => mutations.uncomplete(task)}>Reopen</Btn>
-          ) : (
-            <Btn kind="primary" onClick={() => { mutations.complete(task); dismiss(); }}>
-              Done
-            </Btn>
+                  {/* Project chip */}
+                  <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label text-muted hover:bg-bg hover:text-ink">
+                    <span>{project?.name ?? "+ project"}</span>
+                    <select
+                      aria-label="Project"
+                      value={task.project_id ?? ""}
+                      onChange={(e) => setProject(e.target.value)}
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    >
+                      <option value="">— none —</option>
+                      {vertical.projects
+                        .filter((p) => !isProjectComplete(p.status) || p.id === task.project_id)
+                        .map((p) => {
+                          const d = domainById(vertical, p.domainId);
+                          return <option key={p.id} value={p.id}>{d ? `${d.name} · ` : ""}{p.name}</option>;
+                        })}
+                    </select>
+                  </label>
+
+                  {task.status === "inbox" && (task.project_id || task.initiative_id || task.domain_id) && (
+                    <button
+                      onClick={() => mutations.fileToProject(task)}
+                      className="fast rounded-full border border-accent/30 px-2 py-0.5 text-label text-accent hover:bg-accent-soft"
+                    >
+                      File to project
+                    </button>
+                  )}
+                </div>
+                {/* Auto-domain suggestion — Nuvo's guess sits with the filing it
+                    would change, not in a panel three fields away. */}
+                {suggestedDomain && (
+                  <div className="mt-1 flex items-center gap-2 text-label text-muted">
+                    <span>✦ looks like</span>
+                    <button
+                      onClick={() => setDomain(suggestedDomain.id)}
+                      className="fast flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-label font-medium"
+                      style={{
+                        borderColor: suggestedDomain.color + "50",
+                        color: suggestedDomain.color,
+                        background: suggestedDomain.color + "15",
+                      }}
+                    >
+                      {suggestedDomain.icon && <span>{suggestedDomain.icon}</span>}
+                      {suggestedDomain.name}
+                    </button>
+                  </div>
+                )}
+              </PopField>
+
+              <PopField label="Priority">
+                <div className="flex items-center gap-1.5">
+                  {(["high", "medium", "low", "none"] as const).map((p) => {
+                    const on = task.priority === p;
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => mutations.patchTask(task.id, { priority: p })}
+                        aria-pressed={on}
+                        className={`fast inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-label capitalize ${
+                          on ? "border-transparent font-medium text-ink" : "border-line text-muted hover:border-line-strong hover:text-ink"
+                        }`}
+                        style={
+                          on
+                            ? {
+                                borderColor: `color-mix(in srgb, ${PRIORITY_TOKEN[p]} 45%, transparent)`,
+                                background: `color-mix(in srgb, ${PRIORITY_TOKEN[p]} 12%, transparent)`,
+                              }
+                            : undefined
+                        }
+                      >
+                        {/* The token is the mark, never the label — `--warn` on
+                            light paper is a legible dot and illegible 11px text. */}
+                        <span
+                          className="h-[6px] w-[6px] rounded-full"
+                          style={{ backgroundColor: on ? PRIORITY_TOKEN[p] : "var(--line-strong)" }}
+                          aria-hidden
+                        />
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+              </PopField>
+
+              {labels.length > 0 && (
+                <PopField label="Labels">
+                  <div className="flex flex-wrap gap-1">
+                    {labels.map((l) => {
+                      const on = labelIds.has(l.id);
+                      return (
+                        <button
+                          key={l.id}
+                          onClick={() => {
+                            const next = new Set(labelIds);
+                            on ? next.delete(l.id) : next.add(l.id);
+                            void mutations.setLabels(task.id, [...next]);
+                          }}
+                          aria-pressed={on}
+                          className="fast rounded-full border px-2 py-0.5 text-label"
+                          style={{
+                            borderColor: on ? l.color : "var(--line)",
+                            color: on ? l.color : "var(--muted)",
+                            background: on ? l.color + "15" : "transparent",
+                          }}
+                        >
+                          {l.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </PopField>
+              )}
+
+              {/* One column (inside the slot's slide-out) — the words and the
+                  pre-work still have to be reachable, just stacked. */}
+              {!twoCol && (
+                <>
+                  <PopField label="Notes">
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      onBlur={commitNotes}
+                      rows={3}
+                      aria-label="Notes"
+                      className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-caption leading-relaxed text-text outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
+                      placeholder="Notes…"
+                    />
+                  </PopField>
+                  <PopField label={`✦ ${ASSISTANT_NAME}`}>{prework}</PopField>
+                  <div className="mono text-micro text-muted/70">{stamps}</div>
+                </>
+              )}
+            </PopStack>
+          </PopCol>
+
+          {twoCol && (
+            <PopCol side="right">
+              <PopSection label="Notes">
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  onBlur={commitNotes}
+                  rows={notes ? Math.min(8, notes.split("\n").length + 1) : 3}
+                  aria-label="Notes"
+                  className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-caption leading-relaxed text-text outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
+                  placeholder="Notes…"
+                />
+              </PopSection>
+
+              <PopSection label={`✦ ${ASSISTANT_NAME}`} divider className="flex-1">
+                {prework}
+              </PopSection>
+
+              <div className="mono mt-auto px-4 pb-3 pt-1 text-micro text-muted/70">{stamps}</div>
+            </PopCol>
           )}
-          {task.start_time && <Btn onClick={() => mutations.unblock(task)}>Unblock</Btn>}
+        </PopBody>
+
+        {/* Footer — the rare transforms read as text; Trash is quiet until it
+            asks which occurrences you meant. */}
+        <PopFooter>
+          {task.status !== "inbox" && task.status !== "done" && (
+            <PopFootAct
+              title="Move back to inbox"
+              onClick={() => { mutations.backToInbox(task, { undo: "toast" }); dismiss(); }}
+            >
+              → Inbox
+            </PopFootAct>
+          )}
+          {onConvertToEvent && task.start_time && (
+            <PopFootAct
+              title="Convert to a calendar event and remove the task"
+              onClick={() => { onConvertToEvent(); dismiss(); }}
+            >
+              → Event
+            </PopFootAct>
+          )}
           <div className="min-w-0 flex-1" />
-          <PopoverMoreMenu
-            items={[
-              ...(task.status !== "inbox" && task.status !== "done"
-                ? [{
-                    label: "→ Inbox",
-                    title: "Move back to inbox",
-                    onClick: () => { mutations.backToInbox(task, { undo: "toast" }); dismiss(); },
-                  }]
-                : []),
-              ...(onConvertToEvent && task.start_time
-                ? [{
-                    label: "→ Event",
-                    title: "Convert to a calendar event and remove the task",
-                    onClick: () => { onConvertToEvent(); dismiss(); },
-                  }]
-                : []),
-            ]}
-          />
           <RecurrenceDeleteButton
+            quiet
             recurring={Boolean(task.recurrence_id && recurrence)}
             label="Trash"
             onSimple={() => { mutations.trash(task); dismiss(); }}
@@ -806,7 +947,7 @@ export function TaskPopover({
             }}
             onSeries={() => { if (recurrence) recurrenceMutations.deleteSeries(recurrence); dismiss(); }}
           />
-        </div>
+        </PopFooter>
       </div>
   );
 
@@ -821,26 +962,40 @@ export function TaskPopover({
 }
 
 // ── Attendee status helpers ───────────────────────────────────────────────
+/** The verdict tokens, not raw Tailwind green/amber — an RSVP reads the same
+ *  in e-ink and terminal as it does on paper. */
 function statusIcon(s: AttendeeStatus) {
-  if (s === "accepted") return { icon: "✓", cls: "text-green-600 dark:text-green-400" };
-  if (s === "declined") return { icon: "✗", cls: "text-signal" };
-  if (s === "tentative") return { icon: "?", cls: "text-yellow-600 dark:text-yellow-400" };
-  return { icon: "·", cls: "text-muted" };
+  if (s === "accepted") return { icon: "✓", token: "var(--ok)" };
+  if (s === "declined") return { icon: "✗", token: "var(--signal)" };
+  if (s === "tentative") return { icon: "?", token: "var(--warn)" };
+  return { icon: "·", token: "var(--line-strong)" };
 }
 
+/**
+ * A guest reads name-first with its response as a leading dot — a column of
+ * raw email addresses was the least scannable thing in the card, and the
+ * ✓/✗/? glyphs repeated what the summary already counts.
+ */
 function AttendeeRow({ a }: { a: GoogleAttendee }) {
-  const { icon, cls } = statusIcon(a.responseStatus);
+  const { token } = statusIcon(a.responseStatus);
+  const name = a.displayName ?? a.email.split("@")[0];
   return (
-    <div className="flex items-center gap-2 py-0.5">
-      <span className={`mono w-3 shrink-0 text-center text-label font-bold ${cls}`}>{icon}</span>
-      <span className="min-w-0 truncate text-caption text-text">
-        {a.displayName ?? a.email}
-        {a.organizer && <span className="ml-1 text-meta text-muted">(organizer)</span>}
-        {a.optional && <span className="ml-1 text-meta text-muted">(optional)</span>}
-      </span>
+    <div className="flex items-center gap-2 py-[1px]" title={a.email}>
+      <span
+        className="h-[7px] w-[7px] shrink-0 rounded-full"
+        style={{ backgroundColor: token }}
+        aria-hidden
+      />
+      <span className="min-w-0 flex-1 truncate text-caption text-text">{name}</span>
+      {a.organizer && <span className="shrink-0 text-micro text-muted/80">organizer</span>}
+      {a.optional && <span className="shrink-0 text-micro text-muted/80">optional</span>}
     </div>
   );
 }
+
+/** Guests past this fold behind a "+N more" — a 20-person invite shouldn't
+ *  own the column before you've read the notes. */
+const GUESTS_FOLD = 6;
 
 // ── Safe HTML description renderer ───────────────────────────────────────
 function linkifyText(text: string): React.ReactNode {
@@ -1033,7 +1188,6 @@ function CalendarPicker({
 }
 
 // ── EventPopover — anchored to the clicked event element ─────────────────
-const POP_W = 340;
 const POP_GAP = 10;
 
 export function EventPopover({
@@ -1082,6 +1236,7 @@ export function EventPopover({
   const [addingGuests, setAddingGuests] = useState(false);
   const [newGuests, setNewGuests] = useState<string[]>([]);
   const [inviting, setInviting] = useState(false);
+  const [allGuests, setAllGuests] = useState(false);
   const popRef = useRef<HTMLDivElement>(null);
 
   // Writable move targets grouped by account (the event's current calendar is
@@ -1102,6 +1257,36 @@ export function EventPopover({
   const recurring =
     Boolean((raw as { recurringEventId?: string } | null)?.recurringEventId) ||
     event.provider_event_id.includes("::");
+  const inlineRule = useMemo(
+    () => fromGoogleRRULE((raw as { recurrence?: string[] } | null)?.recurrence),
+    [raw],
+  );
+  const { data: seriesRule } = useEventSeriesRule(event.id, recurring);
+  const repeatRule = inlineRule ?? seriesRule ?? null;
+
+  // Two columns are earned by having people or prose to put in the right one —
+  // but the card must decide that ONCE, before it is on screen, and then hold
+  // it. Guests and the description arrive a round-trip after the popover opens
+  // (`raw` is the table's biggest column and the grid query never selects it),
+  // so deriving the width from them meant a read-only feed's event opened as a
+  // 380px card and became a 560px one mid-look.
+  //
+  // So: an editable event is always wide (the guest list and the notes editor
+  // both live there, and that is known synchronously). Anything else reserves
+  // the wide card unless the details are ALREADY in hand at open — which, with
+  // the hover prefetch in CalendarPane, is the common case. A bare feed event
+  // opened cold therefore shows one empty column instead of moving; opened
+  // warm it is correctly narrow.
+  const wideRef = useRef<{ id: string; wide: boolean } | null>(null);
+  if (wideRef.current?.id !== event.id) {
+    const known = detailsLoading ? null : raw;
+    wideRef.current = {
+      id: event.id,
+      wide: editable || !known || (known.attendees?.length ?? 0) > 0 || Boolean(known.description),
+    };
+  }
+  const wide = wideRef.current.wide;
+  const popW = wide ? POP_W_WIDE : POP_W_NARROW;
 
   useEffect(() => {
     setTitle(event.title);
@@ -1113,6 +1298,7 @@ export function EventPopover({
     setConfirmDelete(false);
     setHideMode(false);
     setMeetError(null);
+    setAllGuests(false);
   }, [event.id, event.title, event.start_at, event.end_at, event.all_day, event.location]);
 
   // Seed the notes field once the raw payload (with the description) arrives.
@@ -1164,7 +1350,7 @@ export function EventPopover({
     anchorEl,
     anchorRect: anchor,
     popRef,
-    width: POP_W,
+    width: popW,
     gap: POP_GAP,
     onDismiss: onClose,
   });
@@ -1191,10 +1377,10 @@ export function EventPopover({
   const isGoogleEvent = ownerAccount?.provider === "google";
   const canAddMeet = editable && isGoogleEvent && !joinLink && !detailsLoading;
 
-  const rsvpOptions: { status: AttendeeStatus; label: string }[] = [
-    { status: "accepted", label: "Yes" },
-    { status: "tentative", label: "Maybe" },
-    { status: "declined", label: "No" },
+  const rsvpOptions = [
+    { value: "accepted" as AttendeeStatus, label: "Yes", glyph: "✓", tone: "ok" as const },
+    { value: "tentative" as AttendeeStatus, label: "Maybe", glyph: "?", tone: "warn" as const },
+    { value: "declined" as AttendeeStatus, label: "No", glyph: "✕", tone: "signal" as const },
   ];
 
   const hasAttendees = (raw?.attendees?.length ?? 0) > 0;
@@ -1204,6 +1390,41 @@ export function EventPopover({
   const otherGuests = (raw?.attendees ?? []).filter((a) => !a.self);
   const iOrganize = raw?.organizer?.self === true;
   const cancelNotifies = iOrganize && otherGuests.length > 0;
+
+  // The masthead's one line. Reads off the live edit state, so it stays true
+  // while you're changing the time rather than lagging a round-trip behind.
+  const whenSummary = allDay
+    ? `${format(new Date(startAt), "EEE MMM d")}${
+        toDateISO(new Date(startAt)) !== toDateISO(allDayInclusiveEnd(endAt))
+          ? ` – ${format(allDayInclusiveEnd(endAt), "EEE MMM d")}`
+          : ""
+      } · All day`
+    : `${format(new Date(startAt), "EEE MMM d · h:mm a")} – ${format(new Date(endAt), "h:mm a")}`;
+  // "Repeats weekly" is a fact about the event, so it reads in the masthead
+  // whether or not you can edit it. Recurring with no rule in hand yet (the
+  // series master is still being fetched) still says so, plainly.
+  const repeatLabel = repeatRule
+    ? describeRule(repeatRule, toDateISO(new Date(startAt)))
+    : recurring
+      ? "Repeats"
+      : null;
+
+  const guests = raw?.attendees ?? [];
+  const shownGuests = allGuests ? guests : guests.slice(0, GUESTS_FOLD);
+  const hiddenGuestCount = guests.length - shownGuests.length;
+  // The counts live on the section label — the old free-standing tally row
+  // repeated what the dots beside each name already say.
+  const guestSummary = (() => {
+    if (!guests.length) return null;
+    const n = (s: AttendeeStatus) => guests.filter((a) => a.responseStatus === s).length;
+    const parts = [
+      n("accepted") > 0 ? `${n("accepted")} yes` : null,
+      n("tentative") > 0 ? `${n("tentative")} maybe` : null,
+      n("declined") > 0 ? `${n("declined")} no` : null,
+      n("needsAction") > 0 ? `${n("needsAction")} awaiting` : null,
+    ].filter(Boolean);
+    return `${guests.length} · ${parts.join(" · ")}`;
+  })();
 
   const toTimeInput = (iso: string) => {
     const d = new Date(iso);
@@ -1266,6 +1487,17 @@ export function EventPopover({
     commitSchedule({ all_day: false, ...defaultTimedRange(parseDateISO(toDateInput(startAt))) });
   };
 
+  const applyRepeat = (rule: RecurrenceRule | null) => {
+    if (rulesEqual(repeatRule, rule)) return;
+    if (rule && !recurring) {
+      eventMutations.updateEvent({ id: event.id, patch: { recurrence: toGoogleRRULE(rule) } });
+    } else if (rule && recurring) {
+      eventMutations.updateEvent({ id: event.id, patch: { recurrence: toGoogleRRULE(rule) }, scope: "ALL" });
+    } else if (!rule && recurring) {
+      eventMutations.updateEvent({ id: event.id, patch: { recurrence: null }, scope: "ALL" });
+    }
+  };
+
   return createPortal(
     <>
       {/* Popover card */}
@@ -1276,8 +1508,8 @@ export function EventPopover({
         style={{
           top: pos.top,
           left: pos.left,
-          width: POP_W,
-          maxHeight: "min(540px, calc(100vh - 24px))",
+          width: popW,
+          maxHeight: "min(560px, calc(100vh - 24px))",
           boxShadow: "var(--shadow-3)",
         }}
       >
@@ -1307,438 +1539,422 @@ export function EventPopover({
           }
         />
 
-        {/* Header row */}
-        <div className="flex shrink-0 items-start justify-between px-4 pt-4 pb-2">
-          <div className="min-w-0 flex-1 pr-2">
-            {editable ? (
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onBlur={() =>
-                  title.trim() &&
-                  title !== event.title &&
-                  eventMutations.updateEvent({ id: event.id, patch: { title: title.trim() } })
-                }
-                className="w-full border-0 border-b border-transparent bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted transition-colors hover:border-line focus:border-ink"
-              />
-            ) : (
-              <div className="text-head font-semibold leading-snug">{event.title}</div>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="fast mt-0.5 shrink-0 rounded p-0.5 text-muted hover:bg-bg hover:text-ink"
-            aria-label="Close"
-          >
-            <Icon name="close" size={14} />
-          </button>
-        </div>
-
-        {/* Scrollable body */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-          <div className="space-y-3">
-
-            {/* When — the primary edit. Date + time carry ink weight (this is
-                what the popover is most often opened to change). */}
-            <div className="flex items-center gap-2.5">
-              <span className="flex w-3.5 shrink-0 justify-center text-muted/70">
-                <Icon name="calendar" size={13} />
-              </span>
-              {editable ? (
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1 text-body text-ink">
-                  <input
-                    type="date"
-                    value={toDateInput(startAt)}
-                    onChange={(e) => commitDate(e.target.value)}
-                    className="fast rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
-                  />
-                  {allDay ? (
-                    <>
-                      <span className="text-muted">–</span>
-                      <input
-                        type="date"
-                        value={toDateInput(allDayInclusiveEnd(endAt).toISOString())}
-                        onChange={(e) => commitAllDayEnd(e.target.value)}
-                        className="fast rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
-                      />
-                      <span className="text-muted">· All day</span>
-                    </>
-                  ) : (
-                    <>
-                      <input
-                        type="time"
-                        value={toTimeInput(startAt)}
-                        onChange={(e) => setStartAt(applyTime(startAt, e.target.value))}
-                        onBlur={() =>
-                          (startAt !== event.start_at || allDay !== event.all_day) &&
-                          eventMutations.updateEvent({ id: event.id, patch: { start_at: startAt, all_day: false } })
-                        }
-                        className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
-                      />
-                      <span className="text-muted">–</span>
-                      <input
-                        type="time"
-                        value={toTimeInput(endAt)}
-                        onChange={(e) => setEndAt(applyTime(endAt, e.target.value))}
-                        onBlur={() =>
-                          (endAt !== event.end_at || allDay !== event.all_day) &&
-                          eventMutations.updateEvent({ id: event.id, patch: { end_at: endAt, all_day: false } })
-                        }
-                        className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
-                      />
-                    </>
-                  )}
-                </div>
-              ) : event.all_day ? (
-                <span className="text-body text-ink">
-                  {format(new Date(event.start_at), "EEE MMM d")}
-                  {toDateISO(new Date(event.start_at)) !== toDateISO(allDayInclusiveEnd(event.end_at)) && (
-                    <> – {format(allDayInclusiveEnd(event.end_at), "EEE MMM d")}</>
-                  )}
-                  {" · All day"}
-                </span>
-              ) : (
-                <span className="text-body text-ink">
-                  {format(new Date(event.start_at), "EEE MMM d · h:mm a")}
-                  {" – "}
-                  {format(new Date(event.end_at), "h:mm a")}
-                </span>
+        {/* Masthead — title, then ONE muted line answering when + whether it
+            repeats. The repeat reads here even on a read-only feed: the card
+            has always known (Delete branches on it) and never said so. */}
+        <PopMast
+          dot={calendarColor ?? undefined}
+          onClose={onClose}
+          meta={
+            <>
+              <span className="mono">{whenSummary}</span>
+              {repeatLabel && (
+                <>
+                  <PopMetaDot />
+                  <span title="Repeats">↻ {repeatLabel}</span>
+                </>
               )}
-            </div>
+              {hiddenNow && (
+                <>
+                  <PopMetaDot />
+                  <span>Hidden from the board</span>
+                </>
+              )}
+            </>
+          }
+        >
+          {editable ? (
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={() =>
+                title.trim() &&
+                title !== event.title &&
+                eventMutations.updateEvent({ id: event.id, patch: { title: title.trim() } })
+              }
+              aria-label="Event title"
+              className="w-full border-0 border-b border-transparent bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted transition-colors hover:border-line focus:border-ink"
+            />
+          ) : (
+            <div className="text-head font-semibold leading-snug">{event.title}</div>
+          )}
+        </PopMast>
 
-            {editable && (
-              <div className="flex items-center gap-2.5 pl-[22px]">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={allDay}
-                  onClick={() => toggleAllDay(!allDay)}
-                  className={`fast tap flex flex-1 items-center gap-2 rounded-[var(--radius)] border px-3 py-2 text-left transition-colors ${
-                    allDay ? "border-accent/40 bg-accent-soft" : "border-line bg-surface-2 hover:border-line-strong"
-                  }`}
-                >
-                  <span className={`text-body font-medium ${allDay ? "text-accent" : "text-muted"}`}>All day</span>
-                  <span className={`fast relative ml-auto h-5 w-9 shrink-0 rounded-full ${allDay ? "bg-accent" : "bg-line-strong"}`}>
-                    <span
-                      className={`fast absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[var(--shadow-1)] transition-[left] ${
-                        allDay ? "left-[18px]" : "left-0.5"
-                      }`}
-                    />
-                  </span>
-                </button>
-              </div>
-            )}
-
-            {/* Calendar / account — one field. The picker moves the event to any
-                writable calendar in any account (native within an account, a
-                confirmed copy across). Static label for read-only / single-target. */}
-            {(calendarName || moveTargetCount > 0) && (
-              <div className="flex items-start gap-2.5">
-                {editable && moveTargetCount > 1 ? (
-                  <CalendarPicker
-                    groups={moveGroups}
-                    currentAccountId={event.account_id}
-                    currentCalendarId={calendarId}
-                    currentLabel={calendarName}
-                    currentColor={calendarColor}
-                    accountEmail={accountEmail}
-                    lossyWarn={recurring || hasAttendees}
-                    onPick={(accountId, cid) =>
-                      eventMutations.moveEventToCalendar({
-                        id: event.id,
-                        targetAccountId: accountId,
-                        targetCalendarId: cid,
-                      })
-                    }
-                  />
-                ) : (
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: calendarColor ?? "var(--muted)" }}
-                      />
-                      <span className="truncate text-body text-ink">{calendarName ?? "Calendar"}</span>
-                    </div>
-                    {accountEmail && (
-                      <div className="truncate pl-[18px] text-meta text-muted/60">{accountEmail}</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Location */}
-            {editable ? (
-              <div className="flex items-center gap-2.5">
-                <span className="flex w-3.5 shrink-0 justify-center text-muted/70">
-                  <Icon name="pin" size={13} />
-                </span>
-                <input
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  onBlur={() => {
-                    const next = location.trim();
-                    if (next !== (event.location ?? "")) {
-                      eventMutations.updateEvent({ id: event.id, patch: { location: next || null } });
-                    }
-                  }}
-                  placeholder="Add location"
-                  className="fast -mx-1 min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-body text-ink outline-none transition-colors placeholder:text-body placeholder:text-muted/50 hover:bg-bg focus:bg-bg"
-                />
-              </div>
-            ) : event.location ? (
-              <div className="flex items-start gap-2.5 text-body text-ink">
-                <span className="mt-[3px] flex w-3.5 shrink-0 justify-center text-muted/70">
-                  <Icon name="pin" size={13} />
-                </span>
-                <span className="leading-snug">{event.location}</span>
-              </div>
-            ) : null}
-
-            {/* Join meeting */}
+        {/* Action strip — the two things you open a meeting for. It is drawn
+            while the details are still in flight too (as a placeholder), so a
+            meeting's Join button lands *in* the strip instead of pushing one
+            into existence under the masthead. */}
+        {detailsLoading ? (
+          <PopStrip>
+            <span className="pop-skeleton block h-[26px] w-[132px] rounded-[var(--radius-sm)]" aria-hidden />
+            <span className="sr-only">Loading event details…</span>
+          </PopStrip>
+        ) : (joinLink || canAddMeet || (editable && hasAttendees)) && (
+          <PopStrip>
             {joinLink && (
-              <a
-                href={joinLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="fast inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-1.5 text-caption font-medium text-accent hover:bg-accent hover:text-on-accent"
-              >
-                <Icon name="arrow-right" size={12} className="shrink-0" />
+              <PopPrimary href={joinLink} icon={<Icon name="video" size={12} className="shrink-0" />}>
                 Join {conferenceName(raw)}
-              </a>
+              </PopPrimary>
             )}
-
-            {/* Add a Meet link to a meeting that hasn't got one */}
             {canAddMeet && (
-              <div className="flex flex-col items-start gap-1">
-                <button
-                  onClick={async () => {
-                    setMeetError(null);
-                    setAddingMeet(true);
-                    try {
-                      const res = await eventMutations.addMeetToEvent({ id: event.id });
-                      // Google can accept the request and still be minting the
-                      // link. Say that rather than showing a button that looks
-                      // like it did nothing.
-                      if (!res?.meetUrl) setMeetError("Google is still creating the link — give it a moment.");
-                    } catch (e) {
-                      setMeetError(e instanceof Error ? e.message : "Couldn't add a Meet link");
-                    } finally {
-                      setAddingMeet(false);
-                    }
-                  }}
-                  disabled={addingMeet}
-                  className="fast inline-flex items-center gap-2 rounded-md border border-line px-3 py-1.5 text-caption font-medium text-muted hover:border-line-strong hover:text-ink disabled:opacity-50"
-                >
-                  <Icon name="video" size={12} className="shrink-0" />
-                  {addingMeet ? "Adding…" : "Add Google Meet"}
-                </button>
-                {otherGuests.length > 0 && !addingMeet && (
-                  <span className="text-meta text-muted">Guests get an update with the link.</span>
-                )}
-                {meetError && <span className="text-meta text-signal">{meetError}</span>}
-              </div>
+              <button
+                onClick={async () => {
+                  setMeetError(null);
+                  setAddingMeet(true);
+                  try {
+                    const res = await eventMutations.addMeetToEvent({ id: event.id });
+                    // Google can accept the request and still be minting the
+                    // link. Say that rather than showing a button that looks
+                    // like it did nothing.
+                    if (!res?.meetUrl) setMeetError("Google is still creating the link — give it a moment.");
+                  } catch (e) {
+                    setMeetError(e instanceof Error ? e.message : "Couldn't add a Meet link");
+                  } finally {
+                    setAddingMeet(false);
+                  }
+                }}
+                disabled={addingMeet}
+                className="fast tap inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-line bg-surface px-3 py-1.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink disabled:opacity-50"
+              >
+                <Icon name="video" size={12} className="shrink-0" />
+                {addingMeet ? "Adding…" : "Add Google Meet"}
+              </button>
             )}
-
-            {/* RSVP */}
             {editable && hasAttendees && (
-              <div className="space-y-2 border-t border-line pt-3">
-                <div className="section-label !p-0">Your response</div>
-                <div className="flex gap-1.5">
-                  {rsvpOptions.map(({ status, label }) => {
-                    const active = myResponse === status;
-                    const { icon, cls } = statusIcon(status);
-                    return (
-                      <button
-                        key={status}
-                        onClick={() => handleRsvp(status)}
-                        className={`fast flex flex-1 items-center justify-center gap-1 rounded-md border py-2.5 text-body font-medium ${
-                          active
-                            ? status === "accepted"
-                              ? "border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
-                              : status === "declined"
-                                ? "border-signal bg-signal-soft text-signal"
-                                : "border-yellow-500 bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400"
-                            : "border-line text-muted hover:border-line-strong hover:text-ink"
-                        }`}
-                      >
-                        <span className={`font-bold ${active ? "" : cls}`}>{icon}</span>
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <label className="flex cursor-pointer items-center gap-2 text-label text-muted">
-                  <input
-                    type="checkbox"
-                    checked={notify}
-                    onChange={(e) => setNotify(e.target.checked)}
-                    className="accent-[var(--accent)]"
-                  />
-                  Notify organizer
-                </label>
-                {rsvpError && (
-                  <p className="text-meta text-signal">{rsvpError}</p>
-                )}
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                <PopLabel>Going?</PopLabel>
+                <PopSegmented
+                  segments={rsvpOptions}
+                  value={myResponse === "needsAction" ? null : myResponse}
+                  onPick={handleRsvp}
+                  ariaLabel="Your response"
+                />
               </div>
             )}
+            {editable && hasAttendees && otherGuests.length > 0 && (
+              <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-micro text-muted">
+                <input
+                  type="checkbox"
+                  checked={notify}
+                  onChange={(e) => setNotify(e.target.checked)}
+                  className="accent-[var(--accent)]"
+                />
+                Notify the organizer
+              </label>
+            )}
+            {canAddMeet && otherGuests.length > 0 && !addingMeet && (
+              <span className="w-full text-micro text-muted">Guests get an update with the link.</span>
+            )}
+            {(meetError || rsvpError) && (
+              <span className="w-full text-meta text-signal">{meetError ?? rsvpError}</span>
+            )}
+          </PopStrip>
+        )}
 
-            {/* Organizer + Guests */}
-            {(raw?.organizer || hasAttendees || editable) && (
-              <div className="space-y-3 border-t border-line pt-3">
-                {raw?.organizer && (
-                  <div className="space-y-0.5">
-                    <div className="section-label">Organizer</div>
-                    <span className="text-body text-text">
-                      {raw.organizer.displayName ?? raw.organizer.email}
-                    </span>
-                  </div>
-                )}
-                {hasAttendees && (
-                  <div className="space-y-0.5">
-                    <div className="section-label mb-1">
-                      Guests ({raw!.attendees!.length})
-                    </div>
-                    {/* Filter out the organizer — they're already shown above */}
-                    {raw!.attendees!.filter((a) => !a.organizer).map((a) => (
-                      <AttendeeRow key={a.email} a={a} />
-                    ))}
-                    {(() => {
-                      const list = raw!.attendees!;
-                      const yes = list.filter((a) => a.responseStatus === "accepted").length;
-                      const no = list.filter((a) => a.responseStatus === "declined").length;
-                      const maybe = list.filter((a) => a.responseStatus === "tentative").length;
-                      const waiting = list.filter((a) => a.responseStatus === "needsAction").length;
-                      return (
-                        <div className="mono mt-1.5 flex gap-3 text-meta text-muted">
-                          {yes > 0 && <span className="text-green-600 dark:text-green-400">✓ {yes}</span>}
-                          {maybe > 0 && <span className="text-yellow-600">? {maybe}</span>}
-                          {no > 0 && <span className="text-signal">✗ {no}</span>}
-                          {waiting > 0 && <span>· {waiting} awaiting</span>}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                {/* Add guest (editable Google events only) */}
-                {editable && (
-                  <div>
-                    {!addingGuests ? (
-                      <button
-                        type="button"
-                        onClick={() => setAddingGuests(true)}
-                        className="fast flex items-center gap-1.5 text-meta text-accent hover:opacity-80"
-                      >
-                        <Icon name="plus" size={11} />
-                        Add guest
-                      </button>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        <GuestsInput
-                          value={newGuests}
-                          onChange={setNewGuests}
-                          placeholder="Name or email…"
+        {/* Left = the event's facts · right = its people and words. Each column
+            scrolls on its own, so a long guest list can never bury the notes. */}
+        <PopBody>
+          <PopCol side={wide ? "left" : "only"}>
+            <PopStack>
+              <PopField label="When">
+                {editable ? (
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1 text-body text-ink">
+                    <input
+                      type="date"
+                      value={toDateInput(startAt)}
+                      onChange={(e) => commitDate(e.target.value)}
+                      aria-label="Date"
+                      className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+                    />
+                    {allDay ? (
+                      <>
+                        <span className="text-muted">–</span>
+                        <input
+                          type="date"
+                          value={toDateInput(allDayInclusiveEnd(endAt).toISOString())}
+                          onChange={(e) => commitAllDayEnd(e.target.value)}
+                          aria-label="End date"
+                          className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
                         />
-                        {/* Both outcomes are spelled out rather than hiding the
-                            quiet one behind a checkbox: adding a guest to an
-                            existing meeting is a mail-out either way, and which
-                            one you meant should take one tap. */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={newGuests.length === 0 || inviting}
-                            onClick={async () => {
-                              if (!newGuests.length) return;
-                              setInviting(true);
-                              try {
-                                await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests, notifyGuests: true });
-                                setNewGuests([]);
-                                setAddingGuests(false);
-                              } finally {
-                                setInviting(false);
-                              }
-                            }}
-                            className="fast tap rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-caption font-medium text-on-accent hover:opacity-90 disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
-                          >
-                            {inviting
-                              ? "Sending…"
-                              : newGuests.length > 1
-                              ? `Email ${newGuests.length} invites`
-                              : "Email invite"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={newGuests.length === 0 || inviting}
-                            onClick={async () => {
-                              if (!newGuests.length) return;
-                              setInviting(true);
-                              try {
-                                await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests, notifyGuests: false });
-                                setNewGuests([]);
-                                setAddingGuests(false);
-                              } finally {
-                                setInviting(false);
-                              }
-                            }}
-                            title="Add them to the event without sending an email"
-                            className="fast tap rounded-[var(--radius-sm)] border border-line px-3 py-1 text-caption font-medium text-ink hover:bg-bg disabled:opacity-40"
-                          >
-                            Add quietly
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setAddingGuests(false); setNewGuests([]); }}
-                            className="fast tap text-caption text-muted hover:text-ink"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          type="time"
+                          value={toTimeInput(startAt)}
+                          onChange={(e) => setStartAt(applyTime(startAt, e.target.value))}
+                          onBlur={() =>
+                            (startAt !== event.start_at || allDay !== event.all_day) &&
+                            eventMutations.updateEvent({ id: event.id, patch: { start_at: startAt, all_day: false } })
+                          }
+                          aria-label="Start time"
+                          className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+                        />
+                        <span className="text-muted">–</span>
+                        <input
+                          type="time"
+                          value={toTimeInput(endAt)}
+                          onChange={(e) => setEndAt(applyTime(endAt, e.target.value))}
+                          onBlur={() =>
+                            (endAt !== event.end_at || allDay !== event.all_day) &&
+                            eventMutations.updateEvent({ id: event.id, patch: { end_at: endAt, all_day: false } })
+                          }
+                          aria-label="End time"
+                          className="fast mono rounded-md px-1 py-0.5 outline-none hover:bg-bg focus:bg-bg"
+                        />
+                      </>
+                    )}
+                    {/* All-day is a switch you touch twice a year — it rides the
+                        time row as a chip instead of owning a full-width block
+                        louder than the meeting's own join button. */}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={allDay}
+                      onClick={() => toggleAllDay(!allDay)}
+                      className={`fast ml-0.5 rounded-full border px-2 py-[3px] text-label ${
+                        allDay
+                          ? "border-accent/40 bg-accent-soft font-medium text-accent"
+                          : "border-line text-muted hover:border-line-strong hover:text-ink"
+                      }`}
+                    >
+                      All day
+                    </button>
+                  </div>
+                ) : (
+                  <span className="mono text-body text-ink">{whenSummary}</span>
+                )}
+                {editable && (
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <RepeatControl
+                      anchorISO={toDateISO(new Date(startAt))}
+                      value={repeatRule}
+                      onChange={applyRepeat}
+                    />
+                    {recurring && (
+                      <span className="text-micro text-muted/80">changes the whole series</span>
                     )}
                   </div>
                 )}
-              </div>
-            )}
+              </PopField>
 
-            {/* Notes / description */}
-            {editable ? (
-              <div className="space-y-1.5 border-t border-line pt-3">
-                <div className="section-label !p-0">Notes</div>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  onBlur={() => {
-                    const original = plainTextFromHtml(raw?.description ?? "");
-                    if (notes !== original) {
-                      eventMutations.updateEvent({ id: event.id, patch: { description: notes } });
-                    }
-                  }}
-                  placeholder="Add notes"
-                  rows={notes ? Math.min(6, notes.split("\n").length + 1) : 2}
-                  className="w-full resize-none rounded-md border border-line bg-transparent px-2 py-1.5 text-caption leading-relaxed text-text outline-none transition-colors placeholder:text-muted/50 focus:border-ink"
-                />
-              </div>
-            ) : raw?.description ? (
-              <div className="space-y-1.5 border-t border-line pt-3">
-                <div className="section-label !p-0">Description</div>
-                <DescriptionHtml html={raw.description} />
-              </div>
-            ) : null}
+              {/* Calendar / account — one field. The picker moves the event to any
+                  writable calendar in any account (native within an account, a
+                  confirmed copy across). Static label for read-only / single-target. */}
+              {(calendarName || moveTargetCount > 0) && (
+                <PopField label="Calendar">
+                  {editable && moveTargetCount > 1 ? (
+                    <CalendarPicker
+                      groups={moveGroups}
+                      currentAccountId={event.account_id}
+                      currentCalendarId={calendarId}
+                      currentLabel={calendarName}
+                      currentColor={calendarColor}
+                      accountEmail={accountEmail}
+                      lossyWarn={recurring || hasAttendees}
+                      onPick={(accountId, cid) =>
+                        eventMutations.moveEventToCalendar({
+                          id: event.id,
+                          targetAccountId: accountId,
+                          targetCalendarId: cid,
+                        })
+                      }
+                    />
+                  ) : (
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: calendarColor ?? "var(--muted)" }}
+                        />
+                        <span className="truncate text-body text-ink">{calendarName ?? "Calendar"}</span>
+                      </div>
+                      {accountEmail && (
+                        <div className="truncate pl-[18px] text-meta text-muted/70">{accountEmail}</div>
+                      )}
+                    </div>
+                  )}
+                </PopField>
+              )}
 
-            {detailsLoading && (
-              <div className="shimmer text-label pt-1">Loading details…</div>
-            )}
+              {(editable || event.location) && (
+                <PopField label="Where">
+                  {editable ? (
+                    <input
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      onBlur={() => {
+                        const next = location.trim();
+                        if (next !== (event.location ?? "")) {
+                          eventMutations.updateEvent({ id: event.id, patch: { location: next || null } });
+                        }
+                      }}
+                      placeholder="Add location"
+                      aria-label="Location"
+                      className={`${POP_INPUT_CLS} w-full`}
+                    />
+                  ) : (
+                    <span className="text-body leading-snug text-ink">{event.location}</span>
+                  )}
+                </PopField>
+              )}
 
-          </div>
-        </div>
+              {/* Organizer is a fact about the event, not a guest — it sits with
+                  the facts, and never repeats inside the guest list. */}
+              {raw?.organizer && !iOrganize && (
+                <PopField label="Organizer">
+                  <span className="truncate text-body text-ink">
+                    {raw.organizer.displayName ?? raw.organizer.email}
+                  </span>
+                </PopField>
+              )}
 
-        {/* Footer — open in Google / hide / delete.
-            → Task is a quiet text action (not a peer Btn) so convert never reads
-            as the primary CTA beside Hide / Delete. */}
+              {/* A one-column card has no right side to put prose in. */}
+              {!wide && raw?.description && (
+                <PopField label="Description">
+                  <DescriptionHtml html={raw.description} />
+                </PopField>
+              )}
+            </PopStack>
+          </PopCol>
+
+          {wide && (
+            <PopCol side="right">
+              {(hasAttendees || editable || detailsLoading) && (
+                <PopSection label="Guests" aside={guestSummary}>
+                  {detailsLoading && <PopSkeleton lines={4} />}
+                  {!detailsLoading && !hasAttendees && !editable && (
+                    <span className="text-caption text-muted/60">No guests</span>
+                  )}
+                  {shownGuests.map((a) => (
+                    <AttendeeRow key={a.email} a={a} />
+                  ))}
+                  {hiddenGuestCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setAllGuests(true)}
+                      className="fast mt-0.5 pl-[15px] text-left text-meta text-muted hover:text-ink"
+                    >
+                      +{hiddenGuestCount} more
+                    </button>
+                  )}
+                  {editable && (
+                    <div className="mt-1">
+                      {!addingGuests ? (
+                        <button
+                          type="button"
+                          onClick={() => setAddingGuests(true)}
+                          className="fast flex items-center gap-1.5 text-meta text-accent hover:opacity-80"
+                        >
+                          <Icon name="plus" size={11} />
+                          Add guest
+                        </button>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          <GuestsInput
+                            value={newGuests}
+                            onChange={setNewGuests}
+                            placeholder="Name or email…"
+                          />
+                          {/* Both outcomes are spelled out rather than hiding the
+                              quiet one behind a checkbox: adding a guest to an
+                              existing meeting is a mail-out either way, and which
+                              one you meant should take one tap. */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={newGuests.length === 0 || inviting}
+                              onClick={async () => {
+                                if (!newGuests.length) return;
+                                setInviting(true);
+                                try {
+                                  await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests, notifyGuests: true });
+                                  setNewGuests([]);
+                                  setAddingGuests(false);
+                                } finally {
+                                  setInviting(false);
+                                }
+                              }}
+                              className="fast tap rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-label font-medium text-on-accent hover:opacity-90 disabled:bg-surface-2 disabled:text-muted disabled:shadow-none"
+                            >
+                              {inviting
+                                ? "Sending…"
+                                : newGuests.length > 1
+                                ? `Email ${newGuests.length} invites`
+                                : "Email invite"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={newGuests.length === 0 || inviting}
+                              onClick={async () => {
+                                if (!newGuests.length) return;
+                                setInviting(true);
+                                try {
+                                  await eventMutations.inviteToEvent({ id: event.id, attendees: newGuests, notifyGuests: false });
+                                  setNewGuests([]);
+                                  setAddingGuests(false);
+                                } finally {
+                                  setInviting(false);
+                                }
+                              }}
+                              title="Add them to the event without sending an email"
+                              className="fast tap rounded-[var(--radius-sm)] border border-line px-3 py-1 text-label font-medium text-ink hover:bg-bg disabled:opacity-40"
+                            >
+                              Add quietly
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setAddingGuests(false); setNewGuests([]); }}
+                              className="fast tap text-label text-muted hover:text-ink"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </PopSection>
+              )}
+
+              <PopSection
+                label={editable ? "Notes" : "Description"}
+                divider={hasAttendees || editable || detailsLoading}
+                className="flex-1"
+              >
+                {editable && detailsLoading ? (
+                  <PopSkeleton lines={5} />
+                ) : editable ? (
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    onBlur={() => {
+                      const original = plainTextFromHtml(raw?.description ?? "");
+                      if (notes !== original) {
+                        eventMutations.updateEvent({ id: event.id, patch: { description: notes } });
+                      }
+                    }}
+                    placeholder="Add notes"
+                    aria-label="Notes"
+                    rows={notes ? Math.min(8, notes.split("\n").length + 1) : 3}
+                    className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-caption leading-relaxed text-text outline-none transition-colors placeholder:text-muted/55 hover:border-line hover:bg-bg focus:border-line-strong focus:bg-bg"
+                  />
+                ) : raw?.description ? (
+                  <DescriptionHtml html={raw.description} />
+                ) : detailsLoading ? (
+                  <PopSkeleton lines={5} />
+                ) : (
+                  <span className="text-caption text-muted/60">No description</span>
+                )}
+              </PopSection>
+            </PopCol>
+          )}
+        </PopBody>
+        {/* Footer — quiet navigation left, the destructive act right. Delete is
+            plain text until it asks to confirm: a permanently-red button was
+            the loudest pixel in a card whose real primary is "Join". */}
         {(
-          <div className="flex min-w-0 shrink-0 items-center gap-1.5 border-t border-line px-3 py-2.5">
+          <PopFooter>
             {hideMode && !hiddenNow ? (
               <>
                 <span className="text-label text-muted">Hide…</span>
@@ -1750,51 +1966,49 @@ export function EventPopover({
             ) : (
             <>
             {raw?.htmlLink && (
-              <a
+              <PopFootAct
                 href={raw.htmlLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="fast shrink-0 text-label text-muted hover:text-ink"
                 title={ownerAccount?.provider === "m365" ? "Open in Outlook" : "Open in Google Calendar"}
               >
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className="inline-block align-middle">
+                <svg width="12" height="12" viewBox="0 0 13 13" fill="none" className="inline-block align-middle">
                   <path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8M8 1h4m0 0v4m0-4L5.5 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
-                <span className="ml-1 align-middle">Google Cal</span>
-              </a>
+                <span className="ml-1 align-middle">
+                  {ownerAccount?.provider === "m365" ? "Outlook" : "Google Cal"}
+                </span>
+              </PopFootAct>
             )}
             {/* Hide / show — available for every event (keeps read-only calendars
                 out of your way too); hiding never touches the server. */}
             {!confirmDelete && (
               hiddenNow ? (
-                <Btn onClick={() => { const k = hiddenKeyFor(event); if (k) unhide(k); onClose(); }} title="Bring this event back onto the board">
+                <PopFootAct onClick={() => { const k = hiddenKeyFor(event); if (k) unhide(k); onClose(); }} title="Bring this event back onto the board">
                   Show
-                </Btn>
+                </PopFootAct>
               ) : (
-                <Btn
+                <PopFootAct
                   onClick={() => { if (canHideSeries) setHideMode(true); else { hide(event, "THIS"); onClose(); } }}
                   title="Hide from the board and time-blocking — it stays on the server"
                 >
                   Hide
-                </Btn>
+                </PopFootAct>
               )
             )}
             {onConvertToTask && !confirmDelete && (
-              <button
-                type="button"
+              <PopFootAct
                 onClick={() => { onConvertToTask(); onClose(); }}
                 title="Create a task from this event and hide the event"
-                className="fast shrink-0 px-1.5 py-1 text-label text-muted hover:text-ink"
               >
                 → Task
-              </button>
+              </PopFootAct>
             )}
             {editable && (
               !confirmDelete ? (
                 <>
                   <div className="min-w-0 flex-1" />
-                  <Btn
-                    kind="signal"
+                  <PopFootAct
+                    danger
+                    title="Delete this event"
                     onClick={() => {
                       if (recurring || cancelNotifies) setConfirmDelete(true);
                       else {
@@ -1804,7 +2018,7 @@ export function EventPopover({
                     }}
                   >
                     Delete
-                  </Btn>
+                  </PopFootAct>
                 </>
               ) : recurring ? (
                 <>
@@ -1870,7 +2084,7 @@ export function EventPopover({
             )}
             </>
             )}
-          </div>
+          </PopFooter>
         )}
       </div>
     </>,
@@ -1879,7 +2093,9 @@ export function EventPopover({
 }
 
 // ── SlotPopover — a time slot and the tasks it holds ─────────────────────
-export const SLOT_POP_W = 340;
+/** Same two-column card as the task and event popovers — left the block's
+ *  facts, right the work inside it (which is why the block exists). */
+export const SLOT_POP_W = POP_W_WIDE;
 const TASK_SLIDE_W = 380;
 /** Floor for the slide-out on a narrow window — below this it stops giving way
  *  and simply overhangs, rather than shrinking into an unreadable strip. */
@@ -2297,6 +2513,13 @@ export function SlotPopover({
     });
   };
 
+  // The masthead's one line — same read the chips below let you change.
+  const whenSummary = `${format(new Date(slot.do_date + "T12:00:00"), "EEE MMM d")} · ${format(
+    startDate,
+    "h:mm a",
+  )} · ${fmtDuration(slot.duration_minutes)}`;
+  const repeatLabel = recurrence ? describeRule(ruleOf(recurrence), slot.do_date) : null;
+
   return createPortal(
     <>
       {/* Arrow — a portal sibling, not a shell child: the shell has to clip
@@ -2336,243 +2559,283 @@ export function SlotPopover({
         {/* Slot column — fixed width; position is owned by the shell, not this pane */}
         <div
           ref={slotColRef}
-          className="flex min-h-0 w-[340px] shrink-0 flex-col"
+          className="flex min-h-0 shrink-0 flex-col"
+          style={{ width: SLOT_POP_W }}
         >
 
-        {/* Header */}
-        <div className="flex shrink-0 items-start gap-2 px-4 pt-4 pb-2">
-          <div className="min-w-0 flex-1">
+        {/* Masthead — the block's name, then ONE line of when + how full. */}
+        <PopMast
+          dot={domain?.color ?? slot.color ?? undefined}
+          onClose={onClose}
+          eyebrow={
             <div className="mono mb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-              🗂 Time slot
+              Time slot
             </div>
-            <input
-              ref={titleRef}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={(e) => e.key === "Enter" && commitTitle()}
-              className="w-full border-0 bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted/70"
-              placeholder={derivedTitle}
-            />
-            {!slot.title.trim() && (
-              <div className="mono mt-0.5 flex items-center gap-2 text-meta text-muted/70">
-                <span>✦ auto-named — type to override</span>
-                {childTasks.length > 0 && (
-                  <button
-                    onClick={suggestName}
-                    disabled={naming}
-                    className="fast rounded text-meta text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
-                    title="Ask Nuvo for the through-line of what's inside"
-                  >
-                    {naming ? "thinking…" : "suggest a name"}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="fast mt-0.5 shrink-0 rounded p-0.5 text-muted hover:bg-bg hover:text-ink"
-            aria-label="Close"
-          >
-            <Icon name="close" size={14} />
-          </button>
-        </div>
-
-        {/* Schedule chips */}
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-line px-3 py-2.5">
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-            <span className="text-ink">{format(new Date(slot.do_date + "T12:00:00"), "MMM d")}</span>
-            <input
-              type="date"
-              value={slot.do_date}
-              onChange={(e) => setDate(e.target.value)}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            />
-          </label>
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-            <span className="text-ink">{format(startDate, "h:mm a")}</span>
-            <input
-              type="time"
-              step={900}
-              value={startHHMM}
-              onChange={(e) => setTime(e.target.value)}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            />
-          </label>
-          <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
-            <span className="text-ink">{fmtDuration(slot.duration_minutes)}</span>
-            <select
-              value={slot.duration_minutes}
-              onChange={(e) =>
-                slotMutations.updateSlot({
-                  id: slot.id,
-                  patch: { duration_minutes: Number(e.target.value) },
-                })
-              }
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            >
-              {[30, 45, 60, 90, 120, 180, 240, 360, 480].map((m) => (
-                <option key={m} value={m}>{fmtDuration(m)}</option>
-              ))}
-            </select>
-          </label>
-
-          {/* Project chip — drives color/inheritance */}
-          <label
-            className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
-            style={{ color: domain?.color ?? "var(--muted)" }}
-          >
-            <span>{project?.name ?? "+ project"}</span>
-            <select
-              value={slot.project_id ?? ""}
-              onChange={(e) => setProject(e.target.value)}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-            >
-              <option value="">— none —</option>
-              {vertical.projects
-                .filter((p) => !isProjectComplete(p.status) || p.id === slot.project_id)
-                .map((p) => {
-                  const d = domainById(vertical, p.domainId);
-                  return <option key={p.id} value={p.id}>{d ? `${d.name} · ` : ""}{p.name}</option>;
-                })}
-            </select>
-          </label>
-
-          {/* Domain chip — a standing "domain slot": with Repeat set, the weekly
-              plan routes this domain's work into it (docs/standing-slots.md).
-              Shown only when no project drives the domain, so it reads as one
-              affinity, not two. */}
-          {!slot.project_id && (
-            <label
-              className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
-              style={{ color: domain?.color ?? "var(--muted)" }}
-            >
-              <span>{slot.domain_id ? (domain?.name ?? "domain") : "+ domain"}</span>
-              <select
-                value={slot.domain_id ?? ""}
-                onChange={(e) => setDomain(e.target.value)}
-                className="absolute inset-0 w-full cursor-pointer opacity-0"
-              >
-                <option value="">— none —</option>
-                {vertical.domains.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {/* Repeat */}
-          <RepeatControl
-            anchorISO={slot.do_date}
-            value={recurrence ? ruleOf(recurrence) : null}
-            onChange={applyRepeat}
-          />
-        </div>
-
-        {/* Progress */}
-        <div className="mono flex shrink-0 items-center gap-2 border-t border-line px-4 py-2 text-meta text-muted">
-          <span>{doneCount}/{ordered.length} done</span>
-          {totalMins > 0 && <span>· {fmtDuration(totalMins)} of tasks</span>}
-        </div>
-
-        {/* Add task — leads when empty, sits above the list when populated */}
-        <div className="shrink-0 border-t border-line px-3 py-2">
+          }
+          meta={
+            <>
+              <span className="mono">{whenSummary}</span>
+              {repeatLabel && (
+                <>
+                  <PopMetaDot />
+                  <span title="Repeats">↻ {repeatLabel}</span>
+                </>
+              )}
+              {ordered.length > 0 && (
+                <>
+                  <PopMetaDot />
+                  <span className="mono">{doneCount}/{ordered.length} done</span>
+                </>
+              )}
+            </>
+          }
+        >
           <input
-            ref={addRef}
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") addTask();
-              if (e.key === "Escape") { e.stopPropagation(); setNewTitle(""); e.currentTarget.blur(); }
-            }}
-            placeholder="+ Add task to slot…"
-            className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-caption outline-none focus:border-accent"
+            ref={titleRef}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => e.key === "Enter" && commitTitle()}
+            className="w-full border-0 bg-transparent text-head font-semibold leading-snug outline-none placeholder:text-muted/70"
+            placeholder={derivedTitle}
+            aria-label="Slot name"
           />
-        </div>
+          {!slot.title.trim() && (
+            <div className="mono mt-0.5 flex items-center gap-2 text-meta text-muted/70">
+              <span>✦ auto-named — type to override</span>
+              {childTasks.length > 0 && (
+                <button
+                  onClick={suggestName}
+                  disabled={naming}
+                  className="fast rounded text-meta text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
+                  title="Ask Nuvo for the through-line of what's inside"
+                >
+                  {naming ? "thinking…" : "suggest a name"}
+                </button>
+              )}
+            </div>
+          )}
+        </PopMast>
 
-        {/* Child tasks — grip to reorder, body drags out (calendar / inbox) */}
-        <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
-          {reorderLineTop != null && (
-            <div className="reorder-insert-line" style={{ top: reorderLineTop }} aria-hidden />
-          )}
-          {ordered.length === 0 && (
-            <div className="px-2 py-2 text-caption italic text-muted/70">No tasks yet — type above.</div>
-          )}
-          {ordered.map((t, i) => {
-            const done = t.status === "done";
-            const dragging = reorder?.id === t.id;
-            const selected = i === sel;
-            return (
-              <div
-                key={t.id}
-                data-slot-row={t.id}
-                className={`group flex items-center gap-0.5 rounded-md pr-1 hover:bg-bg ${
-                  dragging
-                    ? "pointer-events-none bg-accent-soft text-accent shadow-[inset_0_3px_0_0_var(--accent)]"
-                    : selected
-                      ? "bg-accent-soft/60 ring-1 ring-inset ring-accent/30"
-                      : ""
-                }`}
-              >
-                <button
-                  aria-label="Drag to reorder, or out to the inbox or a day"
-                  title="Drag to reorder · drag out to the rail (inbox) or a calendar day"
-                  onPointerDown={(e) => startReorder(t.id, e)}
-                  className="fast flex h-8 w-4 shrink-0 cursor-grab touch-none items-center justify-center text-muted/40 opacity-0 group-hover:opacity-100 hover:text-muted"
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                    <circle cx="3" cy="2" r="1" /><circle cx="7" cy="2" r="1" />
-                    <circle cx="3" cy="5" r="1" /><circle cx="7" cy="5" r="1" />
-                    <circle cx="3" cy="8" r="1" /><circle cx="7" cy="8" r="1" />
-                  </svg>
-                </button>
-                <div
-                  data-task-drag={t.id}
-                  data-task-title={t.title}
-                  data-task-duration={t.duration_minutes ?? ""}
-                  className="flex min-w-0 flex-1 cursor-grab items-center gap-2 py-1.5"
-                  title="Drag onto the calendar, or the rail to send to Inbox"
-                >
-                  <button
-                    aria-label="toggle done"
-                    onClick={() => (done ? taskMutations.uncomplete(t) : taskMutations.complete(t))}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    className={`fast flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[3px] border ${
-                      done ? "border-accent bg-accent text-on-accent" : "border-line-strong bg-surface"
-                    }`}
-                  >
-                    {done && (
-                      <Icon name="check" size={9} />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => onOpenTask(t)}
-                    onMouseDown={() => setSel(i)}
-                    className={`min-w-0 flex-1 truncate text-left text-caption ${
-                      done ? "text-muted line-through" : "text-text"
-                    }`}
-                  >
-                    {t.title}
-                  </button>
+        {/* Left = when the block is and what it belongs to · right = the work
+            inside it, which is the reason the block exists. */}
+        <PopBody>
+          <PopCol side="left" width="42%">
+            <PopStack>
+              <PopField label="When">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                    <Icon name="calendar" size={10} className="shrink-0 text-muted/70" />
+                    <span className="text-ink">{format(new Date(slot.do_date + "T12:00:00"), "MMM d")}</span>
+                    <input
+                      type="date"
+                      aria-label="Date"
+                      value={slot.do_date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    />
+                  </label>
+                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                    <Icon name="clock" size={10} className="shrink-0 text-muted/70" />
+                    <span className="text-ink">{format(startDate, "h:mm a")}</span>
+                    <input
+                      type="time"
+                      step={900}
+                      aria-label="Start time"
+                      value={startHHMM}
+                      onChange={(e) => setTime(e.target.value)}
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    />
+                  </label>
+                  <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
+                    <Icon name="duration" size={10} className="shrink-0 text-muted/70" />
+                    <span className="text-ink">{fmtDuration(slot.duration_minutes)}</span>
+                    <Icon name="chevron-down" size={7} className="text-muted/50" />
+                    <select
+                      aria-label="Duration"
+                      value={slot.duration_minutes}
+                      onChange={(e) =>
+                        slotMutations.updateSlot({
+                          id: slot.id,
+                          patch: { duration_minutes: Number(e.target.value) },
+                        })
+                      }
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    >
+                      {[30, 45, 60, 90, 120, 180, 240, 360, 480].map((m) => (
+                        <option key={m} value={m}>{fmtDuration(m)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <RepeatControl
+                    anchorISO={slot.do_date}
+                    value={recurrence ? ruleOf(recurrence) : null}
+                    onChange={applyRepeat}
+                  />
                 </div>
-                <button
-                  aria-label="remove from slot"
-                  title="Remove from slot"
-                  onClick={() => taskMutations.removeFromSlot(t)}
-                  className="fast shrink-0 rounded p-0.5 text-muted opacity-0 group-hover:opacity-100 hover:bg-surface-2 hover:text-ink"
-                >
-                  <Icon name="close" size={12} />
-                </button>
+              </PopField>
+
+              {/* Project drives the colour and the inheritance; a bare domain
+                  makes this a standing slot the weekly plan routes work into
+                  (docs/standing-slots.md). Only ever one affinity, never two. */}
+              <PopField label="For">
+                <div className="flex flex-wrap items-center gap-1">
+                  <label
+                    className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
+                    style={{ color: domain?.color ?? "var(--muted)" }}
+                  >
+                    <span>{project?.name ?? "+ project"}</span>
+                    <select
+                      aria-label="Project"
+                      value={slot.project_id ?? ""}
+                      onChange={(e) => setProject(e.target.value)}
+                      className="absolute inset-0 w-full cursor-pointer opacity-0"
+                    >
+                      <option value="">— none —</option>
+                      {vertical.projects
+                        .filter((p) => !isProjectComplete(p.status) || p.id === slot.project_id)
+                        .map((p) => {
+                          const d = domainById(vertical, p.domainId);
+                          return <option key={p.id} value={p.id}>{d ? `${d.name} · ` : ""}{p.name}</option>;
+                        })}
+                    </select>
+                  </label>
+
+                  {!slot.project_id && (
+                    <label
+                      className="relative inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-label font-medium hover:bg-bg"
+                      style={{ color: domain?.color ?? "var(--muted)" }}
+                    >
+                      <span>{slot.domain_id ? (domain?.name ?? "domain") : "+ domain"}</span>
+                      <select
+                        aria-label="Domain"
+                        value={slot.domain_id ?? ""}
+                        onChange={(e) => setDomain(e.target.value)}
+                        className="absolute inset-0 w-full cursor-pointer opacity-0"
+                      >
+                        <option value="">— none —</option>
+                        {vertical.domains.map((d) => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+                {slot.domain_id && !slot.project_id && recurrence && (
+                  <div className="text-micro text-muted/80">
+                    A standing slot — the weekly plan routes this domain's work here.
+                  </div>
+                )}
+              </PopField>
+            </PopStack>
+          </PopCol>
+
+          <PopCol side="right" width="58%">
+            <PopSection
+              label="Inside"
+              aside={totalMins > 0 ? `${fmtDuration(totalMins)} of tasks` : undefined}
+              className="min-h-0 flex-1"
+            >
+              <input
+                ref={addRef}
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addTask();
+                  if (e.key === "Escape") { e.stopPropagation(); setNewTitle(""); e.currentTarget.blur(); }
+                }}
+                placeholder="+ Add task to slot…"
+                aria-label="Add task to slot"
+                className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-caption outline-none focus:border-accent"
+              />
+
+              {/* Child tasks — grip to reorder, body drags out (calendar / inbox) */}
+              <div ref={listRef} className="relative -mx-1.5 mt-1 min-h-0 flex-1 overflow-y-auto px-1.5">
+                {reorderLineTop != null && (
+                  <div className="reorder-insert-line" style={{ top: reorderLineTop }} aria-hidden />
+                )}
+                {ordered.length === 0 && (
+                  <div className="px-1 py-2 text-caption italic text-muted/70">No tasks yet — type above.</div>
+                )}
+                {ordered.map((t, i) => {
+                  const done = t.status === "done";
+                  const dragging = reorder?.id === t.id;
+                  const selected = i === sel;
+                  return (
+                    <div
+                      key={t.id}
+                      data-slot-row={t.id}
+                      className={`group flex items-center gap-0.5 rounded-md pr-1 hover:bg-bg ${
+                        dragging
+                          ? "pointer-events-none bg-accent-soft text-accent shadow-[inset_0_3px_0_0_var(--accent)]"
+                          : selected
+                            ? "bg-accent-soft/60 ring-1 ring-inset ring-accent/30"
+                            : ""
+                      }`}
+                    >
+                      <button
+                        aria-label="Drag to reorder, or out to the inbox or a day"
+                        title="Drag to reorder · drag out to the rail (inbox) or a calendar day"
+                        onPointerDown={(e) => startReorder(t.id, e)}
+                        className="fast flex h-8 w-4 shrink-0 cursor-grab touch-none items-center justify-center text-muted/40 opacity-0 group-hover:opacity-100 hover:text-muted"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                          <circle cx="3" cy="2" r="1" /><circle cx="7" cy="2" r="1" />
+                          <circle cx="3" cy="5" r="1" /><circle cx="7" cy="5" r="1" />
+                          <circle cx="3" cy="8" r="1" /><circle cx="7" cy="8" r="1" />
+                        </svg>
+                      </button>
+                      <div
+                        data-task-drag={t.id}
+                        data-task-title={t.title}
+                        data-task-duration={t.duration_minutes ?? ""}
+                        className="flex min-w-0 flex-1 cursor-grab items-center gap-2 py-1.5"
+                        title="Drag onto the calendar, or the rail to send to Inbox"
+                      >
+                        <button
+                          aria-label="toggle done"
+                          onClick={() => (done ? taskMutations.uncomplete(t) : taskMutations.complete(t))}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className={`fast flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[3px] border ${
+                            done ? "border-accent bg-accent text-on-accent" : "border-line-strong bg-surface"
+                          }`}
+                        >
+                          {done && (
+                            <Icon name="check" size={9} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => onOpenTask(t)}
+                          onMouseDown={() => setSel(i)}
+                          className={`min-w-0 flex-1 truncate text-left text-caption ${
+                            done ? "text-muted line-through" : "text-text"
+                          }`}
+                        >
+                          {t.title}
+                        </button>
+                      </div>
+                      <button
+                        aria-label="remove from slot"
+                        title="Remove from slot"
+                        onClick={() => taskMutations.removeFromSlot(t)}
+                        className="fast shrink-0 rounded p-0.5 text-muted opacity-0 group-hover:opacity-100 hover:bg-surface-2 hover:text-ink"
+                      >
+                        <Icon name="close" size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            </PopSection>
+          </PopCol>
+        </PopBody>
 
         {/* Footer */}
-        <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
-          <div className="flex-1" />
+        <PopFooter>
+          <span className="mono text-micro text-muted/70">↑↓ select · ↵ open · space done</span>
+          <div className="min-w-0 flex-1" />
           <SlotDeleteButton
+            quiet
             recurring={Boolean(slot.recurrence_id && recurrence)}
             taskCount={ordered.length}
             dayLabel={format(new Date(slot.do_date + "T12:00:00"), "MMM d")}
@@ -2593,7 +2856,7 @@ export function SlotPopover({
               onClose();
             }}
           />
-        </div>
+        </PopFooter>
         </div>
 
         {/* Task slide-out — same shell, slides open to the right */}

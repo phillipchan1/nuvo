@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { invokeQuiet, supabase } from "../lib/supabase";
@@ -17,6 +17,7 @@ import {
 } from "../lib/types";
 import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
 import { eventsFunctionFor } from "../lib/calendarWrite";
+import { fromGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import { useSettings } from "./useSettings";
 
 function throwIfInvokeFailed(data: unknown, error: Error | null) {
@@ -190,6 +191,8 @@ export function useExternalEventMutations() {
       // write. Everything else maps to a real column.
       patch: Partial<Pick<ExternalEvent, "title" | "start_at" | "end_at" | "location" | "all_day">> & {
         description?: string;
+        /** Google / iCalendar RRULE lines; null or [] removes recurrence. */
+        recurrence?: string[] | null;
       };
       scope?: RecurrenceScope;
     }) => {
@@ -197,7 +200,7 @@ export function useExternalEventMutations() {
       // update is consistent. For ALL, the master PATCH in Google will push a
       // sync back that rewrites all instances — skip the local row update.
       if (scope === "THIS") {
-        const { description: _description, ...columns } = patch;
+        const { description: _description, recurrence: _recurrence, ...columns } = patch;
         if (Object.keys(columns).length) {
           const { error } = await supabase.from("external_events").update(columns).eq("id", id);
           if (error) throw error;
@@ -209,7 +212,7 @@ export function useExternalEventMutations() {
       if (scope !== "THIS") return;
       await qc.cancelQueries({ queryKey: ["external_events"] });
       const snapshot = qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] });
-      const { description, ...columns } = patch;
+      const { description, recurrence: _recurrence, ...columns } = patch;
       if (Object.keys(columns).length) {
         qc.setQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] }, (old) =>
           old?.map((e) => (e.id === id ? { ...e, ...columns } : e)),
@@ -235,7 +238,12 @@ export function useExternalEventMutations() {
         qc.setQueryData(["event_details", ctx.id], ctx.detailSnapshot);
       }
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["external_events"] }),
+    onSettled: (_d, _e, vars) => {
+      qc.invalidateQueries({ queryKey: ["external_events"] });
+      if (vars?.patch.recurrence !== undefined) {
+        qc.invalidateQueries({ queryKey: ["event_series_rule", vars.id] });
+      }
+    },
   });
 
   // Move an event to a different calendar within the same account. Google uses
@@ -530,22 +538,89 @@ export function useExternalEventMutations() {
  *  normalize a Microsoft Graph payload into Google's shape — pass the
  *  email of the account that owns this event (`accounts.find(a => a.id ===
  *  event.account_id)?.email`); omit it for a Google/ICS/iCloud event. */
+/** The detail payload (guests, description, conferencing) for one event. It is
+ *  a separate read on purpose: `raw` is the biggest column in the table and the
+ *  grid query deliberately never selects it. */
+async function fetchEventDetails(id: string, accountEmail?: string | null): Promise<GoogleRawEvent | null> {
+  const { data, error } = await supabase
+    .from("external_events")
+    .select("raw")
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  return normalizeRawEvent(data?.raw as ProviderRawEvent | null, accountEmail);
+}
+
+const EVENT_DETAILS_STALE_MS = 30_000;
+
 export function useEventDetails(id: string | null, accountEmail?: string | null) {
   return useQuery({
     queryKey: ["event_details", id],
     enabled: Boolean(id),
+    staleTime: EVENT_DETAILS_STALE_MS,
+    queryFn: async (): Promise<GoogleRawEvent | null> =>
+      id ? fetchEventDetails(id, accountEmail) : null,
+  });
+}
+
+/**
+ * Warm an event's details while the pointer rests on its block, so the popover
+ * opens with its guests and notes already in hand.
+ *
+ * Without it the card renders once empty and once full — and the second render
+ * is what made it visibly grow a beat after opening. The account email has to
+ * match what the popover passes, or the cached payload would carry the wrong
+ * `self` flags (whose RSVP is yours) — so it is resolved from the same accounts
+ * cache the popover reads.
+ */
+export function usePrefetchEventDetails() {
+  const qc = useQueryClient();
+  return useCallback(
+    (event: ExternalEvent | null | undefined) => {
+      if (!event) return;
+      const accounts = qc.getQueryData<CalendarAccount[]>(["calendar_accounts"]);
+      const email = accounts?.find((a) => a.id === event.account_id)?.email ?? null;
+      void qc.prefetchQuery({
+        queryKey: ["event_details", event.id],
+        staleTime: EVENT_DETAILS_STALE_MS,
+        queryFn: () => fetchEventDetails(event.id, email),
+      });
+    },
+    [qc],
+  );
+}
+
+/** Read the recurrence rule for a calendar event. Instances don't carry the
+ *  RRULE locally — this fetches it from the series master on Google/iCloud. */
+export function useEventSeriesRule(eventId: string | null, isRecurring: boolean) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: ["event_series_rule", eventId],
+    enabled: Boolean(eventId && isRecurring),
     staleTime: 30_000,
-    queryFn: async (): Promise<GoogleRawEvent | null> => {
-      if (!id) return null;
-      const { data, error } = await supabase
-        .from("external_events")
-        .select("raw")
-        .eq("id", id)
-        .single();
-      if (error) throw error;
-      return normalizeRawEvent(data?.raw as ProviderRawEvent | null, accountEmail);
+    queryFn: async (): Promise<RecurrenceRule | null> => {
+      if (!eventId) return null;
+      let provider: CalendarProvider = "google";
+      for (const [, data] of qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] })) {
+        const ev = data?.find((e) => e.id === eventId);
+        if (ev) {
+          provider = providerForAccountFromCache(qc, ev.account_id) ?? "google";
+          break;
+        }
+      }
+      const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
+        body: { action: "series_rule", eventId },
+      });
+      throwIfInvokeFailed(data, error);
+      const recurrence = (data as { recurrence?: string[] | null })?.recurrence;
+      return fromGoogleRRULE(recurrence ?? null);
     },
   });
+}
+
+function providerForAccountFromCache(qc: ReturnType<typeof useQueryClient>, accountId: string): CalendarProvider | null {
+  const accounts = qc.getQueryData<CalendarAccount[]>(["calendar_accounts"]);
+  return accounts?.find((a) => a.id === accountId)?.provider ?? null;
 }
 
 /** Mirrors the `labels.color` schema default — client-minted rows must name it

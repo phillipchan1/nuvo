@@ -14,7 +14,7 @@ import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO } from 
 import { addDays } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
-import { useEventDetails, useHiddenEvents, type useExternalEventMutations } from "../hooks/useCalendar";
+import { useEventDetails, useHiddenEvents, usePrefetchEventDetails, type useExternalEventMutations } from "../hooks/useCalendar";
 import { eventSeriesKey } from "../lib/now";
 import { synClass } from "../lib/syntax";
 import { isReadOnlyCalendarId, isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
@@ -325,6 +325,7 @@ export default function CalendarPane({
   // `showHidden` reveals them dimmed so you can bring one back. The context menu /
   // popover toggle the per-event hidden state.
   const { keys: hiddenKeys, isHidden, hiddenKeyFor, hide, unhide } = useHiddenEvents();
+  const prefetchEventDetails = usePrefetchEventDetails();
   const [showHidden, setShowHidden] = useState(false);
   const [eventMenu, setEventMenu] = useState<{ x: number; y: number; event: ExternalEvent } | null>(null);
   const eventMenuAccountEmail = accounts.find((a) => a.id === eventMenu?.event.account_id)?.email;
@@ -1743,6 +1744,23 @@ export default function CalendarPane({
     }
   };
 
+  // Hovering a block warms its detail payload, so the popover opens complete
+  // rather than filling in a beat later (see usePrefetchEventDetails). Only a
+  // *resting* pointer counts: a sweep across a dense week would otherwise fire
+  // one row read per block it crossed.
+  const hoverWarmRef = useRef<number | null>(null);
+  const onEventHover = (info: { event: { extendedProps: unknown } }) => {
+    const { kind, refId } = info.event.extendedProps as ExtendedProps;
+    if (kind === "task" || kind === "slot") return;
+    if (hoverWarmRef.current) window.clearTimeout(hoverWarmRef.current);
+    hoverWarmRef.current = window.setTimeout(() => prefetchEventDetails(findEvent(refId)), 120);
+  };
+  const onEventUnhover = () => {
+    if (hoverWarmRef.current) window.clearTimeout(hoverWarmRef.current);
+    hoverWarmRef.current = null;
+  };
+  useEffect(() => () => { if (hoverWarmRef.current) window.clearTimeout(hoverWarmRef.current); }, []);
+
   const renderEvent = (arg: EventContentArg) => {
     const { kind, calColor, recurring, done: doneProp } = arg.event.extendedProps as ExtendedProps;
     const inMonth = arg.view.type === "dayGridMonth";
@@ -2708,6 +2726,8 @@ export default function CalendarPane({
           eventResize={onResize}
           eventDragStop={onDragStop}
           eventClick={onClick}
+          eventMouseEnter={onEventHover}
+          eventMouseLeave={onEventUnhover}
           eventContent={renderEvent}
           eventDidMount={handleEventDidMount}
           datesSet={handleDatesSet}

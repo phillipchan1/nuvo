@@ -100,6 +100,14 @@ function setDateTimeProp(vevent: string, kind: "DTSTART" | "DTEND", iso: string,
   return v.replace(/^(UID:.*|DTSTAMP:.*)$/im, `$&\r\n${line}`);
 }
 
+/** Replace (or drop) RRULE lines on the master VEVENT. */
+function setRecurrence(vevent: string, recurrence: string[] | null | undefined): string {
+  let v = vevent.replace(/^RRULE:.*\r?\n/gim, "");
+  if (!recurrence?.length) return v;
+  const lines = recurrence.map((r) => (r.startsWith("RRULE") ? r : `RRULE:${r.replace(/^RRULE:/i, "")}`));
+  return v.replace(/END:VEVENT\s*$/i, `${lines.join("\r\n")}\r\nEND:VEVENT`);
+}
+
 /** Patch the master event's title / start / end / location / notes in place.
  *  A null or empty location/description removes the property line. */
 export function patchMaster(
@@ -111,6 +119,8 @@ export function patchMaster(
     allDay?: boolean;
     location?: string | null;
     description?: string | null;
+    /** RRULE lines, or null / [] to remove recurrence. */
+    recurrence?: string[] | null;
   },
 ): string {
   const { header, events, footer } = splitEvents(ics);
@@ -123,6 +133,7 @@ export function patchMaster(
     if (patch.endISO !== undefined) v = setDateTimeProp(v, "DTEND", patch.endISO, allDay);
     if (patch.location !== undefined) v = setProp(v, "LOCATION", patch.location ? escapeText(patch.location) : null);
     if (patch.description !== undefined) v = setProp(v, "DESCRIPTION", patch.description ? escapeText(patch.description) : null);
+    if (patch.recurrence !== undefined) v = setRecurrence(v, patch.recurrence);
     return v;
   });
   return header + out.join("\r\n") + footer;

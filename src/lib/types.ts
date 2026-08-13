@@ -349,6 +349,8 @@ export interface GoogleRawEvent {
   };
   /** Present on a Google recurring instance; absent otherwise. */
   recurringEventId?: string;
+  /** Present on the series master; instances synced with singleEvents=true omit this. */
+  recurrence?: string[];
 }
 
 // ── Microsoft Graph raw event shape (subset we use) ───────────────────────

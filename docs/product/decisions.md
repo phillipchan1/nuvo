@@ -3223,3 +3223,82 @@ merged, and took three runs to land:
 **Still unverified: the `nuvo://` leg itself.** No CI run can prove it — it needs a tap on a
 device, or `xcrun simctl openurl booted nuvo://capture` on a simulator. Until someone does
 that, "the widget opens the capture sheet" is a claim, not an observation.*
+
+---
+
+**D-101 · 2026-08-12 · One grammar for every detail popover — masthead, one strip of acts,
+two columns, a quiet footer. And the repeat reads in the masthead, whether or not you can
+edit it.**
+
+The event popover had grown into nine stacked regions in a 340px card separated by four
+full-width hairlines, and the hierarchy had inverted: the loudest object was the **All-day
+switch** — a full-width bordered row with a toggle, for a control you touch twice a year —
+while *Join the meeting*, the actual next physical act, was a small outline button below the
+location. Delete was permanently `--signal`, making the destructive act the brightest pixel
+in a card whose real primary is Join. The guest list was a column of raw email addresses with
+a separate tally row underneath repeating what the ✓/✗ glyphs already said. And the card
+**never said the event repeats** — it has always known (Delete branches on `recurring`) and
+never told you.
+
+→ **The parts, in `src/components/PopoverParts.tsx`, worn by all three popovers** (event,
+task, slot): **masthead** (title + ONE muted meta line: when, and whether it repeats) ·
+**strip** (at most two acts, on `--surface-2` ground: Join + RSVP · Done + This week) ·
+**two columns** — left the record's *facts* (when, where, filing), right its *people and
+words* (guests, notes, pre-work, or the slot's task list) — each scrolling independently, so
+a 20-guest invite can never bury the notes · **footer** (quiet text acts left, destructive
+right, `--signal` only once it asks to confirm).
+
+→ **Width is earned, not uniform.** 560px when there is something to put in the right column,
+380px when there isn't. For an editable event that's known synchronously (both the guest list
+and the notes editor live there), so the card never resizes under you. The task card inside
+the slot's slide-out stays one column — it *is* the second column already — and its Notes and
+✦ pre-work move up rather than disappearing.
+
+→ **Recurrence is a fact, not an edit affordance.** The masthead reads "↻ Weekly on Thursday"
+on a read-only ICS feed too; the chip that *changes* it sits in the When field, and says
+"changes the whole series" when you're looking at an instance.
+
+→ **The verdict tokens mark, they don't label.** RSVP and priority now use `--ok` / `--warn` /
+`--signal` (never `text-green-600` / `bg-amber-400`, which no skin could answer for) as the
+**tint, border and dot** while the label stays `--ink`. `--ok` and `--warn` are ~3.3:1 on the
+light paper grounds — fine for a mark (WCAG 1.4.11 wants 3:1), under AA for 11px text. That
+split is what makes one control read in all three paper palettes, both themes, and every skin
+including e-ink's monochrome, with no per-theme exception.
+
+→ **A two-column card made an old latency bug visible, and it had to be fixed three ways.**
+The details (guests, description, conferencing) are a second read — `raw` is the table's
+biggest column and the grid query deliberately never selects it — so the card opened, then
+filled. Measured on a throttled read: it grew 313→552px and the whole card slid 240px up the
+screen. Three causes, three fixes:
+
+- **It re-centred itself on every placement.** `useAnchoredPosition` re-derived the top edge
+  from the card's *current* height each time it ran, so any growth re-centred it. Now a card
+  is centred on its anchor **once**, then follows the anchor's own movement and is only
+  nudged to stay on screen — growth extends it downward and moves it by nothing. The rule is
+  a pure function (`src/lib/anchoredTop.ts`) with a test, because it is exactly the kind of
+  invariant a later edit undoes silently.
+- **It didn't know it had grown.** A `ResizeObserver` now re-places on height change, so a
+  card that grows past the bottom edge lifts by exactly the overflow instead of hanging
+  off-screen until the next scroll.
+- **The width was derived from data that hadn't arrived.** A read-only feed event opened at
+  380px and became 560px. The width is now decided **once, before the card is on screen**:
+  editable → always wide (known synchronously); otherwise reserve the wide card unless the
+  details are already in hand.
+
+→ **And the wait is mostly gone rather than merely well-dressed.** Resting the pointer on a
+block for 120ms warms its detail payload (`usePrefetchEventDetails`), so the ordinary
+hover-then-click opens the card complete on its first frame — verified with a 4s artificial
+delay on the detail read. When it *is* cold (keyboard, a fast click), `PopSkeleton` holds the
+shape in `--line` so the card reads as loading rather than as empty.
+
+→ **What it strains:** Principle 11 (one name, one thing) is *repaid* — three popovers had
+three hand-rolled layouts — but the masthead's meta line deliberately **repeats** what the
+When field lets you edit. That's the read/edit split, and it's the one duplication in the
+grammar. The width rule also means a bare feed event opened cold shows one empty column and
+opened warm is correctly narrow — inconsistency between two opens, traded knowingly for a
+card that never moves. Ledger: no new row; this is **W1** ("what is actually on today") being
+answered faster, not extended.
+
+*Status: standing. Driven in the dev app on real data at 1280px: event (Google, 4 guests,
+Meet link), task, slot, and the task-in-slot slide-out — light, dark, and the e-ink skin.
+794 tests green (7 of them the placement rule), typecheck clean. Mobile untouched: the phone has its own `MobileEventSheet`.*

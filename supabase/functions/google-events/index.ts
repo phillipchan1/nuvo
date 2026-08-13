@@ -413,6 +413,47 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    // ── Series rule: read the master's RRULE (instances don't carry it) ──
+    if (action === "series_rule") {
+      const rawEvent = (evt.raw ?? {}) as Record<string, unknown>;
+      const stored = Array.isArray(rawEvent.recurrence) ? (rawEvent.recurrence as string[]) : null;
+      if (stored?.length) return json({ ok: true, recurrence: stored });
+
+      const recurringEventId = rawEvent.recurringEventId as string | undefined;
+      if (!recurringEventId) return json({ ok: true, recurrence: null });
+
+      const masterRes = await gFetch(
+        account,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(recurringEventId)}`,
+      );
+      if (!masterRes.ok) throw new Error(`fetch master: ${masterRes.status} ${await masterRes.text()}`);
+      const master = await masterRes.json();
+      const recurrence = Array.isArray(master.recurrence) ? (master.recurrence as string[]) : null;
+      return json({ ok: true, recurrence });
+    }
+
+    // ── Recurrence: add / change / remove the series rule ────────────────
+    // Always targets the master — a single event becomes a series; a series
+    // is un-recurred or re-ruled in place.
+    if (patch?.recurrence !== undefined) {
+      const rawEvent = (evt.raw ?? {}) as Record<string, unknown>;
+      const recurringEventId = rawEvent.recurringEventId as string | undefined;
+      const targetId = recurringEventId ?? evt.provider_event_id;
+      const nextRecurrence = patch.recurrence === null || (Array.isArray(patch.recurrence) && patch.recurrence.length === 0)
+        ? []
+        : (patch.recurrence as string[]);
+
+      const res = await gFetch(
+        account,
+        `/calendars/${encodeURIComponent(evt.calendar_id)}/events/${encodeURIComponent(targetId)}`,
+        { method: "PATCH", body: JSON.stringify({ recurrence: nextRecurrence }) },
+      );
+      if (!res.ok) throw new Error(`patch recurrence: ${res.status} ${await res.text()}`);
+
+      await logSync("google", "event-recurrence", "ok", undefined, user.id);
+      return json({ ok: true });
+    }
+
     if (scope === "ALL") {
       // Patch the master recurring event so every instance shifts together.
       const recurringEventId = (evt.raw as Record<string, unknown>)?.recurringEventId as string | undefined;
