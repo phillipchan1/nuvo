@@ -7,6 +7,7 @@ import { isMobileTauri } from "./lib/platform";
 import { configureSync, createSupabaseTransport, teardownSync } from "./lib/sync";
 import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
+import { useWatchSession } from "./hooks/useWatchSession";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
 import { useSubscription, useSubscriptionLiveSync } from "./hooks/useSubscription";
@@ -169,6 +170,9 @@ const queryClient = new QueryClient({
 
 function Shell() {
   const { session, loading } = useAuth();
+  // Keep a paired Apple Watch's credential in step with this session. No-op
+  // outside the iOS shell.
+  useWatchSession(session);
   const { settings } = useSettings();
   const { subscription, isPending: subPending, isError: subError, refetch: refetchSubscription } = useSubscription();
   useSubscriptionLiveSync();

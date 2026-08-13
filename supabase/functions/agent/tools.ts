@@ -145,34 +145,15 @@ async function createRecurringTaskSeries(
 }
 
 /** The zone to fall back on when the client didn't say where it is. The app's
- *  established home — see APP_TZ in src/lib/dates.ts. */
-export const FALLBACK_TZ = "America/Los_Angeles";
+ *  established home — see APP_TZ in src/lib/dates.ts. Defined once in
+ *  `_shared/dayShape.ts`; re-exported here so existing importers don't move. */
+import { FALLBACK_TZ } from "../_shared/dayShape.ts";
+export { FALLBACK_TZ };
 
-/**
- * Convert a local datetime string ("YYYY-MM-DDTHH:MM") in `tz` to a UTC ISO
- * string. Done server-side to avoid LLM midnight-rollover errors.
- *
- * `tz` is the CLIENT'S zone, passed in per request — never a constant. The app
- * renders every instant in the device zone ("a 9am block should read as 9am
- * wherever you wake up" — src/lib/timezone.ts), so "3pm" from a user standing in
- * Chicago means 3pm in Chicago. Hardcoding Pacific here silently landed every
- * agent-created block at the wrong hour while traveling.
- */
-function localToUtc(localStr: string, tz: string): string {
-  // Treat the local string as UTC to get a reference point, then compute
-  // the real zone→UTC offset at that approximate moment and apply it.
-  const asIfUtc = new Date(localStr + ":00Z");
-  const zoned = asIfUtc
-    .toLocaleString("en-CA", {
-      timeZone: tz,
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hour12: false,
-    })
-    .replace(", ", "T");
-  const offsetMs = asIfUtc.getTime() - new Date(zoned + "Z").getTime();
-  return new Date(asIfUtc.getTime() + offsetMs).toISOString();
-}
+/** Local "YYYY-MM-DDTHH:MM" in `tz` → a UTC ISO string. Lives in
+ *  `_shared/dayShape.ts` with the rest of the zone math, so the agent and the
+ *  public capture path convert an hour identically. */
+import { localToUtc } from "../_shared/dayShape.ts";
 
 function fmtZonedTime(isoUtc: string, tz: string): string {
   return new Intl.DateTimeFormat("en-US", {

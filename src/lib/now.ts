@@ -16,6 +16,9 @@ import { quietFor } from "./domainRead";
 import { endOf } from "./dates";
 import { isEventHidden } from "./eventActuals";
 import type { ExternalEvent, Task } from "./types";
+// The day's shared kernel — imported by the SPA and by the edge functions, so
+// "how much of this day is open" and "how a duration reads" mean one thing.
+import { fmtMins, openMinutes, openSpans } from "../../supabase/functions/_shared/dayShape.ts";
 
 export interface Reason {
   glyph: string;
@@ -109,24 +112,23 @@ export function readDay(now: Date, busy: BusyBlock[], windowStart: Date, windowE
   const overlapping = onNow.slice(1);
   const ahead = sorted.filter((b) => b.start > now);
 
-  // Walk the work window from the present forward, collecting the open spans
-  // between commitments. If you're mid-meeting, the first open block starts
-  // when it ends — you can't focus during it.
-  let cursor = new Date(Math.max(now.getTime(), windowStart.getTime()));
-  if (current) cursor = new Date(Math.max(cursor.getTime(), current.end.getTime()));
-  const gaps: Gap[] = [];
-  const push = (start: Date, end: Date) => {
-    const mins = Math.round((end.getTime() - start.getTime()) / 60_000);
-    if (mins >= MIN_GAP) gaps.push({ start, end, mins });
-  };
-  for (const b of sorted) {
-    if (b.end <= cursor || b.start >= windowEnd) continue;
-    if (b.start > cursor) push(cursor, b.start);
-    if (b.end > cursor) cursor = b.end;
-  }
-  if (cursor < windowEnd) push(cursor, windowEnd);
+  // The gap-walk itself lives in the shared day-shape kernel, so the server can
+  // answer "how much room does this day have" with the identical math rather
+  // than a second implementation that drifts (see openSpans' header).
+  const spans = openSpans(
+    sorted.map((b) => ({ startMs: b.start.getTime(), endMs: b.end.getTime() })),
+    windowStart.getTime(),
+    windowEnd.getTime(),
+    now.getTime(),
+    MIN_GAP,
+  );
+  const gaps: Gap[] = spans.map((s) => ({
+    start: new Date(s.startMs),
+    end: new Date(s.endMs),
+    mins: s.mins,
+  }));
 
-  const openMins = gaps.reduce((s, g) => s + g.mins, 0);
+  const openMins = openMinutes(spans);
   const h = now.getHours();
   const deepWindow = (h >= 9 && h < 12) || (h >= 14 && h < 16);
   let deepEndsLabel: string | null = null;
@@ -198,13 +200,11 @@ export function toBusyBlocks(
   ];
 }
 
-/** "1h 42m" · "45m" · "0m" — compact human duration for stat chips. */
-export function fmtMins(mins: number): string {
-  if (mins <= 0) return "0m";
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
-}
+/** "1h 42m" · "45m" · "0m" — compact human duration for stat chips.
+ *  Defined in the shared day-shape kernel so a client that can't import `src/`
+ *  (the watch) writes the same duration the phone does; re-exported here so
+ *  every existing importer stays put. */
+export { fmtMins };
 
 const ENERGY_GLYPH: Record<string, string> = { deep: "◆", decide: "▲", delegate: "⇢", quick: "•" };
 

@@ -182,7 +182,11 @@ pub fn run() {
         // Deep links. On iOS this is what carries a widget tap into the app:
         // the OS opens `nuvo://capture`, tao raises RunEvent::Opened, and the
         // plugin emits it to the webview (MobileShell → applyShortcut).
-        .plugin(tauri_plugin_deep_link::init());
+        .plugin(tauri_plugin_deep_link::init())
+        // The wrist. On iOS this hands a paired Apple Watch a credential over
+        // WatchConnectivity; everywhere else every command is a no-op that
+        // reports `supported: false`, so the SPA calls it unconditionally.
+        .plugin(tauri_plugin_nuvo_watch::init());
 
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());

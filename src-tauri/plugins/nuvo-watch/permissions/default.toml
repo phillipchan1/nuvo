@@ -1,0 +1,12 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+Default permissions for the nuvo-watch plugin.
+
+Grants the three credential-bridge commands. These are Tauri IPC permissions:
+they let the app's own webview ask the native side to hand a paired Apple Watch
+a credential. Nothing here is reachable from remote content, and the payload is
+a revocable connection token rather than the user's Supabase session.
+"""
+permissions = ["allow-push-session", "allow-clear-session", "allow-watch-status"]

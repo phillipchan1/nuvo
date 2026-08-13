@@ -6,49 +6,15 @@
 // uses. A battery that built its own snapshot string would be testing a chat
 // that reads a document nobody sends.
 //
-// Zero imports, zero side effects.
+// Zero runtime imports, zero side effects — the only import is a type-only one
+// from `_shared/dayShape.ts`, which erases at compile time.
 
-/** An open window in the day — computed, not a thing the user made. Named
- *  "window", never "slot": a Slot is a real row the user can create and drop
- *  work into, and calling both of them slots taught the model that "9am slot"
- *  meant "the gap at 9am" (Principle 11 — one name, one meaning). */
-export interface OpenWindow {
-  startISO: string;
-  endISO: string;
-  /** Pre-formatted in the user's zone */
-  timeRange: string;
-  minutes: number;
-}
-
-/** A Slot the user actually holds: one block of time on the calendar that owns
- *  several tasks. The tasks inside have no time of their own — the slot is the
- *  block, they're its contents. */
-export interface SlotSummary {
-  id: string;
-  title: string;
-  /** Pre-formatted in the user's zone — use verbatim. */
-  timeRange: string;
-  startISO: string;
-  durationMinutes: number;
-  localDate: string;
-  past: boolean;
-  projectId: string | null;
-  domainId: string | null;
-  /** What's in it, in order. */
-  tasks: { id: string; title: string; status: string }[];
-}
-
-export interface ScheduleItem {
-  kind: "event" | "task" | "slot";
-  id: string;
-  title: string;
-  localDate: string;
-  /** Pre-formatted in America/Los_Angeles — use this verbatim, never convert ISO yourself. */
-  timeRange: string;
-  past: boolean;
-  ongoing?: boolean;
-  allDay?: boolean;
-}
+// A day's vocabulary is defined once, in the shared module both runtimes (and a
+// watch that cannot import a line of `src/`) build a day from. Imported for use
+// below and re-exported so the snapshot's types and the day's types cannot drift
+// apart. Type-only, so this file still adds nothing at runtime.
+import type { OpenWindow, ScheduleItem, SlotSummary } from "../_shared/dayShape.ts";
+export type { OpenWindow, ScheduleItem, SlotSummary } from "../_shared/dayShape.ts";
 
 /** A project committed to the planning week — the app's own definition of a
  *  week priority. Derived from the project's On Deck span, never stored. */

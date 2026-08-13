@@ -5,7 +5,8 @@
 // MobileCalendar.tsx so the lenses can share it without an import cycle.
 
 import { addDays, isSameDay, startOfDay } from "date-fns";
-import { fmtMins, readDay, toBusyBlocks, type Gap } from "../../lib/now";
+import { readDay, toBusyBlocks, type Gap } from "../../lib/now";
+import { dayReadout as sharedDayReadout } from "../../../supabase/functions/_shared/dayShape.ts";
 import type { AttendeeStatus, ExternalEvent, Task } from "../../lib/types";
 
 export const DAY_MS = 24 * 3600_000;
@@ -195,18 +196,14 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
  *  and the Day lens header, so the two lenses can't disagree about a day. A
  *  past date is a record of what happened, not an availability question — its
  *  readout counts commitments and never advertises open windows. */
+/** The words a day is described in. The rule lives in the shared day-shape
+ *  kernel so the phone, the desk and a watch that can't import `src/` all say
+ *  the same thing about the same day; this is only the adapter from `DayPlan`. */
 export function dayReadout(day: DayPlan): { text: string; accent: boolean } {
-  const busyCount = day.timed.length + day.allDay.length;
-  const text = day.isBygone
-    ? busyCount > 0
-      ? `${busyCount} scheduled`
-      : ""
-    : day.isPast
-      ? "done for today"
-      : day.openMins > 0
-        ? `${fmtMins(day.openMins)} open`
-        : busyCount > 0
-          ? "fully booked"
-          : "wide open";
-  return { text, accent: !day.isBygone && !day.isPast && day.openMins > 0 };
+  return sharedDayReadout({
+    busyCount: day.timed.length + day.allDay.length,
+    openMins: day.openMins,
+    isPast: day.isPast,
+    isBygone: day.isBygone,
+  });
 }

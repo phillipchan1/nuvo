@@ -21,232 +21,24 @@ import {
   planningWeekStart,
   spansWeek,
 } from "../_shared/planningRules.ts";
+// What a day is — shared with the SPA and with any client that has to render a
+// day without importing `src/`. Same rule as the planning kernel: import it,
+// never re-implement it (tests/planning-kernel.test.ts fails if you do).
+import {
+  buildDaySchedule,
+  buildSlotSummaries,
+  computeOpenWindows,
+  FALLBACK_TZ,
+  fmtEvent,
+  fmtTask,
+  makeEventVisibility,
+  todayIn,
+  visibleEventRows,
+} from "../_shared/dayShape.ts";
 
-/** Fallback when the client didn't say where it is — the app's established home. */
-const FALLBACK_TZ = "America/Los_Angeles";
-
-/** Today's calendar date in `tz`. */
-function todayIn(tz: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
 const TASK_COLS =
   "id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count";
-const MIN_WINDOW_MINUTES = 30;
 
-
-function localDateISO(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(iso));
-}
-
-function fmtTimeLocal(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(new Date(iso));
-}
-
-function fmtTimeRange(startIso: string, endIso: string, tz: string): string {
-  return `${fmtTimeLocal(startIso, tz)}–${fmtTimeLocal(endIso, tz)}`;
-}
-
-function fmtTask(t: Record<string, unknown>, today: string, nowMs: number, tz: string) {
-  const startTime = t.start_time as string | null;
-  const duration = (t.duration_minutes as number) ?? 30;
-  let past = false;
-  let ongoing = false;
-  let localDate: string | undefined;
-  let timeRange: string | undefined;
-
-  if (startTime) {
-    const startMs = new Date(startTime).getTime();
-    const endMs = startMs + duration * 60_000;
-    past = endMs <= nowMs;
-    ongoing = startMs <= nowMs && nowMs < endMs;
-    localDate = localDateISO(startTime, tz);
-    timeRange = fmtTimeRange(startTime, new Date(endMs).toISOString(), tz);
-  }
-
-  return {
-    id: t.id,
-    title: t.title,
-    status: t.status,
-    doDate: t.do_date,
-    startTime: t.start_time,
-    durationMinutes: duration,
-    deadline: t.deadline,
-    priority: t.priority,
-    notes: t.notes || undefined,
-    rollCount: t.roll_count || 0,
-    localDate,
-    timeRange,
-    isToday: localDate === today,
-    past,
-    ongoing,
-  };
-}
-
-function fmtEvent(
-  e: Record<string, unknown>,
-  today: string,
-  now: number,
-  tz: string,
-  calMeta?: { name?: string; provider?: string },
-) {
-  const startAt = e.start_at as string;
-  const endAt = e.end_at as string;
-  const start = startAt ? new Date(startAt).getTime() : null;
-  const end = endAt ? new Date(endAt).getTime() : null;
-  const localDate = startAt ? localDateISO(startAt, tz) : undefined;
-  const allDay = Boolean(e.all_day);
-
-  return {
-    id: e.id,
-    title: e.title,
-    startAt,
-    endAt,
-    allDay,
-    location: e.location || undefined,
-    calendarName: calMeta?.name,
-    provider: calMeta?.provider,
-    localDate,
-    timeRange: startAt && endAt && !allDay ? fmtTimeRange(startAt, endAt, tz) : undefined,
-    isToday: localDate === today,
-    past: end != null ? end <= now : false,
-    ongoing: start != null && end != null ? start <= now && now < end : false,
-  };
-}
-
-function buildTodaySchedule(
-  events: ReturnType<typeof fmtEvent>[],
-  scheduled: ReturnType<typeof fmtTask>[],
-  slots: SlotSummary[],
-  today: string,
-): ScheduleItem[] {
-  const items: ScheduleItem[] = [];
-
-  for (const e of events) {
-    if (e.localDate !== today) continue;
-    items.push({
-      kind: "event",
-      id: e.id as string,
-      title: e.title as string,
-      localDate: e.localDate!,
-      timeRange: e.allDay ? "all day" : (e.timeRange ?? ""),
-      past: e.past,
-      ongoing: e.ongoing,
-      allDay: e.allDay,
-    });
-  }
-
-  for (const t of scheduled) {
-    if (!t.startTime || t.localDate !== today) continue;
-    items.push({
-      kind: "task",
-      id: t.id as string,
-      title: t.title as string,
-      localDate: t.localDate!,
-      timeRange: t.timeRange ?? "",
-      past: t.past,
-      ongoing: t.ongoing,
-    });
-  }
-
-  // A slot holds the grid exactly like an event does. Leaving them out told the
-  // model an hour was open when the user had already claimed it.
-  for (const s of slots) {
-    if (s.localDate !== today) continue;
-    items.push({
-      kind: "slot",
-      id: s.id,
-      title: s.title,
-      localDate: s.localDate,
-      timeRange: s.timeRange,
-      past: s.past,
-    });
-  }
-
-  items.sort((a, b) => {
-    const parse = (s: string) => {
-      const m = s.match(/^(\d{1,2}):(\d{2})/);
-      if (!m) return 0;
-      let h = Number(m[1]);
-      const min = Number(m[2]);
-      if (/PM/i.test(s) && h < 12) h += 12;
-      if (/AM/i.test(s) && h === 12) h = 0;
-      return h * 60 + min;
-    };
-    return parse(a.timeRange) - parse(b.timeRange);
-  });
-
-  return items;
-}
-
-function computeOpenWindows(
-  events: ReturnType<typeof fmtEvent>[],
-  scheduled: ReturnType<typeof fmtTask>[],
-  slots: SlotSummary[],
-  today: string,
-  nowMs: number,
-  tz: string,
-): OpenWindow[] {
-  const busy: Array<{ s: number; e: number }> = [];
-
-  for (const ev of events) {
-    if (ev.localDate !== today || ev.allDay || !ev.startAt || !ev.endAt) continue;
-    busy.push({ s: new Date(ev.startAt).getTime(), e: new Date(ev.endAt).getTime() });
-  }
-  for (const t of scheduled) {
-    if (!t.startTime || t.localDate !== today) continue;
-    const s = new Date(t.startTime).getTime();
-    busy.push({ s, e: s + t.durationMinutes * 60_000 });
-  }
-  // Time the user has already claimed for themselves is busy — the whole point
-  // of holding a slot is that nothing else gets offered that hour.
-  for (const sl of slots) {
-    if (sl.localDate !== today) continue;
-    const s = new Date(sl.startISO).getTime();
-    busy.push({ s, e: s + sl.durationMinutes * 60_000 });
-  }
-
-  if (busy.length < 2) return [];
-
-  busy.sort((a, b) => a.s - b.s);
-
-  // Merge overlapping intervals
-  const merged: Array<{ s: number; e: number }> = [];
-  for (const b of busy) {
-    if (merged.length && b.s < merged[merged.length - 1].e) {
-      merged[merged.length - 1].e = Math.max(merged[merged.length - 1].e, b.e);
-    } else {
-      merged.push({ ...b });
-    }
-  }
-
-  // Find gaps between consecutive busy blocks, future-only
-  const windows: OpenWindow[] = [];
-  for (let i = 0; i < merged.length - 1; i++) {
-    const gapStart = Math.max(merged[i].e, nowMs);
-    const gapEnd = merged[i + 1].s;
-    const mins = Math.floor((gapEnd - gapStart) / 60_000);
-    if (mins < MIN_WINDOW_MINUTES) continue;
-    const startISO = new Date(gapStart).toISOString();
-    const endISO = new Date(gapEnd).toISOString();
-    windows.push({ startISO, endISO, timeRange: fmtTimeRange(startISO, endISO, tz), minutes: mins });
-  }
-  return windows;
-}
 
 export async function buildContext(
   userId: string,
@@ -408,19 +200,10 @@ export async function buildContext(
   }
 
 
-  const hiddenCalendars = new Set<string>(
-    (settingsRes.data?.hidden_calendar_ids as string[] | null) ?? [],
-  );
-  // Individually hidden events — keyed by the stable account_id:provider_event_id
-  // (or account_id:series:recurring_event_id for a whole series).
-  const hiddenEventKeys = new Set<string>(
-    ((settingsRes.data?.hidden_events as { key: string }[] | null) ?? []).map((h) => h.key),
-  );
-  // deno-lint-ignore no-explicit-any
-  const isEventHidden = (e: any): boolean => {
-    if (hiddenEventKeys.has(`${e.account_id}:${e.provider_event_id}`)) return true;
-    return e.recurring_event_id ? hiddenEventKeys.has(`${e.account_id}:series:${e.recurring_event_id}`) : false;
-  };
+  // What the user can actually see. Shared with every other day-reader so a
+  // hidden calendar is hidden everywhere — "hidden is out of the ledger".
+  const visibility = makeEventVisibility(settingsRes.data);
+  const { hiddenCalendars } = visibility;
 
   // Calendar name / provider lookup for events + the writable target list for
   // create/move tools ("put it on Apple Family").
@@ -449,30 +232,14 @@ export async function buildContext(
     .filter((t) => !t.start_time)
     .map((t) => fmtTask(t, today, nowMs, tz));
   const scheduled = (scheduledRes.data ?? []).map((t) => fmtTask(t, today, nowMs, tz));
-  // Deduplicate events: same provider_event_id can appear from multiple synced
-  // accounts (e.g. two Google accounts that can both see the same calendar).
-  // Secondary dedup on title+start_at catches cross-account duplicates where
-  // the provider assigns different IDs to the same logical event.
-  const seenEventIds = new Set<string>();
-  const seenEventSlots = new Set<string>();
-  const events = (eventsRes.data ?? [])
-    .filter((e) => !hiddenCalendars.has(e.calendar_id as string) && !isEventHidden(e))
-    .filter((e) => {
-      const pid = e.provider_event_id as string | null;
-      if (pid) {
-        if (seenEventIds.has(pid)) return false;
-        seenEventIds.add(pid);
-      }
-      const slot = `${e.title}|${e.start_at}`;
-      if (seenEventSlots.has(slot)) return false;
-      seenEventSlots.add(slot);
-      return true;
-    })
-    .map((e) => {
-      const meta =
-        calLookup.get(`${e.account_id}:${e.calendar_id}`) ?? calLookup.get(e.calendar_id as string);
-      return fmtEvent(e, today, nowMs, tz, meta);
-    });
+  // Hidden-filtered and de-duplicated by the shared rule (two synced accounts
+  // can both see one calendar, and a provider can assign different ids to the
+  // same logical event).
+  const events = visibleEventRows(eventsRes.data ?? [], visibility).map((e) => {
+    const meta =
+      calLookup.get(`${e.account_id}:${e.calendar_id}`) ?? calLookup.get(e.calendar_id as string);
+    return fmtEvent(e, today, nowMs, tz, meta);
+  });
 
   // Slot children carry no time of their own — the slot is the block — so they
   // are read by slot_id, not by start_time.
@@ -488,27 +255,9 @@ export async function buildContext(
           .order("sort_order")
       ).data ?? [])
     : [];
-  const todaySlots: SlotSummary[] = slotRows.map((r) => {
-    const startISO = new Date(r.start_time as string).toISOString();
-    const duration = (r.duration_minutes as number) ?? 60;
-    const endMs = new Date(startISO).getTime() + duration * 60_000;
-    return {
-      id: r.id as string,
-      title: (r.title as string) || "Untitled block",
-      timeRange: fmtTimeRange(startISO, new Date(endMs).toISOString(), tz),
-      startISO,
-      durationMinutes: duration,
-      localDate: localDateISO(startISO, tz),
-      past: endMs <= nowMs,
-      projectId: (r.project_id as string | null) ?? null,
-      domainId: (r.domain_id as string | null) ?? null,
-      tasks: slotChildren
-        .filter((t) => t.slot_id === r.id)
-        .map((t) => ({ id: t.id as string, title: t.title as string, status: t.status as string })),
-    };
-  });
+  const todaySlots: SlotSummary[] = buildSlotSummaries(slotRows, slotChildren, tz, nowMs);
 
-  const todaySchedule = buildTodaySchedule(events, scheduled, todaySlots, today);
+  const todaySchedule = buildDaySchedule(events, scheduled, todaySlots, today);
   const todayOpenWindows = computeOpenWindows(events, scheduled, todaySlots, today, nowMs, tz);
 
   const rocks = (sprint?.big_rocks ?? []) as {

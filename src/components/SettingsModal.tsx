@@ -20,7 +20,8 @@ import { useLabels } from "../hooks/useCalendar";
 import { useVertical } from "../hooks/useVertical";
 import { Btn, Modal } from "./ui";
 import Sheet from "./mobile/Sheet";
-import { Field, TextInput, Select, Toggle, Stepper, Segmented } from "./form";
+import { Field, PaneHeader, TextInput, Select, Toggle, Stepper, Segmented } from "./form";
+import { AppsDevicesPane } from "./AppsDevicesPane";
 import { BillingPane } from "./billing/BillingPane";
 import SyncPanel from "./SyncPanel";
 import type { SettingsSection } from "../lib/appNav";
@@ -44,7 +45,7 @@ const DOWNLOAD_MAC_URL =
   "https://github.com/phillipchan1/nuvo-releases/releases/latest/download/Nuvo.dmg";
 
 // ── Section registry ──────────────────────────────────────────────────────
-type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "labels" | "account" | "billing" | "about";
+type SectionId = "appearance" | "schedule" | "reminders" | "connections" | "apps" | "labels" | "account" | "billing" | "about";
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
   {
@@ -73,6 +74,15 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
     label: "Calendars",
     icon: (
       <Icon name="calendar" size={15} />
+    ),
+  },
+  {
+    // Its own row rather than a block under Calendars: nobody looks for a
+    // watch's token under a heading about calendars.
+    id: "apps",
+    label: "Apps & devices",
+    icon: (
+      <Icon name="package" size={15} />
     ),
   },
   {
@@ -109,15 +119,6 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode }[] = [
 // `Row` is the settings field unit — Field from the form primitives (label-left
 // / control-right, stacking full-width on a phone).
 const Row = Field;
-
-function PaneHeader({ title, sub }: { title: string; sub: string }) {
-  return (
-    <div className="mb-6">
-      <h2 className="text-lead font-semibold text-ink">{title}</h2>
-      <p className="mt-1 text-caption leading-snug text-muted">{sub}</p>
-    </div>
-  );
-}
 
 const toMinLabel = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
@@ -1566,6 +1567,9 @@ export default function SettingsModal({
       {active === "connections" && (
         <ConnectionsPane settings={settings} updateSettings={updateSettings} accounts={accounts} />
       )}
+      {/* Calendars are what Nuvo reads; these tokens are what writes into it.
+          Named apart so "connection" never means two things (P11). */}
+      {active === "apps" && <AppsDevicesPane />}
       {active === "labels" && <LabelsPane />}
       {active === "account" && <AccountPane />}
       {active === "billing" && (

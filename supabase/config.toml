@@ -16,3 +16,11 @@ verify_jwt = false
 # signature itself via STRIPE_WEBHOOK_SECRET instead of requireUser().
 [functions.stripe-webhook]
 verify_jwt = false
+
+# The Capture API authenticates with an opaque per-connection bearer token, not
+# a Supabase JWT, so the gateway has to pass the header through to us. The
+# function hashes the token and looks it up in `connections` (owner-scoped, RLS,
+# revocable) — see supabase/functions/capture/index.ts. Turning this on would
+# make every capture 401 before the function ever runs.
+[functions.capture]
+verify_jwt = false

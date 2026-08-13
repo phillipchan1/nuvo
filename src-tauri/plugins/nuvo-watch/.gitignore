@@ -1,0 +1,6 @@
+# Injected by tauri-plugin's build script (a copy of Tauri's Swift API package)
+# and produced by SwiftPM. All regenerated on every build.
+.tauri/
+.build/
+ios/.build/
+ios/Package.resolved

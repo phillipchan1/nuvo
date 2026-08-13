@@ -15,6 +15,17 @@ import type { ReactNode, SelectHTMLAttributes, InputHTMLAttributes } from "react
    Segmented  — a small pill group for 2–4 exclusive choices                */
 
 // ── Field: label-left / control-right, stacking on a phone ─────────────────
+/** The heading at the top of a settings pane. Lives here rather than in
+ *  SettingsModal so a pane split into its own file wears the same crown. */
+export function PaneHeader({ title, sub }: { title: string; sub: string }) {
+  return (
+    <div className="mb-6">
+      <h2 className="text-lead font-semibold text-ink">{title}</h2>
+      <p className="mt-1 text-caption leading-snug text-muted">{sub}</p>
+    </div>
+  );
+}
+
 export function Field({
   title,
   desc,

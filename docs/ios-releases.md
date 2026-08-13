@@ -32,7 +32,7 @@ src-tauri/
   tauri.conf.json        identifier com.nuvo.app (macOS desktop)
   tauri.ios.conf.json    identifier day.nuvo.app (iOS / TestFlight)
   gen/apple/             Generated Xcode project (gitignored; CI regenerates)
-  ios/                   Committed native code (widgets + App Intents — phase 2)
+  ios/                   Committed native code (widgets · watch app · App Intents)
 .github/workflows/
   ios-release.yml        Build signed IPA → upload TestFlight
 ```
@@ -111,6 +111,21 @@ The app builds and the extension embeds fine — only the export step fails, and
 only until the identifier exists. Register it once and re-run; nothing in the
 repo needs to change. (If you'd rather ship without widgets in the meantime, set
 `NUVO_IOS_WIDGETS=0` on the build step.)
+
+**The watch app needs one too: `day.nuvo.app.watchkitapp`.** Same place, **+** →
+App IDs → **App**, description `Nuvo Watch`, bundle ID **explicit**
+`day.nuvo.app.watchkitapp`, no capabilities (WatchConnectivity requires none,
+and the watch keychain needs no access group). Apple requires a watch app's id
+to be *prefixed by its companion's* — that part is a rule, not a convention.
+Same failure mode and same fix as the widgets; `NUVO_IOS_WATCH=0` ships without
+it meanwhile.
+
+There is **no separate App Store record.** A companion watch app rides inside
+the existing IPA at `Payload/Nuvo.app/Watch/NuvoWatch.app` — one `day.nuvo.app`
+record, one TestFlight build, one version stamp, and it installs onto a paired
+watch with the phone app. The consequence worth naming: the watch target now
+rides *every* iOS release, so a watch build failure fails the whole thing. That
+is what the `NUVO_IOS_WATCH=0` escape hatch is for.
 
 #### 4 · App Store Connect API key (upload + automatic signing in CI)
 
@@ -378,6 +393,9 @@ step) at `app-icon.svg` directly.
 | Widgets don't appear in the gallery | The extension wasn't embedded. Check the build log for `ios-widgets: added NuvoWidgets…`, and that `nuvo_iOS`'s dependencies in `gen/apple/project.yml` include `target: NuvoWidgets, embed: true` |
 | Upload rejected: extension bundle version mismatch | `scripts/ios-widgets.rb` stamps the widget plist from `tauri.conf.json` + `BUILD_NUMBER`. If CI computes the version differently, that script has to learn the same rule |
 | `exportArchive Automatic signing cannot register bundle identifier "day.nuvo.app.widgets"` / `No profiles for 'day.nuvo.app.widgets' were found` | The extension's App ID doesn't exist yet and CI can't create it through the API key. Register `day.nuvo.app.widgets` by hand — § One-time setup step 3 — then re-run. With manual `IOS_*` secrets you also need a second App Store provisioning profile for it |
+| Same, for `day.nuvo.app.watchkitapp` | Identical cause and fix — register the watch App ID by hand. `NUVO_IOS_WATCH=0` ships without the watch app until you do |
+| `Multiple commands produce .../NuvoWatch.app/NuvoWatch` | The watch target is `application.watchapp2` (legacy: the `.app` wraps Apple's WatchKit stub binary), so the stub copy and our own link both write the executable. A single-target watch app must be `type: application` on `platform: watchOS` — see `scripts/ios-watch.rb` |
+| Archive has no watch app inside it | Check the app target's `NuvoWatch` dependency still carries the explicit `copy:` block. A plain `application` gets **no** inferred "Embed Watch Content" phase. Note XcodeGen names the emitted phase **Embed Dependencies** — verify with `grep -A5 'dstSubfolderSpec = 16' …/project.pbxproj`, not by the Xcode phase name |
 | `CFBundleVersion of an app extension must match that of its containing parent app` | `scripts/ios-widgets.rb` must stamp the widget with the plain `tauri.conf.json` version, *not* `<version>.<build>` — Tauri's `agvtool new-version -all` adds the build number to both plists between build and archive |
 | Anything widget-related blocking a TestFlight build | Set `NUVO_IOS_WIDGETS=0` on the workflow step to ship the plain app while you fix it |
 | Widget taps open the app but nothing happens | The deep link isn't arriving: check `deep-link:default` is in `capabilities/default.json` and the plugin is registered in `src-tauri/src/lib.rs`; reproduce with `xcrun simctl openurl booted nuvo://capture` |

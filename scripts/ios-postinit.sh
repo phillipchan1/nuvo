@@ -26,6 +26,17 @@ else
   echo "ios-widgets: skipped (NUVO_IOS_WIDGETS=0)"
 fi
 
+# The watchOS companion. Same constraint as the widgets — it regenerates the
+# project, so it must run BEFORE the PlistBuddy patches below. The two injection
+# scripts are commutative with each other (each re-reads project.yml from disk),
+# so this order is only for readability. NUVO_IOS_WATCH=0 ships the plain app if
+# the watch target ever blocks a build.
+if [ "${NUVO_IOS_WATCH:-1}" = "1" ]; then
+  ruby "${ROOT}/scripts/ios-watch.rb"
+else
+  echo "ios-watch: skipped (NUVO_IOS_WATCH=0)"
+fi
+
 # App Store export compliance — Nuvo uses HTTPS only (Supabase); no custom crypto.
 /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$PLIST"

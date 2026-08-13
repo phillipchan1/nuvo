@@ -1,0 +1,25 @@
+# The phone → watch credential bridge.
+#
+# A separate crate rather than a command in the app because that is the only
+# mechanism Tauri v2 offers for calling Swift: `tauri_plugin::Builder::ios_path`
+# hands the directory to `swift_rs::SwiftLinker`, which compiles the SwiftPM
+# package during `cargo build` and links it statically into `libapp.a`. The
+# Xcode project never learns about this Swift at all — so none of it belongs in
+# scripts/ios-watch.rb.
+#
+# `links` is mandatory and must equal the package name; tauri-plugin's build
+# helper errors with `LinksMissing` otherwise.
+
+[package]
+name = "tauri-plugin-nuvo-watch"
+version = "0.1.0"
+edition = "2021"
+links = "tauri-plugin-nuvo-watch"
+
+[dependencies]
+tauri = "2"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

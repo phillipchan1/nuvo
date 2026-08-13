@@ -63,6 +63,11 @@ const IOS_ONLY = [
   // The WidgetKit extension's injection into the generated Xcode project. Only
   // ios-postinit.sh calls it, and only the iOS build runs that.
   /^scripts\/ios-widgets\.rb$/,
+  // The watchOS companion's injection into the generated Xcode project. Same
+  // shape as ios-widgets.rb — only ios-postinit.sh calls it, and only the iOS
+  // build runs that. Without this entry a watch-only change falls through to
+  // the conservative default and wakes the macOS runner too.
+  /^scripts\/ios-watch\.rb$/,
   /^\.github\/workflows\/ios-release\.yml$/,
 ];
 

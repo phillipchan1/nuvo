@@ -24,6 +24,10 @@ serde_json = "1"
 # iOS delivers a custom-scheme URL through (the scheme itself is registered in
 # scripts/ios-postinit.sh); MobileShell turns the URL into an overlay.
 tauri-plugin-deep-link = "2"
+# Hands a paired Apple Watch a credential over WatchConnectivity. iOS-only in
+# substance; on every other platform each command is a no-op reporting
+# `supported: false`, so the SPA needs no platform branch.
+tauri-plugin-nuvo-watch = { path = "plugins/nuvo-watch" }
 
 # Global hotkey is desktop-only; the crate doesn't build for mobile targets.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
