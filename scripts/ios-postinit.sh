@@ -29,9 +29,18 @@ fi
 # The watchOS companion. Same constraint as the widgets — it regenerates the
 # project, so it must run BEFORE the PlistBuddy patches below. The two injection
 # scripts are commutative with each other (each re-reads project.yml from disk),
-# so this order is only for readability. NUVO_IOS_WATCH=0 ships the plain app if
-# the watch target ever blocks a build.
-if [ "${NUVO_IOS_WATCH:-1}" = "1" ]; then
+# so this order is only for readability.
+#
+# ⚠️ OPT-IN (default 0) until the SDK conflict is solved — set NUVO_IOS_WATCH=1.
+# `tauri ios build` drives xcodebuild with an explicit
+# `-sdk .../iPhoneOS<ver>.sdk`, and a command-line -sdk overrides every target's
+# own SDKROOT. So the watch target — a build dependency of the app — compiles
+# against the iOS SDK, where WCSessionDelegate has different requirements
+# (sessionDidBecomeInactive/sessionDidDeactivate are iOS-only) and
+# containerBackground(for:) needs iOS 17 against our 15.0 floor. It fails the
+# TestFlight build (run 31719213175). Building the target alone with
+# `-sdk watchsimulator` succeeds, which is why this passed locally.
+if [ "${NUVO_IOS_WATCH:-0}" = "1" ]; then
   ruby "${ROOT}/scripts/ios-watch.rb"
 else
   echo "ios-watch: skipped (NUVO_IOS_WATCH=0)"

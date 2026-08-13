@@ -21,7 +21,7 @@ import {
   REMINDER_LEADS,
   type ReminderAnchorKind,
 } from "../../supabase/functions/_shared/reminderRules.ts";
-import TaskRow, { type TaskMeta } from "./TaskRow";
+import TaskRow, { type TaskMeta, type TaskRowHandle } from "./TaskRow";
 import WeekPanel, { type WeekDoor } from "./WeekPanel";
 import { SectionLabel } from "./ui";
 
@@ -107,6 +107,10 @@ export default function LeftRail({
   const [remindPickerFor, setRemindPickerFor] = useState<Task | null>(null);
   const [schedulePickerFor, setSchedulePickerFor] = useState<Task | null>(null);
   const captureRef = useRef<HTMLInputElement>(null);
+  // So keyboard completion can run the row's own bloom-and-collapse animation
+  // (`triggerToggle`) instead of flipping `status` straight in the cache —
+  // that instant flip is what made a keyboard-completed row just vanish.
+  const rowHandles = useRef<Map<string, TaskRowHandle>>(new Map());
   const [railWidth, setRailWidth] = useState(readRailWidth);
   const [capture, setCapture] = useState("");
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -179,9 +183,24 @@ export default function LeftRail({
       // of the same key just reopened the row you'd already finished, because
       // nothing ever moved the cursor off it (the row it disappeared into "N done
       // today" read as the keyboard having gone dead).
+      //
+      // Completing goes through the row's own `triggerToggle` rather than
+      // patching the cache here directly — that's what gives it the same
+      // bloom-check-then-collapse animation a mouse click gets, instead of an
+      // instant remove. The cursor still advances immediately (it doesn't wait
+      // out the row's animation), so pressing the key again right away walks
+      // down the list — each row plays out its own collapse behind you.
       const completeAndAdvance = () => {
         const advancing = targets.length === 1 && targets[0].status !== "done";
-        targets.forEach((t) => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t)));
+        targets.forEach((t) => {
+          if (t.status === "done") {
+            mutations.uncomplete(t);
+            return;
+          }
+          const handle = rowHandles.current.get(t.id);
+          if (handle) handle.triggerToggle();
+          else mutations.complete(t);
+        });
         if (advancing) move(1);
       };
 
@@ -549,6 +568,10 @@ export default function LeftRail({
   }, [hotkeysEnabled, moveBy, visible]);
 
   const rowProps = (t: Task) => ({
+    ref: (el: TaskRowHandle | null) => {
+      if (el) rowHandles.current.set(t.id, el);
+      else rowHandles.current.delete(t.id);
+    },
     task: t,
     labels,
     // One clock for the row and the group that sorted it — see TaskRow's `now`.

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./Icon";
 import type { Label, Task } from "../lib/types";
 import { ENERGY_META } from "../lib/energy";
@@ -174,28 +174,14 @@ function StatsCluster({
   );
 }
 
-export default function TaskRow({
-  task,
-  labels,
-  selected,
-  multiSelected,
-  draggable,
-  dragging,
-  dragGroup,
-  onSelect,
-  onOpen,
-  onToggleDone,
-  onMultiToggle,
-  onRangeSelect,
-  onContextMenu,
-  accent,
-  meta,
-  action,
-  onAcceptSuggestion,
-  onDismissSuggestion,
-  now,
-  swipeActions,
-}: {
+/** Imperative escape hatch for keyboard-driven completion, which has no click
+ *  to hang the row's bloom-and-collapse animation off of — `triggerToggle()`
+ *  runs the exact same path `toggle()` gives the checkbox. */
+export interface TaskRowHandle {
+  triggerToggle: () => void;
+}
+
+const TaskRow = forwardRef<TaskRowHandle, {
   task: Task;
   labels: Label[];
   selected: boolean;
@@ -231,7 +217,31 @@ export default function TaskRow({
    *  undo toast). Pointer events, never HTML5 DnD (Tauri swallows it). Omitted
    *  on desktop, where the row is byte-identical to before. */
   swipeActions?: { onDefer: () => void };
-}) {
+}>(function TaskRow(
+  {
+    task,
+    labels,
+    selected,
+    multiSelected,
+    draggable,
+    dragging,
+    dragGroup,
+    onSelect,
+    onOpen,
+    onToggleDone,
+    onMultiToggle,
+    onRangeSelect,
+    onContextMenu,
+    accent,
+    meta,
+    action,
+    onAcceptSuggestion,
+    onDismissSuggestion,
+    now,
+    swipeActions,
+  },
+  ref,
+) {
   const [completing, setCompleting] = useState(false);
   const completeTimer = useRef<number | null>(null);
   useEffect(
@@ -265,6 +275,8 @@ export default function TaskRow({
       onToggleDone();
     }
   };
+
+  useImperativeHandle(ref, () => ({ triggerToggle: toggle }));
 
   // Selection is resolved on mousedown (not click) so a modifier-press always
   // registers even when FullCalendar's rail Draggable is watching for a drag —
@@ -576,4 +588,6 @@ export default function TaskRow({
       </div>
     </div>
   );
-}
+});
+
+export default TaskRow;
