@@ -1,6 +1,6 @@
 # Calendar & Task remediation — what shipped, and what didn't
 
-**Status:** P0 complete · P1 partial · 2026-08-13
+**Status:** P0 complete · P1 partial · background push shipped · 2026-08-13
 **Answers:** [`calendar-task-completeness-audit-2026-08-12.md`](./calendar-task-completeness-audit-2026-08-12.md)
 **Plan + the trades it took:** [`calendar-task-remediation-2026-08-12.md`](./calendar-task-remediation-2026-08-12.md)
 
@@ -148,7 +148,6 @@ against the clock, in this order.
 
 | Gap | Why it isn't here |
 |---|---|
-| **Background push** — reminders reaching a closed app | **Newly unblocked (D-105).** D-102 shipped foreground-only delivery out of caution against N-07; Phil has since ruled push acceptable with explicit user consent. What is missing is infrastructure, not permission: a `push_subscriptions` table, VAPID keys, a `push` handler in the service worker, and a cron dispatcher. The rule about *what may be said* does not move — three anchors, no nudges, `reminderRules.ts` still the only door. **This is the next thing to build in this area.** |
 | **Completion-anchored repeat** ("every 3 days *after I last did it*") | The rest of P0-4 shipped. This one changes *materialization*, not the rule: it needs one open occurrence at a time, regenerated on completion, which touches `useRecurrence`, the rollover function and the agent's series creation. Half-done it produces a series that displays but doesn't exist — the exact failure N-15 was reverted for. Column not added; nothing half-built to clean up. |
 | **Filters and saved views** (rank 6) | Untouched. The design in the plan holds: a `TaskQuery` value type with one pure `matchesQuery` shared by rail, table and agent, saved into `user_settings` (not a new table, not a new pool). |
 | **Bulk actions beyond four verbs; any bulk on the phone** | Untouched. |
@@ -158,16 +157,24 @@ against the clock, in this order.
 | **Search depth** — notes body, completed tasks, operators | Title-only still. |
 | `.ics` import/export · M365 write-back · per-event timezone · event attachments · event templates · place autocomplete · Zoom/Teams minting · per-weekday hours · sections · task kanban · per-task history · multi-day timed events · queuing external-event writes offline | P2 in the plan; unchanged. |
 
-### Two things to know before you use it
+### Shipped after this changelog was first written
 
-0. **Reminders currently only fire while Nuvo is open.** With the app closed,
-   nothing reaches you. That was a deliberate limit against N-07 and is now
-   lifted in principle (D-105) but not in code — see the table above.
-1. **`icloud-events` RSVP has not been exercised against a live Apple account.**
-   The code is deployed and the shape follows the existing CalDAV paths, but the
-   only honest verification is answering a real iCloud invite. Your working
-   calendar is ICS (read-only), so I couldn't.
-2. **Reminders are off.** See P0-1.
+- **Background push** (D-105, [`push-notifications.md`](./push-notifications.md)).
+  Reminders now reach a closed app. The interesting half is reconciliation:
+  nothing speaks without winning an atomic claim on `(user, reminder, fire
+  instant)` — the unit is the PERSON, not the device — and the dispatcher gives
+  an open app a 30s head start, so someone in front of Nuvo gets the in-app
+  notification and no push at all.
+
+### What still needs a human, in priority order
+
+| # | What | Why it needs you |
+|---|---|---|
+| 1 | **No push has reached a real device** | The VAPID pair is set and *proven to sign* (`{"selfTest":true}` → `ok`, `matchesClient`), but signing is not delivering. Needs a phone with the PWA installed to the Home Screen and permission granted — §4 of `push-notifications.md`. Until someone sees a notification on a lock screen, this feature is unverified. |
+| 2 | **Reminders are off** in Phil's account | Turned on only to verify, then back off, because off is the designed default. Settings → Reminders. |
+| 3 | **The Tauri shells get no notifications at all** | Mac and iOS run no service worker by design. While running they *could* show native ones via `tauri-plugin-notification` (not installed); quit-state on iOS needs APNs. Neither is built, and the Mac app being usually-open is the only reason this isn't louder. |
+| 4 | **`icloud-events` RSVP never answered a real invite** | Deployed, shaped like the existing CalDAV paths, never exercised. Phil's working calendar is ICS (read-only), so it couldn't be. |
+| 5 | **`npm run eval` never run** | 13 new agent capabilities are pinned by deterministic tests only. Worth `npm run eval -- --repeat 5` before leaning on the new chat verbs. |
 
 ---
 
@@ -183,5 +190,6 @@ against the clock, in this order.
 - `ShortcutsModal` gained **B**, **U**, ⌘Z and ⇧⌘Z. `KEYBOARD_SHORTCUTS.md` is
   still stale against it — the audit noted that, and it is still true.
 
-**Not committed.** The working tree holds everything; the four migrations and
-three functions are live because the app needs them to run.
+**Shipped to `master`.** Migrations 57–61 applied; `agent`, `icloud-events`,
+`task-mirror` and `push-dispatch` deployed. Pushing to `master` runs
+`release.yml`, so this is live in installed desktop apps.
