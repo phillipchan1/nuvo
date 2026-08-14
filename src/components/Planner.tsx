@@ -279,6 +279,19 @@ export default function Planner({
     return m;
   }, [slotChildTasks]);
 
+  // The one merged, deduped view of every task query — CalendarPane reads this
+  // too (via allTasksArray below). Resolving the Today rail through this same
+  // map (rather than reading todayTasks/scheduled independently) is what keeps
+  // a task's checked state from disagreeing between the rail and the calendar
+  // block when the "day" and "scheduled" query caches refetch at slightly
+  // different times after a completion toggle.
+  const allKnownTasks = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled, ...anytime, ...slotChildTasks])
+      map.set(t.id, t);
+    return map;
+  }, [inbox, weekTasks, todayTasks, scheduled, anytime, slotChildTasks]);
+
   // Today's slot children augmented with their slot's start_time so they appear
   // in the "Scheduled on Calendar" section of the Today rail (slot children have
   // start_time null in the DB — the slot carries the time, not the task).
@@ -291,19 +304,20 @@ export default function Planner({
     );
     const seen = new Set<string>();
     const out: Task[] = [];
-    for (const t of slotChildTasks) {
-      if (!t.slot_id || !todaySlotMap.has(t.slot_id) || t.status === "trashed") continue;
-      if (seen.has(t.id)) continue;
-      seen.add(t.id);
-      out.push({ ...t, start_time: todaySlotMap.get(t.slot_id)!.start_time });
+    for (const raw of slotChildTasks) {
+      if (!raw.slot_id || !todaySlotMap.has(raw.slot_id) || raw.status === "trashed") continue;
+      if (seen.has(raw.id)) continue;
+      seen.add(raw.id);
+      const t = allKnownTasks.get(raw.id) ?? raw;
+      out.push({ ...t, start_time: todaySlotMap.get(raw.slot_id)!.start_time });
     }
-    for (const t of todayTasks) {
-      if (t.slot_id || seen.has(t.id)) continue;
-      seen.add(t.id);
-      out.push(t);
+    for (const raw of todayTasks) {
+      if (raw.slot_id || seen.has(raw.id)) continue;
+      seen.add(raw.id);
+      out.push(allKnownTasks.get(raw.id) ?? raw);
     }
     return out;
-  }, [todayTasks, slotChildTasks, slots, today]);
+  }, [todayTasks, slotChildTasks, slots, today, allKnownTasks]);
 
   const slotTitle = useCallback(
     (s: Slot) => deriveSlotTitle(s, slotTasksBySlot[s.id] ?? [], vertical),
@@ -349,13 +363,6 @@ export default function Planner({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlay]);
-
-  const allKnownTasks = useMemo(() => {
-    const map = new Map<string, Task>();
-    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled, ...anytime, ...slotChildTasks])
-      map.set(t.id, t);
-    return map;
-  }, [inbox, weekTasks, todayTasks, scheduled, anytime, slotChildTasks]);
 
   const taskAccent = useCallback((t: Task) => taskDomainColor(vertical, t), [vertical]);
   const taskDomain = useCallback((t: Task) => taskDomainId(vertical, t), [vertical]);
