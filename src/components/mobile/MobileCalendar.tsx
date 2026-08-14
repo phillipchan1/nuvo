@@ -15,7 +15,11 @@ import {
 import { useSettings, firstDayOfWeek } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
+import { useSlots, useSlotTasks } from "../../hooks/useSlots";
+import { useVertical } from "../../hooks/useVertical";
+import { deriveSlotTitle } from "../../lib/slots";
 import { fmtMins, isEventHidden } from "../../lib/now";
+import type { Task } from "../../lib/types";
 import { parseDateISO } from "../../lib/dates";
 import { clearCalendarReveal, onCalendarReveal, pendingCalendarReveal } from "../../lib/calendarReveal";
 import type { CalendarTap } from "./MobileEventSheet";
@@ -167,6 +171,15 @@ export default function MobileCalendar({
 
   const { data: events = [], isLoading: evLoading } = useExternalEvents(range.start, range.end);
   const { data: blocks = [], isLoading: blkLoading } = useScheduledTasks(range.start, range.end);
+  // Standing slots — a slot is its own timed container; a task placed inside
+  // one rides the slot's time instead of carrying its own start_time (see
+  // assignToSlot, useTasks.ts), so it has to be fetched alongside the plain
+  // scheduled blocks or it's invisible here. Same two queries desktop's
+  // Planner.tsx uses for CalendarPane.
+  const { data: slots = [], isLoading: slotLoading } = useSlots(range.start, range.end);
+  const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
+  const { data: slotChildTasks = [] } = useSlotTasks(slotIds);
+  const { data: vertical } = useVertical();
 
   const showWeather = settings?.show_weather ?? false;
   const { data: weatherData } = useWeather(showWeather);
@@ -177,12 +190,31 @@ export default function MobileCalendar({
   const workStart = settings?.work_start_minutes ?? 480;
   const workEnd = settings?.work_end_minutes ?? 990;
 
+  const slotChildren = useMemo(() => {
+    const m: Record<string, Task[]> = {};
+    for (const t of slotChildTasks) {
+      if (!t.slot_id) continue;
+      (m[t.slot_id] ??= []).push(t);
+    }
+    return m;
+  }, [slotChildTasks]);
+
+  // Same derivation desktop's Planner.tsx feeds CalendarPane — a slot with no
+  // typed title takes its name from its project, its children's shared
+  // domain, or a plain time-of-day label, so the two shells never disagree
+  // about what to call the same block.
+  const slotTitles = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of slots) m.set(s.id, deriveSlotTitle(s, slotChildren[s.id] ?? [], vertical));
+    return m;
+  }, [slots, slotChildren, vertical]);
+
   const dayCtx = useMemo<DayCtx>(() => {
     const visibleEvents = events.filter((e) => !hidden.has(e.calendar_id) && !isEventHidden(e, hiddenEventKeys));
-    return { visibleEvents, blocks, hidden, workStart, workEnd, now };
-  }, [events, blocks, hidden, hiddenEventKeys, workStart, workEnd, now]);
+    return { visibleEvents, blocks, slots, slotChildren, slotTitles, hidden, workStart, workEnd, now };
+  }, [events, blocks, slots, slotChildren, slotTitles, hidden, hiddenEventKeys, workStart, workEnd, now]);
 
-  const loading = evLoading || blkLoading;
+  const loading = evLoading || blkLoading || slotLoading;
 
   const pickDay = (date: Date) => {
     const d = startOfDay(date);
@@ -461,7 +493,7 @@ function MonthCell({
   onPick: (d: Date) => void;
 }) {
   const { date, isToday, timed, allDay, openMins, isPast } = day;
-  const blkCount = timed.filter((t) => t.kind === "block").length;
+  const blkCount = timed.filter((t) => t.kind === "block" || t.kind === "slot").length;
   const evCount = timed.filter((t) => t.kind === "event").length + allDay.length;
   // Up to 3 density dots — tasks (accent) first, then events (neutral).
   const dots = [
@@ -873,22 +905,22 @@ const DayCard = memo(function DayCard({
             const tap: CalendarTap =
               b.kind === "event"
                 ? { kind: "event", id: b.eventId!, title: b.title || "Untitled", start: b.start, end: b.end, location: b.location ?? null, self_rsvp: b.self_rsvp, accountId: b.accountId, calendarId: b.calendarId }
-                : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
+                : b.kind === "slot"
+                  ? { kind: "slot", slot: b.slot!, title: b.title || "Untitled", start: b.start, end: b.end, childCount: b.childCount ?? 0, doneCount: b.doneCount ?? 0 }
+                  : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
+            const markColor = b.kind === "slot" ? "var(--slot)" : b.kind === "block" ? "var(--accent)" : "var(--line-strong)";
             return (
               <button
                 key={i}
                 onClick={() => onTapEvent?.(tap)}
                 className="tap fast -mx-1 flex w-full items-baseline gap-2.5 rounded-lg px-1 text-left active:bg-surface-2"
               >
-                <span
-                  className="mono w-[68px] shrink-0 text-right text-meta"
-                  style={{ color: b.kind === "block" ? "var(--accent)" : "var(--muted)" }}
-                >
+                <span className="mono w-[68px] shrink-0 text-right text-meta" style={{ color: markColor }}>
                   {at(b.start)}
                 </span>
                 <span
-                  className={`mt-[5px] shrink-0 self-start ${b.projectBacked ? "h-2 w-2 rounded-[2px]" : "h-1.5 w-1.5 rounded-full"}`}
-                  style={{ background: b.kind === "block" ? "var(--accent)" : "var(--line-strong)" }}
+                  className={`mt-[5px] shrink-0 self-start ${b.kind === "slot" || b.projectBacked ? "h-2 w-2 rounded-[2px]" : "h-1.5 w-1.5 rounded-full"}`}
+                  style={{ background: markColor }}
                 />
                 <div className="min-w-0 flex-1">
                   <div className={`truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>{b.projectBacked ? `▸ ${b.title || "Untitled"}` : b.title || "Untitled"}</div>

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "../Icon";
-import type { AttendeeStatus, ExternalEvent, Task } from "../../lib/types";
+import type { AttendeeStatus, ExternalEvent, Slot, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
+import { useSlotMutations } from "../../hooks/useSlots";
 import { useCalendarAccounts, useEventDetails, useEventSeriesRule, useExternalEventMutations } from "../../hooks/useCalendar";
 import { conferenceName, joinUrl } from "../../../supabase/functions/_shared/conferencing.ts";
 import {
@@ -37,7 +38,8 @@ export type CalendarTap =
       accountId?: string;
       calendarId?: string;
     }
-  | { kind: "block"; taskId: string; title: string; start: Date; end: Date; done: boolean };
+  | { kind: "block"; taskId: string; title: string; start: Date; end: Date; done: boolean }
+  | { kind: "slot"; slot: Slot; title: string; start: Date; end: Date; childCount: number; doneCount: number };
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 
@@ -49,6 +51,7 @@ const dateFmt = (d: Date) => d.toLocaleDateString([], { weekday: "short", month:
 export default function MobileEventSheet({
   tap,
   task,
+  slotChildren,
   mutations,
   onClose,
   onAskNuvo,
@@ -56,6 +59,8 @@ export default function MobileEventSheet({
 }: {
   tap: CalendarTap;
   task?: Task | null;
+  /** kind === "slot" only — its live child tasks, resolved by the caller. */
+  slotChildren?: Task[];
   mutations: Mutations;
   onClose: () => void;
   onAskNuvo?: (seed: string, say?: string) => void;
@@ -63,6 +68,7 @@ export default function MobileEventSheet({
 }) {
   const qc = useQueryClient();
   const { rsvpEvent, updateEvent, deleteEvent } = useExternalEventMutations();
+  const slotMutations = useSlotMutations();
   const { data: accounts = [] } = useCalendarAccounts();
   // Same write-back rule as desktop's EventPopover: a two-way Google/iCloud
   // account, and not a read-only mirror/holiday/subscription calendar.
@@ -118,7 +124,9 @@ export default function MobileEventSheet({
     const seed =
       tap.kind === "event"
         ? `I have "${tap.title}"${!tap.allDay ? ` at ${at(tap.start)}–${at(tap.end)}` : ""}${tap.location ? ` at ${tap.location}` : ""}. Help me prepare.`
-        : `I have a task block: "${tap.title}" at ${at(tap.start)}–${at(tap.end)}. Help me think about it.`;
+        : tap.kind === "slot"
+          ? `I have a block "${tap.title}" at ${at(tap.start)}–${at(tap.end)} holding ${tap.childCount} task${tap.childCount === 1 ? "" : "s"}. Help me think about it.`
+          : `I have a task block: "${tap.title}" at ${at(tap.start)}–${at(tap.end)}. Help me think about it.`;
     // The seed carries the whole block (title, time, place) so Nuvo doesn't have
     // to go looking; the transcript shows what the user actually pressed.
     onAskNuvo(seed, `Help me prepare for “${tap.title}”`);
@@ -478,6 +486,24 @@ export default function MobileEventSheet({
     );
   }
 
+  // Standing slot — a timed container holding zero or more tasks (see
+  // assignToSlot, useTasks.ts). The desktop equivalent is CalendarPane's
+  // SlotPopover; this is the phone's read + the everyday actions (rename,
+  // reschedule the whole block, complete/open a child, delete).
+  if (tap.kind === "slot") {
+    return (
+      <MobileSlotSheet
+        tap={tap}
+        childTasks={slotChildren ?? []}
+        mutations={mutations}
+        slotMutations={slotMutations}
+        onClose={onClose}
+        onAskNuvo={onAskNuvo ? handleAskNuvo : undefined}
+        onEditTask={onEditTask}
+      />
+    );
+  }
+
   // Block (scheduled task)
   if (!task) return null;
   const done = task.status === "done";
@@ -600,6 +626,215 @@ function ReschedulePicker({ task, mutations, onDone }: { task: Task; mutations: 
     } else {
       mutations.planFor(task, date, TRIAGE_UNDO);
     }
+    onDone();
+  };
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <input
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-head outline-none focus:border-accent"
+      />
+      <input
+        type="time"
+        value={time}
+        step={900}
+        onChange={(e) => setTime(e.target.value)}
+        className="mono rounded-lg border border-line bg-surface px-2.5 py-2 text-head outline-none focus:border-accent"
+      />
+      <button
+        onClick={apply}
+        className="tap fast rounded-lg border border-accent bg-accent px-4 py-2 text-head font-medium text-on-accent"
+      >
+        Set
+      </button>
+    </div>
+  );
+}
+
+// A standing slot — a timed container holding zero or more tasks (see
+// assignToSlot, useTasks.ts: a task placed in a slot loses its own
+// start_time and rides the slot's). Desktop's equivalent is CalendarPane's
+// SlotPopover; this is the phone's read + everyday actions — rename,
+// reschedule the whole block, complete/open a child, delete the container.
+function MobileSlotSheet({
+  tap,
+  childTasks,
+  mutations,
+  slotMutations,
+  onClose,
+  onAskNuvo,
+  onEditTask,
+}: {
+  tap: Extract<CalendarTap, { kind: "slot" }>;
+  childTasks: Task[];
+  mutations: Mutations;
+  slotMutations: ReturnType<typeof useSlotMutations>;
+  onClose: () => void;
+  onAskNuvo?: () => void;
+  onEditTask?: (taskId: string) => void;
+}) {
+  const { slot } = tap;
+  const [titleInput, setTitleInput] = useState(slot.title ?? "");
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const children = childTasks
+    .filter((t) => t.status !== "trashed")
+    // completed tasks sink to the bottom, same as the desktop popover.
+    .sort((a, b) => Number(a.status === "done") - Number(b.status === "done"));
+  const doneCount = children.filter((c) => c.status === "done").length;
+
+  const commitTitle = () => {
+    const next = titleInput.trim();
+    if (next !== (slot.title ?? "").trim()) {
+      slotMutations.updateSlot({ id: slot.id, patch: { title: next } });
+    }
+  };
+
+  // Keeps the time-of-day, moves the calendar day — do_date AND start_time
+  // both carry the slot's day (useSlots.ts ranges on start_time; updateSlot's
+  // do_date patch only drags the CHILDREN's day along for the ride).
+  const moveTo = (dateISO: string) => {
+    const [y, mo, d] = dateISO.split("-").map(Number);
+    const next = new Date(slot.start_time);
+    next.setFullYear(y, mo - 1, d);
+    slotMutations.updateSlot({ id: slot.id, patch: { do_date: dateISO, start_time: next.toISOString() } });
+  };
+
+  const handleDelete = () => {
+    // on delete set null (tasks.slot_id) — children survive as plain planned
+    // tasks, same as the desktop delete flow.
+    slotMutations.removeSlot(slot);
+    onClose();
+  };
+
+  return (
+    <Sheet onClose={onClose} title="Block">
+      <div className="mobile-scroll max-h-[78vh] overflow-y-auto px-4 pb-4">
+        <input
+          value={titleInput}
+          onChange={(e) => setTitleInput(e.target.value)}
+          onBlur={commitTitle}
+          placeholder={tap.title}
+          aria-label="Block title"
+          className="mb-1 w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-head font-medium outline-none focus:border-accent"
+        />
+        <div className="mono mb-4 text-caption text-muted">
+          {dateFmt(tap.start)} · {at(tap.start)}–{at(tap.end)}
+        </div>
+
+        <Section label={children.length ? `${doneCount}/${children.length} done` : "Empty"}>
+          {children.length === 0 ? (
+            <div className="text-body text-muted">Nothing in this block yet.</div>
+          ) : (
+            <div className="-mx-1">
+              {children.map((c) => (
+                <div key={c.id} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => (c.status === "done" ? mutations.uncomplete(c) : mutations.complete(c))}
+                    aria-label={c.status === "done" ? "Reopen task" : "Mark task done"}
+                    className="tap fast flex h-11 w-11 shrink-0 items-center justify-center text-lead"
+                    style={{ color: c.status === "done" ? "var(--accent)" : "var(--muted)" }}
+                  >
+                    {c.status === "done" ? "◉" : "○"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onEditTask?.(c.id);
+                    }}
+                    className="tap fast min-h-11 flex-1 truncate py-2 text-left text-body"
+                  >
+                    <span className={c.status === "done" ? "text-muted line-through" : "text-ink"}>{c.title}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section label="Reschedule">
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                { label: "Today", run: () => moveTo(todayISO()) },
+                { label: "Tomorrow", run: () => moveTo(tomorrowISO()) },
+                { label: "Next week", run: () => moveTo(nextWeekISO()) },
+              ] as const
+            ).map((c) => (
+              <Chip key={c.label} onClick={c.run}>{c.label}</Chip>
+            ))}
+            <Chip onClick={() => setShowReschedule((v) => !v)} on={showReschedule}>
+              Pick time…
+            </Chip>
+          </div>
+          {showReschedule && (
+            <SlotReschedulePicker slot={slot} slotMutations={slotMutations} onDone={() => setShowReschedule(false)} />
+          )}
+        </Section>
+
+        <div className="mt-4 space-y-2">
+          {onAskNuvo && (
+            <button
+              onClick={onAskNuvo}
+              className="tap fast flex w-full items-center gap-3 rounded-xl border border-line px-4 py-3 text-body"
+            >
+              <span className="text-lead" style={{ color: "var(--accent)" }}>✦</span>
+              <span className="font-medium">Ask Nuvo</span>
+            </button>
+          )}
+          {confirmDelete ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="tap fast flex-1 rounded-xl border border-line px-4 py-3 text-body text-muted"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="tap fast flex-1 rounded-xl border border-signal bg-signal/10 px-4 py-3 text-body font-medium text-signal"
+              >
+                Confirm delete
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="tap fast flex w-full items-center gap-3 rounded-xl border border-signal/30 px-4 py-3 text-body text-signal"
+            >
+              <span className="text-lead">🗑</span>
+              <span className="font-medium">{children.length > 0 ? "Delete block (keeps its tasks)" : "Delete block"}</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+function SlotReschedulePicker({
+  slot,
+  slotMutations,
+  onDone,
+}: {
+  slot: Slot;
+  slotMutations: ReturnType<typeof useSlotMutations>;
+  onDone: () => void;
+}) {
+  const [date, setDate] = useState(slot.do_date);
+  const [time, setTime] = useState(slot.start_time.slice(11, 16));
+
+  const apply = () => {
+    const [h, m] = time.split(":").map(Number);
+    const [y, mo, d] = date.split("-").map(Number);
+    const start = new Date(y, mo - 1, d, h, m);
+    slotMutations.updateSlot({ id: slot.id, patch: { do_date: date, start_time: start.toISOString() } });
     onDone();
   };
 

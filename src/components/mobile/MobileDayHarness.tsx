@@ -10,7 +10,9 @@ import MobileDayView from "./MobileDayView";
 import { ScheduleView } from "./MobileCalendar";
 import type { DayCtx } from "./dayPlan";
 import type { CalendarTap } from "./MobileEventSheet";
-import type { ExternalEvent, Task } from "../../lib/types";
+import { deriveSlotTitle } from "../../lib/slots";
+import type { VerticalData } from "../../lib/vertical";
+import type { ExternalEvent, Slot, Task } from "../../lib/types";
 
 const today = startOfDay(new Date());
 // A fixed mid-morning "now" so gaps, the now line and Today/Tomorrow labels are
@@ -69,9 +71,57 @@ const BLOCKS: Task[] = [
   blk(1, 14, 0, 45, "Groom the retreat backlog"),
 ];
 
+// A standing slot — a container tasks ride instead of carrying their own
+// start_time (see assignToSlot, useTasks.ts). Fixture proves D-044's "one
+// buildDayPlan" actually renders one on the phone, not just the desktop
+// CalendarPane — the bug this harness addition guards against.
+const slot = (dayOffset: number, h: number, m: number, durMins: number, title: string, o: Partial<Slot> = {}): Slot =>
+  ({
+    id: `s${++seq}`,
+    user_id: "u1",
+    created_at: iso(dayOffset, h, m),
+    updated_at: iso(dayOffset, h, m),
+    title,
+    do_date: iso(dayOffset, 0, 0).slice(0, 10),
+    start_time: iso(dayOffset, h, m),
+    duration_minutes: durMins,
+    project_id: null,
+    domain_id: null,
+    color: null,
+    google_event_id: null,
+    recurrence_id: null,
+    recurrence_date: null,
+    recurrence_overridden: false,
+    ...o,
+  }) as Slot;
+
+const SLOTS: Slot[] = [slot(0, 9, 30, 60, "")];
+const SLOT_CHILDREN: Record<string, Task[]> = {
+  [SLOTS[0].id]: [
+    blk(0, 0, 0, 20, "Call the roofer", { start_time: null, slot_id: SLOTS[0].id }),
+    blk(0, 0, 0, 20, "Pay the HOA invoice", { start_time: null, slot_id: SLOTS[0].id, status: "done" }),
+  ],
+};
+const EMPTY_VERTICAL: VerticalData = {
+  domains: [],
+  initiatives: [],
+  projects: [],
+  tasks: [],
+  sprint: null,
+  focusInitiativeIds: [],
+  bigRocks: [],
+  lastActivityByProject: {},
+};
+const SLOT_TITLES = new Map(
+  SLOTS.map((s) => [s.id, deriveSlotTitle(s, SLOT_CHILDREN[s.id] ?? [], EMPTY_VERTICAL)]),
+);
+
 const CTX: DayCtx = {
   visibleEvents: EVENTS,
   blocks: BLOCKS,
+  slots: SLOTS,
+  slotChildren: SLOT_CHILDREN,
+  slotTitles: SLOT_TITLES,
   hidden: new Set(),
   workStart: 8 * 60,
   workEnd: 16 * 60 + 30,

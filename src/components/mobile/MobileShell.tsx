@@ -361,6 +361,14 @@ export default function MobileShell() {
   }, [inbox, todayTasks, weekTasks, allTasks]);
   const openTask = taskId ? taskById.get(taskId) ?? null : null;
 
+  // The calendar tap's slot children — `allTasks` (useAllTasks) has no
+  // start_time filter, so a slot's members (start_time forced null by
+  // assignToSlot) are already in it; just filter by slot_id.
+  const slotChildTasks = useMemo(
+    () => (calendarTap?.kind === "slot" ? allTasks.filter((t) => t.slot_id === calendarTap.slot.id) : []),
+    [allTasks, calendarTap],
+  );
+
   const subCount = (s: MobileTab) =>
     s === "inbox"
       ? inbox.length
@@ -645,6 +653,7 @@ export default function MobileShell() {
         <MobileEventSheet
           tap={calendarTap}
           task={calendarTap.kind === "block" ? (taskById.get(calendarTap.taskId) ?? null) : null}
+          slotChildren={calendarTap.kind === "slot" ? slotChildTasks : undefined}
           mutations={mutations}
           onClose={() => setCalendarTap(null)}
           onAskNuvo={openChat}

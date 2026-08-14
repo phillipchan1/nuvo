@@ -435,6 +435,7 @@ export default function MobileDayView({
               const height = Math.max(y(l.endMin) - y(l.startMin), MIN_ITEM_PX);
               const compact = height < 34;
               const isBlock = b.kind === "block";
+              const isSlot = b.kind === "slot";
               const tap: CalendarTap =
                 b.kind === "event"
                   ? {
@@ -448,7 +449,9 @@ export default function MobileDayView({
                       accountId: b.accountId,
                       calendarId: b.calendarId,
                     }
-                  : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
+                  : isSlot
+                    ? { kind: "slot", slot: b.slot!, title: b.title || "Untitled", start: b.start, end: b.end, childCount: b.childCount ?? 0, doneCount: b.doneCount ?? 0 }
+                    : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
               return (
                 <button
                   key={i}
@@ -459,16 +462,29 @@ export default function MobileDayView({
                     height,
                     left: `calc(${GUTTER + 2}px + (${itemArea} - 2px) * ${l.col / l.cols})`,
                     width: `calc((${itemArea} - 2px) * ${1 / l.cols} - ${l.cols > 1 ? 2 : 0}px)`,
-                    background: isBlock
-                      ? b.done
-                        ? "color-mix(in srgb, var(--accent) 5%, transparent)"
-                        : "var(--accent-soft)"
-                      : "color-mix(in srgb, var(--ink) 7%, transparent)",
-                    borderColor: isBlock ? "color-mix(in srgb, var(--accent) 30%, transparent)" : "var(--line)",
+                    background: isSlot
+                      ? "color-mix(in srgb, var(--slot) 20%, var(--surface))"
+                      : isBlock
+                        ? b.done
+                          ? "color-mix(in srgb, var(--accent) 5%, transparent)"
+                          : "var(--accent-soft)"
+                        : "color-mix(in srgb, var(--ink) 7%, transparent)",
+                    borderColor: isSlot
+                      ? "color-mix(in srgb, var(--slot) 55%, var(--line))"
+                      : isBlock
+                        ? "color-mix(in srgb, var(--accent) 30%, transparent)"
+                        : "var(--line)",
+                    borderStyle: isSlot ? "dashed" : "solid",
                   }}
                 >
                   {isBlock && !b.done && (
                     <span className="absolute bottom-[3px] left-[3px] top-[3px] w-[3px] rounded-full bg-accent" />
+                  )}
+                  {isSlot && (
+                    <span
+                      className="absolute bottom-[3px] left-[3px] top-[3px] w-[3px] rounded-full"
+                      style={{ background: "var(--slot)" }}
+                    />
                   )}
                   <div
                     className={`h-full min-w-0 overflow-hidden rounded-[5px] ${isBlock ? "pl-2.5" : "pl-2"} pr-1.5 ${

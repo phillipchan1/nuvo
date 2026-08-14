@@ -5,9 +5,9 @@
 // MobileCalendar.tsx so the lenses can share it without an import cycle.
 
 import { addDays, isSameDay, startOfDay } from "date-fns";
-import { readDay, toBusyBlocks, type Gap } from "../../lib/now";
+import { readDay, toBusyBlocks, type BusyBlock, type Gap } from "../../lib/now";
 import { dayReadout as sharedDayReadout } from "../../../supabase/functions/_shared/dayShape.ts";
-import type { AttendeeStatus, ExternalEvent, Task } from "../../lib/types";
+import type { AttendeeStatus, ExternalEvent, Slot, Task } from "../../lib/types";
 
 export const DAY_MS = 24 * 3600_000;
 
@@ -35,7 +35,7 @@ export interface TimedItem {
   title: string;
   start: Date;
   end: Date;
-  kind: "event" | "block";
+  kind: "event" | "block" | "slot";
   location?: string | null;
   done?: boolean;
   // For tapping:
@@ -46,6 +46,11 @@ export interface TimedItem {
   taskId?: string;
   /** Project-backed block — renders as a "project slot" (significant work). */
   projectBacked?: boolean;
+  /** kind === "slot" only — the raw row (for the tap payload / slot actions)
+   *  plus how many of its children are done, for the sheet + a compact count. */
+  slot?: Slot;
+  childCount?: number;
+  doneCount?: number;
 }
 
 export interface DayPlan {
@@ -63,6 +68,17 @@ export interface DayPlan {
 export interface DayCtx {
   visibleEvents: ExternalEvent[];
   blocks: Task[];
+  /** Standing slots — a slot is a timed container; a task placed inside one
+   *  loses its own start_time and rides the slot's (see assignToSlot in
+   *  useTasks.ts), so a slot has to be fetched and rendered separately from
+   *  `blocks` or its contents are invisible on the calendar. */
+  slots: Slot[];
+  /** slot.id -> its child tasks (unfiltered; buildDayPlan drops trashed ones). */
+  slotChildren: Record<string, Task[]>;
+  /** slot.id -> display title, pre-derived by the caller via deriveSlotTitle
+   *  (lib/slots.ts) so mobile and desktop agree on what a slot is called —
+   *  that derivation needs VerticalData, which stays out of this pure module. */
+  slotTitles: Map<string, string>;
   hidden: Set<string>;
   workStart: number;
   workEnd: number;
@@ -84,6 +100,7 @@ interface DayIndex {
   allDay: SpanningEvent[];
   eventsByDay: Map<string, ExternalEvent[]>;
   blocksByDay: Map<string, Task[]>;
+  slotsByDay: Map<string, Slot[]>;
 }
 const dayIndexCache = new WeakMap<DayCtx, DayIndex>();
 
@@ -112,7 +129,14 @@ function indexOf(ctx: DayCtx): DayIndex {
     if (arr) arr.push(t);
     else blocksByDay.set(k, [t]);
   }
-  const idx = { allDay, eventsByDay, blocksByDay };
+  const slotsByDay = new Map<string, Slot[]>();
+  for (const s of ctx.slots) {
+    const k = dayKey(new Date(s.start_time));
+    const arr = slotsByDay.get(k);
+    if (arr) arr.push(s);
+    else slotsByDay.set(k, [s]);
+  }
+  const idx = { allDay, eventsByDay, blocksByDay, slotsByDay };
   dayIndexCache.set(ctx, idx);
   return idx;
 }
@@ -134,7 +158,24 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
 
   const dayEvents = idx.eventsByDay.get(dayKey(date)) ?? [];
   const dayBlocks = idx.blocksByDay.get(dayKey(date)) ?? [];
+  const daySlots = idx.slotsByDay.get(dayKey(date)) ?? [];
   const busy = toBusyBlocks(dayEvents, dayBlocks, hidden);
+  // A slot occupies real time on the day even though its children carry no
+  // start_time of their own (the slot owns the block, see DayCtx.slots) — fold
+  // it into the same busy list toBusyBlocks builds, or the gap math below would
+  // draw an "open" window right on top of the slot it just rendered.
+  for (const s of daySlots) {
+    const children = (ctx.slotChildren[s.id] ?? []).filter((t) => t.status !== "trashed");
+    const start = new Date(s.start_time);
+    const end: Date = new Date(start.getTime() + s.duration_minutes * 60_000);
+    busy.push({
+      title: ctx.slotTitles.get(s.id) ?? s.title ?? "Block",
+      start,
+      end,
+      kind: "block",
+      done: children.length > 0 && children.every((t) => t.status === "done"),
+    } satisfies BusyBlock);
+  }
 
   const ws = new Date(dStart);
   ws.setHours(0, workStart, 0, 0);
@@ -169,6 +210,24 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
         self_rsvp: null,
         projectBacked: !!t.project_id,
       })),
+    ...daySlots.map((s): TimedItem => {
+      const children = (ctx.slotChildren[s.id] ?? []).filter((t) => t.status !== "trashed");
+      const doneCount = children.filter((t) => t.status === "done").length;
+      const start = new Date(s.start_time);
+      return {
+        title: ctx.slotTitles.get(s.id) ?? s.title ?? "Block",
+        start,
+        end: new Date(start.getTime() + s.duration_minutes * 60_000),
+        kind: "slot",
+        location: null,
+        done: children.length > 0 && doneCount === children.length,
+        self_rsvp: null,
+        projectBacked: !!s.project_id,
+        slot: s,
+        childCount: children.length,
+        doneCount,
+      };
+    }),
   ].sort((a, b) => a.start.getTime() - b.start.getTime());
 
   const label = isToday
