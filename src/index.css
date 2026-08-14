@@ -2011,10 +2011,13 @@ select.field { appearance: none; -webkit-appearance: none; }
    cursor so it reads as a normal event rather than a busy placeholder. */
 .fc-event.evt-ics { cursor: default; }
 /* Slots: a dashed teal container holding tasks — a distinct class from the
-   solid violet task/event blocks, so "this is a slot" reads at a glance. */
+   solid violet task/event blocks, so "this is a slot" reads at a glance.
+   Stronger than a plain event border (55% → 68%) so a container reads as a
+   container even beside a saturated project-colored task block. */
 .fc-event.evt-slot {
   border-style: dashed !important;
-  border-color: color-mix(in srgb, var(--slot) 55%, transparent) !important;
+  border-width: 1.5px !important;
+  border-color: color-mix(in srgb, var(--slot) 68%, transparent) !important;
 }
 
 /* RSVP status: dim events the user hasn't confirmed yet.

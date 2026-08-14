@@ -51,6 +51,9 @@ export interface TimedItem {
   slot?: Slot;
   childCount?: number;
   doneCount?: number;
+  /** kind === "slot" only — the "what's in there" peek, done sunk to the
+   *  bottom, same order desktop's CalendarPane shows inside the container. */
+  children?: { title: string; done: boolean }[];
 }
 
 export interface DayPlan {
@@ -211,21 +214,26 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
         projectBacked: !!t.project_id,
       })),
     ...daySlots.map((s): TimedItem => {
-      const children = (ctx.slotChildren[s.id] ?? []).filter((t) => t.status !== "trashed");
-      const doneCount = children.filter((t) => t.status === "done").length;
+      const rawChildren = (ctx.slotChildren[s.id] ?? []).filter((t) => t.status !== "trashed");
+      const doneCount = rawChildren.filter((t) => t.status === "done").length;
       const start = new Date(s.start_time);
+      // completed tasks sink to the bottom — same order the desktop container shows.
+      const children = rawChildren
+        .map((t) => ({ title: t.title, done: t.status === "done" }))
+        .sort((a, b) => Number(a.done) - Number(b.done));
       return {
         title: ctx.slotTitles.get(s.id) ?? s.title ?? "Block",
         start,
         end: new Date(start.getTime() + s.duration_minutes * 60_000),
         kind: "slot",
         location: null,
-        done: children.length > 0 && doneCount === children.length,
+        done: rawChildren.length > 0 && doneCount === rawChildren.length,
         self_rsvp: null,
         projectBacked: !!s.project_id,
         slot: s,
-        childCount: children.length,
+        childCount: rawChildren.length,
         doneCount,
+        children,
       };
     }),
   ].sort((a, b) => a.start.getTime() - b.start.getTime());

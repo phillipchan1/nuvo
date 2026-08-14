@@ -436,6 +436,9 @@ export default function MobileDayView({
               const compact = height < 34;
               const isBlock = b.kind === "block";
               const isSlot = b.kind === "slot";
+              // Room to peek at what's inside, past the title/time/badge rows.
+              const showChildren = isSlot && height > 58 && (b.children?.length ?? 0) > 0;
+              const isProjectSlot = isSlot && b.projectBacked;
               const tap: CalendarTap =
                 b.kind === "event"
                   ? {
@@ -463,45 +466,84 @@ export default function MobileDayView({
                     left: `calc(${GUTTER + 2}px + (${itemArea} - 2px) * ${l.col / l.cols})`,
                     width: `calc((${itemArea} - 2px) * ${1 / l.cols} - ${l.cols > 1 ? 2 : 0}px)`,
                     background: isSlot
-                      ? "color-mix(in srgb, var(--slot) 20%, var(--surface))"
+                      ? "color-mix(in srgb, var(--slot) 28%, var(--surface))"
                       : isBlock
                         ? b.done
                           ? "color-mix(in srgb, var(--accent) 5%, transparent)"
                           : "var(--accent-soft)"
                         : "color-mix(in srgb, var(--ink) 7%, transparent)",
                     borderColor: isSlot
-                      ? "color-mix(in srgb, var(--slot) 55%, var(--line))"
+                      ? "color-mix(in srgb, var(--slot) 65%, var(--line))"
                       : isBlock
                         ? "color-mix(in srgb, var(--accent) 30%, transparent)"
                         : "var(--line)",
                     borderStyle: isSlot ? "dashed" : "solid",
+                    borderWidth: isSlot ? 1.5 : 1,
                   }}
                 >
                   {isBlock && !b.done && (
                     <span className="absolute bottom-[3px] left-[3px] top-[3px] w-[3px] rounded-full bg-accent" />
                   )}
                   {isSlot && (
+                    // A slot is a container, not a single item — the bar reads
+                    // wider than a plain task/event's, and doubles for a
+                    // project-backed one (same "significant work" cue the
+                    // desktop CalendarPane gives isProject blocks).
                     <span
-                      className="absolute bottom-[3px] left-[3px] top-[3px] w-[3px] rounded-full"
-                      style={{ background: "var(--slot)" }}
+                      className="absolute bottom-[3px] left-[3px] top-[3px] rounded-full"
+                      style={{
+                        width: isProjectSlot ? 4 : 3,
+                        background: "var(--slot)",
+                        boxShadow: isProjectSlot
+                          ? "inset 2px 0 0 color-mix(in srgb, var(--slot) 45%, transparent)"
+                          : undefined,
+                      }}
                     />
                   )}
                   <div
-                    className={`h-full min-w-0 overflow-hidden rounded-[5px] ${isBlock ? "pl-2.5" : "pl-2"} pr-1.5 ${
+                    className={`h-full min-w-0 overflow-hidden rounded-[5px] ${isBlock || isSlot ? "pl-2.5" : "pl-2"} pr-1.5 ${
                       compact ? "flex items-center gap-1.5" : "py-1"
                     }`}
                   >
-                    <div
-                      className={`truncate ${compact ? "text-meta" : "text-label"} font-medium ${
-                        b.done ? "text-muted line-through" : "text-ink"
-                      }`}
-                    >
-                      {b.projectBacked ? `▸ ${b.title || "Untitled"}` : b.title || "Untitled"}
+                    <div className="flex min-w-0 items-center gap-1">
+                      <div
+                        className={`min-w-0 truncate ${compact ? "text-meta" : "text-label"} font-medium ${
+                          b.done ? "text-muted line-through" : "text-ink"
+                        }`}
+                      >
+                        {b.projectBacked ? `▸ ${b.title || "Untitled"}` : b.title || "Untitled"}
+                      </div>
+                      {isSlot && (b.childCount ?? 0) > 0 && (
+                        <span
+                          className="mono ml-auto shrink-0 rounded-full px-1 text-micro leading-snug text-muted"
+                          style={{ background: "var(--bg)" }}
+                        >
+                          {b.doneCount}/{b.childCount}
+                        </span>
+                      )}
                     </div>
                     {!compact && (
                       <div className="mono truncate text-micro text-muted">
                         {at(b.start)}–{at(b.end)}
                         {b.location ? ` · ${b.location}` : ""}
+                      </div>
+                    )}
+                    {showChildren && (
+                      <div className="mt-1 flex min-h-0 flex-col gap-0.5 overflow-hidden">
+                        {b.children!.slice(0, 3).map((c, ci) => (
+                          <div key={ci} className="flex items-center gap-1.5 text-micro leading-tight">
+                            <span
+                              className="h-[3px] w-[3px] shrink-0 rounded-full"
+                              style={{ background: c.done ? "var(--muted)" : "var(--slot)" }}
+                            />
+                            <span className={`truncate ${c.done ? "text-muted line-through opacity-60" : "text-muted"}`}>
+                              {c.title}
+                            </span>
+                          </div>
+                        ))}
+                        {b.children!.length > 3 && (
+                          <span className="pl-[9px] text-micro text-muted">+{b.children!.length - 3} more</span>
+                        )}
                       </div>
                     )}
                   </div>

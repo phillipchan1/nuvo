@@ -1040,14 +1040,15 @@ export default function CalendarPane({
         classNames: ["evt-slot"],
         // A clearly teal container — stronger than a task/event tint (14%) so a
         // slot is unmistakable. Border comes from .evt-slot (dashed teal) in CSS.
-        backgroundColor: "color-mix(in srgb, var(--slot) 26%, var(--surface))",
-        borderColor: "color-mix(in srgb, var(--slot) 55%, var(--line))",
+        backgroundColor: "color-mix(in srgb, var(--slot) 32%, var(--surface))",
+        borderColor: "color-mix(in srgb, var(--slot) 68%, var(--line))",
         extendedProps: {
           kind: "slot" as const,
           refId: s.id,
           calColor: "var(--slot)",
           barColor,
           recurring: Boolean(s.recurrence_id),
+          projectBacked: !!s.project_id,
           slotDone: done,
           slotTotal: children.length,
           slotChildren: children,
@@ -1814,8 +1815,12 @@ export default function CalendarPane({
     const tiny = heightPx < 19; // ultra-short — kill the vertical padding
     const bar = barColor ?? calColor ?? "var(--accent)";
     const padY = tiny ? "py-0" : "py-[3px]";
-    // a project-backed task reads as a "project slot" — a thicker, doubled edge
-    const isProject = kind === "task" && (arg.event.extendedProps as ExtendedProps).projectBacked === true;
+    // A project-backed task — or a standing slot tied to one — reads as
+    // significant work: a thicker, doubled edge, not just the domain/slot
+    // tint. Without this a project slot and an empty one looked identical
+    // apart from the bar color, which for most slots IS the teal already.
+    const isProject =
+      (kind === "task" || kind === "slot") && (arg.event.extendedProps as ExtendedProps).projectBacked === true;
 
     const Bar = (
       <span

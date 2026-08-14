@@ -902,32 +902,64 @@ const DayCard = memo(function DayCard({
       {timed.length > 0 && (
         <div className="space-y-1.5">
           {timed.map((b, i) => {
+            const isSlot = b.kind === "slot";
             const tap: CalendarTap =
               b.kind === "event"
                 ? { kind: "event", id: b.eventId!, title: b.title || "Untitled", start: b.start, end: b.end, location: b.location ?? null, self_rsvp: b.self_rsvp, accountId: b.accountId, calendarId: b.calendarId }
-                : b.kind === "slot"
+                : isSlot
                   ? { kind: "slot", slot: b.slot!, title: b.title || "Untitled", start: b.start, end: b.end, childCount: b.childCount ?? 0, doneCount: b.doneCount ?? 0 }
                   : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
-            const markColor = b.kind === "slot" ? "var(--slot)" : b.kind === "block" ? "var(--accent)" : "var(--line-strong)";
+            const markColor = isSlot ? "var(--slot)" : b.kind === "block" ? "var(--accent)" : "var(--line-strong)";
+            // A slot is a container, not a single commitment — it gets the
+            // same dashed teal wash the Day lens draws for it, so tasks
+            // riding inside one don't read as a bare timestamped row.
             return (
               <button
                 key={i}
                 onClick={() => onTapEvent?.(tap)}
-                className="tap fast -mx-1 flex w-full items-baseline gap-2.5 rounded-lg px-1 text-left active:bg-surface-2"
+                className={`tap fast -mx-1 flex w-full items-baseline gap-2.5 rounded-lg px-1 text-left active:bg-surface-2 ${
+                  isSlot ? "border py-1" : ""
+                }`}
+                style={
+                  isSlot
+                    ? {
+                        background: "color-mix(in srgb, var(--slot) 14%, transparent)",
+                        borderColor: "color-mix(in srgb, var(--slot) 45%, var(--line))",
+                        borderStyle: "dashed",
+                      }
+                    : undefined
+                }
               >
                 <span className="mono w-[68px] shrink-0 text-right text-meta" style={{ color: markColor }}>
                   {at(b.start)}
                 </span>
                 <span
-                  className={`mt-[5px] shrink-0 self-start ${b.kind === "slot" || b.projectBacked ? "h-2 w-2 rounded-[2px]" : "h-1.5 w-1.5 rounded-full"}`}
+                  className={`mt-[5px] shrink-0 self-start ${isSlot || b.projectBacked ? "h-2 w-2 rounded-[2px]" : "h-1.5 w-1.5 rounded-full"}`}
                   style={{ background: markColor }}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className={`truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>{b.projectBacked ? `▸ ${b.title || "Untitled"}` : b.title || "Untitled"}</div>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <div className={`min-w-0 truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>
+                      {b.projectBacked ? `▸ ${b.title || "Untitled"}` : b.title || "Untitled"}
+                    </div>
+                    {isSlot && (b.childCount ?? 0) > 0 && (
+                      <span
+                        className="mono ml-auto shrink-0 rounded-full px-1.5 text-micro leading-snug text-muted"
+                        style={{ background: "var(--bg)" }}
+                      >
+                        {b.doneCount}/{b.childCount}
+                      </span>
+                    )}
+                  </div>
                   <div className="mono text-meta text-muted">
                     {at(b.start)}–{at(b.end)}
                     {b.location ? ` · ${b.location}` : ""}
                   </div>
+                  {isSlot && (b.children?.length ?? 0) > 0 && (
+                    <div className="mt-0.5 truncate text-meta text-muted">
+                      {b.children!.map((c) => c.title).join(" · ")}
+                    </div>
+                  )}
                 </div>
               </button>
             );
