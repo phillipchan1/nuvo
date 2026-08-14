@@ -70,6 +70,34 @@ function errMsg(e: unknown) {
   return e instanceof Error ? e.message : "Something went wrong";
 }
 
+// Session restore and the subscription check are usually warm-cache-fast
+// (well under this delay), so painting the wordmark for every one of them
+// reads as a splash screen on every launch instead of a real desktop app
+// that's just already there. Only earn the wordmark once a wait has gone on
+// long enough to actually need reassurance; a fast load never shows it —
+// the atmosphere canvas underneath is the whole transition.
+const SPLASH_DELAY_MS = 200;
+function useDelayedTrue(active: boolean, delayMs: number) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setShow(false);
+      return;
+    }
+    const t = setTimeout(() => setShow(true), delayMs);
+    return () => clearTimeout(t);
+  }, [active, delayMs]);
+  return show;
+}
+
+function LoadingCanvas({ showWordmark }: { showWordmark: boolean }) {
+  return (
+    <div className="atmosphere flex h-full items-center justify-center">
+      {showWordmark && <span className="wordmark shimmer text-head">nuvo</span>}
+    </div>
+  );
+}
+
 // One Toaster for every shell state. On a phone the bottom-right corner is
 // where the ＋ FAB and ✦ launcher live, and the toast is the only undo path
 // (no ⌘Z) — so it rides top-center under the safe area and stays up longer.
@@ -181,6 +209,9 @@ function Shell() {
   useSkin(); // keep <html data-skin> applied (the material axis)
   useScheme(); // keep <html data-palette> applied (the material's colour scheme)
   useThemeColor(); // keep the browser/status-bar chrome on the resolved --bg
+  const showAuthWordmark = useDelayedTrue(loading, SPLASH_DELAY_MS);
+  const subscriptionPending = subPending || (checkoutPending && !subscription?.entitled);
+  const showSubscriptionWordmark = useDelayedTrue(subscriptionPending, SPLASH_DELAY_MS);
 
   // The floating ⌥Space window: just the panel (no app chrome, no updater).
   // SpotlightHost owns the signed-out state too — a summon that renders nothing
@@ -197,11 +228,7 @@ function Shell() {
   }
 
   if (loading) {
-    return (
-      <div className="atmosphere flex h-full items-center justify-center">
-        <span className="wordmark shimmer text-head">nuvo</span>
-      </div>
-    );
+    return <LoadingCanvas showWordmark={showAuthWordmark} />;
   }
 
   if (!session) {
@@ -217,12 +244,8 @@ function Shell() {
   // First subscription fetch (isPending covers a network-paused fetch too,
   // not just an in-flight one — see useSubscription), or the brief window
   // right after Checkout where the webhook hasn't landed yet.
-  if (subPending || (checkoutPending && !subscription?.entitled)) {
-    return (
-      <div className="atmosphere flex h-full items-center justify-center">
-        <span className="wordmark shimmer text-head">nuvo</span>
-      </div>
-    );
+  if (subscriptionPending) {
+    return <LoadingCanvas showWordmark={showSubscriptionWordmark} />;
   }
 
   // A fetch error (network blip, transient outage) is NOT the same as
