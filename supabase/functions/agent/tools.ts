@@ -33,6 +33,7 @@ import {
   dayMs,
   isoOf,
 } from "../_shared/planningRules.ts";
+import { matchesQuery, type TaskQuery } from "../_shared/taskQuery.ts";
 import {
   describeRule,
   expandRule,
@@ -2219,8 +2220,62 @@ export async function executeTool(
     }
 
     case "list_tasks": {
-      const matches = await findTaskByTitle(userId, args.query as string);
-      return { result: JSON.stringify(matches) };
+      // The chat asks the list the SAME question the filter panel asks — one
+      // `matchesQuery`, so "what's overdue" in the chat and the Overdue chip in
+      // the rail can never return different sets. A title-only search still
+      // works; the filters simply narrow it.
+      const q = typeof args.query === "string" ? args.query.trim() : "";
+      const labelNames = (args.label_names as string[] | undefined) ?? [];
+      const labelIds = await resolveLabelIds(userId, labelNames);
+      if (labelNames.length && !labelIds.length) {
+        return { result: JSON.stringify({ tasks: [], note: `No label named ${labelNames.join(" or ")}.` }) };
+      }
+
+      const query: TaskQuery = {
+        text: q || undefined,
+        labelIds: labelIds.length ? labelIds : undefined,
+        priorities: (args.priority as string[] | undefined)?.length ? (args.priority as string[]) : undefined,
+        status: (args.status as TaskQuery["status"]) ?? undefined,
+        when: (args.when as TaskQuery["when"]) ?? undefined,
+        dateField: (args.date_field as TaskQuery["dateField"]) ?? undefined,
+      };
+
+      const today = todayIn(tz);
+      const weekStart = planningWeekStart(today);
+      const clock = { today, weekStart, weekEnd: isoOf(dayMs(weekStart) + 6 * 86_400_000), nowMs: Date.now() };
+
+      // Steps are excluded here as they are from every other task read — the
+      // load-bearing line of the subtasks fix. A checklist row is not a task.
+      let rows = admin
+        .from("tasks")
+        .select("id, title, notes, status, priority, energy, do_date, deadline, start_time, duration_minutes, project_id, domain_id, initiative_id, task_labels(label_id)")
+        .eq("user_id", userId)
+        .is("parent_task_id", null)
+        .neq("status", "trashed")
+        .limit(400);
+      if (q) rows = rows.ilike("title", `%${q}%`);
+      const { data } = await rows;
+
+      const cap = Math.min(Math.max(Number(args.limit ?? 20) || 20, 1), 50);
+      const matched = (data ?? [])
+        .filter((t) => {
+          const row = t as Record<string, unknown>;
+          return matchesQuery(row as never, query, {
+            labelIds: ((row.task_labels as { label_id: string }[] | null) ?? []).map((l) => l.label_id),
+            // The domain a task's hours COUNT toward. The agent's snapshot
+            // doesn't carry the project graph here, so an unparented task uses
+            // its own id and a parented one abstains rather than asserting the
+            // stale copy (D-088) — domain filtering stays a UI facet for now.
+            domainId: row.project_id || row.initiative_id ? null : ((row.domain_id as string) ?? null),
+          }, clock);
+        })
+        .slice(0, cap)
+        .map((t) => {
+          const { task_labels: _labels, notes: _notes, ...rest } = t as Record<string, unknown>;
+          return rest;
+        });
+
+      return { result: JSON.stringify({ tasks: matched, count: matched.length }) };
     }
 
     case "add_step": {
@@ -2324,6 +2379,124 @@ export async function executeTool(
           summary: done ? `Ticked "${step.title}"` : `Unticked "${step.title}"`,
           verb: "updated",
           ref: { kind: "task", id: parent.id },
+        },
+      };
+    }
+
+    case "bulk_update_tasks": {
+      // The chat's twin of the app's bulk bar. Same acts, same filing rule —
+      // the whole chain moves together, because writing project_id and leaving
+      // the denormalized initiative/domain stale is D-088 exactly.
+      // A model copying five UUIDs into one array will eventually drop a
+      // character — observed in the battery: six ids where five were meant, one
+      // of them malformed. So the ids are validated here and the RESULT reports
+      // what actually changed. A bulk act that says "updated 6" when one row
+      // silently didn't match is the dishonesty this whole product refuses.
+      const raw = ((args.task_ids as string[] | undefined) ?? []).map(String).map((v) => v.trim()).filter(Boolean);
+      const ids = [...new Set(raw)].filter((id) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),
+      );
+      const malformed = [...new Set(raw)].filter((id) => !ids.includes(id));
+      if (ids.length < 2) throw new Error("Name at least two real task ids — a single one is update_task.");
+      if (ids.length > 50) throw new Error("50 tasks at a time is the cap.");
+
+      const patch: Record<string, unknown> = {};
+      if (args.do_date !== undefined) {
+        const d = String(args.do_date || "");
+        if (d) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error("do_date must be YYYY-MM-DD");
+          patch.do_date = d;
+          patch.status = "planned";
+          // A new day means the old block is wrong; clear it rather than
+          // silently leaving 9am on a day the user never chose.
+          patch.start_time = null;
+          patch.slot_id = null;
+        } else {
+          patch.do_date = null;
+          patch.start_time = null;
+          patch.slot_id = null;
+        }
+      }
+      if (args.priority !== undefined) patch.priority = String(args.priority);
+      if (args.status === "done") {
+        patch.status = "done";
+        patch.completed_at = new Date().toISOString();
+      } else if (args.status === "inbox") {
+        patch.status = "inbox";
+        patch.do_date = null;
+        patch.start_time = null;
+        patch.slot_id = null;
+      }
+      if (args.project_id !== undefined) {
+        const pid = String(args.project_id || "");
+        if (pid) {
+          const { data: proj } = await admin
+            .from("projects")
+            .select("initiative_id, domain_id")
+            .eq("id", pid)
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (!proj) throw new Error(`Project not found: ${pid}`);
+          patch.project_id = pid;
+          patch.initiative_id = proj.initiative_id ?? null;
+          patch.domain_id = proj.domain_id ?? null;
+        } else {
+          patch.project_id = null;
+          patch.initiative_id = null;
+        }
+      }
+
+      const labelNames = (args.label_names as string[] | undefined) ?? [];
+      const labelIds = await resolveLabelIds(userId, labelNames);
+      if (!Object.keys(patch).length && !labelIds.length) throw new Error("Nothing to change.");
+
+      let changed = ids.length;
+      let missed: string[] = [];
+      if (Object.keys(patch).length) {
+        // Scoped to the caller AND to real tasks — a step id slipped into the
+        // list must not become a scheduled row (migration 60 would reject it,
+        // but refusing here keeps the error honest). `select` so we can count
+        // what actually matched rather than assuming.
+        const { data: hit, error } = await admin
+          .from("tasks")
+          .update(patch)
+          .in("id", ids)
+          .eq("user_id", userId)
+          .is("parent_task_id", null)
+          .select("id");
+        if (error) throw new Error(error.message);
+        const touched = new Set((hit ?? []).map((r) => (r as { id: string }).id));
+        changed = touched.size;
+        missed = ids.filter((id) => !touched.has(id));
+        if (!changed) throw new Error("None of those ids matched a task of yours. Nothing was changed.");
+      }
+      if (labelIds.length) {
+        const rows = ids.flatMap((task_id) => labelIds.map((label_id) => ({ task_id, label_id })));
+        // Additive, and idempotent — re-adding a label a task already has is
+        // not an error the user should ever hear about.
+        await admin.from("task_labels").upsert(rows, { onConflict: "task_id,label_id", ignoreDuplicates: true });
+      }
+
+      return {
+        result: JSON.stringify({
+          changed,
+          patch,
+          labels: labelNames,
+          // Named, never swallowed. If some ids didn't land, the model has to
+          // say so rather than report a round number it didn't earn.
+          ...(missed.length || malformed.length
+            ? {
+                not_changed: missed.length + malformed.length,
+                warning:
+                  `${missed.length + malformed.length} of the ids you sent didn't match a task. ` +
+                  `Tell the user how many actually changed — do not round up.`,
+              }
+            : {}),
+        }),
+        action: {
+          tool: name,
+          summary: `Updated ${changed} task${changed === 1 ? "" : "s"}`,
+          verb: "updated",
         },
       };
     }

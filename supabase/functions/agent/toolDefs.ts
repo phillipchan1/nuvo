@@ -885,6 +885,30 @@ const RAW_TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
+      name: "bulk_update_tasks",
+      description:
+        "Act on SEVERAL tasks at once — 'move all the sermon tasks to next week', 'make those three high priority', 'file the Dayspring ones under the project'. Name the tasks with `task_ids` (from list_tasks). This is the chat's twin of the app's bulk bar: the same acts, the same filing rule. Filing under a project carries its initiative and domain too, so hours never get credited to the wrong place. Say how many you changed, and to what. Never use it to delete — that is trash_task, one at a time, so nobody loses a list by accident.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "The tasks to change. Get them from list_tasks; 2–50.",
+          },
+          do_date: { type: "string", description: "YYYY-MM-DD, or empty string to clear the date." },
+          priority: { type: "string", enum: ["high", "medium", "low", "none"] },
+          project_id: { type: "string", description: "File all of them here. Empty string unfiles them." },
+          label_names: { type: "array", items: { type: "string" }, description: "Labels to ADD (never removes)." },
+          status: { type: "string", enum: ["done", "inbox"], description: "Complete them, or send them back to the inbox." },
+        },
+        required: ["task_ids"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "list_trashed_tasks",
       description:
         "List tasks in the trash, newest first. Use this for 'I deleted something by mistake', 'what did I delete', 'where did X go' — a trashed task is invisible to list_tasks and to your context, so without this you would wrongly tell them it's gone.",
@@ -1054,13 +1078,35 @@ const RAW_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "list_tasks",
-      description: "Search tasks by title when you need to find an id.",
+      description:
+        "Find tasks — by title, or by asking a question of the list: \"what's overdue\", \"my high-priority errands this week\", \"anything undated in Work\". Every filter here is the SAME one the app's filter panel uses, so your answer and their screen can't disagree. Windows are relative (this_week means this week whenever you ask). Omit `query` to filter without searching a title. Trashed tasks are never returned — use list_trashed_tasks for those.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string" },
+          query: { type: "string", description: "Words from the title. Omit to filter only." },
+          when: {
+            type: "string",
+            enum: ["overdue", "today", "tomorrow", "this_week", "next_week", "undated"],
+            description:
+              "Relative window. 'overdue' is the app's overdue: a date that has passed OR a block that ran more than an hour past its end.",
+          },
+          date_field: {
+            type: "string",
+            enum: ["do_date", "deadline"],
+            description: "Which date `when` asks about. Default do_date — when they'll DO it, not when it's due.",
+          },
+          priority: {
+            type: "array",
+            items: { type: "string", enum: ["high", "medium", "low", "none"] },
+          },
+          label_names: { type: "array", items: { type: "string" }, description: "Any-of." },
+          status: {
+            type: "string",
+            enum: ["open", "done", "any"],
+            description: "Default 'open'.",
+          },
+          limit: { type: "number", description: "Default 20, cap 50." },
         },
-        required: ["query"],
       },
     },
   },

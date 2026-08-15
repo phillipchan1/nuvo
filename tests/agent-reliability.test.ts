@@ -193,6 +193,11 @@ describe("tool schemas", () => {
     "list_reminders",
     // "what did I delete?" has no target — the trash IS the target. Read-only.
     "list_trashed_tasks",
+    // "what's overdue?" / "anything undated?" is a question about the LIST, not
+    // about one task, and it stopped needing a title when list_tasks grew the
+    // filter panel's own query (audit rank 6). A bare call is the honest
+    // "everything open". Read-only.
+    "list_tasks",
   ]);
 
   it("guards every tool whose schema would otherwise accept an empty call", () => {

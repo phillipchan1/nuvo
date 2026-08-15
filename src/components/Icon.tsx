@@ -12,6 +12,7 @@ import {
   CreditCard,
   Eye,
   EyeOff,
+  Funnel,
   Globe,
   Hourglass,
   Info,
@@ -72,6 +73,7 @@ export type IconName =
   | "check"
   | "chevron-down"
   | "chevron-left"
+  | "filter"
   | "chevron-right"
   | "clock"
   | "close"
@@ -146,6 +148,16 @@ const PAPER: Record<IconName, PaperGlyph> = {
   "chevron-right": {
     vb: "0 0 14 14",
     body: <path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />,
+  },
+  filter: {
+    vb: "0 0 14 14",
+    body: (
+      <g stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+        <path d="M2.5 3.75h9" />
+        <path d="M4.5 7h5" />
+        <path d="M6 10.25h2" />
+      </g>
+    ),
   },
   clock: {
     vb: "0 0 12 12",
@@ -417,6 +429,7 @@ const FLAT: Record<IconName, LucideIcon> = {
   clock: Clock,
   close: X,
   copy: Copy,
+  filter: Funnel,
   duration: Hourglass,
   eye: Eye,
   "eye-off": EyeOff,

@@ -1,5 +1,6 @@
 import { addDays, format, startOfWeek } from "date-fns";
 import { planningWeekStart } from "../../supabase/functions/_shared/planningRules.ts";
+import { isOverdue as kernelIsOverdue } from "../../supabase/functions/_shared/taskQuery.ts";
 
 export const APP_TZ = "America/Los_Angeles";
 
@@ -63,14 +64,22 @@ export function endOf(task: { start_time: string; duration_minutes: number | nul
   return new Date(start.getTime() + (task.duration_minutes ?? 30) * 60_000);
 }
 
-/** A scheduled task turns overdue 1 hour after its end time. */
+/**
+ * A scheduled task turns overdue 1 hour after its end time — and a task whose
+ * `do_date` has already passed is overdue too.
+ *
+ * The rule itself lives in the shared kernel (`_shared/taskQuery.ts`), not
+ * here: the task filter has to ask the same question, and two definitions would
+ * have put two meanings of "Overdue" in one panel (P11) — the rail's section
+ * counting a block that ran long, the filter beside it counting a stale date.
+ * This is only the adapter that keeps every existing call site, which passes a
+ * `Date`, working unchanged.
+ */
 export function isOverdue(
-  task: { start_time: string | null; duration_minutes: number | null },
+  task: { start_time: string | null; duration_minutes: number | null; do_date?: string | null; status?: string },
   now: Date = new Date(),
 ): boolean {
-  if (!task.start_time) return false;
-  const end = endOf({ start_time: task.start_time, duration_minutes: task.duration_minutes });
-  return now.getTime() > end.getTime() + 60 * 60_000;
+  return kernelIsOverdue(task, now.getTime(), todayISO(now));
 }
 
 /** How late a scheduled task is, phrased as a span rather than a clock time.

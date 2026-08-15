@@ -288,4 +288,20 @@ describe("the kernel is the only implementation", () => {
       );
     }
   });
+
+  // The task-query kernel is held to the same rule for the same reason: the
+  // rail, the collection table and the chat all answer "does this task match
+  // this filter", and three copies is three ideas of what "this week" means.
+  const QUERY_KERNEL = "supabase/functions/_shared/taskQuery.ts";
+  const QUERY_RULES = ["matchesQuery", "matchesWindow", "isEmptyQuery", "describeQuery"];
+  const queryFiles = files.filter((f) => !f.endsWith("taskQuery.ts"));
+
+  for (const rule of QUERY_RULES) {
+    it(`no surface defines its own ${rule}`, () => {
+      const offenders = queryFiles.filter((f) =>
+        new RegExp(`(function|const|let)\\s+${rule}\\b\\s*[=(]`).test(readFileSync(f, "utf8")),
+      );
+      expect(offenders, `these files re-implement ${rule}; import it from ${QUERY_KERNEL} instead`).toEqual([]);
+    });
+  }
 });

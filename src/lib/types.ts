@@ -7,6 +7,7 @@ import type {
   ReminderPrefs,
   ReminderTargetKind,
 } from "../../supabase/functions/_shared/reminderRules.ts";
+import type { SavedView } from "../../supabase/functions/_shared/taskQuery.ts";
 
 // inbox = raw capture · backlog = processed, deliberately undated (never in
 // inbox, never on Today, never rolls) · planned = dated · done/trashed.
@@ -284,6 +285,9 @@ export interface UserSettings {
   /** When the app is allowed to speak first, and how far ahead. Defaults are
    *  silent (`enabled: false`); the rules live in _shared/reminderRules.ts. */
   reminder_prefs: ReminderPrefs;
+  /** Named task queries. Not a pool — a view holds a question, never work.
+   *  The shape and the predicate live in _shared/taskQuery.ts. */
+  saved_views: SavedView[];
   /** IANA zone, kept fresh from the device. The server reads it to resolve a
    *  deadline DATE into an instant — a cron has no device to ask. Null = UTC,
    *  never a hardcoded home zone. */

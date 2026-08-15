@@ -25,6 +25,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   auto_add_meet: DEFAULT_MEET_PREFERENCE,
   onboarding_completed_version: null,
   reminder_prefs: DEFAULT_REMINDER_PREFS,
+  saved_views: [],
   time_zone: null,
 };
 
@@ -73,6 +74,9 @@ export function useSettings() {
           // existed reads back `{}`, and a half-filled prefs object would mean
           // "off" for one anchor and "default" for another.
           reminder_prefs: normalizeReminderPrefs(data.reminder_prefs),
+          // Same reason again: a row written before migration 62 reads back
+          // null, and every caller maps over this.
+          saved_views: Array.isArray(data.saved_views) ? data.saved_views : [],
         };
       }
       const { data: u } = await supabase.auth.getUser();
