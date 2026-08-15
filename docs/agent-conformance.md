@@ -295,10 +295,16 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Domain routing from `routingContext` | `create_task` | ◐ covered via `structure-routes-by-domain` |
 | Voice / dictated capture | `create_task` | ◐ same path, no transcription scenario |
 | Image attachments (a screenshot of a schedule) | — | ○ no scenario; the harness sends text only |
-| "What did I delete?" reads the trash, not the live list | `list_trashed_tasks` | ◐ no scenario |
-| Bringing a deleted task back to where it belongs | `restore_task` | ◐ no scenario |
-| Permanent delete confirms first, and only from the trash | `purge_task` | ◐ mechanism pinned in `tests/agent-reliability.test.ts` |
-| Searching the calendar outside the context window | `search_events` | ◐ no scenario |
+| "What did I delete?" reads the trash, not the live list | `list_trashed_tasks` | ✅ `trash-read-is-not-the-live-list` |
+| Bringing a deleted task back to where it belongs | `restore_task` | ✅ `trash-restore-is-not-a-recreate` |
+| Permanent delete confirms first, and only from the trash | `purge_task` | ✅ `trash-purge-asks-before-the-one-act-with-no-undo` |
+| Searching the calendar outside the context window | `search_events` | ✅ `search-events-reaches-past-the-window` |
+| Breaking one task into parts makes STEPS, not new tasks | `add_step` | ✅ `step-breakdown-is-not-four-tasks` |
+| A checklist is read, never guessed — steps are absent from context | `list_steps` | ✅ `step-read-before-answering-whats-left` |
+| Ticking / unticking one step | `complete_step` | ◐ handler tested (`tests/task-steps.test.ts`), no scenario |
+| Removing a checklist line, never a task | `remove_step` | ◐ handler tested, no scenario |
+| A question about the LIST is a filtered read, not the snapshot | `list_tasks` | ✅ `filter-asks-the-list-not-the-snapshot` |
+| Acting on several tasks as ONE act | `bulk_update_tasks` | ✅ `bulk-moves-the-set-in-one-act` |
 
 ### B · Slots — one block of time that holds several tasks — `slots`
 
@@ -326,14 +332,14 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | A confirmed cancel executes at once | `cancel_event` | ✅ `cal-confirmed-cancel-executes` |
 | Reschedule an existing event | `reschedule_event` | ◐ no scenario |
 | A booked meeting carries a real Meet link | `create_calendar_event` | ◐ pinned in `tests/conferencing.test.ts` |
-| Set a lead on one meeting / block / deadline | `set_reminder` | ◐ rules pinned in `tests/reminders.test.ts` |
-| Silence one item without touching the defaults | `set_reminder` (`"off"`) | ◐ rules pinned in `tests/reminders.test.ts` |
-| Drop an override so it follows the defaults again | `clear_reminder` | ◐ no scenario |
+| Set a lead on one meeting / block / deadline | `set_reminder` | ✅ `reminder-sets-one-lead-not-a-standing-rule` |
+| Silence one item without touching the defaults | `set_reminder` (`"off"`) | ✅ `reminder-silence-is-not-a-clear` |
+| Drop an override so it follows the defaults again | `clear_reminder` | ◐ no scenario — pinned only as the thing `reminder-silence-is-not-a-clear` forbids |
 | "Will you remind me?" is answered from the defaults | `list_reminders` | ◐ no scenario |
-| Refuses a nagging / motivational reminder | — | ◐ prompt-only; no scenario |
-| Saying YES / MAYBE to an invite (not only no) | `rsvp_event` | ◐ no scenario |
-| RSVP reaches Apple/iCloud, not just Google | `rsvp_event` · `decline_event` | ◐ CalDAV PARTSTAT; needs a live-account check |
-| Copying an event to a new time, guests NOT carried | `duplicate_event` | ◐ no scenario |
+| Refuses a nagging / motivational reminder | — | ✅ `reminder-refuses-the-nudge` |
+| Saying YES / MAYBE to an invite (not only no) | `rsvp_event` | ✅ `rsvp-can-say-yes` |
+| RSVP reaches Apple/iCloud, not just Google | `rsvp_event` · `decline_event` | ⚠️ **UNVERIFIED** — CalDAV PARTSTAT is deployed and shaped like the working CalDAV paths, but no real Apple invite has ever been answered through it. Needs a live iCloud invite; Phil's working calendar is a read-only ICS feed, so it cannot be exercised here |
+| Copying an event to a new time, guests NOT carried | `duplicate_event` | ✅ `duplicate-does-not-recreate-from-scratch` |
 
 ### D · The week — `week`
 

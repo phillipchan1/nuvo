@@ -139,6 +139,209 @@ export const SCENARIOS: Scenario[] = [
     ],
   }),
 
+  // The trash, the checklist and calendar search — the verbs the 2026-08-13
+  // remediation added. They shipped pinned by deterministic tests only, which
+  // proves a handler exists and proves nothing about whether the chat REACHES
+  // for it. Each of these is a way the chat would plausibly go wrong instead.
+
+  pin({
+    id: "trash-read-is-not-the-live-list",
+    group: "capture",
+    it: "'what did I delete' reads the trash, not the live task list",
+    because:
+      "a trashed task is invisible to list_tasks AND to the context snapshot, so answering " +
+      "from either one tells the user their task is gone when it is sitting in the trash.",
+    world: "loaded",
+    turns: ["did I delete something about the ATC reviewer? I can't find it"],
+    respond: (c) =>
+      c.name === "list_trashed_tasks"
+        ? { tasks: [{ id: ID.taskRolled, title: "Follow up with the ATC reviewer", trashedAt: "2026-07-30T18:04:00.000Z" }] }
+        : undefined,
+    expect: [
+      called("list_trashed_tasks"),
+      notCalled("create_task"),
+    ],
+  }),
+
+  pin({
+    id: "trash-restore-is-not-a-recreate",
+    group: "capture",
+    it: "bringing a deleted task back restores it — it never makes a new one",
+    because:
+      "re-creating looks identical in the reply and silently drops the task's history, its " +
+      "project and its roll count. Restore is the only act that puts back what was there.",
+    world: "loaded",
+    turns: [
+      "did I delete something about the ATC reviewer?",
+      { assistant: "Yes — **Follow up with the ATC reviewer** is in the trash, deleted Thursday." },
+      "bring it back",
+    ],
+    respond: (c) =>
+      c.name === "list_trashed_tasks"
+        ? { tasks: [{ id: ID.taskRolled, title: "Follow up with the ATC reviewer", trashedAt: "2026-07-30T18:04:00.000Z" }] }
+        : undefined,
+    expect: [
+      called("restore_task"),
+      calledTimes("create_task", 0),
+    ],
+  }),
+
+  pin({
+    id: "trash-purge-asks-before-the-one-act-with-no-undo",
+    group: "capture",
+    it: "permanent deletion is proposed, never performed on the first ask",
+    because:
+      "purge is the only act in Nuvo nothing brings back. Everything else is covered by undo, " +
+      "so this is the one place a confident model costs the user data.",
+    world: "loaded",
+    turns: ["permanently delete the ATC reviewer task, I don't want it in the trash any more"],
+    respond: (c) =>
+      c.name === "list_trashed_tasks"
+        ? { tasks: [{ id: ID.taskRolled, title: "Follow up with the ATC reviewer", trashedAt: "2026-07-30T18:04:00.000Z" }] }
+        : undefined,
+    // The guard is structural and lives in confirmDestructive.ts: purge_task is
+    // in CONFIRMABLE_TOOLS, so a call arriving without a token minted on an
+    // EARLIER turn is refused before the handler runs and nothing is deleted.
+    // So reaching for the tool is not the failure — spending a token on the
+    // first ask would be, and that is what this asserts. (A ×5 run found the
+    // old `calledTimes(purge_task, 0)` failing 1 in 5 on a turn that was
+    // perfectly safe: it called, got the gate, and proposed.)
+    expect: [
+      check("never carries a confirm_token on the first ask", (o) => {
+        const spent = o.calls.find((c) => c.name === "purge_task" && c.args.confirm_token);
+        return spent
+          ? `spent a confirm_token it could not have been given: ${JSON.stringify(spent.args)}`
+          : null;
+      }),
+      replyMatches(
+        /can'?t be undone|cannot be undone|permanent|for good|no undo|unrecoverable/i,
+        "warns that this one is irreversible",
+      ),
+    ],
+  }),
+
+  pin({
+    id: "step-breakdown-is-not-four-tasks",
+    group: "capture",
+    it: "breaking one task into parts makes STEPS, not a handful of new tasks",
+    because:
+      "this is the P10 line the subtasks design was paid for with. If the chat answers " +
+      "'split that into…' with create_task, a step becomes a fifth pool by accident and " +
+      "every one of those rows lands in the inbox, in capacity, and on the funnel's rollups.",
+    world: "loaded",
+    turns: ["split Deploy Dayspring into: cut the release, run migrations, smoke test, announce it"],
+    expect: [
+      called("add_step", {
+        describe: "all four steps in ONE call, against Deploy Dayspring",
+        ok: (a) => Array.isArray(a.steps) && a.steps.length === 4,
+      }),
+      calledTimes("create_task", 0),
+      calledTimes("create_project", 0),
+    ],
+  }),
+
+  pin({
+    id: "step-read-before-answering-whats-left",
+    group: "capture",
+    it: "a task's checklist is read, never guessed — steps are absent from the context",
+    because:
+      "steps are deliberately excluded from every task read (the load-bearing line of the " +
+      "subtasks fix), so the snapshot cannot show them. Answering from it invents a checklist.",
+    world: "loaded",
+    // Deliberately a question about ONE step: it cannot be answered from the
+    // snapshot at all, so answering it without a read means inventing.
+    turns: ["have I ticked off the migrations step on Deploy Dayspring yet?"],
+    respond: (c) =>
+      c.name === "list_steps"
+        ? { steps: [{ title: "Cut the release", done: true }, { title: "Run migrations", done: false }] }
+        : undefined,
+    expect: [called("list_steps"), calledTimes("complete_step", 0)],
+  }),
+
+  pin({
+    id: "search-events-reaches-past-the-window",
+    group: "capture",
+    it: "a calendar question outside the context window searches instead of pleading ignorance",
+    because:
+      "the snapshot carries ~two weeks. Before search_events existed the honest answer was " +
+      "'I can't see that far back', which is exactly the answer that sends someone to Google.",
+    world: "loaded",
+    turns: ["when did I last meet about Dayspring?"],
+    respond: (c) =>
+      c.name === "search_events"
+        ? { past: [{ id: "evt-old", title: "Dayspring kickoff", startAt: "2026-06-18T17:00:00.000Z", localDate: "2026-06-18", timeRange: "10:00 AM – 11:00 AM" }], upcoming: [] }
+        : undefined,
+    expect: [
+      called("search_events", {
+        describe: "looks backwards",
+        ok: (a) => a.direction == null || a.direction === "past" || a.direction === "both",
+      }),
+    ],
+  }),
+
+  pin({
+    id: "bulk-moves-the-set-in-one-act",
+    group: "capture",
+    it: "'move all of those to next week' is ONE bulk call, not five separate ones",
+    because:
+      "n separate writes is n separate undo entries and n chances to half-finish. The app's " +
+      "bulk bar takes the whole set as one act; the chat has to mean the same thing by it.",
+    world: "overloaded",
+    turns: [
+      "what's on the Fall sermon series?",
+      { assistant: "Five tasks — Sermon week 1 through 5, all undated." },
+      "push all five to next week",
+    ],
+    respond: (c) =>
+      c.name === "list_tasks"
+        ? {
+            tasks: Array.from({ length: 5 }, (_, i) => ({
+              id: `44444444-4444-4444-8444-00000000000${i + 1}`,
+              title: `Sermon week ${i + 1}`,
+              status: "backlog",
+            })),
+            count: 5,
+          }
+        : undefined,
+    // What this pins is ONE act, not perfect UUID transcription. A ×5 run
+    // caught the model sending six ids with one malformed — a real hazard of
+    // any array-of-ids tool, and the right place to catch it is the handler,
+    // which now counts what actually matched and refuses to round up. Asserting
+    // exact ids here would have been asserting that an LLM copies UUIDs
+    // flawlessly, which is not a behavior worth pinning or achievable.
+    expect: [
+      calledTimes("bulk_update_tasks", 1),
+      called("bulk_update_tasks", {
+        describe: "carrying the whole set in that one call",
+        ok: (a) => Array.isArray(a.task_ids) && a.task_ids.length >= 5,
+      }),
+      calledTimes("update_task", 0),
+      calledTimes("plan_task", 0),
+      calledTimes("schedule_task", 0),
+    ],
+  }),
+
+  pin({
+    id: "filter-asks-the-list-not-the-snapshot",
+    group: "capture",
+    it: "a question about the list is a filtered read, not an answer from the snapshot",
+    because:
+      "the context carries a window — today's schedule, the inbox, the week's slate — and a " +
+      "model answering 'what's overdue' from it reports on that window while calling it the " +
+      "whole list. `list_tasks` now takes the same query the filter panel does, so the chat's " +
+      "answer and the user's screen are the same set.",
+    world: "loaded",
+    turns: ["what's overdue right now?"],
+    respond: (c) => (c.name === "list_tasks" ? { tasks: [], count: 0 } : undefined),
+    expect: [
+      called("list_tasks", {
+        describe: "asks for the overdue window",
+        ok: (a) => a.when === "overdue",
+      }),
+      readOnly(),
+    ],
+  }),
+
   // ── B · Slots: one block of time that holds several tasks ──────────────────
 
   pin({
@@ -366,6 +569,95 @@ export const SCENARIOS: Scenario[] = [
     expect: [called("cancel_event")],
   }),
 
+  pin({
+    id: "rsvp-can-say-yes",
+    group: "calendar",
+    it: "accepting an invite accepts it — the chat is not decline-only",
+    because:
+      "until 2026-08-13 the only RSVP verb was decline_event, so 'accept that' either did " +
+      "nothing or, worse, reached for the one tool it had.",
+    world: "loaded",
+    turns: ["accept the AI Powered SDLC invite"],
+    expect: [
+      called("rsvp_event", {
+        describe: "responds accepted",
+        ok: (a) => a.response === "accepted",
+      }),
+      calledTimes("decline_event", 0),
+      calledTimes("cancel_event", 0),
+    ],
+  }),
+
+  pin({
+    id: "reminder-sets-one-lead-not-a-standing-rule",
+    group: "calendar",
+    it: "'remind me 15 minutes before X' sets a lead on X",
+    world: "loaded",
+    turns: ["remind me 15 minutes before the AI Powered SDLC session"],
+    expect: [
+      called("set_reminder", {
+        describe: "lead of 15, on that event",
+        ok: (a) => String(a.lead_minutes) === "15",
+      }),
+    ],
+  }),
+
+  pin({
+    id: "reminder-silence-is-not-a-clear",
+    group: "calendar",
+    it: "silencing one item is set_reminder 'off' — clearing it would restore the default",
+    because:
+      "the two verbs read alike in English and do opposite things: clear_reminder drops the " +
+      "override, which hands the item BACK to the defaults it was being silenced from.",
+    world: "loaded",
+    turns: ["don't remind me about lunch today"],
+    expect: [
+      called("set_reminder", {
+        describe: 'lead_minutes "off"',
+        ok: (a) => String(a.lead_minutes) === "off",
+      }),
+      calledTimes("clear_reminder", 0),
+    ],
+  }),
+
+  pin({
+    id: "reminder-refuses-the-nudge",
+    group: "calendar",
+    it: "a nagging reminder is refused, not built out of per-item leads",
+    because:
+      "N-07 said no to notification nudges and reminders shipped only inside its escape " +
+      "clause — time-critical NOW signals. A model that answers 'nag me every hour' by " +
+      "setting a row per item rebuilds the thing the clause excluded, one call at a time.",
+    world: "loaded",
+    turns: ["nag me every hour until I finish the Stampede subdomains"],
+    // The load-bearing assertion is the FIRST one: refusing means not quietly
+    // building the nag out of per-item leads. The reply check is deliberately
+    // broad — a ×5 run failed a flawless answer ("Nuvo doesn't do nagging
+    // reminders…") because my word list had `don't` and not `doesn't`, which
+    // is the same synonym-chasing mistake week-overload-names-the-cost was
+    // built out of. All this needs to catch is a reply that ignores the request
+    // instead of answering it; any real answer names the thing being declined.
+    expect: [
+      calledTimes("set_reminder", 0),
+      replyMatches(/remind|nag|alert|notif/i, "engages with the request instead of ignoring it"),
+    ],
+  }),
+
+  pin({
+    id: "duplicate-does-not-recreate-from-scratch",
+    group: "calendar",
+    it: "'same again next week' copies the event rather than composing a new one",
+    because:
+      "a hand-built copy loses the location, the notes and the conferencing link, and — the " +
+      "reason duplicate exists — a create with guests would mail everyone a second invite.",
+    world: "loaded",
+    turns: ["book another AI Powered SDLC next Thursday at 9am"],
+    expect: [
+      called("duplicate_event"),
+      calledTimes("create_calendar_event", 0),
+    ],
+  }),
+
   // ── D · The week ───────────────────────────────────────────────────────────
 
   pin({
@@ -417,10 +709,34 @@ export const SCENARIOS: Scenario[] = [
     group: "week",
     it: "on a full week, adding something says what comes off",
     world: "overloaded",
-    turns: ["I want to add a new project this week for the budget rewrite"],
+    // 2026-08-14: found FLAKY at 2/5 by `--repeat 5` — a single run had it
+    // green, which is exactly the case the repeat flag exists to catch.
+    //
+    // The chat was RIGHT on every failure ("something needs to wait or come
+    // off", "the sermon series is the clearest candidate to defer", "something
+    // needs to move—most likely the sermon series"). The assertion was a word
+    // list, and a word list can only ever chase the synonym the model picked
+    // this time. So it now asks for the behavior the title actually claims:
+    // **name what comes off.** A cost you can act on is a commitment with a
+    // name, not the adjective "full" — and "Added Budget rewrite to this
+    // week." on its own still fails, which is the silence this pin is for.
+    // The domain is stated. Without it, "add a new project" legitimately makes
+    // the chat ask which life area it belongs to (structure-routes-by-domain
+    // pins exactly that) — two correct behaviors under one assertion, which a
+    // ×5 run duly caught. Naming the domain leaves only one thing to do here.
+    turns: ["add a new Work project this week for the budget rewrite"],
     expect: [
-      replyMatches(/\b(already|full|carry|drop|push|instead of|comes off|too much|trade)\b/i,
-        "names the cost rather than silently agreeing"),
+      check("names an existing commitment as the thing that gives way", (o) => {
+        const reply = o.turn.content;
+        if (!/sermon/i.test(reply)) {
+          return `named nothing that comes off — the overloaded week's biggest carry is "Fall sermon series" (7.5h, 5 tasks rolled 3×) and the reply never mentions it: ${JSON.stringify(reply.slice(0, 240))}`;
+        }
+        return /\b(wait|defer|deferr|come off|comes off|move|drop|push|slip|bump|instead|trade|give up|carry|carrying|already|full|too much)\b/i.test(
+          reply,
+        )
+          ? null
+          : `mentions the sermon series but never says it gives way: ${JSON.stringify(reply.slice(0, 240))}`;
+      }),
     ],
   }),
 

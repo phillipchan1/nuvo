@@ -1,6 +1,10 @@
 # Calendar & Task remediation — what shipped, and what didn't
 
 **Status:** P0 complete · P1 partial · background push shipped · 2026-08-13
+**Superseded in part by** [`the 2026-08-14 changelog`](./calendar-task-remediation-changelog-2026-08-14.md),
+which picks up §3's "what still needs a human" table: `npm run eval` has now been
+run (and found a flaky scenario), rank 10 and rank 6 shipped, bulk actions shipped.
+Push-to-device and iCloud RSVP are **still unverified** and still need Phil.
 **Answers:** [`calendar-task-completeness-audit-2026-08-12.md`](./calendar-task-completeness-audit-2026-08-12.md)
 **Plan + the trades it took:** [`calendar-task-remediation-2026-08-12.md`](./calendar-task-remediation-2026-08-12.md)
 
@@ -181,7 +185,9 @@ against the clock, in this order.
 ## 4 · Docs kept in step
 
 - [`agent-conformance.md`](./agent-conformance.md) — 13 new rows across the
-  Capture and Calendar groups. Every one is `◐` with its reason: they are pinned
+  Capture and Calendar groups. ⚠️ **This count was wrong: it was 11.** The four
+  step tools (`add_step` · `complete_step` · `list_steps` · `remove_step`) got no
+  row at all. Fixed 2026-08-14. Every one is `◐` with its reason: they are pinned
   by deterministic tests, not by live-model scenarios. `npm run eval` was **not**
   run (it costs tokens and needs a live model) — worth running before you lean on
   the new chat capabilities.

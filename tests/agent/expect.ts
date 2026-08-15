@@ -37,6 +37,8 @@ export const WRITE_TOOLS = [
   "restore_task", "purge_task",
   "add_step", "complete_step", "remove_step",
   "rsvp_event", "duplicate_event",
+  // Acts on many tasks at once — emphatically a write.
+  "bulk_update_tasks",
 ];
 
 export function called(
