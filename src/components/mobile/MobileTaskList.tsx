@@ -37,6 +37,8 @@ export default function MobileTaskList({
   now,
   onTapTask,
   pending = false,
+  filterNote = null,
+  selection,
 }: {
   tab: MobileTab;
   inbox: Task[];
@@ -50,6 +52,19 @@ export default function MobileTaskList({
   onTapTask: (t: Task) => void;
   /** the active tab's query hasn't resolved yet — never claim "nothing here". */
   pending?: boolean;
+  /** A filter is narrowing these lists — the plain-English question it asks.
+   *  Null when nothing is filtered. Empty states MUST say this instead of
+   *  "Inbox zero": a short list reads as "you're on top of it", which is the
+   *  one lie a planner can't tell. */
+  filterNote?: string | null;
+  /** Multi-select, entered by holding a row. Absent = selection is off for this
+   *  surface (the trash, which has its own two acts). */
+  selection?: {
+    ids: Set<string>;
+    /** Hold a row: start selecting, with that row picked. */
+    begin: (id: string) => void;
+    toggle: (id: string) => void;
+  };
 }) {
   const metaOf = (t: Task): TaskMeta => {
     const project = projectById(vertical, t.project_id);
@@ -63,16 +78,23 @@ export default function MobileTaskList({
     };
   };
 
+  const selecting = !!selection && selection.ids.size > 0;
+
   const rowProps = (t: Task, action?: React.ReactNode) => ({
     task: t,
     labels,
     now,
     selected: false,
+    multiSelected: selection?.ids.has(t.id) ?? false,
     draggable: false,
     accent: taskDomainColor(vertical, t),
     meta: metaOf(t),
     onSelect: () => {},
-    onOpen: () => onTapTask(t),
+    onLongPress: selection ? () => selection.begin(t.id) : undefined,
+    // While a selection is live, a tap toggles instead of opening — the
+    // convention every phone list uses, and the only way to add a second row
+    // without a second gesture.
+    onOpen: () => (selecting && selection ? selection.toggle(t.id) : onTapTask(t)),
     onToggleDone: () => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t)),
     // Swipe right completes; swipe left snoozes to tomorrow (undo via toast).
     swipeActions: { onDefer: () => mutations.planFor(t, tomorrowISO(), TRIAGE_UNDO) },
@@ -93,7 +115,7 @@ export default function MobileTaskList({
     if (pending && inbox.length === 0) return <SkeletonRows />;
     return (
       <div>
-        {inbox.length === 0 && <Empty text="Inbox zero. Tap ＋ to capture." />}
+        {inbox.length === 0 && <Empty text={filterNote ? `Nothing in the inbox matches ${filterNote}.` : "Inbox zero. Tap ＋ to capture."} />}
         {inbox.map((t) => (
           <TaskRow key={t.id} {...rowProps(t)} />
         ))}
@@ -110,7 +132,7 @@ export default function MobileTaskList({
     if (pending && nothing) return <SkeletonRows />;
     return (
       <div>
-        {nothing && <Empty text="Nothing planned for today. Pull from Week or tap ＋." />}
+        {nothing && <Empty text={filterNote ? `Nothing today matches ${filterNote}.` : "Nothing planned for today. Pull from Week or tap ＋."} />}
         {todaySections.pinned.length > 0 && (
           <>
             <SectionLabel count={todaySections.pinned.length}>Overdue</SectionLabel>
@@ -179,7 +201,7 @@ export default function MobileTaskList({
           <div className="text-head font-medium">{vertical.sprintGoal}</div>
         </div>
       )}
-      {empty && <Empty text="Nothing committed this week yet." />}
+      {empty && <Empty text={filterNote ? `Nothing this week matches ${filterNote}.` : "Nothing committed this week yet."} />}
       {weekPool.unplaced.length > 0 && (
         <>
           <SectionLabel>To place</SectionLabel>

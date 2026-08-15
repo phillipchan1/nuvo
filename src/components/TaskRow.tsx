@@ -197,6 +197,10 @@ const TaskRow = forwardRef<TaskRowHandle, {
   onOpen: (anchor: DOMRect) => void;
   onToggleDone: () => void;
   onMultiToggle?: () => void;
+  /** Touch hold — the phone's way into multi-select (there is no ⌘-click on a
+   *  thumb). Fires once per press, at LONG_PRESS_MS, and cancels the moment the
+   *  finger travels enough to be a swipe or a scroll. */
+  onLongPress?: () => void;
   /** Shift-click: extend the selection from the anchor to this row. */
   onRangeSelect?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
@@ -228,6 +232,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
     dragGroup,
     onSelect,
     onOpen,
+    onLongPress,
     onToggleDone,
     onMultiToggle,
     onRangeSelect,
@@ -302,7 +307,12 @@ const TaskRow = forwardRef<TaskRowHandle, {
       e.stopPropagation();
       return;
     }
-    // The release that ended a swipe must not also open the task.
+    // The release that ended a swipe — or a long press — must not also open it.
+    if (Date.now() - justHeld.current < 500) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (Date.now() - justSwiped.current < 400) {
       e.preventDefault();
       e.stopPropagation();
@@ -322,7 +332,28 @@ const TaskRow = forwardRef<TaskRowHandle, {
   const [swipeSnap, setSwipeSnap] = useState(false);
   const justSwiped = useRef(0);
 
+  // Long press → multi-select. Same 450ms the record sheet and the deck use, so
+  // "hold to act on this" feels like one gesture across the phone.
+  const LONG_PRESS_MS = 450;
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const justHeld = useRef(0);
+  const cancelHold = () => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  };
+
   const onSwipeDown = (e: React.PointerEvent) => {
+    if (e.pointerType !== "mouse" && onLongPress) {
+      cancelHold();
+      holdTimer.current = setTimeout(() => {
+        holdTimer.current = null;
+        justHeld.current = Date.now();
+        // A selection appearing under your thumb with no feedback reads as a
+        // glitch; the platform haptic is the cheapest honest confirmation.
+        navigator.vibrate?.(8);
+        onLongPress();
+      }, LONG_PRESS_MS);
+    }
     if (!swipeActions || e.pointerType === "mouse") return;
     if (e.clientX < 24) return;
     swipe.current = { x: e.clientX, y: e.clientY, id: e.pointerId, engaged: false };
@@ -330,6 +361,8 @@ const TaskRow = forwardRef<TaskRowHandle, {
   };
   const onSwipeMove = (e: React.PointerEvent) => {
     const s = swipe.current;
+    // Any real travel means this is a swipe or a scroll, not a hold.
+    if (holdTimer.current && s && (Math.abs(e.clientX - s.x) > 8 || Math.abs(e.clientY - s.y) > 8)) cancelHold();
     if (!s) return;
     const dx = e.clientX - s.x;
     const dy = e.clientY - s.y;
@@ -348,6 +381,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
     setSwipeX(Math.max(-120, Math.min(120, dx)));
   };
   const onSwipeUp = (e: React.PointerEvent) => {
+    cancelHold();
     const s = swipe.current;
     swipe.current = null;
     if (!s?.engaged) return;
@@ -359,14 +393,17 @@ const TaskRow = forwardRef<TaskRowHandle, {
     if (dx > 0) toggle();
     else swipeActions?.onDefer();
   };
-  const swipeHandlers = swipeActions
-    ? {
-        onPointerDown: onSwipeDown,
-        onPointerMove: onSwipeMove,
-        onPointerUp: onSwipeUp,
-        onPointerCancel: onSwipeUp,
-      }
-    : {};
+  // Attached whenever EITHER gesture is wanted — the long press lives on the
+  // same pointer stream as the swipe, so a row with only one still gets it.
+  const swipeHandlers =
+    swipeActions || onLongPress
+      ? {
+          onPointerDown: onSwipeDown,
+          onPointerMove: onSwipeMove,
+          onPointerUp: onSwipeUp,
+          onPointerCancel: onSwipeUp,
+        }
+      : {};
 
   // Format do_date relative
   const dateLabel = (() => {

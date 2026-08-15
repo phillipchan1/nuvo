@@ -8,6 +8,11 @@ import { acceptPatch, dismissPatch } from "../lib/grooming";
 import { TRASH_LIMIT, useTrashedTasks, type NewTaskInput, type useTaskMutations } from "../hooks/useTasks";
 import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
 import { useVertical } from "../hooks/useVertical";
+import { useTaskFilter } from "../hooks/useTaskFilter";
+import TaskFilter from "./TaskFilter";
+import BulkBar from "./BulkBar";
+import { useBulkOps } from "../hooks/useBulkOps";
+import { describeQuery, queryFacetCount } from "../lib/taskFilter";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useListReorder } from "../hooks/useListReorder";
 import { announce } from "../lib/announce";
@@ -129,15 +134,34 @@ export default function LeftRail({
     setRemindPickerFor(null);
   }, [nav]);
 
-  const todaySections = useMemo(() => buildTodaySections(today, now), [today, now]);
+  // Filters (audit rank 6). The question is held here, not persisted — a filter
+  // left on from last Tuesday, quietly hiding work, is the failure mode every
+  // list tool has, and in a planner a short list reads as "you're on top of it".
+  // Saved views are the thing that persists; applying one is a deliberate act.
+  const filter = useTaskFilter(now);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const { apply: applyFilter } = filter;
+  const filtering = queryFacetCount(filter.query) > 0;
+
+  const todaySections = useMemo(() => {
+    const s = buildTodaySections(today, now);
+    if (!filtering) return s;
+    return {
+      ...s,
+      pinned: applyFilter(s.pinned),
+      unblocked: applyFilter(s.unblocked),
+      scheduled: applyFilter(s.scheduled),
+      done: applyFilter(s.done),
+    };
+  }, [today, now, applyFilter, filtering]);
   // The inbox is a hand-ordered queue, so it renders by sort_order rather than
   // by whatever the cache happens to hold — an optimistic reorder patches rows
   // in place without re-sorting them, so without this the drop wouldn't show
   // until the refetch landed.
-  const inboxOrdered = useMemo(
-    () => [...inbox].sort((a, b) => a.sort_order - b.sort_order),
-    [inbox],
-  );
+  const inboxOrdered = useMemo(() => {
+    const ordered = [...inbox].sort((a, b) => a.sort_order - b.sort_order);
+    return filtering ? applyFilter(ordered) : ordered;
+  }, [inbox, applyFilter, filtering]);
 
   // The trash — its own query, because every other read deliberately excludes
   // `status = "trashed"`. Empty until something is deleted, and the tab that
@@ -159,6 +183,15 @@ export default function LeftRail({
         : [...todaySections.pinned, ...todaySections.unblocked, ...todaySections.scheduled, ...todaySections.done];
 
   const selected = visible.find((t) => t.id === selectedId) ?? null;
+
+  // The bulk bar's acts, shared with the phone (useBulkOps) so "move these to a
+  // project" means the same thing on both — including carrying the initiative
+  // and domain with it (D-088), and taking ONE undo entry for the whole set.
+  const bulkOps = useBulkOps({
+    selected: visible.filter((t) => selectedIds.has(t.id)),
+    mutations,
+    clear: () => setSelectedIds(new Set()),
+  });
 
   // Keyboard-first quick actions
   useEffect(() => {
@@ -206,8 +239,24 @@ export default function LeftRail({
 
       switch (e.key) {
         case "Escape":
-          setSelectedIds(new Set());
-          setContextMenu(null);
+          // Innermost state first. A live selection is the most transient thing
+          // on screen (and the bulk bar is right there saying so), so Escape
+          // drops that before it drops the filter — clearing the filter under a
+          // selection would reflow the list beneath the rows you'd just picked.
+          // With nothing selected, Escape clears the filter, which is the one
+          // state that can silently hide work.
+          if (selectedIds.size > 0 || contextMenu) {
+            setSelectedIds(new Set());
+            setContextMenu(null);
+            break;
+          }
+          if (filtering) filter.setQuery({});
+          break;
+        case "/":
+          // The list-tool convention, and free here — `/` types nothing in the
+          // rail (capture has its own field, and typing targets bail above).
+          e.preventDefault();
+          setFilterOpen((v) => !v);
           break;
         case "ArrowDown":
         case "j":
@@ -696,6 +745,27 @@ export default function LeftRail({
               </button>
             );
           })}
+          {/* The filter lives ON the tab strip, not above it: it modifies which
+              face you're looking at, and a control that floats free of the faces
+              reads as a sixth destination. Inert on Trash — the trash is a
+              recovery surface, and a filtered one could hide the row you came
+              back for without saying so. */}
+          {tab !== "trash" && (
+            <div className="flex shrink-0 items-center pr-2">
+              <TaskFilter
+                query={filter.query}
+                onChange={filter.setQuery}
+                labels={labels}
+                vertical={vertical}
+                savedViews={filter.savedViews}
+                onSaveView={filter.saveView}
+                onDeleteView={filter.deleteView}
+                onApplyView={filter.applyView}
+                open={filterOpen}
+                onOpenChange={setFilterOpen}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -717,7 +787,18 @@ export default function LeftRail({
             {inboxOrdered.map((t) => (
               <TaskRow key={t.id} {...rowProps(t)} />
             ))}
-            {inboxOrdered.length === 0 && <EmptyState text="Inbox zero. Capture with C or ⌘K." />}
+            {inboxOrdered.length === 0 && (
+              // Never claim inbox zero over a filter. A short list reads as
+              // "you're on top of it", which is the one lie a planner must not
+              // tell — so a filtered empty says what it's hiding behind.
+              <EmptyState
+                text={
+                  filtering
+                    ? `Nothing in the inbox matches ${describeQuery(filter.query, { label: (id) => labels.find((l) => l.id === id)?.name, domain: (id) => vertical?.domains.find((d) => d.id === id)?.name })}.`
+                    : "Inbox zero. Capture with C or ⌘K."
+                }
+              />
+            )}
           </>
         )}
 
@@ -774,7 +855,9 @@ export default function LeftRail({
               todaySections.scheduled.length ===
               0 && (
               <div className="px-3 py-6 text-center text-caption text-muted">
-                Nothing for today yet — capture below, or drag from the calendar.
+                {filtering
+                  ? "Nothing today matches the filter."
+                  : "Nothing for today yet — capture below, or drag from the calendar."}
               </div>
             )}
             {/* Done — the quiet tail, folded to a single line (Loose-ends pattern). */}
@@ -836,55 +919,11 @@ export default function LeftRail({
         )}
       </form>
 
-      {/* Bulk action bar — slides up when ≥2 tasks are multi-selected */}
+      {/* Bulk actions — one bar, shared with the phone (BulkBar.tsx). It grew
+          label · priority · schedule · project-move here; the four it had
+          before (today · inbox · done · trash) moved into it unchanged. */}
       {selectedIds.size > 1 && (
-        <div className="rise flex shrink-0 items-center gap-2 border-t border-accent/30 bg-accent-soft px-3 py-2">
-          <span className="mono text-label font-semibold text-accent">{selectedIds.size} selected</span>
-          <div className="flex-1" />
-          <button
-            onClick={() => {
-              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.planFor(t, todayISO(now), TRIAGE_UNDO));
-              setSelectedIds(new Set());
-            }}
-            className="fast rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
-          >
-            → Today
-          </button>
-          <button
-            onClick={() => {
-              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.backToInbox(t, TRIAGE_UNDO));
-              setSelectedIds(new Set());
-            }}
-            className="fast rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
-          >
-            → Inbox
-          </button>
-          <button
-            onClick={() => {
-              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.complete(t));
-              setSelectedIds(new Set());
-            }}
-            className="fast rounded border border-line px-2 py-0.5 text-label text-muted hover:border-accent hover:text-accent"
-          >
-            ✓ Done
-          </button>
-          <button
-            onClick={() => {
-              visible.filter((t) => selectedIds.has(t.id)).forEach((t) => mutations.trash(t));
-              setSelectedIds(new Set());
-            }}
-            className="fast rounded border border-signal/30 px-2 py-0.5 text-label text-signal hover:bg-signal-soft"
-          >
-            Trash
-          </button>
-          <button
-            onClick={() => setSelectedIds(new Set())}
-            className="ml-1 text-label text-muted hover:text-ink"
-            aria-label="Clear selection"
-          >
-            ✕
-          </button>
-        </div>
+        <BulkBar count={selectedIds.size} ops={bulkOps} labels={labels} vertical={vertical} />
       )}
 
       {labelPickerFor && (

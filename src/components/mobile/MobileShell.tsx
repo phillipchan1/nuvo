@@ -31,6 +31,11 @@ import { AltitudeIcon, type AltitudeKind } from "../icons";
 import { TrialBanner } from "../billing/TrialBanner";
 import Orientation from "../orientation/Orientation";
 import MobileTaskList, { type MobileTab } from "./MobileTaskList";
+import TaskFilter from "../TaskFilter";
+import BulkBar from "../BulkBar";
+import { useBulkOps } from "../../hooks/useBulkOps";
+import { useTaskFilter } from "../../hooks/useTaskFilter";
+import { describeQuery, queryFacetCount } from "../../lib/taskFilter";
 import MobileCalendar from "./MobileCalendar";
 import RecurringUpkeepPanel from "../RecurringUpkeepPanel";
 import MobileProjects from "./MobileProjects";
@@ -272,6 +277,23 @@ export default function MobileShell() {
     return () => unlisten?.();
   }, [applyShortcut]);
 
+  // Filters (audit rank 6) — the phone's half. Same hook, same kernel predicate
+  // and the same saved views the desktop rail reads; only the frame differs
+  // (a bottom Sheet, never a cursor-anchored popover).
+  const filter = useTaskFilter(now);
+  const filtering = queryFacetCount(filter.query) > 0;
+
+  // Multi-select — the phone had none, so every bulk verb was desktop-only
+  // (audit §Bulk actions). Entered by HOLDING a row, the same 450ms gesture the
+  // record sheet and the deck already use; a tap then toggles.
+  const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
+  const clearPicked = useCallback(() => setPickedIds(new Set()), []);
+  // Selecting is per-screen: leaving the Tasks screen (or changing segment)
+  // drops it, so a selection can never act on rows you can no longer see.
+  useEffect(() => {
+    setPickedIds(new Set());
+  }, [tab, sub]);
+
   const today = todayISO(now);
   const range = useMemo(() => {
     const start = new Date(now);
@@ -360,6 +382,15 @@ export default function MobileShell() {
     return m;
   }, [inbox, todayTasks, weekTasks, allTasks]);
   const openTask = taskId ? taskById.get(taskId) ?? null : null;
+
+  // The bulk bar's acts — the same hook the desktop rail uses, so a phone bulk
+  // move files the initiative and domain alongside the project (D-088) and the
+  // whole set undoes in one step.
+  const bulkOps = useBulkOps({
+    selected: [...pickedIds].map((id) => taskById.get(id)).filter((t): t is Task => !!t),
+    mutations,
+    clear: clearPicked,
+  });
 
   // The calendar tap's slot children — `allTasks` (useAllTasks) has no
   // start_time filter, so a slot's members (start_time forced null by
@@ -543,7 +574,30 @@ export default function MobileShell() {
           <MobileDomains onOpenItem={openDetail} />
         ) : (
           <div className="fab-clear">
-            <TaskSubtabs sub={sub} setSub={setSub} count={subCount} showTrash={trashed.length > 0} />
+            <TaskSubtabs
+              sub={sub}
+              setSub={setSub}
+              count={subCount}
+              showTrash={trashed.length > 0}
+              filter={
+                // Inert on Trash for the same reason as the desktop rail: the
+                // trash is a recovery surface, and a filtered one could hide the
+                // row you came back for. On a phone this opens a Sheet, never a
+                // cursor-anchored popover.
+                sub === "trash" ? null : (
+                  <TaskFilter
+                    query={filter.query}
+                    onChange={filter.setQuery}
+                    labels={labels}
+                    vertical={vertical}
+                    savedViews={filter.savedViews}
+                    onSaveView={filter.saveView}
+                    onDeleteView={filter.deleteView}
+                    onApplyView={filter.applyView}
+                  />
+                )
+              }
+            />
             {/* The week's read, above the week's list — both are week-scoped, so
                 they sit at the top of the Week segment rather than on an
                 execution screen. */}
@@ -557,15 +611,37 @@ export default function MobileShell() {
             )}
             <MobileTaskList
               tab={sub}
-              inbox={inbox}
-              today={todayTasks}
-              week={weekTasks}
+              inbox={filtering ? filter.apply(inbox) : inbox}
+              today={filtering ? filter.apply(todayTasks) : todayTasks}
+              week={filtering ? filter.apply(weekTasks) : weekTasks}
               trashed={trashed}
+              filterNote={
+                filtering
+                  ? describeQuery(filter.query, {
+                      label: (id) => labels.find((l) => l.id === id)?.name,
+                      domain: (id) => vertical?.domains.find((d) => d.id === id)?.name,
+                    })
+                  : null
+              }
               labels={labels}
               vertical={vertical}
               mutations={mutations}
               now={now}
               onTapTask={(t) => setTaskId(t.id)}
+              selection={
+                sub === "trash"
+                  ? undefined
+                  : {
+                      ids: pickedIds,
+                      begin: (id) => setPickedIds((s) => new Set(s).add(id)),
+                      toggle: (id) =>
+                        setPickedIds((s) => {
+                          const next = new Set(s);
+                          next.has(id) ? next.delete(id) : next.add(id);
+                          return next;
+                        }),
+                    }
+              }
               pending={
                 sub === "inbox" ? inboxPending : sub === "week" ? weekPending || !verticalReady : todayPending
               }
@@ -574,11 +650,22 @@ export default function MobileShell() {
         )}
       </main>
 
+      {/* Bulk actions — the same bar the desktop rail uses, sitting directly on
+          the nav so it reads as a temporary mode over the screen rather than a
+          floating card. Its menus open as Sheets on a phone (BulkBar). */}
+      {pickedIds.size > 0 && (
+        <BulkBar count={pickedIds.size} ops={bulkOps} labels={labels} vertical={vertical} />
+      )}
+
       {/* Bottom bar — the five navigation destinations, equal width. Capture (＋) and Nuvo
           (✦) float above the bar as the two primary *actions* (bottom-right thumb
           arc), so the row stays even and the bold accent belongs to capture. */}
       <nav className="pb-safe relative flex shrink-0 items-stretch border-t border-line bg-surface">
-        {!chatOpen && (
+        {/* Capture and Nuvo stand down while a bulk selection is live, for the
+            same reason they do for the chat: they float over the bottom-right,
+            which is exactly where the bulk bar's last actions sit. A ＋ covering
+            "Move" is worse than a ＋ that waits. */}
+        {!chatOpen && pickedIds.size === 0 && (
           <>
             {/* Nuvo — the floating chat launcher, beside capture. Screen-aware:
                 its starters match wherever you are. */}
@@ -809,15 +896,18 @@ function TaskSubtabs({
   setSub,
   count,
   showTrash = false,
+  filter,
 }: {
   sub: MobileTab;
   setSub: (s: MobileTab) => void;
   count: (s: MobileTab) => number;
   /** The trash holds something, so its lens is reachable. */
   showTrash?: boolean;
+  /** The filter control, rendered at the end of the strip. Null on Trash. */
+  filter?: React.ReactNode;
 }) {
   return (
-    <div className="sticky top-0 z-10 flex gap-1 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
+    <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-line bg-surface/90 px-3 py-2 backdrop-blur">
       {(showTrash ? [...SUBTABS, TRASH_SUBTAB] : SUBTABS).map((t) => {
         const on = sub === t.id;
         const c = count(t.id);
@@ -853,6 +943,7 @@ function TaskSubtabs({
           </button>
         );
       })}
+      {filter}
     </div>
   );
 }
