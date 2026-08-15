@@ -576,9 +576,10 @@ horizontal scroll of larger chips you drag onto the grid.
 
 ## Detail popovers — one grammar (D-101)
 
-The event, task and slot popovers are the **same card** at three subjects. The parts live in
-`src/components/PopoverParts.tsx` — build the next one out of them, don't hand-roll a fourth
-stack of `border-t` sections.
+The event, task and slot popovers are the **same card** at three subjects — and so is the
+**quick-create composer** (`DraftComposer`), which is the same card *before* the thing exists.
+The parts live in `src/components/PopoverParts.tsx` — build the next one out of them, don't
+hand-roll a fifth stack of `border-t` sections.
 
 ```
 ┌───────────────────────────────────────────────┐
@@ -611,6 +612,10 @@ stack of `border-t` sections.
   content extends a card downward; it never re-positions it. Anything that arrives late gets
   a `PopSkeleton` holding its shape, and the width is decided before the card is on screen —
   never from data still in flight.
+- **The composer wears it too, one step earlier.** Its kind switcher and title input are the
+  masthead (the tabs *are* the identity, so it has no separate heading), the meta line reads
+  the when, and Create is the footer's one primary. Only an Event has people, so only an Event
+  goes wide — a Task or a Slot would open a 560px card with an empty half.
 - **Verdict tokens mark, they don't label.** `--ok` / `--warn` carry an RSVP or a priority as
   the tint, border and dot; the label stays `--ink`. They're ~3.3:1 on the light paper grounds
   — a legible *mark* (1.4.11 wants 3:1), illegible 11px *text*. This is why the control needs

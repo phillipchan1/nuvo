@@ -3510,3 +3510,35 @@ answered faster, not extended.
 *Status: standing. Driven in the dev app on real data at 1280px: event (Google, 4 guests,
 Meet link), task, slot, and the task-in-slot slide-out — light, dark, and the e-ink skin.
 794 tests green (7 of them the placement rule), typecheck clean. Mobile untouched: the phone has its own `MobileEventSheet`.*
+
+**Addendum · 2026-08-15 · The composer wears it too — the same card, one step before the
+thing exists.**
+
+`DraftComposer` (the quick-create card from a click-drag on the grid) was left on its own
+384px single-column layout, which is where the grammar was *most* needed: on the Event tab it
+stacked a title, a when-row, a full-width All-day switch, a full-width Repeat block, account
+chips, a guest input and a full-width Google Meet switch into one scrolling strip — the same
+two full-width toggles, in the same inverted hierarchy, that the event popover was rebuilt to
+remove. It also carried six raw `text-white` / `bg-white` values no skin could answer for.
+
+→ **Same parts, adapted where a composer genuinely differs.** The kind switcher *is* the
+masthead's identity, so there is no separate heading and no ✕ (the footer's Cancel is the
+exit, and a second one would be a duplicate act). Everything else holds: hero title, one meta
+line, left column the facts, right column the people, one primary in the footer.
+
+→ **Only an Event goes wide.** A Task or a Slot has nobody to put on the right, so it stays
+`POP_W_NARROW` rather than opening a 560px card with an empty half. Google Meet moved to the
+*left* column on the way: how you get in is a fact of the event, like its calendar — the right
+column is for people.
+
+→ **The placement rule carried over, and proved itself on the other axis.** The composer now
+uses `anchoredTop`, so switching Task→Event grows the card without moving it (measured: top
+constant at 422px across all three tabs). The side it opens on is frozen for the same reason —
+a width change must never flip the card across the pointer mid-edit. On a left-flipped card
+the *right* edge is the anchored one, so the card grows leftward and the edge by your cursor
+stays put.
+
+*Status: standing. Driven in the dev app: the `?meet` harness (all three tabs, light and
+dark) and a real click-drag on the grid — the Slot tab's domain chips and the Event tab's
+three real calendar accounts. 1043 tests, typecheck and build green.*
+
