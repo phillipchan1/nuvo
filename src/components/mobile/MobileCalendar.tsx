@@ -38,6 +38,7 @@ import {
 } from "./dayPlan";
 import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
 import MobileDayView, { CalLensPill, type CalLens } from "./MobileDayView";
+import MobileWeekView from "./MobileWeekView";
 
 // The mobile Calendar — three lenses on the same live day-shape math:
 //   • Month — the whole month at a glance (free/busy density per day), swipe or
@@ -67,12 +68,12 @@ const MODE_KEY = "nuvo-mobile-cal-mode";
 const DAY_FETCH_BEHIND = 7;
 const DAY_FETCH_AHEAD = 21;
 
-type Mode = "month" | "schedule" | "day";
+type Mode = "month" | "schedule" | "day" | "week";
 
 function readMode(): Mode {
   try {
     const v = localStorage.getItem(MODE_KEY);
-    if (v === "month" || v === "schedule" || v === "day") return v;
+    if (v === "month" || v === "schedule" || v === "day" || v === "week") return v;
   } catch {
     /* ignore */
   }
@@ -144,7 +145,7 @@ export default function MobileCalendar({
   const [pastDays, setPastDays] = useState(0);
   // The last drill-in lens (List or Day) — where a month tap lands you. Seeded
   // from the persisted mode so the preference survives a reload.
-  const drill = useRef<Exclude<Mode, "month">>(mode === "day" ? "day" : "schedule");
+  const drill = useRef<Exclude<Mode, "month">>(mode === "month" ? "schedule" : mode);
 
   // The fetch window follows the active lens: the full month grid (up to 6
   // weeks) in month mode; in the schedule, the loaded history behind the
@@ -157,7 +158,10 @@ export default function MobileCalendar({
       const gridEnd = addDays(endOfWeek(endOfMonth(monthCursor), weekOpts), 1);
       return { start: gridStart.toISOString(), end: gridEnd.toISOString() };
     }
-    if (mode === "day") {
+    // Day and Week share one window, anchored to the selected day's WEEK, so
+    // swiping a day (or paging a week) inside it stays on one cached query and
+    // the Day ↔ Week toggle never refetches.
+    if (mode === "day" || mode === "week") {
       const wk = startOfWeek(startOfDay(selected), weekOpts);
       return {
         start: addDays(wk, -DAY_FETCH_BEHIND).toISOString(),
@@ -268,6 +272,18 @@ export default function MobileCalendar({
           onPick={pickDay}
           onOpenSchedule={openSchedule}
           onOpenUpkeep={onOpenUpkeep}
+          onNewEvent={onNewEvent ? () => onNewEvent(selected) : undefined}
+        />
+      ) : mode === "week" ? (
+        <MobileWeekView
+          selected={selected}
+          weekStartsOn={firstDay}
+          ctx={dayCtx}
+          loading={loading}
+          onSelect={(d) => setSelected(startOfDay(d))}
+          onLens={(l, day) => setLens(l, day)}
+          onBack={backToMonth}
+          onTapEvent={onTapEvent}
           onNewEvent={onNewEvent ? () => onNewEvent(selected) : undefined}
         />
       ) : mode === "day" ? (

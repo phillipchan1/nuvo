@@ -464,6 +464,7 @@ export default function Planner({
     { id: "sunday", title: "Plan the week", run: () => openFlow("sunday") },
     { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
     { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
+    { id: "view-agenda", title: "Calendar: agenda (list)", run: () => setCalView("agenda") },
     { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
     { id: "view-week", title: "Calendar: week view", run: () => setCalView("timeGridWeek") },
     { id: "view-month", title: "Calendar: month view", run: () => setCalView("dayGridMonth") },

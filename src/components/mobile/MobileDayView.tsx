@@ -25,14 +25,15 @@ import {
   buildDayPlan,
   dayKey,
   dayReadout,
+  layoutDay,
   scrollParent,
+  tapFor,
   type DayCtx,
-  type TimedItem,
 } from "./dayPlan";
 import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
 
-/** The two drill-in lenses of the mobile Calendar. */
-export type CalLens = "schedule" | "day";
+/** The drill-in lenses of the mobile Calendar. */
+export type CalLens = "schedule" | "day" | "week";
 
 const HOUR_PX = 88; // 30 min = 44px — a half-hour block IS a tap target
 const MIN_ITEM_PX = 22; // a 15-min item stays readable without lying much
@@ -52,6 +53,7 @@ export function CalLensPill({ lens, onLens }: { lens: CalLens; onLens: (l: CalLe
   const faces: { id: CalLens; label: string }[] = [
     { id: "schedule", label: "List" },
     { id: "day", label: "Day" },
+    { id: "week", label: "Week" },
   ];
   return (
     <div data-tabs="day" className="flex shrink-0 rounded-full bg-surface-2 p-0.5">
@@ -74,54 +76,6 @@ export function CalLensPill({ lens, onLens }: { lens: CalLens; onLens: (l: CalLe
       })}
     </div>
   );
-}
-
-// ── Laying the day out ─────────────────────────────────────────────────────
-
-interface Laid {
-  item: TimedItem;
-  startMin: number; // wall-clock minutes into the selected day, clamped [0,1440]
-  endMin: number;
-  col: number;
-  cols: number;
-}
-
-// Overlap packing — the classic day-grid algorithm: sort by start (longer
-// first on ties), walk runs of transitively-overlapping items, give each the
-// first free column, and let every member of a run share its column count.
-function layoutDay(items: TimedItem[], date: Date): Laid[] {
-  const dk = dayKey(date);
-  const mins = (d: Date, edge: 0 | 1440) => (dayKey(d) === dk ? d.getHours() * 60 + d.getMinutes() : edge);
-  const laid: Laid[] = items.map((item) => {
-    const startMin = mins(item.start, 0);
-    return { item, startMin, endMin: Math.max(mins(item.end, 1440), startMin + 1), col: 0, cols: 1 };
-  });
-  laid.sort((a, b) => a.startMin - b.startMin || (b.endMin - b.startMin) - (a.endMin - a.startMin));
-
-  let cluster: Laid[] = [];
-  let colEnds: number[] = [];
-  let clusterMax = -1;
-  const flush = () => {
-    for (const l of cluster) l.cols = colEnds.length;
-    cluster = [];
-    colEnds = [];
-    clusterMax = -1;
-  };
-  for (const l of laid) {
-    if (cluster.length && l.startMin >= clusterMax) flush();
-    let col = colEnds.findIndex((e) => e <= l.startMin);
-    if (col === -1) {
-      col = colEnds.length;
-      colEnds.push(l.endMin);
-    } else {
-      colEnds[col] = Math.max(colEnds[col], l.endMin);
-    }
-    l.col = col;
-    cluster.push(l);
-    clusterMax = Math.max(clusterMax, l.endMin);
-  }
-  flush();
-  return laid;
 }
 
 const hourLabel = (h: number) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric" });
@@ -439,22 +393,7 @@ export default function MobileDayView({
               // Room to peek at what's inside, past the title/time/badge rows.
               const showChildren = isSlot && height > 58 && (b.children?.length ?? 0) > 0;
               const isProjectSlot = isSlot && b.projectBacked;
-              const tap: CalendarTap =
-                b.kind === "event"
-                  ? {
-                      kind: "event",
-                      id: b.eventId!,
-                      title: b.title || "Untitled",
-                      start: b.start,
-                      end: b.end,
-                      location: b.location ?? null,
-                      self_rsvp: b.self_rsvp,
-                      accountId: b.accountId,
-                      calendarId: b.calendarId,
-                    }
-                  : isSlot
-                    ? { kind: "slot", slot: b.slot!, title: b.title || "Untitled", start: b.start, end: b.end, childCount: b.childCount ?? 0, doneCount: b.doneCount ?? 0 }
-                    : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
+              const tap = tapFor(b) as CalendarTap;
               return (
                 <button
                   key={i}

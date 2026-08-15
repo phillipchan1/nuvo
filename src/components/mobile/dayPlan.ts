@@ -259,6 +259,104 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
   };
 }
 
+// ── Laying a day's commitments out in columns ───────────────────────────────
+
+export interface Laid {
+  item: TimedItem;
+  startMin: number; // wall-clock minutes into the day, clamped [0,1440]
+  endMin: number;
+  col: number;
+  cols: number;
+}
+
+/** Overlap packing — the classic day-grid algorithm: sort by start (longer
+ *  first on ties), walk runs of transitively-overlapping items, give each the
+ *  first free column, and let every member of a run share its column count.
+ *
+ *  Lives here rather than in a lens because the Day grid and the Week grid draw
+ *  the same day and must pack it identically — two copies is how one lens
+ *  starts showing an overlap the other hides. */
+export function layoutDay(items: TimedItem[], date: Date): Laid[] {
+  const dk = dayKey(date);
+  const mins = (d: Date, edge: 0 | 1440) => (dayKey(d) === dk ? d.getHours() * 60 + d.getMinutes() : edge);
+  const laid: Laid[] = items.map((item) => {
+    const startMin = mins(item.start, 0);
+    return { item, startMin, endMin: Math.max(mins(item.end, 1440), startMin + 1), col: 0, cols: 1 };
+  });
+  laid.sort((a, b) => a.startMin - b.startMin || (b.endMin - b.startMin) - (a.endMin - a.startMin));
+
+  let cluster: Laid[] = [];
+  let colEnds: number[] = [];
+  let clusterMax = -1;
+  const flush = () => {
+    for (const l of cluster) l.cols = colEnds.length;
+    cluster = [];
+    colEnds = [];
+    clusterMax = -1;
+  };
+  for (const l of laid) {
+    if (cluster.length && l.startMin >= clusterMax) flush();
+    let col = colEnds.findIndex((e) => e <= l.startMin);
+    if (col === -1) {
+      col = colEnds.length;
+      colEnds.push(l.endMin);
+    } else {
+      colEnds[col] = Math.max(colEnds[col], l.endMin);
+    }
+    l.col = col;
+    cluster.push(l);
+    clusterMax = Math.max(clusterMax, l.endMin);
+  }
+  flush();
+  return laid;
+}
+
+/** The tap payload for a laid-out item — one mapping, so the Day grid, the
+ *  Week grid and the agenda all hand the sheet the same shape. */
+export function tapFor(b: TimedItem): CalendarTapLike {
+  return b.kind === "event"
+    ? {
+        kind: "event",
+        id: b.eventId!,
+        title: b.title || "Untitled",
+        start: b.start,
+        end: b.end,
+        location: b.location ?? null,
+        self_rsvp: b.self_rsvp,
+        accountId: b.accountId,
+        calendarId: b.calendarId,
+      }
+    : b.kind === "slot"
+      ? {
+          kind: "slot",
+          slot: b.slot!,
+          title: b.title || "Untitled",
+          start: b.start,
+          end: b.end,
+          childCount: b.childCount ?? 0,
+          doneCount: b.doneCount ?? 0,
+        }
+      : { kind: "block", taskId: b.taskId!, title: b.title || "Untitled", start: b.start, end: b.end, done: !!b.done };
+}
+
+/** Structurally the `CalendarTap` union from MobileEventSheet. Restated here
+ *  rather than imported because that module pulls in React — and this one is
+ *  deliberately importable from anywhere, including the desktop. */
+type CalendarTapLike =
+  | {
+      kind: "event";
+      id: string;
+      title: string;
+      start: Date;
+      end: Date;
+      location: string | null;
+      self_rsvp?: AttendeeStatus | null;
+      accountId?: string;
+      calendarId?: string;
+    }
+  | { kind: "slot"; slot: Slot; title: string; start: Date; end: Date; childCount: number; doneCount: number }
+  | { kind: "block"; taskId: string; title: string; start: Date; end: Date; done: boolean };
+
 /** The day's one-line availability answer — shared by the agenda's day header
  *  and the Day lens header, so the two lenses can't disagree about a day. A
  *  past date is a record of what happened, not an availability question — its

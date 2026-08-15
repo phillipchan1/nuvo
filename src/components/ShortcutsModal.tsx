@@ -11,6 +11,7 @@ const GROUPS: Group[] = [
     title: "Schedule",
     items: [
       { keys: [["S"]], label: "Spread (week board)" },
+      { keys: [["A"]], label: "Agenda (list)" },
       { keys: [["W"]], label: "Week" },
       { keys: [["D"]], label: "Day" },
       { keys: [["M"]], label: "Month" },
@@ -58,6 +59,7 @@ const GROUPS: Group[] = [
       { keys: [["R"]], label: "Reschedule (pick date)" },
       { keys: [["I"]], label: "Back to inbox" },
       { keys: [["X"]], label: "Move to trash" },
+      { keys: [["/"]], label: "Filter the list (Esc clears it)" },
       { keys: [["U"]], label: "Restore (on the Trash tab)" },
       { keys: [["#"]], label: "Label" },
       { keys: [["B"]], label: "Remind (a scheduled task or a deadline)" },

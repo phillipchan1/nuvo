@@ -11,7 +11,7 @@ import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserS
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
 import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
-import { addDays } from "date-fns";
+import { addDays, startOfDay } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useEventDetails, useHiddenEvents, usePrefetchEventDetails, type useExternalEventMutations } from "../hooks/useCalendar";
@@ -25,6 +25,8 @@ import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftCompose
 import { RecurMark } from "./ui";
 import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
+import CalendarAgenda, { AGENDA_HORIZON_DAYS, AGENDA_PAST_STEP } from "./CalendarAgenda";
+import type { DayCtx, TimedItem } from "./mobile/dayPlan";
 import type { EmblemSpec } from "../lib/weekEmblem";
 import { useWeather, indexWeather, type WeatherDay } from "../hooks/useWeather";
 import WeatherIcon from "./WeatherIcon";
@@ -37,7 +39,13 @@ import { toast } from "sonner";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 
-export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
+export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "agenda";
+
+/** Views that aren't FullCalendar at all — they own their own canvas, so every
+ *  `calRef.getApi()` path (paging, today, resize, drag wiring) has to stand
+ *  down for them. Named once so a third one can't half-join the family. */
+const NON_FC_VIEWS: CalView[] = ["board", "agenda"];
+const isFcView = (v: CalView) => !NON_FC_VIEWS.includes(v);
 
 /** SUN…SAT, indexed by day-of-week, in the viewer's locale. Built off a known
  *  Sunday read in UTC so the label can never slide a day on either side of the
@@ -492,7 +500,7 @@ export default function CalendarPane({
   // FC's own `select`/`onSelect` (still the source of truth on release).
   const [allDayDragRange, setAllDayDragRange] = useState<{ start: Date; end: Date } | null>(null);
   useEffect(() => {
-    if (view === "board") return; // WeekBoard has no FC canvas at all
+    if (!isFcView(view)) return; // no FullCalendar canvas at all
     const root = wrapRef.current;
     if (!root) return;
 
@@ -560,38 +568,61 @@ export default function CalendarPane({
   const densityRef = useRef(pxPerHour);
   densityRef.current = pxPerHour;
 
-  // Schedule hotkeys. Views always win on bare s / w / d / m (the rail's triage
-  // letters moved off these). = / - page the period, as do ⌘→ / ⌘←; ⌘T returns
-  // to today. Paging/today need FullCalendar's api, so they no-op in Spread.
+  // ── Agenda state ──────────────────────────────────────────────────────────
+  // Declared up here, above the hotkey effect, because the paging keys have to
+  // reach it: the agenda has no FullCalendar api, so ‹ › and ⌘T move an anchor
+  // instead. The DayCtx it reads is built further down, next to `hidden`.
+  const [agendaAnchor, setAgendaAnchor] = useState(() => startOfDay(now));
+  const [agendaPast, setAgendaPast] = useState(0);
+
+  // One place paging is decided, so the toolbar buttons, the hotkeys and the
+  // trackpad gesture can't drift into three different ideas of "next".
+  const pageBy = (dir: -1 | 1) => {
+    if (view === "agenda") {
+      setAgendaPast(0);
+      setAgendaAnchor((d) => addDays(d, dir * 7));
+    } else calRef.current?.getApi()?.[dir === 1 ? "next" : "prev"]();
+  };
+  const pageToday = () => {
+    if (view === "agenda") {
+      setAgendaPast(0);
+      setAgendaAnchor(startOfDay(now));
+    } else calRef.current?.getApi()?.today();
+  };
+
+  // Schedule hotkeys. Views always win on bare s / w / d / m / a (the rail's
+  // triage letters moved off these). = / - page the period, as do ⌘→ / ⌘←; ⌘T
+  // returns to today. In Spread there's nothing to page; the agenda pages by week.
   useEffect(() => {
     if (!hotkeysEnabled) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-      const api = () => calRef.current?.getApi();
 
       if (e.metaKey || e.ctrlKey) {
-        if (e.key === "ArrowLeft") { e.preventDefault(); api()?.prev(); }
-        else if (e.key === "ArrowRight") { e.preventDefault(); api()?.next(); }
-        else if (e.key.toLowerCase() === "t") { e.preventDefault(); api()?.today(); }
+        if (e.key === "ArrowLeft") { e.preventDefault(); pageBy(-1); }
+        else if (e.key === "ArrowRight") { e.preventDefault(); pageBy(1); }
+        else if (e.key.toLowerCase() === "t") { e.preventDefault(); pageToday(); }
         return;
       }
       if (e.altKey) return;
 
       switch (e.key) {
         case "s": e.preventDefault(); onViewChange?.("board"); break;
+        case "a": e.preventDefault(); onViewChange?.("agenda"); break;
         case "w": e.preventDefault(); onViewChange?.("timeGridWeek"); break;
         case "d": e.preventDefault(); onViewChange?.("timeGridDay"); break;
         case "m": e.preventDefault(); onViewChange?.("dayGridMonth"); break;
         case "=":
-        case "+": e.preventDefault(); api()?.next(); break;
+        case "+": e.preventDefault(); pageBy(1); break;
         case "-":
-        case "_": e.preventDefault(); api()?.prev(); break;
+        case "_": e.preventDefault(); pageBy(-1); break;
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hotkeysEnabled, onViewChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hotkeysEnabled, onViewChange, view, now]);
 
   // Trackpad horizontal swipe pages the period (Fantastical/Google Calendar
   // convention) — a mostly-horizontal wheel gesture goes to next/prev instead
@@ -599,7 +630,7 @@ export default function CalendarPane({
   // Fires once per gesture: crossing the threshold locks further paging until
   // the gesture pauses (deltaX events stop for a beat), so one swipe = one page.
   useEffect(() => {
-    if (view === "board") return; // WeekBoard has no FC api to page
+    if (!isFcView(view)) return; // no FC api to page
     const el = wrapRef.current;
     if (!el) return;
     const THRESHOLD = 60;
@@ -629,7 +660,7 @@ export default function CalendarPane({
   // board ("Spread") view there's no grid — WeekBoard owns rail-row drags itself,
   // so this FC draggable must stand down or it fights for the same rows.
   useEffect(() => {
-    if (!railRef.current || view === "board") return;
+    if (!railRef.current || !isFcView(view)) return;
     const draggable = new Draggable(railRef.current, {
       itemSelector: "[data-task-drag]",
       // A few px of slop so a click (or a cmd/shift multi-select) on a rail row
@@ -852,7 +883,7 @@ export default function CalendarPane({
   }, [railRef]);
 
   useEffect(() => {
-    if (view === "board") return; // the board isn't a FullCalendar view
+    if (!isFcView(view)) return; // the board and the agenda aren't FullCalendar views
     const api = calRef.current?.getApi();
     if (api && api.view.type !== view) api.changeView(view);
   }, [view]);
@@ -862,7 +893,7 @@ export default function CalendarPane({
   // React wrapper builds its DOM after our effect runs; when the scroller isn't
   // found this quietly falls back to `scrollTime` (open at now).
   useEffect(() => {
-    if (view === "board" || view === "dayGridMonth") return;
+    if (!isFcView(view) || view === "dayGridMonth") return;
     let detach: (() => void) | undefined;
     const raf = requestAnimationFrame(() => {
       const scroller = wrapRef.current?.querySelector<HTMLElement>(
@@ -894,6 +925,33 @@ export default function CalendarPane({
     () => new Set(settings?.hidden_calendar_ids ?? []),
     [settings],
   );
+
+  const agendaCtx = useMemo<DayCtx | null>(() => {
+    if (view !== "agenda") return null;
+    const slotChildren: Record<string, Task[]> = {};
+    for (const s of slots) slotChildren[s.id] = slotTasks[s.id] ?? [];
+    return {
+      visibleEvents: events.filter((e) => !hidden.has(e.calendar_id) && !isHidden(e)),
+      blocks: tasks.filter((t) => t.start_time && t.status !== "trashed"),
+      slots,
+      slotChildren,
+      slotTitles: new Map(slots.map((s) => [s.id, slotTitle(s)])),
+      hidden,
+      workStart: (settings?.work_start_minutes ?? 480),
+      workEnd: (settings?.work_end_minutes ?? 990),
+      now,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, events, tasks, slots, slotTasks, hidden, hiddenKeys, settings, now, slotTitle]);
+
+  // The agenda has no FullCalendar to fire `datesSet`, so it asks for its own
+  // span — otherwise it renders 21 confidently empty days.
+  useEffect(() => {
+    if (view !== "agenda") return;
+    const start = addDays(startOfDay(agendaAnchor), -agendaPast);
+    onRangeChange(start.toISOString(), addDays(start, agendaPast + AGENDA_HORIZON_DAYS + 1).toISOString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, agendaAnchor, agendaPast]);
 
   const fcEvents = useMemo(() => {
     const taskEvents = tasks
@@ -1967,6 +2025,35 @@ export default function CalendarPane({
     });
   }, []);
 
+  // An agenda row opens the SAME popover the grid does — the detail surface is
+  // the view's, not the lens's, so nothing about an event reads differently
+  // because you found it in a list. `buildDayPlan` gives us ids, not rows, so
+  // the lookup lands here where the render sets live.
+  const openAgendaItem = (item: TimedItem, rect: DOMRect, el: HTMLElement | null) => {
+    if (item.kind === "block" && item.taskId) {
+      const task = findTask(item.taskId);
+      if (task) onOpenTask(task, rect, el);
+    } else if (item.kind === "slot" && item.slot) {
+      onOpenSlot(item.slot, rect, el);
+    } else if (item.eventId) {
+      const evt = findEvent(item.eventId);
+      if (evt) onOpenEvent(evt, rect, el);
+    }
+  };
+
+  // ＋ on a day header — the same DraftComposer the grid opens on a drag,
+  // seeded at the start of that day's working window.
+  const openAgendaDraft = (d: Date) => {
+    const start = new Date(d);
+    start.setHours(0, settings?.work_start_minutes ?? 480, 0, 0);
+    setDraft({
+      start,
+      end: new Date(start.getTime() + DEFAULT_DURATION_MINUTES * 60_000),
+      kind: canCreateEvents ? "event" : "task",
+      point: { x: window.innerWidth / 2, y: 160 },
+    });
+  };
+
   const handleDatesSet = (arg: DatesSetArg) => {
     // currentStart, not start: the month grid's `start` is the previous month's
     // tail, and reopening on it would show the wrong month.
@@ -2448,21 +2535,21 @@ export default function CalendarPane({
           {view !== "board" && (
             <>
               <button
-                onClick={() => calRef.current?.getApi().prev()}
+                onClick={() => pageBy(-1)}
                 className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
                 title="Previous (Alt+←)"
               >
                 <Icon name="chevron-left" size={14} />
               </button>
               <button
-                onClick={() => calRef.current?.getApi().next()}
+                onClick={() => pageBy(1)}
                 className="fast flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-bg hover:text-ink"
                 title="Next (Alt+→)"
               >
                 <Icon name="chevron-right" size={14} />
               </button>
               <button
-                onClick={() => calRef.current?.getApi().today()}
+                onClick={pageToday}
                 className="fast shrink-0 rounded border border-line px-2 py-0.5 text-label font-medium text-muted hover:border-line-strong hover:text-ink"
                 title="Go to today (Alt+T)"
               >
@@ -2509,7 +2596,7 @@ export default function CalendarPane({
 
           {onViewChange && (
             <div data-tabs="views" className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
-              {(["board", "timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
+              {(["board", "agenda", "timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
                 const on = view === v;
                 return (
                   <button
@@ -2524,7 +2611,15 @@ export default function CalendarPane({
                       boxShadow: on ? "var(--shadow-1)" : "none",
                     }}
                   >
-                    {v === "board" ? "Spread" : v === "timeGridDay" ? "Day" : v === "timeGridWeek" ? "Week" : "Month"}
+                    {v === "board"
+                      ? "Spread"
+                      : v === "agenda"
+                        ? "Agenda"
+                        : v === "timeGridDay"
+                          ? "Day"
+                          : v === "timeGridWeek"
+                            ? "Week"
+                            : "Month"}
                   </button>
                 );
               })}
@@ -2623,8 +2718,20 @@ export default function CalendarPane({
         />
       )}
 
+      {/* ── The Agenda — the list lens, over the same buildDayPlan ──────── */}
+      {view === "agenda" && agendaCtx && (
+        <CalendarAgenda
+          anchor={agendaAnchor}
+          pastDays={agendaPast}
+          ctx={agendaCtx}
+          onLoadEarlier={() => setAgendaPast((p) => p + AGENDA_PAST_STEP)}
+          onOpen={openAgendaItem}
+          onNewOnDay={canCreateEvents ? openAgendaDraft : undefined}
+        />
+      )}
+
       {/* ── FullCalendar ────────────────────────────────────────────────── */}
-      {view !== "board" && (
+      {isFcView(view) && (
       <div
         ref={wrapRef}
         className="nuvo-cal-host min-h-0 flex-1 p-2"
