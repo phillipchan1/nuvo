@@ -39,6 +39,16 @@ import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board";
 
+/** SUN…SAT, indexed by day-of-week, in the viewer's locale. Built off a known
+ *  Sunday read in UTC so the label can never slide a day on either side of the
+ *  date line — Month's headers are weekday names, and this is the only place
+ *  that spells them. */
+const DOW_LABELS = Array.from({ length: 7 }, (_, i) =>
+  new Date(Date.UTC(2024, 0, 7 + i))
+    .toLocaleDateString([], { weekday: "short", timeZone: "UTC" })
+    .toUpperCase(),
+);
+
 type ExtendedProps = {
   kind: "task" | "google" | "m365" | "ics" | "icloud" | "slot";
   refId: string;
@@ -2659,21 +2669,32 @@ export default function CalendarPane({
             scrollTime: `${String(Math.max(viewStart, Math.min(now.getHours() - 1, viewEnd - 1))).padStart(2, "0")}:00:00`,
           })}
           dayHeaderContent={(arg) => {
+            // Month's column headers are *day-of-week* headers, not days: one
+            // header spans five or six rows, so FullCalendar renders them from a
+            // dummy week (Sun 04 Jan 1970 → Sat 10 Jan 1970). Reading a date off
+            // that is how the row came to read "SUN 4 … SAT 10" over every month
+            // and never move when you paged. Month therefore shows the weekday
+            // alone — the day *cell* carries the real number — and takes it from
+            // `dow` rather than the dummy marker, which a local-timezone read
+            // lands a day behind anywhere west of UTC.
+            const headerIsMonth = arg.view.type === "dayGridMonth";
+            if (headerIsMonth) {
+              return (
+                <div className="flex items-center justify-center py-1.5">
+                  <span className="text-caption font-semibold tracking-widest text-muted">
+                    {DOW_LABELS[arg.dow]}
+                  </span>
+                </div>
+              );
+            }
             const isToday = arg.isToday;
-            // Month view hands header dates in as UTC-midnight markers — reading
-            // them with local getters shifts the label back a day for anyone
-            // west of UTC. Week/Day headers are already local, so only Month
-            // needs the UTC read.
-            const weekday = isMonth
-              ? arg.date.toLocaleDateString([], { weekday: "short", timeZone: "UTC" }).toUpperCase()
-              : arg.date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
-            const dateNum = isMonth ? arg.date.getUTCDate() : arg.date.getDate();
+            const weekday = arg.date.toLocaleDateString([], { weekday: "short" }).toUpperCase();
+            const dateNum = arg.date.getDate();
             // en-CA locale reliably produces YYYY-MM-DD in local time
             const dateStr = arg.date.toLocaleDateString("en-CA");
-            const wx = showWeather && !isMonth ? weatherIndex.get(dateStr) : undefined;
+            const wx = showWeather ? weatherIndex.get(dateStr) : undefined;
             // Week/Day: today is a signal disc (the "now" colour — theme-aware).
-            // Month headers stay plain; the day *cell* carries the landmark.
-            const todayChip = isToday && !isMonth;
+            const todayChip = isToday;
             return (
               <div className="flex flex-col items-center gap-0.5 py-1">
                 <span

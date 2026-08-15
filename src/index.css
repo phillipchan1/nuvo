@@ -1878,11 +1878,9 @@ select.field { appearance: none; -webkit-appearance: none; }
 .fc .fc-col-header-cell.fc-day-today {
   border-bottom: 2px solid color-mix(in srgb, var(--signal) 55%, transparent);
 }
-/* Month weekday headers (SUN…SAT): keep the underline, skip the wash — the
-   cell itself already carries the landmark. */
-.fc-dayGridMonth-view .fc-col-header-cell.fc-day-today {
-  background: transparent;
-}
+/* Month's headers are weekday names spanning every row, so FullCalendar never
+   marks one "today" — the day cell carries the landmark there. Nothing to
+   override; the rules above are Week/Day only by construction. */
 /* Column dividers: barely there — the grid recedes, the blocks carry the eye. */
 .fc .fc-timegrid-col {
   border-left-color: color-mix(in srgb, var(--line) 22%, transparent);
