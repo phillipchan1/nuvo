@@ -249,7 +249,7 @@ function ProjectGroomCard({
           <ul className="mb-1 flex flex-col gap-1">
             {steps.slice(0, 4).map((t) => (
               <li key={t.id} className="flex items-center gap-2 text-caption text-muted">
-                <span className="shrink-0 text-[10px]" style={{ color: accent }}>
+                <span className="shrink-0 text-meta" style={{ color: accent }}>
                   ◦
                 </span>
                 <span className="min-w-0 truncate">{t.title}</span>
@@ -328,7 +328,7 @@ function InitiativeGroomCard({
           <ul className="mb-1 flex flex-col gap-1">
             {i.keyResults.slice(0, 3).map((kr) => (
               <li key={kr.id} className="flex items-center gap-2 text-caption text-muted">
-                <span className="shrink-0 text-[10px]" style={{ color: accent }}>
+                <span className="shrink-0 text-meta" style={{ color: accent }}>
                   ◦
                 </span>
                 <span className="min-w-0 truncate">{kr.name || "Unnamed"}</span>

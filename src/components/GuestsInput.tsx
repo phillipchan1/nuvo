@@ -39,7 +39,7 @@ function initials(name: string, email: string) {
 }
 
 function Avatar({ email, name, size = "sm" }: { email: string; name: string; size?: "sm" | "md" }) {
-  const cls = size === "md" ? "h-8 w-8 text-[11px]" : "h-5 w-5 text-[9px]";
+  const cls = size === "md" ? "h-8 w-8 text-label" : "h-5 w-5 text-micro";
   return (
     <span className={`${cls} ${avatarColor(email)} flex shrink-0 items-center justify-center rounded-full font-semibold text-white`}>
       {initials(name, email)}

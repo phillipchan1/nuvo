@@ -25,8 +25,8 @@ import DraftComposer, { type CreateDraft, type CreateKind } from "./DraftCompose
 import { RecurMark } from "./ui";
 import WeekEmblem from "./floors/WeekEmblem";
 import WeekBoard from "./floors/WeekBoard";
-import CalendarAgenda, { AGENDA_HORIZON_DAYS, AGENDA_PAST_STEP } from "./CalendarAgenda";
-import type { DayCtx, TimedItem } from "./mobile/dayPlan";
+import CalendarYear, { yearSpan } from "./CalendarYear";
+import type { DayCtx } from "./mobile/dayPlan";
 import type { EmblemSpec } from "../lib/weekEmblem";
 import { useWeather, indexWeather, type WeatherDay } from "../hooks/useWeather";
 import WeatherIcon from "./WeatherIcon";
@@ -39,12 +39,12 @@ import { toast } from "sonner";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 
-export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "agenda";
+export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "year";
 
 /** Views that aren't FullCalendar at all — they own their own canvas, so every
  *  `calRef.getApi()` path (paging, today, resize, drag wiring) has to stand
  *  down for them. Named once so a third one can't half-join the family. */
-const NON_FC_VIEWS: CalView[] = ["board", "agenda"];
+const NON_FC_VIEWS: CalView[] = ["board", "year"];
 const isFcView = (v: CalView) => !NON_FC_VIEWS.includes(v);
 
 /** SUN…SAT, indexed by day-of-week, in the viewer's locale. Built off a known
@@ -229,6 +229,7 @@ export default function CalendarPane({
   onToggleFocus,
   domains = [],
   onOpenUpkeep,
+  eventsLoading = false,
 }: {
   view: CalView;
   onViewChange?: (v: CalView) => void;
@@ -245,6 +246,9 @@ export default function CalendarPane({
   weekButtonGlow?: boolean;
   tasks: Task[];
   events: ExternalEvent[];
+  /** First-load-for-this-range, not background refetch — the Year distinguishes
+   *  "no commitments" from "not read yet", which look identical on a grid. */
+  eventsLoading?: boolean;
   slots: Slot[];
   /** Child tasks grouped by slot id — drives the in-block progress read. */
   slotTasks: Record<string, Task[]>;
@@ -568,31 +572,26 @@ export default function CalendarPane({
   const densityRef = useRef(pxPerHour);
   densityRef.current = pxPerHour;
 
-  // ── Agenda state ──────────────────────────────────────────────────────────
+  // ── Year state ────────────────────────────────────────────────────────────
   // Declared up here, above the hotkey effect, because the paging keys have to
-  // reach it: the agenda has no FullCalendar api, so ‹ › and ⌘T move an anchor
+  // reach it: the Year has no FullCalendar api, so ‹ › and ⌘T move a cursor
   // instead. The DayCtx it reads is built further down, next to `hidden`.
-  const [agendaAnchor, setAgendaAnchor] = useState(() => startOfDay(now));
-  const [agendaPast, setAgendaPast] = useState(0);
+  const [yearCursor, setYearCursor] = useState(() => now.getFullYear());
 
   // One place paging is decided, so the toolbar buttons, the hotkeys and the
   // trackpad gesture can't drift into three different ideas of "next".
   const pageBy = (dir: -1 | 1) => {
-    if (view === "agenda") {
-      setAgendaPast(0);
-      setAgendaAnchor((d) => addDays(d, dir * 7));
-    } else calRef.current?.getApi()?.[dir === 1 ? "next" : "prev"]();
+    if (view === "year") setYearCursor((y) => y + dir);
+    else calRef.current?.getApi()?.[dir === 1 ? "next" : "prev"]();
   };
   const pageToday = () => {
-    if (view === "agenda") {
-      setAgendaPast(0);
-      setAgendaAnchor(startOfDay(now));
-    } else calRef.current?.getApi()?.today();
+    if (view === "year") setYearCursor(now.getFullYear());
+    else calRef.current?.getApi()?.today();
   };
 
-  // Schedule hotkeys. Views always win on bare s / w / d / m / a (the rail's
+  // Schedule hotkeys. Views always win on bare s / w / d / m / y (the rail's
   // triage letters moved off these). = / - page the period, as do ⌘→ / ⌘←; ⌘T
-  // returns to today. In Spread there's nothing to page; the agenda pages by week.
+  // returns to today. In Spread there's nothing to page; the Year pages by year.
   useEffect(() => {
     if (!hotkeysEnabled) return;
     const onKey = (e: KeyboardEvent) => {
@@ -609,7 +608,7 @@ export default function CalendarPane({
 
       switch (e.key) {
         case "s": e.preventDefault(); onViewChange?.("board"); break;
-        case "a": e.preventDefault(); onViewChange?.("agenda"); break;
+        case "y": e.preventDefault(); onViewChange?.("year"); break;
         case "w": e.preventDefault(); onViewChange?.("timeGridWeek"); break;
         case "d": e.preventDefault(); onViewChange?.("timeGridDay"); break;
         case "m": e.preventDefault(); onViewChange?.("dayGridMonth"); break;
@@ -883,7 +882,7 @@ export default function CalendarPane({
   }, [railRef]);
 
   useEffect(() => {
-    if (!isFcView(view)) return; // the board and the agenda aren't FullCalendar views
+    if (!isFcView(view)) return; // the board and the Year aren't FullCalendar views
     const api = calRef.current?.getApi();
     if (api && api.view.type !== view) api.changeView(view);
   }, [view]);
@@ -926,8 +925,8 @@ export default function CalendarPane({
     [settings],
   );
 
-  const agendaCtx = useMemo<DayCtx | null>(() => {
-    if (view !== "agenda") return null;
+  const yearCtx = useMemo<DayCtx | null>(() => {
+    if (view !== "year") return null;
     const slotChildren: Record<string, Task[]> = {};
     for (const s of slots) slotChildren[s.id] = slotTasks[s.id] ?? [];
     return {
@@ -944,14 +943,15 @@ export default function CalendarPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, events, tasks, slots, slotTasks, hidden, hiddenKeys, settings, now, slotTitle]);
 
-  // The agenda has no FullCalendar to fire `datesSet`, so it asks for its own
-  // span — otherwise it renders 21 confidently empty days.
+  // The Year has no FullCalendar to fire `datesSet`, so it asks for its own
+  // span — otherwise it shades 365 confidently empty days, which is the one
+  // wrong answer this view can give (an empty grid reads as a free year).
   useEffect(() => {
-    if (view !== "agenda") return;
-    const start = addDays(startOfDay(agendaAnchor), -agendaPast);
-    onRangeChange(start.toISOString(), addDays(start, agendaPast + AGENDA_HORIZON_DAYS + 1).toISOString());
+    if (view !== "year") return;
+    const { startISO, endISO } = yearSpan(yearCursor);
+    onRangeChange(startISO, endISO);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, agendaAnchor, agendaPast]);
+  }, [view, yearCursor]);
 
   const fcEvents = useMemo(() => {
     const taskEvents = tasks
@@ -2025,33 +2025,14 @@ export default function CalendarPane({
     });
   }, []);
 
-  // An agenda row opens the SAME popover the grid does — the detail surface is
-  // the view's, not the lens's, so nothing about an event reads differently
-  // because you found it in a list. `buildDayPlan` gives us ids, not rows, so
-  // the lookup lands here where the render sets live.
-  const openAgendaItem = (item: TimedItem, rect: DOMRect, el: HTMLElement | null) => {
-    if (item.kind === "block" && item.taskId) {
-      const task = findTask(item.taskId);
-      if (task) onOpenTask(task, rect, el);
-    } else if (item.kind === "slot" && item.slot) {
-      onOpenSlot(item.slot, rect, el);
-    } else if (item.eventId) {
-      const evt = findEvent(item.eventId);
-      if (evt) onOpenEvent(evt, rect, el);
-    }
-  };
-
-  // ＋ on a day header — the same DraftComposer the grid opens on a drag,
-  // seeded at the start of that day's working window.
-  const openAgendaDraft = (d: Date) => {
-    const start = new Date(d);
-    start.setHours(0, settings?.work_start_minutes ?? 480, 0, 0);
-    setDraft({
-      start,
-      end: new Date(start.getTime() + DEFAULT_DURATION_MINUTES * 60_000),
-      kind: canCreateEvents ? "event" : "task",
-      point: { x: window.innerWidth / 2, y: 160 },
-    });
+  // Drilling out of the Year. FullCalendar is unmounted while the Year is up
+  // (it isn't an FC view), so it remounts on `initialDate` — parking the target
+  // in `remountCache` before the view flips is what lands the grid on the day
+  // you clicked rather than on today. Same door the reveal bus uses when FC is
+  // already alive; this is the version for when it isn't.
+  const openYearDate = (d: Date, next: CalView) => {
+    remountCache.dateISO = startOfDay(d).toISOString();
+    onViewChange?.(next);
   };
 
   const handleDatesSet = (arg: DatesSetArg) => {
@@ -2596,14 +2577,20 @@ export default function CalendarPane({
 
           {onViewChange && (
             <div data-tabs="views" className="inline-flex shrink-0 items-center gap-0 rounded-full border border-line bg-surface-2 p-0.5">
-              {(["board", "agenda", "timeGridDay", "timeGridWeek", "dayGridMonth"] as const).map((v) => {
+              {(["board", "timeGridDay", "timeGridWeek", "dayGridMonth", "year"] as const).map((v) => {
                 const on = view === v;
                 return (
                   <button
                     key={v}
                     data-on={on}
                     onClick={() => onViewChange(v)}
-                    className="fast rounded-full px-1.5 py-0.5 text-label leading-none"
+                    // The whole switcher measured 15px tall — half the WCAG
+                    // 2.5.8 floor on the control that changes what the primary
+                    // surface even shows. The pill grows to the 24px floor via
+                    // the hit box, not the type: `tap-desk-h` plus centring, so
+                    // the segmented control looks identical and is twice the
+                    // target.
+                    className="tap-desk-h fast inline-flex items-center justify-center rounded-full px-2 py-0.5 text-label leading-none"
                     style={{
                       background: on ? "var(--surface)" : "transparent",
                       color: on ? "var(--accent)" : "var(--muted)",
@@ -2613,13 +2600,13 @@ export default function CalendarPane({
                   >
                     {v === "board"
                       ? "Spread"
-                      : v === "agenda"
-                        ? "Agenda"
-                        : v === "timeGridDay"
-                          ? "Day"
-                          : v === "timeGridWeek"
-                            ? "Week"
-                            : "Month"}
+                      : v === "timeGridDay"
+                        ? "Day"
+                        : v === "timeGridWeek"
+                          ? "Week"
+                          : v === "dayGridMonth"
+                            ? "Month"
+                            : "Year"}
                   </button>
                 );
               })}
@@ -2718,15 +2705,16 @@ export default function CalendarPane({
         />
       )}
 
-      {/* ── The Agenda — the list lens, over the same buildDayPlan ──────── */}
-      {view === "agenda" && agendaCtx && (
-        <CalendarAgenda
-          anchor={agendaAnchor}
-          pastDays={agendaPast}
-          ctx={agendaCtx}
-          onLoadEarlier={() => setAgendaPast((p) => p + AGENDA_PAST_STEP)}
-          onOpen={openAgendaItem}
-          onNewOnDay={canCreateEvents ? openAgendaDraft : undefined}
+      {/* ── The Year — the density lens, over the same day-load kernel ──── */}
+      {view === "year" && yearCtx && (
+        <CalendarYear
+          year={yearCursor}
+          ctx={yearCtx}
+          now={now}
+          weekStartsOn={firstDayOfWeek(settings)}
+          loading={eventsLoading}
+          onPickDay={(d) => openYearDate(d, "timeGridDay")}
+          onPickMonth={(d) => openYearDate(d, "dayGridMonth")}
         />
       )}
 

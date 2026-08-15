@@ -78,6 +78,7 @@ export default function LeftRail({
   now,
   railRef,
   collapsed = false,
+  squeezed = false,
   weekDoor,
 }: {
   tab: RailTab;
@@ -92,6 +93,14 @@ export default function LeftRail({
   railRef: React.MutableRefObject<HTMLDivElement | null>;
   /** Focus mode: slide the rail closed so the calendar takes the whole width. */
   collapsed?: boolean;
+  /**
+   * Squeeze mode: the chat is open on a narrow window, so give the calendar
+   * back everything above the rail's own minimum. Clamps the *rendered* width
+   * only — the user's dragged preference is untouched and springs back when
+   * the squeeze lifts. MIN_RAIL_WIDTH is a width they can already drag to, so
+   * this never shows a size the rail wasn't designed for.
+   */
+  squeezed?: boolean;
   /** The week door's lifecycle, worn by the WeekPanel header that crowns us. */
   weekDoor?: WeekDoor;
 }) {
@@ -116,7 +125,9 @@ export default function LeftRail({
   // (`triggerToggle`) instead of flipping `status` straight in the cache —
   // that instant flip is what made a keyboard-completed row just vanish.
   const rowHandles = useRef<Map<string, TaskRowHandle>>(new Map());
-  const [railWidth, setRailWidth] = useState(readRailWidth);
+  const [railWidthPref, setRailWidth] = useState(readRailWidth);
+  // What renders. Differs from the preference only while squeezed.
+  const railWidth = squeezed ? Math.min(railWidthPref, MIN_RAIL_WIDTH) : railWidthPref;
   const [capture, setCapture] = useState("");
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -703,7 +714,11 @@ export default function LeftRail({
         aria-label="Resize sidebar"
         data-tauri-drag-region="false"
         onPointerDown={startResize}
-        className={`absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35 ${collapsed ? "hidden" : ""}`}
+        // Hidden while squeezed as well as collapsed: the rendered width is
+        // pinned to the minimum there, so a drag would grab the handle and
+        // move nothing — a control that visibly does nothing is worse than an
+        // absent one.
+        className={`absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize touch-none hover:bg-accent/20 active:bg-accent/35 ${collapsed || squeezed ? "hidden" : ""}`}
       />
       {/* Clears macOS traffic lights — explicit drag target, not inherited from deep. */}
       <div data-tauri-drag-region className="rail-titlebar-drag w-full shrink-0" aria-hidden />

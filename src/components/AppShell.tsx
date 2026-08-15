@@ -194,16 +194,40 @@ function AppShellInner() {
   const [narrowViewport, setNarrowViewport] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 1280
   );
+  // The squeeze threshold. Below this, an open chat and a full-width spine +
+  // rail cannot both be paid for, and the calendar was the one silently picking
+  // up the bill: at 1280 it measured 298px wide — 34px per day column, event
+  // titles worn down to "c." and "K." — because the chat simply took its 380px
+  // out of the Schedule and neither rail yielded a pixel.
+  //
+  // The chat is meant to be a permanent first-class surface, so making it cost
+  // the primary surface teaches people not to open it. Instead the *chrome*
+  // gives way first: the spine rails to 64 (−124) and the rail drops to its own
+  // minimum 240 (−120), which hands the calendar ~244px back. Both are render-
+  // only clamps — neither touches the user's saved width — so closing the chat
+  // or widening past the threshold restores exactly what they had.
+  const [squeezeViewport, setSqueezeViewport] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 1600
+  );
   useEffect(() => {
     if (!window.matchMedia) return;
-    const mq = window.matchMedia("(max-width: 1279px)");
-    const onChange = () => setNarrowViewport(mq.matches);
+    const narrow = window.matchMedia("(max-width: 1279px)");
+    const squeeze = window.matchMedia("(max-width: 1599px)");
+    const onChange = () => {
+      setNarrowViewport(narrow.matches);
+      setSqueezeViewport(squeeze.matches);
+    };
     onChange();
-    if (mq.addEventListener) mq.addEventListener("change", onChange);
-    else mq.addListener(onChange);
+    const subs = [narrow, squeeze];
+    for (const mq of subs) {
+      if (mq.addEventListener) mq.addEventListener("change", onChange);
+      else mq.addListener(onChange);
+    }
     return () => {
-      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
-      else mq.removeListener(onChange);
+      for (const mq of subs) {
+        if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+        else mq.removeListener(onChange);
+      }
     };
   }, []);
   const effectiveAgentOpen = agentOpen && !narrowViewport;
@@ -225,6 +249,11 @@ function AppShellInner() {
       return next;
     });
   }, []);
+
+  // Declared here rather than beside the media queries above because it reads
+  // focusMode: focus mode already hands the calendar the whole workspace, so
+  // there is no squeeze left to apply — the spine and rail are shut either way.
+  const squeezed = effectiveAgentOpen && squeezeViewport && !focusMode;
 
   // One create surface, summonable from anywhere. There is no "more options"
   // fork any more — it swapped in a second layout mid-typing and dropped the
@@ -403,6 +432,7 @@ function AppShellInner() {
       <div className="flex min-h-0 flex-1">
       <Spine
         collapsed={focusMode}
+        forceRail={squeezed}
         rung={rung}
         setRung={goRung}
         openSettings={openSettings}
@@ -411,7 +441,12 @@ function AppShellInner() {
 
       <div className="flex min-w-0 flex-1">
         <div className="relative min-w-0 flex-1">
-          <Planner openFlow={openFlow} focusMode={focusMode} onToggleFocus={toggleFocus} />
+          <Planner
+            openFlow={openFlow}
+            focusMode={focusMode}
+            onToggleFocus={toggleFocus}
+            squeezed={squeezed}
+          />
           {rung !== "day" && (
             // Sits ABOVE the Schedule beneath it: the LeftRail is z-40, so the
             // floor overlay must clear that (z-30 let the rail paint through).

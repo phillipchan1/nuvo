@@ -43,9 +43,22 @@ export default class ErrorBoundary extends Component<
             {this.props.label ? `The ${this.props.label} hit an error` : "Nuvo hit an error"} it
             couldn't recover from. Your data is safe — reloading usually fixes it.
           </p>
-          <p className="mono mb-5 break-words text-caption text-muted">
-            {this.state.error.message}
-          </p>
+          {/* The raw message is a minified identifier — "agendaAnchor is not
+              defined" — which means nothing to the person reading it and
+              quietly undercuts the two calm lines above that just told them
+              their data is safe. It belongs to whoever is going to debug it, so
+              it lives behind a disclosure and inside "Copy details", which
+              already carries the full stack. Kept reachable rather than
+              removed: a user who can paste the message into a bug report is
+              worth far more than one who can't. */}
+          <details className="mb-5 text-left">
+            <summary className="tap-desk-h fast cursor-pointer list-none text-center text-caption text-muted hover:text-ink">
+              Technical details
+            </summary>
+            <p className="mono mt-2 break-words text-caption text-muted">
+              {this.state.error.message}
+            </p>
+          </details>
           <div className="flex flex-col items-stretch gap-2">
             <button
               type="button"

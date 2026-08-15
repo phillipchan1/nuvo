@@ -83,6 +83,13 @@ interface SpineProps {
   openShortcuts: () => void;
   /** Focus mode: slide the whole spine closed (the calendar takes the room). */
   collapsed?: boolean;
+  /**
+   * Squeeze mode: render railed because the workspace has no room for the wide
+   * spine — the chat is open on a narrow window. Distinct from the user's own
+   * railed *preference*, which this deliberately does not touch or persist: the
+   * spine springs back to whatever they chose the moment the squeeze lifts.
+   */
+  forceRail?: boolean;
 }
 
 // The thin half: subscribes to the vertical, derives the spine reading, and
@@ -113,6 +120,7 @@ const SpineBody = memo(function SpineBody({
   openSettings,
   openShortcuts,
   collapsed = false,
+  forceRail = false,
 }: SpineProps & { spine: SpineState | null }) {
   // The macOS traffic lights are drawn by AppKit, outside the zoomed document,
   // so they can't left-align themselves to the wordmark — nothing native knows
@@ -124,7 +132,10 @@ const SpineBody = memo(function SpineBody({
   // the same measurement just gets re-scaled rather than re-measured.
   const wordmarkCssLeft = useRef<number | null>(null);
   const { scale: uiScale } = useUiScale();
-  const [railed, setRailed] = useState(readRail);
+  // `railedPref` is what the user chose and what gets persisted; `railed` is
+  // what actually renders. They differ only while the workspace is squeezed.
+  const [railedPref, setRailed] = useState(readRail);
+  const railed = railedPref || forceRail;
   const [tip, setTip] = useState<Tip>(null);
 
   const toggleRail = () =>
@@ -341,8 +352,13 @@ const SpineBody = memo(function SpineBody({
                 />
               </span>
               {cue && (
+                // `--text-meta`, not `--text-micro`: this is the navigation's
+                // ONLY status signal ("7 to ready"), and it was simultaneously
+                // the smallest step on the scale and — before --warn was
+                // recalibrated — the lowest-contrast text in the app. The token
+                // fix carried most of it; the last 1px is this.
                 <span
-                  className="mono shrink-0 truncate text-micro leading-none"
+                  className="mono shrink-0 truncate text-meta leading-none"
                   style={{ color: toneColor(cue.tone), maxWidth: 88 }}
                   title={cue.label}
                 >
@@ -408,7 +424,7 @@ const SpineBody = memo(function SpineBody({
         ref={wordmarkRef}
         onClick={() => setRung("day")}
         title="Home"
-        className={`fast wordmark select-none py-3 text-[15px] leading-none ${railed ? "text-center" : "px-4 text-left"} ${rung === "day" ? "wordmark-grad" : ""}`}
+        className={`fast wordmark select-none py-3 text-head leading-none ${railed ? "text-center" : "px-4 text-left"} ${rung === "day" ? "wordmark-grad" : ""}`}
         style={rung === "day" ? {} : { color: "var(--muted)", opacity: 0.5 }}
       >
         {railed ? "N" : "Nuvo"}
@@ -460,13 +476,18 @@ const SpineBody = memo(function SpineBody({
         })}
 
         {/* The width itself is a control, so it sits with the other chrome —
-            always visible, never a hover-only affordance. */}
-        {utility({
-          icon: <ChevronIcon dir={railed ? "right" : "left"} />,
-          label: railed ? "Expand" : "Collapse",
-          hint: "⌘\\",
-          onClick: toggleRail,
-        })}
+            always visible, never a hover-only affordance. The exception is a
+            forced rail: there is no room to expand into while the chat is open
+            on a narrow window, and an "Expand" that cannot expand is worse than
+            no control at all. Close the chat or widen the window and it returns,
+            still set to whatever the user last chose. */}
+        {!forceRail &&
+          utility({
+            icon: <ChevronIcon dir={railed ? "right" : "left"} />,
+            label: railed ? "Expand" : "Collapse",
+            hint: "⌘\\",
+            onClick: toggleRail,
+          })}
       </div>
       </div>
 

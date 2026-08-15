@@ -151,7 +151,7 @@ export function WeekProjectRow({
             onClick={state === "landed" ? onReopen : onShip}
             title={state === "landed" ? "Landed — tap to reopen" : "Ship it — you'll see what's still open first"}
             aria-label={state === "landed" ? "Reopen" : "Ship project"}
-            className="fast mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-micro"
+            className="tap-desk-bloom fast mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-micro"
             style={{
               borderColor: p.domainColor,
               background: state === "landed" ? p.domainColor : "transparent",

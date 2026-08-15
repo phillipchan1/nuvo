@@ -35,6 +35,29 @@ function luminance(rgb: [number, number, number]): number {
   return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
 }
 
+/** Hue angle in degrees, for the "these two must not look like the same
+ *  colour" checks that a contrast ratio structurally cannot make. */
+function hueOf(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) throw new Error(`not a hex colour: ${hex}`);
+  const [r, g, b] = rgb;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (d === 0) return 0;
+  let h: number;
+  if (max === r) h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return ((h * 60) % 360 + 360) % 360;
+}
+
+/** Shortest angular distance between two hues, in degrees (0–180). */
+function hueGap(a: string, b: string): number {
+  const raw = Math.abs(hueOf(a) - hueOf(b)) % 360;
+  return raw > 180 ? 360 - raw : raw;
+}
+
 export function contrastRatio(a: string, b: string): number {
   const ra = hexToRgb(a);
   const rb = hexToRgb(b);
@@ -131,8 +154,19 @@ const rules = parseRules(css);
 const AA_TEXT = 4.5;
 const PAPER_PALETTES = ["daybreak", "fog", "dusk"] as const;
 const THEMES = ["light", "dark"] as const;
-const TEXT_TOKENS = ["--muted", "--signal", "--slot", "--accent"] as const;
+// Every token the app renders as *words* belongs here. --ok/--warn were the
+// two that weren't, and they were exactly the strings that carry state ("no
+// outcome", "N to ready", "shipped", "at risk") — the least legible text in the
+// app was the text saying something needed attention. --danger joins them as
+// the error/overcommitted hue. A token used as text and missing from this list
+// is the whole bug class this file exists to prevent.
+const TEXT_TOKENS = ["--muted", "--signal", "--slot", "--accent", "--ok", "--warn", "--danger"] as const;
 const GROUNDS = ["--bg", "--surface", "--surface-2"] as const;
+// Ink-on-fill pairs: a filled control must be readable in both directions.
+const ON_PAIRS = [
+  ["--on-accent", "--accent"],
+  ["--on-danger", "--danger"],
+] as const;
 
 describe("token contrast (WCAG AA)", () => {
   for (const palette of PAPER_PALETTES) {
@@ -147,9 +181,28 @@ describe("token contrast (WCAG AA)", () => {
             });
           }
         }
-        it(`--on-accent on --accent ≥ ${AA_TEXT}:1`, () => {
-          const ratio = contrastRatio(tokens["--on-accent"], tokens["--accent"]);
-          expect(ratio).toBeGreaterThanOrEqual(AA_TEXT);
+        for (const [ink, fill] of ON_PAIRS) {
+          it(`${ink} on ${fill} ≥ ${AA_TEXT}:1`, () => {
+            const ratio = contrastRatio(tokens[ink], tokens[fill]);
+            expect(ratio, `${ink} ${tokens[ink]} on ${fill} ${tokens[fill]}`).toBeGreaterThanOrEqual(AA_TEXT);
+          });
+        }
+
+        // --danger and --signal must stay tellable apart: the whole point of
+        // splitting them is that "wrong" and "now" stop sharing a hue. Pure
+        // contrast can't see that (two reds of equal darkness score 1.0), so
+        // this checks hue separation directly.
+        it("--danger is hue-distinct from --signal", () => {
+          const gap = hueGap(tokens["--danger"], tokens["--signal"]);
+          expect(gap, `danger ${tokens["--danger"]} vs signal ${tokens["--signal"]}`).toBeGreaterThanOrEqual(12);
+        });
+
+        // Same argument one step over: --warn is an amber and --signal an
+        // ember, and at AA weight on a light ground they both want to collapse
+        // into the same brown.
+        it("--warn is hue-distinct from --signal", () => {
+          const gap = hueGap(tokens["--warn"], tokens["--signal"]);
+          expect(gap, `warn ${tokens["--warn"]} vs signal ${tokens["--signal"]}`).toBeGreaterThanOrEqual(10);
         });
       });
     }

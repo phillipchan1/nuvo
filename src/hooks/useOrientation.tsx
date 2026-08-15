@@ -134,6 +134,25 @@ export function OrientationProvider({ children }: { children: ReactNode }) {
     if (needsWelcome) setVisible(true);
   }, [isLoading, needsWelcome]);
 
+  // Publish "the walkthrough owns the screen" to CSS.
+  //
+  // The toaster is mounted OUTSIDE this provider (it is a sibling of AppShell,
+  // so it survives every shell state including the signed-out one), which means
+  // it cannot read this context — and it renders at z-index 999999999, well
+  // over the coach card's z-80. Measured during first run: the toast covered a
+  // 336×44px strip at the bottom of the card, which is where the card keeps its
+  // action. A first-run walkthrough is the one moment the app controls
+  // completely; a background notification must not land on the step's only
+  // control. An attribute on <html> is the smallest bridge across that gap.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (visible) root.dataset.orientation = "on";
+    else delete root.dataset.orientation;
+    return () => {
+      delete root.dataset.orientation;
+    };
+  }, [visible]);
+
   // The chosen door + how far the live walkthrough got. Persisted so a reload
   // mid-walkthrough (or the HMR remount that bit us during dev) resumes where it
   // was instead of dumping the reader back at the fork.

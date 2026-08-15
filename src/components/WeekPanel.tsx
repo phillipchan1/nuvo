@@ -290,13 +290,17 @@ function PriorityRow({
                 : "Ship it — you'll see what's still open first"
         }
         aria-label={shipped ? "Shipped" : done ? "Reopen push" : "Ship project"}
-        className="fast flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-micro"
+        className="tap-desk-bloom fast flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-micro"
         style={{ borderColor: color, background: done ? color : "transparent", color: done ? "#fff" : color }}
       >
         <span className={done ? "" : "opacity-0 group-hover/row:opacity-100"} style={{ lineHeight: 1 }}>✓</span>
       </button>
 
-      <button onClick={onOpen} title="Open" className="fast min-w-0 flex-1 truncate text-left">
+      <button
+        onClick={onOpen}
+        title="Open"
+        className="tap-desk-h fast flex min-w-0 flex-1 items-center truncate text-left"
+      >
         <span className={`text-body ${done ? "text-muted line-through" : "text-ink"}`}>{rock.title}</span>
       </button>
 

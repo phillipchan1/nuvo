@@ -383,7 +383,7 @@ export default function DraftComposer({
                     }`}
                   >
                     <span
-                      className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none text-white"
+                      className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-micro font-semibold leading-none text-white"
                       style={{ background: meta.color }}
                     >
                       {meta.letter}

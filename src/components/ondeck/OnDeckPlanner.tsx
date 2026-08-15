@@ -31,6 +31,7 @@ import PlannerRail from "./PlannerRail";
 import DeckCard, { deckWeight } from "./DeckCard";
 import { PIP_TONE, projectCardStatus } from "./deckStatus";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
+import { SlotCreateHint } from "./SlotCreateButton";
 import { pressable } from "../../lib/a11y";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
@@ -112,6 +113,30 @@ export default function OnDeckPlanner() {
   const [dropWeek, setDropWeek] = useState<number | null>(null);
   const [overInbox, setOverInbox] = useState(false);
   const [preview, setPreview] = useState<Preview>(null);
+
+  // "Is there more week to the right?" — the one bit the edge fade needs.
+  // Deliberately a boolean and not a scroll position: the listener is passive
+  // and the setState only fires when the answer actually flips, so scrolling a
+  // 4-week strip commits nothing, and a drag across it (which is what this
+  // surface is for) never re-renders the planner from here.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const [moreRight, setMoreRight] = useState(false);
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const read = () => {
+      const more = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setMoreRight((prev) => (prev === more ? prev : more));
+    };
+    read();
+    el.addEventListener("scroll", read, { passive: true });
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", read);
+      ro.disconnect();
+    };
+  }, []);
   // No completion control on the card. Shipping a project is a *judgment* — the
   // assessment asks about the leftovers — and it is not this surface's act
   // (D-023: the timeline decides, the deck does). It stayed reachable the whole
@@ -435,7 +460,19 @@ export default function OnDeckPlanner() {
             stubs floating in a tall pane were the surface's real imbalance: with
             nothing running down beside it, the coverage label gutter read as a hole
             in the middle of the page rather than as the grid's margin. */}
-        <div className="mt-1 flex min-h-0 flex-1 flex-col overflow-auto pb-1">
+        {/* The horizon is "the next 4 weeks", and at 1280 the strip showed two
+            and a half of them: clientWidth 580 against scrollWidth 960, the
+            third column cut mid-card and the fourth invisible. With macOS
+            overlay scrollbars there was nothing at rest to say the rest of the
+            plan existed — a planner that misrepresents its own horizon. The
+            fade is the resting affordance; it appears only when there is
+            genuinely more to the right, and retires when you reach the end.
+
+            It hangs off this wrapper rather than living inside the scroller: as
+            a child of a `flex-col` scroll container it became a flex ROW, took
+            the full height, and collapsed the grid beside it to zero. */}
+        <div className="relative mt-1 flex min-h-0 flex-1 flex-col">
+        <div ref={stripRef} className="flex min-h-0 flex-1 flex-col overflow-auto pb-1">
           <div className="relative flex min-h-0 flex-1 flex-col" style={{ minWidth: gridMinW }}>
             {/* domain coverage — a NAMED read aligned OVER the sprint columns (shares
                 the grid template), so a lit cell points straight down at its sprint.
@@ -513,11 +550,11 @@ export default function OnDeckPlanner() {
                         this week is the one being composed. */}
                     {composeWeek !== w.idx && (
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2.5">
-                        {/* text-only open-time cue — no dashed box. Blooms to
-                            `--slot` when the column is hovered. */}
-                        <span className="slot-hint fast text-micro font-medium transition-colors">
-                          + project
-                        </span>
+                        {/* Presentational on purpose — the column is the control
+                            (pressable, above). Shares its voice with the
+                            initiative deck's button so the same act cannot read
+                            two ways again. See SlotCreateButton.tsx. */}
+                        <SlotCreateHint noun="project" />
                       </div>
                     )}
                   </div>
@@ -603,6 +640,14 @@ export default function OnDeckPlanner() {
               )}
             </div>
           </div>
+        </div>
+        {moreRight && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 z-20 w-12"
+            style={{ background: "linear-gradient(to right, transparent, var(--bg))" }}
+          />
+        )}
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">

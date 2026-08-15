@@ -39,6 +39,7 @@ import {
 import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
 import MobileDayView, { CalLensPill, type CalLens } from "./MobileDayView";
 import MobileWeekView from "./MobileWeekView";
+import MobileYearView, { mobileYearRange } from "./MobileYearView";
 
 // The mobile Calendar — three lenses on the same live day-shape math:
 //   • Month — the whole month at a glance (free/busy density per day), swipe or
@@ -48,6 +49,8 @@ import MobileWeekView from "./MobileWeekView";
 //     Now uses.
 //   • Day — one day as a proportional time grid (MobileDayView): the same
 //     commitments and open windows, drawn to scale so duration reads instantly.
+//   • Year — the whole year shaded by load (MobileYearView), reached by tapping
+//     the year beside the month name; a month taps back down into the grid.
 // All read from one buildDayPlan() (dayPlan.ts), so "what counts as busy" lives
 // in one place.
 
@@ -68,12 +71,12 @@ const MODE_KEY = "nuvo-mobile-cal-mode";
 const DAY_FETCH_BEHIND = 7;
 const DAY_FETCH_AHEAD = 21;
 
-type Mode = "month" | "schedule" | "day" | "week";
+type Mode = "month" | "schedule" | "day" | "week" | "year";
 
 function readMode(): Mode {
   try {
     const v = localStorage.getItem(MODE_KEY);
-    if (v === "month" || v === "schedule" || v === "day" || v === "week") return v;
+    if (v === "month" || v === "schedule" || v === "day" || v === "week" || v === "year") return v;
   } catch {
     /* ignore */
   }
@@ -113,6 +116,7 @@ export default function MobileCalendar({
 
   // The month the grid is showing, and the day the schedule is anchored to.
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(now));
+  const [yearCursor, setYearCursor] = useState(() => now.getFullYear());
   const [selected, setSelected] = useState(() => startOfDay(now));
 
   // "Take me to that day" — landing here from a calendar search hit. The bus
@@ -143,9 +147,13 @@ export default function MobileCalendar({
   // at 0 so the schedule always opens ON the anchor day (top of the list); the
   // "Earlier" control grows it. Reset to 0 on each entry.
   const [pastDays, setPastDays] = useState(0);
-  // The last drill-in lens (List or Day) — where a month tap lands you. Seeded
-  // from the persisted mode so the preference survives a reload.
-  const drill = useRef<Exclude<Mode, "month">>(mode === "month" ? "schedule" : mode);
+  // The last drill-in lens (List, Day or Week) — where a month tap lands you,
+  // seeded from the persisted mode so the preference survives a reload. Year is
+  // a drill-*out*, so it can never be the answer here: landing a day tap on it
+  // would zoom away from the very day you tapped.
+  const drill = useRef<Exclude<Mode, "month" | "year">>(
+    mode === "month" || mode === "year" ? "schedule" : mode,
+  );
 
   // The fetch window follows the active lens: the full month grid (up to 6
   // weeks) in month mode; in the schedule, the loaded history behind the
@@ -153,6 +161,7 @@ export default function MobileCalendar({
   // anchored to the selected day's week so swiping within a week stays on one
   // cached query.
   const range = useMemo(() => {
+    if (mode === "year") return mobileYearRange(yearCursor);
     if (mode === "month") {
       const gridStart = startOfWeek(startOfMonth(monthCursor), weekOpts);
       const gridEnd = addDays(endOfWeek(endOfMonth(monthCursor), weekOpts), 1);
@@ -171,7 +180,7 @@ export default function MobileCalendar({
     const anchor = startOfDay(selected);
     const start = addDays(anchor, -pastDays);
     return { start: start.toISOString(), end: new Date(anchor.getTime() + HORIZON_DAYS * DAY_MS).toISOString() };
-  }, [mode, monthCursor, selected, pastDays, weekOpts]);
+  }, [mode, monthCursor, selected, pastDays, weekOpts, yearCursor]);
 
   const { data: events = [], isLoading: evLoading } = useExternalEvents(range.start, range.end);
   const { data: blocks = [], isLoading: blkLoading } = useScheduledTasks(range.start, range.end);
@@ -253,9 +262,31 @@ export default function MobileCalendar({
     setMode(lens);
   };
 
+  // Zoom out to the Year, on the year the user is looking at.
+  const openYear = () => {
+    setYearCursor(monthCursor.getFullYear());
+    setMode("year");
+  };
+
   return (
     <div className="fab-clear">
-      {mode === "month" ? (
+      {mode === "year" ? (
+        <MobileYearView
+          year={yearCursor}
+          ctx={dayCtx}
+          now={now}
+          weekStartsOn={firstDay}
+          loading={loading}
+          onPrev={() => setYearCursor((y) => y - 1)}
+          onNext={() => setYearCursor((y) => y + 1)}
+          onToday={() => setYearCursor(now.getFullYear())}
+          onBack={() => setMode("month")}
+          onPickMonth={(m) => {
+            setMonthCursor(startOfMonth(m));
+            setMode("month");
+          }}
+        />
+      ) : mode === "month" ? (
         <MonthView
           monthCursor={monthCursor}
           ctx={dayCtx}
@@ -271,6 +302,7 @@ export default function MobileCalendar({
           }}
           onPick={pickDay}
           onOpenSchedule={openSchedule}
+          onOpenYear={openYear}
           onOpenUpkeep={onOpenUpkeep}
           onNewEvent={onNewEvent ? () => onNewEvent(selected) : undefined}
         />
@@ -339,6 +371,7 @@ function MonthView({
   onToday,
   onPick,
   onOpenSchedule,
+  onOpenYear,
   onOpenUpkeep,
   onNewEvent,
 }: {
@@ -353,6 +386,8 @@ function MonthView({
   onToday: () => void;
   onPick: (d: Date) => void;
   onOpenSchedule: () => void;
+  /** Stand back to the Year — the month title is the door. */
+  onOpenYear: () => void;
   onOpenUpkeep?: () => void;
   onNewEvent?: () => void;
 }) {
@@ -396,9 +431,20 @@ function MonthView({
 
   return (
     <div>
-      {/* Month header — serif month label, ≥44px nav controls. */}
+      {/* Month header — serif month label, ≥44px nav controls. The title is the
+          zoom-out door (iOS Calendar's grammar): tapping it stands back to the
+          Year. A chevron marks it, because an invisible affordance is worse
+          than a hover-only one — and on a phone there is no hover to fall back
+          on. Costs no extra row: the header is already this tall. */}
       <div className="flex items-center gap-1 px-4 pt-3 pb-1">
-        <h2 className="text-lead masthead flex-1 text-ink">{format(monthCursor, "MMMM yyyy")}</h2>
+        <button
+          onClick={onOpenYear}
+          aria-label={`Stand back to ${format(monthCursor, "yyyy")}`}
+          className="tap fast -ml-1 flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 text-left active:bg-surface-2"
+        >
+          <h2 className="text-lead masthead truncate text-ink">{format(monthCursor, "MMMM yyyy")}</h2>
+          <Icon name="chevron-down" size={14} className="shrink-0 text-muted" />
+        </button>
         {!isCurrentMonth && (
           <button
             onClick={onToday}
@@ -473,7 +519,9 @@ function MonthView({
         ))}
       </div>
 
-      {/* What the density dots mean — colour alone is not a legend. */}
+      {/* What the marks mean — colour alone is not a legend, and a legend that
+          names only some of what's on screen is worse than none: it reads as a
+          complete key. So the weather row appears exactly when weather does. */}
       <div aria-hidden className="flex items-center justify-center gap-3 px-4 pt-1.5">
         <span className="flex items-center gap-1 text-micro text-muted">
           <span className="h-1 w-1 rounded-full" style={{ background: "var(--accent)" }} />
@@ -483,6 +531,12 @@ function MonthView({
           <span className="h-1 w-1 rounded-full" style={{ background: "var(--line-strong)" }} />
           events
         </span>
+        {weatherIndex && weatherIndex.size > 0 && (
+          <span className="flex items-center gap-1 text-micro text-muted">
+            <WeatherIcon wmo={2} size={11} className="opacity-80" />
+            forecast
+          </span>
+        )}
       </div>
 
       {/* The availability of the selected day — a one-line answer under the grid
@@ -542,19 +596,29 @@ function MonthCell({
       >
         {date.getDate()}
       </span>
-      {wx ? (
-        <WeatherIcon wmo={wx.wmo} size={12} />
-      ) : (
-        <span className="flex h-1.5 items-center gap-0.5">
-          {dots.map((k, i) => (
-            <span
-              key={i}
-              className="h-1 w-1 rounded-full"
-              style={{ background: k === "block" ? "var(--accent)" : "var(--line-strong)" }}
-            />
-          ))}
-        </span>
+      {/* Weather rides the corner; the load dots keep the slot under the
+          numeral. These used to be an either/or, and because a forecast only
+          exists for the week ahead, the ONE row where every day is still
+          movable — the next seven — was the row that lost its busy/free signal
+          entirely. Same cell position, two different meanings, on the row a
+          planner reads hardest. Load is the planner's data and weather is the
+          garnish, so load is the one that never gives up its place. */}
+      {wx && (
+        <WeatherIcon
+          wmo={wx.wmo}
+          size={11}
+          className="pointer-events-none absolute right-0.5 top-0.5 opacity-80"
+        />
       )}
+      <span className="flex h-1.5 items-center gap-0.5">
+        {dots.map((k, i) => (
+          <span
+            key={i}
+            className="h-1 w-1 rounded-full"
+            style={{ background: k === "block" ? "var(--accent)" : "var(--line-strong)" }}
+          />
+        ))}
+      </span>
     </button>
   );
 }

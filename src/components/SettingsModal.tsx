@@ -162,6 +162,7 @@ function ThemeCard({
   return (
     <button
       onClick={onSelect}
+      aria-pressed={active}
       disabled={disabled}
       className={`fast group overflow-hidden rounded-lg border text-left disabled:cursor-not-allowed disabled:opacity-40 ${
         active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
@@ -184,6 +185,10 @@ function ThemeCard({
       <div className="flex items-center justify-between border-t border-line bg-surface px-2.5 py-1.5">
         <span className="text-caption font-medium capitalize text-ink">{theme}</span>
         <span
+          // Decorative: the card itself is the control, and its selected state
+          // now rides `aria-pressed` on the button. Leaving this in the a11y
+          // tree exposed a second, ~10px "target" that was never one.
+          aria-hidden
           className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
             active ? "border-accent bg-accent text-on-accent" : "border-line-strong"
           }`}
@@ -219,6 +224,7 @@ function SchemeCard({
   return (
     <button
       onClick={onSelect}
+      aria-pressed={active}
       className={`fast group overflow-hidden rounded-lg border text-left ${
         active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
       }`}
@@ -238,6 +244,10 @@ function SchemeCard({
           <span className="mono text-micro text-muted">{scheme.hint}</span>
         </span>
         <span
+          // Decorative: the card itself is the control, and its selected state
+          // now rides `aria-pressed` on the button. Leaving this in the a11y
+          // tree exposed a second, ~10px "target" that was never one.
+          aria-hidden
           className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
             active ? "border-accent bg-accent text-on-accent" : "border-line-strong"
           }`}
@@ -278,6 +288,7 @@ function SkinCard({
   return (
     <button
       onClick={onSelect}
+      aria-pressed={active}
       className={`fast group overflow-hidden rounded-lg border text-left ${
         active ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line hover:border-line-strong"
       }`}
@@ -297,6 +308,10 @@ function SkinCard({
           <span className="mono text-micro text-muted">{meta.hint}</span>
         </span>
         <span
+          // Decorative: the card itself is the control, and its selected state
+          // now rides `aria-pressed` on the button. Leaving this in the a11y
+          // tree exposed a second, ~10px "target" that was never one.
+          aria-hidden
           className={`fast flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
             active ? "border-accent bg-accent text-on-accent" : "border-line-strong"
           }`}
@@ -886,6 +901,25 @@ function ConnectionsPane({
                   <Btn onClick={() => disconnect(a.id)}>Disconnect</Btn>
                 </div>
                 <div className="space-y-0.5 p-2">
+                  {/* The mirror, named. It is deliberately absent from the list
+                      below — Nuvo writes it, so syncing it back would count every
+                      block twice — which means this line is the only place in the
+                      app that says it exists. And mirroring is one-directional by
+                      decision (D-107 · Q-13): the app's version wins. That is
+                      allowed to be true and is not allowed to be a surprise, so
+                      it is stated here as well as on every block Nuvo writes. */}
+                  {a.mirror_calendar_id && a.sync_direction === "two_way" && (
+                    <div className="rounded-[var(--radius)] border border-line px-2.5 py-2 text-caption text-muted">
+                      <span className="font-medium text-ink">Nuvo</span> — a calendar Nuvo keeps
+                      for your time blocks, so they show up wherever you read this account. It
+                      isn't listed above because Nuvo writes it rather than reads it.{" "}
+                      <span className="text-ink">
+                        Move a block in {providerMeta(a.provider).name} and Nuvo puts it back on
+                        the next sync
+                      </span>{" "}
+                      — change it in Nuvo instead.
+                    </div>
+                  )}
                   {shown.map((c) => calRow(a, c, true))}
                   {shown.length === 0 && hiddenCals.length === 0 && (
                     <div className="px-2.5 py-2 text-caption text-muted">No calendars synced yet.</div>
@@ -1638,8 +1672,18 @@ export default function SettingsModal({
     <Modal onClose={onClose} width="max-w-6xl" align="center">
       <div className="flex items-center justify-between border-b border-line px-6 py-3.5">
         <div className="text-head font-semibold">Settings</div>
-        <button onClick={onClose} className="keycap">
-          esc
+        {/* Was a `.keycap` reading "esc" at 30×18 — the only visible dismissal
+            for the app's largest modal, under half the 24px floor, and styled
+            as a keyboard *hint*, so it read as a label rather than a control.
+            The shortcut moves into the title (Escape still works); the button
+            becomes the conventional ✕ at a real target size. */}
+        <button
+          onClick={onClose}
+          aria-label="Close settings"
+          title="Close (Esc)"
+          className="tap-desk fast -mr-1.5 flex items-center justify-center rounded-md px-2 py-1 text-caption text-muted hover:bg-surface-2 hover:text-ink"
+        >
+          ✕
         </button>
       </div>
 

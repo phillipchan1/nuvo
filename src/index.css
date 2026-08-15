@@ -71,17 +71,53 @@
   --now-mark: color-mix(in srgb, var(--ink) 68%, var(--muted));
 }
 
+/* ── Danger — "this is wrong", which is not the same as "this is now" ──────
+   `--signal` was carrying four meanings at once: now (the calendar's time
+   line), overdue, overcommitted (the Year's `over` band) and *error* (the
+   sonner toast borrowed it). Semantic colour only works if a hue maps to one
+   meaning, so failure gets its own red and `--signal` keeps the temporal
+   roles it is named for. Hue ~3° against signal's ~22° is a real separation,
+   not a shade of the same orange.
+
+   `--on-danger` is the ink that survives a danger fill, the same contract
+   `--on-accent` has: light theme puts near-white on a dark red, dark theme
+   puts near-black on a light red. Both directions are gated in
+   tests/token-contrast.test.ts. */
+:root,
+[data-theme="light"] {
+  --danger: #b3261e;
+  --danger-soft: rgba(179, 38, 30, 0.10);
+  --on-danger: #fff8f7;
+}
+[data-theme="dark"] {
+  --danger: #ff7a7a;
+  --danger-soft: rgba(255, 122, 122, 0.14);
+  --on-danger: #1f1310;
+}
+
 /* ── Verdict — ripe vs. stalled ───────────────────────────────────────────
    `--ok` is the readiness meter's ripe fill and "shipped"; `--warn` is
    "waiting on something". They used to be raw hexes inside
    PROJECT_STATUS_COLORS, which meant they were the two colours on screen no
    skin could answer for — full-saturation amber and teal survived even into
    e-ink, which is supposed to have no colour at all. As tokens they follow the
-   material, like everything else. */
+   material, like everything else.
+
+   The light values are darker than the hues they started from (#0d9488 /
+   #d97706) for the same reason `--signal` is: they measured 2.8–3.7:1 on the
+   light grounds and they are read as *text* — "no outcome", "no steps",
+   "N to ready", "shipped", "at risk". The strings that say something needs
+   attention were the least legible strings in the app. Darkened in-hue to
+   clear AA on --bg / --surface / --surface-2 across all three paper moods.
+
+   `--warn` sits at hue ~36° rather than the ~29° a straight darkening lands
+   on, because at AA weight an amber and `--signal`'s ember collapse into the
+   same brown otherwise. 36° against signal's 22° holds them apart, and it is
+   the same separation the dark theme already had (#e9960f vs #ff8a4c). */
 :root,
 [data-theme="light"] {
-  --ok: #0d9488;
-  --warn: #d97706;
+  --ok: #0b6b62;
+  --warn: #8a5a10;
 }
 [data-theme="dark"] {
   --ok: #2ab5a5;
@@ -980,12 +1016,22 @@ body.odp-dragging [data-resize] {
 .slot-col:hover {
   background: color-mix(in srgb, var(--slot) 7%, transparent);
 }
-/* Text-only open-time cue (column footers) — dissolves at rest, blooms to
-   `--slot` when the column is receptive. No box, no dash. */
+/* Text-only open-time cue (column footers) — quiet at rest, blooms to
+   `--slot` when the column is receptive. No box, no dash.
+
+   It rested at `--muted` 50%, which measured 1.96:1 — below the point where
+   text is reliably perceivable at all — on what is the primary "create a
+   project here" affordance. 80% clears 3:1 on every paper ground in both
+   themes while staying clearly the quietest thing in the column. */
 .slot-hint {
-  color: color-mix(in srgb, var(--muted) 50%, transparent);
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
 }
-.group\/col:hover .slot-hint {
+/* `:focus-within` alongside `:hover`, because a keyboard can reach this column
+   (pressable() gives it a tab stop) and without this rule the label explaining
+   what Enter will do stays dissolved — focusable and invisible, the exact
+   failure docs/design-language.md names. */
+.group\/col:hover .slot-hint,
+.group\/col:focus-within .slot-hint {
   color: var(--slot);
 }
 /* Coverage gap — a soft solid recess matching a pip's geometry. Empty cells
@@ -2555,10 +2601,34 @@ select.field { appearance: none; -webkit-appearance: none; }
   --warning-bg: var(--surface) !important;
   --warning-border: color-mix(in srgb, var(--warn) 35%, var(--line)) !important;
   --warning-text: var(--warn) !important;
+  /* Failure wears --danger, not --signal: a toast that says something went
+     wrong should not be the same hue as the line marking "now". */
   --error-bg: var(--surface) !important;
-  --error-border: color-mix(in srgb, var(--signal) 35%, var(--line)) !important;
-  --error-text: var(--signal) !important;
+  --error-border: color-mix(in srgb, var(--danger) 35%, var(--line)) !important;
+  --error-text: var(--danger) !important;
   --border-radius: var(--radius) !important;
+  /* 20px, matching the walkthrough panel's `bottom-5 right-5` dock and the rest
+     of the app's floating chrome. Sonner's own default is 24px, which is how
+     the toast and the coach card ended up with right edges 4px apart and
+     bottoms 4px apart — near-miss alignment, the classic "feels off" defect
+     that has no visible cause. */
+  --offset-right: 20px !important;
+  --offset-bottom: 20px !important;
+}
+
+/* The first-run walkthrough owns the screen while it is up, and it docks into a
+   corner. The toaster renders at z-index 999999999 — over the coach card's
+   z-80 — so a background toast landed squarely on the card's action strip
+   (measured: a 336×44px overlap). The toaster is mounted outside the
+   orientation provider and cannot read it in React, so `useOrientation` stamps
+   <html data-orientation="on"> and the stack simply steps above the panel for
+   the duration. `top`/`bottom` are both set because the desktop toaster is
+   bottom-anchored and the phone's is top-anchored; each only binds on its own
+   axis. */
+html[data-orientation="on"] [data-sonner-toaster] {
+  /* Clears the docked panel (w-340, ~200-260px tall) plus its 20px inset. */
+  --offset-bottom: 300px !important;
+  --mobile-offset-bottom: 300px !important;
 }
 [data-sonner-toast][data-styled="true"] {
   padding: 10px 12px !important;
@@ -2615,6 +2685,40 @@ select.field { appearance: none; -webkit-appearance: none; }
      on desktop the bloom would swallow clicks meant for the row around it. */
   .tap-bloom { position: relative; }
   .tap-bloom::before { content: ""; position: absolute; inset: -15px; }
+}
+
+/* ── The desktop's own floor ───────────────────────────────────────────────
+   `.tap` / `.tap-h` / `.tap-bloom` live in the phone block above, which is
+   correct for 44px but left the desktop with NO minimum target at all — a
+   single Week view measured 51 interactive elements under 24×24, including the
+   done checkboxes and the whole Day/Week/Month/Year switcher. WCAG 2.2 SC
+   2.5.8 sets 24×24 regardless of input device, and a 13px checkbox sitting
+   flush against its row title does not qualify for the spacing exception.
+
+   These are deliberately a *floor*, not a size: the point is that the desktop's
+   density stays a choice rather than an accident. The drawn box is untouched in
+   every case — the extra area is padding on the button or an invisible bloom,
+   so nothing on screen gets bigger. */
+@media (min-width: 768px) {
+  .tap-desk { min-height: 24px; min-width: 24px; }
+  /* Height-only, for full-width rows and flex-fill controls where a width
+     floor means nothing — same split as `.tap-h`. */
+  .tap-desk-h { min-height: 24px; }
+
+  /* The bloom, sized for a mouse rather than a thumb. Centred and clamped to
+     `max(100%, 24px)` rather than a fixed negative inset, so it grows a small
+     control to exactly the floor and never further — which is what keeps it
+     from swallowing the clicks its phone-sized cousin would. */
+  .tap-desk-bloom { position: relative; }
+  .tap-desk-bloom::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 24px);
+    height: max(100%, 24px);
+    transform: translate(-50%, -50%);
+  }
 
   /* A deck card being held but not yet picked up — the ramp makes the
      long-press wait legible: keep holding and it visibly arms. Duration

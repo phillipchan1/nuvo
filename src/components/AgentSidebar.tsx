@@ -141,7 +141,7 @@ export default function AgentSidebar({
           <span
             aria-hidden
             data-teach="nuvo"
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-[18px] leading-none text-accent transition-colors group-hover:bg-accent/15"
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-lead leading-none text-accent transition-colors group-hover:bg-accent/15"
           >
             ✦
           </span>
@@ -227,9 +227,30 @@ export default function AgentSidebar({
         )}
       </div>
 
+      {/* A failure wears --danger, not --signal: this bar used to be the same
+          hue as the calendar's now-line and an overdue block. And it carries
+          its own "Try again", because the per-message retry only appears under
+          the newest ASSISTANT bubble — and a request that dies before one
+          streams removes its placeholder, so the exact case where the chat
+          failed hardest was the one case with no way back but retyping.
+          `retry` rewinds to the last USER turn, so it is the right act here. */}
       {error && (
-        <div className="shrink-0 border-t border-line bg-signal-soft px-3.5 py-2 text-label text-signal">
-          {error}
+        <div
+          role="alert"
+          className="flex shrink-0 items-center gap-2 border-t border-line px-3.5 py-2 text-label"
+          style={{ background: "var(--danger-soft)", color: "var(--danger)" }}
+        >
+          <span className="min-w-0 flex-1">{error}</span>
+          {!loading && (
+            <button
+              type="button"
+              onClick={retry}
+              className="tap-desk-h fast shrink-0 rounded-md border px-2 py-0.5 font-medium"
+              style={{ borderColor: "color-mix(in srgb, var(--danger) 40%, transparent)" }}
+            >
+              Try again
+            </button>
+          )}
         </div>
       )}
 

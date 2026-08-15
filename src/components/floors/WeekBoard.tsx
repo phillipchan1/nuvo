@@ -244,7 +244,18 @@ export default function WeekBoard({
   // Committed effort vs the work window. Timed commitments (calendar events +
   // scheduled task blocks) are *merged* via readDay so overlaps don't double-
   // count; anytime tasks add their duration on top (they still want focus time).
-  const dayLoad = (d: Date) => {
+  //
+  // Deliberately NOT the kernel's `dayLoad` (`_shared/dayShape.ts`), and named
+  // apart so the two can't be mistaken for each other (Principle 11). They
+  // answer different questions and must keep different answers:
+  //   dayCapacity (here)  — how much of your WORK WINDOW is spoken for,
+  //                         intentions included. Anytime tasks count; a 7pm
+  //                         dinner does not. This is a planning surface: you
+  //                         drop unscheduled work onto these columns.
+  //   dayLoad (kernel)    — how much of the DAY is claimed by things on a
+  //                         clock, evening included, intentions excluded. That
+  //                         is what a year grid shades, and what the chat says.
+  const dayCapacity = (d: Date) => {
     const ws = new Date(d);
     ws.setHours(0, workStartMin, 0, 0);
     const we = new Date(d);
@@ -501,7 +512,7 @@ export default function WeekBoard({
           const iso = toDateISO(d);
           const isToday = iso === today;
           const isPast = iso < today;
-          const load = dayLoad(d);
+          const load = dayCapacity(d);
           const { timed, anytime } = dayStream(iso);
           const empty = timed.length === 0 && anytime.length === 0;
           const hovered = hoverDay === iso;
@@ -569,18 +580,30 @@ export default function WeekBoard({
                   ),
                 )}
 
-                {!isPast && empty && (
-                  <div
-                    className="flex items-center justify-center rounded-lg border border-dashed text-caption"
-                    style={{
-                      height: CARD_H,
-                      borderColor: hovered ? "var(--accent)" : "var(--line)",
-                      color: hovered ? "var(--accent)" : "var(--muted)",
-                    }}
-                  >
-                    {hovered ? "drop here" : "—"}
-                  </div>
-                )}
+                {/* Empty is a state, not the absence of one. A past day used to
+                    render as a plain blank column, which reads ambiguously as
+                    "nothing was on", "nothing loaded yet" or "this is broken" —
+                    and the three are very different answers in a planning grid.
+                    The two cases also mean different things and so get
+                    different words: an empty Thursday next week is an
+                    invitation, an empty Sunday last week is a record. Past days
+                    are not drop targets (see data-day above), so that one is a
+                    line rather than a dashed well. */}
+                {empty &&
+                  (isPast ? (
+                    <div className="px-0.5 text-caption text-muted/60">Nothing was kept here</div>
+                  ) : (
+                    <div
+                      className="flex items-center justify-center rounded-lg border border-dashed text-caption"
+                      style={{
+                        height: CARD_H,
+                        borderColor: hovered ? "var(--accent)" : "var(--line)",
+                        color: hovered ? "var(--accent)" : "var(--muted)",
+                      }}
+                    >
+                      {hovered ? "drop here" : "Nothing planned"}
+                    </div>
+                  ))}
               </div>
             </div>
           );

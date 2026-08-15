@@ -64,7 +64,7 @@ export default function GroomFloor() {
             { k: "⌘⏎", label: "add steps" },
           ].map((h) => (
             <span key={h.label} className="flex items-center gap-1.5 text-micro text-muted">
-              <kbd className="mono rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink" style={{ borderBottomWidth: 2 }}>{h.k}</kbd>
+              <kbd className="mono rounded border border-line bg-surface-2 px-1.5 py-0.5 text-meta text-ink" style={{ borderBottomWidth: 2 }}>{h.k}</kbd>
               {h.label}
             </span>
           ))}

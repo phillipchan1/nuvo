@@ -95,9 +95,15 @@ function resolveRowIdentity(
   };
 }
 
-/** Status/meta — two steps below the title so it reads as primary. 8px is a
- *  desktop-density size; under 768px it rises to a legible 12px (WCAG floor). */
-const META = "text-[12px] md:text-[8px] leading-[1.3]";
+/** Status/meta — two steps below the title so it reads as primary.
+ *
+ *  The desktop step used to be a bare `text-[8px]`: below the type scale's own
+ *  floor, below any legibility floor, and applied to the highest-frequency
+ *  loop in the product (inbox triage reads its Accept / ✕ through this class).
+ *  It is now `--text-micro`, the smallest step the scale actually owns, which
+ *  costs 1.5px of density and buys back a readable row. Phones keep the larger
+ *  caption step. */
+const META = "text-caption md:text-micro";
 
 function PlaceTag({ identity }: { identity: RowIdentity }) {
   if (!identity.placeName || !identity.placeHint) return null;
@@ -481,29 +487,46 @@ const TaskRow = forwardRef<TaskRowHandle, {
   // Accept / dismiss — the one thing that genuinely distinguishes a guess from a
   // filed fact, so it's what marks the row instead of a taller silhouette.
   const acceptControls = groom ? (
-    <span className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+    // gap-2 on the desk, not gap-1: Accept and ✕ are opposite decisions, and at
+    // 4px apart in identical type a misclick threw away the guess. 8px is the
+    // WCAG 2.5.8 spacing allowance and the smallest gap that reads as "two
+    // controls" rather than one cluster.
+    <span className="flex shrink-0 items-center gap-1 md:gap-2" onClick={(e) => e.stopPropagation()}>
+      {/* The desktop floor is written as `md:min-h-6` rather than a `.tap-desk`
+          class because these buttons already carry an explicit `md:min-h-0`
+          from the phone rule — two same-specificity declarations whose winner
+          would depend on stylesheet order. An explicit utility can't race. */}
       <button
         onClick={(e) => { e.stopPropagation(); onAcceptSuggestion?.(); }}
-        className={`fast min-h-[44px] rounded px-3 md:min-h-0 md:px-1.5 md:py-px ${META} font-medium text-accent hover:bg-accent-soft`}
+        className={`fast min-h-[44px] rounded px-3 md:min-h-6 md:px-2 md:py-px ${META} font-medium text-accent hover:bg-accent-soft`}
       >
         Accept
       </button>
       <button
         aria-label="Dismiss suggestion"
         onClick={(e) => { e.stopPropagation(); onDismissSuggestion?.(); }}
-        className={`fast min-h-[44px] rounded px-3 md:min-h-0 md:px-1 md:py-px ${META} text-muted hover:text-ink`}
+        className={`fast min-h-[44px] rounded px-3 md:min-h-6 md:min-w-6 md:px-1 md:py-px ${META} text-muted hover:text-ink`}
       >
         ✕
       </button>
     </span>
   ) : null;
 
+  // Accept / ✕ deliberately do NOT travel inside StatsCluster any more. They
+  // used to ride whichever content line the stats landed on — the title line on
+  // a placeless row, the place line on a row carrying a domain chip — which put
+  // the same two controls at two different heights depending on the row's
+  // contents. Measured: 9.8px below the row's centre on a two-line row, dead
+  // centre on a one-line one. In a list you triage by clicking the same spot
+  // over and over, that is the whole cost. They are now a sibling of the
+  // content column, so the row's own `items-center` centres them against the
+  // full row height whatever it contains.
   const stats = (
     <StatsCluster
       showDur={showDur}
       showState={showState}
       recurring={Boolean(task.recurrence_id)}
-      acceptControls={acceptControls}
+      acceptControls={null}
     />
   );
 
@@ -587,7 +610,10 @@ const TaskRow = forwardRef<TaskRowHandle, {
         <button
           aria-label={done ? "Mark not done" : "Mark done"}
           onClick={(e) => { e.stopPropagation(); toggle(); }}
-          className={`tap-bloom fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
+          // tap-bloom gives the phone 44px; tap-desk-bloom gives the mouse its
+          // own 24px floor. Both are invisible ::before area — the drawn 15px
+          // box is untouched, so the row's density reads exactly as before.
+          className={`tap-bloom tap-desk-bloom fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
             completing ? "bloom" : ""
           } ${done || completing ? "border-accent bg-accent text-on-accent" : "border-muted hover:border-accent"}`}
         >
@@ -599,7 +625,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
         <div className={`min-w-0 flex-1 ${hasPlace ? "flex flex-col gap-1" : ""}`}>
           <div className="flex min-w-0 items-center gap-2">
             <span
-              className={`min-w-0 flex-1 text-[15px] leading-snug line-clamp-2 md:line-clamp-none md:truncate md:text-caption font-medium ${done || completing ? "text-muted line-through" : ""}`}
+              className={`min-w-0 flex-1 text-head leading-snug line-clamp-2 md:line-clamp-none md:truncate md:text-caption font-medium ${done || completing ? "text-muted line-through" : ""}`}
             >
               {task.title}
             </span>
@@ -622,6 +648,10 @@ const TaskRow = forwardRef<TaskRowHandle, {
             </div>
           )}
         </div>
+
+        {/* Row-level, so it centres against the whole row rather than a text
+            line. See the note on `stats` above. */}
+        {acceptControls}
       </div>
     </div>
   );

@@ -33,6 +33,11 @@ html[data-skin="eink"][data-theme="light"] {
   /* Derived, not fixed, so every tint (sepia, carta) keeps its own cast. */
   --ok: color-mix(in srgb, var(--text) 55%, var(--muted));
   --warn: color-mix(in srgb, var(--muted) 80%, var(--text));
+  /* Failure is the heaviest mark the device has, not a red one — e-ink has no
+     colour, so "wrong" reads as full-strength ink where --warn reads as grey. */
+  --danger: var(--text);
+  --danger-soft: color-mix(in srgb, var(--text) 9%, transparent);
+  --on-danger: var(--bg);
   /* One face, and it is the sans. A book face was tried here and cut — an
      e-reader sets the BOOK in a serif and its own interface in a sans, and Nuvo
      is all interface. --font-serif is pointed at the sans too, so the
@@ -67,6 +72,11 @@ html[data-skin="eink"][data-theme="dark"] {
   /* Derived, not fixed, so every tint (sepia, carta) keeps its own cast. */
   --ok: color-mix(in srgb, var(--text) 55%, var(--muted));
   --warn: color-mix(in srgb, var(--muted) 80%, var(--text));
+  /* Failure is the heaviest mark the device has, not a red one — e-ink has no
+     colour, so "wrong" reads as full-strength ink where --warn reads as grey. */
+  --danger: var(--text);
+  --danger-soft: color-mix(in srgb, var(--text) 9%, transparent);
+  --on-danger: var(--bg);
   /* One face, and it is the sans. A book face was tried here and cut — an
      e-reader sets the BOOK in a serif and its own interface in a sans, and Nuvo
      is all interface. --font-serif is pointed at the sans too, so the

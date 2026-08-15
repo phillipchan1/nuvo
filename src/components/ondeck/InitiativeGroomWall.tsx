@@ -259,16 +259,25 @@ function InitiativeGroomCard({
       {/* the readiness meter — Defined · Measured (an initiative's two axes) + attainment */}
       <div>
         <div className="flex items-center gap-2.5">
+          {/* A met criterion is always READY (--ok), never the lane's own tier
+              colour. It used to inherit the tier, which meant a project in the
+              "grooming" tier drew its MET pips in --warn — so amber read as
+              "achieved" here and as "9d overdue", "no outcome", "at risk"
+              everywhere else in the app. It also made the "raw" tier illegible:
+              met pips were --line-strong against --line unmet, a distinction of
+              almost nothing. The tier still speaks, in the count beside the
+              meter — which is the right place for a status, and leaves the pips
+              to answer only "is this one done". */}
           <span className="flex flex-1 items-center gap-1.5">
             {meter.map((met, k) => (
-              <span key={k} className="h-[7px] flex-1 rounded-full transition-colors" style={{ background: met ? color : "var(--line)" }} />
+              <span key={k} className="h-[7px] flex-1 rounded-full transition-colors" style={{ background: met ? READY : "var(--line)" }} />
             ))}
           </span>
           <span className="mono text-caption font-semibold" style={{ color: readyN === 2 ? color : "var(--muted)" }}>
             {readyN}/2
           </span>
         </div>
-        <div className="mt-1 flex justify-between text-[9px] uppercase tracking-wide text-muted">
+        <div className="mt-1 flex justify-between text-micro uppercase tracking-wide text-muted">
           <span>defined</span>
           <span>measured</span>
         </div>
@@ -364,7 +373,7 @@ function InitiativeGroomCard({
 
         {/* inline composer — type a measure, ⏎ commits it (fast, like project steps) */}
         <div className="flex items-center gap-1.5 rounded-lg border border-dashed border-line px-2.5 py-1.5 focus-within:border-accent">
-          <span className="shrink-0 text-[9px]" style={{ color: accent }}>◇</span>
+          <span className="shrink-0 text-micro" style={{ color: accent }}>◇</span>
           <input
             value={newKR}
             onChange={(e) => setNewKR(e.target.value)}

@@ -673,7 +673,7 @@ export default function MobileShell() {
               onClick={() => openChat()}
               aria-label="Ask Nuvo"
               data-teach="nuvo"
-              className="elev-2 fast absolute right-[calc(1rem_+_3.5rem_+_0.75rem)] bottom-[calc(100%_+_0.75rem_+_4px)] flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface text-[22px] leading-none text-accent active:scale-95"
+              className="elev-2 fast absolute right-[calc(1rem_+_3.5rem_+_0.75rem)] bottom-[calc(100%_+_0.75rem_+_4px)] flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface text-display leading-none text-accent active:scale-95"
             >
               ✦
             </button>

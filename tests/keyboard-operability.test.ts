@@ -119,6 +119,62 @@ describe("keyboard operability", () => {
     ).toEqual([]);
   });
 
+  it("the desktop has a pointer-target floor to reach for", () => {
+    // WCAG 2.2 SC 2.5.8 is 24×24 regardless of input device, but `.tap` and
+    // `.tap-bloom` are deliberately scoped to phones (a 44px bloom on a desk
+    // swallows the row around it), which left the desktop with no floor at all
+    // — 51 sub-24px controls on a single Week view. These are the classes a
+    // desktop control reaches for; deleting them silently re-opens that hole.
+    const css = readFileSync(join(SRC, "index.css"), "utf8");
+    for (const cls of [".tap-desk", ".tap-desk-h", ".tap-desk-bloom"]) {
+      expect(css, `${cls} missing — the desktop target floor`).toContain(cls);
+    }
+    // The floor must live OUTSIDE the phone-only block, or it isn't a desktop
+    // floor at all — which was the original bug, one level up.
+    const desktopBlock = css.slice(css.indexOf("@media (min-width: 768px)"));
+    expect(desktopBlock).toMatch(/\.tap-desk\s*\{[^}]*min-height:\s*24px/);
+    expect(desktopBlock).toMatch(/\.tap-desk\s*\{[^}]*min-width:\s*24px/);
+  });
+
+  it("no interactive element declares a sub-24px box on the desktop step", () => {
+    // The `md:` step is the desktop one. A control that explicitly shrinks
+    // itself there (`md:h-4`, `md:min-h-0`, `md:h-[13px]`) is opting out of the
+    // floor on purpose, so it has to say so by carrying a hit-area class.
+    // Trailing boundary is `(?![\w.-])` rather than `\b`: after a `]` there is
+    // no word boundary before the closing quote, so a `\b` here silently let
+    // every `md:h-[13px]` through — a gate that matched nothing.
+    const SMALL =
+      /\bmd:(?:min-)?h-(?:\[(?:[0-9]|1[0-9]|2[0-3])(?:\.\d+)?px\]|(?:0|px|0\.5|1|1\.5|2|2\.5|3|3\.5|4|4\.5|5)(?![\w.-]))/;
+    const EXEMPT = /tap-desk|tap-bloom|tap-h|\btap\b/;
+    const offenders: string[] = [];
+    for (const f of FILES) {
+      const src = readFileSync(f, "utf8");
+      const re = /<button\s/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(src))) {
+        // Same brace-aware scan the tag reader above uses.
+        let i = re.lastIndex, depth = 0, end = -1;
+        while (i < src.length) {
+          const c = src[i];
+          if (c === "{") depth++;
+          else if (c === "}") depth--;
+          else if (depth === 0 && c === ">") { end = i; break; }
+          i++;
+        }
+        if (end === -1) continue;
+        const attrs = src.slice(m.index, end);
+        if (!SMALL.test(attrs) || EXEMPT.test(attrs)) continue;
+        offenders.push(`${rel(f)}:${src.slice(0, m.index).split("\n").length}`);
+      }
+    }
+    expect(
+      offenders,
+      `These buttons shrink below 24px at the desktop breakpoint without a hit-area ` +
+        `class. Add \`tap-desk\`/\`tap-desk-h\`/\`tap-desk-bloom\` (src/index.css), or ` +
+        `raise the box.\n` + offenders.join("\n"),
+    ).toEqual([]);
+  });
+
   it("interactive ARIA roles carry real keyboard handling", () => {
     // A role is a promise to assistive tech about how the thing behaves. A
     // `role="button"` that ignores Enter is worse than no role at all: it tells

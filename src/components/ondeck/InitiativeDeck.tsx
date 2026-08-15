@@ -45,6 +45,7 @@ import PlannerRail from "./PlannerRail";
 import DeckCard, { type DeckTone } from "./DeckCard";
 import { initiativeCardStatus } from "./deckStatus";
 import { NOW_BAND, NOW_BORDER, NOW_INK, NOW_MARK } from "./plannerNow";
+import SlotCreateButton from "./SlotCreateButton";
 
 const CAUTION = PROJECT_STATUS_COLORS.waiting;
 const COL_PX = 216;
@@ -333,8 +334,31 @@ export default function InitiativeDeck() {
                       {current && <span className="h-1.5 w-1.5 rounded-full" style={{ background: NOW_MARK }} />}
                       {q.label}
                     </span>
-                    <span className="mono text-micro tabular-nums" title={`${openLanes.length} committed · max ${maxPerQuarter} — your per-quarter focus cap`} style={{ color: over ? CAUTION : "var(--muted)" }}>
-                      {openLanes.length}/{maxPerQuarter}{over ? " ⚠" : ""}{risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
+                    {/* Two counts and up to two ⚠ glyphs, on the header of the
+                        primary planning column. The ratio had a title; the
+                        at-risk count had nothing, and a screen reader crossing
+                        the row heard "3 warning sign" with no idea what was at
+                        risk. The glyphs are decoration on top of numbers that
+                        already carry the meaning, so they go aria-hidden and
+                        the whole cluster gets one worded name. */}
+                    <span
+                      className="mono text-micro tabular-nums"
+                      title={
+                        `${openLanes.length} committed of ${maxPerQuarter} — your per-quarter focus cap` +
+                        (over ? " · over the cap" : "") +
+                        (risky > 0 ? ` · ${risky} at risk` : "")
+                      }
+                      aria-label={
+                        `${openLanes.length} committed of ${maxPerQuarter}` +
+                        (over ? ", over the cap" : "") +
+                        (risky > 0 ? `, ${risky} at risk` : "")
+                      }
+                      style={{ color: over ? CAUTION : "var(--muted)" }}
+                    >
+                      <span aria-hidden>
+                        {openLanes.length}/{maxPerQuarter}{over ? " ⚠" : ""}
+                        {risky > 0 && <span style={{ color: "var(--signal)" }}> · {risky}⚠</span>}
+                      </span>
                     </span>
                   </div>
                   {/* month span + week scale — each column reads when it starts and
@@ -398,15 +422,12 @@ export default function InitiativeDeck() {
 
                   {/* pinned "+ initiative" — text cue, no dashed box. Hidden while composing. */}
                   {composeCol !== q.idx && (
-                    <button
-                      data-card-control
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); composeInCol(q.idx); }}
-                      className="slot-hint tap fast mt-2 w-full py-2 text-center text-micro font-medium transition-colors hover:text-[color:var(--slot)]"
+                    <SlotCreateButton
+                      noun="initiative"
                       title="New initiative in this quarter"
-                    >
-                      + initiative
-                    </button>
+                      onCreate={() => composeInCol(q.idx)}
+                      className="mt-2"
+                    />
                   )}
                 </div>
               );

@@ -325,7 +325,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
           <div className="flex flex-wrap gap-x-7 gap-y-3">
             <GainNum n={`${domain.quarterHours}`} unit="h" label="this quarter" />
             <div>
-              <div className="text-[22px]" style={{ fontWeight: 600, letterSpacing: "-.02em" }}>
+              <div className="text-display" style={{ fontWeight: 600, letterSpacing: "-.02em" }}>
                 <span className="mono">{fmtH(domain.investedThisWeek)}</span>
                 <span className="text-muted" style={{ fontSize: 13, fontWeight: 500 }}> / <InlineNumber value={domain.weeklyTargetHours} onChange={(v) => updateDomain(domain.id, { weeklyTargetHours: v })} suffix="h" /></span>
               </div>
@@ -449,7 +449,7 @@ function DomainDetail({ domain, onBack, onOpenInitiative, onOpenProject }: { dom
 function GainNum({ n, unit, label }: { n: string; unit: string; label: string }) {
   return (
     <div>
-      <div className="mono text-[22px]" style={{ fontWeight: 600, letterSpacing: "-.02em" }}>
+      <div className="mono text-display" style={{ fontWeight: 600, letterSpacing: "-.02em" }}>
         {n}{unit && <span className="text-muted" style={{ fontSize: 13, fontWeight: 500 }}>{unit}</span>}
       </div>
       <div className="text-micro uppercase text-muted" style={{ letterSpacing: "0.08em" }}>{label}</div>

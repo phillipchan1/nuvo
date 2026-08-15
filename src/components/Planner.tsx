@@ -13,6 +13,7 @@ import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
 import { useRealtime } from "../hooks/useRealtime";
 import { useSettings } from "../hooks/useSettings";
+import { useOnline } from "../hooks/useOnline";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { taskDomainColor, taskDomainId } from "../lib/vertical";
@@ -50,11 +51,15 @@ export default function Planner({
   openFlow,
   focusMode = false,
   onToggleFocus,
+  squeezed = false,
 }: {
   openFlow: (f: FlowName) => void;
   /** Focus mode: the inbox·today rail slides closed and the calendar goes full-bleed. */
   focusMode?: boolean;
   onToggleFocus?: () => void;
+  /** Squeeze mode: the chat is open on a narrow window, so the rail gives its
+   *  slack back to the calendar. See AppShellInner for the arithmetic. */
+  squeezed?: boolean;
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const {
@@ -93,6 +98,8 @@ export default function Planner({
     },
     [setAgentRange],
   );
+
+  const online = useOnline();
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -251,7 +258,10 @@ export default function Planner({
   // Every non-trashed task (shares the vertical store's cache) — lets ⌘K open any
   // task as the centered modal, scheduled or buried in a project backlog.
   const { data: allTasks = [] } = useAllTasks();
-  const { data: events = [] } = useExternalEvents(range.start, range.end);
+  // `isLoading` (not `isFetching`): true only when this range has no cached
+  // answer yet. The Year needs it — a year grid drawn over an in-flight fetch
+  // says "365 clear days", which is the one wrong answer that view can give.
+  const { data: events = [], isLoading: eventsLoading } = useExternalEvents(range.start, range.end);
   const { data: slots = [] } = useSlots(range.start, range.end);
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
   const { data: slotChildTasks = [] } = useSlotTasks(slotIds);
@@ -406,6 +416,11 @@ export default function Planner({
     ? (events.find((e) => e.id === eventPanel.id) ?? null)
     : null;
   const openEventAccount = openEvent ? accounts.find((a) => a.id === openEvent.account_id) : null;
+  // "Could this event be written at all", separate from "can it be written
+  // right now" — see the offline note in lib/calendarWrite.ts.
+  const eventWritable = Boolean(
+    openEvent && isWritableAccount(openEventAccount) && !isReadOnlyCalendarId(openEvent.calendar_id),
+  );
   const openEventCalendar = openEvent && openEventAccount
     ? (openEventAccount.calendars.find((c) => c.id === openEvent.calendar_id) ?? null)
     : null;
@@ -464,10 +479,10 @@ export default function Planner({
     { id: "sunday", title: "Plan the week", run: () => openFlow("sunday") },
     { id: "summit", title: "Summit — decide the quarter", run: () => openFlow("summit") },
     { id: "shutdown", title: "Evening shutdown", run: () => openOverlay("evening") },
-    { id: "view-agenda", title: "Calendar: agenda (list)", run: () => setCalView("agenda") },
     { id: "view-day", title: "Calendar: day view", run: () => setCalView("timeGridDay") },
     { id: "view-week", title: "Calendar: week view", run: () => setCalView("timeGridWeek") },
     { id: "view-month", title: "Calendar: month view", run: () => setCalView("dayGridMonth") },
+    { id: "view-year", title: "Calendar: year (where it's heavy)", run: () => setCalView("year") },
     { id: "connect", title: "Connect calendar…", run: () => openOverlay("settings") },
     { id: "label", title: "New label…", run: () => openOverlay("settings") },
     { id: "agent", title: "Toggle Nuvo agent", run: handleToggleAgent },
@@ -564,6 +579,7 @@ export default function Planner({
           now={now}
           railRef={railRef}
           collapsed={focusMode}
+          squeezed={squeezed}
           weekDoor={{
             mode: weekDoorMode,
             title: weekButtonTitle,
@@ -573,8 +589,13 @@ export default function Planner({
           }}
         />
         )}
+        {/* min-w: 280 was the old floor and it was too low to be a floor at
+            all — a seven-day grid at 280px is a ~48px time gutter and 34px
+            columns, which is not a smaller calendar so much as an unreadable
+            one. 420 keeps columns above ~52px, where an event title still says
+            which event it is. The rails yield to pay for it (AppShellInner). */}
         {onSchedule && (
-        <div className="relative flex min-h-0 flex-1 min-w-[280px]">
+        <div className="relative flex min-h-0 min-w-[420px] flex-1">
           {/* The week door lives on the rail's Week's Plan header — on top of the
               priorities it opens. The toolbar's right cluster acts on the canvas
               (zone · view · tools); the door acts on the plan, so it was the one
@@ -587,6 +608,7 @@ export default function Planner({
             hotkeysEnabled={!anyModalOpen}
             tasks={allTasksArray}
             events={events}
+            eventsLoading={eventsLoading}
             slots={slots}
             slotTasks={slotTasksBySlot}
             accounts={accounts}
@@ -647,7 +669,13 @@ export default function Planner({
               event={openEvent}
               anchor={panelRect}
               anchorEl={panelAnchorEl}
-              editable={isWritableAccount(openEventAccount) && !isReadOnlyCalendarId(openEvent.calendar_id)}
+              // Offline folds into editability rather than surfacing as a
+              // failed save. `external_events` is not in SYNC_TABLES and never
+              // will be — Google and Apple own these rows (lib/calendarWrite.ts
+              // explains why a queue there would be a promise Nuvo can't keep),
+              // so the honest move is inert controls plus the reason.
+              editable={eventWritable && online}
+              offlineOnly={eventWritable && !online}
               calendarId={openEvent.calendar_id}
               calendarName={openEventCalendar?.summary}
               calendarColor={openEventCalendar?.color}

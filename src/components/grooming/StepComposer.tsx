@@ -46,7 +46,7 @@ export function StepComposer({ lines, setLines, accent, placeholder, meta }: {
     <div className="-mx-1.5">
       {lines.map((line, idx) => (
         <div key={line.id} className="group fast flex items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors focus-within:bg-surface-2/50">
-          <span className="shrink-0 text-[10px]" style={{ color: line.text.trim() ? accent : "var(--line-strong)" }}>◦</span>
+          <span className="shrink-0 text-meta" style={{ color: line.text.trim() ? accent : "var(--line-strong)" }}>◦</span>
           <input
             ref={(el) => { if (el) refs.current.set(line.id, el); else refs.current.delete(line.id); }}
             value={line.text}
