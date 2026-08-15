@@ -304,4 +304,36 @@ describe("the kernel is the only implementation", () => {
       expect(offenders, `these files re-implement ${rule}; import it from ${QUERY_KERNEL} instead`).toEqual([]);
     });
   }
+
+  // The day-shape kernel, same rule again. "How heavy is this day" is now read
+  // by the desktop Year, the phone's Year and the chat — and a shade that means
+  // one thing on the desk and another in your hand is worse than no shade at
+  // all, because both look right in isolation.
+  const DAY_KERNEL = "supabase/functions/_shared/dayShape.ts";
+  const DAY_RULES = ["dayLoad", "spanLoad", "longestClearRun", "loadLabel", "dayReadout"];
+  const dayFiles = files.filter((f) => !f.endsWith("dayShape.ts"));
+
+  for (const rule of DAY_RULES) {
+    it(`no surface defines its own ${rule}`, () => {
+      const offenders = dayFiles.filter((f) => {
+        const src = readFileSync(f, "utf8");
+        if (!new RegExp(`(function|const|let)\\s+${rule}\\b\\s*[=(]`).test(src)) return false;
+        // An *adapter* over the kernel is the intended shape and must stay
+        // legal: `dayPlan.ts` exports `dayReadout(day: DayPlan)` that does
+        // nothing but re-shape its argument and call the kernel's. What this
+        // catches is a surface that grows the rule from scratch — so defining
+        // the name is only an offence when the file never reads the kernel.
+        return !src.includes("_shared/dayShape.ts");
+      });
+      expect(offenders, `these files re-implement ${rule}; import it from ${DAY_KERNEL} instead`).toEqual([]);
+    });
+  }
+
+  it("both Year views shade from the kernel, not from their own arithmetic", () => {
+    for (const f of ["src/components/calendar/YearParts.tsx", "src/components/CalendarYear.tsx", "src/components/mobile/MobileYearView.tsx"]) {
+      expect(readFileSync(f, "utf8"), `${f} must read the day-shape kernel`).toMatch(
+        /_shared\/dayShape\.ts|calendar\/YearParts/,
+      );
+    }
+  });
 });

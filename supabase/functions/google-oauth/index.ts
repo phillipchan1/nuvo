@@ -3,6 +3,7 @@
 // the start leg is authenticated by the user's JWT passed as ?token=.
 import { admin, json, logSync, signState, storeSecret, verifyState } from "../_shared/admin.ts";
 import { GOOGLE_TOKEN_URL, MIRROR_CALENDAR_NAME } from "../_shared/google.ts";
+import { MIRROR_CALENDAR_DESCRIPTION } from "../_shared/mirror.ts";
 
 // The two contacts scopes are what make the guest picker search a real address
 // book instead of only people who happened to appear on a synced event.
@@ -96,7 +97,15 @@ Deno.serve(async (req) => {
       const createRes = await fetch("https://www.googleapis.com/calendar/v3/calendars", {
         method: "POST",
         headers: { Authorization: `Bearer ${tok.access_token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ summary: MIRROR_CALENDAR_NAME, timeZone: "America/Los_Angeles" }),
+        // The description is where a Google Calendar user reads what this
+        // calendar is — including that Nuvo overwrites what it wrote here.
+        // Mirroring is one-directional by decision (D-107 / Q-13); the decision
+        // that came with it is that it must never be silent.
+        body: JSON.stringify({
+          summary: MIRROR_CALENDAR_NAME,
+          description: MIRROR_CALENDAR_DESCRIPTION,
+          timeZone: "America/Los_Angeles",
+        }),
       });
       if (!createRes.ok) throw new Error(`mirror calendar create failed: ${await createRes.text()}`);
       mirror = await createRes.json();

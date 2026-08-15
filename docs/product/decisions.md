@@ -2042,6 +2042,103 @@ cancellation notice that has already been mailed. *Status: standing.*
 
 ---
 
+**D-106 · 2026-08-15 · The Year is a view of LOAD, not a view of dates. A grid
+of days that only tells you what day it is has not paid for its place.**
+
+A year view was on the audit's rank-10 list and was deliberately skipped in
+round two ("building it because it was on a list is how a planner turns into a
+calendar"). Phil then asked for it, which changes the question from *should this
+exist* to *what does it have to answer to deserve to*.
+
+Principle 10 is the test: a new place has to be paid for. Twelve month grids of
+numerals is a browsing surface — it answers "what day is the 14th", which is a
+question a phone's status bar already answers. So the Year does not draw dates.
+It draws **how loaded each day is**, shaded from a shared kernel band, and the
+question it owns is one no other surface in Nuvo answers at day altitude:
+**where is this heavy, and where is there nothing.** On Deck answers exactly that
+at project altitude, across weeks. Below it, nothing did — which is why "when
+could this actually go?" has always meant paging the week grid eleven times.
+
+Three things follow from that, and they are the decision:
+
+1. **The clear-day count is not the answer; the clear *run* is.** Forty
+   scattered free Tuesdays and one free fortnight are the same number, and only
+   one of them is somewhere a week of work fits. The headline names the longest
+   unbroken clear stretch and its dates, and it measures **forward from today** —
+   a clear run last February is a true fact about the shading and a useless
+   answer to "where could this go".
+2. **Absence is drawn as absence.** A day with nothing on it is bare paper, not
+   a tint. It is the strongest possible answer to half the question.
+3. **The rule lives in the kernel** (`dayLoad` / `spanLoad` / `longestClearRun`
+   in `_shared/dayShape.ts`), so the desk, the phone and the chat weigh the same
+   Tuesday identically. `read_calendar_load` is the chat's twin and reads the
+   same functions. A shade that means one thing on the desk and another in your
+   hand is worse than no shade, because both look right alone.
+
+Standing this up found a pre-existing collision worth recording: `WeekBoard` had
+its own `dayLoad`, measuring something genuinely different (how much of the
+*work window* is spoken for, **including** unscheduled intentions, **excluding**
+evenings). Two questions, so two names — it is now `dayCapacity`, and the kernel
+test forbids a third. *Status: standing.*
+
+---
+
+**D-107 · 2026-08-15 · Nuvo's time blocks mirror to whichever calendar the user
+actually has. The mirror resource is derived, not stored.**
+
+The mirror — pushing Nuvo's own blocks onto the calendar your phone already
+shows — was gated on `calendar_accounts.mirror_calendar_id`, which exactly one
+line in `google-oauth/index.ts` ever set. So an iCloud-only user's blocks never
+left the app (audit rank 3). iCloud is a **writable** provider; that was an
+asymmetry, not a policy, and it is closed: a dedicated "Nuvo" CalDAV collection
+is stood up lazily on first write, so an account connected before this existed
+gets one without reconnecting.
+
+The design decision underneath is worth keeping. Google hands back an opaque
+event id that has to be **stored** (`tasks.google_event_id`), so a lost id
+orphans an event nobody can find. A CalDAV resource URL is something the client
+**chooses**, so the iCloud mirror derives its resource from the row id
+(`mirror-mirrorUid`): PUT is an upsert, DELETE-404 is already-gone, and a
+half-written mirror self-heals on the next reconcile. No new column, and no
+state to fall out of sync. Two call sites that gated teardown on
+`google_event_id` (recurring-series cancellation, and rollover) were leaving
+blocks stranded on an iCloud phone and now don't.
+
+The counterpart rule, which is the one with teeth: **Nuvo must never re-import
+its own mirror.** `icloud-sync` re-discovers calendars every poll, so without a
+guard every mirrored task would exist twice on every surface and count as busy
+twice — the double-count that credited four projects' hours to the wrong domains
+(D-085). Two independent nets: the mirror collection is dropped by URL (never by
+display name — a user is entitled to their own calendar called "Nuvo"), and any
+inbound event whose UID carries Nuvo's mirror prefix is skipped.
+
+**Still one-directional: the app's version wins** — decided, not defaulted.
+Phil chose it on 2026-08-15 over provider-wins and per-field LWW, **on the
+condition that it stop being silent.** This is the only place in Nuvo that
+actively discards something the user did, and a revert nobody warned you about
+is indistinguishable from data loss.
+
+So the warning goes where the mistake is made. The user is not in Nuvo when they
+drag a mirrored block — they are in Apple Calendar on a phone — so no amount of
+Nuvo UI reaches them. The only channel that does is the event itself:
+
+- **Every mirrored block carries the line** in its description (`MIRROR_NOTE`),
+  after the user's own notes: *"Moving or editing this here won't stick: Nuvo
+  replaces it on the next sync."* Naming the consequence, not just the author —
+  "Written by Nuvo" alone is a label, and a label doesn't stop a drag.
+- **The mirror calendar says it too**, in the provider's own calendar info
+  (`MIRROR_CALENDAR_DESCRIPTION`), set at MKCALENDAR / calendar-create time.
+- **Settings → Calendars names the mirror.** It is deliberately absent from the
+  synced calendar list (Nuvo writes it; syncing it back double-counts), which
+  makes that line the only place in the app the calendar exists at all.
+
+What this does **not** buy: Google's and Apple's own UIs still let you drag the
+block. We can warn; we cannot disable. That residual is accepted, and it is the
+reason Q-13 stays on the list rather than being closed outright.
+*Status: standing.*
+
+---
+
 ## 2 · Things we decided **not** to do
 
 | # | The idea | Why not | Would change if… |
@@ -2061,6 +2158,7 @@ cancellation notice that has already been mailed. *Status: standing.*
 | **N-13** | Replacing the orientation's rebuilt art with coach marks on the live app | A cold account has nothing to point at. `FirstRun` gates the shell on zero domains, so orientation opens with the domains they just named and **nothing else** — four of five ladder steps would spotlight empty surfaces, and an orb on an empty Inbox teaches less than a drawing of a full one (P7). D-059 forks instead, and the live door teaches by *making the thing exist* | Never as a straight swap. The live door already covers the real want; if it needs more reach, extend it — don't point at emptiness |
 | **N-15** | Queuing recurring-series materialisation offline | Tried and reverted the same day. `materializeSeries` **reads server state** to work out which occurrences are missing, and `clearFuture` deletes by predicate — queued, you get a series row with no occurrences behind it: a recurring commitment that displays but does not exist. That is worse than an honest "needs connection", so the `field_ts` column and the `apply_patch` allowlist entry were backed out rather than shipped half-working (D-091) | Materialisation moves to a pure client-side computation over the already-cached occurrence set, so it needs no read to decide what to write |
 | **N-12** | Pasting the video-call link into the event description | It's the *unstructured* copy of a structured fact (D-056): invisible to every client's Join button, doesn't move when the meeting does, outlives a removed conference, and can't be told apart from a link a human typed. `conferenceData` is the field they all already read | A provider Nuvo writes to has no conference field at all — and even then, say plainly that the link is pasted |
+| **N-16** | A desktop **Agenda** (list) view on the Schedule | **Built, shipped, and removed within three days — 2026-08-14 to 2026-08-15.** It existed because the 2026-08-12 audit's rank 10 asked for it ("no agenda/list on desktop"), and that line was a *symmetry* observation, not a user need: the phone has a list because a 375px screen cannot draw a week grid, and the desktop, which can, gets nothing from a list it doesn't already get from Week. Phil used it and didn't want it. **This row exists so the same audit line doesn't rebuild it next quarter** — the audit's rank-10 row has been amended to say so too. Note carefully what this is NOT: the phone's `schedule` (List) lens predates all of this, is the phone's native idiom, and is untouched (D-044) | A *desktop* reason appears that Week genuinely can't serve — e.g. reading a range longer than a week in one scroll. Symmetry with the phone is not that reason, and "the audit says so" is not either |
 
 ---
 
@@ -3219,6 +3317,7 @@ macOS stays `com.nuvo.app`. First green TestFlight upload pending GitHub secrets
 | **Q-07** | Where do timezone and working hours come from for a new account? | Rollover is LA-anchored and hours default to 480/990. Both are silent wrongness for anyone else — and capacity math depends on them | Reading how the rollover cron and `user_settings` actually resolve per user |
 | **Q-11** | Where does Monday's reader for `note_to_monday` live? | The Find has written this column since migration 33 and **nothing reads it** — the surface that did went with the Today rung. It's a letter from Friday-you to Monday-you that never arrives, and it's the precedent D-062 was written against. Either give it a reader or cut the field; leaving it is the one thing that shouldn't continue | Deciding which surface Monday actually opens on |
 | **Q-12** | Does an initiative get a completion stamp (`initiatives.shipped_at`)? | D-087 gave projects an honest ship date and folded them into the domain ledger. Initiatives have no stamp at all — `status === "complete"` and nothing else — so a finished bet neither keeps its domain warm nor files under the quarter it actually landed in; it files under the quarter it was *due*. The fallback is honest about being a fallback, which is why this is a question and not a bug | Whether a migration is worth it, or whether the bet's finish line is close enough at quarter grain |
+| **Q-13** | **Who wins when a mirrored block is moved on both sides?** D-107 closed the "iCloud gets no mirror at all" half of audit rank 3 and deliberately left this half open: mirroring is still one-directional, so dragging a Nuvo block in Google Calendar is silently reverted on the next reconcile. This is the only place in the app that **actively discards something the user did**, so it can't stay unanswered forever — but it is a model decision, not a bug fix. Three shapes, and each costs something real: **app always wins** (today — honest and simple, but the provider's UI lies to you the moment you touch a block there; the mitigation is to say so rather than to silently revert); **provider always wins for time** — needs Nuvo to start *reading back* its own mirror calendar, which it deliberately never does, and hands Google's quirks (a moved recurring instance, a declined invite) the power to rewrite planning state; **per-field last-writer-wins**, the model `lib/sync/ops.ts` already uses for tasks — but that model works because Nuvo stamps every field itself, and neither provider returns per-field timestamps, so this degrades to row-level LWW on the mirror's fields and a stale `updated` can still clobber a deliberate edit | **Answered 2026-08-15 — app always wins, and says so** (see D-107). Reopens if the warning proves insufficient: the thing to watch for is Phil losing an edit he made in Google *despite* the note, which is the only evidence that would justify paying for one of the other two shapes |
 
 **D-099 · 2026-08-12 · The phone gets the Build altitudes' other two faces — and the acts a
 record has, including the one it could not perform.** *(A desktop→mobile parity audit,

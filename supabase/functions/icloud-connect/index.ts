@@ -6,6 +6,7 @@
 // calendar_accounts row, then kick an immediate sync so events appear at once.
 import { admin, handleOptions, json, logSync, requireUser, storeSecret } from "../_shared/admin.ts";
 import { discoverCalendars } from "../_shared/caldav.ts";
+import { withoutMirrorCalendar } from "../_shared/mirror.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -36,6 +37,19 @@ Deno.serve(async (req) => {
       const msg = e instanceof Error ? e.message : String(e);
       return json({ error: msg }, 400);
     }
+
+    // A reconnect re-discovers everything, including Nuvo's own mirror
+    // collection if one was already stood up. Storing it would make every
+    // mirrored block sync back as an external event — the same double-count
+    // icloud-sync guards against, arriving by a different door.
+    const { data: existing } = await admin
+      .from("calendar_accounts")
+      .select("mirror_calendar_id")
+      .eq("user_id", user.id)
+      .eq("provider", "icloud")
+      .eq("email", username)
+      .maybeSingle();
+    calendars = withoutMirrorCalendar(calendars, existing?.mirror_calendar_id);
 
     const secretId = await storeSecret(`icloud_pw_${user.id}_${username}`, password);
 

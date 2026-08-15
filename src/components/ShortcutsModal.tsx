@@ -11,10 +11,10 @@ const GROUPS: Group[] = [
     title: "Schedule",
     items: [
       { keys: [["S"]], label: "Spread (week board)" },
-      { keys: [["A"]], label: "Agenda (list)" },
       { keys: [["W"]], label: "Week" },
       { keys: [["D"]], label: "Day" },
       { keys: [["M"]], label: "Month" },
+      { keys: [["Y"]], label: "Year (where it's heavy)" },
       { keys: [["="], ["⌘", "→"]], sep: "or", label: "Next period" },
       { keys: [["−"], ["⌘", "←"]], sep: "or", label: "Previous period" },
       { keys: [["⌘", "T"]], label: "Today" },

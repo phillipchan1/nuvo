@@ -1,13 +1,21 @@
-// Mirror scheduled tasks onto the dedicated "Nuvo" Google calendar so time
-// blocks show up on the phone before any mobile UI exists.
+// Mirror scheduled tasks onto the dedicated "Nuvo" calendar so time blocks show
+// up on the user's phone alongside everything else they've committed to.
 //
 // Reconciler, not a command handler: the client just says "task X changed"
-// and this function makes Google match the task's current state —
+// and this function makes the provider match the task's current state —
 //   scheduled + active/done → upsert event (✓ prefix when done)
 //   unblocked / trashed / rolled → delete event
-// Mirror writes are one-directional (app → Google); the app's version wins.
-import { admin, handleOptions, json, logSync, requireUser } from "../_shared/admin.ts";
-import { type GoogleAccount, gFetch } from "../_shared/google.ts";
+//
+// Mirror writes are one-directional (app → provider); the app's version wins.
+// That is a deliberate model choice, not an oversight — see docs/product/
+// decisions.md. What WAS an oversight, and what this now fixes, is that the
+// mirror only ever existed for Google (`google-oauth/index.ts` was the one line
+// that set `mirror_calendar_id`), so an iCloud-only user's blocks never left
+// Nuvo at all. iCloud is a writable provider; that was an asymmetry, not a
+// policy. Both live behind `_shared/mirrorTargets.ts` now.
+import { admin, handleOptions, json, logSync, readSecret, requireUser } from "../_shared/admin.ts";
+import { mirrorDescription, mirrorSpan, mirrorTitle, shouldMirror } from "../_shared/mirror.ts";
+import { deleteMirror, putMirror, resolveMirrorTarget } from "../_shared/mirrorTargets.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -32,76 +40,52 @@ Deno.serve(async (req) => {
       if (task.user_id !== user.id) return json({ error: "forbidden" }, 403);
     }
 
-    const { data: accounts } = await admin
-      .from("calendar_accounts")
-      .select("*")
-      .eq("user_id", task.user_id)
-      .eq("provider", "google")
-      .not("mirror_calendar_id", "is", null)
-      .limit(1);
-    const account = accounts?.[0] as GoogleAccount | undefined;
-    if (!account) return json({ ok: true, skipped: "no mirror calendar" });
-    const calId = encodeURIComponent(account.mirror_calendar_id!);
+    const target = await resolveMirrorTarget(task.user_id, readSecret);
+    if (!target) return json({ ok: true, skipped: "no mirror calendar" });
 
-    const shouldMirror =
-      task.start_time != null && (task.status === "planned" || task.status === "done");
-
-    if (!shouldMirror) {
-      if (task.google_event_id) {
-        const res = await gFetch(
-          account,
-          `/calendars/${calId}/events/${encodeURIComponent(task.google_event_id)}`,
-          { method: "DELETE" },
-        );
-        if (!res.ok && res.status !== 404 && res.status !== 410) {
-          throw new Error(`mirror delete failed: ${res.status}`);
+    if (!shouldMirror(task, "task")) {
+      // Google needs the stored id to find its event; CalDAV derives the
+      // resource from the task id, so a torn-down mirror is safe to tear down
+      // again and needs no state at all.
+      if (target.provider === "icloud" || task.google_event_id) {
+        await deleteMirror(target, "task", task.id, task.google_event_id);
+        if (task.google_event_id) {
+          await admin.from("tasks").update({ google_event_id: null }).eq("id", task.id);
         }
-        await admin.from("tasks").update({ google_event_id: null }).eq("id", task.id);
-        await logSync("google", "mirror-delete", "ok", undefined, task.user_id);
+        await logSync(target.provider, "mirror-delete", "ok", undefined, task.user_id);
       }
       return json({ ok: true });
     }
 
-    const start = new Date(task.start_time);
-    const end = new Date(start.getTime() + (task.duration_minutes ?? 30) * 60_000);
     // The zone rides the request from the device, and falls back to UTC rather
     // than to a home zone. It used to be hardcoded `America/Los_Angeles` — which
     // is one operator's own zone stamped on every user's mirrored block
     // (Principle 16), and the exact class of bug the device-zone-not-home-zone
-    // doctrine was locked in for (D-082). `dateTime` is a UTC instant either
+    // doctrine was locked in for (D-082). Every write is a UTC instant either
     // way, so this only decides how Google renders and DST-shifts the block.
     const tz = typeof body_.tz === "string" && body_.tz ? body_.tz : "UTC";
-    const body = JSON.stringify({
-      summary: task.status === "done" ? `✓ ${task.title}` : task.title,
-      description: task.notes || undefined,
-      start: { dateTime: start.toISOString(), timeZone: tz },
-      end: { dateTime: end.toISOString(), timeZone: tz },
-    });
+    const span = mirrorSpan(task, "task");
 
-    if (task.google_event_id) {
-      const res = await gFetch(
-        account,
-        `/calendars/${calId}/events/${encodeURIComponent(task.google_event_id)}`,
-        { method: "PATCH", body },
-      );
-      if (res.ok) {
-        await logSync("google", "mirror-update", "ok", undefined, task.user_id);
-        return json({ ok: true });
-      }
-      if (res.status !== 404 && res.status !== 410) {
-        throw new Error(`mirror update failed: ${res.status} ${await res.text()}`);
-      }
-      // fall through: event vanished on Google's side — recreate
+    const eventId = await putMirror(
+      target,
+      {
+        kind: "task",
+        rowId: task.id,
+        title: mirrorTitle(task, "Task"),
+        startISO: span.startISO,
+        endISO: span.endISO,
+        // Carries the "edits here won't stick" line — the only channel that
+        // reaches the user inside Google/Apple, where the mistake is made.
+        description: mirrorDescription(task.notes),
+        tz,
+      },
+      task.google_event_id,
+    );
+
+    if (eventId && eventId !== task.google_event_id) {
+      await admin.from("tasks").update({ google_event_id: eventId }).eq("id", task.id);
     }
-
-    const createRes = await gFetch(account, `/calendars/${calId}/events`, {
-      method: "POST",
-      body,
-    });
-    if (!createRes.ok) throw new Error(`mirror create failed: ${createRes.status} ${await createRes.text()}`);
-    const created = await createRes.json();
-    await admin.from("tasks").update({ google_event_id: created.id }).eq("id", task.id);
-    await logSync("google", "mirror-create", "ok", undefined, task.user_id);
+    await logSync(target.provider, task.google_event_id ? "mirror-update" : "mirror-create", "ok", undefined, task.user_id);
     return json({ ok: true });
   } catch (e) {
     if (e instanceof Response) return e;

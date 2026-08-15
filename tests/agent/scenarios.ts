@@ -460,6 +460,62 @@ export const SCENARIOS: Scenario[] = [
   // ── C · Calendar ───────────────────────────────────────────────────────────
 
   pin({
+    id: "load-reads-past-the-window",
+    group: "calendar",
+    it: "a question about a month the snapshot can't see is read, not guessed",
+    because:
+      "the snapshot carries ~two weeks. 'Is November bad?' is four months out, and the two " +
+      "failure modes are equally bad: pleading ignorance (which sends you to Google) or " +
+      "answering confidently off a window that doesn't reach.",
+    world: "loaded",
+    turns: ["how does November look — is it going to be brutal?"],
+    respond: (c) =>
+      c.name === "read_calendar_load"
+        ? {
+            span: { start: "2026-11-01", end: "2026-11-30", days: 30 },
+            summary: { band: "full", clear_days: 3, heavy_days: 17, claimed: "142h" },
+            longest_clear_run: { start: "2026-11-26", days: 3, end: "2026-11-28" },
+            heaviest_days: [{ date: "2026-11-12", band: "over", claimed: "11h" }],
+          }
+        : undefined,
+    expect: [
+      called("read_calendar_load", {
+        describe: "reaches November rather than answering from the snapshot",
+        ok: (a) =>
+          typeof a.start_date !== "string" ||
+          /^2026-1[01]/.test(a.start_date as string),
+      }),
+      replyLacks(/can'?t see|don'?t have|only see|no visibility/i, "pleads a short window"),
+    ],
+  }),
+
+  pin({
+    id: "load-answers-with-the-run-not-the-count",
+    group: "calendar",
+    it: "'where could a week of writing go' is answered with the clear STRETCH, not a tally of free days",
+    because:
+      "forty scattered free Tuesdays and one real free fortnight score identically on a count, " +
+      "and only one of them is somewhere a week of work fits. A reply that says '19 days are " +
+      "clear' is technically true and useless — it is the exact answer the Year view exists to " +
+      "replace.",
+    world: "loaded",
+    turns: ["I need a solid week for the book. Where does it actually fit before the end of the year?"],
+    respond: (c) =>
+      c.name === "read_calendar_load"
+        ? {
+            span: { start: "2026-08-15", end: "2026-12-31", days: 139 },
+            summary: { band: "busy", clear_days: 19, heavy_days: 41, claimed: "612h" },
+            longest_clear_run: { start: "2026-12-13", days: 8, end: "2026-12-20" },
+            heaviest_days: [{ date: "2026-09-09", band: "over", claimed: "10h" }],
+          }
+        : undefined,
+    expect: [
+      called("read_calendar_load", { describe: "asks for the load", ok: () => true }),
+      replyMatches(/dec(ember)?\s*1[3-9]|13\s*(–|-|to)\s*20/i, "names the December run's dates"),
+    ],
+  }),
+
+  pin({
     id: "cal-named-calendar-wins",
     group: "calendar",
     it: "a calendar the user names beats their stored default",

@@ -156,6 +156,25 @@ export { FALLBACK_TZ };
  *  public capture path convert an hour identically. */
 import { localToUtc } from "../_shared/dayShape.ts";
 
+/** The day-shape kernel — `read_calendar_load` is the Year view's twin, so it
+ *  weighs a day with the same functions the two grids shade with. Anything
+ *  hand-rolled here would let the chat call a month quiet that the Year paints
+ *  dark, and neither would look wrong on its own. */
+import {
+  buildSlotSummaries,
+  busyIntervalsFor,
+  dayLoad,
+  fmtEvent,
+  fmtMins,
+  fmtTask,
+  longestClearRun,
+  makeEventVisibility,
+  spanLoad,
+  todayIn,
+  visibleEventRows,
+  zonedInstant,
+} from "../_shared/dayShape.ts";
+
 function fmtZonedTime(isoUtc: string, tz: string): string {
   return new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
@@ -2621,6 +2640,150 @@ export async function executeTool(
             upcoming.length + past.length === 0
               ? "Nothing on their calendar matches. Say so plainly — don't guess a date."
               : "Dates are in the user's own time zone. Name the date, not just that it exists.",
+        }),
+      };
+    }
+
+    // The Year view's twin. Every number below comes from the same kernel the
+    // grid shades with (`dayLoad` / `spanLoad` / `longestClearRun` in
+    // `_shared/dayShape.ts`) over the same busy rule (`busyIntervalsFor`), so
+    // the chat cannot call a month quiet that the Year paints dark.
+    case "read_calendar_load": {
+      const today = todayIn(tz);
+      const start = (args.start_date as string | undefined)?.trim() || today;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) throw new Error("start_date must be YYYY-MM-DD.");
+      const startMs = Date.parse(`${start}T00:00:00Z`);
+      const defaultEnd = new Date(startMs + 89 * 86_400_000).toISOString().slice(0, 10);
+      const end = (args.end_date as string | undefined)?.trim() || defaultEnd;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) throw new Error("end_date must be YYYY-MM-DD.");
+      const days = Math.floor((Date.parse(`${end}T00:00:00Z`) - startMs) / 86_400_000) + 1;
+      if (days < 1) throw new Error("end_date must not be before start_date.");
+      if (days > 400) throw new Error("That span is over 400 days — ask about a year or less at a time.");
+
+      const dates = Array.from({ length: days }, (_, i) =>
+        new Date(startMs + i * 86_400_000).toISOString().slice(0, 10),
+      );
+      // A whole day either side of the span in UTC terms, so an evening event on
+      // the last local day is still inside the fetch.
+      const fetchStart = new Date(startMs - 86_400_000).toISOString();
+      const fetchEnd = new Date(startMs + days * 86_400_000 + 86_400_000).toISOString();
+
+      // Paginated, not capped. PostgREST tops out at 1000 rows, and a year of a
+      // real calendar is several times that — a truncated read here would
+      // report an empty December and send someone to book over their own week.
+      const pageAll = async <T>(
+        build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+      ): Promise<T[]> => {
+        const PAGE = 1000;
+        const out: T[] = [];
+        for (let from = 0; ; from += PAGE) {
+          const { data, error } = await build(from, from + PAGE - 1);
+          if (error) throw new Error(error.message);
+          const rows = data ?? [];
+          out.push(...rows);
+          if (rows.length < PAGE) break;
+        }
+        return out;
+      };
+
+      const [eventRows, taskRows, slotRows, settingsRes] = await Promise.all([
+        pageAll<Record<string, unknown>>((f, t) =>
+          admin
+            .from("external_events")
+            .select("id, title, start_at, end_at, all_day, busy, calendar_id, account_id, provider_event_id, recurring_event_id, location")
+            .eq("user_id", userId)
+            .lt("start_at", fetchEnd)
+            .gt("end_at", fetchStart)
+            .order("start_at")
+            .order("id")
+            .range(f, t),
+        ),
+        pageAll<Record<string, unknown>>((f, t) =>
+          admin
+            .from("tasks")
+            .select("id, title, status, do_date, start_time, duration_minutes, deadline, priority, notes, roll_count")
+            .eq("user_id", userId)
+            .not("start_time", "is", null)
+            .in("status", ["planned", "done"])
+            .gte("start_time", fetchStart)
+            .lt("start_time", fetchEnd)
+            .order("start_time")
+            .order("id")
+            .range(f, t),
+        ),
+        pageAll<Record<string, unknown>>((f, t) =>
+          admin
+            .from("slots")
+            .select("id, title, do_date, start_time, duration_minutes, project_id, domain_id")
+            .eq("user_id", userId)
+            .gte("start_time", fetchStart)
+            .lt("start_time", fetchEnd)
+            .order("start_time")
+            .order("id")
+            .range(f, t),
+        ),
+        admin
+          .from("user_settings")
+          .select("work_start_minutes, work_end_minutes, hidden_calendar_ids, hidden_events")
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ]);
+      if (settingsRes.error) throw new Error(settingsRes.error.message);
+
+      // Hidden is out of the ledger — the same rule every other reader applies.
+      const visibility = makeEventVisibility(settingsRes.data);
+      const nowMs = Date.now();
+      const events = visibleEventRows(eventRows, visibility).map((e) => fmtEvent(e, today, nowMs, tz));
+      const scheduled = taskRows.map((t) => fmtTask(t, today, nowMs, tz));
+      const slotChildren = slotRows.length
+        ? ((
+            await admin
+              .from("tasks")
+              .select("id, title, status, slot_id")
+              .eq("user_id", userId)
+              .in("slot_id", slotRows.map((r) => r.id as string))
+              .neq("status", "trashed")
+          ).data ?? [])
+        : [];
+      const slots = buildSlotSummaries(slotRows, slotChildren, tz, nowMs);
+
+      const workStart = (settingsRes.data?.work_start_minutes as number | null) ?? 480;
+      const workEnd = (settingsRes.data?.work_end_minutes as number | null) ?? 990;
+
+      const loads = dates.map((date) => {
+        const busy = busyIntervalsFor(events, scheduled, slots, date);
+        const count =
+          busy.length + events.filter((e) => e.localDate === date && e.allDay).length;
+        return dayLoad(busy, zonedInstant(date, workStart, tz), zonedInstant(date, workEnd, tz), count);
+      });
+
+      const summary = spanLoad(loads);
+      const run = longestClearRun(loads);
+      // Only the bands worth naming ride back — 400 rows of "clear" is the wall
+      // of numbers this view exists to replace, and it would crowd out the run.
+      const notable = loads
+        .map((l, i) => ({ date: dates[i], band: l.band, claimed: fmtMins(l.claimedMins) }))
+        .filter((d) => d.band === "full" || d.band === "over");
+
+      return {
+        result: JSON.stringify({
+          span: { start, end, days },
+          summary: {
+            band: summary.band,
+            clear_days: summary.clearDays,
+            heavy_days: summary.heavyDays,
+            claimed: fmtMins(summary.claimedMins),
+          },
+          longest_clear_run:
+            run.length > 0
+              ? { start: dates[run.startIndex], days: run.length, end: dates[run.startIndex + run.length - 1] }
+              : null,
+          heaviest_days: notable.slice(0, 20),
+          note:
+            "Bands: clear (nothing on) · light · busy · full · over (promised more than the day holds). " +
+            (run.length > 0
+              ? "Lead with the clear RUN and its dates — that is the answer to 'where could this go'. A count of free days is not."
+              : "There is no unbroken clear stretch in this span. Say so plainly rather than offering the scattered free days as if they were one."),
         }),
       };
     }

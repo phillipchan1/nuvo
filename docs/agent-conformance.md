@@ -340,6 +340,8 @@ can't do it and should be able to · `—` = deliberately not the chat's job.
 | Saying YES / MAYBE to an invite (not only no) | `rsvp_event` | ✅ `rsvp-can-say-yes` |
 | RSVP reaches Apple/iCloud, not just Google | `rsvp_event` · `decline_event` | ⚠️ **UNVERIFIED** — CalDAV PARTSTAT is deployed and shaped like the working CalDAV paths, but no real Apple invite has ever been answered through it. Needs a live iCloud invite; Phil's working calendar is a read-only ICS feed, so it cannot be exercised here |
 | Copying an event to a new time, guests NOT carried | `duplicate_event` | ✅ `duplicate-does-not-recreate-from-scratch` |
+| How heavy a stretch is, far past the context window | `read_calendar_load` | ✅ `load-reads-past-the-window` |
+| "Where could a week of work go" is a RUN, not a count | `read_calendar_load` | ✅ `load-answers-with-the-run-not-the-count` |
 
 ### D · The week — `week`
 

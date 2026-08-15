@@ -150,6 +150,9 @@ export function readNavState(raw: unknown): AppNavState | null {
     rung: (s.rung as string) === "now" ? "day" : s.rung,
     // The Week rail tab was retired (the board replaced it) — heal stale state.
     tab: s.tab === "inbox" ? "inbox" : "today",
+    // The desktop Agenda was retired (D-101) — anyone whose last session ended
+    // on it would otherwise restore into a view that renders nothing at all.
+    calView: (s.calView as string) === "agenda" ? "timeGridWeek" : s.calView,
     // Heal retired project views ("portfolio"/"detail" full page, "sprint" This
     // Week) → On Deck, the front door.
     projectView: (["ondeck", "groom", "all", "shipped"] as ProjectView[]).includes(s.projectView as ProjectView) ? (s.projectView as ProjectView) : "ondeck",

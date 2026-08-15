@@ -3,7 +3,11 @@ import { loadAccountsPaged } from "./syncSchedule.ts";
 
 export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const GOOGLE_API = "https://www.googleapis.com/calendar/v3";
-export const MIRROR_CALENDAR_NAME = "Nuvo";
+/** The dedicated calendar Nuvo mirrors blocks onto. Defined once in `mirror.ts`
+ *  with the rest of the mirror vocabulary — now that iCloud mirrors too, a
+ *  second copy here would be two providers' idea of one name (P11). Re-exported
+ *  so existing importers don't have to move. */
+export { MIRROR_CALENDAR_NAME } from "./mirror.ts";
 
 export interface GoogleAccount {
   id: string;

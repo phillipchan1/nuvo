@@ -612,3 +612,172 @@ export function dayReadout(d: DayReadoutInput): { text: string; accent: boolean 
           : "wide open";
   return { text, accent: !d.isBygone && !d.isPast && d.openMins > 0 };
 }
+
+// ---------------------------------------------------------------------------
+// How heavy a day is — the read a year answers
+// ---------------------------------------------------------------------------
+//
+// `dayReadout` answers "how much room is left *today*", in words, for a day you
+// are about to run. That phrasing is useless at a distance: 365 of them is a
+// wall of text, and "3h 20m open" is not a thing you can scan across a year.
+//
+// A load band is the same question compressed to one comparable number, so a
+// grid of days can be *shaded* — which is the only way a year answers "where is
+// this heavy, and where is there nothing". It is deliberately NOT a second
+// definition of busy: the intervals handed in come from `busyIntervalsFor` /
+// `toBusyBlocks` exactly as every other reader gets them. This only decides how
+// a pile of claimed minutes turns into a word.
+
+/** How loaded a day is, coarsely enough to compare 365 of them at a glance. */
+export type LoadBand = "clear" | "light" | "busy" | "full" | "over";
+
+/** Ordered lightest → heaviest. `indexOf` gives the shade ramp; a surface must
+ *  not invent its own ordering (that is how one shell shades Tuesday darker
+ *  than the other). */
+export const LOAD_BANDS: readonly LoadBand[] = ["clear", "light", "busy", "full", "over"];
+
+/** Fraction of a working window at which each band starts. `over` is anything
+ *  at or past a full window's worth of commitments — a day that has already
+ *  been promised more time than it holds. */
+const LOAD_THRESHOLDS: ReadonlyArray<{ band: LoadBand; from: number }> = [
+  { band: "over", from: 1 },
+  { band: "full", from: 2 / 3 },
+  { band: "busy", from: 1 / 3 },
+  { band: "light", from: 0 },
+];
+
+export interface DayLoad {
+  band: LoadBand;
+  /** 0–4, the index into LOAD_BANDS — the shade ramp a grid paints with. */
+  level: number;
+  /** Merged, de-overlapped minutes of timed commitment on the day. */
+  claimedMins: number;
+  /** claimedMins ÷ the working window. >1 means the day is oversubscribed. */
+  ratio: number;
+  /** Commitments of any kind, including all-day ones and anything outside the
+   *  working window — what separates "nothing at all" from "an evening thing". */
+  count: number;
+}
+
+/** Union of possibly-overlapping intervals, in minutes. Two meetings booked on
+ *  top of each other are one claimed hour, not two — counting them twice is how
+ *  a double-booked morning would read as a full day. */
+function claimedMinutes(busy: Array<{ startMs: number; endMs: number }>): number {
+  if (!busy.length) return 0;
+  const sorted = [...busy].sort((a, b) => a.startMs - b.startMs);
+  let total = 0;
+  let curStart = sorted[0].startMs;
+  let curEnd = sorted[0].endMs;
+  for (let i = 1; i < sorted.length; i++) {
+    const b = sorted[i];
+    if (b.startMs > curEnd) {
+      total += curEnd - curStart;
+      curStart = b.startMs;
+      curEnd = b.endMs;
+    } else if (b.endMs > curEnd) curEnd = b.endMs;
+  }
+  total += curEnd - curStart;
+  return Math.max(0, Math.round(total / 60_000));
+}
+
+/**
+ * One day's load.
+ *
+ * `busy` is the day's claimed intervals — pass them **unclipped**. A 7pm dinner
+ * is not free time just because it falls outside working hours, and clipping it
+ * away would draw an empty square over a night that is spoken for. The working
+ * window is the *yardstick* (how much a day of yours holds), not a filter.
+ *
+ * `count` is every commitment on the day including all-day ones, so a date
+ * carrying nothing but an all-day "Conference" still reads as claimed rather
+ * than clear — the one thing a year grid must never get wrong is telling you a
+ * day is empty when it isn't.
+ */
+export function dayLoad(
+  busy: Array<{ startMs: number; endMs: number }>,
+  windowStartMs: number,
+  windowEndMs: number,
+  count: number,
+): DayLoad {
+  const claimedMins = claimedMinutes(busy);
+  const windowMins = Math.max(1, Math.round((windowEndMs - windowStartMs) / 60_000));
+  const ratio = claimedMins / windowMins;
+  if (claimedMins === 0 && count === 0) {
+    return { band: "clear", level: 0, claimedMins: 0, ratio: 0, count: 0 };
+  }
+  const band = LOAD_THRESHOLDS.find((t) => ratio >= t.from)!.band;
+  return { band, level: LOAD_BANDS.indexOf(band), claimedMins, ratio, count };
+}
+
+/** How a band describes itself, for a legend, a tooltip or a spoken answer.
+ *  One vocabulary, so the shading and the sentence can't disagree. */
+export function loadLabel(band: LoadBand): string {
+  switch (band) {
+    case "clear": return "nothing on";
+    case "light": return "light";
+    case "busy": return "busy";
+    case "full": return "full";
+    case "over": return "overcommitted";
+  }
+}
+
+export interface SpanLoad {
+  /** Days examined. */
+  days: number;
+  /** Days with nothing on them at all — the "where is there nothing" half. */
+  clearDays: number;
+  /** Days at `full` or `over` — the "where is this heavy" half. */
+  heavyDays: number;
+  claimedMins: number;
+  /** Mean ratio across the span — what makes two months comparable. */
+  ratio: number;
+  /** The span's own band, from its mean ratio. */
+  band: LoadBand;
+}
+
+/**
+ * Roll a run of days up into one comparable read — a month in a year grid, or
+ * the answer to "which month is worst". Derived from the same `DayLoad`s the
+ * grid paints, so a month's summary can never contradict its own squares.
+ */
+export function spanLoad(loads: DayLoad[]): SpanLoad {
+  const days = loads.length;
+  const claimedMins = loads.reduce((s, l) => s + l.claimedMins, 0);
+  const ratio = days ? loads.reduce((s, l) => s + l.ratio, 0) / days : 0;
+  const band = days === 0 || (claimedMins === 0 && loads.every((l) => l.count === 0))
+    ? "clear"
+    : LOAD_THRESHOLDS.find((t) => ratio >= t.from)!.band;
+  return {
+    days,
+    clearDays: loads.filter((l) => l.band === "clear").length,
+    heavyDays: loads.filter((l) => l.band === "full" || l.band === "over").length,
+    claimedMins,
+    ratio,
+    band,
+  };
+}
+
+/**
+ * The longest unbroken run of days with nothing on them, as `[startIndex,
+ * length]` into the loads you passed (date order assumed; the caller owns the
+ * calendar, this owns the counting).
+ *
+ * This is the half of "where is the year heavy" that a shaded grid alone cannot
+ * say. Counting clear days gives you 40 scattered singles and one real
+ * fortnight at the same number, and only one of those is somewhere work fits.
+ * Returns length 0 when nothing is clear.
+ */
+export function longestClearRun(loads: DayLoad[]): { startIndex: number; length: number } {
+  let best = { startIndex: 0, length: 0 };
+  let runStart = -1;
+  for (let i = 0; i <= loads.length; i++) {
+    const clear = i < loads.length && loads[i].band === "clear";
+    if (clear) {
+      if (runStart < 0) runStart = i;
+    } else if (runStart >= 0) {
+      if (i - runStart > best.length) best = { startIndex: runStart, length: i - runStart };
+      runStart = -1;
+    }
+  }
+  return best;
+}

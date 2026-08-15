@@ -334,7 +334,13 @@ export function useRecurrenceMutations() {
           recurrence_date: null,
         }),
       );
-      if (t.google_event_id && navigator.onLine) mirrorTask(t.id);
+      // Not gated on google_event_id any more: an iCloud mirror has no stored
+      // id (its CalDAV resource is derived from the task id — see
+      // _shared/mirror.ts), so the old gate silently left every iCloud-mirrored
+      // occurrence on the user's phone after the series was cancelled.
+      // task-mirror is a reconciler: telling it about a trashed task with no
+      // mirror anywhere is a cheap no-op.
+      if (navigator.onLine) mirrorTask(t.id);
     }
 
     // slots → delete (children orphan back to normal tasks via FK)
@@ -345,7 +351,9 @@ export function useRecurrenceMutations() {
         (sl.do_date ?? "") >= fromISO,
     );
     for (const sl of doomedSlots) {
-      if (sl.google_event_id && navigator.onLine) {
+      // Same reason as the tasks above — an iCloud mirror carries no stored id,
+      // so gating the teardown on one stranded the block on the phone.
+      if (navigator.onLine) {
         invokeQuiet("slot-mirror", { slotId: sl.id, deleted: true, googleEventId: sl.google_event_id });
       }
       await queueWrite(makeOp("slots", "delete", sl.id));

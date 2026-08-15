@@ -7,7 +7,7 @@ import { Draggable } from "@fullcalendar/interaction";
 import { format } from "date-fns";
 import type { AttendeeStatus, CalendarAccount, ExternalEvent, GoogleAttendee, Label, Recurrence, Slot, Task } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES, DURATION_PRESETS, ruleOf } from "../lib/types";
-import { providerLabel, writableCalendarTargets, type MoveTargetGroup } from "../lib/calendarWrite";
+import { CALENDAR_OFFLINE_NOTE, providerLabel, writableCalendarTargets, type MoveTargetGroup } from "../lib/calendarWrite";
 import { conferenceName, joinUrl } from "../../supabase/functions/_shared/conferencing.ts";
 import type { useTaskMutations } from "../hooks/useTasks";
 import type { useExternalEventMutations } from "../hooks/useCalendar";
@@ -1226,6 +1226,7 @@ export function EventPopover({
   anchor,
   anchorEl,
   editable,
+  offlineOnly = false,
   calendarId,
   calendarName,
   calendarColor,
@@ -1241,6 +1242,11 @@ export function EventPopover({
    *  popover follows it on scroll/resize instead of freezing at `anchor`. */
   anchorEl?: HTMLElement | null;
   editable: boolean;
+  /** Writable in principle, but the device is offline. Calendar rows belong to
+   *  Google/Apple and are deliberately absent from SYNC_TABLES, so this is the
+   *  one edit Nuvo genuinely cannot hold for later — see lib/calendarWrite.ts.
+   *  Saying so beats letting the user type and then failing the save. */
+  offlineOnly?: boolean;
   calendarId?: string;
   calendarName?: string;
   calendarColor?: string | null;
@@ -1610,6 +1616,15 @@ export function EventPopover({
             <div className="text-head font-semibold leading-snug">{event.title}</div>
           )}
         </PopMast>
+
+        {/* The one edit Nuvo can't hold for later, said before it's attempted.
+            Shown only where the event WOULD be editable — a read-only feed has
+            its own reason and shouldn't be handed two. */}
+        {offlineOnly && (
+          <div className="border-b border-line px-3 py-2 text-caption text-muted">
+            {CALENDAR_OFFLINE_NOTE}
+          </div>
+        )}
 
         {/* Action strip — the two things you open a meeting for. It is drawn
             while the details are still in flight too (as a placeholder), so a

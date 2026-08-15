@@ -980,6 +980,25 @@ const RAW_TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
+      name: "read_calendar_load",
+      description:
+        "How heavy a stretch of calendar is, day by day — the read behind the Year view. Use it for 'when am I quietest', 'is October brutal', 'where could a week of writing actually go', 'how does the rest of the year look'. Your context only carries a narrow window around today, so anything beyond a couple of weeks has to come from here rather than from a guess. Returns each day's band (clear · light · busy · full · over), a summary of the whole span, and — the part that matters most — the longest UNBROKEN run of clear days, because forty scattered free Tuesdays and one real free fortnight look identical in a count and only one of them is somewhere work fits. Answer with the stretch and its dates, not with a number of free days.",
+      parameters: {
+        type: "object",
+        properties: {
+          start_date: { type: "string", description: "YYYY-MM-DD, inclusive. Defaults to today." },
+          end_date: {
+            type: "string",
+            description: "YYYY-MM-DD, inclusive. Defaults to 90 days after start. Max span 400 days.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "set_reminder",
       description:
         "Set how long before something Nuvo should speak: a meeting, a block the user scheduled, or a deadline. Name ONE target — task_id/task_title, or event_id/event_title, or slot_id. `lead_minutes` is minutes before; 0 means at the time; pass \"off\" to silence just this one item while leaving the user's defaults alone. Reminders are the app's only unprompted voice and they only ever announce something about to happen — never a planning nudge. If the user is asking for reminders in general rather than for one thing, tell them Settings → Reminders holds the defaults; do not set one per item to fake it.",

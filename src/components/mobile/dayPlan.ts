@@ -6,8 +6,14 @@
 
 import { addDays, isSameDay, startOfDay } from "date-fns";
 import { readDay, toBusyBlocks, type BusyBlock, type Gap } from "../../lib/now";
-import { dayReadout as sharedDayReadout } from "../../../supabase/functions/_shared/dayShape.ts";
+import {
+  dayLoad as sharedDayLoad,
+  dayReadout as sharedDayReadout,
+  type DayLoad,
+} from "../../../supabase/functions/_shared/dayShape.ts";
 import type { AttendeeStatus, ExternalEvent, Slot, Task } from "../../lib/types";
+
+export type { DayLoad };
 
 export const DAY_MS = 24 * 3600_000;
 
@@ -66,6 +72,9 @@ export interface DayPlan {
   openMins: number;
   isPast: boolean; // a fully-elapsed work window (today, after hours)
   isBygone: boolean; // a calendar date strictly before today — a historical read
+  /** How heavy the day is, from the shared kernel — the same band the Year grid
+   *  shades with. Carried here so no surface has to weigh a day itself. */
+  load: DayLoad;
 }
 
 export interface DayCtx {
@@ -144,16 +153,18 @@ function indexOf(ctx: DayCtx): DayIndex {
   return idx;
 }
 
-// The one place a calendar date becomes a plan — used by the month grid (for
-// its free/busy density), the schedule agenda (the full read) and the Day lens.
-export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
-  const { hidden, workStart, workEnd, now } = ctx;
+/** Everything a day is made of, before anyone decides what to do with it —
+ *  which rows fall on it, what they claim, and where its working window sits.
+ *
+ *  Extracted so `buildDayPlan` (the full read) and `buildDayLoad` (the year's
+ *  cheap one) share it. A second copy here would be the same class of bug as a
+ *  second `toBusyBlocks`: the year would shade a Tuesday the Day lens draws
+ *  differently, and neither would look wrong on its own. */
+function dayFrame(date: Date, ctx: DayCtx) {
+  const { hidden, workStart, workEnd } = ctx;
   const idx = indexOf(ctx);
   const dStart = startOfDay(date);
   const dEnd = new Date(dStart.getTime() + DAY_MS);
-  const startNow = startOfDay(now);
-  const isToday = isSameDay(date, now);
-  const isBygone = dStart.getTime() < startNow.getTime();
 
   const allDay = idx.allDay
     .filter((p) => p.start < dEnd.getTime() && p.end > dStart.getTime())
@@ -184,6 +195,44 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
   ws.setHours(0, workStart, 0, 0);
   const we = new Date(dStart);
   we.setHours(0, workEnd, 0, 0);
+
+  return { dStart, dEnd, allDay, dayEvents, dayBlocks, daySlots, busy, ws, we };
+}
+
+/** The kernel's load band for a day, from the frame's own busy list. The
+ *  yardstick is the user's working window; the claim is every busy interval on
+ *  the day, evening ones included. See `dayLoad` in `_shared/dayShape.ts`. */
+function loadOf(frame: ReturnType<typeof dayFrame>): DayLoad {
+  return sharedDayLoad(
+    frame.busy.map((b) => ({ startMs: b.start.getTime(), endMs: b.end.getTime() })),
+    frame.ws.getTime(),
+    frame.we.getTime(),
+    frame.busy.length + frame.allDay.length,
+  );
+}
+
+/**
+ * A day's load and nothing else — what a year grid reads, 365 times.
+ *
+ * The full `buildDayPlan` allocates a `TimedItem` (and several `Date`s) per row
+ * and walks the gap math; a year of that is work nobody looks at, since a 3mm
+ * square shows a shade, not a schedule. This shares the frame, so it is the
+ * same answer, just without building the parts the square can't show.
+ */
+export function buildDayLoad(date: Date, ctx: DayCtx): DayLoad {
+  return loadOf(dayFrame(date, ctx));
+}
+
+// The one place a calendar date becomes a plan — used by the month grid (for
+// its free/busy density), the schedule agenda (the full read) and the Day lens.
+export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
+  const { now } = ctx;
+  const frame = dayFrame(date, ctx);
+  const { dStart, allDay, dayEvents, dayBlocks, daySlots, busy, ws, we } = frame;
+  const startNow = startOfDay(now);
+  const isToday = isSameDay(date, now);
+  const isBygone = dStart.getTime() < startNow.getTime();
+
   const refNow = isToday ? new Date(Math.max(now.getTime(), ws.getTime())) : ws;
   const read = readDay(refNow, busy, ws, we);
 
@@ -256,6 +305,7 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
     openMins: read.openMins,
     isPast: isToday && now.getTime() >= we.getTime(),
     isBygone,
+    load: loadOf(frame),
   };
 }
 

@@ -168,8 +168,12 @@ function assertOk(res: Response, what: string): void {
   if (!res.ok) throw new Error(`${what} failed: HTTP ${res.status}`);
 }
 
-// 1. current-user-principal → 2. calendar-home-set → 3. list calendar collections.
-export async function discoverCalendars(username: string, password: string): Promise<CalDavCalendar[]> {
+/** 1. current-user-principal → 2. calendar-home-set. Split out of
+ *  `discoverCalendars` because creating a calendar (MKCALENDAR) needs the home
+ *  collection and nothing else — and a second copy of this two-hop dance is
+ *  exactly how the quote-parsing bug in `parseCalendarList` got missed for ten
+ *  days the first time. */
+export async function discoverCalendarHome(username: string, password: string): Promise<string> {
   const auth = basicAuth(username, password);
 
   // 1. Principal.
@@ -197,7 +201,52 @@ export async function discoverCalendars(username: string, password: string): Pro
   const homeXml = await homeRes.text();
   const homeHref = pickFirst(pickFirst(homeXml, "calendar-home-set") ?? "", "href");
   if (!homeHref) throw new Error("could not resolve iCloud calendar home");
-  const homeUrl = new URL(homeHref.trim(), homeRes.url || principalUrl).toString();
+  return new URL(homeHref.trim(), homeRes.url || principalUrl).toString();
+}
+
+/**
+ * MKCALENDAR a new collection under the user's calendar home and return its
+ * absolute URL. Used once per account to stand up the dedicated "Nuvo" mirror
+ * calendar, the CalDAV counterpart of what `google-oauth` does at connect time.
+ *
+ * The slug is caller-supplied and must be stable: MKCALENDAR on an existing
+ * collection returns 405, which the caller reads as "already there" rather than
+ * as a failure — that is what makes standing the calendar up idempotent, and
+ * therefore safe to attempt lazily on any mirror write.
+ */
+export async function createCalendar(
+  homeUrl: string,
+  slug: string,
+  displayName: string,
+  username: string,
+  password: string,
+  /** Shown in Apple Calendar's own calendar info — where a user who is about to
+   *  edit a mirrored block is actually standing. */
+  description?: string,
+): Promise<{ url: string; created: boolean }> {
+  const url = `${homeUrl.replace(/\/$/, "")}/${slug}/`;
+  const strip = (t: string) => t.replace(/[<&>]/g, "");
+  const res = await dav(url, {
+    method: "MKCALENDAR",
+    auth: basicAuth(username, password),
+    body:
+      `<?xml version="1.0" encoding="utf-8"?><C:mkcalendar xmlns:A="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">` +
+      `<A:set><A:prop><A:displayname>${strip(displayName)}</A:displayname>` +
+      (description ? `<C:calendar-description>${strip(description)}</C:calendar-description>` : "") +
+      `<C:supported-calendar-component-set><C:comp name="VEVENT"/></C:supported-calendar-component-set>` +
+      `</A:prop></A:set></C:mkcalendar>`,
+  });
+  // 405 Method Not Allowed = a collection is already there. That is a success
+  // for our purposes and the whole reason this is safe to call on every write.
+  if (res.status === 405) return { url, created: false };
+  assertOk(res, "create calendar");
+  return { url, created: true };
+}
+
+// 1. current-user-principal → 2. calendar-home-set → 3. list calendar collections.
+export async function discoverCalendars(username: string, password: string): Promise<CalDavCalendar[]> {
+  const auth = basicAuth(username, password);
+  const homeUrl = await discoverCalendarHome(username, password);
 
   // 3. Enumerate collections under the home set.
   const listRes = await dav(homeUrl, {

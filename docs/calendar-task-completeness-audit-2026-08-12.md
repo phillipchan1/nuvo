@@ -17,7 +17,7 @@ Ratings are from reading the code, not from the docs. ✅ Full · ⚠️ Partial
 
 | Capability | Status | Evidence | Gap | Impact |
 |---|---|---|---|---|
-| Views: day / week / month / agenda / year | ⚠️ | `src/components/CalendarPane.tsx:39` (`CalView = timeGridWeek \| timeGridDay \| dayGridMonth \| board`), switcher at `:2446`; mobile modes at `src/components/mobile/MobileCalendar.tsx:64` (`month \| schedule \| day`) | **No year view** on either shell. **No agenda/list view on desktop** — "Spread" (`board`) is a week-board (`floors/WeekBoard.tsx`), not an agenda; the phone has one (`schedule`), the desktop does not. Conversely the phone has **no week grid**. | med |
+| Views: day / week / month / agenda / year | ✅ *(as of 2026-08-15)* | Desktop `CalView = timeGridWeek \| timeGridDay \| dayGridMonth \| board \| year` (`CalendarPane.tsx:42`), Year at `CalendarYear.tsx`; mobile modes `month \| schedule \| day \| week \| year` (`MobileCalendar.tsx`), `MobileWeekView.tsx` · `MobileYearView.tsx` | **Closed, but not by symmetry.** The phone gained the week grid; both shells gained a **Year** — shaded by load, not drawn as dates (D-106), reading `dayLoad` from `_shared/dayShape.ts`. The desktop **Agenda** was built here and then removed on purpose (**N-16**) — the desktop does not want a list, and this row should not be read as asking for one again. The phone's `schedule` lens stands. | — |
 | Smooth view switching | ✅ | `CalendarPane.tsx:846` (`api.changeView`), keys `S/W/D/M` at `:572-574`, persisted view state; mobile persists mode to localStorage `MobileCalendar.tsx:57,97` | — | — |
 | Drag-to-create | ✅ | `CalendarPane.tsx:2715-2723` (`selectable`, `selectMirror`, `select={onSelect}`) → opens `DraftComposer` | Phone creates via `MobileNewEventSheet`, not drag (correct for touch) | — |
 | Drag-to-reschedule | ✅ | `CalendarPane.tsx:2725` `eventDrop={onDrop}`; `editable` per-event at `:902,942,983,1037`; read-only events explicitly non-editable `:983` (`writable && !e.all_day`) | All-day external events are **not** draggable (`:983`) | low |
@@ -42,7 +42,7 @@ Ratings are from reading the code, not from the docs. ✅ Full · ⚠️ Partial
 | External sync: Google / Outlook / iCal / CalDAV | ⚠️ | Read: `google-sync`, `m365-sync`, `ics-sync`, `icloud-sync` + `_shared/caldav.ts`; write: `lib/calendarWrite.ts:5-7` — **write-back is Google + iCloud only; M365 and ICS are read-only**; subscribe `ics-subscribe/index.ts` | **No export**: zero hits for `.ics` generation / `BEGIN:VEVENT` / `text/calendar` in `src`. No import of an `.ics` *file* (only feed subscription). M365 users get a read-only calendar. | med |
 | Sharing (public link, per-calendar permissions) | ❌ **(by design)** | Single-player, per-account model — `CLAUDE.md` §1, `docs/product/overview.md` §2.1. Only "sharing" reference is Settings copy pointing at Google's own publish flow (`SettingsModal.tsx:995`) | Correct for the product | — |
 | Undo / redo on calendar edits | ⚠️ | Undo: `CalendarPane.tsx:287,1395,1422,1487,1513` (drag + resize of slots *and* external events), stack `hooks/useUndoStack.tsx`, tiers `lib/undoTiers.ts` | **No redo** — `useUndoStack.tsx:184`: `if (e.shiftKey) return; // redo — not in v1`. Undo covers drag/resize but **not** event create, delete, RSVP, move-to-calendar, or field edits (`useCalendar.ts` records no undo at all — zero `recordUndo` hits in that file). Deletes are confirm-then-permanent (`CalendarPane.tsx:2113` "This can't be undone"). | med |
-| Offline support & conflict handling | ⚠️ | Strong for Nuvo's own data: `lib/sync/ops.ts:32-45` `SYNC_TABLES`, per-field LWW `ops.ts:14-24` + `migrations/…53_offline_sync.sql:2-11`, transport `lib/sync/transport.ts`, status `hooks/useOutbox.ts` | **`external_events` is not in `SYNC_TABLES`** — every calendar-event write is online-only and fails hard offline. Correct given the provider is the source of truth, but the app doesn't say so: the failure is a toast, not a queued edit. | med |
+| Offline support & conflict handling | ✅ *(as of 2026-08-15)* | Nuvo's own data: `lib/sync/ops.ts:32-45` `SYNC_TABLES`, per-field LWW `ops.ts:14-24` + `migrations/…53_offline_sync.sql:2-11`. Calendar: the refusal is now stated up front — `calendarWriteBlockedReason` / `CALENDAR_OFFLINE_NOTE` / `assertCalendarWritable` in `lib/calendarWrite.ts`, guarding all seven event mutations in `useCalendar.ts`, and folded into `editable` on both editors | **Answered by saying so, not by queueing** — deliberately. `external_events` is a cache of Google's/Apple's truth, and neither returns per-field timestamps to merge against, so a queued local edit would turn "this didn't save" into "this saved and then silently vanished". Offline now goes *inert with a reason* before the user types, instead of a raw network error after. | — |
 
 ---
 
@@ -86,7 +86,7 @@ Ratings are from reading the code, not from the docs. ✅ Full · ⚠️ Partial
 |---|---|---|---|---|
 | Time-blocking: task ↔ calendar event, two-way sync | ⚠️ | **Inside Nuvo it's ✅ and better than the field** — a scheduled task *is* a time block, one `tasks` row (`types.ts:40-42`), rendered natively `CalendarPane.tsx:1027-1040`. Push to the native calendar: `supabase/functions/task-mirror/index.ts`, `slot-mirror/index.ts`. Conversions both ways: `CalendarPane.tsx:2253` (→ Event), `:2098` (→ Task) | The **external** half is one-directional and Google-only: `task-mirror/index.ts:8` — "Mirror writes are one-directional (app → Google); the app's version wins", gated on `mirror_calendar_id` which only `google-oauth/index.ts:125` ever sets. So (a) an **iCloud-only or M365-only user's blocks never reach their phone's native calendar at all**, and (b) moving a mirrored block in Google Calendar is silently reverted on the next reconcile. Also `task-mirror/index.ts:69` stamps `America/Los_Angeles` on every mirrored block. | **high** |
 | Unified "what's on my plate today" | ✅ | One busy-model shared by every surface: `lib/now.ts` (`readDay`, `toBusyBlocks`), phone `mobile/dayPlan.ts:121` `buildDayPlan` → month/schedule/day all read it (`MobileCalendar.tsx:44,292,417,553`, `MobileDayView.tsx:155`); desktop Today rail `LeftRail.tsx`; week `lib/readiness.ts:208-255` | Tasks + events + slots + free gaps in one read. This is Nuvo's strongest area. | — |
-| Mobile parity | ⚠️ | Very high overall: `MobileCalendar` (month/schedule/day), `MobileEventSheet` (edit, all-day toggle, location, recurrence THIS/ALL, RSVP, delete), `MobileNewEventSheet` (all-day, repeat, guests, Meet, calendar picker), `MobileTaskList`, `MobileRecordActions`, `MobileSearch`, harnesses at `?domains`/`?build` | Deltas: **no week grid on the phone**; **no bulk actions** (`LeftRail.tsx:730-775` has no mobile twin); no drag-to-create/resize on the calendar (defensible on touch); collection Table is desktop-only. Conversely the **desktop lacks the phone's agenda view**. | med |
+| Mobile parity | ⚠️ | Very high overall: `MobileCalendar` (month/schedule/day), `MobileEventSheet` (edit, all-day toggle, location, recurrence THIS/ALL, RSVP, delete), `MobileNewEventSheet` (all-day, repeat, guests, Meet, calendar picker), `MobileTaskList`, `MobileRecordActions`, `MobileSearch`, harnesses at `?domains`/`?build` | Deltas: no drag-to-create/resize on the calendar (defensible on touch); collection Table is desktop-only. **Closed since:** the phone's week grid (`MobileWeekView`), bulk actions (`BulkBar` on both shells), and the Year (`MobileYearView`). "The desktop lacks the phone's agenda" was listed here as a delta and is **not** one — see N-16. | low |
 | Agent tool coverage for the above | ⚠️ | 39 tools, `supabase/functions/agent/toolDefs.ts:44-891`. Covers: vertical CRUD (`:111-349`), tasks (`create_task :415`, `create_recurring_task :439`, `plan_task :461`, `schedule_task :477`, `unschedule_task :582`, `reschedule_task :596`, `complete_task :613`, `trash_task :627`, `move_to_inbox :641`, `update_task :655`, `list_tasks :795`), slots (`:494-568`), events (`create_calendar_event :694`, `move_event :673`, `reschedule_event :735`, `cancel_event :753`, `decline_event :774`), priorities (`:809-859`), contacts/invites (`:874-891`), UI (`point_at :44`) | **Human-only paths with no agent tool:** search events (none — `list_tasks` is tasks-only); **accept/tentative an invite** (only `decline_event` exists — the agent can say no but never yes); edit an event's location / notes / all-day flag (`create_calendar_event` accepts them, no updater does); duplicate anything; hide/show a calendar; edit or delete a **recurrence series** (it can create one, `:439`, but not change or end it); labels (`create_task.label_names :427` only — no add/remove on an existing task); bulk anything; reorder; `update_task` (`:655`) can't set `do_date`, `duration_minutes`, project/domain, or labels. **Agent-only, no UI twin:** none found — every writing tool has a surface. | med |
 
 ---
@@ -106,6 +106,18 @@ Ratings are from reading the code, not from the docs. ✅ Full · ⚠️ Partial
    `google-oauth/index.ts:125`: an iCloud-only or M365-only user's time blocks never leave Nuvo,
    and any edit made in Google is reverted on the next reconcile. Given iCloud *is* a writable
    provider (`lib/calendarWrite.ts:5-7`), this is an asymmetry, not a policy.
+
+   > **Half closed, 2026-08-15 (D-107).** The **asymmetry** is fixed: an iCloud account now
+   > gets a dedicated "Nuvo" CalDAV collection, stood up lazily on first write, and both
+   > `task-mirror` and `slot-mirror` serve either provider through
+   > `_shared/mirrorTargets.ts`. Two teardown paths that gated on `google_event_id` (series
+   > cancellation, rollover) were stranding blocks on an iCloud phone and no longer do.
+   > **M365 stays out** — it is read-only end to end (`lib/calendarWrite.ts`), so this is that
+   > row, not this one. ⚠️ **Unverified against a real Apple account** — see §Verification.
+   >
+   > The **one-directional** half is deliberately still open, and is now **Q-13** in
+   > `docs/product/decisions.md` §3: who wins when both sides changed is a model decision, not
+   > a bug fix.
 
 4. **Recurrence ceiling: daily / weekly / monthly-by-date only.**
    `_shared/recurrence.ts:8` + `RecurrencePicker.tsx:410,344`. No yearly (birthdays, renewals),
@@ -135,6 +147,20 @@ Ratings are from reading the code, not from the docs. ✅ Full · ⚠️ Partial
 10. **View coverage is split across shells.** No agenda/list on desktop, no week grid on the phone
     (`CalendarPane.tsx:39` vs `MobileCalendar.tsx:64`), no year view anywhere, and no attendee
     free/busy (`freeBusy` matches nothing) — so scheduling with guests is blind.
+
+    > **Amended 2026-08-15 — read this before acting on the line above.**
+    > The phone's **week grid** shipped (`MobileWeekView.tsx`, 2026-08-14) and the **year view**
+    > shipped on both shells (`CalendarYear.tsx` · `mobile/MobileYearView.tsx`, D-106) — as a
+    > view of *load*, not of dates, which is what earned it a place under P10.
+    >
+    > **The desktop agenda was built and then deliberately removed** (N-16, 2026-08-15). It was
+    > built *because of this line*, and this line was wrong: "the phone has a list and the desktop
+    > doesn't" is a symmetry observation, not a user need. The phone has a list because 375px
+    > cannot draw a week grid; the desktop can, and gets nothing from a list it doesn't already
+    > get from Week. **Do not rebuild it from this row.** The phone's `schedule` (List) lens is a
+    > different thing, predates all of this, and stands (D-044).
+    >
+    > Still open from this row: **attendee free/busy**.
 
 **Just below the line:** no `.ics` import/export, M365 write-back, no event duplication
 (`CalendarPane.tsx:1975-2170`), no per-event timezone, external-event writes non-queueable offline

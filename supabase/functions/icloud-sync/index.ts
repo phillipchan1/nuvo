@@ -6,6 +6,7 @@
 import { admin, handleOptions, json, logSync, readSecret } from "../_shared/admin.ts";
 import { type ExternalEventRow, parseIcs } from "../_shared/ics.ts";
 import { discoverCalendars, fetchEvents } from "../_shared/caldav.ts";
+import { isMirrorUid, withoutMirrorCalendar } from "../_shared/mirror.ts";
 import { reconcileEvents } from "../_shared/eventSync.ts";
 import { loadAccountsPaged, markSyncResult } from "../_shared/syncSchedule.ts";
 
@@ -18,6 +19,9 @@ interface IcloudAccount {
   email: string;
   refresh_token_secret_id: string | null;
   needs_reconnect: boolean;
+  /** The dedicated collection Nuvo mirrors blocks into. Excluded from the sync
+   *  below — it is Nuvo's own writing, not the user's calendar. */
+  mirror_calendar_id: string | null;
   // deno-lint-ignore no-explicit-any
   calendars: any[] | null;
 }
@@ -45,6 +49,17 @@ async function syncAccount(account: IcloudAccount): Promise<void> {
     return await fail(e instanceof Error ? e.message : String(e));
   }
 
+  // Nuvo's own mirror calendar is not the user's calendar and must never come
+  // back in as external events. Without this, every mirrored task would exist
+  // TWICE on every surface — once as its own block and once as an "event" — and
+  // both copies would count as busy, which is the double-count that put four
+  // projects' hours in the wrong place in the domain time ledger (D-085).
+  //
+  // Matched by URL, never by display name: a user is entitled to their own
+  // calendar called "Nuvo". The UID prefix below is the second net, for the
+  // case where the stored URL is missing.
+  calendars = withoutMirrorCalendar(calendars, account.mirror_calendar_id);
+
   // Refresh the stored calendars list when discovery changed (keeps colors/names
   // current and surfaces newly-created calendars in Settings).
   const nextCals = calendars.map((c) => ({ id: c.url, summary: c.displayName, color: c.color, visible: true }));
@@ -70,6 +85,10 @@ async function syncAccount(account: IcloudAccount): Promise<void> {
         ownerEmail: account.email,
       });
       for (const row of parsed) {
+        // Second net: a resource Nuvo wrote, wherever it turned up. Cheap, and
+        // it holds even if `mirror_calendar_id` is lost or the user drags a
+        // mirrored block into another calendar.
+        if (isMirrorUid(row.provider_event_id)) continue;
         row.raw = { ...row.raw, caldav_href: ev.href, caldav_etag: ev.etag };
         rows.push(row);
       }

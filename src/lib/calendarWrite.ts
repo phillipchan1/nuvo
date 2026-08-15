@@ -1,5 +1,49 @@
 import type { CalendarAccount, CalendarInfo, CalendarProvider } from "./types";
 
+// ── Offline: the one write in Nuvo that genuinely cannot be queued ──────────
+//
+// Everything Nuvo *owns* queues (`SYNC_TABLES` in `lib/sync/ops.ts`): a task
+// edited on a plane lands in IndexedDB, merges per-field, and reaches Postgres
+// days later. `external_events` is deliberately not on that list, and the audit
+// (2026-08-12, calendar row "Offline support & conflict handling") was right
+// that the omission is CORRECT and wrong that the app owned up to it.
+//
+// It is correct because Nuvo does not own these rows. Google and Apple do. The
+// `external_events` table is a *cache* of somebody else's truth, and a queued
+// local edit would be a promise Nuvo cannot keep: the provider can move,
+// cancel or re-title the same event while the device is dark, and there is no
+// per-field timestamp coming back from either API to merge against. A queue
+// there converts "this didn't save" into "this saved and then silently
+// vanished", which is strictly worse.
+//
+// What was wrong is that the failure arrived as a raw network error in a red
+// toast — indistinguishable from a bug, after the user had already typed the
+// edit. So the rule is stated here, checked BEFORE any work is done, and shown
+// on the editing surfaces while the device is offline. Refusing early and
+// saying why is the honest version of a constraint you can't remove.
+
+/** Why a calendar write can't happen right now, or null if it can. Pass the
+ *  live `useOnline()` value; `undefined` means "don't know", which is treated
+ *  as online (a false refusal is worse than a real failure). */
+export function calendarWriteBlockedReason(online?: boolean): string | null {
+  if (online === false) {
+    return "You're offline. Calendar changes go straight to Google or Apple, so this one can't be saved on the device the way your tasks are — reconnect and try again.";
+  }
+  return null;
+}
+
+/** The short form, for a banner or a disabled control's tooltip. */
+export const CALENDAR_OFFLINE_NOTE =
+  "Offline — your calendar lives with Google/Apple, so events can't be edited until you reconnect. Tasks still save here.";
+
+/** Throw the reason if a calendar write can't happen. Called at the top of
+ *  every event mutation, before anything optimistic — the alternative is
+ *  painting the change on screen and then yanking it back. */
+export function assertCalendarWritable(online?: boolean): void {
+  const reason = calendarWriteBlockedReason(online);
+  if (reason) throw new Error(reason);
+}
+
 /** Providers Nuvo can write back to (create / move / resize / retitle / delete).
  *  Google via its API; iCloud via CalDAV. M365 and ICS stay read-only. */
 export function isWritableProvider(provider: CalendarProvider): boolean {

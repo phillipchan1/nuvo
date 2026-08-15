@@ -16,7 +16,8 @@ import {
   todayISO,
   tomorrowISO,
 } from "../../lib/dates";
-import { isReadOnlyCalendarId, isWritableAccount } from "../../lib/calendarWrite";
+import { CALENDAR_OFFLINE_NOTE, isReadOnlyCalendarId, isWritableAccount } from "../../lib/calendarWrite";
+import { useOnline } from "../../hooks/useOnline";
 import { plainTextFromHtml } from "../../lib/text";
 import { fromGoogleRRULE, rulesEqual, toGoogleRRULE, type RecurrenceRule } from "../../lib/recurrence";
 import { RepeatControl } from "../RecurrencePicker";
@@ -113,11 +114,20 @@ export default function MobileEventSheet({
     setNotes(plainTextFromHtml(raw?.description ?? ""));
   }, [raw?.description]);
 
-  const editable =
+  // Offline is a real reason an event can't be edited, so it belongs in the
+  // same predicate as "read-only feed" rather than surfacing later as a failed
+  // save. `external_events` is not in SYNC_TABLES and deliberately never will
+  // be — Google and Apple own these rows, so a queued local edit is a promise
+  // Nuvo can't keep (see the note in lib/calendarWrite.ts). Going inert and
+  // saying why beats accepting the typing and losing it.
+  const online = useOnline();
+  const writableEvent =
     tap.kind === "event" &&
     isWritableAccount(account) &&
     Boolean(tap.calendarId) &&
     !isReadOnlyCalendarId(tap.calendarId!);
+  const editable = writableEvent && online;
+  const offlineOnly = writableEvent && !online;
 
   const handleAskNuvo = () => {
     if (!onAskNuvo) return;
@@ -329,6 +339,16 @@ export default function MobileEventSheet({
                   </>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* The one constraint Nuvo can't engineer away, said out loud rather
+              than discovered after typing. Only on an event that WOULD be
+              editable — a read-only feed has its own reason and shouldn't be
+              given two. */}
+          {offlineOnly && (
+            <div className="mb-4 rounded-lg border border-line bg-surface-2 px-3 py-2 text-caption text-muted">
+              {CALENDAR_OFFLINE_NOTE}
             </div>
           )}
 

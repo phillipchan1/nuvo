@@ -16,10 +16,11 @@ import {
   type RecurrenceScope,
 } from "../lib/types";
 import { eventKey, eventSeriesKey, isEventHidden } from "../lib/now";
-import { eventsFunctionFor } from "../lib/calendarWrite";
+import { assertCalendarWritable, eventsFunctionFor } from "../lib/calendarWrite";
 import { fromGoogleRRULE, type RecurrenceRule } from "../lib/recurrence";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
+import { useOnline } from "./useOnline";
 
 function throwIfInvokeFailed(data: unknown, error: Error | null) {
   if (error) throw error;
@@ -138,6 +139,12 @@ export function useHiddenEvents() {
 /** Move/resize/retitle a Google event: optimistic local write + API write-back.
  *  scope="ALL" patches the master recurring event in Google instead of just this instance. */
 export function useExternalEventMutations() {
+  // Checked at the top of every mutation below, before any optimistic paint.
+  // `external_events` is not in SYNC_TABLES and never will be — see the note in
+  // lib/calendarWrite.ts. Refusing early with a sentence beats a raw network
+  // error after the user has already typed the edit.
+  const online = useOnline();
+  const guardOffline = () => assertCalendarWritable(online);
   const qc = useQueryClient();
   // Calendar writes recorded nothing at all until now: the audit found undo
   // covering drag and resize (which CalendarPane records itself) but not
@@ -205,6 +212,7 @@ export function useExternalEventMutations() {
       };
       scope?: RecurrenceScope;
     }) => {
+      guardOffline();
       // For THIS-only edits, write the instance row immediately so optimistic
       // update is consistent. For ALL, the master PATCH in Google will push a
       // sync back that rewrites all instances — skip the local row update.
@@ -297,6 +305,7 @@ export function useExternalEventMutations() {
   // calendar_id so the event recolors to the destination immediately.
   const move = useMutation({
     mutationFn: async ({ id, calendarId }: { id: string; calendarId: string }) => {
+      guardOffline();
       const { error } = await supabase.functions.invoke(eventsFunctionFor(providerForEvent(id)), {
         body: { action: "move", eventId: id, calendarId },
       });
@@ -350,6 +359,7 @@ export function useExternalEventMutations() {
       responseStatus: AttendeeStatus;
       sendNotifications?: boolean;
     }) => {
+      guardOffline();
       // Was hardcoded to google-events, which made RSVP Google-only even though
       // iCloud is a writable provider — the audit's rank 9. Routed like every
       // other write now.
@@ -425,6 +435,7 @@ export function useExternalEventMutations() {
        *  stays quiet. Pass false to cancel without telling anyone. */
       notifyGuests?: boolean;
     }) => {
+      guardOffline();
       const provider = await resolveProviderForEvent(id);
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
         body: { action: "delete", eventId: id, scope, notifyGuests },
@@ -524,6 +535,7 @@ export function useExternalEventMutations() {
       addMeet?: boolean;
       all_day?: boolean;
     }) => {
+      guardOffline();
       const provider = providerForAccount(accountId) ?? "google";
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
         body: { action: "create", title, start_at, end_at, all_day, recurrence, attendees, accountId, calendarId, location, description, notifyGuests, ...(provider === "google" ? { addMeet } : {}) },
@@ -588,6 +600,7 @@ export function useExternalEventMutations() {
       /** Email the new guests. Defaults to true. */
       notifyGuests?: boolean;
     }) => {
+      guardOffline();
       const { error } = await supabase.functions.invoke("google-events", {
         body: { action: "invite", eventId: id, attendees, notifyGuests },
       });
@@ -602,6 +615,7 @@ export function useExternalEventMutations() {
   // booked before the preference existed, or one that grew guests later.
   const addMeet = useMutation({
     mutationFn: async ({ id }: { id: string }) => {
+      guardOffline();
       const { data, error } = await supabase.functions.invoke("google-events", {
         body: { action: "add_meet", eventId: id },
       });

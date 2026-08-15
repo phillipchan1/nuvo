@@ -1,19 +1,29 @@
-// Mirror a Time Slot onto the dedicated "Nuvo" Google calendar as a single
-// busy block, so reserved time shows up on the phone. Like task-mirror, this
-// is a reconciler (app → Google, the app's version wins): the client says
-// "slot X changed" (or "slot X is being deleted") and Google is made to match.
+// Mirror a Time Slot onto the dedicated "Nuvo" calendar as a single busy
+// block, so reserved time shows up on the user's phone. Like task-mirror, this
+// is a reconciler (app → provider, the app's version wins): the client says
+// "slot X changed" (or "slot X is being deleted") and the provider is made to
+// match.
 //
 // The slot's child tasks are NOT individually mirrored — they're unblocked
-// (start_time null), so only the slot's time is reflected on Google.
-import { admin, handleOptions, json, logSync, requireUser } from "../_shared/admin.ts";
-import { type GoogleAccount, gFetch } from "../_shared/google.ts";
+// (start_time null), so only the slot's time is reflected.
+//
+// Google and iCloud both, through `_shared/mirrorTargets.ts`. Before that, this
+// was Google-only for the same reason task-mirror was (audit rank 3).
+import { admin, handleOptions, json, logSync, readSecret, requireUser } from "../_shared/admin.ts";
+import { mirrorDescription, mirrorSpan, mirrorTitle } from "../_shared/mirror.ts";
+import { deleteMirror, putMirror, resolveMirrorTarget } from "../_shared/mirrorTargets.ts";
+
+/** A held block reads as a container, not as a task — the glyph is what tells
+ *  them apart at a glance on a phone's calendar. */
+const SLOT_GLYPH = "🗂";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
 
   try {
-    const { slotId, deleted, googleEventId } = await req.json();
+    const body_ = await req.json();
+    const { slotId, deleted, googleEventId } = body_;
     if (!slotId) return json({ error: "slotId required" }, 400);
 
     // On delete the row is (about to be) gone, so the caller passes the slot's
@@ -31,68 +41,49 @@ Deno.serve(async (req) => {
     const ownerId = (slot?.user_id as string | undefined) ?? user?.id;
     if (!ownerId) return json({ error: "no owner" }, 400);
 
-    const { data: accounts } = await admin
-      .from("calendar_accounts")
-      .select("*")
-      .eq("user_id", ownerId)
-      .eq("provider", "google")
-      .not("mirror_calendar_id", "is", null)
-      .limit(1);
-    const account = accounts?.[0] as GoogleAccount | undefined;
-    if (!account) return json({ ok: true, skipped: "no mirror calendar" });
-    const calId = encodeURIComponent(account.mirror_calendar_id!);
+    const target = await resolveMirrorTarget(ownerId, readSecret);
+    if (!target) return json({ ok: true, skipped: "no mirror calendar" });
 
     // ── Delete: tear down the mirror block ───────────────────────────────
+    // CalDAV derives the resource from the slot id, so it can tear one down
+    // without the caller having kept an id — which is also why a delete that
+    // races the row's own deletion still lands.
     if (deleted) {
-      if (googleEventId) {
-        const res = await gFetch(
-          account,
-          `/calendars/${calId}/events/${encodeURIComponent(googleEventId)}`,
-          { method: "DELETE" },
-        );
-        if (!res.ok && res.status !== 404 && res.status !== 410) {
-          throw new Error(`slot mirror delete failed: ${res.status}`);
-        }
-        await logSync("google", "slot-mirror-delete", "ok", undefined, ownerId);
+      if (target.provider === "icloud" || googleEventId) {
+        await deleteMirror(target, "slot", slotId, googleEventId);
+        await logSync(target.provider, "slot-mirror-delete", "ok", undefined, ownerId);
       }
       return json({ ok: true });
     }
 
     // ── Upsert: one busy block for the slot ──────────────────────────────
-    const start = new Date(slot!.start_time as string);
-    const end = new Date(start.getTime() + (slot!.duration_minutes as number) * 60_000);
-    const title = (slot!.title as string)?.trim() || "Time slot";
-    const body = JSON.stringify({
-      summary: `🗂 ${title}`,
-      start: { dateTime: start.toISOString(), timeZone: "America/Los_Angeles" },
-      end: { dateTime: end.toISOString(), timeZone: "America/Los_Angeles" },
-      transparency: "opaque",
-    });
+    const span = mirrorSpan(slot!, "slot");
+    // The device's zone, per request — never a constant. This function used to
+    // stamp `America/Los_Angeles` on every user's held block, which is one
+    // operator's own zone treated as everyone's (Principle 16) and the exact
+    // bug D-082 locked the device-zone-not-home-zone doctrine in for.
+    // `task-mirror` was fixed for it; this one was missed.
+    const tz = typeof body_.tz === "string" && body_.tz ? body_.tz : "UTC";
+    const existingEventId = (slot!.google_event_id as string | null) ?? null;
 
-    const existingEventId = slot!.google_event_id as string | null;
-    if (existingEventId) {
-      const res = await gFetch(
-        account,
-        `/calendars/${calId}/events/${encodeURIComponent(existingEventId)}`,
-        { method: "PATCH", body },
-      );
-      if (res.ok) {
-        await logSync("google", "slot-mirror-update", "ok", undefined, ownerId);
-        return json({ ok: true });
-      }
-      if (res.status !== 404 && res.status !== 410) {
-        throw new Error(`slot mirror update failed: ${res.status} ${await res.text()}`);
-      }
-      // fall through: event vanished on Google's side — recreate
-    }
+    const eventId = await putMirror(
+      target,
+      {
+        kind: "slot",
+        rowId: slotId,
+        title: `${SLOT_GLYPH} ${mirrorTitle(slot!, "Time slot")}`,
+        startISO: span.startISO,
+        endISO: span.endISO,
+        description: mirrorDescription(null),
+        tz,
+      },
+      existingEventId,
+    );
 
-    const createRes = await gFetch(account, `/calendars/${calId}/events`, { method: "POST", body });
-    if (!createRes.ok) {
-      throw new Error(`slot mirror create failed: ${createRes.status} ${await createRes.text()}`);
+    if (eventId && eventId !== existingEventId) {
+      await admin.from("slots").update({ google_event_id: eventId }).eq("id", slotId);
     }
-    const created = await createRes.json();
-    await admin.from("slots").update({ google_event_id: created.id }).eq("id", slotId);
-    await logSync("google", "slot-mirror-create", "ok", undefined, ownerId);
+    await logSync(target.provider, existingEventId ? "slot-mirror-update" : "slot-mirror-create", "ok", undefined, ownerId);
     return json({ ok: true });
   } catch (e) {
     if (e instanceof Response) return e;

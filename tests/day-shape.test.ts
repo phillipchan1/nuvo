@@ -5,15 +5,20 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  LOAD_BANDS,
   buildDaySchedule,
   busyIntervalsFor,
   computeOpenWindows,
+  dayLoad,
   dayReadout,
   fmtEvent,
   fmtTask,
+  loadLabel,
+  longestClearRun,
   makeEventVisibility,
   openMinutes,
   openSpans,
+  spanLoad,
   visibleEventRows,
   zonedInstant,
 } from "../supabase/functions/_shared/dayShape.ts";
@@ -283,5 +288,107 @@ describe("dayReadout — one set of words for every surface", () => {
     const r = dayReadout({ busyCount: 5, openMins: 300, isPast: false, isBygone: true });
     expect(r.text).toBe("5 scheduled");
     expect(r.accent).toBe(false);
+  });
+});
+
+// ── the load bands — the rule a year grid is shaded by ──────────────────────
+// A year of squares is only worth a place if the shading is TRUE, so these pin
+// the four ways it could quietly lie: double-counting a double-booking,
+// erasing an evening, calling an all-day commitment "nothing on", and treating
+// forty scattered free Tuesdays as somewhere a week of work fits.
+
+describe("dayLoad", () => {
+  const WINDOW_START = zonedInstant(DATE, 8 * 60, TZ); // 08:00
+  const WINDOW_END = zonedInstant(DATE, 16 * 60 + 30, TZ); // 16:30 → 510m
+  const span = (from: string, to: string) => ({
+    startMs: new Date(at(from)).getTime(),
+    endMs: new Date(at(to)).getTime(),
+  });
+  const load = (busy: Array<{ startMs: number; endMs: number }>, count = busy.length) =>
+    dayLoad(busy, WINDOW_START, WINDOW_END, count);
+
+  it("calls an empty day clear", () => {
+    const l = load([]);
+    expect(l.band).toBe("clear");
+    expect(l.level).toBe(0);
+    expect(l.claimedMins).toBe(0);
+  });
+
+  it("never calls a day with an all-day commitment clear", () => {
+    // Zero timed minutes, one commitment. An all-day "Conference" does not
+    // block 9am specifically — but the day is spoken for, and a grid that
+    // paints it blank is telling you it is free.
+    const l = dayLoad([], WINDOW_START, WINDOW_END, 1);
+    expect(l.band).toBe("light");
+    expect(l.count).toBe(1);
+  });
+
+  it("counts two meetings booked on top of each other once", () => {
+    // 9–11 and 10–12 is three claimed hours, not four. Summing durations would
+    // read a double-booked morning as a full day.
+    const l = load([span("09:00", "11:00"), span("10:00", "12:00")]);
+    expect(l.claimedMins).toBe(180);
+  });
+
+  it("counts a commitment outside working hours", () => {
+    // A 7pm dinner is not free time because it falls after 16:30. The window is
+    // the yardstick, never a filter.
+    const l = load([span("19:00", "21:00")]);
+    expect(l.claimedMins).toBe(120);
+    expect(l.band).toBe("light");
+  });
+
+  it("climbs light → busy → full as the day fills", () => {
+    expect(load([span("09:00", "10:00")]).band).toBe("light"); // 60/510
+    expect(load([span("09:00", "12:00")]).band).toBe("busy"); // 180/510
+    expect(load([span("09:00", "16:00")]).band).toBe("full"); // 420/510
+  });
+
+  it("calls a day promised more than it holds overcommitted", () => {
+    const l = load([span("07:00", "19:00")]); // 12h against an 8.5h window
+    expect(l.band).toBe("over");
+    expect(l.ratio).toBeGreaterThan(1);
+    expect(LOAD_BANDS.indexOf(l.band)).toBe(l.level);
+  });
+
+  it("gives every band a word — colour is never the whole answer", () => {
+    for (const b of LOAD_BANDS) expect(loadLabel(b)).toBeTruthy();
+  });
+});
+
+describe("spanLoad + longestClearRun", () => {
+  const WINDOW_START = zonedInstant(DATE, 8 * 60, TZ);
+  const WINDOW_END = zonedInstant(DATE, 16 * 60 + 30, TZ);
+  const clear = () => dayLoad([], WINDOW_START, WINDOW_END, 0);
+  const heavy = () =>
+    dayLoad(
+      [{ startMs: WINDOW_START, endMs: WINDOW_END }],
+      WINDOW_START,
+      WINDOW_END,
+      1,
+    );
+
+  it("rolls a run of days into one comparable read", () => {
+    const s = spanLoad([clear(), clear(), heavy(), heavy()]);
+    expect(s.days).toBe(4);
+    expect(s.clearDays).toBe(2);
+    expect(s.heavyDays).toBe(2);
+  });
+
+  it("reads a month with nothing in it as clear, not as light", () => {
+    expect(spanLoad([clear(), clear(), clear()]).band).toBe("clear");
+  });
+
+  it("finds the longest unbroken clear stretch, not the count", () => {
+    // Scattered singles and one real fortnight score the same on a count, and
+    // only one of them is somewhere a week of work fits.
+    const days = [clear(), heavy(), clear(), heavy(), clear(), clear(), clear(), heavy()];
+    const run = longestClearRun(days);
+    expect(run.startIndex).toBe(4);
+    expect(run.length).toBe(3);
+  });
+
+  it("reports no run at all when every day is spoken for", () => {
+    expect(longestClearRun([heavy(), heavy()])).toEqual({ startIndex: 0, length: 0 });
   });
 });
