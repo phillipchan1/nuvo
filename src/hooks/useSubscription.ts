@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { writeWasEntitled } from "../lib/subscription";
 import type { Subscription } from "../lib/subscription";
 
 const KEY = ["subscription"];
@@ -65,6 +66,13 @@ export function useSubscription() {
     retry: 2,
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 4_000),
   });
+
+  // Record the outcome as the device-local optimistic-render hint (see
+  // lib/subscription.ts) — every settle, not just the first, so a lapse
+  // clears the hint just as readily as a renewal sets it.
+  useEffect(() => {
+    if (query.isSuccess) writeWasEntitled(Boolean(query.data?.entitled));
+  }, [query.isSuccess, query.data]);
 
   // isPending (not isLoading) is the right "we don't know yet" signal here:
   // isLoading is false while a query is network-paused (offline/reconnecting)

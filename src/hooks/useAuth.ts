@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { clearPersistedCache } from "../lib/sync/persist";
+import { writeWasEntitled } from "../lib/subscription";
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
@@ -34,7 +35,10 @@ export function useAuth() {
       // on this device rehydrates the previous one's tasks, projects and
       // domains before its own first fetch lands — a cross-account leak that
       // looks exactly like a rendering bug.
-      if (event === "SIGNED_OUT") void clearPersistedCache();
+      if (event === "SIGNED_OUT") {
+        void clearPersistedCache();
+        writeWasEntitled(false);
+      }
     });
     return () => sub.subscription.unsubscribe();
   }, []);

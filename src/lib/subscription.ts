@@ -23,6 +23,33 @@ export function trialDaysRemaining(sub: Subscription | null | undefined): number
   return Math.max(0, Math.ceil((new Date(sub.trial_ends_at).getTime() - Date.now()) / 86_400_000));
 }
 
+const WAS_ENTITLED_KEY = "nuvo-was-entitled";
+
+/** A device-local hint only — never a source of truth. `subscription` is
+ *  deliberately excluded from the offline query cache (NEVER_PERSIST in
+ *  lib/sync/persist.ts), so every launch re-checks entitlement over the
+ *  network with nothing to show meanwhile. This flag lets the UI render
+ *  optimistically on that first paint instead of blocking on it; real access
+ *  stays enforced server-side via RLS no matter what this says, and the live
+ *  check that follows corrects the UI within moments if it's stale. Cleared
+ *  on sign-out so the next account on this device never inherits it. */
+export function readWasEntitled(): boolean {
+  try {
+    return localStorage.getItem(WAS_ENTITLED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeWasEntitled(entitled: boolean): void {
+  try {
+    if (entitled) localStorage.setItem(WAS_ENTITLED_KEY, "1");
+    else localStorage.removeItem(WAS_ENTITLED_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export type Plan = "monthly" | "annual";
 
 /** Where Stripe should return us. The desktop app sends nothing: checkout

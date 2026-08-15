@@ -11,6 +11,7 @@ import { useWatchSession } from "./hooks/useWatchSession";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
 import { useSubscription, useSubscriptionLiveSync } from "./hooks/useSubscription";
+import { readWasEntitled } from "./lib/subscription";
 import { useSkin, useScheme } from "./hooks/useSkin";
 import { useThemeColor } from "./hooks/useThemeColor";
 import Login from "./components/Login";
@@ -212,6 +213,15 @@ function Shell() {
   const showAuthWordmark = useDelayedTrue(loading, SPLASH_DELAY_MS);
   const subscriptionPending = subPending || (checkoutPending && !subscription?.entitled);
   const showSubscriptionWordmark = useDelayedTrue(subscriptionPending, SPLASH_DELAY_MS);
+  // The entitlement check is deliberately never cached to disk (see
+  // readWasEntitled), so it's a real network round-trip on every launch —
+  // blocking on it is what actually caused the splash to keep flashing on
+  // mobile networks even after the delay above. Render straight through on
+  // the strength of last launch's answer instead, and let the live check
+  // correct the screen a moment later if it landed differently this time.
+  // Scoped to the first-fetch window only — a just-completed Checkout still
+  // waits for a real answer, since there's nothing stale to trust yet.
+  const optimisticEntitled = subPending && readWasEntitled();
 
   // The floating ⌥Space window: just the panel (no app chrome, no updater).
   // SpotlightHost owns the signed-out state too — a summon that renders nothing
@@ -243,8 +253,9 @@ function Shell() {
 
   // First subscription fetch (isPending covers a network-paused fetch too,
   // not just an in-flight one — see useSubscription), or the brief window
-  // right after Checkout where the webhook hasn't landed yet.
-  if (subscriptionPending) {
+  // right after Checkout where the webhook hasn't landed yet. Skipped when
+  // we're rendering optimistically on last launch's entitlement instead.
+  if (subscriptionPending && !optimisticEntitled) {
     return <LoadingCanvas showWordmark={showSubscriptionWordmark} />;
   }
 
@@ -269,7 +280,7 @@ function Shell() {
     );
   }
 
-  if (!subscription?.entitled) {
+  if (!subscription?.entitled && !optimisticEntitled) {
     return (
       <>
         <LockedScreen subscription={subscription} />
