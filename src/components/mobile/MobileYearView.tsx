@@ -17,9 +17,8 @@ import { useMemo } from "react";
 import { addMonths, format, startOfMonth } from "date-fns";
 import { Icon } from "../Icon";
 import TimeZoneChip from "../TimeZoneChip";
-import { YearLegend, YearMonth, loadLabel, monthDays, spanLoad } from "../calendar/YearParts";
-import { buildDayLoad, type DayCtx } from "./dayPlan";
-import { longestClearRun } from "../../../supabase/functions/_shared/dayShape.ts";
+import { YearLegend, YearMonth, loadLabel, spanLoad } from "../calendar/YearParts";
+import { buildYearLoads, type DayCtx } from "./dayPlan";
 import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
 import { useRef } from "react";
 import { scrollParent } from "./dayPlan";
@@ -49,35 +48,19 @@ export default function MobileYearView({
   /** Back to the month grid — the phone's home lens. */
   onBack: () => void;
 }) {
-  const { months, byMonth, flat, flatDays } = useMemo(() => {
+  // Cached per ctx outside React — see buildYearLoads. The phone pays this on a
+  // slower CPU than the desk, so re-computing it on every zoom-out would be the
+  // more visible stall of the two.
+  const { months, byMonth, flat } = useMemo(() => {
     const ms = Array.from({ length: 12 }, (_, m) => new Date(year, m, 1));
-    const byM = ms.map((m) => monthDays(m).map((d) => buildDayLoad(d, ctx)));
-    return { months: ms, byMonth: byM, flat: byM.flat(), flatDays: ms.flatMap((m) => monthDays(m)) };
+    const byM = buildYearLoads(year, ctx);
+    return { months: ms, byMonth: byM, flat: byM.flat() };
   }, [year, ctx]);
 
-  // Same read as the desk, same reasons — see CalendarYear. Room is measured
-  // forward from today, because a clear fortnight last February is a true fact
-  // about the shading and a useless answer to "where could this go".
-  const read = useMemo(() => {
-    const total = spanLoad(flat);
-    const heaviest = months
-      .map((m, i) => ({ month: m, span: spanLoad(byMonth[i]) }))
-      .filter((x) => x.span.band !== "clear")
-      .sort((a, b) => b.span.ratio - a.span.ratio)[0];
-    const todayMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const from = flatDays.findIndex((d) => d.getTime() >= todayMs);
-    const ahead = from >= 0 ? flat.slice(from) : [];
-    const run = longestClearRun(ahead);
-    return {
-      total,
-      heaviest,
-      hasFuture: ahead.length > 0,
-      run: run.length > 0 ? { length: run.length, start: flatDays[from + run.startIndex] } : null,
-    };
-  }, [flat, flatDays, months, byMonth, now]);
-
   const isCurrentYear = year === now.getFullYear();
-  const nothingYet = loading && read.total.clearDays === flat.length;
+  // The only question still asked in prose — see the header block below.
+  const anyLoad = useMemo(() => flat.some((l) => l.band !== "clear"), [flat]);
+  const nothingYet = loading && !anyLoad;
 
   // Horizontal swipe pages a year — the same gesture (and the same classifier)
   // the month grid uses to page a month, so traversal means one thing on this
@@ -123,26 +106,13 @@ export default function MobileYearView({
         </button>
       </div>
 
-      {/* The year's own read — the sentence the grid is a picture of. */}
+      {/* Year and legend. The prose read this used to carry was cut with the
+          desk's — the grid says it. Screen space is scarcer here than anywhere,
+          so three lines of sentence above a heat map was the worst version of
+          the trade. See the header block in CalendarYear.tsx. */}
       <div className="px-4 pb-2 pt-1">
         <h2 className="text-lead masthead text-ink">{year}</h2>
-        {nothingYet ? (
-          <p className="mt-0.5 text-caption text-muted">Reading your calendar…</p>
-        ) : (
-          <div className="mt-0.5 flex flex-col gap-0.5">
-            <span className="mono text-label text-muted">
-              {read.total.clearDays} of {read.total.days} days clear
-              {read.heaviest ? ` · heaviest ${format(read.heaviest.month, "MMMM")} (${loadLabel(read.heaviest.span.band)})` : ""}
-            </span>
-            {read.hasFuture && (
-              <span className="mono text-label" style={{ color: read.run ? "var(--accent)" : "var(--muted)" }}>
-                {read.run
-                  ? `longest clear run ahead — ${read.run.length} day${read.run.length === 1 ? "" : "s"} from ${format(read.run.start, "MMM d")}`
-                  : "no clear day left this year"}
-              </span>
-            )}
-          </div>
-        )}
+        {nothingYet && <p className="mt-0.5 text-caption text-muted">Reading your calendar…</p>}
         <YearLegend className="mt-1.5" />
       </div>
 

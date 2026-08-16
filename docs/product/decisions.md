@@ -2061,12 +2061,26 @@ could this actually go?" has always meant paging the week grid eleven times.
 
 Three things follow from that, and they are the decision:
 
-1. **The clear-day count is not the answer; the clear *run* is.** Forty
-   scattered free Tuesdays and one free fortnight are the same number, and only
-   one of them is somewhere a week of work fits. The headline names the longest
-   unbroken clear stretch and its dates, and it measures **forward from today** —
-   a clear run last February is a true fact about the shading and a useless
-   answer to "where could this go".
+1. **The clear-day count is not the answer; the clear *run* is** — and the
+   **grid says it, not a sentence.** Forty scattered free Tuesdays and one free
+   fortnight are the same number, and only one of them is somewhere a week of
+   work fits.
+
+   This first shipped as a prose headline ("119 of 365 days clear · heaviest
+   August · longest clear run ahead, 19 days from Dec 13"), and the headline was
+   **cut the same day** along with the per-month "light · 23 clear" line. Phil's
+   objection was the right one: *the visuals say all of that without needing to
+   read.* A run of blank squares is more legible than a sentence describing one,
+   and a dark August is visible without being announced.
+
+   The reasoning survives the cut — it is *why the view is shaded at all*, and
+   it is still what the Year is for. Prose was simply the wrong medium for it on
+   a surface whose whole argument is that you can see the answer. What stays:
+   the **legend**, because a colour ramp with no key is a picture of a year
+   rather than a reading of one; the per-day and per-month **accessible names**,
+   which carry the same facts in words for anyone who cannot see a shade at all;
+   and the chat's `read_calendar_load`, where prose *is* the medium and naming
+   the run is exactly what it must do.
 2. **Absence is drawn as absence.** A day with nothing on it is bare paper, not
    a tint. It is the strongest possible answer to half the question.
 3. **The rule lives in the kernel** (`dayLoad` / `spanLoad` / `longestClearRun`
@@ -2074,6 +2088,24 @@ Three things follow from that, and they are the decision:
    Tuesday identically. `read_calendar_load` is the chat's twin and reads the
    same functions. A shade that means one thing on the desk and another in your
    hand is worse than no shade, because both look right alone.
+
+**Making it fast enough to be a lens rather than a destination.** A view you
+toggle through constantly has to be free to toggle. Two costs were rebuilt on
+every click and are now paid once: **FullCalendar** was unmounted whenever a
+non-FC view was up and cost ~111ms to reconstruct, and the **Year** costs ~150ms
+to mount 365 cells. Both now live in one relative box, both absolutely
+positioned at the pane's real size, hidden with `visibility` rather than
+`display` — so neither is rebuilt *and* neither loses its geometry and has to
+re-measure. The Year mounts lazily on first use and then stays, because mounting
+it eagerly would move its cost onto app boot. The day math behind it is cached
+per `DayCtx` (`buildYearLoads`), keyed on a **day-stable** `now` so the 30-second
+clock tick doesn't throw a year away twice a minute.
+
+What that does **not** fix, and is worth writing down so it isn't re-diagnosed
+as a calendar problem: every nav-state change re-renders the whole Planner tree,
+which measures **65–73ms on its own** — a rail tab switch, which touches nothing
+about the calendar, costs the same. That is the floor under every view switch
+and it is an app-shell question, not a Schedule one.
 
 Standing this up found a pre-existing collision worth recording: `WeekBoard` had
 its own `dayLoad`, measuring something genuinely different (how much of the

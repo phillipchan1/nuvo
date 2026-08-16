@@ -8,7 +8,8 @@
 // so the chat weighs the same Tuesday the same way.
 
 import { memo, useMemo } from "react";
-import { addDays, getDay, getDaysInMonth, isSameDay, startOfMonth } from "date-fns";
+import { getDay, isSameDay, startOfMonth } from "date-fns";
+import { monthDates } from "../mobile/dayPlan";
 import {
   LOAD_BANDS,
   fmtMins,
@@ -88,10 +89,12 @@ const DOW_INITIALS = Array.from({ length: 7 }, (_, i) =>
   new Date(Date.UTC(2024, 0, 7 + i)).toLocaleDateString([], { weekday: "narrow", timeZone: "UTC" }),
 );
 
-/** A month's days, in date order — the unit both the grid and `spanLoad` read. */
+/** A month's days, in date order — the unit both the grid and `spanLoad` read.
+ *  Delegates to `monthDates` in dayPlan.ts, which is what `buildYearLoads`
+ *  counts with: two ideas of "how long is February" would silently offset a
+ *  leap year's shading by one day. */
 export function monthDays(month: Date): Date[] {
-  const first = startOfMonth(month);
-  return Array.from({ length: getDaysInMonth(first) }, (_, i) => addDays(first, i));
+  return monthDates(month.getFullYear(), month.getMonth());
 }
 
 // ── one month ──────────────────────────────────────────────────────────────
@@ -126,7 +129,6 @@ export const YearMonth = memo(function YearMonth({
   showWeekdays = true,
 }: YearMonthProps) {
   const days = useMemo(() => monthDays(month), [month]);
-  const span = useMemo(() => spanLoad(loads), [loads]);
   // Blank cells before the 1st so the columns are real weekdays.
   const lead = (getDay(days[0]) - weekStartsOn + 7) % 7;
   const dow = useMemo(
@@ -156,7 +158,6 @@ export const YearMonth = memo(function YearMonth({
             {label}
           </span>
         )}
-        <MonthRead span={span} />
       </div>
 
       {showWeekdays && (
@@ -187,19 +188,6 @@ export const YearMonth = memo(function YearMonth({
     </section>
   );
 });
-
-/** The month's own line. Never colour alone: a month says how heavy it is in a
- *  word, and how much room it still has in a number. */
-function MonthRead({ span }: { span: SpanLoad }) {
-  const clear = span.clearDays;
-  return (
-    <span className="mono shrink-0 text-micro leading-none text-muted">
-      {span.band === "clear"
-        ? "nothing on"
-        : `${loadLabel(span.band)} · ${clear} clear`}
-    </span>
-  );
-}
 
 const DayCell = memo(function DayCell({
   date,

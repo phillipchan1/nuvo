@@ -17,26 +17,21 @@
 // March.
 
 import { useMemo } from "react";
-import { addDays, format, startOfDay, startOfMonth, startOfYear } from "date-fns";
-import {
-  YearLegend,
-  YearMonth,
-  loadLabel,
-  monthDays,
-  spanLoad,
-  type DayLoad,
-} from "./calendar/YearParts";
-import { buildDayLoad, type DayCtx } from "./mobile/dayPlan";
-import { longestClearRun } from "../../supabase/functions/_shared/dayShape.ts";
+import { addDays, startOfMonth, startOfYear } from "date-fns";
+import { YearLegend, YearMonth, type DayLoad } from "./calendar/YearParts";
+import { buildYearLoads, type DayCtx } from "./mobile/dayPlan";
 
-/** One year's worth of days, grouped by month, each weighed once. */
+/** One year's worth of days, grouped by month, each weighed once.
+ *
+ *  The weighing itself lives in `buildYearLoads`, which caches per `ctx` —
+ *  outside React, deliberately. This component unmounts every time you switch
+ *  to Week, so a `useMemo` here would die with it and every return trip would
+ *  re-pay ~84ms of day math on the click. */
 function useYearLoads(year: number, ctx: DayCtx) {
   return useMemo(() => {
     const months = Array.from({ length: 12 }, (_, m) => new Date(year, m, 1));
-    const byMonth = months.map((m) => monthDays(m).map((d) => buildDayLoad(d, ctx)));
-    const flatDays = months.flatMap((m) => monthDays(m));
-    const flat = byMonth.flat();
-    return { months, byMonth, flat, flatDays };
+    const byMonth = buildYearLoads(year, ctx);
+    return { months, byMonth, flat: byMonth.flat() };
   }, [year, ctx]);
 }
 
@@ -59,36 +54,12 @@ export default function CalendarYear({
   /** Drill one step — a month name opens the month grid. */
   onPickMonth: (d: Date) => void;
 }) {
-  const { months, byMonth, flat, flatDays } = useYearLoads(year, ctx);
+  const { months, byMonth, flat } = useYearLoads(year, ctx);
 
-  // The headline. Two halves, and the second one is the reason this view is
-  // worth a place: a count of clear days tells you nothing about whether a
-  // week of work fits anywhere, because forty scattered Tuesdays and one real
-  // fortnight score the same. The run does.
-  const read = useMemo(() => {
-    const heaviest = months
-      .map((m, i) => ({ month: m, span: spanLoad(byMonth[i]) }))
-      .filter((x) => x.span.band !== "clear")
-      .sort((a, b) => b.span.ratio - a.span.ratio)[0];
-
-    // Room is a forward-looking question. A ten-day clear run last February is
-    // a true fact about the shading and a useless answer to "where could this
-    // go", so the run is measured from today — and says so.
-    const fromIdx = flatDays.findIndex((d) => startOfDay(d).getTime() >= startOfDay(now).getTime());
-    const ahead = fromIdx >= 0 ? flat.slice(fromIdx) : [];
-    const aheadDays = fromIdx >= 0 ? flatDays.slice(fromIdx) : [];
-    const run = longestClearRun(ahead);
-    const total = spanLoad(flat);
-
-    return {
-      heaviest,
-      total,
-      run: run.length > 0 ? { length: run.length, start: aheadDays[run.startIndex] } : null,
-      hasFuture: ahead.length > 0,
-    };
-  }, [months, byMonth, flat, flatDays, now]);
-
-  const nothingYet = loading && read.total.claimedMins === 0 && read.total.clearDays === flat.length;
+  // Has anything actually arrived? The only question this component still asks
+  // in prose — see the header below for why the rest of it went.
+  const anyLoad = useMemo(() => flat.some((l) => l.band !== "clear"), [flat]);
+  const nothingYet = loading && !anyLoad;
 
   return (
     // Transparent — the one warm-paper gradient has to read continuously from
@@ -104,34 +75,27 @@ export default function CalendarYear({
     // read, so the failure mode cannot recur at any pane width.
     <div className="@container min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-[1180px] px-4 pb-8 pt-1">
-        {/* The year's own read — the sentence the grid is a picture of. */}
+        {/* Year and legend. Nothing else.
+              This header used to carry a prose read — "119 of 365 days clear ·
+              heaviest August · longest clear run ahead, 19 days from Dec 13".
+              Cut 2026-08-15, because the grid already SAYS all of it: a run of
+              blank squares is more legible than a sentence describing one, and
+              a dark August is visible without being announced. The original
+              argument for the sentence was that a *count* can't tell forty
+              scattered Tuesdays from one free fortnight — true, and the reason
+              it never earned its place is that the shading tells them apart on
+              sight.
+              The legend stays: a colour ramp with no key is a picture of a year
+              rather than a reading of one. The per-day accessible names stay
+              too — they carry the same facts in words for anyone who can't see
+              a shade. And the chat still speaks the run aloud, which is the
+              medium prose actually belongs in (`read_calendar_load`). */}
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line pb-2">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
             <span className="masthead text-lead leading-none text-ink">{year}</span>
-            {nothingYet ? (
-              <span className="text-caption text-muted">Reading your calendar…</span>
-            ) : (
-              <>
-                <span className="mono text-label text-muted">
-                  {read.total.clearDays} of {read.total.days} days clear
-                </span>
-                {read.heaviest && (
-                  <span className="mono text-label text-muted">
-                    heaviest {format(read.heaviest.month, "MMMM")} ({loadLabel(read.heaviest.span.band)})
-                  </span>
-                )}
-                {read.hasFuture && (
-                  <span
-                    className="mono text-label"
-                    style={{ color: read.run ? "var(--accent)" : "var(--muted)" }}
-                  >
-                    {read.run
-                      ? `longest clear run ahead — ${read.run.length} day${read.run.length === 1 ? "" : "s"} from ${format(read.run.start, "MMM d")}`
-                      : "no clear day left this year"}
-                  </span>
-                )}
-              </>
-            )}
+            {/* The one line that is not decoration: an unread year and an empty
+                year are the same picture, and only one of them is true. */}
+            {nothingYet && <span className="text-caption text-muted">Reading your calendar…</span>}
           </div>
           <YearLegend />
         </div>

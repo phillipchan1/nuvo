@@ -223,6 +223,44 @@ export function buildDayLoad(date: Date, ctx: DayCtx): DayLoad {
   return loadOf(dayFrame(date, ctx));
 }
 
+/**
+ * A whole year's loads, in date order, grouped by month — memoized per `ctx`.
+ *
+ * Measured at ~84ms for 365 days on a real calendar, which is a visible stall
+ * on a click. A `useMemo` inside the view cannot fix that on its own: the view
+ * *unmounts* when you switch away, so the memo dies and every return trip pays
+ * again. The cache has to outlive the component, and `ctx` is the right key —
+ * it is exactly the identity that decides whether the answer could have changed
+ * (same events, blocks, slots, settings and `now` → same year), and a WeakMap
+ * means a superseded ctx takes its cache with it when it's collected.
+ *
+ * Paying the 84ms once per data change instead of once per click is the whole
+ * difference between "instant" and "laggy" here.
+ */
+const yearLoadCache = new WeakMap<DayCtx, Map<number, DayLoad[][]>>();
+
+export function buildYearLoads(year: number, ctx: DayCtx): DayLoad[][] {
+  let byYear = yearLoadCache.get(ctx);
+  if (!byYear) {
+    byYear = new Map();
+    yearLoadCache.set(ctx, byYear);
+  }
+  const hit = byYear.get(year);
+  if (hit) return hit;
+  const months = Array.from({ length: 12 }, (_, m) =>
+    monthDates(year, m).map((d) => buildDayLoad(d, ctx)),
+  );
+  byYear.set(year, months);
+  return months;
+}
+
+/** The dates of one month, in order. Here rather than in a view so the loads
+ *  and the grid that paints them can never disagree about a month's length. */
+export function monthDates(year: number, month: number): Date[] {
+  const days = new Date(year, month + 1, 0).getDate();
+  return Array.from({ length: days }, (_, i) => new Date(year, month, i + 1));
+}
+
 // The one place a calendar date becomes a plan — used by the month grid (for
 // its free/busy density), the schedule agenda (the full read) and the Day lens.
 export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {

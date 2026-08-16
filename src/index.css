@@ -734,8 +734,19 @@ html.tauri-macos .trial-banner {
    carry this inset so their own surfaces rise to fill the macOS titlebar zone
    (traffic lights float over the spine; nothing reads as an empty bar). On the
    web there's no window chrome, so it collapses to zero. */
+/* ADDITIVE — the inset sits ON TOP of the element's own top padding.
+   This used to be a bare `padding-top: var(--titlebar-inset-top, 0px)`, which
+   is the same specificity as the Tailwind `py-2` on the very same element and
+   wins on source order. So wherever the inset resolves to zero — the web, and
+   Tauri macOS, where `.app-shell` zeroes it deliberately — the calendar toolbar
+   silently lost its 8px of top padding and its controls sat flush against the
+   top edge of the bar. In the browser the shell's own ~9px rounding inset
+   disguised it; in the desktop app, whose shell has no such inset, the view
+   pill was pressed right into the window frame.
+   `--titlebar-pad-y` lets a consumer state its own base without this rule
+   having to know about it. */
 .titlebar-pad {
-  padding-top: var(--titlebar-inset-top, 0px);
+  padding-top: calc(var(--titlebar-pad-y, 0.5rem) + var(--titlebar-inset-top, 0px));
 }
 
 /* Niche case only: the desktop Tauri window shrunk below 768px so the mobile

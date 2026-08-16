@@ -577,6 +577,17 @@ export default function CalendarPane({
   // reach it: the Year has no FullCalendar api, so ‹ › and ⌘T move a cursor
   // instead. The DayCtx it reads is built further down, next to `hidden`.
   const [yearCursor, setYearCursor] = useState(() => now.getFullYear());
+  // Mount the Year on first use and never unmount it again. 365 cells cost
+  // ~150ms to build, which is fine once and awful per click — but mounting it
+  // eagerly would move that onto app boot, where nobody has asked for a year
+  // yet. Latched, never cleared: the second visit is a class toggle.
+  const [yearEverOpened, setYearEverOpened] = useState(view === "year");
+  /** Host size FullCalendar was last laid out at, so a reveal only reflows when
+   *  the box really changed. See the changeView effect. */
+  const fcSizeRef = useRef({ w: 0, h: 0 });
+  useEffect(() => {
+    if (view === "year") setYearEverOpened(true);
+  }, [view]);
 
   // One place paging is decided, so the toolbar buttons, the hotkeys and the
   // trackpad gesture can't drift into three different ideas of "next".
@@ -884,7 +895,26 @@ export default function CalendarPane({
   useEffect(() => {
     if (!isFcView(view)) return; // the board and the Year aren't FullCalendar views
     const api = calRef.current?.getApi();
-    if (api && api.view.type !== view) api.changeView(view);
+    if (!api) return;
+    if (api.view.type !== view) api.changeView(view);
+    // FullCalendar is hidden rather than unmounted now (see the render), and a
+    // re-measure of the whole grid is expensive — ~100ms — so it must not be
+    // paid on every reveal. `invisible` over a stable `absolute inset-0` keeps
+    // the box it already had, so usually there is nothing to re-measure; the
+    // exception is the Spread, which collapses the whole stack to `display:none`
+    // and does return a zero box. Measure, and only reflow when it actually
+    // moved. rAF so the class change has landed first.
+    const raf = requestAnimationFrame(() => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w === 0 || h === 0) return; // still hidden — nothing meaningful to measure
+      if (w === fcSizeRef.current.w && h === fcSizeRef.current.h) return;
+      fcSizeRef.current = { w, h };
+      calRef.current?.getApi()?.updateSize();
+    });
+    return () => cancelAnimationFrame(raf);
   }, [view]);
 
   // Restore the remembered time-grid scroll on (re)mount, then keep the cache
@@ -925,8 +955,23 @@ export default function CalendarPane({
     [settings],
   );
 
-  const yearCtx = useMemo<DayCtx | null>(() => {
-    if (view !== "year") return null;
+  // `now` ticks every 30 seconds in Planner, and this ctx is the cache key that
+  // `buildYearLoads` weighs 365 days against — so a live `now` would throw the
+  // year away twice a minute. Nothing in a day's *load* depends on the time of
+  // day (only `buildDayPlan` reads `ctx.now`, for isToday/isPast; the load path
+  // reads the working window and the busy list), so day granularity is not an
+  // approximation here, it is the honest key. The live `now` still reaches the
+  // view as a prop, which is what draws today's ring.
+  const nowDayISO = toDateISO(now);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dayStableNow = useMemo(() => startOfDay(now), [nowDayISO]);
+
+  // NOT gated on `view === "year"`. It used to be, and that quietly defeated
+  // the whole cache: leaving the Year dropped the ctx, coming back built a new
+  // object, and a new identity is a WeakMap miss — so every single visit re-paid
+  // ~180ms of day math. Building it always costs an object and a small Map per
+  // data change, which is nothing, and buys a free return trip.
+  const yearCtx = useMemo<DayCtx>(() => {
     const slotChildren: Record<string, Task[]> = {};
     for (const s of slots) slotChildren[s.id] = slotTasks[s.id] ?? [];
     return {
@@ -938,10 +983,10 @@ export default function CalendarPane({
       hidden,
       workStart: (settings?.work_start_minutes ?? 480),
       workEnd: (settings?.work_end_minutes ?? 990),
-      now,
+      now: dayStableNow,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, events, tasks, slots, slotTasks, hidden, hiddenKeys, settings, now, slotTitle]);
+  }, [events, tasks, slots, slotTasks, hidden, hiddenKeys, settings, dayStableNow, slotTitle]);
 
   // The Year has no FullCalendar to fire `datesSet`, so it asks for its own
   // span — otherwise it shades 365 confidently empty days, which is the one
@@ -2492,7 +2537,10 @@ export default function CalendarPane({
             drag-region gap between. Also fills the macOS titlebar zone (titlebar-pad). */}
       <div
         data-tauri-drag-region="deep"
-        className="titlebar-pad grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-4 py-2"
+        // `pb-2`, not `py-2`: `.titlebar-pad` owns the top (its own 0.5rem base
+        // plus the macOS titlebar inset), and declaring padding-top here too
+        // just re-creates the collision that flattened it — see index.css.
+        className="titlebar-pad grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-4 pb-2"
       >
         {/* Left — Show panels (focus exit only) + period nav */}
         <div className="flex min-w-0 items-center gap-1">
@@ -2705,24 +2753,48 @@ export default function CalendarPane({
         />
       )}
 
-      {/* ── The Year — the density lens, over the same day-load kernel ──── */}
-      {view === "year" && yearCtx && (
-        <CalendarYear
-          year={yearCursor}
-          ctx={yearCtx}
-          now={now}
-          weekStartsOn={firstDayOfWeek(settings)}
-          loading={eventsLoading}
-          onPickDay={(d) => openYearDate(d, "timeGridDay")}
-          onPickMonth={(d) => openYearDate(d, "dayGridMonth")}
-        />
-      )}
+      {/* ── The grid stack ────────────────────────────────────────────────
+            The Year and FullCalendar share one relative box and are BOTH
+            absolutely positioned inside it, both always at the pane's real
+            size. That is what makes switching between them free:
 
-      {/* ── FullCalendar ────────────────────────────────────────────────── */}
-      {isFcView(view) && (
-      <div
-        ref={wrapRef}
-        className="nuvo-cal-host min-h-0 flex-1 p-2"
+            · Neither is unmounted, so neither is rebuilt. FullCalendar cost
+              **111ms of blocking main thread** to construct, and the Year costs
+              ~150ms to mount 365 cells — paid once each, not per click.
+            · Neither ever loses its box. `display:none` measures as zero, so a
+              revealed FullCalendar had to re-measure its whole grid before it
+              could be drawn; `invisible` over a stable `inset-0` keeps the
+              geometry it already had, and the reveal is a paint.
+
+            The Year mounts LAZILY and then stays (`yearEverOpened`) — always
+            mounting it would move its cost onto app boot, which is the one
+            place nobody is waiting for a year.
+
+            The Spread (`board`) is a different animal: it replaces the pane
+            rather than sharing it, so the whole stack stands down for it. */}
+      <div className={`relative min-h-0 flex-1 ${view === "board" ? "hidden" : ""}`}>
+        {yearEverOpened && (
+          <div
+            className={`absolute inset-0 flex flex-col ${view === "year" ? "" : "invisible pointer-events-none"}`}
+            aria-hidden={view !== "year"}
+          >
+            <CalendarYear
+              year={yearCursor}
+              ctx={yearCtx}
+              now={now}
+              weekStartsOn={firstDayOfWeek(settings)}
+              loading={eventsLoading}
+              onPickDay={(d) => openYearDate(d, "timeGridDay")}
+              onPickMonth={(d) => openYearDate(d, "dayGridMonth")}
+            />
+          </div>
+        )}
+
+        {/* FullCalendar — the other half of the stack. See the box above. */}
+        <div
+          ref={wrapRef}
+          className={`nuvo-cal-host absolute inset-0 p-2 ${isFcView(view) ? "" : "invisible pointer-events-none"}`}
+          aria-hidden={!isFcView(view)}
         style={
           {
             "--nuvo-hour": `${pxPerHour}px`,
@@ -2737,7 +2809,11 @@ export default function CalendarPane({
         <FullCalendar
           ref={calRef}
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
-          initialView={view}
+          // Only read at mount. The pane can now mount while a non-FC view is
+          // active (a reload straight into the Year), and "year" is not a
+          // FullCalendar view name — it would throw. The changeView effect
+          // above puts it right the moment an FC view is selected.
+          initialView={isFcView(view) ? view : "timeGridWeek"}
           initialDate={remountCache.dateISO ?? undefined}
           headerToolbar={false}
           allDaySlot={!isMonth}
@@ -2901,11 +2977,11 @@ export default function CalendarPane({
           eventMouseEnter={onEventHover}
           eventMouseLeave={onEventUnhover}
           eventContent={renderEvent}
-          eventDidMount={handleEventDidMount}
-          datesSet={handleDatesSet}
-        />
+            eventDidMount={handleEventDidMount}
+            datesSet={handleDatesSet}
+          />
+        </div>
       </div>
-      )}
 
       {wxPopover && (
         <WeatherPopover
