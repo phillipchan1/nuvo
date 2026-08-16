@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useWeekCrown, type WeekCrownRow } from "../hooks/useWeekCrown";
+import { carryMark } from "../lib/priorities";
 import { fmtDayTime } from "../lib/dates";
 import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
 import { ProjectShipAssess } from "./record/ShipAssess";
@@ -280,8 +281,8 @@ function PriorityRow({
         <span className="flex shrink-0 items-center gap-1.5">
           {/* Carrying isn't *now* — the number tells it, the border shouted it. */}
           {rolls > 0 && (
-            <span className="mono text-micro text-muted" title={`Carried into week ${rolls + 1}`}>
-              wk {rolls + 1}
+            <span className="mono text-micro text-muted" title={carryMark(rolls).title}>
+              {carryMark(rolls).text}
             </span>
           )}
           {work.total > 0 && (

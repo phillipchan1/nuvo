@@ -27,7 +27,7 @@ import { Icon } from "../Icon";
 import { format } from "date-fns";
 import { useVertical } from "../../hooks/useVertical";
 import { useWeekDraft } from "../../hooks/useWeekDraft";
-import { projectsOnDeck, weekPushes } from "../../lib/priorities";
+import { carryMark, projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { lensGaps } from "../../lib/lenses";
 import { domainById, taskDomainColor, type Project, type VerticalData } from "../../lib/vertical";
 import { fmtHours as hrs, parseDateISO, planningWeekStartISO } from "../../lib/dates";
@@ -448,7 +448,7 @@ export function ProjectsStep({
 
       {pushes.length > 0 ? (
         <div className="mt-3 border-t border-line">
-          {pushes.map(({ project, shipped }) => {
+          {pushes.map(({ project, shipped, carried }) => {
             const color = domainById(data, project.domainId)?.color ?? "var(--accent)";
             const gaps = lensGaps(data, "project", project, new Date());
             const ready = gaps.length === 0;
@@ -465,6 +465,14 @@ export function ProjectsStep({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
                       <span className="min-w-0 flex-1 truncate text-body text-ink">{project.name}</span>
+                      {/* It's here because its week passed, not because you just
+                          chose it — say so, or the slate reads as five fresh
+                          decisions when two of them are debt. */}
+                      {carried > 0 && (
+                        <span className="mono shrink-0 text-micro text-muted" title={carryMark(carried).title}>
+                          {carryMark(carried).text}
+                        </span>
+                      )}
                       {/* how much of this project's work is in the week — a meter
                           and a fraction, where a clause used to be */}
                       {work.length > 0 && (

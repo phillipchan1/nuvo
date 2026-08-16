@@ -59,8 +59,9 @@ const DATA: VerticalData = {
 };
 
 const PUSHES = [
-  { project: PROJECTS[0], rock: null, done: false, shipped: false },
-  { project: PROJECTS[1], rock: null, done: false, shipped: false },
+  { project: PROJECTS[0], rock: null, done: false, shipped: false, carried: 0 },
+  // one carrying, so the harness shows what a project whose week passed looks like
+  { project: PROJECTS[1], rock: null, done: false, shipped: false, carried: 2 },
 ];
 
 // the pull, already split the way `useWeekDraft.byLane` splits it

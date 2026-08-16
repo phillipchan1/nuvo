@@ -29,6 +29,7 @@
 import { useState } from "react";
 import { Icon } from "../Icon";
 import { fmtDayTime } from "../../lib/dates";
+import { carryMark } from "../../lib/priorities";
 import { useWeekCrown, type WeekCrownRow } from "../../hooks/useWeekCrown";
 import { WeekPlanSheet } from "./WeekPlanCard";
 
@@ -230,9 +231,12 @@ function CrownRow({
             <span className="mono shrink-0 text-micro font-medium text-accent">ready to ship</span>
           ) : (
             <span className="flex shrink-0 items-center gap-1.5">
+              {/* Carried — the same words the rail crown uses (D-108), because
+                  the phone inherited the carry the moment the slate became a
+                  read model. */}
               {rolls > 0 && (
-                <span className="mono text-micro text-muted" aria-label={`Carried into week ${rolls + 1}`}>
-                  wk {rolls + 1}
+                <span className="mono text-micro text-muted" aria-label={carryMark(rolls).title}>
+                  {carryMark(rolls).text}
                 </span>
               )}
               {work.total > 0 && (

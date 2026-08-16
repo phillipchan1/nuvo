@@ -58,6 +58,10 @@ const PROJECTS: Project[] = [
   proj({ id: "p4", domainId: "d1", name: "Obi handoff doc", status: "complete", shippedAt: at(1, 16) }),
   proj({ id: "p5", domainId: "d2", name: "Family photo album", startDate: day(14), targetDate: day(18) }), // not this week
   proj({ id: "p6", domainId: "d2", name: "Photo wall" }), // every open piece has a time
+  // its committed week ended a fortnight ago and it's still open — it CARRIES
+  // onto this week (D-108), and must arrive marked and ordered after the rows
+  // this week actually chose.
+  proj({ id: "p7", domainId: "d1", name: "Teach the kids to ride", startDate: day(-14), targetDate: day(-10) }),
 ];
 
 const vt = (o: Record<string, unknown>): VTask =>
@@ -82,6 +86,7 @@ const VTASKS: VTask[] = [
   vt({ id: "t5", title: "Collect the quotes", projectId: "p2" }),
   vt({ id: "t6", title: "Hire the skip", projectId: "p3", status: "done" }),
   vt({ id: "t7", title: "Hang the frames", projectId: "p6", status: "scheduled" }),
+  vt({ id: "t8", title: "Find the training wheels", projectId: "p7" }),
 ];
 
 const task = (o: Record<string, unknown>): Task =>
@@ -105,6 +110,7 @@ const TASKS: Task[] = [
   task({ id: "t5", title: "Collect the quotes", project_id: "p2" }),
   task({ id: "t6", title: "Hire the skip", project_id: "p3", status: "done" }),
   task({ id: "t7", title: "Hang the frames", project_id: "p6", status: "planned", start_time: at(4, 10) }),
+  task({ id: "t8", title: "Find the training wheels", project_id: "p7" }),
 ];
 
 const SLOTS = [{ id: "s1", title: "Rollout sitting", project_id: "p1", start_time: at(3, 14) }] as unknown as Slot[];
@@ -159,7 +165,9 @@ const read = async () => {
 describe("useWeekCrown", () => {
   it("is the week's SLATE — spans decide membership, not a stored list", async () => {
     const crown = await read();
-    expect(crown.rows.map((r) => r.projectId)).toEqual(["p1", "p2", "p3", "p4", "p6"]);
+    // Chosen-for-this-week first, carried after (`slateOrder`) — p5 is a future
+    // week and correctly absent.
+    expect(crown.rows.map((r) => r.projectId)).toEqual(["p1", "p2", "p3", "p4", "p6", "p7"]);
     expect(crown.weekISO).toBe(WEEK_ISO);
   });
 
@@ -169,7 +177,7 @@ describe("useWeekCrown", () => {
     expect(shipped.state).toBe("shipped");
     // landed = the verdict rows: p2 (done_at) and p4 (shipped in-week)
     expect(crown.landed).toBe(2);
-    expect(crown.total).toBe(5);
+    expect(crown.total).toBe(6);
   });
 
   it("says a landed push CONTINUES when its project still has open work", async () => {
@@ -204,7 +212,16 @@ describe("useWeekCrown", () => {
     expect(crown.rows.find((r) => r.projectId === "p2")!.placedLabel).toBe("0 of 1 placed");
     // And nothing homeless is a plain fact, not a warning (P9).
     expect(crown.rows.find((r) => r.projectId === "p6")!.placedLabel).toBe("all placed");
-    expect(crown.looseCount).toBe(2); // p1's t4 and p2's untimed t5
+    expect(crown.looseCount).toBe(3); // p1's t4, p2's t5, and the carried p7's t8
+  });
+
+  it("brings an unfinished project's week forward, marked and ordered last", async () => {
+    const crown = await read();
+    const carried = crown.rows.at(-1)!;
+    expect(carried.projectId).toBe("p7");
+    // The carry is DERIVED from the lapsed span, not from a stored roll_count —
+    // so the phone's crown gets it for free (D-108 + D-109).
+    expect(carried.rolls).toBeGreaterThan(0);
   });
 
   it("carries the row's identity — domain hue, carry count, progress", async () => {

@@ -7,6 +7,10 @@
 // phone couldn't answer "what am I carrying this week, and does it have a time"
 // at all — the answer wasn't a model, it was a component.
 //
+// Row ORDER is the kernel's too (`slateOrder`, via `weekPushes`): what you chose
+// for this week first, then what carried into it, longest-carrying first — so a
+// surface can render the list as it comes and still be right.
+//
 // Nothing here is new logic. `weekPushes` derives membership from the spans,
 // `priorityWork` says what a push owns, `useLooseWork.splitFor` cuts the open
 // work by whether it has a time this week, `pushState` names the row's state.
@@ -39,7 +43,9 @@ export interface WeekCrownRow {
   work: RockWork;
   /** 0–100, derived from the project's own tasks */
   pct: number;
-  /** weeks carried: 0 = first week on this */
+  /** weeks it has been carrying past the week it was committed to — 0 when this
+   *  is the week you actually chose it for. Derived (D-108), not stored; render
+   *  it through `carryMark` so both shells say the same thing. */
   rolls: number;
   /** open pieces that HAVE a time this week, earliest first */
   placed: PlacedPiece[];

@@ -17,7 +17,7 @@
 // no acts.
 
 import { useState } from "react";
-import { pushState, type PushState } from "../../lib/priorities";
+import { carryMark, pushState, type PushState } from "../../lib/priorities";
 import { fmtHours } from "../../lib/dates";
 import { RemedyPanel } from "./RemedyPanel";
 import { FindTimeProposal } from "./FindTimeProposal";
@@ -141,7 +141,7 @@ export function WeekProjectRow({
               {p.total > 0 && <span>{p.done} of {p.total} done</span>}
               {p.total > 0 && line && <span> · </span>}
               {line}
-              {rolls > 0 && <span title={`Carried into week ${rolls + 1}`}> · wk {rolls + 1}</span>}
+              {rolls > 0 && <span title={carryMark(rolls).title}> · {carryMark(rolls).text}</span>}
             </div>
           )}
         </div>

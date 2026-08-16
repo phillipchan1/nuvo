@@ -28,6 +28,10 @@ export interface SlateProject {
   targetDate: string | null;
   /** the stored per-week verdict, when one exists (big_rocks joined by project) */
   priorityId: string | null;
+  /** Whole weeks this project has been carrying past the week it was committed
+   *  to — 0 when this week is the one it was actually chosen for. Non-zero means
+   *  it is here because it is unfinished, not because it was picked. */
+  carriedWeeks: number;
   /** The whole stored record, when there is one — title, win condition and roll
    *  count included. It lives HERE, on the project it belongs to, rather than in
    *  a separate top-level list that reads like a competing answer to "what are

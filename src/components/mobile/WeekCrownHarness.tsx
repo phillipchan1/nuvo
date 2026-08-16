@@ -10,8 +10,8 @@
 //
 // The fixtures cover every state a row can be in — in motion with homeless
 // work, carried from an earlier week, fully placed, every task done (ready to
-// ship), a landed week-verdict over a project that continues, and one shipped
-// inside the week.
+// ship), a landed week-verdict over a project that continues, one shipped
+// inside the week, and one whose week lapsed and is now carrying (D-108).
 
 import { useMemo, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -84,6 +84,9 @@ const PROJECTS: Project[] = [
   proj({ id: "p5", domainId: "d1", name: "Obi handoff doc", status: "complete", shippedAt: at(1, 16) }),
   // NOT on this week — proves the slate is derived from the span, not the list
   proj({ id: "p6", domainId: "d2", name: "Family photo album", startDate: day(14), targetDate: day(18) }),
+  // its week ended a fortnight ago and it's still open — it CARRIES onto this
+  // week (D-108), arriving marked `wk 3` and ordered after the chosen rows
+  proj({ id: "p7", domainId: "d3", name: "Teach the kids to ride", startDate: day(-14), targetDate: day(-10) }),
 ];
 
 const vt = (o: Partial<VTask> & { id: string; title: string; projectId: string }): VTask =>
@@ -115,6 +118,7 @@ const VTASKS: VTask[] = [
   vt({ id: "t8", title: "Clear the shelving", projectId: "p3", status: "done" }),
   vt({ id: "t9", title: "Collect the last two quotes", projectId: "p4" }),
   vt({ id: "t10", title: "Send Obi the doc", projectId: "p5", status: "done" }),
+  vt({ id: "t11", title: "Find the training wheels", projectId: "p7" }),
 ];
 
 const task = (o: Partial<Task> & { id: string; title: string; project_id: string }): Task =>
@@ -162,6 +166,7 @@ const TASKS: Task[] = [
   task({ id: "t8", title: "Clear the shelving", project_id: "p3", status: "done" }),
   task({ id: "t9", title: "Collect the last two quotes", project_id: "p4", duration_minutes: 30 }),
   task({ id: "t10", title: "Send Obi the doc", project_id: "p5", status: "done" }),
+  task({ id: "t11", title: "Find the training wheels", project_id: "p7", duration_minutes: 60 }),
 ];
 
 // The blocks query is range-scoped — same window `useLooseWork` asks for.

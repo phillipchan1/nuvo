@@ -146,7 +146,7 @@ it needs to work on a phone.
   crown (`WeekPanel`) and the phone's Calendar crown (`mobile/MobileWeekCrown`) are two
   layouts over it. **Never re-derive the slate in a surface** — that composition
   (`weekPushes` → `pushAsRock` → `priorityWork` → `splitFor`) lived inside `WeekPanel`, and
-  that is exactly why the phone couldn't say what the week was carrying at all (D-108).
+  that is exactly why the phone couldn't say what the week was carrying at all (D-109).
   The phone deliberately differs in three ways and no more: the rows collapse (the shut
   header still carries the scoreboard *and* the loose count), there is no ship circle
   (shipping is the record sheet's act — one vocabulary), and loose work **taps** to its
