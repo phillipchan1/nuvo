@@ -67,7 +67,7 @@ export function CalLensPill({ lens, onLens }: { lens: CalLens; onLens: (l: CalLe
             onClick={() => !on && onLens(f.id)}
             aria-pressed={on}
             data-on={on}
-            className={`fast relative rounded-full px-3 py-1 text-label font-medium after:absolute after:-inset-2 after:content-[''] ${
+            className={`fast relative rounded-full px-2.5 py-1 text-label font-medium after:absolute after:-inset-2 after:content-[''] ${
               on ? "bg-surface text-accent" : "text-muted"
             }`}
             style={on ? { boxShadow: "var(--shadow-1)" } : undefined}
@@ -201,7 +201,9 @@ export default function MobileDayView({
           className="tap fast flex items-center gap-0.5 px-3 py-2.5 text-body font-medium text-accent active:opacity-70"
         >
           <span className="text-head leading-none">‹</span>
-          {format(selected, "MMMM yyyy")}
+          {/* Compact on purpose: this row carries up to six controls at 375px, and
+              the three drill-in lenses wear ONE back-header — see MobileCalendar. */}
+          {format(selected, "MMM yyyy")}
         </button>
         <div className="flex-1" />
         <CalLensPill lens="day" onLens={onLens} />

@@ -279,13 +279,17 @@ export default function MobileCalendar({
 
   return (
     <div className="fab-clear">
-      {/* The week's crown — the Schedule rail's crown, on the phone. It rides
-          the two lenses that ARE the week or wider (Month, Week), where "what am
-          I carrying, and does it have a time" is the question you're already
-          asking. The drill-in lenses (Day, List) are a single day's answer and
-          the Year is a different altitude entirely, so it stays out of those
-          rather than following you everywhere (P8). */}
-      {(mode === "month" || mode === "week") && onOpenProject && onOpenTask && onPlanWeek && (
+      {/* The week's crown — the Schedule rail's crown, on the phone, and the
+          Calendar tab's context strip in EVERY lens.
+          
+          It shipped on Month and Week only, on the theory that a day-scoped lens
+          answers a different question (P8). That was wrong in use: "what is this
+          week carrying" is the context you read a Tuesday *against*, so a crown
+          you can only reach by backing out to the month is a crown you don't
+          have. The desktop rail never leaves either — it is beside the day grid,
+          the week grid and the agenda alike. One position, one collapse state,
+          every lens. */}
+      {onOpenProject && onOpenTask && onPlanWeek && (
         <MobileWeekCrown
           now={now}
           onOpenProject={onOpenProject}
@@ -376,6 +380,45 @@ export default function MobileCalendar({
         />
       )}
     </div>
+  );
+}
+
+// ── Jump to any date — the OS picker behind a 44px glyph ─────────────────────
+function DateJump({ anchor, onJumpTo }: { anchor: Date; onJumpTo: (d: Date) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          const el = ref.current;
+          if (!el) return;
+          // `showPicker` where it exists (iOS 16+, every desktop engine we run
+          // on); focus is the honest fallback rather than a dead glyph.
+          try {
+            el.showPicker();
+          } catch {
+            el.focus();
+          }
+        }}
+        aria-label="Jump to date"
+        className="tap fast flex h-11 w-11 items-center justify-center rounded-full text-muted active:bg-surface-2"
+      >
+        <Icon name="calendar" size={16} />
+      </button>
+      <input
+        ref={ref}
+        type="date"
+        value={anchor.toLocaleDateString("en-CA")}
+        onChange={(e) => {
+          const [y, m, d] = e.target.value.split("-").map(Number);
+          if (y && m && d) onJumpTo(new Date(y, m - 1, d));
+        }}
+        aria-label="Jump to date"
+        className="sr-only"
+        tabIndex={-1}
+      />
+    </>
   );
 }
 
@@ -824,33 +867,33 @@ export function ScheduleView({
       {/* Back header — pops to the month grid and names where you'll land; the
           pill switches to the Day lens on the day you're scrolled to. The
           timezone chip names the clock these times are in (and flags travel). */}
-      <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-line bg-surface/90 pr-3 backdrop-blur">
+      {/* Six controls on a 375px row — back · jump · lens · zone · new. It is
+          over-subscribed by ~30px, and flexbox pays for that by wrapping the
+          month name onto two lines, which reads like a broken header. `gap-1`
+          and a nowrap label spend the difference: the label truncates as a last
+          resort rather than folding. */}
+      <div className="sticky top-0 z-20 flex items-center gap-1 border-b border-line bg-surface/90 pr-2 backdrop-blur">
         <button
           onClick={onBack}
-          className="tap fast flex items-center gap-0.5 px-3 py-2.5 text-body font-medium text-accent active:opacity-70"
+          className="tap fast flex min-w-0 items-center gap-0.5 px-2 py-2.5 text-body font-medium text-accent active:opacity-70"
         >
           <span className="text-head leading-none">‹</span>
-          {format(anchor, "MMMM yyyy")}
+          <span className="truncate whitespace-nowrap">{format(anchor, "MMM yyyy")}</span>
         </button>
         <div className="flex-1" />
         {onJumpTo && (
           // A date jump — reaching "three Tuesdays ago" used to cost repeated
           // "Earlier days" taps plus a long scroll. The OS date picker reaches
-          // any date in a couple of taps; the invisible input fills the 44px
-          // button so tapping the glyph IS tapping the picker.
-          <label className="tap fast relative flex items-center justify-center rounded-full text-muted active:bg-surface-2" aria-label="Jump to date">
-            <Icon name="calendar" size={16} />
-            <input
-              type="date"
-              value={anchor.toLocaleDateString("en-CA")}
-              onChange={(e) => {
-                const [y, m, d] = e.target.value.split("-").map(Number);
-                if (y && m && d) onJumpTo(new Date(y, m - 1, d));
-              }}
-              aria-label="Jump to date"
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            />
-          </label>
+          // any date in a couple of taps.
+          //
+          // The input is `sr-only` and the BUTTON opens it (`showPicker`, the
+          // same idiom `PlacementBand` and `InlineDate` already use). It used to
+          // be a transparent full-size input laid over the glyph, and iOS paints
+          // a date control's own value while its picker is open — at the
+          // control's intrinsic width, which is twice this 44px button. So
+          // "Aug 17," smeared across the header behind the calendar glyph every
+          // time you opened it. Nothing is left to paint now.
+          <DateJump anchor={anchor} onJumpTo={onJumpTo} />
         )}
         <CalLensPill lens="schedule" onLens={(l) => l === "day" && onDayLens(topDay())} />
         <TimeZoneChip now={ctx.now} />

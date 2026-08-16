@@ -3761,10 +3761,16 @@ computes anything; `tests/week-crown.test.tsx` holds the read.
   own sheet, where the date and time already are. Same act, the phone's gesture —
   never a hidden or hover-only affordance.
 
-**It rides Month and Week only** — the two lenses that *are* the week or wider.
-Day and List are one day's answer and the Year is another altitude; a crown that
-followed you into all of them would be a second subject on a surface that has
-one (P8).
+**It rides every Calendar lens.** It shipped on Month and Week only, reasoning
+that a day-scoped lens answers a different question and a crown following you
+into all of them is a second subject on a one-subject surface (P8). Phil used it
+and that was wrong: *"I can only access it when I'm on the month view, which
+doesn't make sense — this is weak context, I should be able to access it when I'm
+not in the month."* The week is what you read a Tuesday **against**, so a crown
+you reach by backing out to the month is a crown you don't have — and the
+desktop rail, the thing this is a copy of, never leaves either. One position, one
+remembered collapse state, every lens. P8 is satisfied the way the rail satisfies
+it: the crown is the tab's context strip, not a competing subject.
 
 **Note what this is NOT: it is not N-16 in reverse.** That row killed a desktop
 Agenda built because the phone had a list — *symmetry* dressed as a need. The

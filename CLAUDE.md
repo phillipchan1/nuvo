@@ -147,10 +147,12 @@ it needs to work on a phone.
   layouts over it. **Never re-derive the slate in a surface** — that composition
   (`weekPushes` → `pushAsRock` → `priorityWork` → `splitFor`) lived inside `WeekPanel`, and
   that is exactly why the phone couldn't say what the week was carrying at all (D-110).
-  The phone deliberately differs in three ways and no more: the rows collapse (the shut
-  header still carries the scoreboard *and* the loose count), there is no ship circle
-  (shipping is the record sheet's act — one vocabulary), and loose work **taps** to its
-  sheet instead of dragging. Verify both at once at `?weekcrown`
+  The phone's crown rides **every** Calendar lens (Month · List · Day · Week · Year), the
+  way the rail crown sits beside every desktop view — it shipped Month-only and that made
+  it a crown you had to back out to reach. The phone deliberately differs in three ways and
+  no more: the rows collapse (the shut header still carries the scoreboard *and* the loose
+  count), there is no ship circle (shipping is the record sheet's act — one vocabulary),
+  and loose work **taps** to its sheet instead of dragging. Verify both at once at `?weekcrown`
   (`mobile/WeekCrownHarness.tsx`), which also renders the in-situ Calendar tab.
 - **The Build rungs wear the same four faces on both shells** — **On Deck · Groom · All
   (Table) · Shipped**, in that order, at the project *and* initiative altitudes. Desktop:

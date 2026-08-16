@@ -282,11 +282,18 @@ export default function WeekCrownHarness() {
                   style={{ width: 375, height: 640 }}
                 >
                   <div className="atmosphere h-full overflow-y-auto">
+                    {/* Wired exactly as `MobileShell` wires it — including the
+                        ＋, so the lens headers here are as crowded as the real
+                        ones. A frame missing a control measures a header the
+                        phone never has. */}
                     <MobileCalendar
                       now={new Date()}
                       onOpenProject={(id) => say(`open project ${id}`)}
                       onOpenTask={(id) => say(`open task ${id}`)}
                       onPlanWeek={() => say("plan the week")}
+                      onNewEvent={(d) => say(`new event ${toDateISO(d)}`)}
+                      onTapEvent={() => say("tap event")}
+                      onOpenUpkeep={() => say("open upkeep")}
                     />
                   </div>
                 </div>

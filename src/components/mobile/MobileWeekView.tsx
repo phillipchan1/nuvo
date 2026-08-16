@@ -146,7 +146,7 @@ export default function MobileWeekView({
           className="tap fast flex items-center gap-0.5 px-3 py-2.5 text-body font-medium text-accent active:opacity-70"
         >
           <span className="text-head leading-none">‹</span>
-          {format(weekStart, "MMMM yyyy")}
+          {format(weekStart, "MMM yyyy")}
         </button>
         <div className="flex-1" />
         <CalLensPill lens="week" onLens={(l) => onLens(l, selected)} />
