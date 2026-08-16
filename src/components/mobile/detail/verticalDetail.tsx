@@ -40,6 +40,7 @@ import { ripenessOfInitiative, ripenessOfProject, verdictOf } from "../../../lib
 import { DomainPicker, InitiativePicker, ProjectAttachPicker, RipenessPip } from "../../floors/parts";
 import { ShipStamp } from "../../ShipStamp";
 import { whenText } from "../../floors/TaskList";
+import DurationSelect from "../../DurationSelect";
 
 export type Store = ReturnType<typeof useVertical>;
 
@@ -304,6 +305,7 @@ export function InitiativeScreen({
                 t={t}
                 onToggle={() => store.toggleTask(t.id)}
                 onDelete={() => store.deleteTask(t.id)}
+                onPatch={(patch) => store.updateTask(t.id, patch)}
               />
             ))}
           </CardList>
@@ -384,6 +386,7 @@ export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store;
                 t={t}
                 onToggle={() => store.toggleTask(t.id)}
                 onDelete={() => store.deleteTask(t.id)}
+                onPatch={(patch) => store.updateTask(t.id, patch)}
               />
             ))}
           </CardList>
@@ -455,7 +458,19 @@ export function ProjectRow({ d, p, onClick }: { d: VerticalData; p: Project; onC
   );
 }
 
-export function TaskRow({ t, onToggle, onDelete }: { t: VTask; onToggle: () => void; onDelete?: () => void }) {
+export function TaskRow({
+  t,
+  onToggle,
+  onDelete,
+  onPatch,
+}: {
+  t: VTask;
+  onToggle: () => void;
+  onDelete?: () => void;
+  /** Rename + re-time the task in place. Omit to fall back to a read-only row
+   *  (e.g. a domain's read-only reach-through, if one ever needs this row). */
+  onPatch?: (patch: Partial<VTask>) => void;
+}) {
   const done = t.status === "done";
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
@@ -470,7 +485,27 @@ export function TaskRow({ t, onToggle, onDelete }: { t: VTask; onToggle: () => v
       >
         ✓
       </button>
-      <span className={`min-w-0 flex-1 truncate text-body ${done ? "text-muted line-through" : ""}`}>{t.title}</span>
+      {/* Tap-to-edit, no separate mode — the same `defaultValue` + commit-on-blur
+          idiom as `TextField` above. This is the fix for the phone having no way
+          to rename or re-time a task once it's on a project: the ✕ was the only
+          thing you could do to it besides check it off. */}
+      {onPatch ? (
+        <input
+          key={t.title}
+          defaultValue={t.title}
+          onBlur={(e) => {
+            const next = e.target.value.trim();
+            if (next && next !== t.title) onPatch({ title: next });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+          aria-label="Task title"
+          className={`min-w-0 flex-1 truncate bg-transparent text-body outline-none ${done ? "text-muted line-through" : ""}`}
+        />
+      ) : (
+        <span className={`min-w-0 flex-1 truncate text-body ${done ? "text-muted line-through" : ""}`}>{t.title}</span>
+      )}
       {/* Same read as the desktop record, same helper — a project that can say
           which work has a time on one shell and not the other is the drift the
           golden rule exists to stop. The title truncates, so this never pushes
@@ -478,7 +513,16 @@ export function TaskRow({ t, onToggle, onDelete }: { t: VTask; onToggle: () => v
       {!done && whenText(t) && (
         <span className="mono shrink-0 whitespace-nowrap text-micro text-muted">{whenText(t)}</span>
       )}
-      {t.durationMins ? <span className="mono shrink-0 text-meta text-muted">{t.durationMins}m</span> : null}
+      {onPatch ? (
+        <DurationSelect
+          value={t.durationMins}
+          onChange={(m) => onPatch({ durationMins: m })}
+          className="shrink-0 rounded px-1 py-0.5 active:bg-surface-2"
+          title="Sitting length"
+        />
+      ) : t.durationMins ? (
+        <span className="mono shrink-0 text-meta text-muted">{t.durationMins}m</span>
+      ) : null}
       {/* desktop deletes on hover; a phone has no hover, so the ✕ is always
           there. `deleteTask` files its own Undo, same as the record. */}
       {onDelete && (
