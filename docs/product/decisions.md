@@ -3797,3 +3797,23 @@ Verified over fixtures at **?weekcrown**, which renders both crowns and the
 in-situ Calendar tab over one set of data — including a carried row — so a
 divergence between the shells shows up as a difference you can see.
 *Status: standing.*
+
+→ **Trimmed 2026-08-16, same day, on first real use.** Phil: *"there's a lot of
+visual conflict now because there's so much going on — the collapsed version can
+hold a lot less information."* Shut, the crown had been carrying six marks: the
+span, a scoreboard, a meter, an amber sentence, an accent door and a chevron —
+above a month grid that is itself dense. A header that competes with its own
+screen is the failure P9 names, and the fault was mine: every one of those marks
+was defensible alone, and nobody counted them together.
+
+Shut is now **one line, three things**: `This week · 2 of 6 landed`, the amber
+loose count when something is homeless, a chevron. 45px, down from ~110. The
+span, the meter, the amber sentence and the door are one tap away. The loose
+count is the one detail that survives, for the reason it always was — "something
+has no time" must not be missable.
+
+Open lost two marks as well: the meter (a picture of the number beside it) and
+the "N pieces with no time yet" line (which every row restates in its own pill).
+And the first-run default flipped to **shut** — the original open default was
+argued on the grounds that a closed crown would be silent, and that stopped being
+true the moment the shut line carried the scoreboard.

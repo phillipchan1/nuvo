@@ -13,10 +13,12 @@
 //
 // Three deliberate differences from the desktop crown, all because this is a
 // phone:
-//   · The rows collapse. The month grid is the screen's subject; the crown is
-//     its header, and a five-project slate would push the grid off-screen. The
-//     choice is remembered, and the header keeps the *whole* honest summary
-//     (landed + loose) while shut, so collapsing hides depth, never the fact.
+//   · It collapses, and shut it is ONE line: "This week · 2 of 6 landed", the
+//     amber loose count if anything is homeless, a chevron. Nothing else. The
+//     month grid is the screen's subject and the crown is its header; a header
+//     carrying six marks over a dense grid is a surface arguing with itself.
+//     The choice is remembered. Shut hides depth, never the fact — which is why
+//     the loose count is the one detail that survives.
 //   · No ship circle. Shipping lives in one vocabulary (`recordActions`) reached
 //     from the record sheet's ⋯ — a tick here would be a second ship path, which
 //     is exactly how Delete ended up desktop-only. A finished-looking row says
@@ -37,12 +39,15 @@ const OPEN_KEY = "nuvo-mobile-weekcrown-open";
 
 function readOpen(): boolean {
   try {
-    // Default OPEN: the whole point of this surface is that the week's projects
-    // are *visible* from the Calendar. A closed default would ship the same
-    // silence with an extra tap in front of it.
-    return localStorage.getItem(OPEN_KEY) !== "0";
+    // Default SHUT. It shipped open, because a closed crown that said nothing
+    // would have been the same silence with an extra tap in front of it — but
+    // the shut line isn't silent any more: "This week · 2 of 6 landed · 3
+    // loose" is the glance, and the rows are the detail you ask for. Opening
+    // six projects over a month grid by default is the surface arguing with
+    // itself, which is exactly how it read on a real phone.
+    return localStorage.getItem(OPEN_KEY) === "1";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -86,56 +91,74 @@ export default function MobileWeekCrown({
   const action = planned ? "The plan ›" : "Plan the week";
   const openDoor = () => (planned ? setPlanOpen(true) : onPlanWeek());
 
+  // ── shut: one line, three things ──────────────────────────────────────────
+  // It used to carry the span, a scoreboard, a meter, an amber sentence, an
+  // accent door and a chevron — six marks stacked above a month grid that is
+  // itself dense, which is a header competing with its own screen. Shut, the
+  // crown answers one question ("is this week going?") and offers one gesture
+  // (open me). Everything it dropped is one tap away, and the amber count stays
+  // because "something has no time" is the fact you must not be able to miss.
+  if (!open) {
+    const openIt = () => (total === 0 ? openDoor() : setOpen(true));
+    return (
+      <section className="border-b border-line">
+        <button
+          onClick={openIt}
+          aria-expanded={false}
+          aria-label={total === 0 ? "Plan the week" : "Show this week's projects"}
+          className="tap-h fast flex w-full items-center gap-2 px-4 py-2 text-left active:bg-surface-2"
+        >
+          <span className="section-label !p-0 shrink-0">This week</span>
+          {total === 0 ? (
+            <span className="truncate text-body text-muted">nothing on it yet</span>
+          ) : (
+            <span className="shrink-0 text-body">
+              <span className="mono font-medium text-ink">{landed}</span>
+              <span className="text-muted"> of </span>
+              <span className="mono font-medium text-ink">{total}</span>
+              <span className="text-muted"> landed</span>
+            </span>
+          )}
+          <span className="flex-1" />
+          {looseCount > 0 && (
+            <span className="mono shrink-0 text-micro" style={{ color: "var(--signal)" }}>
+              {looseCount} loose
+            </span>
+          )}
+          {/* Pointing right: the one gesture this row offers is "open me" —
+              into the rows, or into the ritual when the week is empty. */}
+          <Icon name="chevron-down" size={13} className="-rotate-90 shrink-0 text-muted" />
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section className="border-b border-line px-4 pb-2 pt-3">
       <div className="flex items-start gap-2">
-        {/* Identity + scoreboard, and the disclosure. Tapping the summary opens
-            the depth; it never navigates, so the one place that *leaves* this
-            screen is the door on the right. */}
+        {/* Open: identity + the span it covers, the scoreboard, and the door.
+            No meter and no "N pieces with no time" line — the first restates the
+            scoreboard as a picture, the second restates every row's own amber
+            pill. The rows below are the detail; the header should not compete
+            with them. */}
         <button
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-          aria-label={open ? "Hide this week's projects" : "Show this week's projects"}
+          onClick={() => setOpen(false)}
+          aria-expanded
+          aria-label="Hide this week's projects"
           className="tap-h fast -ml-1 flex min-w-0 flex-1 items-start gap-1.5 rounded-lg px-1 py-1 text-left active:bg-surface-2"
         >
           <div className="min-w-0 flex-1">
             <div className="section-label !p-0" style={{ color: "var(--accent)" }}>
               This week · {weekLabel}
             </div>
-            {total === 0 ? (
-              <div className="mt-1 text-body text-muted">No projects on this week yet</div>
-            ) : (
-              <>
-                <div className="mt-1.5 flex items-center gap-2.5">
-                  <span className="shrink-0 text-body">
-                    <span className="mono font-medium text-ink">{landed}</span>
-                    <span className="text-muted"> of </span>
-                    <span className="mono font-medium text-ink">{total}</span>
-                    <span className="text-muted"> landed</span>
-                  </span>
-                  <span className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-                    <span
-                      className="block h-full rounded-full"
-                      style={{ width: `${(landed / total) * 100}%`, background: "var(--accent)" }}
-                    />
-                  </span>
-                </div>
-                {/* The fact that has to survive a collapsed crown: what has no
-                    time yet. Amber only when something is genuinely homeless
-                    (P9) — a fully-placed week says nothing at all. */}
-                {looseCount > 0 && (
-                  <div className="mono mt-1 text-micro" style={{ color: "var(--signal)" }}>
-                    {looseCount} piece{looseCount === 1 ? "" : "s"} with no time yet
-                  </div>
-                )}
-              </>
-            )}
+            <div className="mt-1 text-body">
+              <span className="mono font-medium text-ink">{landed}</span>
+              <span className="text-muted"> of </span>
+              <span className="mono font-medium text-ink">{total}</span>
+              <span className="text-muted"> landed</span>
+            </div>
           </div>
-          <Icon
-            name="chevron-down"
-            size={14}
-            className={`fast mt-1 shrink-0 text-muted ${open ? "" : "-rotate-90"}`}
-          />
+          <Icon name="chevron-down" size={14} className="fast mt-1 shrink-0 text-muted" />
         </button>
 
         <button
