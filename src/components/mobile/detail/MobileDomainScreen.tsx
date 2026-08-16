@@ -380,7 +380,13 @@ export default function MobileDomainScreen({
         {looseTasks.length > 0 && (
           <CardList>
             {looseTasks.map((t) => (
-              <TaskRow key={t.id} t={t} onToggle={() => store.toggleTask(t.id)} onDelete={() => store.deleteTask(t.id)} />
+              <TaskRow
+                key={t.id}
+                t={t}
+                onToggle={() => store.toggleTask(t.id)}
+                onDelete={() => store.deleteTask(t.id)}
+                onPatch={(patch) => store.updateTask(t.id, patch)}
+              />
             ))}
           </CardList>
         )}
