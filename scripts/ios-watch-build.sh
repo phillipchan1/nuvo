@@ -32,11 +32,22 @@ if ! xcodebuild -list -project "$PROJECT" 2>/dev/null | grep -q 'NuvoWatch'; the
   exit 1
 fi
 
-# Automatic signing, same identity as the app. -allowProvisioningUpdates can
-# create a PROFILE for an existing identifier but cannot register a new one, so
-# day.nuvo.app.watchkitapp must already exist in the developer portal.
+# Signing — CI builds unsigned on purpose. Ephemeral GitHub runners plus
+# -allowProvisioningUpdates mint a fresh "Apple Development: Created via API"
+# certificate on every run; a handful of pushes exhausts the account cap and
+# every TestFlight build fails (CI runs 31895025088+). The nested watch bundle
+# rides inside the host IPA; Tauri's app-store export signs the archive and
+# upload succeeds without a separately signed watch product (run 31853058296).
+#
+# Local builds with an API key may still use automatic signing for convenience.
+# -allowProvisioningUpdates can create a PROFILE for an existing identifier but
+# cannot register a new one, so day.nuvo.app.watchkitapp must already exist in
+# the developer portal.
 SIGN_ARGS=()
-if [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ] && [ -n "${APPLE_API_KEY_PATH:-}" ]; then
+if [ "${CI:-}" = "true" ]; then
+  SIGN_ARGS+=(CODE_SIGNING_ALLOWED=NO)
+  echo "ios-watch-build: CI — building unsigned (avoids minting Development certs)"
+elif [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ] && [ -n "${APPLE_API_KEY_PATH:-}" ]; then
   SIGN_ARGS+=(
     -allowProvisioningUpdates
     -authenticationKeyID "$APPLE_API_KEY"

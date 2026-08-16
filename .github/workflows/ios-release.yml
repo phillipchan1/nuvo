@@ -27,6 +27,10 @@ permissions:
 
 env:
   CI: true
+  # Watch builds unsigned in CI (scripts/ios-watch-build.sh) so ephemeral
+  # runners don't mint a new Apple Development cert every push. Set to 0 to
+  # omit the watch target entirely while debugging signing.
+  NUVO_IOS_WATCH: "1"
 
 jobs:
   changes:
@@ -175,6 +179,7 @@ jobs:
       # exports NUVO_WATCH_APP; the app's "Embed Nuvo Watch" phase copies that
       # product into Nuvo.app/Watch/ during the archive below.
       - name: Build the watchOS companion
+        if: env.NUVO_IOS_WATCH != '0'
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: bash scripts/ios-watch-build.sh
