@@ -95,17 +95,32 @@ const slot = (dayOffset: number, h: number, m: number, durMins: number, title: s
     ...o,
   }) as Slot;
 
-const SLOTS: Slot[] = [slot(0, 9, 30, 60, "")];
+// Two sittings, because they are not the same block: a plain one (teal, named
+// by what's in it) and a PROJECT sitting — the block a project gets when it's
+// dragged onto the Schedule, which wears its designation in words rather than a
+// `▸` you'd have to be taught. Rendering them side by side is the point: the
+// phone has to say the same thing the desk does.
+const SLOTS: Slot[] = [
+  slot(0, 9, 30, 60, ""),
+  slot(0, 13, 0, 90, "", { project_id: "p1", domain_id: "d1" }),
+];
 const SLOT_CHILDREN: Record<string, Task[]> = {
   [SLOTS[0].id]: [
     blk(0, 0, 0, 20, "Call the roofer", { start_time: null, slot_id: SLOTS[0].id }),
     blk(0, 0, 0, 20, "Pay the HOA invoice", { start_time: null, slot_id: SLOTS[0].id, status: "done" }),
   ],
+  [SLOTS[1].id]: [
+    blk(0, 0, 0, 45, "Cut over the DNS", { start_time: null, slot_id: SLOTS[1].id, project_id: "p1" }),
+    blk(0, 0, 0, 30, "Update the runbook", { start_time: null, slot_id: SLOTS[1].id, project_id: "p1" }),
+    blk(0, 0, 0, 20, "Tell the team", { start_time: null, slot_id: SLOTS[1].id, project_id: "p1", status: "done" }),
+  ],
 };
 const EMPTY_VERTICAL: VerticalData = {
-  domains: [],
+  domains: [{ id: "d1", name: "Clearstream", color: "#7c6f9f" } as VerticalData["domains"][number]],
   initiatives: [],
-  projects: [],
+  projects: [
+    { id: "p1", name: "Clearstream domains", domainId: "d1" } as VerticalData["projects"][number],
+  ],
   tasks: [],
   sprint: null,
   focusInitiativeIds: [],

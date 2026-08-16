@@ -64,7 +64,13 @@ function rockColor(data: VerticalData, rock: BigRock): string | null {
 
 export default function WeekPanel({ door }: { door?: WeekDoor }) {
   const { data, togglePushLanded } = useVertical();
-  const { openFlow, openRecord } = useAppNavigation();
+  const { openFlow, openRecord, nav } = useAppNavigation();
+  // A project places onto a TIME grid — that's what a sitting is. The board and
+  // the Year have no hours, and the floors have no calendar at all, so the row
+  // doesn't wear a grab cursor there: an affordance that can't land is the exact
+  // defect the crown's own drag shipped with once (D-084).
+  const canPlaceProjects =
+    nav.rung === "day" && (nav.calView === "timeGridWeek" || nav.calView === "timeGridDay");
   const [shipId, setShipId] = useState<string | null>(null);
   // Which project rows are open to their loose work. Collapsed by default — the
   // crown's job is the glance; the depth is there when the glance isn't enough.
@@ -194,6 +200,7 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
                 onToggle={() => onTick(rock)}
                 onOpen={() => openRow(rock)}
                 split={rock.project_id ? splitFor(rock.project_id) : EMPTY_SPLIT}
+                canPlace={canPlaceProjects}
                 expanded={openIds.has(rock.id)}
                 onExpand={() =>
                   setOpenIds((prev) => {
@@ -239,6 +246,7 @@ function PriorityRow({
   onToggle,
   onOpen,
   split,
+  canPlace,
   expanded,
   onExpand,
 }: {
@@ -251,6 +259,8 @@ function PriorityRow({
   /** this project's open work, cut by whether it has a time — the "Xh has a time
    *  · Xh loose" line made into the actual tasks */
   split: { placed: PlacedPiece[]; loose: Task[] };
+  /** the Schedule is showing a time grid, so a sitting has somewhere to land */
+  canPlace: boolean;
   expanded: boolean;
   onExpand: () => void;
 }) {
@@ -269,6 +279,31 @@ function PriorityRow({
   const open = placed.length + loose.length;
   // A finished row has nothing left to say about time; offering it would be noise.
   const canExpand = !done && !shipped && open > 0;
+  const project = projectById(data, rock.project_id ?? null);
+
+  // ── the project itself is draggable ──────────────────────────────────────
+  // The crown already offered a project's *pieces* one at a time; the whole
+  // point of the row is that they're one push, so the row places as one too.
+  // The payload is DOM-only on purpose: `CalendarPane` mounts a single
+  // FullCalendar `Draggable` over the rail and reads what it needs off the
+  // element, so this needs no new drag machinery and no second drop path.
+  // `data-project-placed` is what makes the drop honest — the sitting takes the
+  // loose work, and what already has a time is *offered*, never moved silently.
+  const canDrag = canPlace && !done && !shipped && Boolean(project) && open > 0;
+  const dragProps = canDrag
+    ? {
+        "data-project-drag": project!.id,
+        "data-project-title": project!.name,
+        "data-project-color": color,
+        "data-project-domain": project!.domainId ?? "",
+        "data-project-tasks": loose.map((t) => t.id).join(","),
+        "data-project-placed": placed.map((p) => p.task.id).join(","),
+        // The crown sits inside the rail's `data-tauri-drag-region="deep"` zone,
+        // so without this opt-out this drag moves the macOS WINDOW and the
+        // project never lands — the same trap the loose rows below hit (D-084).
+        "data-tauri-drag-region": "false",
+      }
+    : {};
   // State the split, not the half that happens to be non-zero. "3 of 5 placed"
   // and "2 loose" are the same fact, but the first one can't be read as "and the
   // rest is fine" — which is the read that let work go missing in the first place.
@@ -276,7 +311,17 @@ function PriorityRow({
 
   return (
     <>
-    <div className="group/row flex items-center gap-2 py-1">
+    <div
+      {...dragProps}
+      title={
+        canDrag
+          ? loose.length > 0
+            ? `Drag onto the calendar to sit ${project!.name} — ${loose.length} piece${loose.length === 1 ? "" : "s"} with no time yet`
+            : `Drag onto the calendar to give ${project!.name} a sitting`
+          : undefined
+      }
+      className={`group/row flex items-center gap-2 py-1 ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
+    >
       <button
         onClick={onToggle}
         disabled={shipped}
@@ -424,6 +469,12 @@ function PriorityRow({
                   data-task-title={t.title}
                   data-task-duration={t.duration_minutes ?? ""}
                   data-task-week="1"
+                  // Project work placed by hand lands in the project's SITTING,
+                  // never as a bare block — one piece or five, project time on
+                  // the grid wears one shape. The drop reads this to know the
+                  // difference between "a task that happens to have a project"
+                  // and "this project, being given time".
+                  data-task-project={t.project_id ?? ""}
                   title="Drag onto the calendar to give it a time"
                   className="fast flex cursor-grab items-center gap-2 rounded py-0.5 pr-1 hover:bg-surface-2 active:cursor-grabbing"
                 >

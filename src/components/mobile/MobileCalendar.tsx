@@ -17,7 +17,7 @@ import { useExternalEvents } from "../../hooks/useCalendar";
 import { useScheduledTasks } from "../../hooks/useTasks";
 import { useSlots, useSlotTasks } from "../../hooks/useSlots";
 import { useVertical } from "../../hooks/useVertical";
-import { deriveSlotTitle } from "../../lib/slots";
+import { blockDesignation, deriveSlotTitle } from "../../lib/slots";
 import { fmtMins, isEventHidden } from "../../lib/now";
 import type { Task } from "../../lib/types";
 import { parseDateISO } from "../../lib/dates";
@@ -1018,9 +1018,20 @@ const DayCard = memo(function DayCard({
                   style={{ background: markColor }}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-1.5">
+                  {/* A sitting held for a project says so, in the same words the
+                      Schedule and Plan the week use (`blockDesignation`) — the
+                      `▸` it wore is a glyph you'd have to be taught. */}
+                  {isSlot && b.projectBacked && (
+                    <div
+                      className="truncate text-micro font-semibold uppercase leading-none"
+                      style={{ color: "var(--slot)", letterSpacing: "0.06em" }}
+                    >
+                      {blockDesignation({ kind: "project" })}
+                    </div>
+                  )}
+                  <div className={`flex min-w-0 items-center gap-1.5 ${isSlot && b.projectBacked ? "mt-[3px]" : ""}`}>
                     <div className={`min-w-0 truncate text-body ${b.done ? "text-muted line-through" : "text-ink"}`}>
-                      {b.projectBacked ? `▸ ${b.title || "Untitled"}` : b.title || "Untitled"}
+                      {b.projectBacked && !isSlot ? `▸ ${b.title || "Untitled"}` : b.title || "Untitled"}
                     </div>
                     {isSlot && (b.childCount ?? 0) > 0 && (
                       <span

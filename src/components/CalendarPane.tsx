@@ -38,6 +38,8 @@ import { consumeCalendarClickHandled } from "../lib/calendarDismissGuard";
 import { toast } from "sonner";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
+// One spelling for what a block IS — shared with Plan the week's grid.
+import { blockDesignation } from "../lib/slots";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "year";
 
@@ -70,6 +72,9 @@ type ExtendedProps = {
   done?: boolean;
   /** Project-backed task — renders as a "project slot" (thicker bar + ▸ marker). */
   projectBacked?: boolean;
+  /** The project a sitting is FOR — carried so the block can wear its
+   *  designation (`PROJECT · Frontier Site`) when its own title doesn't say it. */
+  projectName?: string | null;
   slotDone?: number;
   slotTotal?: number;
   slotChildren?: { title: string; done: boolean }[];
@@ -202,6 +207,7 @@ export default function CalendarPane({
   taskAccent,
   taskDomain,
   slotTitle,
+  slotProject,
   mutations,
   eventMutations,
   slotMutations,
@@ -259,6 +265,9 @@ export default function CalendarPane({
   taskAccent: (t: Task) => string | null;
   /** Display title for a slot — derived from its contents when unnamed. */
   slotTitle: (s: Slot) => string;
+  /** The project a slot is reserved for, and the hue it inherits — so a project
+   *  sitting can name its kind on the grid instead of wearing a bare `▸`. */
+  slotProject?: (s: Slot) => { name: string; color: string | null } | null;
   mutations: ReturnType<typeof useTaskMutations>;
   eventMutations: ReturnType<typeof useExternalEventMutations>;
   slotMutations: ReturnType<typeof useSlotMutations>;
@@ -366,6 +375,15 @@ export default function CalendarPane({
   // a lossy cross-account pick asks to confirm the copy.
   const [eventMoveMode, setEventMoveMode] = useState(false);
   const [eventMoveConfirm, setEventMoveConfirm] = useState<{ accountId: string; calendarId: string; name: string } | null>(null);
+  // A project was just sat on the week, and some of its work already had a time
+  // somewhere else. The sitting is placed; this asks whether to bring the rest
+  // in. Nothing that's already on the grid moves until it's pressed (P3).
+  const [gatherOffer, setGatherOffer] = useState<{
+    point: { x: number; y: number };
+    slot: Slot;
+    name: string;
+    tasks: Task[];
+  } | null>(null);
   const [taskMenu, setTaskMenu] = useState<{ x: number; y: number; task: Task; el: HTMLElement } | null>(null);
   // Recurring-task trash expands in place (this / following / series) — same
   // scopes as RecurrenceDeleteButton in the task popover.
@@ -666,17 +684,62 @@ export default function CalendarPane({
   }, [view]);
 
   // External drag: any [data-task-drag] row in the left rail can be dropped
-  // onto the grid. FullCalendar owns the drop geometry; we own the state. In the
-  // board ("Spread") view there's no grid — WeekBoard owns rail-row drags itself,
-  // so this FC draggable must stand down or it fights for the same rows.
+  // onto the grid — and, since the crown's rows are projects, any
+  // [data-project-drag] row too. FullCalendar owns the drop geometry; we own the
+  // state. In the board ("Spread") view there's no grid — WeekBoard owns rail-row
+  // drags itself, so this FC draggable must stand down or it fights for the same rows.
   useEffect(() => {
     if (!railRef.current || !isFcView(view)) return;
     const draggable = new Draggable(railRef.current, {
-      itemSelector: "[data-task-drag]",
+      itemSelector: "[data-task-drag], [data-project-drag]",
       // A few px of slop so a click (or a cmd/shift multi-select) on a rail row
       // isn't misread as the start of a drag onto the grid.
       minDistance: 6,
       eventData: (el) => {
+        // ── a PROJECT, dragged whole ──────────────────────────────────────
+        // The preview has to be the thing you're about to get, not a generic
+        // ghost: the in-grid mirror renders through the same `eventContent` as
+        // a real block, so handing it slot-shaped props draws the sitting —
+        // designation, project hue, the pieces it will hold — under the cursor
+        // before you commit to a time.
+        const projectId = el.getAttribute("data-project-drag");
+        if (projectId) {
+          dragGroupRef.current = null;
+          const name = el.getAttribute("data-project-title") ?? "project";
+          const hue = el.getAttribute("data-project-color") || "var(--slot)";
+          const pieces = (el.getAttribute("data-project-tasks") ?? "")
+            .split(",")
+            .filter(Boolean)
+            .map(resolveDroppedTask)
+            .filter((t): t is Task => Boolean(t));
+          return {
+            title: name,
+            duration: minutesToDuration(
+              pieces.length > 0
+                ? sizeSlotToContents(pieces.map((t) => t.duration_minutes))
+                : DEFAULT_DURATION_MINUTES,
+            ),
+            classNames: ["evt-slot"],
+            backgroundColor: "color-mix(in srgb, var(--slot) 32%, var(--surface))",
+            borderColor: "color-mix(in srgb, var(--slot) 68%, var(--line))",
+            extendedProps: {
+              kind: "slot" as const,
+              refId: "",
+              calColor: "var(--slot)",
+              barColor: hue,
+              projectBacked: true,
+              // The preview's title IS the project's name, so the designation
+              // doesn't repeat it — the ghost has to read exactly like the block
+              // it becomes, or the drop looks like it changed something.
+              projectName: null,
+              slotDone: 0,
+              slotTotal: pieces.length,
+              slotChildren: pieces.map((t) => ({ title: t.title, done: false })),
+            },
+            create: true,
+          };
+        }
+
         const taskId = el.getAttribute("data-task-drag");
         const groupAttr = el.getAttribute("data-task-drag-group");
         const groupIds = groupAttr?.split(",").filter(Boolean) ?? [];
@@ -748,8 +811,12 @@ export default function CalendarPane({
     };
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement | null;
-      armed = Boolean(el?.closest?.("[data-task-drag], .evt-task"));
-      const dragEl = el?.closest?.("[data-task-drag]") as HTMLElement | null;
+      armed = Boolean(el?.closest?.("[data-task-drag], [data-project-drag], .evt-task"));
+      // A project row is a rail-origin drag like any other — it just has no task
+      // id to return to the Inbox. Resolving `dragEl` off both attributes is what
+      // makes `fromRail` true for it, which is what eats the phantom click that
+      // would otherwise open the project record the moment you let go.
+      const dragEl = el?.closest?.("[data-task-drag], [data-project-drag]") as HTMLElement | null;
       dragId = dragEl?.getAttribute("data-task-drag") ?? null;
       fromRail = Boolean(dragEl && railRef.current?.contains(dragEl));
       calTask = Boolean(el?.closest?.(".evt-task"));
@@ -773,7 +840,12 @@ export default function CalendarPane({
       // full-width time band (the whole column row, not just the rendered block) —
       // so the entire slot reads as one generous drop zone.
       let slotEl: HTMLElement | null = null;
-      for (const el of document.querySelectorAll<HTMLElement>(".fc-event.evt-slot")) {
+      // `[data-slot-id]` — a REAL slot, not the drag preview. Dragging a project
+      // renders a mirror that wears `.evt-slot` (it's a picture of the sitting
+      // you're about to make), and without this the preview hit-tests itself:
+      // the ghost fades to 10% and a chip offers to drop the project into the
+      // block it hasn't created yet.
+      for (const el of document.querySelectorAll<HTMLElement>(".fc-event.evt-slot[data-slot-id]")) {
         const r = el.getBoundingClientRect();
         if (e.clientY < r.top || e.clientY > r.bottom) continue;
         const col = el.closest<HTMLElement>(".fc-timegrid-col");
@@ -1135,8 +1207,11 @@ export default function CalendarPane({
     const slotEvents = slots.map((s) => {
       const end = new Date(new Date(s.start_time).getTime() + s.duration_minutes * 60_000);
       // The container reads as a slot (teal) regardless of domain; the thin bar
-      // still carries the project/domain thread when one is set.
-      const barColor = s.color ?? "var(--slot)";
+      // still carries the project/domain thread when one is set — including the
+      // project's own domain hue, which the bar used to drop on the floor
+      // (every unpainted slot came out teal, project or not).
+      const project = s.project_id ? slotProject?.(s) ?? null : null;
+      const barColor = s.color ?? project?.color ?? "var(--slot)";
       const children = (slotTasks[s.id] ?? [])
         .filter((t) => t.status !== "trashed")
         .map((t) => ({ title: t.title, done: t.status === "done" }))
@@ -1162,6 +1237,11 @@ export default function CalendarPane({
           barColor,
           recurring: Boolean(s.recurrence_id),
           projectBacked: !!s.project_id,
+          // Only when the block's own title isn't already the project's name —
+          // `PROJECT · Frontier Site` over a block titled "Frontier Site" is the
+          // same word twice.
+          projectName:
+            project && project.name !== slotTitle(s) ? project.name : null,
           slotDone: done,
           slotTotal: children.length,
           slotChildren: children,
@@ -1171,7 +1251,7 @@ export default function CalendarPane({
 
     return [...taskEvents, ...plannedTaskEvents, ...externalEvents, ...slotEvents];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, now, taskAccent, slotTitle]);
+  }, [tasks, events, slots, slotTasks, hidden, hiddenKeys, showHidden, accountById, now, taskAccent, slotTitle, slotProject]);
 
   // Ghost block shown while dragging an all-day range (allDayDragRange, live)
   // or while the DraftComposer popover is open (draft, on release/click) — for
@@ -1242,7 +1322,11 @@ export default function CalendarPane({
       return;
     }
     if (kind === "slot") {
-      arg.el.setAttribute("data-slot-id", refId);
+      // Only a REAL slot gets the handle. The drag preview for a project mounts
+      // through here too (it is drawn as the sitting it will become) with no id
+      // of its own — stamping an empty one made the drop hit-test find the
+      // ghost, which then offered to drop the project into itself.
+      if (refId) arg.el.setAttribute("data-slot-id", refId);
       arg.el.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         const slot = findSlot(refId);
@@ -1324,6 +1408,25 @@ export default function CalendarPane({
     };
   }, [slotMenu]);
 
+  // The gather offer closes like every other floating thing on this pane —
+  // Escape, or a press anywhere else. Declining is silence, not a second button
+  // to hunt for: what it offered is still true, and the sitting is already there.
+  const gatherOfferRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!gatherOffer) return;
+    const onDown = (e: PointerEvent) => {
+      if (gatherOfferRef.current?.contains(e.target as Node)) return;
+      setGatherOffer(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setGatherOffer(null);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [gatherOffer]);
+
   // If the event is part of a recurring series, revert immediately and
   // surface the scope dialog. On confirm the caller gets scope + executes.
   const withRecurrenceScope = (
@@ -1344,10 +1447,111 @@ export default function CalendarPane({
     });
   };
 
+  /**
+   * **A project, dropped on the grid** — the sitting, and what goes in it.
+   *
+   * The crown could already place a project's pieces one at a time; the row
+   * above them is the push itself, so it places as one act: a block *typed* as
+   * this project's time, holding the work that had none.
+   *
+   * Three rules it holds to, all of them learned:
+   *  - **The week gate (P2).** Loose work joins the sprint in the same gesture
+   *    that gives it a time, or the placement writes a `do_date` with no week
+   *    behind it and the Sunday number stops meaning anything (D-084).
+   *  - **One sitting per project, topped up in place.** Dropped onto a sitting
+   *    that already exists, it grows that one rather than standing a second
+   *    block with the same name beside it (D-084 again — the same defect, once
+   *    from a re-plan, now from a hand).
+   *  - **Nothing that already has a time moves on its own.** What was blocked
+   *    elsewhere is *offered*, and waits for a press (P3).
+   */
+  const receiveProject = (
+    el: HTMLElement,
+    projectId: string,
+    start: Date,
+    allDay: boolean,
+  ) => {
+    // A fresh placement replaces whatever the last one was still offering — an
+    // offer pointing at the previous sitting is worse than no offer.
+    setGatherOffer(null);
+    const name = el.getAttribute("data-project-title")?.trim() || "this project";
+    const domainId = el.getAttribute("data-project-domain") || null;
+    const idsOf = (attr: string) =>
+      (el.getAttribute(attr) ?? "").split(",").filter(Boolean);
+    const loose = idsOf("data-project-tasks")
+      .map(resolveDroppedTask)
+      .filter((t): t is Task => Boolean(t));
+    const placed = idsOf("data-project-placed")
+      .map(resolveDroppedTask)
+      .filter((t): t is Task => Boolean(t));
+
+    if (loose.length) onWeekWorkPlaced?.(loose.map((t) => t.id));
+
+    // The all-day row holds no clock, so it can hold no sitting. Dropping a
+    // project there is the weaker, real act it can carry: its loose work is
+    // planned for that day, time still to come.
+    if (allDay) {
+      const date = toDateISO(start);
+      if (!loose.length) {
+        toast(`Every piece of ${name} already has a time this week`);
+        return;
+      }
+      loose.forEach((t) => mutations.planFor(t, date));
+      return;
+    }
+
+    const point = { ...dropPointRef.current };
+    const offer = (slot: Slot) => {
+      if (!placed.length) return;
+      setGatherOffer({ point, slot, name, tasks: placed });
+    };
+
+    // Prefer the sitting the pointer was over (the highlighted one) to
+    // time-range math, which breaks when FC snaps the ghost clear of an overlap.
+    const hoveredSlotId = overSlotIdRef.current;
+    overSlotIdRef.current = null;
+    const t0 = start.getTime();
+    const target =
+      (hoveredSlotId ? slotsRef.current.find((s) => s.id === hoveredSlotId) : null) ??
+      slotsRef.current.find((s) => {
+        const ss = new Date(s.start_time).getTime();
+        return t0 >= ss && t0 < ss + s.duration_minutes * 60_000;
+      });
+
+    if (target) {
+      slotMutations.gatherIntoSlot(target, loose, slotTasks[target.id] ?? []);
+      offer(target);
+      return;
+    }
+
+    void slotMutations
+      .createSlotWith(loose, start, taskDomain, {
+        projectId,
+        domainId,
+        label: `Sat ${name} on the week`,
+      })
+      .then((made) => made && offer(made))
+      .catch((e) => {
+        console.warn("[nuvo] project sitting failed:", e);
+        toast.error("Couldn't hold that sitting — the project is unchanged");
+      });
+  };
+
   const onReceive = (info: EventReceiveArg) => {
     const el = info.draggedEl;
     const start = info.event.start;
     const allDay = info.event.allDay;
+
+    // A project drags as itself — its own payload, its own drop. The phantom FC
+    // made is always dropped: what renders is the sitting, out of the slots
+    // cache, which the optimistic write has already put there.
+    const projectId = el.getAttribute("data-project-drag");
+    if (projectId) {
+      info.event.remove();
+      if (start) receiveProject(el, projectId, start, Boolean(allDay));
+      return;
+    }
+
     // A multi-selection drags as a group, captured at drag start (dragGroupRef);
     // a single row is just its own id. The DOM attribute is only a fallback —
     // by drop time the rail may already have re-rendered without it.
@@ -1420,17 +1624,35 @@ export default function CalendarPane({
       }
       return;
     }
+    // Project work placed by hand becomes the project's SITTING, even when it's
+    // one piece. The crown stamps `data-task-project` on the rows it offers, so
+    // this is the deliberate act "give this project time" — not the everyday
+    // "put this task at 9am", which still lands as its own block. Without it the
+    // same project's work wore two different shapes on one grid depending on
+    // which row you happened to drag.
+    const fromProject = el.getAttribute("data-task-project") || null;
+
     // Several things dropped on open time are ONE block that holds them all —
     // a slot, sized to its contents and named from what's inside. Tiling them
     // back-to-back gave four anonymous blocks for one decision; the block is
     // the decision, and its contents are its detail. The popover opens on the
-    // name so it can be yours in the same gesture.
-    if (tasks.length > 1) {
+    // name so it can be yours in the same gesture — unless the project already
+    // names it, in which case asking would be asking twice.
+    if (tasks.length > 1 || fromProject) {
       const { x, y } = dropPointRef.current;
       const point = new DOMRect(x, y, 0, 0);
+      // A single row's phantom carries the id fcEvents would generate for a
+      // *task* block. It's becoming a slot child instead, so that id will never
+      // be regenerated — drop the ghost rather than leave it standing.
+      if (fromProject && !group) info.event.remove();
       void slotMutations
-        .createSlotWith(tasks, start, taskDomain)
-        .then((made) => made && onOpenSlot(made, point, null, { focusTitle: true }))
+        .createSlotWith(
+          tasks,
+          start,
+          taskDomain,
+          fromProject ? { projectId: fromProject, label: "Sat it on the week" } : undefined,
+        )
+        .then((made) => made && !fromProject && onOpenSlot(made, point, null, { focusTitle: true }))
         .catch((e) => {
           console.warn("[nuvo] block-together failed:", e);
           toast.error("Couldn't hold that block — the tasks are unchanged");
@@ -1959,12 +2181,45 @@ export default function CalendarPane({
     // ── Slot: container with a progress badge + child task peek ────────────
     if (kind === "slot") {
       const showChildren = heightPx > 64;
+      // What this block IS, in words — the same designation Plan the week prints
+      // over every sitting it places (`blockDesignation`), so protected project
+      // time reads identically in the ritual that proposes it and on the grid
+      // that holds it. The count stays in the progress badge; the eyebrow says
+      // the kind, and the project's name only when the title doesn't. A block
+      // sheds the least recoverable thing last, so below the height that fits an
+      // eyebrow the designation moves inline ahead of the title rather than
+      // reverting to a `▸` you'd have to learn.
+      const designation = isProject
+        ? blockDesignation({
+            kind: "project",
+            name: (arg.event.extendedProps as ExtendedProps).projectName ?? null,
+          })
+        : null;
+      const showEyebrow = Boolean(designation) && !compact;
       return (
         <div className="flex h-full min-w-0 overflow-hidden">
           {Bar}
           <div className={`flex min-w-0 flex-1 flex-col overflow-hidden px-1.5 ${padY} ${compact ? "justify-center" : "justify-start"}`}>
-            <div className="flex min-w-0 items-center gap-1">
-              <span className={titleCls}>{arg.event.title}</span>
+            {showEyebrow && (
+              <div
+                className="truncate text-micro font-semibold uppercase leading-none"
+                style={{ color: bar, letterSpacing: "0.06em" }}
+              >
+                {designation}
+              </div>
+            )}
+            <div className={`flex min-w-0 items-center gap-1 ${showEyebrow ? "mt-[3px]" : ""}`}>
+              <span className={titleCls}>
+                {designation && !showEyebrow && (
+                  <span className="uppercase" style={{ color: bar, letterSpacing: "0.06em" }}>
+                    {/* No room for the project's name on a block this short —
+                        the kind is the part that can't be recovered from the
+                        title, so it's the part that survives. */}
+                    {blockDesignation({ kind: "project" })} ·{" "}
+                  </span>
+                )}
+                {arg.event.title}
+              </span>
               {Recur}
               {slotTotal > 0 && (
                 <span className="mono ml-auto shrink-0 rounded-full bg-bg px-1 text-micro leading-snug text-muted">
@@ -2510,6 +2765,76 @@ export default function CalendarPane({
                 {!recurring && childCount === 0 ? "Delete slot" : "Delete slot…"}
               </span>
             </EventMenuItem>
+          </div>
+        );
+      })()}
+
+      {/* ── the reconcile card ───────────────────────────────────────────────
+          A project's sitting is placed, and some of its work already had a time
+          elsewhere this week. It says WHERE that work is — a count alone would
+          make "move them in" a decision you can't check — and moves nothing
+          until you press. One press, one undo. */}
+      {gatherOffer && (() => {
+        const { point, slot, name, tasks: waiting } = gatherOffer;
+        const left = fixedCssPx(Math.min(point.x + 12, window.innerWidth - 280));
+        const top = fixedCssPx(Math.min(point.y + 12, window.innerHeight - 190));
+        const when = (t: Task) => {
+          const iso = t.start_time;
+          if (!iso) return "in a sitting";
+          const d = new Date(iso);
+          const h = d.getHours();
+          const m = d.getMinutes();
+          const hh = ((h + 11) % 12) + 1;
+          return `${format(d, "EEE")} ${m === 0 ? hh : `${hh}:${String(m).padStart(2, "0")}`}${h >= 12 ? "pm" : "am"}`;
+        };
+        return (
+          <div
+            ref={gatherOfferRef}
+            // Opaque, like every other menu on this pane: it sits ON the block it
+            // just made, and a translucent card over a tinted sitting is two
+            // things you have to read through each other.
+            className="pop-in fixed z-[60] w-[264px] rounded-[var(--radius)] border border-line bg-surface p-3"
+            style={{ top, left, boxShadow: "var(--shadow-3)" }}
+          >
+            <div className="section-label !px-0 !pb-0 truncate" style={{ color: "var(--accent)" }}>
+              {name}
+            </div>
+            <p className="mt-1.5 text-caption text-ink">
+              Sitting placed. {waiting.length} piece{waiting.length === 1 ? "" : "s"} already{" "}
+              {waiting.length === 1 ? "has" : "have"} a time this week.
+            </p>
+            <div className="mt-1.5 border-t border-line">
+              {waiting.slice(0, 3).map((t) => (
+                <div key={t.id} className="flex items-baseline gap-2 border-b border-line py-1">
+                  <span className="mono shrink-0 text-micro text-muted">{when(t)}</span>
+                  <span className="min-w-0 flex-1 truncate text-meta text-muted" title={t.title}>
+                    {t.title}
+                  </span>
+                </div>
+              ))}
+              {waiting.length > 3 && (
+                <div className="pt-1 text-micro text-muted">+{waiting.length - 3} more</div>
+              )}
+            </div>
+            <div className="mt-2.5 flex items-center gap-2">
+              <button
+                onClick={() => {
+                  slotMutations.gatherIntoSlot(slot, waiting, slotTasks[slot.id] ?? []);
+                  setGatherOffer(null);
+                }}
+                title="Move them out of their own blocks and into this sitting"
+                className="tap fast flex-1 rounded-md px-2.5 py-1.5 text-caption text-accent hover:brightness-105"
+                style={{ background: "var(--accent-soft)" }}
+              >
+                Move them in
+              </button>
+              <button
+                onClick={() => setGatherOffer(null)}
+                className="fast shrink-0 px-1.5 py-1.5 text-caption text-muted hover:text-ink"
+              >
+                Leave them
+              </button>
+            </div>
           </div>
         );
       })()}

@@ -63,3 +63,42 @@ export function deriveSlotTitle(
 export function slotTitleIsDerived(slot: Pick<Slot, "title">): boolean {
   return !slot.title?.trim();
 }
+
+/** What a block IS — the designation, not its name. */
+export interface BlockDesignation {
+  /** project sitting · a plain slot · a single piece of work */
+  kind: "project" | "slot" | "task";
+  /** one sitting of a run that was split across days */
+  part?: { part: number; parts: number } | null;
+  /** how many pieces it holds — omitted where the surface already counts them */
+  holds?: number | null;
+  /** what the pieces are called at this altitude */
+  unit?: "task" | "capture";
+  /** the project behind it, when the block's own title doesn't already say it */
+  name?: string | null;
+}
+
+/**
+ * **The words a block wears** — `Project · 3 tasks`, `Slot · 2 captures`, `Task`.
+ *
+ * Plan the week says this over every block it places; the Schedule said it with
+ * a `▸`, which asks you to learn a glyph before you can read your own calendar.
+ * One spelling now, so protected project time reads the same in the ritual that
+ * proposes it, on the grid that holds it, and on the phone that shows it.
+ *
+ * A surface passes only the facts it has room for: the ritual's grid carries the
+ * count (it has no progress badge), the Schedule leaves it to the `2/3` badge and
+ * passes the project name instead — but only when its own title isn't already
+ * the project's, since a block that says `Frontier Site` twice says it once.
+ */
+export function blockDesignation(d: BlockDesignation): string {
+  const kind = d.kind === "project" ? "Project" : d.kind === "slot" ? "Slot" : "Task";
+  if (d.part && d.part.parts > 1) return `${kind} · part ${d.part.part} of ${d.part.parts}`;
+  if (d.holds != null && d.holds > 0) {
+    const unit = d.unit ?? "task";
+    return `${kind} · ${d.holds} ${unit}${d.holds === 1 ? "" : "s"}`;
+  }
+  const name = d.name?.trim();
+  if (name) return `${kind} · ${name}`;
+  return kind;
+}
