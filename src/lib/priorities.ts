@@ -5,7 +5,7 @@
 
 import { initiativeById, isProjectInFlight, projectById, tasksOf, type Project, type VerticalData, type VTask } from "./vertical";
 import { portfolioDemand, type ProjectPace } from "./pace";
-import { isCompleteStatus, isOnDeckThisWeek, isOnSlate } from "../../supabase/functions/_shared/planningRules.ts";
+import { carriedWeeks, isCompleteStatus, isOnDeckThisWeek, isOnSlate, slateOrder } from "../../supabase/functions/_shared/planningRules.ts";
 import { isTended } from "./tending";
 import type { BigRock } from "./types";
 
@@ -58,10 +58,10 @@ export function priorityWork(data: VerticalData, rock: BigRock): RockWork {
 // from the same file, so the chat and the UI cannot disagree about what is on
 // this week. Everything below is the client's *shape* over those rules.
 
-/** The projects you can still WORK on this week — open, committed to this week.
- *  This is the planning/pull question ("what should I pull from?"), so shipped
- *  and dropped projects are correctly gone. For the week's SCOREBOARD, which
- *  must keep what you shipped, use `weekPushes`. */
+/** The projects you can still WORK on this week — open, committed to this week
+ *  or carrying into it. This is the planning/pull question ("what should I pull
+ *  from?"), so shipped and dropped projects are correctly gone. For the week's
+ *  SCOREBOARD, which must keep what you shipped, use `weekPushes`. */
 export function projectsOnDeck(d: VerticalData, weekStartISO: string): Project[] {
   return d.projects.filter((p) => isOnDeckThisWeek(p, weekStartISO));
 }
@@ -73,17 +73,26 @@ export interface WeekPush {
   done: boolean;
   /** shipped inside this week — the loudest possible verdict. */
   shipped: boolean;
+  /** whole weeks it has been carrying past its committed week — 0 when this
+   *  week is the one you actually chose it for (`carriedWeeks` in the kernel). */
+  carried: number;
 }
 
-/** The week's SLATE — what you committed to this week, derived from the spans,
- *  joined to the stored verdict.
+/** The week's SLATE — what this week owes, derived from the spans, joined to the
+ *  stored verdict.
  *
  *  Deliberately NOT `projectsOnDeck`: that drops anything complete, so shipping
  *  a project on Wednesday used to erase it from the week's plan and quietly
  *  shrink "N of M landed" — finishing your biggest thing made the scoreboard
  *  forget it. A project that shipped *inside* this week stays on this week's
  *  slate and reads as the win it is; one that shipped in an earlier week is
- *  correctly gone. */
+ *  correctly gone.
+ *
+ *  Unfinished projects whose week has passed are here too, marked `carried` —
+ *  the same rule from the other side: what you *didn't* finish must not erase
+ *  itself either (`isCarrying` in the kernel). Committed rows come first; the
+ *  carried ones follow, longest-carrying first, so the week you actually chose
+ *  still reads first in every surface that renders this list in order. */
 export function weekPushes(d: VerticalData, weekStartISO: string): WeekPush[] {
   return d.projects
     .filter((p) => isOnSlate(p, weekStartISO))
@@ -93,26 +102,37 @@ export function weekPushes(d: VerticalData, weekStartISO: string): WeekPush[] {
       // Shipping the project inside the week says the week moved it, louder than
       // the checkbox does — so it READS landed. Display only: shipping never
       // writes the verdict, so un-shipping simply reveals the verdict again.
-      return { project, rock, done: Boolean(rock?.done_at) || shipped, shipped };
-    });
+      return {
+        project,
+        rock,
+        done: Boolean(rock?.done_at) || shipped,
+        shipped,
+        carried: carriedWeeks(project, weekStartISO),
+      };
+    })
+    .sort((a, b) => slateOrder(a.project, b.project, weekStartISO));
 }
 
 /** A push rendered as a rock: the stored verdict record when one exists, else a
  *  stand-in built from the live project. Every week surface needs this shape —
  *  it was copied character-for-character into WeekPanel and the (now dead)
- *  bigRocks editor before it lived here. */
+ *  bigRocks editor before it lived here.
+ *
+ *  `roll_count` is the DERIVED carry, overlaid on whatever the verdict stored.
+ *  Membership is derived from the span, so the carry has to be too — the stored
+ *  count only ever moved through `carryBigRocksForward`, which no surface calls,
+ *  so every "wk N" marker in the app read 0 forever. */
 export function pushAsRock(push: WeekPush): BigRock {
-  return (
-    push.rock ?? {
-      id: `derived:${push.project.id}`,
-      title: push.project.name,
-      win: push.project.outcome ?? "",
-      initiative_id: null,
-      project_id: push.project.id,
-      done_at: null,
-      roll_count: 0,
-    }
-  );
+  const base: BigRock = push.rock ?? {
+    id: `derived:${push.project.id}`,
+    title: push.project.name,
+    win: push.project.outcome ?? "",
+    initiative_id: null,
+    project_id: push.project.id,
+    done_at: null,
+    roll_count: 0,
+  };
+  return push.carried > 0 ? { ...base, roll_count: push.carried } : base;
 }
 
 /** Where a project's REMAINING work actually sits this week.
@@ -203,6 +223,17 @@ export type PriorityVerdict = "landed" | "carried" | "open";
 export function priorityVerdict(rock: BigRock): PriorityVerdict {
   if (rock.done_at) return "landed";
   return rock.roll_count > 0 ? "carried" : "open";
+}
+
+/** The carry marker's words — the mono "wk 3" and the sentence that says what it
+ *  means. Shared by the rail crown and the Week's Plan row so a carried project
+ *  reads the same wherever you meet it. `rolls` is `WeekPush.carried`, i.e. how
+ *  many weeks past the one it was committed to. */
+export function carryMark(rolls: number): { text: string; title: string } {
+  return {
+    text: `wk ${rolls + 1}`,
+    title: `Carried — its week passed ${rolls} week${rolls === 1 ? "" : "s"} ago and it's still open, so it's on this week`,
+  };
 }
 
 // ── "Projects asking for you" — the bottom-up feed ───────────────────────────

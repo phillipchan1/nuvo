@@ -84,6 +84,15 @@ export function dayOfWeek(iso: string): number {
   return new Date(dayMs(iso)).getUTCDay();
 }
 
+/** Monday of the week a date falls in — the plain containment rule, with no
+ *  weekend shift. `planningWeekStart` is this plus "the weekend plans ahead". */
+export function mondayOf(iso: string): string {
+  const base = dayMs(iso);
+  if (Number.isNaN(base)) return iso;
+  const sinceMonday = (new Date(base).getUTCDay() + 6) % 7;
+  return isoOf(base - sinceMonday * DAY_MS);
+}
+
 /**
  * Monday of the week you are planning, from the calendar date you are standing
  * in. **The weekend plans the week ahead** — on Saturday and Sunday "this week"
@@ -97,9 +106,7 @@ export function planningWeekStart(todayISO: string): string {
   if (Number.isNaN(base)) return todayISO;
   const dow = new Date(base).getUTCDay();
   const shift = dow === 0 ? 1 : dow === 6 ? 2 : 0; // weekend → next Monday
-  const shifted = base + shift * DAY_MS;
-  const sinceMonday = (new Date(shifted).getUTCDay() + 6) % 7;
-  return isoOf(shifted - sinceMonday * DAY_MS);
+  return mondayOf(isoOf(base + shift * DAY_MS));
 }
 
 /**
@@ -154,16 +161,76 @@ export function shippedInWeek(p: Pick<SpanProject, "status" | "shippedAt">, week
   return at >= monday && at < monday + 7 * DAY_MS;
 }
 
+/** Parked. Named here because the carry rule below turns on it: parking is the
+ *  explicit "not now", and it is how you stop a project following you forward. */
+const PARKED_STATUS = "waiting";
+
 /**
- * THE SLATE — what you committed to this week, for the scoreboard.
+ * CARRYING — an open project whose committed week has already passed, and which
+ * you never finished. It is not this week's *decision* and it is not gone: it's
+ * work you still owe, on a week that is behind you.
+ *
+ * Without this rule an unfinished project fell off every week surface the moment
+ * its span lapsed — the rail crown, the Week's Plan, the pull, the chat's slate —
+ * while the On Deck deck went on drawing it in the "This week" column, because
+ * the deck clamps a past due-date to column 0. Two surfaces, two answers to "is
+ * this on my week", and the honest one was the one that made the work vanish.
+ *
+ * Deliberately NOT a write: nothing re-dates the project behind your back
+ * (P3 — Nuvo proposes, you promote). The span still says what you committed to;
+ * this only refuses to pretend the commitment expired quietly. The row carries
+ * `carriedWeeks` so it reads as carried rather than as freshly chosen, and the
+ * four ways out are all yours: ship it, give it another week, move it out, or
+ * park it.
+ *
+ * Parked projects never carry — that IS the off-ramp. So does clearing the span
+ * ("take it off the week"), which sends it back to needing a sprint.
+ */
+export function isCarrying(p: SpanProject, weekStartISO: string): boolean {
+  if (!isOpenProjectStatus(p.status)) return false; // shipped / dropped are settled
+  if (p.status === PARKED_STATUS) return false; // deliberately resting
+  if (!p.targetDate) return false; // no finish line = needs a sprint, not carrying
+  if (spansWeek(p, weekStartISO)) return false; // already committed to this week
+  const monday = dayMs(weekStartISO);
+  const end = dayMs(p.targetDate) + DAY_MS - 1;
+  if (Number.isNaN(monday) || Number.isNaN(end)) return false;
+  return end < monday; // its week is behind us
+}
+
+/** How many whole weeks past its committed week an open project has been
+ *  carrying — 0 when it isn't. 1 = "its week was last week". The rail crown and
+ *  the Week's Plan row render it as `wk N+1` ("this is its Nth+1 week"). */
+export function carriedWeeks(p: SpanProject, weekStartISO: string): number {
+  if (!isCarrying(p, weekStartISO)) return 0;
+  const committed = dayMs(mondayOf(p.targetDate!));
+  const monday = dayMs(weekStartISO);
+  if (Number.isNaN(committed) || Number.isNaN(monday)) return 0;
+  return Math.max(1, Math.round((monday - committed) / (7 * DAY_MS)));
+}
+
+/**
+ * The week's WORK SET — committed to this week, or carrying into it. The union
+ * both membership rules below are built on, so "on my week" cannot mean one
+ * thing on the scoreboard and another in the pull.
+ */
+export function worksThisWeek(p: SpanProject, weekStartISO: string): boolean {
+  return spansWeek(p, weekStartISO) || isCarrying(p, weekStartISO);
+}
+
+/**
+ * THE SLATE — what this week owes, for the scoreboard.
  *
  * Keeps a project that shipped *inside* this week: finishing your biggest thing
  * on Wednesday must not erase it from the week's plan and quietly shrink
  * "N of M landed". One that shipped in an earlier week is correctly gone.
+ *
+ * Keeps an unfinished project whose week has passed, for the mirror reason: a
+ * project you *didn't* finish must not erase itself either. It arrives marked
+ * (`carriedWeeks`), never as a fresh choice.
  */
 export function isOnSlate(p: SpanProject, weekStartISO: string): boolean {
   if (isDroppedStatus(p.status)) return false;
-  if (!spansWeek(p, weekStartISO)) return false;
+  if (!worksThisWeek(p, weekStartISO)) return false;
   return isCompleteStatus(p.status) ? shippedInWeek(p, weekStartISO) : true;
 }
 
@@ -174,7 +241,7 @@ export function isOnSlate(p: SpanProject, weekStartISO: string): boolean {
  */
 export function isOnDeckThisWeek(p: SpanProject, weekStartISO: string): boolean {
   if (!isOpenProjectStatus(p.status)) return false;
-  return spansWeek(p, weekStartISO);
+  return worksThisWeek(p, weekStartISO);
 }
 
 /** A project that exists but has no week yet — the "needs a sprint" pool, the
@@ -183,10 +250,24 @@ export function needsASprint(p: SpanProject): boolean {
   return isOpenProjectStatus(p.status) && !p.targetDate;
 }
 
-/** Ids on the slate, in the order given. The whole derivation in one call, so a
+/** Render order for a week: what you chose for THIS week first, then what is
+ *  carrying, longest-carrying last. Stable, so equal ranks keep the order they
+ *  arrived in. Here rather than in a surface so the chat lists the week in the
+ *  same order the rail crown draws it. */
+export function slateOrder(a: SpanProject, b: SpanProject, weekStartISO: string): number {
+  const ca = carriedWeeks(a, weekStartISO);
+  const cb = carriedWeeks(b, weekStartISO);
+  if (ca > 0 !== cb > 0) return ca > 0 ? 1 : -1;
+  return ca - cb;
+}
+
+/** Ids on the slate, in slate order. The whole derivation in one call, so a
  *  surface can never "nearly" implement it. */
 export function deriveSlateIds<T extends SpanProject & { id: string }>(projects: T[], weekStartISO: string): string[] {
-  return projects.filter((p) => isOnSlate(p, weekStartISO)).map((p) => p.id);
+  return projects
+    .filter((p) => isOnSlate(p, weekStartISO))
+    .sort((a, b) => slateOrder(a, b, weekStartISO))
+    .map((p) => p.id);
 }
 
 /** Ids workable this week, in the order given. */
@@ -227,13 +308,21 @@ export function takeOffWeekPatch(): { startDate: null; targetDate: null } {
  * is what an On Deck span already means. One project, one outcome, one pace
  * number — a second "Part 2" *project* would be a new object with a near-identical
  * name and no outcome of its own, and would split the ship and pace math in two.
+ *
+ * "Another week" always means **at least through the week you're standing in.**
+ * For a project that lapsed weeks ago, widening by one from its own start landed
+ * the new finish line still in the past — the act ran, the row didn't move, and
+ * the only remedy a carried project is offered did nothing.
  */
 export function spanAnotherWeekPatch(
   p: Pick<SpanProject, "startDate" | "targetDate">,
   weekStartISO: string,
 ): { startDate: string; targetDate: string } {
   const start = p.startDate ?? weekStartISO;
-  return weekSpanFor(start, spanWidthWeeks({ startDate: start, targetDate: p.targetDate }) + 1);
+  const widened = spanWidthWeeks({ startDate: start, targetDate: p.targetDate }) + 1;
+  // Weeks from its start to the asked week, +1 so the span reaches through it.
+  const reachesHere = Math.round((dayMs(mondayOf(weekStartISO)) - dayMs(mondayOf(start))) / (7 * DAY_MS)) + 1;
+  return weekSpanFor(start, Math.max(widened, reachesHere));
 }
 
 /**

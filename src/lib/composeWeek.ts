@@ -197,8 +197,11 @@ export function composeWeek(input: ComposeWeekInput): WeekReport {
     const weekBlockTaskIds = new Set(blocks.filter((t) => t.start_time).map((t) => t.id));
     const weekSlotIds = new Set((input.slots ?? []).map((s) => s.id));
     const pushes = weekPushes(vertical, weekStartISO);
-    priorities = pushes.map(({ project, rock, done, shipped }) => {
-      const asRock = pushAsRock({ project, rock, done, shipped });
+    priorities = pushes.map((push) => {
+      const { project, shipped } = push;
+      // `pushAsRock` overlays the derived carry onto the stored verdict, so the
+      // row's "wk N" and the Review's repeated-carry Find both read the truth.
+      const asRock = pushAsRock(push);
       const work = priorityWork(vertical, asRock);
       const placement = weekPlacement(work, weekBlockTaskIds, weekSlotIds);
       const gaps = lensGaps(vertical, "project", project, now);

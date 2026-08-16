@@ -30,6 +30,7 @@ import {
   spansWeek,
   takeOffWeekPatch,
   toRowPatch,
+  worksThisWeek,
   dayMs,
   isoOf,
 } from "../_shared/planningRules.ts";
@@ -257,8 +258,8 @@ async function findProjectForPriority(
   if (!q) return null;
   const byName = rows.filter((p) => p.name.toLowerCase().includes(q) || q.includes(p.name.toLowerCase()));
   if (byName.length === 1) return byName[0];
-  // ambiguous by name — prefer one already committed to this week
-  const onSlate = byName.filter((p) => spansWeek(fromProjectRow(p), weekStart));
+  // ambiguous by name — prefer one already on this week (committed or carrying)
+  const onSlate = byName.filter((p) => worksThisWeek(fromProjectRow(p), weekStart));
   return onSlate.length === 1 ? onSlate[0] : null;
 }
 
@@ -2979,7 +2980,7 @@ export async function executeTool(
       );
       if (!known) {
         const project = await findProjectForPriority(userId, weekStart, args as { project_id?: string; priority_title?: string });
-        if (project && spansWeek(fromProjectRow(project), weekStart)) {
+        if (project && worksThisWeek(fromProjectRow(project), weekStart)) {
           const landed: BigRock = {
             id: crypto.randomUUID(),
             title: project.name,

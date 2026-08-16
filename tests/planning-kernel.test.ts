@@ -20,20 +20,24 @@ import { describe, expect, it } from "vitest";
 
 import {
   bringIntoWeekPatch,
+  carriedWeeks,
   deriveSlateIds,
   fromProjectRow,
+  isCarrying,
   isOnSlate,
   needsASprint,
   planningWeekStart,
+  spanAnotherWeekPatch,
   spansWeek,
   takeOffWeekPatch,
   toRowPatch,
   weekSpanFor,
+  mondayOf,
   type ProjectRow,
 } from "../supabase/functions/_shared/planningRules.ts";
 
 import { planningWeekStartISO } from "../src/lib/dates";
-import { projectsOnDeck, weekPushes } from "../src/lib/priorities";
+import { priorityVerdict, projectsOnDeck, pushAsRock, weekPushes } from "../src/lib/priorities";
 import { sprintSpanFor } from "../src/lib/onDeck";
 import type { Project, VerticalData } from "../src/lib/vertical";
 
@@ -58,6 +62,10 @@ const FACTS: Fact[] = [
   { id: "spans-into-week", start: "2026-07-13", target: "2026-07-22", status: "in_progress", shipped: null },
   { id: "spans-past-week", start: "2026-07-20", target: "2026-08-07", status: "in_progress", shipped: null },
   { id: "overdue-before", start: "2026-07-06", target: "2026-07-10", status: "in_progress", shipped: null },
+  { id: "overdue-long", start: "2026-06-15", target: "2026-06-19", status: "in_progress", shipped: null },
+  { id: "overdue-parked", start: "2026-07-06", target: "2026-07-10", status: "waiting", shipped: null },
+  { id: "overdue-shipped", start: "2026-07-06", target: "2026-07-10", status: "complete", shipped: "2026-07-09T18:00:00.000Z" },
+  { id: "overdue-dropped", start: "2026-07-06", target: "2026-07-10", status: "dropped", shipped: null },
   { id: "next-week", start: "2026-07-27", target: "2026-07-31", status: "in_progress", shipped: null },
   // the Sunday-boundary leak: a span anchored to a Sunday-start week must NOT
   // count as the prior Monday-based week's
@@ -156,6 +164,87 @@ describe("the slate is one derivation, whichever runtime asks", () => {
   });
 });
 
+// ── 1b · unfinished work carries; it does not vanish ─────────────────────────
+// The drift this closes: the On Deck deck clamps a past due-date into its "This
+// week" column, so an unfinished project still read as this week's there — while
+// every span-derived surface (the rail crown, the Week's Plan, the pull, the
+// chat's slate) had already dropped it. The board said "this week", the Schedule
+// said nothing at all.
+
+describe("an unfinished project carries into the week", () => {
+  const span = (id: string) => fromProjectRow(asRow(FACTS.find((f) => f.id === id)!));
+
+  it("puts a lapsed open project on the slate, marked as carrying", () => {
+    expect(deriveSlateIds(rowsAsSpans(), WEEK)).toContain("overdue-before");
+    expect(isCarrying(span("overdue-before"), WEEK)).toBe(true);
+    expect(carriedWeeks(span("overdue-before"), WEEK)).toBe(2); // its week was Jul 6
+    expect(carriedWeeks(span("overdue-long"), WEEK)).toBe(5); // Jun 15 → Jul 20
+  });
+
+  it("the client and the agent carry the same set", () => {
+    expect(weekPushes(DATA, WEEK).map((p) => p.project.id)).toEqual(deriveSlateIds(rowsAsSpans(), WEEK));
+    expect(weekPushes(DATA, WEEK).find((p) => p.project.id === "overdue-before")?.carried).toBe(2);
+  });
+
+  it("the wk N mark reads the derived carry, not the dead stored one", () => {
+    // `roll_count` only ever moved through `carryBigRocksForward`, which no
+    // surface calls — so every "wk N" in the app read 0 forever. Membership is
+    // derived from the span, so the carry is too: this is the one line the rail
+    // crown, the Week's Plan row, Sunday, the phone's slate and the Review's
+    // repeated-carry Find all render from.
+    const pushes = weekPushes(DATA, WEEK);
+    expect(pushAsRock(pushes.find((p) => p.project.id === "overdue-before")!).roll_count).toBe(2);
+    expect(pushAsRock(pushes.find((p) => p.project.id === "in-week")!).roll_count).toBe(0);
+    expect(priorityVerdict(pushAsRock(pushes.find((p) => p.project.id === "overdue-before")!))).toBe("carried");
+  });
+
+  it("this week's own choices come first; carried work follows", () => {
+    const ids = deriveSlateIds(rowsAsSpans(), WEEK);
+    const firstCarried = ids.findIndex((id) => isCarrying(span(id), WEEK));
+    const lastCommitted = ids.reduce((last, id, i) => (isCarrying(span(id), WEEK) ? last : i), -1);
+    expect(firstCarried).toBeGreaterThan(lastCommitted);
+    // longest-carrying last, so the freshest debt reads first
+    expect(ids.indexOf("overdue-long")).toBeGreaterThan(ids.indexOf("overdue-before"));
+  });
+
+  it("carrying is only for work you still owe — never parked, shipped or dropped", () => {
+    for (const id of ["overdue-parked", "overdue-shipped", "overdue-dropped"]) {
+      expect(isCarrying(span(id), WEEK), `${id} must not carry`).toBe(false);
+      expect(deriveSlateIds(rowsAsSpans(), WEEK), `${id} must not be on the slate`).not.toContain(id);
+    }
+  });
+
+  it("a project committed to THIS week is not carrying — nor is one queued ahead", () => {
+    for (const id of ["in-week", "spans-into-week", "next-week", "no-target"]) {
+      expect(isCarrying(span(id), WEEK), `${id}`).toBe(false);
+      expect(carriedWeeks(span(id), WEEK)).toBe(0);
+    }
+  });
+
+  it("every off-ramp actually stops the carry", () => {
+    const p = span("overdue-before");
+    // ship it / drop it / park it — the status answers
+    expect(isCarrying({ ...p, status: "complete", shippedAt: "2026-07-09T00:00:00Z" }, WEEK)).toBe(false);
+    expect(isCarrying({ ...p, status: "dropped" }, WEEK)).toBe(false);
+    expect(isCarrying({ ...p, status: "waiting" }, WEEK)).toBe(false);
+    // take it off the week — back to needing a sprint
+    const off = { ...p, ...takeOffWeekPatch() };
+    expect(isCarrying(off, WEEK)).toBe(false);
+    expect(needsASprint(off)).toBe(true);
+    // give it another week — it lands ON this week, so it stops carrying
+    const again = { ...p, ...spanAnotherWeekPatch(p, WEEK) };
+    expect(spansWeek(again, WEEK)).toBe(true);
+    expect(isCarrying(again, WEEK)).toBe(false);
+  });
+
+  it("mondayOf is plain containment — no weekend shift", () => {
+    expect(mondayOf("2026-07-20")).toBe("2026-07-20"); // Monday
+    expect(mondayOf("2026-07-24")).toBe("2026-07-20"); // Friday
+    expect(mondayOf("2026-07-26")).toBe("2026-07-20"); // Sunday stays in its week
+    expect(planningWeekStart("2026-07-26")).toBe("2026-07-27"); // …but plans the next
+  });
+});
+
 // ── 2 · the week you are planning ────────────────────────────────────────────
 
 describe("planningWeekStart — one rule for both runtimes", () => {
@@ -247,6 +336,7 @@ describe("bring in / take off — the same act in chat and on a tap", () => {
 const KERNEL = "supabase/functions/_shared/planningRules.ts";
 const OWNED_RULES = [
   "planningWeekStart",
+  "mondayOf",
   "spansWeek",
   "shippedInWeek",
   "weekSpanFor",
@@ -254,6 +344,10 @@ const OWNED_RULES = [
   "takeOffWeekPatch",
   "isOnSlate",
   "isOnDeckThisWeek",
+  "isCarrying",
+  "carriedWeeks",
+  "worksThisWeek",
+  "slateOrder",
 ];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

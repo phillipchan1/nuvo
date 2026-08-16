@@ -3574,3 +3574,75 @@ stays put.
 dark) and a real click-drag on the grid — the Slot tab's domain chips and the Event tab's
 three real calendar accounts. 1043 tests, typecheck and build green.*
 
+
+---
+
+**D-108 · 2026-08-16 · Unfinished work carries onto the week it survived into. It does not
+quietly stop existing.**
+
+Reported from the Schedule: *"I didn't finish Teach Kids How to Ride a Bike. You can see it
+still on projects On Deck but in schedule view you don't see it, which I think I expect to
+see as carry over."* Both halves were true at once, which is what makes it worth a decision
+rather than a patch.
+
+**The two answers.** Week membership was `spansWeek` — does the project's committed span
+(`start_date → target_date`) cover this week's Mon–Fri? A project whose finish line was ten
+days ago answers no, so it left the rail crown, the Week's Plan floor, `suggestPull`, the
+phone's slate and the chat's `weekSlate` **on the day its week ended**, with no event, no
+mark and nothing to act on. Meanwhile `readOnDeck` clamps a past due-date to horizon column
+0 (`targetMs < horizonStartMs → dueWeekIdx = 0`), so the deck went on drawing it under
+**This week**. One surface said "this week", every other said nothing at all — and the one
+that said nothing was the one that was arithmetically right.
+
+→ **The rule: `isCarrying` (in the kernel, so both runtimes get it).** An **open, unparked**
+project whose span ended before this week's Monday is *carrying* — it is on the slate and on
+deck, and `carriedWeeks` says how long it has been. It rides in as debt, not as a fresh
+choice: `WeekPush.carried` → `carryMark` → the mono `wk N` already designed for this on the
+rail crown and the Week's Plan row, now also on Sunday's Projects step and the phone's
+slate. Nothing is written behind the user's back (**P3**) — the span still says exactly what
+was committed; the app just stops pretending the commitment expired quietly.
+
+→ **The deck stops lying by the rule changing, not by the deck changing.** Its "This week"
+column was the only surface telling the truth about what the user still owed. Making the
+membership rule agree with it means the clamp is now correct rather than a display accident.
+
+→ **Four off-ramps, all yours, all already built.** *Ship it* · *park it* (`waiting` never
+carries — parking IS how you stop something following you) · *move it out* (`pushToNextWeekPatch`)
+· *take it off the week* (span cleared → back to "needs a sprint"). The remediation panel on
+the Week's Plan row is the surface for the last three, and it was **unreachable** for exactly
+the projects that needed it, since the row disappeared with the span.
+
+→ **One of those off-ramps was broken and nobody could have noticed.** `spanAnotherWeekPatch`
+widened from the project's *own* start, so "give it another week" on a project that lapsed
+two weeks ago produced Aug 3 → Aug 14 while you stood in the week of Aug 17: the act ran, the
+write landed, the row did not move. It now always reaches through the week you are standing
+in. This is the second-order cost of a surface that vanishes — the act it owned rots
+untested.
+
+→ **`roll_count` was dead, so the `wk N` marker read 0 forever.** The stored count only ever
+moved through `carryBigRocksForward`, which no surface calls. Membership is derived from the
+span, so the carry has to be too: `pushAsRock` now overlays the derived count. Three things
+came alive with it — the crown's marker, the Week's Plan row's, and `weekFinds.repeatedCarry`
+(the Review's *"has rolled N weeks — the supporting work may be done, but the decision
+isn't"*), which had never once had data to fire on.
+
+→ **Principle strained: P9 (quiet by default).** A week can now inherit rows nobody chose
+this Sunday, and in an account full of stale `in_progress` projects the crown could read as a
+graveyard. Accepted knowingly, with no time cap: a cap is just the same silent disappearance
+on a delay, which is the bug. The mitigations are ordering (this week's choices first,
+carried after, longest-carrying last — `slateOrder`, in the kernel so the chat lists the week
+the way the crown draws it) and the fact that carrying is only ever reachable for a project
+you *committed to a week and didn't finish*. **If it reads as a graveyard in a real account,
+the fix is parking, not a threshold.**
+
+Ledger: **W1** ("can I actually carry this week?") — the week's slate could not answer it
+while it was silently dropping what you still owed. No new row, no new pool, no new name: the
+word *carried* is already the app's (`priorityVerdict`, the Review's Find, "The rest" in
+[`glossary.md`](./glossary.md)); this only lets it apply to a project as well as a task.
+
+*Status: standing. Kernel + client + agent, 1000 tests green (14 of them this rule: the carry
+set, the ordering, every off-ramp, and the lapsed-span remediation), typecheck clean. The
+phone's carried row verified in the running dev app at 420px via the `?planweek` harness.
+**Not driven against real data** — this session had no Supabase credentials, so the desktop
+crown's carried row is proven by unit test and by the shared `carryMark` render path the
+phone row exercises, not by observation.*

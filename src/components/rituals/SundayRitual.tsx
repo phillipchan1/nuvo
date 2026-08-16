@@ -44,7 +44,7 @@ import { type Batch } from "../../lib/batch";
 import DurationSelect from "../DurationSelect";
 import { type PullSuggestion } from "../../lib/pull";
 import { lensGaps } from "../../lib/lenses";
-import { projectsOnDeck, weekPushes } from "../../lib/priorities";
+import { carryMark, projectsOnDeck, weekPushes } from "../../lib/priorities";
 import { bringIntoWeekPatch, pushToNextWeekPatch, spanAnotherWeekPatch, takeOffWeekPatch } from "../../../supabase/functions/_shared/planningRules.ts";
 import { PLAN_STEPS, STEP_ASK, STEP_LABEL, STEP_QUESTION, REVEALED_BY_LANE, laneOf, workBadge, type WeekPlanStep } from "../../lib/intake";
 import SourceSwitch, { CapacityMeter } from "./WeekIntake";
@@ -830,10 +830,11 @@ function ProjectsLane({
       )}
 
       <div className="border-t border-line">
-        {pushes.map(({ project }) => (
+        {pushes.map(({ project, carried }) => (
           <ProjectRow
             key={project.id}
             project={project}
+            carried={carried}
             data={data}
             rows={byProject.get(project.id) ?? []}
             kept={kept}
@@ -928,6 +929,7 @@ function FitStrip({
  *  identical words carrying no information, so readiness is now a silence. */
 function ProjectRow({
   project,
+  carried,
   data,
   rows,
   kept,
@@ -942,6 +944,9 @@ function ProjectRow({
   onPushOut,
 }: {
   project: Project;
+  /** weeks it has been carrying past the week it was committed to (0 = chosen
+   *  for this week). Sunday has to distinguish a decision from a leftover. */
+  carried: number;
   data: VerticalData;
   rows: PullSuggestion[];
   kept: Set<string>;
@@ -977,6 +982,12 @@ function ProjectRow({
             aria-hidden
           />
           <span className="min-w-0 flex-1 truncate text-body text-ink">{project.name}</span>
+          {/* Carrying, not chosen — Sunday's whole job is telling those apart. */}
+          {carried > 0 && (
+            <span className="mono shrink-0 text-micro text-muted" title={carryMark(carried).title}>
+              {carryMark(carried).text}
+            </span>
+          )}
         </button>
 
         {/* What happened to it — one mark per piece, so "did this land?" is

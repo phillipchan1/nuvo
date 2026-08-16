@@ -23,6 +23,7 @@ Each of these shipped. None was caught by typecheck, build, or review.
 | The agent read the sprint's `big_rocks`; every UI surface derived the slate from project spans | Asked to plan the week, Nuvo said *"no week priorities set yet"* over a deck holding several projects |
 | `planningWeekStart` shifted Saturday to next Monday in the app, to *this* Monday on the server | On Saturdays the app planned the week ahead while the agent planned the week that was ending |
 | `_shared/nlp.ts` is a 92-line re-implementation of the 207-line `src/lib/nlp.ts` | The same capture parses differently depending on whether you typed it into the app or said it to Nuvo — **still true; not yet folded into a kernel** |
+| The On Deck deck clamped a past due-date into its "This week" column; the span rules said the project's week had ended | An unfinished project sat in the deck's *This week* column and appeared on **no** week surface — not the rail crown, not the Week's Plan, not the pull, not the chat's slate. Fixed by `isCarrying` (D-100): unfinished work carries, marked, instead of falling through the floor |
 
 > The pattern: **the UI evolves, the agent's copy doesn't, and nothing fails.** Both surfaces
 > keep answering confidently — with different answers.
@@ -56,7 +57,7 @@ calling them. `tests/planning-kernel.test.ts` holds the line three ways:
 | Test class | Catches | Example |
 |---|---|---|
 | **Agreement** | the two *shapes* disagreeing | client `weekPushes(...)` vs the agent's `deriveSlateIds(...)` over one fixture set expressed both as view models and as rows |
-| **Behavior** | the shared rule being *wrong* | Saturday plans the week ahead · a project that shipped Wednesday stays on the slate · a Sunday-anchored span doesn't leak into the prior week |
+| **Behavior** | the shared rule being *wrong* | Saturday plans the week ahead · a project that shipped Wednesday stays on the slate · an unfinished project whose week passed carries onto this one, and every off-ramp (ship · park · move out · take off the week) actually stops it · a Sunday-anchored span doesn't leak into the prior week |
 | **Drift guard** | a second implementation *appearing* | a source scan: no file outside the kernel may define `spansWeek`, `planningWeekStart`, `weekSpanFor`, `bringIntoWeekPatch`… and both agent files must import the kernel |
 
 The drift guard is the load-bearing one. Agreement tests pass trivially while both sides call
@@ -73,6 +74,8 @@ zero-import module beside it (e.g. `_shared/conferencing.ts`) and is cited inlin
 | Which week am I planning | `planningWeekStart` | `planningWeekStartISO` (`lib/dates.ts`) | `context.ts`, `tools.ts` |
 | What's on this week (scoreboard) | `isOnSlate` / `deriveSlateIds` | `weekPushes` → rail crown, phone slate, week card, **`composeWeek` / the Week's Plan floor** (D-060 — the last surface still reading `big_rocks` as a list) | `context.weekSlate` |
 | What can I work on this week | `isOnDeckThisWeek` | `projectsOnDeck` → `suggestPull` | `context.weekSlate[].openTasks` |
+| Is this unfinished work following me | `isCarrying` / `carriedWeeks` (`worksThisWeek` = the union both membership rules stand on) | `WeekPush.carried` → the `wk N` mark (`carryMark`) on the rail crown, the Week's Plan row, Sunday and the phone's slate | `context.weekSlate[].carriedWeeks` |
+| What order does a week read in | `slateOrder` | `weekPushes` sorts through it | `context.ts` sorts `slateRows` through it |
 | What has no week yet | `needsASprint` *(code drift, D-007)* | deck pool "Needs a week" | `context.needsASprint` |
 | Bring a project into the week | `bringIntoWeekPatch` | `SundayRitual.bringIn`, `MobilePlanWeek.bringIn`, deck drop (`sprintSpanFor`) | `create_priority` |
 | Take a project off the week | `takeOffWeekPatch` | `MobilePlanWeek.takeOff`, `SundayRitual`, **Week's Plan row** | `delete_priority` |

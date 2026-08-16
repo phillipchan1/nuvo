@@ -13,12 +13,14 @@ import {
 // from, so "what is on this week" cannot mean two things. Never re-implement
 // one of these locally; tests/planning-kernel.test.ts fails if you do.
 import {
+  carriedWeeks,
   fromProjectRow,
   isCompleteStatus,
   isOnSlate,
   isOpenProjectStatus,
   needsASprint,
   planningWeekStart,
+  slateOrder,
   spansWeek,
 } from "../_shared/planningRules.ts";
 // What a day is — shared with the SPA and with any client that has to render a
@@ -172,7 +174,11 @@ export async function buildContext(
     .toISOString()
     .slice(0, 10);
 
-  const slateRows = projectRows.filter((p) => isOnSlate(fromProjectRow(p), weekStart));
+  // Slate order is the kernel's, so the chat lists the week in the same order
+  // the rail crown draws it: this week's choices first, then what's carrying.
+  const slateRows = projectRows
+    .filter((p) => isOnSlate(fromProjectRow(p), weekStart))
+    .sort((a, b) => slateOrder(fromProjectRow(a), fromProjectRow(b), weekStart));
   const needsRows = projectRows.filter((p) => needsASprint(fromProjectRow(p)));
   const nextRows = projectRows.filter(
     (p) => isOpenProjectStatus(p.status) && spansWeek(fromProjectRow(p), nextWeekStart),
@@ -281,6 +287,7 @@ export async function buildContext(
       startDate: p.start_date,
       targetDate: p.target_date,
       priorityId: rock?.id ?? null,
+      carriedWeeks: carriedWeeks(fromProjectRow(p), weekStart),
       // The verdict rides with its project — see contextShape.ts for why it is
       // no longer a top-level list.
       verdict: rock

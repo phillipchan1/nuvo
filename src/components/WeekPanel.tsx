@@ -18,7 +18,7 @@ import { addDays, format } from "date-fns";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { useLooseWork, type PlacedPiece } from "../hooks/useFindTime";
-import { priorityWork, pushAsRock, weekPushes } from "../lib/priorities";
+import { carryMark, priorityWork, pushAsRock, weekPushes } from "../lib/priorities";
 import { planningWeekStartISO } from "../lib/dates";
 import type { Task } from "../lib/types";
 import { domainById, initiativeById, projectById, type VerticalData } from "../lib/vertical";
@@ -354,8 +354,8 @@ function PriorityRow({
         <span className="flex shrink-0 items-center gap-1.5">
           {/* Carrying isn't *now* — the number tells it, the border shouted it. */}
           {rolls > 0 && (
-            <span className="mono text-micro text-muted" title={`Carried into week ${rolls + 1}`}>
-              wk {rolls + 1}
+            <span className="mono text-micro text-muted" title={carryMark(rolls).title}>
+              {carryMark(rolls).text}
             </span>
           )}
           {work.total > 0 && (

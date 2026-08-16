@@ -33,6 +33,17 @@ describe("span remediations", () => {
     expect(spansWeek(next, "2026-08-03")).toBe(true);
   });
 
+  it("gives a LAPSED project a week that actually reaches this one", () => {
+    // The bug: widening a project whose week passed by one week from its own
+    // start landed the new finish line still in the past — the row offered the
+    // act, the act ran, and nothing moved.
+    const p = { startDate: "2026-07-06", targetDate: "2026-07-10" }; // two weeks gone
+    const next = spanAnotherWeekPatch(p, WEEK);
+    expect(spansWeek(p, WEEK)).toBe(false);
+    expect(spansWeek(next, WEEK)).toBe(true);
+    expect(next.startDate).toBe("2026-07-06"); // it still started when it started
+  });
+
   it("handles a project with no span yet", () => {
     const next = spanAnotherWeekPatch({ startDate: null, targetDate: null }, WEEK);
     expect(next.startDate).toBe(WEEK);
