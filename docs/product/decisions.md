@@ -2169,6 +2169,76 @@ block. We can warn; we cannot disable. That residual is accepted, and it is the
 reason Q-13 stays on the list rather than being closed outright.
 *Status: standing.*
 
+**D-109 · 2026-08-16 · A project is placed as ONE act, and project time on the grid
+wears one shape — the sitting.**
+
+Origin ⓞ: *"dragging the parent (the project) onto schedule I should visually see the
+project slot and then if I drop it creates the project slot with the tasks inside."*
+
+D-084 gave the crown's project rows *depth* — you could open one and drag its loose pieces
+onto the grid, one at a time. But the row itself, which is the whole reason the crown
+exists (**this project is what the week is for**), was the only thing on the rail you
+couldn't place. So the manual version of "give this project time" existed at the wrong
+altitude: five drags for one decision, and each drop produced an anonymous block that said
+nothing about which project it served. Question Ledger **W2** — *if I only get three real
+hours, where do they go* — is answerable only if putting them somewhere is one gesture.
+
+Four parts, and each one is a rule rather than a screen:
+
+- **The project drags whole, and the preview is the thing you're about to get.** The crown
+  row carries its payload on the element (`data-project-*`), which the FullCalendar
+  `Draggable` already mounted over the rail picks up — no second drag machinery, no second
+  drop path. The in-grid mirror renders through the *same* `eventContent` as a real block
+  with slot-shaped props, so what follows the cursor is the sitting itself: designation,
+  the project's hue, the pieces it will hold, sized to their sum. A ghost that isn't the
+  block you'll get is a ghost that lies about how much of the morning this claims.
+- **Work that already has a time is offered, never moved.** The drop takes the *loose*
+  pieces; anything already blocked elsewhere this week surfaces in a card at the drop
+  point that names **where** each one is (`Thu 9:00am`) and waits for a press (P3). A count
+  alone would make "move them in" a decision you can't check. Accepting it is one act and
+  one undo, and the sitting **grows** to cover what it now holds — never shrinks, because
+  you may have sized that block by hand. A project whose work is *all* placed drops an
+  empty sitting and the same offer, which is the honest reading of the gesture.
+- **One sitting per project, topped up in place.** Dropped onto a sitting that already
+  exists, the work joins it. This is the same defect D-084 fixed in the re-plan (a second
+  slot with the same project title standing beside the first), arriving from a hand instead
+  of from the composer — so it gets the same answer, not a second one.
+- **A piece placed from the crown lands in a sitting too, even alone.** Project time wore
+  two different shapes on one grid depending on which row you happened to drag. It wears
+  one now. Deliberately scoped to the crown (`data-task-project`): dragging the same task
+  from Today is still "put this at 9am" and still makes its own block — the everyday
+  reschedule is not the deliberate act of giving a project time.
+
+**The designation is the other half, and it was already canon.** `glossary.md` has said
+since D-041 that calendar blocks wear their kind as an eyebrow — `PROJECT · 3 TASKS` — and
+only Plan the week's grid did. The Schedule said it with a `▸`, which asks you to learn a
+glyph before you can read your own calendar, and the phone copied the glyph. One spelling
+now (`blockDesignation`, `lib/slots`), worn by the ritual that proposes a sitting, the grid
+that holds it, and both phone lenses; a test fails on a second spelling. The Schedule
+leaves the count to its `2/3` progress badge and prints the project's name only when its
+own title isn't already the name, and below the height that fits an eyebrow the designation
+moves *inline* ahead of the title — a block sheds the least recoverable thing last.
+
+**Which principles this strains, named rather than buried.** P10 (don't add a pool, a name
+or a place): it adds **no** noun — a "project sitting" is the `slots` row with a
+`project_id` that `applySlots` has written since D-084, and the word *sitting* was already
+on screen in the ritual. P8 (one surface, one question): the reconcile card is a second
+thing on the Schedule, which is why it is an *offer* that closes on Escape or any press
+outside, rather than a modal on the common path. **Two smaller fixes fell out of building
+it:** a project sitting's bar took the project's domain hue (every unpainted slot rendered
+teal, project or not), and the drop hit-test now requires a real `data-slot-id` — the
+preview wears `.evt-slot`, so it was hit-testing *itself* and offering to drop the project
+into the block it hadn't made yet.
+
+*Status: standing — typecheck, 1007 tests (6 new: the designation's spelling, and that no surface re-spells it) and both builds green. **Driven, but not against a
+real account:** this container has no Supabase credentials (`.env.local` is gitignored), so
+the dev server serves the login wall — confirmed, not assumed. Both gestures were driven
+with a real pointer in a browser against the new `?sitting` harness (CalendarPane + a
+fixture crown): the preview, the drop, the reconcile card, "Move them in" growing the block
+60→135m, and a single piece landing in a sitting rather than a bare block. The phone's two
+lenses were verified at `?daycal`. **What still needs eyes on real data:** the crown row's
+drag against the macOS Tauri window-drag region, and a project whose loose work spans days.*
+
 ---
 
 ## 2 · Things we decided **not** to do
@@ -3649,7 +3719,7 @@ phone row exercises, not by observation.*
 
 ---
 
-**D-109 · 2026-08-16 · The week's slate is a read model, not a component. The
+**D-110 · 2026-08-16 · The week's slate is a read model, not a component. The
 phone's Calendar wears the Schedule's crown.**
 
 Phil, on the phone: *"a key feature on desktop schedule is seeing the this week
@@ -3703,12 +3773,19 @@ one did: the phone genuinely could not say what this week is carrying. (The
 inverse also holds — nothing about this argues the desktop should grow a
 collapsed crown; it never lost the view.)
 
-**Landed the same day as D-108, and the two compose exactly as they should.**
+**Landed the same day as D-108 and D-109, and composes with both.**
 That decision made an unfinished project *carry* onto the week it survived into,
 marked `wk N` by the shared `carryMark`. Because the slate is now a read model,
 the phone's crown inherited the carry — the rows, the order (chosen-first, then
-carried) and the marker's words — without a line of phone-specific work. That is
-the whole argument for the extraction, arriving within hours of making it.
+carried) and the marker's words — without a line of phone-specific work. D-109
+then made the desktop row *draggable as a whole project*, and that is the one
+place the two shells legitimately part: the rail's row carries a drag payload
+(`data-project-*`) built entirely off this read model, and the phone's row does
+not, because a phone has no drag. The model grew one field for it (`domainId`),
+which is the right shape — the surface asks the model for what it needs instead
+of reaching back into `VerticalData`. Two decisions in one day, both absorbed
+without a copy: that is the whole argument for the extraction, arriving within
+hours of making it.
 
 Verified over fixtures at **?weekcrown**, which renders both crowns and the
 in-situ Calendar tab over one set of data — including a carried row — so a

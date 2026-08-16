@@ -16,7 +16,7 @@ import { useSettings } from "../hooks/useSettings";
 import { useOnline } from "../hooks/useOnline";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { taskDomainColor, taskDomainId } from "../lib/vertical";
+import { domainById, projectById, taskDomainColor, taskDomainId } from "../lib/vertical";
 import { isReadOnlyCalendarId, isWritableAccount } from "../lib/calendarWrite";
 import {
   applySpotlightNav,
@@ -334,6 +334,17 @@ export default function Planner({
     [slotTasksBySlot, vertical],
   );
 
+  /** The project a sitting is FOR — its name, and the domain hue it carries up
+   *  the vertical — so the grid can say what kind of block it is. */
+  const slotProject = useCallback(
+    (s: Slot) => {
+      const p = projectById(vertical, s.project_id);
+      if (!p) return null;
+      return { name: p.name, color: domainById(vertical, p.domainId)?.color ?? null };
+    },
+    [vertical],
+  );
+
   const handleToggleAgent = () => {
     toggleAgent();
     writeAgentOpen(!agentOpen);
@@ -617,6 +628,7 @@ export default function Planner({
             taskAccent={taskAccent}
             taskDomain={taskDomain}
             slotTitle={slotTitle}
+            slotProject={slotProject}
             mutations={mutations}
             eventMutations={eventMutations}
             slotMutations={slotMutations}

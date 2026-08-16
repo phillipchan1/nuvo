@@ -1,6 +1,14 @@
 # Project-slot blocks — protected project time
 
-**Status:** spec / not built. Design-only, for review before any code.
+**Status:** **half built** (2026-08-16). The *affinity* half is real: a slot carrying a
+`project_id` is a **project sitting** — you make one by dragging a project (or one of its
+pieces) from the week crown onto the Schedule, it holds that project's loose work, and it
+wears the `PROJECT` designation on the grid and on the phone (D-109, and D-084 before it,
+which made `applySlots` write `project_id` at all). The *typed capacity* half below —
+§1's `kind` column and §3's On Deck reading capacity in project hours — is **still spec**,
+and is the part that makes the headline numbers honest. §2's "mark a slot as project time"
+is answered obliquely: a sitting gets its affinity from the act that made it rather than
+from a toggle.
 **Origin:** Phil — "not all blocks are created equal… a special block type to work on
 projects so we can always find time for them."
 
@@ -65,6 +73,13 @@ yet, fall back to the generic availability (today's behavior) and surface a gent
 everywhere and making every week look overloaded.
 
 ## Open decisions (resolve before building)
+
+> **Two of these were answered by use, not by argument** (D-109). (1) is settled: slots
+> bind to **one project** — that's what dragging a project onto the grid makes, and it's
+> what lets a second drop top up the sitting that already exists instead of standing a
+> twin beside it. (3) is settled for placement: dragging a project *does* claim time for
+> it, and its loose work goes inside; what already had a time is offered, never moved.
+> Capacity (2) and the no-slots-yet fallback (4) are untouched and still open.
 
 1. **General vs per-project slots.** Start general (recommended) or bind a slot to one
    project from day one?

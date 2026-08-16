@@ -193,16 +193,24 @@ export function useSlotMutations() {
     start: Date,
     /** Where a task's hours actually count — pass `taskDomainId(vertical, t)`. */
     domainOf: (t: Task) => string | null,
+    /**
+     * A stated affinity, when the gesture already knows it: dragging a PROJECT
+     * onto the grid means "this project's time", so the block is its sitting
+     * even before any piece is inside it (a project whose work is all placed
+     * elsewhere drops an empty sitting and then offers to gather it).
+     */
+    affinity?: { projectId?: string | null; domainId?: string | null; label?: string },
   ): Promise<Slot | null> => {
-    if (tasks.length === 0) return null;
+    if (tasks.length === 0 && !affinity?.projectId) return null;
 
     const only = <T,>(values: (T | null)[]): T | null => {
       const set = new Set(values);
       const first = [...set][0];
       return set.size === 1 && first != null ? first : null;
     };
-    const projectId = only(tasks.map((t) => t.project_id ?? null));
-    const domainId = only(tasks.map((t) => domainOf(t)));
+    const projectId = affinity?.projectId ?? only(tasks.map((t) => t.project_id ?? null));
+    const domainId =
+      only(tasks.map((t) => domainOf(t))) ?? affinity?.domainId ?? null;
 
     // Snapshot where each task was BEFORE anything moves — the same four
     // fields every other place-act restores (D-063a).
@@ -218,7 +226,11 @@ export function useSlotMutations() {
       title: "",
       do_date: toDateISO(start),
       start_time: start.toISOString(),
-      duration_minutes: sizeSlotToContents(tasks.map((t) => t.duration_minutes)),
+      // An empty sitting still has to be a real piece of time — the floor, not
+      // a zero-height sliver you can't aim at.
+      duration_minutes: sizeSlotToContents(
+        tasks.length > 0 ? tasks.map((t) => t.duration_minutes) : [DEFAULT_DURATION_MINUTES],
+      ),
       project_id: projectId,
       domain_id: domainId,
     });
@@ -227,8 +239,8 @@ export function useSlotMutations() {
 
     const n = tasks.length;
     recordUndo({
-      label: `Blocked ${n} task${n === 1 ? "" : "s"} together`,
-      shortLabel: "Blocked together",
+      label: affinity?.label ?? `Blocked ${n} task${n === 1 ? "" : "s"} together`,
+      shortLabel: affinity?.label ? "Placed the sitting" : "Blocked together",
       tier: "toast",
       undo: () => {
         before.forEach(({ id, ...snap }) => taskMutations.patchTask(id, snap, { undo: false }));
@@ -237,6 +249,49 @@ export function useSlotMutations() {
     });
 
     return slot;
+  };
+
+  /**
+   * **Gather work that already has a time into a sitting** — one act, one undo.
+   *
+   * The reconcile half of placing a project by hand: the drop takes the loose
+   * pieces, and what was already blocked elsewhere is *offered*, never moved
+   * behind your back (P3). Two rules it must not break:
+   *
+   *  - **The sitting grows to cover what it now holds** (`sizeSlotToContents`),
+   *    the same top-up-in-place rule a mid-week re-plan follows — a sitting that
+   *    silently keeps its old 30 minutes while swallowing four tasks is the
+   *    calendar lying about the week (D-084).
+   *  - **It never shrinks.** You may have sized this block by hand; gathering is
+   *    a reason to make room, never a reason to take it away.
+   */
+  const gatherIntoSlot = (slot: Slot, tasks: Task[], alreadyHeld: Task[] = []) => {
+    if (tasks.length === 0) return;
+    const before = tasks.map((t) => ({
+      id: t.id,
+      status: t.status,
+      do_date: t.do_date,
+      start_time: t.start_time,
+      slot_id: t.slot_id,
+    }));
+    const wasMins = slot.duration_minutes;
+    const grown = sizeSlotToContents(
+      [...alreadyHeld, ...tasks].map((t) => t.duration_minutes),
+    );
+
+    tasks.forEach((t) => taskMutations.assignToSlot(t, slot, { undo: false }));
+    if (grown > wasMins) updateSlot({ id: slot.id, patch: { duration_minutes: grown } });
+
+    const n = tasks.length;
+    recordUndo({
+      label: `Moved ${n} piece${n === 1 ? "" : "s"} into the sitting`,
+      shortLabel: "Moved in",
+      tier: "toast",
+      undo: () => {
+        before.forEach(({ id, ...snap }) => taskMutations.patchTask(id, snap, { undo: false }));
+        if (grown > wasMins) updateSlot({ id: slot.id, patch: { duration_minutes: wasMins } });
+      },
+    });
   };
 
   const removeSlot = (slot: Slot) => {
@@ -257,5 +312,5 @@ export function useSlotMutations() {
     invalidateWhenSafe(qc, "tasks", ["tasks"]); // orphaned children
   };
 
-  return { createSlot, createSlotWith, updateSlot, removeSlot };
+  return { createSlot, createSlotWith, gatherIntoSlot, updateSlot, removeSlot };
 }

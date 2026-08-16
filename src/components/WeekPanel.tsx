@@ -36,7 +36,13 @@ export interface WeekDoor {
 
 export default function WeekPanel({ door }: { door?: WeekDoor }) {
   const { data, togglePushLanded } = useVertical();
-  const { openFlow, openRecord } = useAppNavigation();
+  const { openFlow, openRecord, nav } = useAppNavigation();
+  // A project places onto a TIME grid — that's what a sitting is. The board and
+  // the Year have no hours, and the floors have no calendar at all, so the row
+  // doesn't wear a grab cursor there: an affordance that can't land is the exact
+  // defect the crown's own drag shipped with once (D-084).
+  const canPlaceProjects =
+    nav.rung === "day" && (nav.calView === "timeGridWeek" || nav.calView === "timeGridDay");
   const [shipId, setShipId] = useState<string | null>(null);
   // Which project rows are open to their loose work. Collapsed by default — the
   // crown's job is the glance; the depth is there when the glance isn't enough.
@@ -144,6 +150,7 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
                 // Open a priority where its work lives: its Record, to manage
                 // and close its tasks.
                 onOpen={() => openRecord("project", row.projectId)}
+                canPlace={canPlaceProjects}
                 expanded={openIds.has(row.rock.id)}
                 onExpand={() =>
                   setOpenIds((prev) => {
@@ -186,6 +193,7 @@ function PriorityRow({
   row,
   onToggle,
   onOpen,
+  canPlace,
   expanded,
   onExpand,
 }: {
@@ -193,17 +201,54 @@ function PriorityRow({
   row: WeekCrownRow;
   onToggle: () => void;
   onOpen: () => void;
+  /** the Schedule is showing a time grid, so a sitting has somewhere to land */
+  canPlace: boolean;
   expanded: boolean;
   onExpand: () => void;
 }) {
-  const { rock, work, color, placed, loose, pct, rolls, continues, canExpand, placedLabel: pill } = row;
+  const { rock, work, color, placed, loose, open, pct, rolls, continues, canExpand, placedLabel: pill } = row;
   const shipped = row.state === "shipped";
   const done = shipped || row.state === "landed";
   const looksDone = row.state === "ready-to-ship";
 
+  // ── the project itself is draggable ──────────────────────────────────────
+  // The crown already offered a project's *pieces* one at a time; the whole
+  // point of the row is that they're one push, so the row places as one too.
+  // The payload is DOM-only on purpose: `CalendarPane` mounts a single
+  // FullCalendar `Draggable` over the rail and reads what it needs off the
+  // element, so this needs no new drag machinery and no second drop path.
+  // `data-project-placed` is what makes the drop honest — the sitting takes the
+  // loose work, and what already has a time is *offered*, never moved silently.
+  // Every field comes off the read model: what you drag is what the row says.
+  const canDrag = canPlace && !done && open > 0;
+  const dragProps = canDrag
+    ? {
+        "data-project-drag": row.projectId,
+        "data-project-title": row.title,
+        "data-project-color": color,
+        "data-project-domain": row.domainId ?? "",
+        "data-project-tasks": loose.map((t) => t.id).join(","),
+        "data-project-placed": placed.map((p) => p.task.id).join(","),
+        // The crown sits inside the rail's `data-tauri-drag-region="deep"` zone,
+        // so without this opt-out this drag moves the macOS WINDOW and the
+        // project never lands — the same trap the loose rows below hit (D-084).
+        "data-tauri-drag-region": "false",
+      }
+    : {};
+
   return (
     <>
-    <div className="group/row flex items-center gap-2 py-1">
+    <div
+      {...dragProps}
+      title={
+        canDrag
+          ? loose.length > 0
+            ? `Drag onto the calendar to sit ${row.title} — ${loose.length} piece${loose.length === 1 ? "" : "s"} with no time yet`
+            : `Drag onto the calendar to give ${row.title} a sitting`
+          : undefined
+      }
+      className={`group/row flex items-center gap-2 py-1 ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
+    >
       <button
         onClick={onToggle}
         disabled={shipped}
@@ -351,6 +396,12 @@ function PriorityRow({
                   data-task-title={t.title}
                   data-task-duration={t.duration_minutes ?? ""}
                   data-task-week="1"
+                  // Project work placed by hand lands in the project's SITTING,
+                  // never as a bare block — one piece or five, project time on
+                  // the grid wears one shape. The drop reads this to know the
+                  // difference between "a task that happens to have a project"
+                  // and "this project, being given time".
+                  data-task-project={t.project_id ?? ""}
                   title="Drag onto the calendar to give it a time"
                   className="fast flex cursor-grab items-center gap-2 rounded py-0.5 pr-1 hover:bg-surface-2 active:cursor-grabbing"
                 >

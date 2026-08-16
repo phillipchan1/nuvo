@@ -31,6 +31,8 @@ import {
   type DayCtx,
 } from "./dayPlan";
 import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
+// One spelling for what a block IS — shared with the Schedule and the ritual.
+import { blockDesignation } from "../../lib/slots";
 
 /** The drill-in lenses of the mobile Calendar. */
 export type CalLens = "schedule" | "day" | "week";
@@ -444,13 +446,28 @@ export default function MobileDayView({
                       compact ? "flex items-center gap-1.5" : "py-1"
                     }`}
                   >
-                    <div className="flex min-w-0 items-center gap-1">
+                    {/* The block says what it IS, in words — the same designation
+                        the desktop grid and Plan the week print over a sitting
+                        (`blockDesignation`). The phone had the desk's `▸`, which
+                        is a glyph you have to be taught; a tall enough sitting
+                        gets the eyebrow, a short one keeps the mark. */}
+                    {isProjectSlot && !compact && (
+                      <div
+                        className="truncate text-micro font-semibold uppercase leading-none"
+                        style={{ color: "var(--slot)", letterSpacing: "0.06em" }}
+                      >
+                        {blockDesignation({ kind: "project" })}
+                      </div>
+                    )}
+                    <div className={`flex min-w-0 items-center gap-1 ${isProjectSlot && !compact ? "mt-[3px]" : ""}`}>
                       <div
                         className={`min-w-0 truncate ${compact ? "text-meta" : "text-label"} font-medium ${
                           b.done ? "text-muted line-through" : "text-ink"
                         }`}
                       >
-                        {b.projectBacked ? `▸ ${b.title || "Untitled"}` : b.title || "Untitled"}
+                        {b.projectBacked && !(isProjectSlot && !compact)
+                          ? `▸ ${b.title || "Untitled"}`
+                          : b.title || "Untitled"}
                       </div>
                       {isSlot && (b.childCount ?? 0) > 0 && (
                         <span

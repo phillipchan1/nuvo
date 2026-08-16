@@ -39,6 +39,9 @@ export interface WeekCrownRow {
   title: string;
   /** the domain's own hue, or `--accent` when there's nothing to inherit */
   color: string;
+  /** the domain it belongs to — the rail's drag payload hands this to the
+   *  sitting it creates, so the block is attributed the moment it lands */
+  domainId: string | null;
   state: PushState;
   work: RockWork;
   /** 0–100, derived from the project's own tasks */
@@ -103,6 +106,7 @@ export function useWeekCrown(): WeekCrown | null {
         projectId: push.project.id,
         title: rock.title,
         color: rockDomainColor(data, rock) ?? "var(--accent)",
+        domainId: push.project.domainId || null,
         state,
         work,
         pct: work.total > 0 ? Math.round((work.done / work.total) * 100) : 0,

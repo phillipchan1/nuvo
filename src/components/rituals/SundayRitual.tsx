@@ -41,6 +41,7 @@ import { noticeIfUnready } from "../../lib/readyNotice";
 import { CONTEXT_META, type DayContext, type Placement, type UnplacedTask } from "../../lib/compose";
 import { readDay, toBusyBlocks, type Gap } from "../../lib/now";
 import { type Batch } from "../../lib/batch";
+import { blockDesignation } from "../../lib/slots";
 import DurationSelect from "../DurationSelect";
 import { type PullSuggestion } from "../../lib/pull";
 import { lensGaps } from "../../lib/lenses";
@@ -2082,17 +2083,23 @@ function WeekGrid({
                 const open = inspect === it.id;
                 // what this block IS, in words — used as an eyebrow when there's
                 // a line for it, and inlined before the title when there isn't
+                // `blockDesignation` (lib/slots) spells this for the Schedule too —
+                // a sitting proposed here and the same sitting on the grid wear one
+                // vocabulary, because they are one thing at two moments.
                 const kindLabel =
                   holds > 0
-                    ? it.slotPart
-                      ? `Project · part ${it.slotPart.part} of ${it.slotPart.parts}`
-                      : `${isProject ? "Project" : "Slot"} · ${holds} ${isProject ? "task" : "capture"}${holds === 1 ? "" : "s"}`
+                    ? blockDesignation({
+                        kind: isProject ? "project" : "slot",
+                        part: it.slotPart,
+                        holds,
+                        unit: isProject ? "task" : "capture",
+                      })
                     : isProject
-                      ? it.project
+                      ? blockDesignation({ kind: "project", name: it.project })
                       : // a single loose piece of work — say so, so every block Nuvo
                         // placed names its kind and the week reads as one vocabulary
                         isNew
-                        ? "Task"
+                        ? blockDesignation({ kind: "task" })
                         : null;
                 // 44px = one hour. A 45-minute sitting is 33px: room for a
                 // designation and a title, not for a time it can read off the axis.
