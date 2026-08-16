@@ -3,7 +3,7 @@
 // share one definition. A priority (big rock) owns tasks directly via
 // tasks.big_rock_id, and can optionally spotlight a linked bet/project's work.
 
-import { initiativeById, isProjectInFlight, projectById, tasksOf, type Project, type VerticalData, type VTask } from "./vertical";
+import { domainById, initiativeById, isProjectInFlight, projectById, tasksOf, type Project, type VerticalData, type VTask } from "./vertical";
 import { portfolioDemand, type ProjectPace } from "./pace";
 import { isCompleteStatus, isOnDeckThisWeek, isOnSlate } from "../../supabase/functions/_shared/planningRules.ts";
 import { isTended } from "./tending";
@@ -113,6 +113,18 @@ export function pushAsRock(push: WeekPush): BigRock {
       roll_count: 0,
     }
   );
+}
+
+/** The hue a week row inherits from the initiative/project it's anchored to —
+ *  identity, never decoration, so the same project reads the same colour on the
+ *  rail crown and on the phone. `null` = nothing to inherit; the caller falls
+ *  back to `--accent`. */
+export function rockDomainColor(data: VerticalData, rock: BigRock): string | null {
+  const init = initiativeById(data, rock.initiative_id);
+  if (init) return domainById(data, init.domainId)?.color ?? null;
+  const proj = projectById(data, rock.project_id ?? null);
+  if (proj) return domainById(data, proj.domainId)?.color ?? null;
+  return null;
 }
 
 /** Where a project's REMAINING work actually sits this week.

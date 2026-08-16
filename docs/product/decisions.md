@@ -2171,6 +2171,66 @@ reason Q-13 stays on the list rather than being closed outright.
 
 ---
 
+**D-108 · 2026-08-16 · The week's slate is a read model, not a component. The
+phone's Calendar wears the Schedule's crown.**
+
+Phil, on the phone: *"a key feature on desktop schedule is seeing the this week
+w projects — I realized I can't see that."* He was right, and the gap was worse
+than a missing view. The desktop Schedule has always crowned its rail with the
+week's projects — each one's verdict, its progress, and how much of its
+remaining work still has **no time** (D-060). On the phone that read did not
+exist anywhere: the Calendar showed a month, and the Week segment of Tasks
+offered a card that opened the *ritual*. So **W2** ("if I only get three real
+hours, where do they go?") was answered on one shell out of two, and P13 was
+being satisfied in the letter — every component reflows — while the *question*
+stayed desk-only.
+
+**Why it happened is the part worth keeping.** The answer wasn't a model, it was
+a component: `weekPushes` → `pushAsRock` → `priorityWork` → `splitFor` →
+`pushState`, composed inside `WeekPanel.tsx` and nowhere else. A second surface
+could only have that read by copying five calls — which is how the two runtimes
+drifted about a week before (`docs/planning-kernel.md`), and how "is this domain
+quiet" nearly drifted (D-086). So the composition moved out first:
+**`hooks/useWeekCrown.ts`** is the week's slate — rows, verdicts, progress,
+placed/loose, the scoreboard — and `WeekPanel` became a layout over it in the
+same commit. The phone's `MobileWeekCrown` is the second layout. Neither
+computes anything; `tests/week-crown.test.tsx` holds the read.
+
+**What the phone shows, and the three places it deliberately differs:**
+
+- **It collapses**, remembering the choice. The month grid is the screen's
+  subject and a five-project slate would push it off a 375px screen. Collapsing
+  hides *depth*, never the fact: the shut header still carries the scoreboard
+  **and** "N pieces with no time yet", which is the one line that has to survive
+  (P9 — amber only when something is genuinely homeless).
+- **No ship circle.** The desktop row's ring opens the ship assessment. On the
+  phone, lifecycle acts live in one vocabulary reached from the record sheet
+  (`recordActions`), so a tick here would be a *second* ship path — exactly how
+  Delete ended up desktop-only. A finished-looking row states "ready to ship"
+  and opens the record.
+- **Loose work taps instead of dragging.** The desktop's answer to a homeless
+  piece is to drag it onto the grid; a phone has no drag, so the piece opens its
+  own sheet, where the date and time already are. Same act, the phone's gesture —
+  never a hidden or hover-only affordance.
+
+**It rides Month and Week only** — the two lenses that *are* the week or wider.
+Day and List are one day's answer and the Year is another altitude; a crown that
+followed you into all of them would be a second subject on a surface that has
+one (P8).
+
+**Note what this is NOT: it is not N-16 in reverse.** That row killed a desktop
+Agenda built because the phone had a list — *symmetry* dressed as a need. The
+test it sets is whether a real question goes unanswered on that shell, and here
+one did: the phone genuinely could not say what this week is carrying. (The
+inverse also holds — nothing about this argues the desktop should grow a
+collapsed crown; it never lost the view.)
+
+Verified over fixtures at **?weekcrown**, which renders both crowns and the
+in-situ Calendar tab over one set of data, so a divergence between the shells
+shows up as a difference you can see. *Status: standing.*
+
+---
+
 ## 2 · Things we decided **not** to do
 
 | # | The idea | Why not | Would change if… |

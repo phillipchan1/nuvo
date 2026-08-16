@@ -14,18 +14,13 @@
 // focus mode, where this rail is slid shut.
 
 import { useState } from "react";
-import { addDays, format } from "date-fns";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { useLooseWork, type PlacedPiece } from "../hooks/useFindTime";
-import { priorityWork, pushAsRock, weekPushes } from "../lib/priorities";
-import { planningWeekStartISO } from "../lib/dates";
-import type { Task } from "../lib/types";
-import { domainById, initiativeById, projectById, type VerticalData } from "../lib/vertical";
+import { useWeekCrown, type WeekCrownRow } from "../hooks/useWeekCrown";
+import { fmtDayTime } from "../lib/dates";
 import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
-import type { BigRock } from "../lib/types";
 
 /** The week door's lifecycle, owned by Planner and worn by this header. */
 export interface WeekDoor {
@@ -38,30 +33,6 @@ export interface WeekDoor {
   onOpen: () => void;
 }
 
-/** Stable identity for a rock with no project behind it — a new `{}` each render
- *  would churn every row's memo for nothing. */
-const EMPTY_SPLIT: { placed: PlacedPiece[]; loose: Task[] } = { placed: [], loose: [] };
-
-/** "Thu 9:00am" — the one thing the crown could never say. Matches the idiom in
- *  `FindTimeProposal`, so a proposed block and a real one read the same way. */
-function whenLabel(startISO: string): string {
-  const d = new Date(startISO);
-  const h = d.getHours();
-  const m = d.getMinutes();
-  const ampm = h >= 12 ? "pm" : "am";
-  const hh = ((h + 11) % 12) + 1;
-  return `${format(d, "EEE")} ${m === 0 ? `${hh}${ampm}` : `${hh}:${String(m).padStart(2, "0")}${ampm}`}`;
-}
-
-/** The color a priority inherits from the initiative/project it's anchored to. */
-function rockColor(data: VerticalData, rock: BigRock): string | null {
-  const init = initiativeById(data, rock.initiative_id);
-  if (init) return domainById(data, init.domainId)?.color ?? null;
-  const proj = projectById(data, rock.project_id ?? null);
-  if (proj) return domainById(data, proj.domainId)?.color ?? null;
-  return null;
-}
-
 export default function WeekPanel({ door }: { door?: WeekDoor }) {
   const { data, togglePushLanded } = useVertical();
   const { openFlow, openRecord } = useAppNavigation();
@@ -69,29 +40,16 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   // Which project rows are open to their loose work. Collapsed by default — the
   // crown's job is the glance; the depth is there when the glance isn't enough.
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
-  const weekISO = data?.sprint?.week_start ?? planningWeekStartISO();
-  // One definition of "loose", shared with the Week's Plan row that counts it.
-  const { splitFor } = useLooseWork(weekISO);
-  if (!data) return null;
+  // The week's slate, read once and shared with the phone's crown — the
+  // priorities ARE the projects On Deck committed to this week, derived, so this
+  // rail can never drift from the board (or from Set-the-week). The stored rock,
+  // when one exists, carries only the verdict.
+  const crown = useWeekCrown();
+  if (!data || !crown) return null;
 
-  // The week's priorities ARE the projects On Deck committed to this week —
-  // derived, so this rail can never drift from the board (or from Set-the-week).
-  // The stored rock, when one exists, carries only the verdict.
-  const pushes = weekPushes(data, weekISO);
-  const rocks: BigRock[] = pushes.map(pushAsRock);
-  // `done` already folds in "shipped inside this week" — a shipped project must
-  // count on the scoreboard, not vanish from it.
-  const landed = pushes.filter((p) => p.done).length;
-  const shippedIds = new Set(pushes.filter((p) => p.shipped).map((p) => p.project.id));
-  const composed = Boolean(data.sprint?.reviewed_at);
-
-  const weekLabel = (() => {
-    const iso = data.sprint?.week_start;
-    if (!iso) return "";
-    const s = new Date(iso + "T00:00:00");
-    const e = addDays(s, 6);
-    return `${format(s, "MMM d")} – ${format(e, s.getMonth() === e.getMonth() ? "d" : "MMM d")}`;
-  })();
+  const { rows, landed, composed } = crown;
+  // The label follows the sprint the way it always has: no sprint row, no span.
+  const weekLabel = data.sprint?.week_start ? crown.weekLabel : "";
 
   // The panel is the ambient face of the Week's Plan: composed → open the
   // surface (view), not yet → the compose ritual (plan). Planner owns the real
@@ -112,13 +70,6 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   // one position, three verbs — the state changes the word, never the weight.
   const action = mode === "review" ? "Review" : mode === "plan" ? "Plan the week" : "The plan ▸";
 
-  // Open a priority where its work lives: a project-bound one → its Record
-  // (manage/close its tasks, complete the project); an aim → the Week's Plan.
-  const openRow = (rock: BigRock) => {
-    if (rock.project_id) openRecord("project", rock.project_id);
-    else openWeekPlan();
-  };
-
   // Ticking a priority SHIPS its project — one completion act, not two. The
   // circle used to write only the week's verdict (done_at), which read as
   // "complete" and finalized nothing, so a priority could go struck-through
@@ -126,11 +77,10 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   // every other ship path uses: you see what's still open before anything is
   // written. (A legacy landed-but-not-shipped verdict can still be tapped to
   // reopen; shipped rows are inert — reopen from the record.)
-  const onTick = (rock: BigRock) => {
-    if (!rock.project_id) return;
-    if (shippedIds.has(rock.project_id)) return;
-    if (rock.done_at) return togglePushLanded(rock.project_id);
-    setShipId(rock.project_id);
+  const onTick = (row: WeekCrownRow) => {
+    if (row.state === "shipped") return;
+    if (row.rock.done_at) return togglePushLanded(row.projectId);
+    setShipId(row.projectId);
   };
 
   return (
@@ -149,20 +99,20 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
           <div className="section-label !px-0 !pb-0" style={{ color: "var(--accent)" }}>
             This week{weekLabel ? ` · ${weekLabel}` : ""}
           </div>
-          {rocks.length === 0 ? (
+          {rows.length === 0 ? (
             <div className="mt-1 text-body text-muted">No priorities named yet</div>
           ) : (
             <div className="mt-1.5 flex items-center gap-2.5">
               <span className="shrink-0 text-body">
                 <span className="mono font-medium text-ink">{landed}</span>
                 <span className="text-muted"> of </span>
-                <span className="mono font-medium text-ink">{rocks.length}</span>
+                <span className="mono font-medium text-ink">{rows.length}</span>
                 <span className="text-muted"> landed</span>
               </span>
               <span className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
                 <span
                   className="block h-full rounded-full"
-                  style={{ width: `${(landed / rocks.length) * 100}%`, background: "var(--accent)" }}
+                  style={{ width: `${(landed / rows.length) * 100}%`, background: "var(--accent)" }}
                 />
               </span>
             </div>
@@ -183,23 +133,22 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
 
       {/* priorities — directly under the crown; the crown states the count, so
           there's no repeated "Priorities" label. */}
-      {rocks.length > 0 ? (
+      {rows.length > 0 ? (
         <div className="flex flex-col gap-0.5">
-            {rocks.map((rock) => (
+            {rows.map((row) => (
               <PriorityRow
-                key={rock.id}
-                rock={rock}
-                data={data}
-                shipped={Boolean(rock.project_id && shippedIds.has(rock.project_id))}
-                onToggle={() => onTick(rock)}
-                onOpen={() => openRow(rock)}
-                split={rock.project_id ? splitFor(rock.project_id) : EMPTY_SPLIT}
-                expanded={openIds.has(rock.id)}
+                key={row.rock.id}
+                row={row}
+                onToggle={() => onTick(row)}
+                // Open a priority where its work lives: its Record, to manage
+                // and close its tasks.
+                onOpen={() => openRecord("project", row.projectId)}
+                expanded={openIds.has(row.rock.id)}
                 onExpand={() =>
                   setOpenIds((prev) => {
                     const next = new Set(prev);
-                    if (next.has(rock.id)) next.delete(rock.id);
-                    else next.add(rock.id);
+                    if (next.has(row.rock.id)) next.delete(row.rock.id);
+                    else next.add(row.rock.id);
                     return next;
                   })
                 }
@@ -233,46 +182,23 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
 //  motion   → mini progress bar + done/total from priorityWork; hover to ship
 //  carrying → unfinished + rolled from a prior week → a quiet "wk N" nag
 function PriorityRow({
-  rock,
-  data,
-  shipped,
+  row,
   onToggle,
   onOpen,
-  split,
   expanded,
   onExpand,
 }: {
-  rock: BigRock;
-  data: VerticalData;
-  /** the linked project SHIPPED inside this week — the loudest verdict there is */
-  shipped: boolean;
+  /** the week's read model — this row computes nothing (see useWeekCrown) */
+  row: WeekCrownRow;
   onToggle: () => void;
   onOpen: () => void;
-  /** this project's open work, cut by whether it has a time — the "Xh has a time
-   *  · Xh loose" line made into the actual tasks */
-  split: { placed: PlacedPiece[]; loose: Task[] };
   expanded: boolean;
   onExpand: () => void;
 }) {
-  const done = Boolean(rock.done_at) || shipped;
-  const work = priorityWork(data, rock);
-  const color = rockColor(data, rock) ?? "var(--accent)";
-  const rolls = rock.roll_count ?? 0;
-  const pct = work.total > 0 ? Math.round((work.done / work.total) * 100) : 0;
-  const looksDone = !done && work.total > 0 && work.done === work.total;
-  // Sealing a Push lands the WEEK, not the project: if it's project-bound with
-  // open work left, the project rolls on. Say so, so "landed" never reads as
-  // "closed the project" (or silently finished its tasks). (Push verdict ≠ done.)
-  // Shipped is the exception — there the project really did finish.
-  const continues = done && !shipped && Boolean(rock.project_id) && work.tasks.some((t) => t.status !== "done");
-  const { placed, loose } = split;
-  const open = placed.length + loose.length;
-  // A finished row has nothing left to say about time; offering it would be noise.
-  const canExpand = !done && !shipped && open > 0;
-  // State the split, not the half that happens to be non-zero. "3 of 5 placed"
-  // and "2 loose" are the same fact, but the first one can't be read as "and the
-  // rest is fine" — which is the read that let work go missing in the first place.
-  const pill = loose.length === 0 ? "all placed" : `${placed.length} of ${open} placed`;
+  const { rock, work, color, placed, loose, pct, rolls, continues, canExpand, placedLabel: pill } = row;
+  const shipped = row.state === "shipped";
+  const done = shipped || row.state === "landed";
+  const looksDone = row.state === "ready-to-ship";
 
   return (
     <>
@@ -396,7 +322,7 @@ function PriorityRow({
               {placed.map((p) => (
                 <li key={p.task.id} className="flex items-baseline gap-2 py-0.5 pr-1">
                   <span className="mono shrink-0 text-micro" style={{ color }}>
-                    {whenLabel(p.startISO)}
+                    {fmtDayTime(p.startISO)}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-label text-muted">{p.task.title}</span>
                   {/* A slot child has no block of its own — say what holds it,

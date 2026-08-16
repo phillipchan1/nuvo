@@ -565,6 +565,13 @@ export default function MobileShell() {
             onTapEvent={setCalendarTap}
             onOpenUpkeep={() => setUpkeepOpen(true)}
             onNewEvent={setNewEventDate}
+            // The week crown's three doors: a project opens its record sheet, a
+            // loose piece opens its task sheet (where it gets a time), and the
+            // door opens the same ritual the Week segment's card does — no
+            // second copy of any of them.
+            onOpenProject={(id) => openDetail("project", id)}
+            onOpenTask={(id) => setTaskId(id)}
+            onPlanWeek={() => setPlanOpen(true)}
           />
         ) : tab === "projects" ? (
           <MobileProjects onOpenItem={openDetail} />

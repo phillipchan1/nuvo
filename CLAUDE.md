@@ -140,6 +140,18 @@ it needs to work on a phone.
   **Never re-derive "is this domain quiet" in a surface** — import it. Verify both at once
   at `?domains` (`mobile/DomainHarness.tsx`), which renders the wall, the open domain and
   the desktop floor over the same fixtures — see D-086.
+- **The week's slate is a read model, not a component** — `useWeekCrown`
+  (`src/hooks/useWeekCrown.ts`) is what the week IS: the projects committed to it, each
+  one's verdict, its progress, and its work cut by *placed vs loose*. The Schedule's rail
+  crown (`WeekPanel`) and the phone's Calendar crown (`mobile/MobileWeekCrown`) are two
+  layouts over it. **Never re-derive the slate in a surface** — that composition
+  (`weekPushes` → `pushAsRock` → `priorityWork` → `splitFor`) lived inside `WeekPanel`, and
+  that is exactly why the phone couldn't say what the week was carrying at all (D-108).
+  The phone deliberately differs in three ways and no more: the rows collapse (the shut
+  header still carries the scoreboard *and* the loose count), there is no ship circle
+  (shipping is the record sheet's act — one vocabulary), and loose work **taps** to its
+  sheet instead of dragging. Verify both at once at `?weekcrown`
+  (`mobile/WeekCrownHarness.tsx`), which also renders the in-situ Calendar tab.
 - **The Build rungs wear the same four faces on both shells** — **On Deck · Groom · All
   (Table) · Shipped**, in that order, at the project *and* initiative altitudes. Desktop:
   `FloorPane`'s `RungTabs`. Phone: the segmented header in `MobileProjects` /

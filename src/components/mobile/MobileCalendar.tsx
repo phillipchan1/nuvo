@@ -40,6 +40,7 @@ import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
 import MobileDayView, { CalLensPill, type CalLens } from "./MobileDayView";
 import MobileWeekView from "./MobileWeekView";
 import MobileYearView, { mobileYearRange } from "./MobileYearView";
+import MobileWeekCrown from "./MobileWeekCrown";
 
 // The mobile Calendar — three lenses on the same live day-shape math:
 //   • Month — the whole month at a glance (free/busy density per day), swipe or
@@ -88,12 +89,20 @@ export default function MobileCalendar({
   onTapEvent,
   onOpenUpkeep,
   onNewEvent,
+  onOpenProject,
+  onOpenTask,
+  onPlanWeek,
 }: {
   now: Date;
   onTapEvent?: (tap: CalendarTap) => void;
   onOpenUpkeep?: () => void;
   /** Opens the new-event sheet, seeded on the day the user was looking at. */
   onNewEvent?: (date: Date) => void;
+  /** The week crown's doors — omit them and the crown stays off (harnesses,
+   *  and any embed that has nowhere to route a record). */
+  onOpenProject?: (id: string) => void;
+  onOpenTask?: (id: string) => void;
+  onPlanWeek?: () => void;
 }) {
   const { settings } = useSettings();
 
@@ -270,6 +279,21 @@ export default function MobileCalendar({
 
   return (
     <div className="fab-clear">
+      {/* The week's crown — the Schedule rail's crown, on the phone. It rides
+          the two lenses that ARE the week or wider (Month, Week), where "what am
+          I carrying, and does it have a time" is the question you're already
+          asking. The drill-in lenses (Day, List) are a single day's answer and
+          the Year is a different altitude entirely, so it stays out of those
+          rather than following you everywhere (P8). */}
+      {(mode === "month" || mode === "week") && onOpenProject && onOpenTask && onPlanWeek && (
+        <MobileWeekCrown
+          now={now}
+          onOpenProject={onOpenProject}
+          onOpenTask={onOpenTask}
+          onOpenDay={(d) => setLens("day", d)}
+          onPlanWeek={onPlanWeek}
+        />
+      )}
       {mode === "year" ? (
         <MobileYearView
           year={yearCursor}

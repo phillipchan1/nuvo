@@ -109,7 +109,9 @@ export function WeekCompanions({ onOpenPlan }: { onOpenPlan: () => void }) {
   );
 }
 
-function WeekPlanSheet({
+/** The week's plan, full-screen — also the Calendar crown's door, so "the plan"
+ *  opens the same surface wherever the phone offers it. */
+export function WeekPlanSheet({
   currentWeekISO,
   now,
   onClose,

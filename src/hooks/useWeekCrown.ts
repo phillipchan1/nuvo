@@ -1,0 +1,131 @@
+// The week's slate as ONE read model — the projects committed to this week, each
+// with its verdict, its progress, and where its remaining pieces sit in time.
+//
+// The Schedule's rail crown (desktop, `WeekPanel`) and the Calendar's week crown
+// (phone, `MobileWeekCrown`) are two layouts over this. Neither re-derives it:
+// the read lived only inside `WeekPanel` for a while, which is exactly why the
+// phone couldn't answer "what am I carrying this week, and does it have a time"
+// at all — the answer wasn't a model, it was a component.
+//
+// Nothing here is new logic. `weekPushes` derives membership from the spans,
+// `priorityWork` says what a push owns, `useLooseWork.splitFor` cuts the open
+// work by whether it has a time this week, `pushState` names the row's state.
+// This is the shape those four make together, computed once.
+
+import { useMemo } from "react";
+import { useVertical } from "./useVertical";
+import { useLooseWork, type PlacedPiece } from "./useFindTime";
+import {
+  priorityWork,
+  pushAsRock,
+  pushState,
+  rockDomainColor,
+  weekPushes,
+  type PushState,
+  type RockWork,
+} from "../lib/priorities";
+import { planningWeekStartISO, weekRangeLabel } from "../lib/dates";
+import type { BigRock, Task } from "../lib/types";
+
+export interface WeekCrownRow {
+  /** the stored verdict record, or a stand-in built from the live project */
+  rock: BigRock;
+  /** every row on the week IS a project — the slate is derived from spans */
+  projectId: string;
+  title: string;
+  /** the domain's own hue, or `--accent` when there's nothing to inherit */
+  color: string;
+  state: PushState;
+  work: RockWork;
+  /** 0–100, derived from the project's own tasks */
+  pct: number;
+  /** weeks carried: 0 = first week on this */
+  rolls: number;
+  /** open pieces that HAVE a time this week, earliest first */
+  placed: PlacedPiece[];
+  /** open pieces with no time this week — including work timed into another
+   *  week, which is honest: it is not happening here */
+  loose: Task[];
+  /** placed + loose */
+  open: number;
+  /** the split, never the flattering half: "all placed" · "3 of 5 placed" */
+  placedLabel: string;
+  /** landed as a WEEK verdict while the project itself rolls on */
+  continues: boolean;
+  /** the row has time to disclose and isn't finished */
+  canExpand: boolean;
+}
+
+export interface WeekCrown {
+  weekISO: string;
+  /** "Aug 10 – 16" */
+  weekLabel: string;
+  rows: WeekCrownRow[];
+  /** rows with a verdict (landed or shipped) — the scoreboard's numerator */
+  landed: number;
+  /** rows.length — the denominator */
+  total: number;
+  /** pieces with no time, across the whole slate */
+  looseCount: number;
+  /** the week has been composed (the ritual ran) */
+  composed: boolean;
+}
+
+/** The week's crown. `null` until the vertical has loaded. */
+export function useWeekCrown(): WeekCrown | null {
+  const { data } = useVertical();
+  const weekISO = data?.sprint?.week_start ?? planningWeekStartISO();
+  const { splitFor } = useLooseWork(weekISO);
+
+  return useMemo<WeekCrown | null>(() => {
+    if (!data) return null;
+
+    const rows = weekPushes(data, weekISO).map<WeekCrownRow>((push) => {
+      const rock = pushAsRock(push);
+      const work = priorityWork(data, rock);
+      const state = pushState({
+        shipped: push.shipped,
+        doneAt: rock.done_at,
+        done: work.done,
+        total: work.total,
+      });
+      const done = state === "shipped" || state === "landed";
+      const { placed, loose } = splitFor(push.project.id);
+      const open = placed.length + loose.length;
+      return {
+        rock,
+        projectId: push.project.id,
+        title: rock.title,
+        color: rockDomainColor(data, rock) ?? "var(--accent)",
+        state,
+        work,
+        pct: work.total > 0 ? Math.round((work.done / work.total) * 100) : 0,
+        rolls: rock.roll_count ?? 0,
+        placed,
+        loose,
+        open,
+        // State the split, not the half that happens to be non-zero. "3 of 5
+        // placed" and "2 loose" are the same fact, but the first one can't be
+        // read as "and the rest is fine" — the read that let work go missing.
+        placedLabel: loose.length === 0 ? "all placed" : `${placed.length} of ${open} placed`,
+        // Sealing a push lands the WEEK, not the project. Say so, so "landed"
+        // never reads as "closed the project". Shipped is the exception — there
+        // the project really did finish.
+        continues: done && state !== "shipped" && work.tasks.some((t) => t.status !== "done"),
+        canExpand: !done && open > 0,
+      };
+    });
+
+    return {
+      weekISO,
+      weekLabel: weekRangeLabel(weekISO),
+      rows,
+      // `landed` folds in "shipped inside this week" — a shipped project must
+      // count on the scoreboard, not vanish from it.
+      landed: rows.filter((r) => r.state === "landed" || r.state === "shipped").length,
+      total: rows.length,
+      looseCount: rows.reduce((n, r) => n + r.loose.length, 0),
+      composed: Boolean(data.sprint?.reviewed_at),
+    };
+  }, [data, weekISO, splitFor]);
+}

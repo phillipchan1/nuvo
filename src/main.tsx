@@ -46,7 +46,7 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     });
 }
 
-// Dev verify harnesses — reached at ?emblem / ?planweek / ?daycal / ?domains / ?build / ?meet / ?invite / ?chat, no auth/shell.
+// Dev verify harnesses — reached at ?emblem / ?planweek / ?daycal / ?domains / ?build / ?weekcrown / ?meet / ?invite / ?chat, no auth/shell.
 const params = new URLSearchParams(window.location.search);
 const showEmblemHarness = import.meta.env.DEV && params.has("emblem");
 const showPlanWeekHarness = import.meta.env.DEV && params.has("planweek");
@@ -55,6 +55,7 @@ const showMeetHarness = import.meta.env.DEV && params.has("meet");
 const showInviteHarness = import.meta.env.DEV && params.has("invite");
 const showDomainHarness = import.meta.env.DEV && params.has("domains");
 const showBuildHarness = import.meta.env.DEV && params.has("build");
+const showWeekCrownHarness = import.meta.env.DEV && params.has("weekcrown");
 const showPickHarness = import.meta.env.DEV && params.has("chat");
 
 if (showPickHarness) {
@@ -110,6 +111,14 @@ if (showPickHarness) {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
         <BuildFacesHarness />
+      </React.StrictMode>,
+    );
+  });
+} else if (showWeekCrownHarness) {
+  void import("./components/mobile/WeekCrownHarness").then(({ default: WeekCrownHarness }) => {
+    ReactDOM.createRoot(document.getElementById("root")!).render(
+      <React.StrictMode>
+        <WeekCrownHarness />
       </React.StrictMode>,
     );
   });

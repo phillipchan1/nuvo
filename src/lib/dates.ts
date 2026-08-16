@@ -41,6 +41,15 @@ export function planningWeekStartISO(now: Date = new Date()): string {
   return planningWeekStart(todayISO(now));
 }
 
+/** A week's span in one label: "Aug 10 – 16", or "Jul 27 – Aug 2" across a month
+ *  boundary. Written three times (the rail crown, the phone's week card, the
+ *  Week's Plan sheet) before it lived here. */
+export function weekRangeLabel(weekStartISO: string): string {
+  const s = parseDateISO(weekStartISO);
+  const e = addDays(s, 6);
+  return `${format(s, "MMM d")} – ${format(e, s.getMonth() === e.getMonth() ? "d" : "MMM d")}`;
+}
+
 /** Hours from minutes, max one decimal: 90 → "1.5", 120 → "2". */
 export function fmtHours(minutes: number): string {
   return (minutes / 60).toFixed(minutes % 60 === 0 ? 0 : 1);
@@ -103,6 +112,18 @@ export function fmtLateness(
 
 export function fmtTime(iso: string): string {
   return format(new Date(iso), "h:mm a");
+}
+
+/** "Thu 9am" · "Thu 9:30am" — a block's day and start in one glance. The same
+ *  idiom `whenText` and `FindTimeProposal` use, so a proposed block, a placed
+ *  one and the week crown's disclosure all read alike on both shells. */
+export function fmtDayTime(iso: string): string {
+  const d = new Date(iso);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? "pm" : "am";
+  const hh = ((h + 11) % 12) + 1;
+  return `${format(d, "EEE")} ${m === 0 ? `${hh}${ampm}` : `${hh}:${String(m).padStart(2, "0")}${ampm}`}`;
 }
 
 /** Hour 0–23, or 24 for midnight end-of-day. */
