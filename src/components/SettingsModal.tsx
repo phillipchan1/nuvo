@@ -38,6 +38,7 @@ import { DEFAULT_REMINDER_PREFS, describeLead, REMINDER_LEADS } from "../../supa
 import { detectDeviceTz, supportedTimeZones, tzAbbrev, tzCity, tzStatus } from "../lib/timezone";
 import { useUpdater } from "../hooks/useUpdater";
 import { isDesktopTauri } from "../lib/platform";
+import { openDevTools, useDeveloperMode } from "../lib/devtools";
 import { loadChangelog, isMinor, type ChangelogEntry } from "../lib/changelog";
 
 /** Stable-named universal DMG on the public releases repo. */
@@ -1525,6 +1526,30 @@ function InstallRow() {
   return null;
 }
 
+function DeveloperControls() {
+  const [on, setOn] = useDeveloperMode();
+  return (
+    <div className="divide-y divide-line rounded-lg border border-line bg-surface-2/40">
+      <Row
+        title="Developer mode"
+        desc="Unlock the desktop web inspector and console. Off by default — nothing here affects how Nuvo plans."
+      >
+        <Toggle checked={on} onChange={setOn} label="Developer mode" />
+      </Row>
+      {on && (
+        <Row
+          title="Web inspector"
+          desc="Opens DevTools for this window. Shortcut: ⌘⌥I."
+        >
+          <Btn className="tap" onClick={() => void openDevTools()}>
+            Open DevTools
+          </Btn>
+        </Row>
+      )}
+    </div>
+  );
+}
+
 function AboutPane({ onClose }: { onClose: () => void }) {
   const { open: openOrientation } = useOrientation();
   const desktop = isDesktopTauri();
@@ -1542,7 +1567,12 @@ function AboutPane({ onClose }: { onClose: () => void }) {
 
       {/* Auto-update controls in the native app; a download link on web/iOS. */}
       {desktop ? (
-        <UpdateControls />
+        <>
+          <UpdateControls />
+          <div className="mt-4">
+            <DeveloperControls />
+          </div>
+        </>
       ) : (
         <Row title="Download for Mac" desc="Native app — Apple Silicon & Intel, updates itself in the background.">
           <a
