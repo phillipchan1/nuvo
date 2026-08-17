@@ -112,6 +112,58 @@ fn hide_spotlight(app: tauri::AppHandle) {
 }
 
 // Other desktops use a plain window (no NSPanel) — hide it directly.
+// Relaunch after an in-app update. The JS `relaunch()` path races on macOS —
+// the process can exit before the new one spawns, especially right after the
+// updater swaps the .app bundle. Save window geometry first, then on macOS
+// hand off to `open` (LaunchServices) instead of exec-ing the binary directly.
+#[cfg(desktop)]
+#[tauri::command]
+fn restart_for_update(app: tauri::AppHandle) {
+    relaunch_after_update(&app);
+}
+
+#[cfg(desktop)]
+fn relaunch_after_update(app: &tauri::AppHandle) -> ! {
+    use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+
+    let flags = StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED;
+    let _ = app.save_window_state(flags);
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::{exit, Command};
+
+        if let Ok(exe) = tauri::process::current_binary(&app.env()) {
+            if let Some(bundle) = app_bundle_path(&exe) {
+                if Command::new("open").arg(&bundle).spawn().is_ok() {
+                    app.cleanup_before_exit();
+                    exit(0);
+                }
+            }
+        }
+    }
+
+    app.restart();
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn app_bundle_path(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    let macos = exe.parent()?;
+    if macos.file_name()? != "MacOS" {
+        return None;
+    }
+    let contents = macos.parent()?;
+    if contents.file_name()? != "Contents" {
+        return None;
+    }
+    let app = contents.parent()?;
+    if app.extension()? == "app" {
+        Some(app.to_path_buf())
+    } else {
+        None
+    }
+}
+
 #[cfg(all(desktop, not(target_os = "macos")))]
 #[tauri::command]
 fn hide_spotlight(app: tauri::AppHandle) {
@@ -189,7 +241,21 @@ pub fn run() {
         .plugin(tauri_plugin_nuvo_watch::init());
 
     #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Remember main window size/position across restarts; skip the transient
+        // ⌥Space panel — it has its own fixed dimensions.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_denylist(&["spotlight"])
+                // Size/position only — visibility is app-managed (⌘W hides, dock restores).
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        );
 
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
@@ -199,7 +265,8 @@ pub fn run() {
         open_devtools,
         hide_spotlight,
         surface_main,
-        align_traffic_lights
+        align_traffic_lights,
+        restart_for_update,
     ]);
 
     builder

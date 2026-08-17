@@ -30,7 +30,6 @@ const TRANSIENT_MS = 4000; // how long "up to date"/"error" lingers before idlin
 const IDLE: UpdateState = { status: "idle", version: null, progress: 0, error: null, notes: null };
 let state: UpdateState = IDLE;
 const listeners = new Set<() => void>();
-let relaunchFn: (() => Promise<void>) | null = null;
 let inFlight = false;
 let staged = false; // an update is downloaded and waiting for restart
 let stagedVersion: string | null = null; // survives past a later "checking"/"up-to-date" transient
@@ -150,8 +149,6 @@ async function runCheck(manual: boolean, attempt = 1): Promise<void> {
       update = next && next.version !== lastVersion ? next : null;
     }
 
-    const { relaunch } = await import("@tauri-apps/plugin-process");
-    relaunchFn = relaunch;
     staged = true;
     stagedVersion = lastVersion;
     stagedNotes = lastNotes;
@@ -178,7 +175,9 @@ async function runCheck(manual: boolean, attempt = 1): Promise<void> {
 
 /** Relaunch into the staged update. No-op until one is ready. */
 export async function restartForUpdate(): Promise<void> {
-  if (relaunchFn) await relaunchFn();
+  if (!isDesktopTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("restart_for_update");
 }
 
 /** Start the background poll once (idempotent). Called when the first hook mounts. */
