@@ -27,7 +27,7 @@ const project = (id: string, name: string, domainId: string, o: Partial<Project>
   outcome: "A clear finish line stated in one line", description: "",
   startDate: weekISO, targetDate: dayISO(4), status: "in_progress", storedStatus: "in_progress",
   progress: 30, shippedAt: null, createdAt: null, tendedAt: null, verification: null,
-  verifiedAt: null, brief: null, ...o,
+  verifiedAt: null, brief: null, sortOrder: 0, ...o,
 });
 
 const task = (id: string, title: string, projectId: string | null, domainId: string, o: Partial<VTask> = {}): VTask => ({

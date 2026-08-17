@@ -156,6 +156,10 @@ export interface Project {
   verification: SoundnessVerdict | null; // Nuvo's last soundness judgment (cached)
   verifiedAt: string | null; // when that judgment was made
   brief: ItemBrief | null; // the What lens's document (scope / non-goals / acceptance)
+  /** The raw global ordering column — a reorder scoped to one initiative's
+   *  projects must re-deal these values, not renumber from 0 (the column is
+   *  shared by every project in the account). */
+  sortOrder: number;
 }
 
 /** A task as the floors see it — a thin view over a live `tasks` row. */
@@ -486,6 +490,7 @@ export function buildVertical(
         verification: p.verification ?? null,
         verifiedAt: p.verified_at ?? null,
         brief: p.brief ?? null,
+        sortOrder: p.sort_order,
       };
     });
 
@@ -695,6 +700,27 @@ export const projectsOf = (d: VerticalData, initiativeId: string) =>
   d.projects.filter((p) => p.initiativeId === initiativeId);
 export const tasksOf = (d: VerticalData, projectId: string) =>
   d.tasks.filter((t) => t.projectId === projectId);
+
+/** Re-deal a band's own `sortOrder` values into a new id order, instead of
+ *  renumbering from 0. `projects.sort_order` is a single global column shared
+ *  by every project in the account (unlike a task's, which nothing compares
+ *  across projects) — writing fresh small integers for a reorder scoped to
+ *  one initiative's own projects would jump that handful of rows ahead of
+ *  every other unrelated project ordering in the app. Ties (every project
+ *  created in the same request lands on the same default) get spread from
+ *  the band's own floor so they can express an order at all. Returns only
+ *  the entries whose value actually changed. */
+export function redealSortOrder(
+  current: { id: string; sortOrder: number }[],
+  nextIds: string[],
+): { id: string; sortOrder: number }[] {
+  const byId = new Map(current.map((x) => [x.id, x]));
+  let vals = current.map((x) => x.sortOrder).sort((a, b) => a - b);
+  if (new Set(vals).size !== vals.length) vals = vals.map((_, i) => vals[0] + i);
+  return nextIds
+    .map((id, i) => ({ id, sortOrder: vals[i] }))
+    .filter(({ id, sortOrder }) => byId.get(id)?.sortOrder !== sortOrder);
+}
 
 /** Projects that hang directly off a domain with no initiative parent. */
 export const looseProjectsOf = (d: VerticalData, domainId: string) =>

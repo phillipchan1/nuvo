@@ -46,6 +46,7 @@ import {
   projectById,
   projectProgress,
   projectsOf,
+  redealSortOrder,
   tasksOf,
   type KeyResult,
   type Momentum,
@@ -447,7 +448,7 @@ function InitiativeRecord({
   const store = useVertical();
   const {
     data, updateInitiative, deleteInitiative, addProject, updateProject,
-    addKeyResult, updateKeyResult, deleteKeyResult, routeTask,
+    addKeyResult, updateKeyResult, deleteKeyResult, routeTask, reorderProjects,
   } = store;
   const initiative = initiativeById(data, id);
   const [assessing, setAssessing] = useState(false);
@@ -458,6 +459,10 @@ function InitiativeRecord({
   const logRef = useRef<HTMLTextAreaElement>(null);
   const bandRef = useRef<HTMLDivElement>(null);
   const [krFocus, setKrFocus] = useState(0);
+  const projListRef = useRef<HTMLDivElement>(null);
+  const [dragProjectId, setDragProjectId] = useState<string | null>(null);
+  const [projReorderLineTop, setProjReorderLineTop] = useState<number | null>(null);
+  const projTargetIndexRef = useRef(0);
 
   // p = projects · l = log · q = quarter · k = add a key result.
   useEffect(() => {
@@ -502,6 +507,56 @@ function InitiativeRecord({
   };
 
   const projects = projectsOf(data, initiative.id);
+
+  // Drag the grip to reorder the projects feeding this bet — pointer events
+  // (Tauri's webview swallows HTML5 DnD), same shape as TaskList's own.
+  const startReorderProject = (e: React.PointerEvent, pid: string) => {
+    if (projects.length < 2) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragProjectId(pid);
+    document.body.classList.add("wb-noselect");
+    const insertLineTop = (clientY: number) => {
+      const list = projListRef.current;
+      if (!list) return null;
+      const rows = [...list.querySelectorAll<HTMLElement>("[data-project-id]")].filter(
+        (r) => r.getAttribute("data-project-id") !== pid,
+      );
+      let k = 0;
+      for (const r of rows) {
+        const b = r.getBoundingClientRect();
+        if (clientY > b.top + b.height / 2) k++;
+      }
+      projTargetIndexRef.current = k;
+      const contTop = list.getBoundingClientRect().top;
+      if (!rows.length) return 0;
+      if (k < rows.length) return rows[k].getBoundingClientRect().top - contTop;
+      return rows[rows.length - 1].getBoundingClientRect().bottom - contTop;
+    };
+    setProjReorderLineTop(insertLineTop(e.clientY));
+    const move = (ev: PointerEvent) => setProjReorderLineTop(insertLineTop(ev.clientY));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("wb-noselect");
+      setDragProjectId(null);
+      setProjReorderLineTop(null);
+      const ids = projects.map((p) => p.id);
+      const from = ids.indexOf(pid);
+      const to = projTargetIndexRef.current;
+      if (from < 0) return;
+      const next = [...ids];
+      next.splice(from, 1);
+      next.splice(Math.max(0, Math.min(to, next.length)), 0, pid);
+      if (next.some((x, i) => x !== ids[i])) {
+        const entries = redealSortOrder(projects, next);
+        if (entries.length) reorderProjects(entries);
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   // The downward half of linking a project ↔ initiative: any other project
   // that could actually join this bet (same domain — D-073's cascade rule —
   // and not already here). Includes projects reparenting from another bet.
@@ -648,35 +703,58 @@ function InitiativeRecord({
             >
               {/* The same card the deck behind this modal shows — one object, not
                   a bespoke tile in a half-empty two-column grid. */}
-              {projects.map((p) => {
-                const pAxes = projectReadinessAxes(data, p, new Date());
-                const pOpen = tasksOf(data, p.id).filter((t) => t.status !== "done");
-                const pDomain = domainById(data, p.domainId);
-                return (
-                  <div key={p.id} data-assess-anchor={`project:${p.id}`} className="mt-2">
-                    <DeckCard
-                      variant="marked"
-                      spine={pDomain?.color ?? accent}
-                      eyebrow={pDomain?.name ?? "—"}
-                      title={p.name}
-                      weight={deckWeight(pOpen.reduce((s, t) => s + (t.durationMins || 0), 0))}
-                      status={
-                        p.status === "complete"
-                          ? { label: "shipped", tone: "ready" }
-                          : p.targetDate
-                            ? { label: weekName(new Date(p.targetDate + "T12:00:00")), tone: "muted" }
-                            : null
-                      }
-                      pips={p.status === "complete" ? undefined : [pAxes.defined, pAxes.planned, pAxes.fits ?? true]}
-                      pipTone="muted"
-                      dim={p.status === "cancelled"}
-                      shipped={p.status === "complete"}
-                      className="cursor-pointer"
-                      onClick={() => onOpenProject(p.id)}
-                    />
-                  </div>
-                );
-              })}
+              <div ref={projListRef} className="relative">
+                {projReorderLineTop != null && (
+                  <div className="reorder-insert-line" style={{ top: projReorderLineTop }} aria-hidden />
+                )}
+                {projects.map((p) => {
+                  const pAxes = projectReadinessAxes(data, p, new Date());
+                  const pOpen = tasksOf(data, p.id).filter((t) => t.status !== "done");
+                  const pDomain = domainById(data, p.domainId);
+                  const dragging = dragProjectId === p.id;
+                  return (
+                    <div
+                      key={p.id}
+                      data-assess-anchor={`project:${p.id}`}
+                      data-project-id={p.id}
+                      className="mt-2"
+                      style={dragging ? { opacity: 0.6 } : undefined}
+                    >
+                      <DeckCard
+                        variant="marked"
+                        spine={pDomain?.color ?? accent}
+                        eyebrow={pDomain?.name ?? "—"}
+                        title={p.name}
+                        weight={deckWeight(pOpen.reduce((s, t) => s + (t.durationMins || 0), 0))}
+                        status={
+                          p.status === "complete"
+                            ? { label: "shipped", tone: "ready" }
+                            : p.targetDate
+                              ? { label: weekName(new Date(p.targetDate + "T12:00:00")), tone: "muted" }
+                              : null
+                        }
+                        pips={p.status === "complete" ? undefined : [pAxes.defined, pAxes.planned, pAxes.fits ?? true]}
+                        pipTone="muted"
+                        dim={p.status === "cancelled"}
+                        shipped={p.status === "complete"}
+                        className="cursor-pointer"
+                        onClick={() => onOpenProject(p.id)}
+                      >
+                        {projects.length > 1 && (
+                          <span
+                            onPointerDown={(e) => startReorderProject(e, p.id)}
+                            className="fast absolute right-2 top-2 z-10 cursor-grab touch-none select-none rounded px-1 text-micro leading-none text-muted/40 opacity-0 transition-opacity hover:text-ink group-hover/card:opacity-100 active:cursor-grabbing"
+                            title="Drag to reorder"
+                            aria-hidden
+                          >
+                            ⠿
+                          </span>
+                        )}
+                      </DeckCard>
+                    </div>
+                  );
+                })}
+              </div>
               <div className="mt-1">
                 <ProjectComposer
                   domainId={initiative.domainId}

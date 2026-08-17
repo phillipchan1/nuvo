@@ -12,6 +12,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { format, parseISO } from "date-fns";
 import { useVertical, type TaskParent } from "../../../hooks/useVertical";
+import { useLongPressReorder } from "../../../hooks/useLongPressReorder";
 import { parseCapture } from "../../../lib/nlp";
 import { ProjectShipAssess } from "../../record/ShipAssess";
 import { QuarterBand, WeekBand } from "../../record/PlacementBand";
@@ -27,6 +28,7 @@ import {
   looseTasksOfInitiative,
   projectProgress,
   projectsOf,
+  redealSortOrder,
   tasksOf,
   type Initiative,
   type KeyResult,
@@ -212,6 +214,17 @@ export function InitiativeScreen({
   id: string;
   onOpenProject: (id: string) => void;
 }) {
+  const projectListRef = useRef<HTMLDivElement>(null);
+  const projectReorder = useLongPressReorder({
+    containerRef: projectListRef,
+    itemSelector: "[data-project-id]",
+    idAttr: "data-project-id",
+    ids: () => projectsOf(d, id).map((p) => p.id),
+    onCommit: (next) => {
+      const entries = redealSortOrder(projectsOf(d, id), next);
+      if (entries.length) store.reorderProjects(entries);
+    },
+  });
   const i = d.initiatives.find((x) => x.id === id);
   if (!i) return <Empty>This initiative is gone.</Empty>;
   const dom = d.domains.find((x) => x.id === i.domainId);
@@ -279,11 +292,30 @@ export function InitiativeScreen({
         {projects.length === 0 ? (
           <Hint>No projects under this initiative.</Hint>
         ) : (
-          <CardList>
-            {projects.map((p) => (
-              <ProjectRow key={p.id} d={d} p={p} onClick={() => onOpenProject(p.id)} />
-            ))}
-          </CardList>
+          <div ref={projectListRef} className="relative">
+            {projectReorder.lineTop != null && (
+              <div className="reorder-insert-line" style={{ top: projectReorder.lineTop }} aria-hidden />
+            )}
+            <CardList>
+              {projects.map((p) => (
+                <ProjectRow
+                  key={p.id}
+                  d={d}
+                  p={p}
+                  onClick={() => onOpenProject(p.id)}
+                  reorder={
+                    projects.length > 1
+                      ? {
+                          press: (e) => projectReorder.press(e, p.id),
+                          arming: projectReorder.armingId === p.id,
+                          dragging: projectReorder.draggingId === p.id,
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+            </CardList>
+          </div>
         )}
         <div className="mt-2">
           <ProjectAttachPicker
@@ -345,6 +377,14 @@ export function InitiativeScreen({
 // ── A single project ─────────────────────────────────────────────────────────
 export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store; id: string }) {
   const [shipping, setShipping] = useState(false);
+  const taskListRef = useRef<HTMLDivElement>(null);
+  const taskReorder = useLongPressReorder({
+    containerRef: taskListRef,
+    itemSelector: "[data-task-id]",
+    idAttr: "data-task-id",
+    ids: () => tasksOf(d, id).map((t) => t.id),
+    onCommit: (next) => store.reorderTasks(next),
+  });
   const p = d.projects.find((x) => x.id === id);
   if (!p) return <Empty>This project is gone.</Empty>;
   const dom = d.domains.find((x) => x.id === p.domainId);
@@ -379,17 +419,31 @@ export function ProjectScreen({ d, store, id }: { d: VerticalData; store: Store;
         accent={accent}
       >
         {tasks.length > 0 && (
-          <CardList>
-            {tasks.map((t) => (
-              <TaskRow
-                key={t.id}
-                t={t}
-                onToggle={() => store.toggleTask(t.id)}
-                onDelete={() => store.deleteTask(t.id)}
-                onPatch={(patch) => store.updateTask(t.id, patch)}
-              />
-            ))}
-          </CardList>
+          <div ref={taskListRef} className="relative">
+            {taskReorder.lineTop != null && (
+              <div className="reorder-insert-line" style={{ top: taskReorder.lineTop }} aria-hidden />
+            )}
+            <CardList>
+              {tasks.map((t) => (
+                <TaskRow
+                  key={t.id}
+                  t={t}
+                  onToggle={() => store.toggleTask(t.id)}
+                  onDelete={() => store.deleteTask(t.id)}
+                  onPatch={(patch) => store.updateTask(t.id, patch)}
+                  reorder={
+                    tasks.length > 1
+                      ? {
+                          press: (e) => taskReorder.press(e, t.id),
+                          arming: taskReorder.armingId === t.id,
+                          dragging: taskReorder.draggingId === t.id,
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+            </CardList>
+          </div>
         )}
         <TaskComposer
           parent={{ projectId: p.id, initiativeId: p.initiativeId, domainId: p.domainId }}
@@ -445,15 +499,27 @@ export function InitiativeRow({ d, i, onClick }: { d: VerticalData; i: Initiativ
   );
 }
 
-export function ProjectRow({ d, p, onClick }: { d: VerticalData; p: Project; onClick: () => void }) {
+export function ProjectRow({
+  d,
+  p,
+  onClick,
+  reorder,
+}: {
+  d: VerticalData;
+  p: Project;
+  onClick: () => void;
+  reorder?: { press: (e: React.PointerEvent) => void; arming: boolean; dragging: boolean };
+}) {
   return (
     <Row
+      id={p.id}
       onClick={onClick}
       chevron
       leading={<StatusDot status={p.status} />}
       title={p.name}
       subtitle={p.outcome || undefined}
       meta={<span className="mono shrink-0 text-caption text-muted">{projectProgress(d, p)}%</span>}
+      reorder={reorder}
     />
   );
 }
@@ -463,6 +529,7 @@ export function TaskRow({
   onToggle,
   onDelete,
   onPatch,
+  reorder,
 }: {
   t: VTask;
   onToggle: () => void;
@@ -470,10 +537,17 @@ export function TaskRow({
   /** Rename + re-time the task in place. Omit to fall back to a read-only row
    *  (e.g. a domain's read-only reach-through, if one ever needs this row). */
   onPatch?: (patch: Partial<VTask>) => void;
+  /** Press-and-hold the grip to reorder — opt-in per list (only the ones
+   *  where manual order means something), via `useLongPressReorder`. */
+  reorder?: { press: (e: React.PointerEvent) => void; arming: boolean; dragging: boolean };
 }) {
   const done = t.status === "done";
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5">
+    <div
+      data-task-id={reorder ? t.id : undefined}
+      className="flex items-center gap-3 px-3 py-2.5"
+      style={reorder?.dragging ? { opacity: 0.6 } : undefined}
+    >
       <button
         onClick={onToggle}
         aria-label={done ? "Reopen" : "Mark done"}
@@ -533,6 +607,19 @@ export function TaskRow({
         >
           ✕
         </button>
+      )}
+      {/* No hover on a phone to reveal a grip behind — it's always here, and
+          the hold (not the tap) is what starts the drag, so it never steals a
+          tap meant for the row's own controls or the list's scroll. */}
+      {reorder && (
+        <span
+          onPointerDown={(e) => reorder.press(e)}
+          aria-label="Press and hold to reorder"
+          className="tap-icon fast flex h-8 w-6 shrink-0 touch-none items-center justify-center text-caption text-muted/50 active:text-ink"
+          style={reorder.arming ? { color: "var(--ink)" } : undefined}
+        >
+          ⠿
+        </span>
       )}
     </div>
   );
@@ -664,6 +751,7 @@ function KrNumber({ value, accent, onCommit }: { value: number; accent?: string;
 }
 
 export function Row({
+  id,
   leading,
   title,
   subtitle,
@@ -671,7 +759,9 @@ export function Row({
   onClick,
   chevron,
   hold,
+  reorder,
 }: {
+  id?: string;
   leading?: ReactNode;
   title: string;
   subtitle?: string;
@@ -682,12 +772,18 @@ export function Row({
    *  right-click. Spread rather than baked in, because only rows that stand
    *  for a record have lifecycle acts. */
   hold?: Record<string, unknown>;
+  /** Press-and-hold the grip to reorder — opt-in per list, via
+   *  `useLongPressReorder`. Pairs with `id`, which the row is tagged with so
+   *  the gesture's own geometry query can find it. */
+  reorder?: { press: (e: React.PointerEvent) => void; arming: boolean; dragging: boolean };
 }) {
   return (
     <button
+      data-project-id={reorder ? id : undefined}
       onClick={onClick}
       {...hold}
       className="tap fast flex w-full items-center gap-3 border-b border-line px-4 py-3 text-left last:border-b-0 active:bg-surface-2"
+      style={reorder?.dragging ? { opacity: 0.6 } : undefined}
     >
       {leading}
       <div className="min-w-0 flex-1">
@@ -696,6 +792,19 @@ export function Row({
       </div>
       {meta}
       {chevron && <span className="shrink-0 text-muted">›</span>}
+      {/* Always visible (no hover to reveal it behind) — the hold, not the
+          tap, starts the drag, so a plain tap still opens the record. */}
+      {reorder && (
+        <span
+          onPointerDown={(e) => { e.stopPropagation(); reorder.press(e); }}
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Press and hold to reorder"
+          className="tap-icon fast flex h-8 w-6 shrink-0 touch-none items-center justify-center text-caption text-muted/50 active:text-ink"
+          style={reorder.arming ? { color: "var(--ink)" } : undefined}
+        >
+          ⠿
+        </span>
+      )}
     </button>
   );
 }

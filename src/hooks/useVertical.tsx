@@ -80,6 +80,12 @@ export interface VerticalStore {
   updateProject: (id: string, patch: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   deleteProjects: (ids: string[]) => void;
+  /** Persist an explicit project order — writes each id's given sort_order
+   *  verbatim. The column is global (shared by every project in the account),
+   *  so a reorder scoped to one initiative/domain's own projects must pass its
+   *  band's own re-dealt values here, never a fresh 0..n renumbering — that
+   *  would jump the band to the front of every other unrelated ordering. */
+  reorderProjects: (entries: { id: string; sortOrder: number }[]) => void;
 
   // tasks — created under a project/initiative/domain they land in `backlog`,
   // quiet by design: never in the inbox, never on Today, never roll.
@@ -937,6 +943,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           shippedAt: row.shipped_at ?? null,
           createdAt: row.created_at ?? null, tendedAt: row.tended_at ?? null,
           verification: null, verifiedAt: null, brief: null,
+          sortOrder: row.sort_order,
         });
         const insert: Record<string, unknown> = {
           domain_id: domainId,
@@ -990,6 +997,14 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       },
       deleteProjects: (ids) => {
         void deleteProjectRows(ids);
+      },
+      reorderProjects: (entries) => {
+        if (!entries.length) return;
+        void qc.cancelQueries({ queryKey: ["vertical", "projects"] });
+        entries.forEach(({ id, sortOrder }) => {
+          patchRows<ProjectRow>(["vertical", "projects"], id, { sort_order: sortOrder });
+          persistVertical("projects", id, { sort_order: sortOrder });
+        });
       },
 
       // ── tasks ────────────────────────────────────────────────────────────

@@ -100,13 +100,64 @@ export default function TaskList({
   refining?: boolean;
   onRefining?: (v: boolean) => void;
 }) {
-  const { addTask, addTasks, updateTask, deleteTask, toggleTask, toggleTaskInbox } = useVertical();
+  const { addTask, addTasks, updateTask, deleteTask, toggleTask, toggleTaskInbox, reorderTasks } = useVertical();
   const [draft, setDraft] = useState("");
   const [refiningLocal, setRefiningLocal] = useState(false);
   const [sel, setSel] = useState(-1);
   const innerRef = useRef<HTMLInputElement>(null);
   const inputRef = composerRef ?? innerRef;
   const listRef = useRef<HTMLDivElement>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [reorderLineTop, setReorderLineTop] = useState<number | null>(null);
+  const targetIndexRef = useRef(0);
+
+  // Drag the grip to reorder — pointer events, not HTML5 DnD (Tauri's webview
+  // swallows the latter). A row's title is inline-editable, so the grip is the
+  // only drag surface; grabbing anywhere else in the row is a click/edit, same
+  // as GroomWall's step list, which this mirrors.
+  const startReorder = (e: React.PointerEvent, id: string) => {
+    if (tasks.length < 2) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragId(id);
+    document.body.classList.add("wb-noselect");
+    const insertLineTop = (clientY: number) => {
+      const list = listRef.current;
+      if (!list) return null;
+      const rows = [...list.querySelectorAll<HTMLElement>("[data-task-id]")].filter(
+        (r) => r.getAttribute("data-task-id") !== id,
+      );
+      let k = 0;
+      for (const r of rows) {
+        const b = r.getBoundingClientRect();
+        if (clientY > b.top + b.height / 2) k++;
+      }
+      targetIndexRef.current = k;
+      const contTop = list.getBoundingClientRect().top;
+      if (!rows.length) return 0;
+      if (k < rows.length) return rows[k].getBoundingClientRect().top - contTop;
+      return rows[rows.length - 1].getBoundingClientRect().bottom - contTop;
+    };
+    setReorderLineTop(insertLineTop(e.clientY));
+    const move = (ev: PointerEvent) => setReorderLineTop(insertLineTop(ev.clientY));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("wb-noselect");
+      setDragId(null);
+      setReorderLineTop(null);
+      const ids = tasks.map((t) => t.id);
+      const from = ids.indexOf(id);
+      const to = targetIndexRef.current;
+      if (from < 0) return;
+      const next = [...ids];
+      next.splice(from, 1);
+      next.splice(Math.max(0, Math.min(to, next.length)), 0, id);
+      if (next.some((x, i) => x !== ids[i])) reorderTasks(next);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   const controlled = refiningProp != null;
   const refining = controlled ? refiningProp : refiningLocal;
@@ -153,8 +204,7 @@ export default function TaskList({
   };
 
   // ── ↑↓ select · ↵ edit · space toggle · ⌫ delete ────────────────────────────
-  // No ⌥↑/⌥↓ reorder: `tasks` has no sort column, so there is nothing to write.
-  // Adding one is a migration, not a keybinding.
+  // Reorder is drag-only (the grip), via startReorder above — not bound here.
   useEffect(() => {
     if (!keyboardNav) return;
     const onKey = (e: KeyboardEvent) => {
@@ -230,24 +280,31 @@ export default function TaskList({
   const gutter = spine ? "w-[26px]" : "";
 
   const rows = (
-    <div ref={listRef}>
+    <div ref={listRef} className="relative">
+      {reorderLineTop != null && (
+        <div className="reorder-insert-line" style={{ top: reorderLineTop }} aria-hidden />
+      )}
       {tasks.map((t, i) => {
         const selected = keyboardNav && i === sel;
+        const dragging = dragId === t.id;
         return (
           <div
             key={t.id}
             data-row={i}
+            data-task-id={t.id}
             onMouseDown={() => keyboardNav && setSel(i)}
             className={
               spine
                 ? // -mx-2/px-2 so the hover wash and the focal lift have room to
                   // breathe either side of the text instead of hugging it.
                   `group fast -mx-2 flex items-center rounded-[var(--radius-sm)] border-b border-line px-2 last:border-b-0 ${
-                    selected
-                      ? "glass-lift-row lift-anim border-transparent"
-                      : "hover:bg-accent-soft/40"
+                    dragging
+                      ? "border-transparent opacity-60"
+                      : selected
+                        ? "glass-lift-row lift-anim border-transparent"
+                        : "hover:bg-accent-soft/40"
                   }`
-                : "group fast flex items-center gap-2.5 border-b border-line py-2 last:border-b-0 hover:bg-accent-soft/40"
+                : `group fast flex items-center gap-2.5 border-b border-line py-2 last:border-b-0 ${dragging ? "opacity-60" : "hover:bg-accent-soft/40"}`
             }
             style={spine ? { minHeight: 36 } : undefined}
           >
@@ -343,6 +400,20 @@ export default function TaskList({
             >
               ✕
             </button>
+
+            {/* drag to reorder — trails the row rather than sharing the spine's
+                left gutter (checkbox/title/composer's shared edge, see header
+                note), so it never disturbs that alignment. */}
+            {tasks.length > 1 && (
+              <span
+                onPointerDown={(e) => startReorder(e, t.id)}
+                className="fast ml-0.5 shrink-0 cursor-grab touch-none select-none px-0.5 text-micro leading-none text-muted/40 opacity-0 transition-opacity hover:text-ink group-hover:opacity-100 active:cursor-grabbing"
+                title="Drag to reorder"
+                aria-hidden
+              >
+                ⠿
+              </span>
+            )}
           </div>
         );
       })}
