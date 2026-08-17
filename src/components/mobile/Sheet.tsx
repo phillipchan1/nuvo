@@ -222,19 +222,19 @@ export default function Sheet({
         } flex-col rounded-t-2xl border-t border-line pb-safe outline-none`}
         style={kbInset ? { paddingBottom: kbInset } : undefined}
       >
-        {/* Grab pill — primary swipe target. A `tall` sheet's safe-area inset
-            (the notch/Dynamic-Island clearance) lives HERE, as this div's own
-            padding, not as dead space on the outer container above it — that
-            padding is still part of this element's hit area, so the whole
-            gap stays swipe-to-dismiss-able instead of a dead zone a thumb
-            naturally lands in first. `max()` keeps a floor on devices with
-            no safe-area-inset (Android, older iPhones). */}
+        {/* Grab pill — primary swipe target. Even a `tall` sheet sits below
+            the notch/Dynamic-Island already: the scrim above it (justify-end
+            over the 92dvh sheet) leaves an 8dvh gap that's always ≥ the real
+            safe-area-inset-top on every supported phone, so this padding
+            only needs the fixed floor — adding env(safe-area-inset-top) on
+            top of that double-counted the inset and pushed the pill (and the
+            whole title row under it) well below the sheet's top edge. */}
         <div
           {...handleProps}
           className="flex shrink-0 flex-col items-center pb-2.5"
           style={{
             ...handleProps.style,
-            paddingTop: tall ? "max(env(safe-area-inset-top, 0px), 0.625rem)" : "0.625rem",
+            paddingTop: "0.625rem",
           }}
         >
           <span className="h-1 w-9 rounded-full bg-line-strong" />
