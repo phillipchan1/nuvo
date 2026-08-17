@@ -108,6 +108,45 @@ export async function loadGoogleAccounts(accountId?: string): Promise<GoogleAcco
   return (await loadAccountsPaged("google", accountId)) as GoogleAccount[];
 }
 
+/** A recurring *instance* carries recurringEventId; a series *master* carries
+ *  recurrence[] instead. Masters must never be stored as calendar blocks — they
+ *  paint one day with no future weeks. Slipped through when a delta pull omits
+ *  singleEvents=true. */
+export function isGoogleSeriesMaster(
+  // deno-lint-ignore no-explicit-any
+  e: any,
+): boolean {
+  return Boolean(Array.isArray(e?.recurrence) && e.recurrence.length && !e.recurringEventId);
+}
+
+/** Expanded instances for a series master Google returned instead of singles. */
+export async function fetchGoogleSeriesInstances(
+  account: GoogleAccount,
+  calendarId: string,
+  masterId: string,
+  timeMin: string,
+  timeMax: string,
+) {
+  const rows: ReturnType<typeof mapGoogleEvent>[] = [];
+  let pageToken: string | null = null;
+  do {
+    const params = new URLSearchParams({ timeMin, timeMax, maxResults: "250" });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await gFetch(
+      account,
+      `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(masterId)}/instances?${params}`,
+    );
+    if (!res.ok) throw new Error(`instances ${masterId}: ${res.status} ${await res.text()}`);
+    const body = await res.json();
+    for (const inst of body.items ?? []) {
+      const row = mapGoogleEvent(account, calendarId, inst);
+      if (row) rows.push(row);
+    }
+    pageToken = body.nextPageToken ?? null;
+  } while (pageToken);
+  return rows;
+}
+
 /** Map a Google event resource to an external_events row (null = skip/cancelled). */
 export function mapGoogleEvent(
   account: GoogleAccount,

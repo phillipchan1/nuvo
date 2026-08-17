@@ -31,6 +31,51 @@ export function eventSeriesKey(e: { account_id: string; recurring_event_id?: str
   return e.recurring_event_id ? `${e.account_id}:series:${e.recurring_event_id}` : null;
 }
 
+/** Google instance ids end with `_YYYYMMDDTHHMMSSZ` (UTC suffix optional). */
+export function isGoogleRecurringInstanceId(providerEventId: string): boolean {
+  return /_\d{8}T\d{6}Z?$/.test(providerEventId);
+}
+
+/** Series master slipped through sync — carries RRULE locally, no recurringEventId. */
+export function isGoogleSeriesMasterRaw(
+  raw: { recurrence?: string[]; recurringEventId?: string } | null | undefined,
+): boolean {
+  return Boolean(raw?.recurrence?.length && !raw.recurringEventId);
+}
+
+/** Resolve the master series id for hide/edit/delete scope. */
+export function resolveRecurringEventId(
+  e: Pick<ExternalEvent, "recurring_event_id" | "provider_event_id">,
+  opts?: {
+    raw?: { recurringEventId?: string } | null;
+    provider?: "google" | "m365" | "icloud" | "ics" | null;
+  },
+): string | undefined {
+  if (e.recurring_event_id) return e.recurring_event_id;
+  if (opts?.raw?.recurringEventId) return opts.raw.recurringEventId;
+  if (opts?.provider === "google" && isGoogleRecurringInstanceId(e.provider_event_id)) {
+    const m = e.provider_event_id.match(/^(.+)_\d{8}T\d{6}Z?$/);
+    return m?.[1];
+  }
+  return undefined;
+}
+
+/** Is this external event part of a recurring series? */
+export function isExternalEventRecurring(
+  e: Pick<ExternalEvent, "recurring_event_id" | "provider_event_id">,
+  opts?: {
+    raw?: { recurrence?: string[]; recurringEventId?: string } | null;
+    provider?: "google" | "m365" | "icloud" | "ics" | null;
+  },
+): boolean {
+  if (e.recurring_event_id) return true;
+  if (opts?.raw?.recurringEventId) return true;
+  if (isGoogleSeriesMasterRaw(opts?.raw)) return true;
+  if (e.provider_event_id.includes("::")) return true;
+  if (opts?.provider === "google" && isGoogleRecurringInstanceId(e.provider_event_id)) return true;
+  return false;
+}
+
 /** Is this event hidden — directly, or because its whole series is? */
 export function isEventHidden(
   e: { account_id: string; provider_event_id: string; recurring_event_id?: string | null },

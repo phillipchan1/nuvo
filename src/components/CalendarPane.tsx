@@ -15,7 +15,7 @@ import { addDays, startOfDay } from "date-fns";
 import { expandRule, toGoogleRRULE } from "../lib/recurrence";
 import type { useTaskMutations } from "../hooks/useTasks";
 import { useEventDetails, useHiddenEvents, usePrefetchEventDetails, type useExternalEventMutations } from "../hooks/useCalendar";
-import { eventSeriesKey } from "../lib/now";
+import { eventSeriesKey, isExternalEventRecurring, resolveRecurringEventId } from "../lib/now";
 import { clearCalendarReveal, onCalendarReveal, pendingCalendarReveal } from "../lib/calendarReveal";
 import { synClass } from "../lib/syntax";
 import { isReadOnlyCalendarId, isWritableAccount, providerLabel, writableCalendarTargets } from "../lib/calendarWrite";
@@ -1190,17 +1190,8 @@ export default function CalendarPane({
             selfRsvp: rsvp,
             // Prefer the DB-derived field (post-migration); fall back to
             // detecting the Google instance ID pattern: base_YYYYMMDDTHHMMSSZ
-            recurringEventId:
-              e.recurring_event_id ??
-              (isGoogle && /_.{8}T\d{6}Z?$/.test(e.provider_event_id)
-                ? e.provider_event_id
-                : undefined),
-            // iCloud occurrences carry a `uid::<recurrence-id>` provider id.
-            recurring: Boolean(
-              e.recurring_event_id ||
-                (isGoogle && /_.{8}T\d{6}Z?$/.test(e.provider_event_id)) ||
-                (isIcloud && e.provider_event_id.includes("::")),
-            ),
+            recurringEventId: resolveRecurringEventId(e, { provider: isGoogle ? "google" : isIcloud ? "icloud" : isIcs ? "ics" : "m365" }),
+            recurring: isExternalEventRecurring(e, { provider: isGoogle ? "google" : isIcloud ? "icloud" : isIcs ? "ics" : "m365" }),
           },
         };
       });

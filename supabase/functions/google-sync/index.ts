@@ -6,7 +6,9 @@ import { admin, handleOptions, json, logSync } from "../_shared/admin.ts";
 import {
   type CalendarEntry,
   type GoogleAccount,
+  fetchGoogleSeriesInstances,
   gFetch,
+  isGoogleSeriesMaster,
   loadGoogleAccounts,
   mapGoogleEvent,
 } from "../_shared/google.ts";
@@ -37,13 +39,18 @@ async function saveCalendars(account: GoogleAccount) {
 async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise<void> {
   const windowStartISO = new Date(Date.now() - WINDOW_PAST_DAYS * 86400_000).toISOString();
   const windowEndISO = new Date(Date.now() + WINDOW_FUTURE_DAYS * 86400_000).toISOString();
-  const fullParams = () =>
-    new URLSearchParams({
-      singleEvents: "true",
-      maxResults: "250",
-      timeMin: windowStartISO,
-      timeMax: windowEndISO,
-    });
+  // singleEvents MUST be on every pull — full and incremental — or Google
+  // returns series masters (recurrence[] but no recurringEventId) and we store
+  // one phantom block with no future weeks.
+  const listParams = (syncToken?: string | null) => {
+    const params = new URLSearchParams({ singleEvents: "true", maxResults: "250" });
+    if (syncToken) params.set("syncToken", syncToken);
+    else {
+      params.set("timeMin", windowStartISO);
+      params.set("timeMax", windowEndISO);
+    }
+    return params;
+  };
 
   let pageToken: string | null = null;
   let syncToken = cal.sync_token ?? null;
@@ -62,9 +69,7 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
   let seen: EventRow[] = [];
 
   do {
-    const params = usingToken
-      ? new URLSearchParams({ syncToken: syncToken!, maxResults: "250" })
-      : fullParams();
+    const params = listParams(usingToken ? syncToken : null);
     if (pageToken) params.set("pageToken", pageToken);
     const res = await gFetch(
       account,
@@ -89,6 +94,19 @@ async function syncCalendar(account: GoogleAccount, cal: CalendarEntry): Promise
     for (const e of body.items ?? []) {
       if (e.status === "cancelled") {
         deletes.push(e.id);
+        continue;
+      }
+      if (isGoogleSeriesMaster(e)) {
+        // Master slipped through — expand to instances and drop the master row.
+        deletes.push(e.id as string);
+        const instances = await fetchGoogleSeriesInstances(
+          account,
+          cal.id,
+          e.id as string,
+          windowStartISO,
+          windowEndISO,
+        );
+        seen.push(...instances);
         continue;
       }
       const row = mapGoogleEvent(account, cal.id, e);

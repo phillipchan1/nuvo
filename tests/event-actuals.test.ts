@@ -4,7 +4,15 @@
 // mirrored into a second account under a hidden calendar id.
 
 import { describe, expect, it } from "vitest";
-import { eventCountsAsActual, isEventHidden, type ActualsFilter } from "../src/lib/eventActuals";
+import {
+  eventCountsAsActual,
+  isEventHidden,
+  isExternalEventRecurring,
+  isGoogleRecurringInstanceId,
+  isGoogleSeriesMasterRaw,
+  resolveRecurringEventId,
+  type ActualsFilter,
+} from "../src/lib/eventActuals";
 import type { ExternalEvent } from "../src/lib/types";
 
 const NOW = new Date("2026-08-06T20:00:00.000Z");
@@ -76,5 +84,69 @@ describe("isEventHidden", () => {
     expect(isEventHidden(e, new Set(["a:p"]))).toBe(true);
     expect(isEventHidden(e, new Set(["a:series:m"]))).toBe(true);
     expect(isEventHidden({ ...e, recurring_event_id: null }, new Set(["a:series:m"]))).toBe(false);
+  });
+});
+
+describe("isExternalEventRecurring", () => {
+  it("detects DB recurring_event_id, Google instances, series masters, and iCloud occurrences", () => {
+    expect(isExternalEventRecurring({ recurring_event_id: "master", provider_event_id: "x" })).toBe(true);
+    expect(
+      isExternalEventRecurring(
+        { recurring_event_id: null, provider_event_id: "abc_20260820T160000Z" },
+        { provider: "google" },
+      ),
+    ).toBe(true);
+    expect(
+      isExternalEventRecurring(
+        { recurring_event_id: null, provider_event_id: "master-id" },
+        { raw: { recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"] }, provider: "google" },
+      ),
+    ).toBe(true);
+    expect(
+      isExternalEventRecurring(
+        { recurring_event_id: null, provider_event_id: "uid::recur-1" },
+        { provider: "icloud" },
+      ),
+    ).toBe(true);
+    expect(
+      isExternalEventRecurring(
+        { recurring_event_id: null, provider_event_id: "one-off" },
+        { provider: "google" },
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("resolveRecurringEventId", () => {
+  it("prefers the DB column, then raw, then parses a Google instance id", () => {
+    expect(resolveRecurringEventId({ recurring_event_id: "m", provider_event_id: "p" })).toBe("m");
+    expect(
+      resolveRecurringEventId(
+        { recurring_event_id: null, provider_event_id: "p" },
+        { raw: { recurringEventId: "from-raw" }, provider: "google" },
+      ),
+    ).toBe("from-raw");
+    expect(
+      resolveRecurringEventId(
+        { recurring_event_id: null, provider_event_id: "abc_20260820T160000Z" },
+        { provider: "google" },
+      ),
+    ).toBe("abc");
+  });
+});
+
+describe("isGoogleRecurringInstanceId", () => {
+  it("matches Google's instance suffix", () => {
+    expect(isGoogleRecurringInstanceId("abc_20260820T160000Z")).toBe(true);
+    expect(isGoogleRecurringInstanceId("abc_20260820T160000")).toBe(true);
+    expect(isGoogleRecurringInstanceId("abc")).toBe(false);
+  });
+});
+
+describe("isGoogleSeriesMasterRaw", () => {
+  it("is true only when recurrence is present without recurringEventId", () => {
+    expect(isGoogleSeriesMasterRaw({ recurrence: ["RRULE:FREQ=WEEKLY"], recurringEventId: undefined })).toBe(true);
+    expect(isGoogleSeriesMasterRaw({ recurrence: ["RRULE:FREQ=WEEKLY"], recurringEventId: "m" })).toBe(false);
+    expect(isGoogleSeriesMasterRaw(null)).toBe(false);
   });
 });

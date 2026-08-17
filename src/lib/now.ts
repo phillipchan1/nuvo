@@ -161,7 +161,7 @@ export function readDay(now: Date, busy: BusyBlock[], windowStart: Date, windowE
 // The keys + the hidden test live in `eventActuals` (zero-dep) so the actuals
 // ledger can apply the same rule without importing this module. Re-exported
 // here because "what's hidden" and "what's busy" are read together.
-export { eventKey, eventSeriesKey } from "./eventActuals";
+export { eventKey, eventSeriesKey, isExternalEventRecurring, isGoogleRecurringInstanceId, resolveRecurringEventId } from "./eventActuals";
 export { isEventHidden };
 
 /** Fold the live calendar — external events + your own scheduled task blocks —

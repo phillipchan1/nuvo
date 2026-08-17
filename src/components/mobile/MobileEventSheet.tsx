@@ -4,6 +4,7 @@ import { Icon } from "../Icon";
 import type { AttendeeStatus, ExternalEvent, Slot, Task } from "../../lib/types";
 import type { useTaskMutations } from "../../hooks/useTasks";
 import { useSlotMutations } from "../../hooks/useSlots";
+import { isExternalEventRecurring } from "../../lib/now";
 import { useCalendarAccounts, useEventDetails, useEventSeriesRule, useExternalEventMutations } from "../../hooks/useCalendar";
 import { conferenceName, joinUrl } from "../../../supabase/functions/_shared/conferencing.ts";
 import {
@@ -88,9 +89,16 @@ export default function MobileEventSheet({
   }, [qc, tap]);
   const recurring =
     tap.kind === "event" &&
-    (Boolean((raw as { recurringEventId?: string } | null)?.recurringEventId) ||
-      Boolean(cachedEvent?.recurring_event_id) ||
-      Boolean(cachedEvent?.provider_event_id.includes("::")));
+    isExternalEventRecurring(
+      {
+        recurring_event_id: cachedEvent?.recurring_event_id ?? null,
+        provider_event_id: cachedEvent?.provider_event_id ?? "",
+      },
+      {
+        raw: raw as { recurrence?: string[]; recurringEventId?: string } | null,
+        provider: account?.provider ?? "google",
+      },
+    );
   const inlineRule = fromGoogleRRULE((raw as { recurrence?: string[] } | null)?.recurrence);
   const { data: seriesRule } = useEventSeriesRule(tap.kind === "event" ? tap.id : null, recurring);
   const repeatRule = inlineRule ?? seriesRule ?? null;

@@ -14,7 +14,7 @@ import type { useExternalEventMutations } from "../hooks/useCalendar";
 import type { useSlotMutations } from "../hooks/useSlots";
 import type { useRecurrenceMutations, SeriesTemplate } from "../hooks/useRecurrence";
 import { useEventDetails, useEventSeriesRule, useHiddenEvents } from "../hooks/useCalendar";
-import { eventKey, eventSeriesKey } from "../lib/now";
+import { eventKey, eventSeriesKey, isExternalEventRecurring } from "../lib/now";
 import ReminderSelect from "./ReminderSelect";
 import TaskSteps from "./TaskSteps";
 import { plainTextFromHtml } from "../lib/text";
@@ -1292,11 +1292,11 @@ export function EventPopover({
 
   const ownerAccount = (accounts ?? []).find((a) => a.id === event.account_id);
   const { data: raw, isLoading: detailsLoading } = useEventDetails(event.id, ownerAccount?.email);
-  // Google marks instances with recurringEventId in raw; iCloud (CalDAV)
-  // occurrences carry a `uid::<recurrence-id>` provider id.
   const recurring =
-    Boolean((raw as { recurringEventId?: string } | null)?.recurringEventId) ||
-    event.provider_event_id.includes("::");
+    isExternalEventRecurring(event, {
+      raw: raw as { recurrence?: string[]; recurringEventId?: string } | null,
+      provider: ownerAccount?.provider ?? "google",
+    });
   const inlineRule = useMemo(
     () => fromGoogleRRULE((raw as { recurrence?: string[] } | null)?.recurrence),
     [raw],
