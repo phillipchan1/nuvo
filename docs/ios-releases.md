@@ -413,6 +413,7 @@ step) at `app-icon.svg` directly.
 | `CFBundleVersion of an app extension must match that of its containing parent app` | `scripts/ios-widgets.rb` must stamp the widget with the plain `tauri.conf.json` version, *not* `<version>.<build>` — Tauri's `agvtool new-version -all` adds the build number to both plists between build and archive |
 | Anything widget-related blocking a TestFlight build | Set `NUVO_IOS_WIDGETS=0` on the workflow step to ship the plain app while you fix it |
 | Widget taps open the app but nothing happens | The deep link isn't arriving: check `deep-link:default` is in `capabilities/default.json` and the plugin is registered in `src-tauri/src/lib.rs`; reproduce with `xcrun simctl openurl booted nuvo://capture` |
+| `Permission <plugin>:default not found` → `failed to run custom build command for nuvo` (cargo exit 101) | A plugin's Cargo dependency is scoped to desktop-only (`[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]`, e.g. `tauri-plugin-window-state`) but its permission was added to the shared `capabilities/default.json`, which mobile loads too — the ACL can't resolve a permission from a crate that isn't compiled in. Put that permission in its own capability file with `"platforms": ["macOS", "windows", "linux"]` instead (see `capabilities/desktop.json`); mobile-only plugins (`tauri-plugin-nuvo-watch`) go the other way — compile unconditionally and no-op off-platform — so their permission is safe to leave in `default.json` (runs 31995032224+, first broke `d37dc77`) |
 
 ---
 
