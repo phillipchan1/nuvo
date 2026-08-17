@@ -48,11 +48,14 @@ function Avatar({ email, name, size = "sm" }: { email: string; name: string; siz
 }
 
 /** Which address books a suggestion came from. Contacts merge across providers,
- *  so this can legitimately name more than one. */
+ *  so this can legitimately name more than one. Sits under the email rather
+ *  than beside the name — competing for the same line as a long label like
+ *  "Met before" forced the name/email column to swallow the squeeze, which is
+ *  what made long names/emails truncate down to a couple of characters. */
 function SourceLabel({ sources }: { sources: ContactSource[] }) {
   if (!sources?.length) return null;
   return (
-    <span className="ml-auto shrink-0 pl-2 text-micro text-muted/70">
+    <span className="truncate text-micro text-muted/70">
       {sources.map(sourceLabel).join(" · ")}
     </span>
   );
@@ -212,6 +215,12 @@ export function GuestsInput({
             // Plain text input so iOS dictation works (low-data-entry principle).
             type="text"
             autoComplete="off"
+            // Names/emails aren't prose — WebKit's autocorrect bubble (the Tauri
+            // shell is WKWebView) would otherwise float a suggestion chip right
+            // over this dropdown's own suggestions.
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
           />
         </div>
 
