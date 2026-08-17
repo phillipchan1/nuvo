@@ -252,6 +252,19 @@ export function useSprintTasks(sprintId: string | null) {
  * ghost with the slot-children fetch → duplicate rows. Drop or insert so each
  * cache matches what its queryFn would return.
  */
+/** Fields that constitute a manual re-filing — see `patchTask`'s suggestion-dismiss guard. */
+const REFILE_FIELDS = ["domain_id", "project_id", "initiative_id"] as const;
+
+/** Best-effort lookup of a task's current cached row, from whichever `tasks`-
+ *  prefixed query already has it (mirrors `patchCaches`'s own resolution). */
+function findCachedTask(qc: QueryClient, id: string): Task | undefined {
+  for (const [, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+    const hit = data?.find((t) => t.id === id);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
   // Resolve the post-patch row from any cache that already has it — needed when
   // inserting into a list the task is newly joining (slot children, etc.).
@@ -546,6 +559,19 @@ export function useTaskMutations() {
     kind?: keyof typeof TASK_UNDO_DEFAULT;
     title?: string;
   }) => {
+    // A manual re-file (domain/project/initiative picker) is itself a placement
+    // decision, so any live suggestion it disagrees with is moot — leaving it
+    // live let a stale AI guess outrank the filing the user just made by hand
+    // (the row showed the guess as the active pill and the just-set domain
+    // struck through). `acceptPatch`/`dismissPatch` already dismiss explicitly
+    // (they set `suggestion` themselves), so only step in when the caller didn't.
+    if (!("suggestion" in patch) && REFILE_FIELDS.some((f) => f in patch)) {
+      const current = findCachedTask(qc, id);
+      if (current?.suggestion && !current.suggestion.dismissed) {
+        patch = { ...patch, suggestion: { ...current.suggestion, dismissed: true } };
+      }
+    }
+
     // No temp-id dance: `id` is the real, client-minted primary key from the
     // moment the task exists, so a patch fired one tick after a create targets
     // the same row the insert will create. The outbox folds the two into a
