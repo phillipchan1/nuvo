@@ -91,13 +91,16 @@ export default function MobileWeekCrown({
   const action = planned ? "The plan ›" : "Plan the week";
   const openDoor = () => (planned ? setPlanOpen(true) : onPlanWeek());
 
-  // ── shut: one line, three things ──────────────────────────────────────────
-  // It used to carry the span, a scoreboard, a meter, an amber sentence, an
-  // accent door and a chevron — six marks stacked above a month grid that is
-  // itself dense, which is a header competing with its own screen. Shut, the
-  // crown answers one question ("is this week going?") and offers one gesture
-  // (open me). Everything it dropped is one tap away, and the amber count stays
-  // because "something has no time" is the fact you must not be able to miss.
+  // ── shut: a picture, not a sentence ──────────────────────────────────────
+  // "2 of 6 landed · 3 loose" is still six words to read, at the top of a page
+  // already saying a great deal. So the slate is DRAWN: one pip per project in
+  // its domain's hue, filled when it landed, hollow while it's open — the count
+  // and the progress in one glance, no counting words. The amber light on the
+  // right is the only other mark, and it means what it has always meant: some
+  // work has no time yet. Two words of text remain ("This week"), because an
+  // unlabelled row of dots is a puzzle to a stranger (P16). Everything the
+  // words used to say is one tap below, and the screen reader still gets the
+  // full sentence through `aria-label`.
   if (!open) {
     const openIt = () => (total === 0 ? openDoor() : setOpen(true));
     return (
@@ -105,25 +108,30 @@ export default function MobileWeekCrown({
         <button
           onClick={openIt}
           aria-expanded={false}
-          aria-label={total === 0 ? "Plan the week" : "Show this week's projects"}
-          className="tap-h fast flex w-full items-center gap-2 px-4 py-2 text-left active:bg-surface-2"
+          aria-label={
+            total === 0
+              ? "This week — nothing on it yet. Plan the week"
+              : `This week — ${landed} of ${total} landed${
+                  looseCount > 0 ? `, ${looseCount} piece${looseCount === 1 ? "" : "s"} with no time yet` : ""
+                }. Show this week's projects`
+          }
+          className="tap-h fast flex w-full items-center gap-2.5 px-4 py-2 text-left active:bg-surface-2"
         >
           <span className="section-label !p-0 shrink-0">This week</span>
           {total === 0 ? (
             <span className="truncate text-body text-muted">nothing on it yet</span>
           ) : (
-            <span className="shrink-0 text-body">
-              <span className="mono font-medium text-ink">{landed}</span>
-              <span className="text-muted"> of </span>
-              <span className="mono font-medium text-ink">{total}</span>
-              <span className="text-muted"> landed</span>
-            </span>
+            <SlatePips rows={rows} landed={landed} />
           )}
           <span className="flex-1" />
+          {/* The one light on the strip. Not a count — a state: something in
+              this week has nowhere to happen. The number is one tap away. */}
           {looseCount > 0 && (
-            <span className="mono shrink-0 text-micro" style={{ color: "var(--signal)" }}>
-              {looseCount} loose
-            </span>
+            <span
+              className="h-[7px] w-[7px] shrink-0 rounded-full"
+              style={{ background: "var(--signal)" }}
+              aria-hidden
+            />
           )}
           {/* Pointing right: the one gesture this row offers is "open me" —
               into the rows, or into the ritual when the week is empty. */}
@@ -136,29 +144,19 @@ export default function MobileWeekCrown({
   return (
     <section className="border-b border-line px-4 pb-2 pt-3">
       <div className="flex items-start gap-2">
-        {/* Open: identity + the span it covers, the scoreboard, and the door.
-            No meter and no "N pieces with no time" line — the first restates the
-            scoreboard as a picture, the second restates every row's own amber
-            pill. The rows below are the detail; the header should not compete
-            with them. */}
+        {/* Open: the span it covers, and the door. No scoreboard sentence — the
+            rows ARE the scoreboard once you can see them, and a header that
+            restates them in words is the page talking over itself. */}
         <button
           onClick={() => setOpen(false)}
           aria-expanded
-          aria-label="Hide this week's projects"
-          className="tap-h fast -ml-1 flex min-w-0 flex-1 items-start gap-1.5 rounded-lg px-1 py-1 text-left active:bg-surface-2"
+          aria-label={`This week, ${landed} of ${total} landed. Hide this week's projects`}
+          className="tap-h fast -ml-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 py-1 text-left active:bg-surface-2"
         >
-          <div className="min-w-0 flex-1">
-            <div className="section-label !p-0" style={{ color: "var(--accent)" }}>
-              This week · {weekLabel}
-            </div>
-            <div className="mt-1 text-body">
-              <span className="mono font-medium text-ink">{landed}</span>
-              <span className="text-muted"> of </span>
-              <span className="mono font-medium text-ink">{total}</span>
-              <span className="text-muted"> landed</span>
-            </div>
-          </div>
-          <Icon name="chevron-down" size={14} className="fast mt-1 shrink-0 text-muted" />
+          <span className="section-label !p-0 truncate" style={{ color: "var(--accent)" }}>
+            This week · {weekLabel}
+          </span>
+          <Icon name="chevron-down" size={14} className="fast shrink-0 text-muted" />
         </button>
 
         <button
@@ -197,6 +195,49 @@ export default function MobileWeekCrown({
         <WeekPlanSheet currentWeekISO={weekISO} now={now} onClose={() => setPlanOpen(false)} storyFirst={false} />
       )}
     </section>
+  );
+}
+
+// ── the slate, drawn ─────────────────────────────────────────────────────────
+// One pip per project, in its domain's own hue: filled = it landed (or shipped),
+// hollow = still open. Reading it costs no words — how many, how far, and which
+// domains are carrying the week, in about 60px.
+//
+// Past ten it stops being countable at a glance, so it becomes the meter the
+// pips were standing in for. Neither form is ever a number: the count belongs to
+// the rows, which are one tap below.
+const PIP_LIMIT = 10;
+
+function SlatePips({ rows, landed }: { rows: WeekCrownRow[]; landed: number }) {
+  if (rows.length > PIP_LIMIT) {
+    return (
+      <span className="h-1 w-16 shrink-0 overflow-hidden rounded-full" style={{ background: "var(--line)" }} aria-hidden>
+        <span
+          className="block h-full rounded-full"
+          style={{ width: `${(landed / rows.length) * 100}%`, background: "var(--accent)" }}
+        />
+      </span>
+    );
+  }
+  return (
+    <span className="flex shrink-0 items-center gap-1" aria-hidden>
+      {rows.map((r) => {
+        const done = r.state === "landed" || r.state === "shipped";
+        return (
+          <span
+            key={r.rock.id}
+            className="h-[7px] w-[7px] rounded-full"
+            style={
+              done
+                ? { background: r.color }
+                : // A ring, drawn with inset shadow so a hollow pip and a filled
+                  // one occupy exactly the same 7px — a border would nudge the row.
+                  { boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${r.color} 60%, transparent)` }
+            }
+          />
+        );
+      })}
+    </span>
   );
 }
 
@@ -247,7 +288,10 @@ function CrownRow({
               shipped
             </span>
           ) : done ? (
-            <span className="mono shrink-0 text-micro text-muted">{continues ? "landed · continues" : "landed"}</span>
+            // "landed" is already drawn — filled pip, struck title. The only
+            // thing the drawing can't say is that the PROJECT rolls on past the
+            // week's verdict, so that is the only word left.
+            continues ? <span className="mono shrink-0 text-micro text-muted">continues</span> : null
           ) : row.state === "ready-to-ship" ? (
             // A statement, not a button: shipping is the record sheet's act, and
             // a second ship path is how the two shells drift.
@@ -262,15 +306,16 @@ function CrownRow({
                   {carryMark(rolls).text}
                 </span>
               )}
+              {/* The bar and "1/4" were one fact told twice. The bar is the
+                  faster read on a phone, so the numbers go; they are on the
+                  record, one tap away, and in this row's aria-label. */}
               {work.total > 0 && (
-                <>
-                  <span className="block h-1 w-8 overflow-hidden rounded-full bg-line">
-                    <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-                  </span>
-                  <span className="mono text-micro text-muted">
-                    {work.done}/{work.total}
-                  </span>
-                </>
+                <span
+                  className="block h-1 w-10 overflow-hidden rounded-full bg-line"
+                  aria-label={`${work.done} of ${work.total} done`}
+                >
+                  <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                </span>
               )}
             </span>
           )}
@@ -281,14 +326,31 @@ function CrownRow({
             onClick={onExpand}
             aria-expanded={expanded}
             aria-label={`${row.title} — ${placedLabel}`}
-            className="tap-h tap-bloom fast mono flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-micro"
-            style={
-              loose.length === 0
-                ? { color: "var(--muted)", background: "var(--surface-2)" }
-                : { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
-            }
+            title={placedLabel}
+            // The TARGET is 44px and transparent; the MARK is the small tinted
+            // pill inside it. Putting `tap-h` on the tinted element itself
+            // inflated a two-character pill into an amber blob — the loudest
+            // thing on the surface, for the quietest fact. And a `tap-bloom`
+            // pseudo-element isn't enough here: it overlaps the row's own
+            // button, which wins the tap, so the hit area has to be real.
+            className="tap-h fast flex shrink-0 items-center px-1"
           >
-            {placedLabel} {expanded ? "▾" : "▸"}
+            {/* "2 of 3 placed" → "2/3". Both numbers survive, because stating
+                only the loose half is the read that let work go missing (D-060);
+                it is the WORD that goes. The full phrase is the aria-label and
+                the title. */}
+            <span
+              className="mono flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-micro"
+              style={
+                // Amber only when something is genuinely homeless (P9) — a
+                // fully-placed project is a fact, not a warning.
+                loose.length === 0
+                  ? { color: "var(--muted)", background: "var(--surface-2)" }
+                  : { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
+              }
+            >
+              {loose.length === 0 ? "all" : `${placed.length}/${row.open}`} {expanded ? "▾" : "▸"}
+            </span>
           </button>
         )}
       </div>

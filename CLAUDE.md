@@ -150,9 +150,10 @@ it needs to work on a phone.
   The phone's crown rides **every** Calendar lens (Month · List · Day · Week · Year), the
   way the rail crown sits beside every desktop view — it shipped Month-only and that made
   it a crown you had to back out to reach. The phone deliberately differs in three ways and
-  no more: it collapses — and shut it is ONE line (`This week · 2 of 6 landed`, the amber
-  loose count, a chevron), because a header carrying six marks over a dense month grid is a
-  surface arguing with itself; there is no ship circle (shipping is the record sheet's act — one vocabulary),
+  no more: it collapses — and shut it is ONE line drawn rather than written (a pip per
+  project in its domain's hue, filled when it landed; one amber light when something has no
+  time; a chevron), because a phone screen already saying a great deal cannot afford a
+  header that must be *read*; there is no ship circle (shipping is the record sheet's act — one vocabulary),
   and loose work **taps** to its sheet instead of dragging. Verify both at once at `?weekcrown`
   (`mobile/WeekCrownHarness.tsx`), which also renders the in-situ Calendar tab.
 - **The Build rungs wear the same four faces on both shells** — **On Deck · Groom · All

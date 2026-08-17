@@ -3812,6 +3812,26 @@ span, the meter, the amber sentence and the door are one tap away. The loose
 count is the one detail that survives, for the reason it always was — "something
 has no time" must not be missable.
 
+→ **And then drawn instead of written, same day.** Phil again: *"even less
+reading — rely on visuals over text on mobile, because we're communicating a lot
+on this whole page."* Six words is still a sentence to parse at the top of a
+dense screen. So the slate became a **picture**: one pip per project in its
+domain's own hue, filled when it landed, hollow while it's open — count,
+progress and which domains are carrying the week, in about 60px and no words.
+The amber light on the right is the only other mark. Two words of text remain
+("This week"), because an unlabelled row of dots is a puzzle to a stranger (P16),
+and `aria-label` still carries the whole sentence for a screen reader. Past ten
+projects the pips stop being countable at a glance and become the meter they
+stood in for.
+
+The same edit ran one level down, wherever a picture and its verbal twin sat side
+by side: the row's `1/4` went (the bar says it), `landed` went (the filled pip
+and the struck title say it — only `continues` survives, being the part the
+drawing can't say), and `2 of 3 placed` became `2/3`. Both numbers stay there
+deliberately: D-060 forbids stating only the flattering half, and it is the WORD
+that was redundant, not the ratio. Every phrase removed is still in the
+`aria-label` and the `title`.
+
 Open lost two marks as well: the meter (a picture of the number beside it) and
 the "N pieces with no time yet" line (which every row restates in its own pill).
 And the first-run default flipped to **shut** — the original open default was
