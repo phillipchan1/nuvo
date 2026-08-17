@@ -1873,7 +1873,16 @@ select.field { appearance: none; -webkit-appearance: none; }
 .fc .fc-scroller { scrollbar-width: none; }
 .fc .fc-scroller::-webkit-scrollbar { display: none; }
 
-.fc .fc-timegrid-slot {
+/* Specificity has to beat FullCalendar's own `.fc .fc-timegrid-slot { height:
+   1.5em }` — FC injects its stylesheet at runtime (on first mount), which
+   lands after this file in the cascade, so an equal-specificity rule here
+   silently loses and the "Hours on screen" setting has no effect (every row
+   — lane cell AND its label cell — pinned to 1.5em regardless of --nuvo-hour).
+   Repeating the class is valid CSS and bumps specificity to outrank it
+   without `!important`, while still matching every slot cell FC's own rule
+   does (label cells included — a table row is only as short as its tallest
+   cell, so missing one keeps the whole row pinned). */
+.fc .fc-timegrid-slot.fc-timegrid-slot {
   height: calc(var(--nuvo-hour, 52px) / 4);
   border-top-color: color-mix(in srgb, var(--line) 34%, transparent);
 }
