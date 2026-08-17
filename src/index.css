@@ -2739,7 +2739,15 @@ html[data-orientation="on"] [data-sonner-toaster] {
     height: max(100%, 24px);
     transform: translate(-50%, -50%);
   }
+}
 
+/* Everything below was swallowed into the desktop block above by a missing
+   closing brace: `.scrim`'s flat rgba(0,0,0,.5) — meant only to dim a phone
+   Sheet harder — outranked `.atmosphere`'s opaque warm-paper background on
+   every `scrim atmosphere` full-screen ritual shell (Plan the week, Summit),
+   so the app underneath read straight through it. Reopening the mobile query
+   these rules were always written for. */
+@media (max-width: 767px), ((max-height: 500px) and (orientation: landscape) and (pointer: coarse)) {
   /* A deck card being held but not yet picked up — the ramp makes the
      long-press wait legible: keep holding and it visibly arms. Duration
      matches LONG_PRESS_MS in MobileDeck. */
