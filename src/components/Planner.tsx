@@ -7,7 +7,8 @@ import { readRevealConfig, isRevealReady, isAcknowledged, acknowledge, wasToaste
 import { fallbackPanelAnchor } from "../lib/appNav";
 import { MARQUEE_OPEN_EVENT, MARQUEE_CLOSE_EVENT } from "../lib/marquee";
 import type { ExternalEvent, Slot, Task } from "../lib/types";
-import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations } from "../hooks/useTasks";
+import { isTypingIn } from "../lib/a11y";
+import { useAllTasks, useDayTasks, useGroomInbox, useInboxTasks, usePlannedAnytimeTasks, useRolloverGuard, useScheduledTasks, useSprintTasks, useTaskMutations, useTrashedTasks } from "../hooks/useTasks";
 import { useCalendarAccounts, useCalendarRefresh, useExternalEventMutations, useExternalEvents, useHiddenEvents, useLabels } from "../hooks/useCalendar";
 import { useSlots, useSlotTasks, useSlotMutations } from "../hooks/useSlots";
 import { useRecurrences, useRecurrenceMutations } from "../hooks/useRecurrence";
@@ -375,7 +376,7 @@ export default function Planner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoaded, today]);
 
-  // ⌘K / Ctrl+K → command bar  |  ⌘J → agent  |  ⌘, → settings
+  // ⌘K / Ctrl+K → command bar  |  ⌘, → settings
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -453,6 +454,37 @@ export default function Planner({
   // over the record you were reading.
   const recordOpen = overlay === "project-record" || overlay === "initiative-record";
   const anyModalOpen = showCmd || showSettings || showEvening || showUpkeep || recordOpen || Boolean(taskPanel) || Boolean(eventPanel) || Boolean(slotPanel) || Boolean(recordTask);
+
+  const { data: trashedRows = [] } = useTrashedTasks();
+
+  // 1/2/3 switch the rail's Today · Inbox · Trash tabs. Lives here — not in
+  // LeftRail — so it still works in focus mode (⌘.) when the rail is slid shut,
+  // and so the numbers follow the tab strip left-to-right (Today is first now).
+  useEffect(() => {
+    if (!onSchedule || anyModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingIn(e.target)) return;
+      switch (e.key) {
+        case "1":
+          e.preventDefault();
+          setTab("today");
+          break;
+        case "2":
+          e.preventDefault();
+          setTab("inbox");
+          break;
+        case "3":
+          if (trashedRows.length > 0) {
+            e.preventDefault();
+            setTab("trash");
+          }
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onSchedule, anyModalOpen, setTab, trashedRows.length]);
 
   // The searchable vertical for ⌘K — every task / project / initiative / domain
   // as a SearchHit whose `run` navigates to it. Built from the shared builder

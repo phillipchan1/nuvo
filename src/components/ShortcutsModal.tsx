@@ -63,7 +63,7 @@ const GROUPS: Group[] = [
       { keys: [["U"]], label: "Restore (on the Trash tab)" },
       { keys: [["#"]], label: "Label" },
       { keys: [["B"]], label: "Remind (a scheduled task or a deadline)" },
-      { keys: [["1"], ["2"]], sep: "/", label: "Inbox / Today tab" },
+      { keys: [["1"], ["2"], ["3"]], sep: "/", label: "Today / Inbox / Trash tab" },
     ],
   },
   {

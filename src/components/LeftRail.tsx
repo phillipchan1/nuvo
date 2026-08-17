@@ -5,7 +5,7 @@ import type { Label, Task } from "../lib/types";
 import { isOverdue, nextWeekISO, todayISO, tomorrowISO } from "../lib/dates";
 import { captureTitle, parseCapture } from "../lib/nlp";
 import { acceptPatch, dismissPatch } from "../lib/grooming";
-import { TRASH_LIMIT, useTrashedTasks, type NewTaskInput, type useTaskMutations } from "../hooks/useTasks";
+import { TRASH_LIMIT, TRASH_RETENTION_DAYS, useTrashedTasks, type NewTaskInput, type useTaskMutations } from "../hooks/useTasks";
 import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
 import { useSettings } from "../hooks/useSettings";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
@@ -348,12 +348,6 @@ export default function LeftRail({
             e.preventDefault();
             setRemindPickerFor(targets[0]);
           }
-          break;
-        case "1":
-          setTab("inbox");
-          break;
-        case "2":
-          setTab("today");
           break;
         case "c":
           e.preventDefault();
@@ -828,6 +822,7 @@ export default function LeftRail({
             onSelect={setSelectedId}
             onRestore={(t) => mutations.restore(t)}
             onPurge={(t) => void mutations.purge(t)}
+            onPurgeAll={() => void mutations.purgeAll(trashed)}
           />
         )}
 
@@ -1255,14 +1250,17 @@ function TrashList({
   onSelect,
   onRestore,
   onPurge,
+  onPurgeAll,
 }: {
   tasks: Task[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onRestore: (t: Task) => void;
   onPurge: (t: Task) => void;
+  onPurgeAll: () => void;
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [emptyConfirm, setEmptyConfirm] = useState(false);
 
   if (tasks.length === 0) {
     return <EmptyState text="Nothing in the trash." />;
@@ -1270,9 +1268,28 @@ function TrashList({
 
   return (
     <>
-      <div className="border-b border-line px-4 py-2 text-meta leading-snug text-muted">
-        Deleted tasks rest here. Restoring puts one back where it belongs; deleting forever
-        can't be undone.
+      <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-2">
+        <div className="min-w-0 text-meta leading-snug text-muted">
+          Deleted tasks rest here. Restoring puts one back where it belongs; deleting forever
+          can't be undone. Items older than {TRASH_RETENTION_DAYS} days are removed automatically.
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (emptyConfirm) {
+              onPurgeAll();
+              setEmptyConfirm(false);
+            } else {
+              setEmptyConfirm(true);
+            }
+          }}
+          onBlur={() => setEmptyConfirm(false)}
+          className={`tap fast shrink-0 rounded-[var(--radius-sm)] px-2 py-1 text-label ${
+            emptyConfirm ? "font-medium text-signal" : "text-muted hover:text-signal"
+          }`}
+        >
+          {emptyConfirm ? "Delete all?" : "Empty trash"}
+        </button>
       </div>
       {tasks.map((t) => {
         const isConfirming = confirming === t.id;

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Label, Task } from "../../lib/types";
-import type { useTaskMutations } from "../../hooks/useTasks";
+import { TRASH_RETENTION_DAYS, type useTaskMutations } from "../../hooks/useTasks";
 import type { useVertical } from "../../hooks/useVertical";
 import { isOverdue, todayISO, tomorrowISO } from "../../lib/dates";
 import {
@@ -108,7 +108,14 @@ export default function MobileTaskList({
     setTodayOpen((s) => ({ ...s, [key]: !s[key] }));
 
   if (tab === "trash") {
-    return <MobileTrash tasks={trashed} onRestore={(t) => mutations.restore(t)} onPurge={(t) => void mutations.purge(t)} />;
+    return (
+      <MobileTrash
+        tasks={trashed}
+        onRestore={(t) => mutations.restore(t)}
+        onPurge={(t) => void mutations.purge(t)}
+        onPurgeAll={() => void mutations.purgeAll(trashed)}
+      />
+    );
   }
 
   if (tab === "inbox") {
@@ -259,18 +266,39 @@ function MobileTrash({
   tasks,
   onRestore,
   onPurge,
+  onPurgeAll,
 }: {
   tasks: Task[];
   onRestore: (t: Task) => void;
   onPurge: (t: Task) => void;
+  onPurgeAll: () => void;
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [emptyConfirm, setEmptyConfirm] = useState(false);
   if (tasks.length === 0) return <Empty text="Nothing in the trash." />;
   return (
     <div>
-      <div className="border-b border-line px-4 py-3 text-caption leading-snug text-muted">
-        Deleted tasks rest here. Restoring puts one back where it belongs; deleting forever
-        can't be undone.
+      <div className="border-b border-line px-4 py-3">
+        <div className="text-caption leading-snug text-muted">
+          Deleted tasks rest here. Restoring puts one back where it belongs; deleting forever
+          can't be undone. Items older than {TRASH_RETENTION_DAYS} days are removed automatically.
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (emptyConfirm) {
+              onPurgeAll();
+              setEmptyConfirm(false);
+            } else {
+              setEmptyConfirm(true);
+            }
+          }}
+          className={`tap-h fast mt-3 w-full rounded-lg border px-3 py-2.5 text-body font-medium ${
+            emptyConfirm ? "border-signal text-signal" : "border-line text-muted active:bg-surface-2"
+          }`}
+        >
+          {emptyConfirm ? "Delete all forever?" : "Empty trash"}
+        </button>
       </div>
       {tasks.map((t) => {
         const asking = confirming === t.id;

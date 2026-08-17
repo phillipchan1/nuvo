@@ -170,6 +170,9 @@ export function useAllTasks() {
  *  forever is an archive, and this isn't one — it is a floor under delete. */
 export const TRASH_LIMIT = 100;
 
+/** Trashed tasks older than this are hard-deleted by the nightly cron job. */
+export const TRASH_RETENTION_DAYS = 30;
+
 /**
  * The trash.
  *
@@ -742,6 +745,15 @@ export function useTaskMutations() {
       patchCaches(qc, t.id, { status: "trashed" }); // keep it out of every list…
       qc.setQueryData<Task[]>(["tasks", "trashed"], (old) => old?.filter((x) => x.id !== t.id));
       await queueWrite(makeOp("tasks", "delete", t.id));
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+    },
+
+    /** Hard-delete every trashed task currently in the trash face. No undo. */
+    purgeAll: async (tasks: Task[]) => {
+      if (tasks.length === 0) return;
+      for (const t of tasks) patchCaches(qc, t.id, { status: "trashed" });
+      qc.setQueryData<Task[]>(["tasks", "trashed"], []);
+      await Promise.all(tasks.map((t) => queueWrite(makeOp("tasks", "delete", t.id))));
       invalidateWhenSafe(qc, "tasks", ["tasks"]);
     },
 
