@@ -9,7 +9,6 @@
     "updater:default",
     "shell:default",
     "process:default",
-    "window-state:default",
     "deep-link:default",
     "nuvo-watch:default"
   ]
