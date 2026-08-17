@@ -20,6 +20,7 @@ import TaskSteps from "./TaskSteps";
 import { plainTextFromHtml } from "../lib/text";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVertical } from "../hooks/useVertical";
+import { useSettings } from "../hooks/useSettings";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
 import { allDayInclusiveEnd, allDayRangeFromStart, defaultTimedRange, fmtDuration, parseDateISO, toDateISO, todayISO } from "../lib/dates";
 import { deriveSlotTitle } from "../lib/slots";
@@ -293,6 +294,8 @@ export function TaskPopover({
   const [prepError, setPrepError] = useState<string | null>(null);
   const qc = useQueryClient();
   const { data: vertical, toggleTaskSprint } = useVertical();
+  const { settings } = useSettings();
+  const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
   const popRef = useRef<HTMLDivElement>(null);
   // Two columns wherever the card floats on its own. Inside the slot popover
   // the card IS the second column already, so it stays single there.
@@ -417,7 +420,7 @@ export function TaskPopover({
     if (rulesEqual(recurrence ? ruleOf(recurrence) : null, rule)) return;
     const template: SeriesTemplate = {
       title: task.title,
-      duration_minutes: task.duration_minutes ?? 30,
+      duration_minutes: task.duration_minutes ?? defaultDurationMins,
       time_of_day_minutes: task.start_time ? localMinutes(task.start_time) : null,
       project_id: task.project_id,
       domain_id: task.domain_id,
@@ -462,7 +465,7 @@ export function TaskPopover({
 
   // The masthead's one line — the same read the chips below let you change.
   const whenSummary = task.do_date
-    ? `${doDateLabel}${task.start_time ? ` · ${format(new Date(task.start_time), "h:mm a")}` : ""} · ${fmtDuration(task.duration_minutes ?? 30)}`
+    ? `${doDateLabel}${task.start_time ? ` · ${format(new Date(task.start_time), "h:mm a")}` : ""} · ${fmtDuration(task.duration_minutes ?? defaultDurationMins)}`
     : task.status === "inbox"
       ? "in the inbox — no date yet"
       : "no date";
@@ -696,11 +699,11 @@ export function TaskPopover({
                   {/* Duration chip */}
                   <label className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-label hover:brightness-95 dark:hover:brightness-110">
                     <Icon name="duration" size={10} className="shrink-0 text-muted/70" />
-                    <span className="text-ink">{fmtDuration(task.duration_minutes ?? 30)}</span>
+                    <span className="text-ink">{fmtDuration(task.duration_minutes ?? defaultDurationMins)}</span>
                     <Icon name="chevron-down" size={7} className="text-muted/50" />
                     <select
                       aria-label="Duration"
-                      value={task.duration_minutes ?? DEFAULT_DURATION_MINUTES}
+                      value={task.duration_minutes ?? defaultDurationMins}
                       onChange={(e) => mutations.patchTask(task.id, { duration_minutes: Number(e.target.value) })}
                       className="absolute inset-0 w-full cursor-pointer opacity-0"
                     >
@@ -2206,6 +2209,8 @@ export function SlotPopover({
   const [reorder, setReorder] = useState<{ id: string; index: number } | null>(null);
   const [reorderLineTop, setReorderLineTop] = useState<number | null>(null);
   const { data: vertical } = useVertical();
+  const { settings } = useSettings();
+  const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
 
   // Slot children are draggable OUT onto the calendar (or rail → inbox), reusing
   // FullCalendar's drop geometry. The reorder handle sits outside [data-task-drag]
@@ -2354,7 +2359,7 @@ export function SlotPopover({
       Number(a.status === "done") - Number(b.status === "done") || a.sort_order - b.sort_order,
   );
   const doneCount = ordered.filter((t) => t.status === "done").length;
-  const totalMins = ordered.reduce((sum, t) => sum + (t.duration_minutes ?? 30), 0);
+  const totalMins = ordered.reduce((sum, t) => sum + (t.duration_minutes ?? defaultDurationMins), 0);
 
   const insertLineTop = (dragId: string, clientY: number) => {
     const list = listRef.current;

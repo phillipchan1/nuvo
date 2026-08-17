@@ -570,6 +570,7 @@ export default function CalendarPane({
     return () => root.removeEventListener("mousedown", onMouseDown);
   }, [view, canCreateEvents]);
 
+  const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
   const showWeather = settings?.show_weather ?? false;
   const { data: weatherData } = useWeather(showWeather);
   const weatherIndex = useMemo(() => indexWeather(weatherData?.days), [weatherData]);
@@ -717,7 +718,7 @@ export default function CalendarPane({
             duration: minutesToDuration(
               pieces.length > 0
                 ? sizeSlotToContents(pieces.map((t) => t.duration_minutes))
-                : DEFAULT_DURATION_MINUTES,
+                : defaultDurationMins,
             ),
             classNames: ["evt-slot"],
             backgroundColor: "color-mix(in srgb, var(--slot) 32%, var(--surface))",
@@ -760,7 +761,7 @@ export default function CalendarPane({
               ? sizeSlotToContents(
                   group.map((id) => resolveDroppedTask(id)?.duration_minutes ?? null),
                 )
-              : Number(el.getAttribute("data-task-duration")) || DEFAULT_DURATION_MINUTES,
+              : Number(el.getAttribute("data-task-duration")) || defaultDurationMins,
           ),
           create: true,
         };
@@ -1614,7 +1615,7 @@ export default function CalendarPane({
         let cursor = new Date(start);
         tasks.forEach((t) => {
           mutations.block(t, cursor);
-          cursor = new Date(cursor.getTime() + (t.duration_minutes ?? DEFAULT_DURATION_MINUTES) * 60_000);
+          cursor = new Date(cursor.getTime() + (t.duration_minutes ?? defaultDurationMins) * 60_000);
         });
       } else {
         tasks.forEach((t) => mutations.assignToSlot(t, slot));

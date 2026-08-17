@@ -11,6 +11,7 @@ import { RepeatControl } from "../RecurrencePicker";
 import ReminderSelect from "../ReminderSelect";
 import TaskSteps from "../TaskSteps";
 import Sheet from "./Sheet";
+import { useSettings } from "../../hooks/useSettings";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
 type Vertical = ReturnType<typeof useVertical>["data"];
@@ -41,6 +42,8 @@ export default function MobileTaskSheet({
   const done = task.status === "done";
   const currentLabels = new Set((task.task_labels ?? []).map((tl) => tl.label_id));
   const [showDatePick, setShowDatePick] = useState(false);
+  const { settings } = useSettings();
+  const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
   const { data: recurrences = [] } = useRecurrences();
   const recurrenceMutations = useRecurrenceMutations();
   const recurrence = useMemo(
@@ -53,7 +56,7 @@ export default function MobileTaskSheet({
   const onRepeatChange = async (rule: RecurrenceRule | null) => {
     const template = {
       title: task.title,
-      duration_minutes: task.duration_minutes ?? 30,
+      duration_minutes: task.duration_minutes ?? defaultDurationMins,
       time_of_day_minutes: task.start_time
         ? new Date(task.start_time).getHours() * 60 + new Date(task.start_time).getMinutes()
         : null,
@@ -206,7 +209,7 @@ export default function MobileTaskSheet({
             {DURATION_PRESETS.map((m) => (
               <Chip
                 key={m}
-                on={(task.duration_minutes ?? DEFAULT_DURATION_MINUTES) === m}
+                on={(task.duration_minutes ?? defaultDurationMins) === m}
                 onClick={() => mutations.patchTask(task.id, { duration_minutes: m })}
               >
                 {fmtDuration(m)}
