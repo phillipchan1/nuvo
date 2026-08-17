@@ -297,8 +297,17 @@ export default function Planner({
   // different times after a completion toggle.
   const allKnownTasks = useMemo(() => {
     const map = new Map<string, Task>();
-    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled, ...anytime, ...slotChildTasks])
-      map.set(t.id, t);
+    // `weekTasks` (useSprintTasks) deliberately leaves a trashed row in its
+    // cache rather than dropping it — see the "sprint" branch of patchCaches
+    // in useTasks.ts, which relies on every downstream reader filtering it
+    // out explicitly (the way buildVertical does). This merge didn't, so a
+    // task trashed off the calendar stayed on the grid as long as it was
+    // still committed to the week: `map.delete` here undoes an earlier
+    // source's entry too, not just skips adding the trashed one.
+    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled, ...anytime, ...slotChildTasks]) {
+      if (t.status === "trashed") map.delete(t.id);
+      else map.set(t.id, t);
+    }
     return map;
   }, [inbox, weekTasks, todayTasks, scheduled, anytime, slotChildTasks]);
 
