@@ -1941,7 +1941,7 @@ export default function CalendarPane({
       return;
     }
     const start = arg.date;
-    const end = new Date(start.getTime() + 30 * 60_000);
+    const end = new Date(start.getTime() + defaultDurationMins * 60_000);
     const je = arg.jsEvent;
     let kind: CreateKind = createMode;
     if (je?.altKey) kind = "event";
