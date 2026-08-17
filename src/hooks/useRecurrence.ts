@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, mirrorTask, supabase } from "../lib/supabase";
-import { makeOp, queueWrite } from "../lib/sync";
-import { patchCaches } from "./useTasks";
+import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
+import { insertTaskCache, patchCaches } from "./useTasks";
+import { insertSlotCache, patchSlotCaches } from "./useSlots";
 import {
   DEFAULT_DURATION_MINUTES,
   type Recurrence,
@@ -24,6 +25,68 @@ const REC_COLS =
 function occurrenceStartISO(dateISO: string, minutes: number): string {
   const [y, m, d] = dateISO.split("-").map(Number);
   return new Date(y, m - 1, d, Math.floor(minutes / 60), minutes % 60, 0, 0).toISOString();
+}
+
+function buildOccurrenceTask(rec: Recurrence, dateISO: string, id: string): Task {
+  return {
+    id,
+    user_id: "",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    title: rec.title,
+    notes: "",
+    status: "planned",
+    do_date: dateISO,
+    start_time:
+      rec.time_of_day_minutes != null ? occurrenceStartISO(dateISO, rec.time_of_day_minutes) : null,
+    duration_minutes: rec.duration_minutes,
+    deadline: null,
+    priority: rec.priority,
+    roll_count: 0,
+    completed_at: null,
+    trashed_at: null,
+    project_id: rec.project_id,
+    initiative_id: null,
+    domain_id: rec.domain_id,
+    key_result_id: null,
+    sprint_id: null,
+    big_rock_id: null,
+    energy: null,
+    assignee: "me",
+    prework: "",
+    prework_at: null,
+    suggestion: null,
+    suggested_at: null,
+    google_event_id: null,
+    sort_order: 9999,
+    slot_id: null,
+    parent_task_id: null,
+    recurrence_id: rec.id,
+    recurrence_date: dateISO,
+    recurrence_overridden: false,
+    task_labels: [],
+  };
+}
+
+function buildOccurrenceSlot(rec: Recurrence, dateISO: string, id: string): Slot {
+  const minutes = rec.time_of_day_minutes ?? 9 * 60;
+  return {
+    id,
+    user_id: "",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    title: rec.title,
+    do_date: dateISO,
+    start_time: occurrenceStartISO(dateISO, minutes),
+    duration_minutes: rec.duration_minutes,
+    project_id: rec.project_id,
+    domain_id: rec.domain_id,
+    color: rec.color,
+    google_event_id: null,
+    recurrence_id: rec.id,
+    recurrence_date: dateISO,
+    recurrence_overridden: false,
+  };
 }
 
 /** The template payload shared by both create paths. */
@@ -92,9 +155,9 @@ export function useRecurrenceMutations() {
   const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
 
   const invalidate = useCallback(() => {
-    qc.invalidateQueries({ queryKey: ["tasks"] });
-    qc.invalidateQueries({ queryKey: ["slots"] });
-    qc.invalidateQueries({ queryKey: ["recurrences"] });
+    invalidateWhenSafe(qc, "tasks", ["tasks"]);
+    invalidateWhenSafe(qc, "slots", ["slots"]);
+    invalidateWhenSafe(qc, "recurrences", ["recurrences"]);
   }, [qc]);
 
   /**
@@ -140,8 +203,10 @@ export function useRecurrenceMutations() {
       // replay cannot tell which rows made it. Per-row upserts are each
       // idempotent, so a partial delivery simply completes on the next drain.
       for (const d of missing) {
+        const id = crypto.randomUUID();
+        insertTaskCache(qc, buildOccurrenceTask(rec, d, id));
         await queueWrite(
-          makeOp("tasks", "insert", crypto.randomUUID(), {
+          makeOp("tasks", "insert", id, {
             title: rec.title,
             status: "planned",
             do_date: d,
@@ -158,8 +223,10 @@ export function useRecurrenceMutations() {
     } else {
       const minutes = rec.time_of_day_minutes ?? 9 * 60;
       for (const d of missing) {
+        const id = crypto.randomUUID();
+        insertSlotCache(qc, buildOccurrenceSlot(rec, d, id));
         await queueWrite(
-          makeOp("slots", "insert", crypto.randomUUID(), {
+          makeOp("slots", "insert", id, {
             title: rec.title,
             do_date: d,
             start_time: occurrenceStartISO(d, minutes),
@@ -283,11 +350,11 @@ export function useRecurrenceMutations() {
       const rec = await insertRecurrence({ kind, rule, anchorISO, template });
       // Adopt the existing row as occurrence #1 *before* materializing, so the
       // anchor date is already taken and never gets a duplicate.
+      const link = { recurrence_id: rec.id, recurrence_date: anchorISO };
+      if (kind === "task") patchCaches(qc, row.id, link);
+      else patchSlotCaches(qc, row.id, link);
       await queueWrite(
-        makeOp(kind === "task" ? "tasks" : "slots", "update", row.id, {
-          recurrence_id: rec.id,
-          recurrence_date: anchorISO,
-        }),
+        makeOp(kind === "task" ? "tasks" : "slots", "update", row.id, link),
       );
       await materializeSeries(rec, anchorISO);
       invalidate();

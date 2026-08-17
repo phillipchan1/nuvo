@@ -245,6 +245,23 @@ Deno.serve(async (req) => {
           : p.recurrence,
       });
       await putEvent(href, next, account.email, password, etag);
+      const syncRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/icloud-sync`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ accountId: account.id }),
+      });
+      if (!syncRes.ok) {
+        await logSync(
+          "icloud",
+          "event-recurrence-sync",
+          "error",
+          await syncRes.text(),
+          user.id,
+        );
+      }
       await logSync("icloud", "event-recurrence", "ok", undefined, user.id);
       return json({ ok: true });
     }

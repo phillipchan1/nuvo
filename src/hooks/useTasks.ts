@@ -268,6 +268,13 @@ function findCachedTask(qc: QueryClient, id: string): Task | undefined {
   return undefined;
 }
 
+/** Insert a newly minted task row into every `tasks`-keyed cache fragment. */
+export function insertTaskCache(qc: QueryClient, task: Task) {
+  qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+    old ? [...old, task] : [task],
+  );
+}
+
 export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
   // Resolve the post-patch row from any cache that already has it — needed when
   // inserting into a list the task is newly joining (slot children, etc.).

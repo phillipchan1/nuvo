@@ -450,6 +450,39 @@ Deno.serve(async (req) => {
       );
       if (!res.ok) throw new Error(`patch recurrence: ${res.status} ${await res.text()}`);
 
+      // Google expands the series upstream; pull the new instances into the
+      // mirror now rather than waiting for a webhook or the 15-minute poll.
+      const updated = await res.json().catch(() => null);
+      if (updated) {
+        const mapped = mapGoogleEvent(account, evt.calendar_id, updated);
+        if (mapped) {
+          await admin
+            .from("external_events")
+            .upsert(mapped, { onConflict: "account_id,calendar_id,provider_event_id" });
+        }
+      }
+      const syncRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/google-sync`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "incremental",
+          accountId: account.id,
+          calendarId: evt.calendar_id,
+        }),
+      });
+      if (!syncRes.ok) {
+        await logSync(
+          "google",
+          "event-recurrence-sync",
+          "error",
+          await syncRes.text(),
+          user.id,
+        );
+      }
+
       await logSync("google", "event-recurrence", "ok", undefined, user.id);
       return json({ ok: true });
     }

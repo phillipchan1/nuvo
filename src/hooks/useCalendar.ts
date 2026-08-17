@@ -223,7 +223,16 @@ export function useExternalEventMutations() {
           if (error) throw error;
         }
       }
-      invokeQuiet(eventsFunctionFor(providerForEvent(id)), { eventId: id, patch, scope });
+      const fn = eventsFunctionFor(providerForEvent(id));
+      const body = { eventId: id, patch, scope };
+      // Recurrence edits expand into a whole series upstream — await the write
+      // and the sync kick so the next refetch actually sees future instances.
+      if (patch.recurrence !== undefined) {
+        const { data, error } = await supabase.functions.invoke(fn, { body });
+        throwIfInvokeFailed(data, error);
+      } else {
+        invokeQuiet(fn, body);
+      }
     },
     onMutate: async ({ id, patch, scope = "THIS" }) => {
       if (scope !== "THIS") return;
