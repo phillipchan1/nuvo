@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
-import type { Recurrence } from "../lib/types";
-import { ruleOf } from "../lib/types";
+import { DEFAULT_DURATION_MINUTES, ruleOf, type Recurrence } from "../lib/types";
 import { groupSeriesByCadence } from "../lib/recurrence";
 import { todayISO, parseDateISO, toDateISO } from "../lib/dates";
 import { addDays } from "date-fns";
 import { useRecurrences, useRecurrenceMutations, type SeriesTemplate } from "../hooks/useRecurrence";
+import { useSettings } from "../hooks/useSettings";
 import { useVertical } from "../hooks/useVertical";
 import { domainById, projectById } from "../lib/vertical";
 import { Modal, SectionLabel } from "./ui";
 import { RepeatControl } from "./RecurrencePicker";
+import DurationSelect from "./DurationSelect";
 import { useEscape } from "../hooks/useEscape";
 import type { RecurrenceRule } from "../lib/recurrence";
 import { useIsMobile } from "../hooks/useIsMobile";
@@ -41,9 +42,12 @@ function UpkeepBody({ onClose }: { onClose: () => void }) {
   const groups = useMemo(() => groupSeriesByCadence(taskSeries, today), [taskSeries, today]);
   const { data: vertical } = useVertical();
   const mut = useRecurrenceMutations();
+  const { settings } = useSettings();
+  const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
 
   const [draftTitle, setDraftTitle] = useState("");
   const [draftRule, setDraftRule] = useState<RecurrenceRule | null>(null);
+  const [draftDuration, setDraftDuration] = useState(defaultDurationMins);
   const [adding, setAdding] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const isMobile = useIsMobile();
@@ -55,7 +59,7 @@ function UpkeepBody({ onClose }: { onClose: () => void }) {
     try {
       const template: SeriesTemplate = {
         title,
-        duration_minutes: 30,
+        duration_minutes: draftDuration,
         time_of_day_minutes: null,
       };
       await mut.createSeries({
@@ -66,6 +70,7 @@ function UpkeepBody({ onClose }: { onClose: () => void }) {
       });
       setDraftTitle("");
       setDraftRule(null);
+      setDraftDuration(defaultDurationMins);
     } finally {
       setAdding(false);
     }
@@ -91,6 +96,7 @@ function UpkeepBody({ onClose }: { onClose: () => void }) {
           />
           <div className="flex flex-wrap items-center gap-2">
             <RepeatControl anchorISO={today} value={draftRule} onChange={setDraftRule} />
+            <DurationSelect value={draftDuration} onChange={setDraftDuration} title="Duration" />
             <button
               type="button"
               disabled={!draftTitle.trim() || !draftRule || adding}
@@ -129,6 +135,9 @@ function UpkeepBody({ onClose }: { onClose: () => void }) {
                         today={today}
                         vertical={vertical}
                         onUpdate={(rule) => void mut.updateSeries(s, rule)}
+                        onUpdateDuration={(mins) =>
+                          void mut.updateSeries(s, ruleOf(s), { duration_minutes: mins })
+                        }
                         onPause={() => void mut.pauseSeries(s.id)}
                         onDelete={() => void mut.deleteSeries(s)}
                       />
@@ -161,6 +170,7 @@ function UpkeepRow({
   today,
   vertical,
   onUpdate,
+  onUpdateDuration,
   onPause,
   onDelete,
 }: {
@@ -170,6 +180,7 @@ function UpkeepRow({
   today: string;
   vertical: ReturnType<typeof useVertical>["data"];
   onUpdate: (rule: RecurrenceRule) => void;
+  onUpdateDuration: (minutes: number) => void;
   onPause: () => void;
   onDelete: () => void;
 }) {
@@ -202,6 +213,7 @@ function UpkeepRow({
         value={rule}
         onChange={(r) => r && onUpdate(r)}
       />
+      <DurationSelect value={series.duration_minutes} onChange={onUpdateDuration} title="Duration" className="shrink-0" />
       <div className="relative shrink-0">
         <button
           type="button"

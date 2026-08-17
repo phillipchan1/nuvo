@@ -261,6 +261,10 @@ export interface UserSettings {
   week_start: number;
   work_start_minutes: number; // compose boundary: blocks proposed inside these
   work_end_minutes: number;
+  /** The duration a new task/slot/recurring series gets when nothing says
+   *  otherwise — capture with no stated length, "Add" in Recurring upkeep, etc.
+   *  Falls back to `DEFAULT_DURATION_MINUTES` (30) until the user changes it. */
+  default_task_duration_minutes: number;
   hidden_calendar_ids: string[];
   /** Individually hidden events (Fantastical-style hide, not delete). Kept out of
    *  the board AND the busy/availability math. Keyed by the stable event key so a

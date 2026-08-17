@@ -7,6 +7,8 @@ import { captureTitle, parseCapture } from "../lib/nlp";
 import { acceptPatch, dismissPatch } from "../lib/grooming";
 import { TRASH_LIMIT, useTrashedTasks, type NewTaskInput, type useTaskMutations } from "../hooks/useTasks";
 import { useRecurrenceMutations, useRecurrences } from "../hooks/useRecurrence";
+import { useSettings } from "../hooks/useSettings";
+import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { useVertical } from "../hooks/useVertical";
 import { useTaskFilter } from "../hooks/useTaskFilter";
 import TaskFilter from "./TaskFilter";
@@ -108,6 +110,8 @@ export default function LeftRail({
   const { recordUndo } = useOptionalUndoStack();
   const recurrenceMutations = useRecurrenceMutations();
   const { nav } = useAppNavigation();
+  const { settings } = useSettings();
+  const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
 
   /** A task's thread back up the vertical: its domain color. */
   const accentOf = (t: Task) => taskDomainColor(vertical, t);
@@ -380,7 +384,7 @@ export default function LeftRail({
           anchorISO: anchor,
           template: {
             title: captureTitle(p, text),
-            duration_minutes: p.durationMinutes ?? 30,
+            duration_minutes: p.durationMinutes ?? defaultDurationMins,
             time_of_day_minutes: startMins,
             priority: p.priority,
           },

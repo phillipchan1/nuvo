@@ -16,6 +16,7 @@ const DEFAULTS: Omit<UserSettings, "user_id"> = {
   week_start: 0, // Sunday — display only; the planning week is Monday-based
   work_start_minutes: 480,
   work_end_minutes: 990,
+  default_task_duration_minutes: 30,
   hidden_calendar_ids: [],
   hidden_events: [],
   calendar_domain_map: {},

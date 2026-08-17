@@ -5,6 +5,7 @@ import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../lib/types";
 import { toDateISO } from "../lib/dates";
 import { useTaskMutations } from "./useTasks";
 import { useOptionalUndoStack } from "./useUndoStack";
+import { useSettings } from "./useSettings";
 // One rule for "how big is this block", shared with the chat's `create_slot` —
 // see docs/planning-kernel.md §3.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
@@ -85,6 +86,8 @@ export function useSlotMutations() {
   const qc = useQueryClient();
   const taskMutations = useTaskMutations();
   const { recordUndo } = useOptionalUndoStack();
+  const { settings } = useSettings();
+  const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
 
   /**
    * Create a standing slot.
@@ -104,7 +107,7 @@ export function useSlotMutations() {
       title: input.title,
       do_date: input.do_date,
       start_time: input.start_time,
-      duration_minutes: input.duration_minutes ?? DEFAULT_DURATION_MINUTES,
+      duration_minutes: input.duration_minutes ?? defaultDurationMins,
       project_id: input.project_id ?? null,
       domain_id: input.domain_id ?? null,
       color: input.color ?? null,
@@ -119,7 +122,7 @@ export function useSlotMutations() {
       await queueWrite(
         makeOp("slots", "insert", id, {
           ...input,
-          duration_minutes: input.duration_minutes ?? DEFAULT_DURATION_MINUTES,
+          duration_minutes: input.duration_minutes ?? defaultDurationMins,
         }),
       );
       if (navigator.onLine) invokeQuiet("slot-mirror", { slotId: id });

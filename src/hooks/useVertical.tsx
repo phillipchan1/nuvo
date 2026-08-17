@@ -1004,7 +1004,9 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         const title = patch?.title ?? "";
         const durationMins =
           patch?.durationMins ??
-          (parented ? DEFAULT_PROJECT_DURATION_MINUTES : DEFAULT_DURATION_MINUTES);
+          (parented
+            ? DEFAULT_PROJECT_DURATION_MINUTES
+            : (settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES));
         const optimistic = optimisticTask({
           id: tempId,
           title,

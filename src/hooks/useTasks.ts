@@ -6,6 +6,7 @@ import { DEFAULT_DURATION_MINUTES, restingStatus, type Recurrence, type Slot, ty
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
 import { useOptionalUndoStack } from "./useUndoStack";
+import { useSettings } from "./useSettings";
 import {
   COALESCE,
   resolveUndoTier,
@@ -433,6 +434,8 @@ export interface NewTaskInput {
 export function useTaskMutations() {
   const qc = useQueryClient();
   const { recordUndo } = useOptionalUndoStack();
+  const { settings } = useSettings();
+  const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
 
   // NOTE: the temp-id machinery this hook used to carry is gone. It existed
   // because the server minted the row id, so a patch fired in the ~150ms before
@@ -460,7 +463,7 @@ export function useTaskMutations() {
     const status: TaskStatus = isStep ? "backlog" : input.do_date ? "planned" : "inbox";
     const duration =
       input.start_time != null
-        ? (input.duration_minutes ?? DEFAULT_DURATION_MINUTES)
+        ? (input.duration_minutes ?? defaultDurationMins)
         : input.duration_minutes;
 
     const optimistic: Task = {
@@ -647,7 +650,7 @@ export function useTaskMutations() {
           do_date: todayLocalISO(start),
           start_time: start.toISOString(),
           slot_id: null,
-          duration_minutes: durationMinutes ?? t.duration_minutes ?? DEFAULT_DURATION_MINUTES,
+          duration_minutes: durationMinutes ?? t.duration_minutes ?? defaultDurationMins,
         },
       opts),
 

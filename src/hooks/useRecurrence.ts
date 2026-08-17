@@ -13,6 +13,7 @@ import {
 import { HORIZON_DAYS, expandRule, type RecurrenceRule } from "../lib/recurrence";
 import { addDays } from "date-fns";
 import { parseDateISO, toDateISO, todayISO } from "../lib/dates";
+import { useSettings } from "./useSettings";
 
 export { HORIZON_DAYS } from "../lib/recurrence";
 
@@ -87,6 +88,8 @@ export function useRecurrences() {
 
 export function useRecurrenceMutations() {
   const qc = useQueryClient();
+  const { settings } = useSettings();
+  const defaultDurationMins = settings?.default_task_duration_minutes ?? DEFAULT_DURATION_MINUTES;
 
   const invalidate = useCallback(() => {
     qc.invalidateQueries({ queryKey: ["tasks"] });
@@ -241,7 +244,7 @@ export function useRecurrenceMutations() {
         until_date: rule.until ?? null,
         max_count: rule.count ?? null,
         title: template.title,
-        duration_minutes: template.duration_minutes || DEFAULT_DURATION_MINUTES,
+        duration_minutes: template.duration_minutes || defaultDurationMins,
         time_of_day_minutes: template.time_of_day_minutes,
         project_id: template.project_id ?? null,
         domain_id: template.domain_id ?? null,
@@ -254,7 +257,7 @@ export function useRecurrenceMutations() {
       await queueWrite(makeOp("recurrences", "insert", id, row));
       return rec;
     },
-    [qc],
+    [qc, defaultDurationMins],
   );
 
   /** Create a brand-new repeating series and lay down its first occurrences. */

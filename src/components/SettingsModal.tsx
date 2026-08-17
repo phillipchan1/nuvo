@@ -11,9 +11,9 @@ import {
   onInstallAvailabilityChange,
   promptInstall,
 } from "../lib/installPrompt";
-import { formatHourLabel } from "../lib/dates";
+import { formatHourLabel, fmtDuration } from "../lib/dates";
 import { readRevealConfig, writeRevealConfig, type RevealConfig } from "../lib/weekReveal";
-import type { CalendarAccount, UserSettings } from "../lib/types";
+import { DURATION_PRESETS, type CalendarAccount, type UserSettings } from "../lib/types";
 import { providerMeta } from "../lib/calendarWrite";
 import { firstDayOfWeek } from "../hooks/useSettings";
 import { useLabels } from "../hooks/useCalendar";
@@ -568,6 +568,24 @@ function SchedulePane({
               className="mono w-full sm:w-36"
             />
           </div>
+        </Row>
+
+        <Row
+          layout="stack"
+          title="Default task duration"
+          desc="How long a new task or recurring series gets when nothing says otherwise."
+        >
+          <Select
+            value={settings?.default_task_duration_minutes ?? 30}
+            onChange={(e) => updateSettings({ default_task_duration_minutes: Number(e.target.value) })}
+            className="mono w-full sm:w-36"
+          >
+            {DURATION_PRESETS.map((m) => (
+              <option key={m} value={m}>
+                {fmtDuration(m)}
+              </option>
+            ))}
+          </Select>
         </Row>
 
         <Row
