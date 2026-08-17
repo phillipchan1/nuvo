@@ -9,7 +9,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { enqueue } from "./outbox";
-import { refreshOwing, startSync, syncNow } from "./coordinator";
+import { markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
 import type { NewOp, Op, SyncTable } from "./ops";
 import type { Transport } from "./engine";
 
@@ -52,6 +52,11 @@ export function teardownSync() {
  * reaches Postgres. Callers await this only to know the change is safe.
  */
 export async function queueWrite(op: NewOp): Promise<Op> {
+  // Synchronous, before the first await: a caller that fires this with
+  // `void` and immediately calls `invalidateWhenSafe` (the standard
+  // optimistic-patch shape) must not see a stale "nothing owed" the
+  // instant this function is entered — see markOwing's own comment.
+  markOwing(op.table);
   const stored = await enqueue(op);
   await refreshOwing();
   // Fire and forget: a drain failure is the engine's business, not the caller's.

@@ -44,6 +44,23 @@ export function tablesOwing(): ReadonlySet<SyncTable> {
   return owing;
 }
 
+/**
+ * Mark a table as owing the instant its write is queued — synchronously,
+ * before the IndexedDB round-trip. `queueWrite` is async and most callers
+ * fire it with `void` rather than awaiting it (an optimistic patch plus
+ * `invalidateWhenSafe` on the very next line is the standard mutation
+ * shape), so `owing` has to be right *before* that `await` yields or the
+ * immediate-refetch branch below races it: `invalidateWhenSafe` runs while
+ * `owing` still reflects the pre-enqueue world, refetches from the server,
+ * and clobbers the optimistic value with the stale row it's racing against
+ * — a setting (or anything else on this pattern) visibly reverting the
+ * instant you change it. `refreshOwing` still reconciles against IndexedDB
+ * afterward for cross-tab/session truth; this just can't wait for it.
+ */
+export function markOwing(table: SyncTable): void {
+  owing.add(table);
+}
+
 /** Recompute the mirror. Called after every enqueue and every drain. */
 export async function refreshOwing(): Promise<void> {
   const ops = await pendingOps();

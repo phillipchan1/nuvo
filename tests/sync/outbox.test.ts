@@ -424,6 +424,38 @@ describe("invalidateWhenSafe", () => {
     invalidateWhenSafe(qc, "slots", ["slots"]);
     expect(invalidated).toEqual([["slots"]]);
   });
+
+  /**
+   * The settings-revert regression: a mutation hook fires `void queueWrite(...)`
+   * (deliberately not awaited — see index.ts's own doc comment) and calls
+   * `invalidateWhenSafe` on the very next line. `refreshOwing` used to be the
+   * only thing that marked a table as owing, and it only runs after
+   * `queueWrite`'s IndexedDB write resolves — a tick that hasn't happened yet
+   * when the very next synchronous line runs. So the immediate-refetch branch
+   * fired against a table that (as far as the synchronous check could tell)
+   * owed nothing, fetched the pre-write row, and stomped the just-applied
+   * optimistic value with it — a Settings toggle visibly snapping back to its
+   * old value the instant you changed it. `queueWrite` must mark its table as
+   * owing before it does anything async, not after.
+   */
+  it("marks a table as owing before queueWrite's first await, not after", async () => {
+    const { QueryClient } = await import("@tanstack/react-query");
+    const { invalidateWhenSafe } = await import("../../src/lib/sync/coordinator");
+    const { queueWrite } = await import("../../src/lib/sync/index");
+
+    const qc = new QueryClient();
+    const invalidated: unknown[] = [];
+    qc.invalidateQueries = ((args: { queryKey: unknown }) => {
+      invalidated.push(args.queryKey);
+      return Promise.resolve();
+    }) as typeof qc.invalidateQueries;
+
+    // The exact shape of the vulnerable call sites: fire-and-forget, then
+    // invalidate on the next synchronous line — no `await` in between.
+    void queueWrite(newTask("a", "queued"));
+    invalidateWhenSafe(qc, "tasks", ["tasks"]);
+    expect(invalidated).toHaveLength(0);
+  });
 });
 
 describe("status", () => {
