@@ -103,6 +103,13 @@ that predate them and wipes the user's offline work. `invalidateWhenSafe`
 refetches immediately when the table owes nothing, and defers until the drain
 otherwise.
 
+**Agent writes paint immediately.** Realtime used to only invalidate, so a
+teammate's edit waited on a refetch — and if this device owed any write on
+that table, the refetch waited on the outbox. `applyLiveChange` writes the
+socket payload into the query caches as soon as it arrives, merging any
+unsent local op for the *same row* through field-LWW. A Friday reschedule
+lands on the Schedule the way a Google Doc edit lands on the page.
+
 **The persisted cache is cleared on sign-out.** Nuvo is multi-tenant and the
 cache is on disk; leaving it would rehydrate one account's tasks for the next
 person to sign in on that device.
@@ -132,6 +139,13 @@ a wrong clock can win or lose exchanges it shouldn't. The RPC clamps
 future-dated stamps to `now()`, which bounds a fast clock; a slow clock still
 loses. A hybrid logical clock would close this and is deliberately out of scope.
 There is a test documenting the behaviour rather than asserting it is desirable.
+
+**Server-side writers must stamp.** Agent, MCP, and Capture update rows through
+the service role and never call `apply_patch`. An unstamped column change loses
+to the SPA's cache on the next merge (same stamp, local value wins). The
+`stamp_unstamped_field_ts` trigger covers that forgotten-stamp case: it writes
+`now()` only when the value changed and the stamp did not. SPA patches that
+send value + stamp together are left alone.
 
 ## 6. What is converted, and what is not
 

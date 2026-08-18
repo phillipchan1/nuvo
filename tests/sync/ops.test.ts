@@ -232,4 +232,19 @@ describe("mergeFieldLww", () => {
     expect(merged.title).toBe("remote title");
     expect(rejected).toEqual(["title"]);
   });
+
+  it("an unstamped remote placement still wins the tie against a queued local patch", () => {
+    // Agent/MCP used to write start_time without bumping field_ts. A later
+    // drain replaying the local cache at the old stamp must not clobber it.
+    const ts = "2026-08-18T14:11:37.913Z";
+    const { merged, rejected } = mergeFieldLww(
+      { start_time: "2026-08-18T20:00:00.000Z" },
+      { start_time: ts },
+      { start_time: null },
+      { start_time: ts },
+    );
+
+    expect(merged.start_time).toBe("2026-08-18T20:00:00.000Z");
+    expect(rejected).toEqual(["start_time"]);
+  });
 });

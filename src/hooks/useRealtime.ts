@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
-import { invalidateWhenSafe, SYNC_TABLES, type SyncTable } from "../lib/sync";
+import { applyLiveChange } from "../lib/sync/liveApply";
+import { invalidateWhenSafe, pendingOps, SYNC_TABLES, tablesOwing, type SyncTable } from "../lib/sync";
 
 const isSyncTable = (t: string): t is SyncTable =>
   (SYNC_TABLES as readonly string[]).includes(t);
@@ -34,8 +35,9 @@ const TABLE_TO_KEYS: Record<string, string[][]> = {
 // the client to one refetch per burst no matter how large the burst is.
 const COALESCE_MS = 120;
 
-/** Live updates: any server-side change (sync jobs, rollover, other devices)
- *  invalidates the matching query caches. Boring on purpose. */
+/** Live updates: paint the Realtime row into the caches the UI already reads,
+ *  then fall back to a coalesced invalidate only when we could not apply it
+ *  (unknown shape, nested join, missing id). */
 export function useRealtime(enabled: boolean) {
   const qc = useQueryClient();
   useEffect(() => {
@@ -70,6 +72,27 @@ export function useRealtime(enabled: boolean) {
       if (pending.size && timer === null) timer = setTimeout(flush, COALESCE_MS);
     };
 
+    const onChange = (payload: {
+      table: string;
+      eventType: string;
+      new: Record<string, unknown>;
+      old: Record<string, unknown>;
+    }) => {
+      const paint = (ops: Parameters<typeof applyLiveChange>[2]) => {
+        if (applyLiveChange(qc, payload, ops)) return;
+        queue(payload.table);
+      };
+
+      // Only hit IndexedDB when this table actually owes a write — the common
+      // "Friday moved a block while I'm looking" path is a synchronous cache
+      // patch and nothing else.
+      if (isSyncTable(payload.table) && tablesOwing().has(payload.table)) {
+        void pendingOps().then(paint);
+        return;
+      }
+      paint([]);
+    };
+
     // Subscribe per table, never to the whole schema. A schema-wide listener
     // asks Realtime to decode and deliver EVERY public write — including the
     // ones this client has no query for — so unrelated server-side churn still
@@ -78,7 +101,7 @@ export function useRealtime(enabled: boolean) {
     const channel = supabase.channel("nuvo-db-changes");
     for (const table of Object.keys(TABLE_TO_KEYS)) {
       channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) =>
-        queue(payload.table),
+        onChange(payload),
       );
     }
     channel.subscribe();

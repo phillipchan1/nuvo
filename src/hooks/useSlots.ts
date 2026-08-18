@@ -72,6 +72,25 @@ export function insertSlotCache(qc: QueryClient, slot: Slot) {
   );
 }
 
+/** Place a slot's post-image into every mounted range query. `null` removes it. */
+export function putSlotInCaches(qc: QueryClient, id: string, next: Slot | null) {
+  for (const [key, data] of qc.getQueriesData<Slot[]>({ queryKey: ["slots"] })) {
+    if (!Array.isArray(data)) continue;
+    const rangeStart = key[1] as string | undefined;
+    const rangeEnd = key[2] as string | undefined;
+    const existing = data.find((s) => s.id === id);
+    const belongs =
+      next != null &&
+      (!rangeStart || !rangeEnd ||
+        (next.start_time >= rangeStart && next.start_time < rangeEnd));
+    let updated: Slot[];
+    if (!belongs) updated = data.filter((s) => s.id !== id);
+    else if (existing) updated = data.map((s) => (s.id === id ? next! : s));
+    else updated = [...data, next!];
+    qc.setQueryData(key, updated);
+  }
+}
+
 export interface NewSlotInput {
   title: string;
   do_date: string;

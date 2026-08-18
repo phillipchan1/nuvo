@@ -56,6 +56,20 @@ Calendar writes from MCP have no user JWT to forward. `google-events` /
 `icloud-events` accept the service-role key **only** when `actingUserId` is the
 connection's owner (`requireActor`). A leaked id without that key is still 401.
 
+Agent / MCP / Capture write rows through the service role, not `apply_patch`,
+so they used to change a column and leave `field_ts` for that column untouched.
+The SPA's last-write-wins merge then treated the write as if it had never
+happened: same stamp, local cache wins, and a "Done, it's at 1:00" never
+appeared on the Schedule. A `BEFORE INSERT OR UPDATE` trigger
+(`stamp_unstamped_field_ts`) now stamps a column only when the value changed
+and the stamp did not. Client patches that send value + stamp together pass
+through unchanged.
+
+The SPA paints those writes as soon as Realtime delivers the row
+(`applyLiveChange`) rather than waiting on a refetch that can sit behind the
+outbox. Unsent local edits to the *same* row still win when their stamp is
+newer.
+
 ## 3 · What it deliberately does not do
 
 - **No `point_at`.** That drives the operator's screen.

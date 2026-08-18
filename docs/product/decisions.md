@@ -4012,4 +4012,9 @@ unasked (N-01). Does not add a pool. The user-facing name stays **Apps & devices
 token you minted is an answer to "who can see my work" for *this* teammate, not a privacy
 surface.
 
-*Status: standing — mechanism in [`docs/mcp.md`](../mcp.md).*
+*Status: standing — mechanism in [`docs/mcp.md`](../mcp.md). 2026-08-18: a
+`stamp_unstamped_field_ts` trigger was added after an MCP reschedule wrote
+`start_time` without bumping `field_ts`, so the Schedule kept the local cache
+and the 1:00 block never appeared. Realtime now applies the row to the query
+caches immediately (`applyLiveChange`) so a teammate's write lands like a
+Google Doc edit, not a later refetch.*

@@ -275,22 +275,20 @@ export function insertTaskCache(qc: QueryClient, task: Task) {
   );
 }
 
-export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
-  // Resolve the post-patch row from any cache that already has it — needed when
-  // inserting into a list the task is newly joining (slot children, etc.).
-  let resolved: Task | null = null;
-  for (const [, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
-    const hit = data?.find((t) => t.id === id);
-    if (hit) {
-      resolved = { ...hit, ...patch };
-      break;
-    }
-  }
-
+/**
+ * Place a task's post-image into every mounted `tasks` query, inserting or
+ * dropping so membership matches what that queryFn would return. `next === null`
+ * removes it everywhere — a Realtime DELETE, not a trash (trash keeps the row
+ * in the unfiltered pool so undo can find it).
+ *
+ * A Realtime payload can land a row that this device has never cached (Friday
+ * scheduling an overdue task onto the grid). Passing the full row here is what
+ * lets it appear on the Schedule without waiting for a refetch.
+ */
+export function putTaskInCaches(qc: QueryClient, id: string, next: Task | null) {
   for (const [key, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
-    if (!data) continue;
+    if (!Array.isArray(data)) continue;
     const existing = data.find((t) => t.id === id);
-    const next = existing ? { ...existing, ...patch } : resolved;
     const kind = key[1];
 
     let updated: Task[] | undefined;
@@ -370,20 +368,45 @@ export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
       if (!belongs) updated = data.filter((t) => t.id !== id);
       else if (existing) updated = data.map((t) => (t.id === id ? next! : t));
       else if (next) updated = [next, ...data];
+    } else if (kind === "sprint") {
+      const sprintId = key[2] as string | null;
+      const belongs =
+        next != null && next.sprint_id === sprintId && next.status !== "trashed";
+      if (!belongs) updated = data.filter((t) => t.id !== id);
+      else if (existing) updated = data.map((t) => (t.id === id ? next : t));
+      else updated = [...data, next];
+    } else if (kind === "record") {
+      const belongs = next != null && next.id === key[2];
+      if (!belongs) updated = data.filter((t) => t.id !== id);
+      else if (existing) updated = data.map((t) => (t.id === id ? next : t));
+      else updated = [...data, next];
     } else {
-      // "all" / "sprint" / "record" — same pool, just patch in place.
-      //
-      // Note the deliberate asymmetry with the branches above: a trashed row is
-      // left IN the unfiltered pool rather than dropped. Downstream reads
-      // already filter it (`buildVertical` does so explicitly, and says why),
-      // and dropping it here would break undo — a restore patch has to find the
-      // row in SOME cache to rebuild it from, and the trash face may not be
-      // mounted to hold it.
-      if (existing) updated = data.map((t) => (t.id === id ? { ...t, ...patch } : t));
+      // "all" and any other list under ["tasks"]. A trashed row stays in the
+      // unfiltered pool so undo can find it (`buildVertical` filters it out).
+      // A Realtime DELETE (`next === null`) is gone for good — drop it.
+      if (next == null) updated = data.filter((t) => t.id !== id);
+      else if (existing) updated = data.map((t) => (t.id === id ? next : t));
+      else updated = [...data, next];
     }
 
     if (updated) qc.setQueryData(key, updated);
   }
+}
+
+export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
+  // Resolve the post-patch row from any cache that already has it — needed when
+  // inserting into a list the task is newly joining (slot children, etc.).
+  let resolved: Task | null = null;
+  for (const [, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+    if (!Array.isArray(data)) continue;
+    const hit = data.find((t) => t.id === id);
+    if (hit) {
+      resolved = { ...hit, ...patch };
+      break;
+    }
+  }
+
+  putTaskInCaches(qc, id, resolved);
 }
 
 /**
