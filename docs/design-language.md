@@ -334,6 +334,18 @@ the rule that keeps a dense screen calm.
    isn't moving; moving a block belongs to the calendar, and the other surface links to it
    rather than growing a second handle.
 
+11. **A name outranks its neighbours by WEIGHT, not by a step up the ramp.** "Scope reads as
+   mass" means the row — a spine, a second line, indented children — not a bigger font. A
+   heading one step up the type scale inside a dense list reads as a headline dropped into
+   it, and juts. Before setting a size, measure the two things it sits between: **the rows
+   beside it and the rows inside it.** The rail crown shipped its project name at
+   `text-head` over `text-caption` rows and it stood out like a subhead; worse, the phone's
+   crown was `text-body` over `text-head` children, so the parent was drawn *smaller than
+   its own work* — an inversion that only appeared once the crown started rendering real
+   rows. Both now sit at their neighbours' step in `font-semibold` (D-111). The desktop's is
+   `text-body`, which is also `DeckCard`'s hero: the same object at two densities should
+   speak at the same size.
+
 Reference: the **Schedule rail** (`WeekPanel` crown → one `--line-strong` zone divider →
 flat Today list → floating capture) and the **Projects/Initiatives floors** (`FloorHeader`
 hero → `FloorStanding` gauges + quiet synthesis → the Collection). They obey the same law.

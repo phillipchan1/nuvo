@@ -3955,6 +3955,30 @@ record-actions vocabulary exists to prevent.
 height). Now `min-w-[44px]`. Worth keeping as a pattern — removing text from a control
 shrinks its hit area, and the golden rule's 44px is not something a screenshot shows you.
 
+→ **Corrected on first real use · the name was too big, and on the phone it was
+backwards.** Phil, seeing it in place: *"the projects text is way too big… any way we can
+retain the same size as other text there so that it doesn't jut out so much."* Right, and
+the fault was in how I read this decision's own rule. "Scope reads as mass" (D-049) means
+the ROW — spine, second line, indented children — and I spent it on the type ramp instead,
+which is the one place it doesn't belong.
+
+Measured, the two crowns disagreed with everything around them and with each other:
+
+| | project name | the rows beside/inside it |
+|---|---|---|
+| Rail | `text-head` **15px** | `text-caption` 12px |
+| Phone | `text-body` 13px | `text-head` **15px** |
+| `DeckCard` hero | `text-body` 13px | — |
+
+The rail's name stood three steps over its neighbours and read as a subhead dropped into a
+list. The phone's was **inverted** — the parent drawn smaller than its own work — a defect
+that could not exist until the crown started rendering real `TaskRow`s, i.e. one this very
+decision introduced. Both now sit at their neighbours' step in `font-semibold`: the rail at
+`text-body`, which is also `DeckCard`'s hero (the same object at two densities should speak
+at the same size — Phil's own reason for choosing this concept), the phone at `text-head`.
+Hierarchy is carried by weight, ink, the spine and the row's mass, exactly as it should have
+been. Generalised as design-language law 11.
+
 *Mobile status: driven at 375px on real data and on `?weekcrown` fixtures — a placed piece
 ticked from the phone crown, loose work wearing the amber dot, zero horizontal overflow,
 checkbox 43px bloom (`tap-bloom`, unchanged and shared with every other phone row), time chip

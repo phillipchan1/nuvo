@@ -287,7 +287,12 @@ function CrownRow({
             style={{ borderColor: color, background: done ? color : "transparent" }}
             aria-hidden
           />
-          <span className={`min-w-0 flex-1 truncate text-body ${done ? "text-muted line-through" : "text-ink"}`}>
+          {/* `text-head`, matching the `TaskRow`s underneath — which are
+              `text-head` on a phone. At `text-body` the parent was drawn SMALLER
+              than its own children, an inversion introduced the moment the crown
+              started rendering real rows. Same size, more weight: the name
+              outranks its work by weight and position, never by size. */}
+          <span className={`min-w-0 flex-1 truncate text-head font-semibold ${done ? "text-muted line-through" : "text-ink"}`}>
             {row.title}
           </span>
 

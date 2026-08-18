@@ -406,8 +406,14 @@ function ProjectStackRow({
             title={`${row.title} — open`}
             className="tap-desk-h fast min-w-0 flex-1 truncate text-left"
           >
+            {/* `text-body` — the SAME step `DeckCard` gives its hero, and one
+                the rows around it already speak in. The name outranks a loose
+                task by WEIGHT, ink and the spine, never by size: at `text-head`
+                it stood 3px over every neighbour and read as a headline dropped
+                into a list. Mass is the row (two lines, a spine, indented
+                children), not the type ramp. */}
             <span
-              className={`text-head font-semibold leading-snug ${done ? "text-muted line-through" : "text-ink"}`}
+              className={`text-body font-semibold leading-snug ${done ? "text-muted line-through" : "text-ink"}`}
             >
               {rock.title}
             </span>
