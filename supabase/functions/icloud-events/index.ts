@@ -7,7 +7,7 @@
 // scope="THIS" (default) edits/deletes a single occurrence of a recurring series;
 // scope="ALL" edits/deletes the whole series. Single-occurrence edits on a series
 // are best-effort (RECURRENCE-ID/EXDATE are written in UTC).
-import { admin, handleOptions, json, logSync, readSecret, requireUser } from "../_shared/admin.ts";
+import { admin, handleOptions, json, logSync, readSecret, requireActor } from "../_shared/admin.ts";
 import {
   addExdate,
   buildEvent,
@@ -32,8 +32,8 @@ Deno.serve(async (req) => {
   if (pre) return pre;
 
   try {
-    const user = await requireUser(req);
     const body = await req.json();
+    const user = await requireActor(req, (body as { actingUserId?: unknown }).actingUserId);
     const { eventId, action, patch, scope = "THIS" } = body;
 
     // ── Create a new event on an iCloud calendar ─────────────────────────

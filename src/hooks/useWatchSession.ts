@@ -42,7 +42,7 @@ function mintToken(): string {
     .replace(/=+$/, "");
 }
 
-/** Must match `sha256Hex` in supabase/functions/capture/index.ts. */
+/** Must match `sha256Hex` in supabase/functions/_shared/connections.ts. */
 async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");

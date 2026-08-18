@@ -1,5 +1,5 @@
-// Apps & devices — the bearer tokens that let something you own push into your
-// inbox over HTTP (the Capture API, `supabase/functions/capture`).
+// Apps & devices — the bearer tokens that let something you own talk to Nuvo
+// over HTTP: the Capture API (`inbox:write`) and MCP (`account`).
 //
 // Deliberately NOT called "connections" in the UI even though the table is
 // `connections`: the Settings section already uses that word for calendar
@@ -14,7 +14,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { supabase } from "../lib/supabase";
+import { supabase, supabaseAnonKey, supabaseUrl } from "../lib/supabase";
 import { PaneHeader, TextInput } from "./form";
 import { Btn } from "./ui";
 
@@ -31,6 +31,21 @@ interface Connection {
 
 const QK = ["connections"] as const;
 
+type TokenKind = "inbox" | "account";
+
+const KIND_SCOPES: Record<TokenKind, string[]> = {
+  inbox: ["inbox:write"],
+  account: ["account"],
+};
+
+function kindOf(scopes: string[]): TokenKind {
+  return scopes.includes("account") ? "account" : "inbox";
+}
+
+function kindLabel(scopes: string[]): string {
+  return kindOf(scopes) === "account" ? "Full account" : "Inbox";
+}
+
 /** URL-safe, 43 chars of entropy from the platform CSPRNG. */
 function mintToken(): string {
   const bytes = new Uint8Array(32);
@@ -41,7 +56,7 @@ function mintToken(): string {
     .replace(/=+$/, "");
 }
 
-/** Must match `sha256Hex` in supabase/functions/capture/index.ts exactly. */
+/** Must match `sha256Hex` in supabase/functions/_shared/connections.ts exactly. */
 async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -55,12 +70,28 @@ const machineKey = (name: string) =>
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 
+function mcpEndpoint(): string {
+  const url = new URL(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/mcp`);
+  url.searchParams.set("apikey", supabaseAnonKey);
+  return url.toString();
+}
+
+async function copyText(text: string, ok: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(ok);
+  } catch {
+    toast.error("Couldn't copy — select it and copy it by hand");
+  }
+}
+
 export function AppsDevicesPane() {
   const qc = useQueryClient();
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<TokenKind>("account");
   // Held in memory only, and only until the user dismisses it. Never persisted,
   // never re-derivable — this is the one moment the token exists outside a hash.
-  const [fresh, setFresh] = useState<{ name: string; token: string } | null>(null);
+  const [fresh, setFresh] = useState<{ name: string; token: string; kind: TokenKind } | null>(null);
 
   const { data: connections = [], isLoading } = useQuery({
     queryKey: QK,
@@ -75,7 +106,7 @@ export function AppsDevicesPane() {
   });
 
   const create = useMutation({
-    mutationFn: async (label: string) => {
+    mutationFn: async ({ label, tokenKind }: { label: string; tokenKind: TokenKind }) => {
       const { data: session } = await supabase.auth.getSession();
       const userId = session.session?.user.id;
       if (!userId) throw new Error("Not signed in");
@@ -84,12 +115,12 @@ export function AppsDevicesPane() {
         user_id: userId,
         app: machineKey(label),
         name: label.trim(),
-        scopes: ["inbox:write"],
+        scopes: KIND_SCOPES[tokenKind],
         token_hash: await sha256Hex(token),
         last_four: token.slice(-4),
       });
       if (error) throw error;
-      return { name: label.trim(), token };
+      return { name: label.trim(), token, kind: tokenKind };
     },
     onSuccess: (t) => {
       setFresh(t);
@@ -116,29 +147,84 @@ export function AppsDevicesPane() {
 
   const live = connections.filter((c) => !c.revoked_at);
   const revoked = connections.filter((c) => c.revoked_at);
+  const placeholder = kind === "account" ? "e.g. Grok Bot" : "e.g. Apple Watch, iPhone shortcut";
 
   return (
     <div>
       <PaneHeader
         title="Apps & devices"
-        sub="Give something you own a token so it can add to your inbox over HTTP — a shortcut, a widget, another app. Each token is shown once and can be revoked at any time."
+        sub="A key to this signed-in account. A shortcut can drop into your inbox. A teammate like Grok Bot can see your week and act on it — as you, never as Nuvo placing the day."
       />
 
-      <div className="max-w-2xl space-y-5">
-        {/* Free text in, structure out — a token is named, not configured. */}
+      <div className="max-w-2xl space-y-6">
+        <div className="flex flex-col gap-2 sm:flex-row" role="radiogroup" aria-label="What this token can do">
+          {([
+            { id: "account" as const, label: "Full account", hint: "A teammate that can see and act on your funnel" },
+            { id: "inbox" as const, label: "Inbox", hint: "Add tasks over HTTP — watch, shortcut, another app" },
+          ]).map((opt) => {
+            const on = kind === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => setKind(opt.id)}
+                className={`tap min-h-[44px] flex-1 rounded-lg border px-3 py-2.5 text-left ${
+                  on ? "border-accent bg-accent-soft" : "border-line hover:border-line-strong"
+                }`}
+              >
+                <div className="text-caption font-medium text-ink">{opt.label}</div>
+                <div className="text-label text-muted">{opt.hint}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {kind === "account" ? (
+          <div className="space-y-3">
+            <p className="text-caption leading-snug text-ink">
+              Grok Bot (or any MCP teammate) reads your domains, projects, week, and calendar,
+              and writes through the same acts as ⌘J. Destructive calendar acts still ask first.
+              It does not auto-schedule your day.
+            </p>
+            <p className="text-caption leading-snug text-muted">
+              The URL is Nuvo. The token is <span className="text-ink">you</span> — this
+              signed-in account only. Anyone who holds the token acts as you. Never drop it
+              into a team-wide connector; every person mints their own.
+            </p>
+            <div className="section-label">Wire Grok Bot</div>
+            <ol className="space-y-2 text-caption leading-snug text-muted">
+              <li>1. Name it below and create the token — shown once.</li>
+              <li>2. In Grok Bot, add a custom connector (not a team one).</li>
+              <li>
+                3. URL +{" "}
+                <span className="mono text-ink">Authorization: Bearer &lt;token&gt;</span>
+              </li>
+              <li>4. Skip any login card. This is a Bearer token, not OAuth.</li>
+            </ol>
+            <div className="mono break-all text-label text-muted">{mcpEndpoint()}</div>
+          </div>
+        ) : (
+          <p className="text-caption leading-snug text-muted">
+            A key that can add to your inbox over HTTP — a watch, a shortcut, another app
+            you own. It cannot read your week or change a project.
+          </p>
+        )}
+
         <div className="flex flex-col gap-2 sm:flex-row">
           <TextInput
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="What's holding it? — e.g. Apple Watch, iPhone shortcut"
-            onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate(name)}
+            placeholder={placeholder}
+            onKeyDown={(e) => e.key === "Enter" && name.trim() && create.mutate({ label: name, tokenKind: kind })}
             aria-label="Name this app or device"
           />
           <Btn
             kind="primary"
             className="tap shrink-0"
             disabled={!name.trim() || create.isPending}
-            onClick={() => create.mutate(name)}
+            onClick={() => create.mutate({ label: name, tokenKind: kind })}
           >
             {create.isPending ? "Creating…" : "Create token"}
           </Btn>
@@ -160,21 +246,32 @@ export function AppsDevicesPane() {
               <Btn
                 kind="primary"
                 className="tap"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(fresh.token);
-                    toast.success("Token copied");
-                  } catch {
-                    toast.error("Couldn't copy — select the token and copy it by hand");
-                  }
-                }}
+                onClick={() => void copyText(fresh.token, "Token copied")}
               >
                 Copy token
               </Btn>
+              {fresh.kind === "account" && (
+                <Btn
+                  className="tap"
+                  onClick={() =>
+                    void copyText(
+                      `URL: ${mcpEndpoint()}\nAuthorization: Bearer ${fresh.token}`,
+                      "URL + token copied",
+                    )
+                  }
+                >
+                  Copy URL + token
+                </Btn>
+              )}
               <Btn className="tap" onClick={() => setFresh(null)}>
                 Done
               </Btn>
             </div>
+            {fresh.kind === "account" && (
+              <p className="text-label text-muted">
+                Paste that block into Grok Bot as a custom connector. Skip the login card.
+              </p>
+            )}
           </div>
         )}
 
@@ -182,10 +279,11 @@ export function AppsDevicesPane() {
           <div className="text-caption text-muted">Loading…</div>
         ) : live.length === 0 ? (
           <p className="text-caption text-muted">
-            No tokens yet. Nothing can write to your inbox over HTTP until you make one.
+            No tokens yet. Nothing can talk to this account over HTTP until you make one.
           </p>
         ) : (
           <div>
+            <div className="section-label">Live keys</div>
             {live.map((c) => (
               <div
                 key={c.id}
@@ -194,7 +292,7 @@ export function AppsDevicesPane() {
                 <div className="min-w-0">
                   <div className="text-caption font-medium text-ink">{c.name}</div>
                   <div className="text-label text-muted">
-                    <span className="mono">…{c.last_four}</span> · added {fmtDate(c.created_at)} ·{" "}
+                    {kindLabel(c.scopes)} · <span className="mono">…{c.last_four}</span> · added {fmtDate(c.created_at)} ·{" "}
                     {c.last_used_at ? `last used ${fmtDate(c.last_used_at)}` : "never used"}
                   </div>
                 </div>
@@ -212,7 +310,7 @@ export function AppsDevicesPane() {
 
         {revoked.length > 0 && (
           <details className="text-label text-muted">
-            <summary className="tap cursor-pointer py-2">
+            <summary className="tap min-h-[44px] cursor-pointer py-2">
               {revoked.length} revoked
             </summary>
             <div className="mt-1">

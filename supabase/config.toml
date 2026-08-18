@@ -24,3 +24,9 @@ verify_jwt = false
 # make every capture 401 before the function ever runs.
 [functions.capture]
 verify_jwt = false
+
+# MCP authenticates with the same opaque connection token as Capture, not a
+# Supabase JWT. The gateway has to pass Authorization through; the function
+# hashes it and looks it up in `connections`. See supabase/functions/mcp/.
+[functions.mcp]
+verify_jwt = false

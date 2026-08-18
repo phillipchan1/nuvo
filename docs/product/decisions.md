@@ -3991,3 +3991,25 @@ from the crown; a loose piece carrying `data-task-week` + `data-task-project`; t
 scrolling the grid; 375px unchanged (the rail isn't mounted there) with zero horizontal
 overflow. Loose-path and tick-path verified on `?weekcrown` fixtures rather than by mutating
 Phil's own week.*
+
+**D-112 · 2026-08-18 · A teammate acts through the chat's tools, not a second API.**
+
+Grok Bot (an always-on cloud teammate) needs to see and write Phil's Nuvo. The tempting
+shapes were a new REST surface, raw PostgREST, the service-role key, or pointing the bot
+at `/agent` so two models stacked. Each of those is a third runtime that will drift the
+way the chat used to (`docs/planning-kernel.md`).
+
+**What shipped.** `POST /functions/v1/mcp` — Streamable HTTP JSON-RPC over the existing
+`TOOL_DEFINITIONS` (minus `point_at`) plus `get_snapshot`. Auth is a `connections` bearer
+token with a new `account` scope, minted in Settings → Apps & devices as **Full account**.
+Calendar writes from MCP have no user JWT, so `requireActor` lets the service-role key
+impersonate only when `actingUserId` is the connection's owner.
+
+Strains Principle 3 (Nuvo proposes, you promote) the way the in-app chat already does:
+cancel/decline/purge still need a confirm token from a previous call. Does not auto-schedule
+unasked (N-01). Does not add a pool. The user-facing name stays **Apps & devices** / token
+— MCP is the protocol, not a second settings word (P11). Ledger row O4 is not closed: a
+token you minted is an answer to "who can see my work" for *this* teammate, not a privacy
+surface.
+
+*Status: standing — mechanism in [`docs/mcp.md`](../mcp.md).*

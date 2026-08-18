@@ -341,9 +341,18 @@ export interface AgentAction {
 
 /** Call a sibling edge function. Pass `token` (the user's JWT) for user-scoped
  *  functions like google-events; omit it for internal ones (task-mirror) that
- *  run as the service role. Returns whether the call succeeded. */
-async function invokeFn(name: string, body: Record<string, unknown>, token?: string): Promise<boolean> {
-  return (await invokeFnJson(name, body, token)) !== null;
+ *  run as the service role. Returns whether the call succeeded.
+ *
+ *  `actingUserId` is for MCP (and any caller that has no user JWT): google-
+ *  events / icloud-events accept the service-role key only when this is set
+ *  to the connection's owner — see `requireActor`. */
+async function invokeFn(
+  name: string,
+  body: Record<string, unknown>,
+  token?: string,
+  actingUserId?: string,
+): Promise<boolean> {
+  return (await invokeFnJson(name, body, token, actingUserId)) !== null;
 }
 
 /** invokeFn, but hands back the parsed response instead of just "did it work".
@@ -354,16 +363,18 @@ async function invokeFnJson(
   name: string,
   body: Record<string, unknown>,
   token?: string,
+  actingUserId?: string,
 ): Promise<Record<string, unknown> | null> {
   const url = Deno.env.get("SUPABASE_URL")!;
   const bearer = token || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const payload = actingUserId ? { ...body, actingUserId } : body;
   const res = await fetch(`${url}/functions/v1/${name}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${bearer}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -1028,6 +1039,7 @@ async function moveEventToTarget(
       eventsFnFor(sourceProvider),
       { action: "move", eventId: evt.id, calendarId: target.calendarId },
       userToken,
+      userId,
     );
     if (!ok) throw new Error(`Couldn't move "${evt.title}" to ${target.name}`);
     return {
@@ -1057,6 +1069,7 @@ async function moveEventToTarget(
       ...(description ? { description } : {}),
     },
     userToken,
+    userId,
   );
   if (!created) throw new Error(`Couldn't create "${evt.title}" on ${target.name}`);
   const newId = (created.event as { id?: string } | null)?.id;
@@ -1065,6 +1078,7 @@ async function moveEventToTarget(
     eventsFnFor(sourceProvider),
     { action: "delete", eventId: evt.id, scope: "THIS", sendUpdates: "none" },
     userToken,
+    userId,
   );
   if (!deleted) {
     throw new Error(
@@ -2021,6 +2035,7 @@ export async function executeTool(
           calendarId: target.calendarId,
         },
         userToken,
+        userId,
       );
       if (!res) {
         throw new Error(`Failed to create event on "${target.name}" — is that ${provider} account connected?`);
@@ -2115,7 +2130,7 @@ export async function executeTool(
       const { error: updErr } = await admin.from("external_events").update(patch).eq("id", eventId);
       if (updErr) throw new Error(updErr.message);
 
-      await invokeFn("google-events", { eventId, patch }, userToken);
+      await invokeFn("google-events", { eventId, patch }, userToken, userId);
 
       return {
         result: JSON.stringify({ id: eventId, patch }),
@@ -2137,6 +2152,7 @@ export async function executeTool(
         "google-events",
         { eventId: id, action: "delete", sendUpdates: args.notify ? "all" : "none" },
         userToken,
+        userId,
       );
       if (!ok) throw new Error(`Couldn't cancel "${title}" — only Google events can be cancelled.`);
       return {
@@ -2152,6 +2168,7 @@ export async function executeTool(
         fn,
         { eventId: id, action: "rsvp", responseStatus: "declined", sendNotifications: Boolean(args.notify) },
         userToken,
+        userId,
       );
       if (!ok) throw new Error(`Couldn't decline "${title}".`);
       return {
@@ -2203,6 +2220,7 @@ export async function executeTool(
           // (tests/invites.test.ts enforces that the agent can't name it).
         },
         userToken,
+        userId,
       );
       if (!created) throw new Error(`Couldn't duplicate "${row.title}"`);
       return {
@@ -2227,6 +2245,7 @@ export async function executeTool(
         fn,
         { eventId: id, action: "rsvp", responseStatus: response, sendNotifications: args.notify !== false },
         userToken,
+        userId,
       );
       if (!ok) throw new Error(`Couldn't answer "${title}".`);
       return {

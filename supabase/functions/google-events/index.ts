@@ -5,7 +5,7 @@
 // scope="THIS"  — patch just this instance (default)
 // scope="ALL"   — patch the master recurring event using the time delta,
 //                 which shifts every instance in the series
-import { admin, handleOptions, json, logSync, requireUser } from "../_shared/admin.ts";
+import { admin, handleOptions, json, logSync, requireActor } from "../_shared/admin.ts";
 import { type GoogleAccount, gFetch, loadGoogleAccounts, mapGoogleEvent } from "../_shared/google.ts";
 import { hasConference, joinUrl, meetCreateRequest, shouldAddMeet } from "../_shared/conferencing.ts";
 
@@ -25,8 +25,8 @@ Deno.serve(async (req) => {
   if (pre) return pre;
 
   try {
-    const user = await requireUser(req);
     const body = await req.json();
+    const user = await requireActor(req, (body as { actingUserId?: unknown }).actingUserId);
     const { eventId, action, patch, scope = "THIS" } = body;
 
     // ── Create a new event on the primary Google calendar ────────────────

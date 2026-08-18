@@ -50,6 +50,31 @@ export async function requireUser(req: Request) {
   return data.user;
 }
 
+/**
+ * User JWT, or (internal only) the service-role key acting as a user.
+ *
+ * The chat forwards the browser's JWT into google-events / icloud-events.
+ * MCP authenticates with a connection token, not a JWT, so those writes go
+ * service-role → this helper, with `actingUserId` set to the connection's
+ * owner. The service-role key is compared as a whole string — a leaked
+ * actingUserId without that key is still 401.
+ */
+export async function requireActor(req: Request, actingUserId?: unknown) {
+  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (
+    serviceRole &&
+    token === serviceRole &&
+    typeof actingUserId === "string" &&
+    actingUserId
+  ) {
+    const { data, error } = await admin.auth.admin.getUserById(actingUserId);
+    if (error || !data.user) throw new Response("Unauthorized", { status: 401 });
+    return data.user;
+  }
+  return requireUser(req);
+}
+
 // ── Vault helpers (via security-definer RPCs) ──────────────────────────
 export async function storeSecret(name: string, secret: string): Promise<string> {
   const { data, error } = await admin.rpc("store_secret", { p_name: name, p_secret: secret });

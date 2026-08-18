@@ -21,6 +21,14 @@
 import { admin } from "../_shared/admin.ts";
 import { createTaskCore, mirrorTask, FALLBACK_TZ } from "../_shared/createTask.ts";
 import type { TaskPriority } from "../_shared/nlp.ts";
+import {
+  hasScope,
+  resolveConnection,
+  SCOPE_INBOX,
+  tokenFrom,
+  touchConnection,
+  type Connection,
+} from "../_shared/connections.ts";
 
 // A chatty external app is the same unbounded-loop risk we've been burned by,
 // pointed inward — cap writes per connection per minute.
@@ -45,13 +53,6 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-/** sha256(token) as lowercase hex — what we store and compare against. Never
- *  reversible, so a leaked hash can't forge auth. */
-async function sha256Hex(s: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 function resolveTz(raw: unknown): string {
   if (typeof raw !== "string" || !raw) return FALLBACK_TZ;
   try {
@@ -62,36 +63,17 @@ function resolveTz(raw: unknown): string {
   }
 }
 
-interface Connection {
-  id: string;
-  user_id: string;
-  app: string;
-  scopes: string[];
-}
-
 /** Resolve the bearer token → a live connection, or a Response to short-circuit. */
 async function authenticate(req: Request): Promise<Connection | Response> {
-  const auth = req.headers.get("Authorization") ?? "";
-  const token = auth.replace(/^Bearer\s+/i, "").trim();
+  const token = tokenFrom(req);
   if (!token) return json({ error: "Missing bearer token" }, 401);
-
-  const tokenHash = await sha256Hex(token);
-  const { data: conn } = await admin
-    .from("connections")
-    .select("id, user_id, app, scopes")
-    .eq("token_hash", tokenHash)
-    .is("revoked_at", null)
-    .maybeSingle<Connection>();
-  // Never branch on the raw token — only the hash lookup decides.
+  const conn = await resolveConnection(token);
   if (!conn) return json({ error: "Invalid or revoked token" }, 401);
-  if (!conn.scopes?.includes("inbox:write")) {
+  if (!hasScope(conn, SCOPE_INBOX)) {
     return json({ error: "Token lacks inbox:write scope" }, 403);
   }
   return conn;
 }
-
-const touch = (id: string) =>
-  admin.from("connections").update({ last_used_at: new Date().toISOString() }).eq("id", id);
 
 const DEFAULT_DURATION = 30;
 
@@ -136,7 +118,7 @@ async function handleGet(req: Request, conn: Connection): Promise<Response> {
   const { data, error } = await q;
   if (error) return json({ error: error.message }, 500);
 
-  await touch(conn.id);
+  await touchConnection(conn.id);
   const nowMs = Date.now();
   const tasks = (data ?? []).map((t) => ({
     id: t.id,
@@ -193,7 +175,7 @@ async function handlePost(req: Request, conn: Connection): Promise<Response> {
       .eq("external_id", idemKey)
       .maybeSingle();
     if (prior) {
-      await touch(conn.id);
+      await touchConnection(conn.id);
       if (status && status !== prior.status) {
         const patch: Record<string, unknown> = {
           status,
@@ -252,7 +234,7 @@ async function handlePost(req: Request, conn: Connection): Promise<Response> {
     throw e;
   }
 
-  await touch(conn.id);
+  await touchConnection(conn.id);
   return json({ id: created.id, title: created.title, status: created.status }, 201);
 }
 
