@@ -4,7 +4,76 @@
 // its project, its children's shared domain, or just the hour of day.
 
 import type { Slot, Task } from "./types";
+import { snapMinutes } from "./dates";
 import { domainById, projectById, taskDomainId, type VerticalData } from "./vertical";
+
+/** How wide the left/right "place beside" bands are on a slot block (px). */
+export const SLOT_DROP_EDGE_PX = 28;
+
+export type SlotDropZone = "inside" | "before" | "after";
+
+export type SlotDropIntent = { slotId: string; zone: SlotDropZone };
+
+export type ResolvedSlotDrop =
+  | { kind: "join"; slot: Slot }
+  | { kind: "adjacent"; slot: Slot; zone: "before" | "after"; start: Date };
+
+/** Classify pointer position within a slot block's screen rect. */
+export function slotDropZoneFromPointer(
+  slotRect: DOMRect,
+  clientX: number,
+  clientY: number,
+): SlotDropZone | null {
+  if (clientY < slotRect.top || clientY > slotRect.bottom) return null;
+  if (clientX < slotRect.left || clientX > slotRect.right) return null;
+  const edge = Math.min(SLOT_DROP_EDGE_PX, Math.max(12, slotRect.width * 0.22));
+  if (slotRect.width <= edge * 2 + 4) return "inside";
+  if (clientX < slotRect.left + edge) return "before";
+  if (clientX > slotRect.right - edge) return "after";
+  return "inside";
+}
+
+function slotEndTime(slot: Pick<Slot, "start_time" | "duration_minutes">): Date {
+  return new Date(new Date(slot.start_time).getTime() + slot.duration_minutes * 60_000);
+}
+
+/** Start time for a block placed immediately before or after a slot. */
+export function adjacentBlockStart(
+  slot: Pick<Slot, "start_time" | "duration_minutes">,
+  zone: "before" | "after",
+  durationMins: number,
+): Date {
+  const slotStart = new Date(slot.start_time);
+  if (zone === "after") return snapMinutes(slotEndTime(slot));
+  return snapMinutes(new Date(slotStart.getTime() - durationMins * 60_000));
+}
+
+/** Resolve whether a drop joins a slot or lands beside it. */
+export function resolveSlotDrop(
+  dropStart: Date,
+  intent: SlotDropIntent | null,
+  slots: Slot[],
+  durationMins: number,
+): ResolvedSlotDrop | null {
+  if (intent) {
+    const slot = slots.find((s) => s.id === intent.slotId);
+    if (!slot) return null;
+    if (intent.zone === "inside") return { kind: "join", slot };
+    return {
+      kind: "adjacent",
+      slot,
+      zone: intent.zone,
+      start: adjacentBlockStart(slot, intent.zone, durationMins),
+    };
+  }
+  const t0 = dropStart.getTime();
+  const slot = slots.find((s) => {
+    const ss = new Date(s.start_time).getTime();
+    return t0 >= ss && t0 < ss + s.duration_minutes * 60_000;
+  });
+  if (!slot) return null;
+  return { kind: "join", slot };
+}
 
 /** Morning / Midday / Afternoon / Evening from a start instant. */
 export function partOfDay(start: Date): string {

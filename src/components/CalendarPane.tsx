@@ -39,7 +39,13 @@ import { toast } from "sonner";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 // One spelling for what a block IS — shared with Plan the week's grid.
-import { blockDesignation } from "../lib/slots";
+import {
+  blockDesignation,
+  resolveSlotDrop,
+  slotDropZoneFromPointer,
+  type SlotDropIntent,
+  type SlotDropZone,
+} from "../lib/slots";
 
 export type CalView = "timeGridWeek" | "timeGridDay" | "dayGridMonth" | "board" | "year";
 
@@ -324,10 +330,11 @@ export default function CalendarPane({
   eventsRef.current = events;
   const slotsRef = useRef(slots);
   slotsRef.current = slots;
-  // Tracks the slot id the pointer is hovering over during a task drag.
-  // onReceive reads this to prefer the visually-highlighted slot over time-range math,
-  // which breaks when FC snaps the ghost adjacent to the slot to avoid overlap.
-  const overSlotIdRef = useRef<string | null>(null);
+  // Slot under the pointer during a task drag — id + whether the drop is into the
+  // slot or beside it (left/right edge bands). onReceive reads this to prefer the
+  // highlighted target over time-range math, which breaks when FC snaps the ghost
+  // adjacent to the slot to avoid overlap.
+  const slotDropIntentRef = useRef<SlotDropIntent | null>(null);
   // The multi-selection being dragged, captured at drag START rather than read
   // off the DOM at drop time. The rail clears `selectedIds` when the gesture
   // ends, which re-renders the rows without their `data-task-drag-group` — a
@@ -787,6 +794,7 @@ export default function CalendarPane({
     let startX = 0;
     let startY = 0;
     let overSlot: HTMLElement | null = null;
+    let overZone: SlotDropZone | null = null;
     let dragId: string | null = null; // external [data-task-drag] id (rail / slot popover row)
     let fromRail = false; // did this drag start inside the rail itself?
     let calTask = false; // calendar block being dragged (inbox via eventDragStop, not here)
@@ -805,8 +813,9 @@ export default function CalendarPane({
     document.body.appendChild(chip);
     const reset = () => {
       document.body.classList.remove("cal-dragging", "over-slot");
-      overSlot?.classList.remove("slot-drop-target");
+      overSlot?.classList.remove("slot-drop-target", "slot-drop-target-before", "slot-drop-target-after");
       overSlot = null;
+      overZone = null;
       chip.classList.remove("is-visible");
       railRef.current?.classList.remove("rail-drop-active", "rail-return-armed");
     };
@@ -837,10 +846,9 @@ export default function CalendarPane({
       // Hit-test slots by geometry, not elementFromPoint: FullCalendar stacks the
       // .fc-highlight selection box and the drag mirror *above* the slot event, so
       // elementFromPoint+closest never sees the slot and the drop lands beside it.
-      // Instead walk the slot rects and accept the pointer anywhere in the slot's
-      // full-width time band (the whole column row, not just the rendered block) —
-      // so the entire slot reads as one generous drop zone.
+      // The slot block's left/right edges are "place beside"; the middle joins it.
       let slotEl: HTMLElement | null = null;
+      let zone: SlotDropZone | null = null;
       // `[data-slot-id]` — a REAL slot, not the drag preview. Dragging a project
       // renders a mirror that wears `.evt-slot` (it's a picture of the sitting
       // you're about to make), and without this the preview hit-tests itself:
@@ -848,22 +856,31 @@ export default function CalendarPane({
       // block it hasn't created yet.
       for (const el of document.querySelectorAll<HTMLElement>(".fc-event.evt-slot[data-slot-id]")) {
         const r = el.getBoundingClientRect();
-        if (e.clientY < r.top || e.clientY > r.bottom) continue;
-        const col = el.closest<HTMLElement>(".fc-timegrid-col");
-        const cr = col?.getBoundingClientRect() ?? r;
-        if (e.clientX >= cr.left && e.clientX <= cr.right) { slotEl = el; break; }
+        const hit = slotDropZoneFromPointer(r, e.clientX, e.clientY);
+        if (!hit) continue;
+        slotEl = el;
+        zone = hit;
+        break;
       }
-      if (slotEl !== overSlot) {
-        overSlot?.classList.remove("slot-drop-target");
-        slotEl?.classList.add("slot-drop-target");
+      if (slotEl !== overSlot || zone !== overZone) {
+        overSlot?.classList.remove("slot-drop-target", "slot-drop-target-before", "slot-drop-target-after");
+        if (slotEl && zone) {
+          if (zone === "inside") slotEl.classList.add("slot-drop-target");
+          else if (zone === "before") slotEl.classList.add("slot-drop-target-before");
+          else slotEl.classList.add("slot-drop-target-after");
+        }
         overSlot = slotEl;
-        overSlotIdRef.current = slotEl?.getAttribute("data-slot-id") ?? null;
+        overZone = zone;
+        const slotId = slotEl?.getAttribute("data-slot-id") ?? null;
+        slotDropIntentRef.current = slotId && zone ? { slotId, zone } : null;
         // Slots use a custom renderer (no .fc-event-title); .fc-event-main holds
         // just the slot title, no time text.
         const title = slotEl?.querySelector(".fc-event-main")?.textContent?.trim();
-        chip.textContent = `↳ Drop into ${title || "this slot"}`;
+        if (zone === "before") chip.textContent = `Place before ${title || "this slot"}`;
+        else if (zone === "after") chip.textContent = `Place after ${title || "this slot"}`;
+        else chip.textContent = `↳ Drop into ${title || "this slot"}`;
       }
-      document.body.classList.toggle("over-slot", Boolean(slotEl));
+      document.body.classList.toggle("over-slot", zone === "inside");
       if (slotEl) {
         // clientX/Y are post-zoom; fixed left/top are pre-zoom under CSS zoom.
         chip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
@@ -905,7 +922,7 @@ export default function CalendarPane({
             if (task) mutationsRef.current.backToInbox(task);
           });
         }
-        // onReceive fires after onUp in the same task. Clear overSlotIdRef after a
+        // onReceive fires after onUp in the same task. Clear slotDropIntentRef after a
         // microtask so onReceive can read it; if no drop occurred it clears itself.
         //
         // dragGroupRef is deliberately NOT cleared here. FullCalendar does not
@@ -914,7 +931,7 @@ export default function CalendarPane({
         // is the whole bug: the drop then sees one id and places one task out of
         // four. The next drag overwrites it in `eventData`, and `onReceive`
         // consumes it, so there is nothing stale to leak.
-        Promise.resolve().then(() => { overSlotIdRef.current = null; });
+        Promise.resolve().then(() => { slotDropIntentRef.current = null; });
         reset();
       } else if (!moved) {
         reset();
@@ -942,7 +959,7 @@ export default function CalendarPane({
       fromRail = false;
       calTask = false;
       overRail = false;
-      overSlotIdRef.current = null;
+      slotDropIntentRef.current = null;
       dragGroupRef.current = null;
       reset();
     };
@@ -1498,21 +1515,30 @@ export default function CalendarPane({
       setGatherOffer({ point, slot, name, tasks: placed });
     };
 
-    // Prefer the sitting the pointer was over (the highlighted one) to
-    // time-range math, which breaks when FC snaps the ghost clear of an overlap.
-    const hoveredSlotId = overSlotIdRef.current;
-    overSlotIdRef.current = null;
-    const t0 = start.getTime();
-    const target =
-      (hoveredSlotId ? slotsRef.current.find((s) => s.id === hoveredSlotId) : null) ??
-      slotsRef.current.find((s) => {
-        const ss = new Date(s.start_time).getTime();
-        return t0 >= ss && t0 < ss + s.duration_minutes * 60_000;
-      });
+    // Prefer the sitting the pointer was over (highlighted zone) to time-range
+    // math, which breaks when FC snaps the ghost clear of an overlap.
+    const intent = slotDropIntentRef.current;
+    slotDropIntentRef.current = null;
+    const resolved = resolveSlotDrop(start, intent, slotsRef.current, defaultDurationMins);
 
-    if (target) {
-      slotMutations.gatherIntoSlot(target, loose, slotTasks[target.id] ?? []);
-      offer(target);
+    if (resolved?.kind === "adjacent") {
+      void slotMutations
+        .createSlotWith(loose, resolved.start, taskDomain, {
+          projectId,
+          domainId,
+          label: `Sat ${name} on the week`,
+        })
+        .then((made) => made && offer(made))
+        .catch((e) => {
+          console.warn("[nuvo] project sitting failed:", e);
+          toast.error("Couldn't hold that sitting — the project is unchanged");
+        });
+      return;
+    }
+
+    if (resolved?.kind === "join") {
+      slotMutations.gatherIntoSlot(resolved.slot, loose, slotTasks[resolved.slot.id] ?? []);
+      offer(resolved.slot);
       return;
     }
 
@@ -1584,22 +1610,44 @@ export default function CalendarPane({
       tasks.forEach((t) => mutations.planFor(t, date));
       return;
     }
-    // Dropped onto a slot → join it. Prefer the visually-highlighted slot (the
-    // one the pointer was over at drop time, stored in overSlotIdRef) over time-range
+    // Dropped onto a slot → join it, or beside it when the pointer was on an edge.
+    // Prefer the visually-highlighted target (slotDropIntentRef) over time-range
     // math, which breaks when FC snaps the ghost adjacent to avoid overlap.
-    const hoveredSlotId = overSlotIdRef.current;
-    overSlotIdRef.current = null; // consume it — onUp intentionally left it for us
-    const hoveredSlot = hoveredSlotId
-      ? slotsRef.current.find((s) => s.id === hoveredSlotId)
-      : null;
+    const intent = slotDropIntentRef.current;
+    slotDropIntentRef.current = null; // consume it — onUp intentionally left it for us
+    const resolved = resolveSlotDrop(start, intent, slotsRef.current, defaultDurationMins);
 
-    const t0 = start.getTime();
-    const timeSlot = slotsRef.current.find((s) => {
-      const ss = new Date(s.start_time).getTime();
-      return t0 >= ss && t0 < ss + s.duration_minutes * 60_000;
-    });
-    const slot = hoveredSlot ?? timeSlot;
-    if (slot) {
+    if (resolved?.kind === "adjacent") {
+      const fromProject = el.getAttribute("data-task-project") || null;
+      if (tasks.length > 1 || fromProject) {
+        const { x, y } = dropPointRef.current;
+        const point = new DOMRect(x, y, 0, 0);
+        if (fromProject && !group) info.event.remove();
+        void slotMutations
+          .createSlotWith(
+            tasks,
+            resolved.start,
+            taskDomain,
+            fromProject ? { projectId: fromProject, label: "Sat it on the week" } : undefined,
+          )
+          .then((made) => made && !fromProject && onOpenSlot(made, point, null, { focusTitle: true }))
+          .catch((e) => {
+            console.warn("[nuvo] block-together failed:", e);
+            toast.error("Couldn't hold that block — the tasks are unchanged");
+          });
+      } else {
+        let cursor = resolved.start;
+        tasks.forEach((t) => {
+          mutations.block(t, cursor);
+          cursor = new Date(cursor.getTime() + (t.duration_minutes ?? defaultDurationMins) * 60_000);
+        });
+        if (!group && tasks.length === 1) info.event.remove();
+      }
+      return;
+    }
+
+    if (resolved?.kind === "join") {
+      const slot = resolved.slot;
       // If every dropped task is already in this slot, they're being dragged to
       // reschedule (from the Today rail), not re-slotted. Block them at the drop time.
       if (tasks.every((t) => t.slot_id === slot.id)) {
@@ -1671,20 +1719,19 @@ export default function CalendarPane({
         if (info.event.allDay) {
           mutations.planFor(task, toDateISO(info.event.start));
         } else {
-          // Check if the task was dropped onto a slot (visually highlighted or by time overlap).
-          const hoveredSlotId = overSlotIdRef.current;
-          overSlotIdRef.current = null;
-          const hoveredSlot = hoveredSlotId
-            ? slotsRef.current.find((s) => s.id === hoveredSlotId)
-            : null;
-          const t0 = info.event.start.getTime();
-          const timeSlot = slotsRef.current.find((s) => {
-            const ss = new Date(s.start_time).getTime();
-            return t0 >= ss && t0 < ss + s.duration_minutes * 60_000;
-          });
-          const slot = hoveredSlot ?? timeSlot;
-          if (slot) {
-            mutations.assignToSlot(task, slot);
+          const intent = slotDropIntentRef.current;
+          slotDropIntentRef.current = null;
+          const resolved = resolveSlotDrop(
+            info.event.start,
+            intent,
+            slotsRef.current,
+            defaultDurationMins,
+          );
+          if (resolved?.kind === "adjacent") {
+            mutations.block(task, resolved.start);
+            info.event.remove();
+          } else if (resolved?.kind === "join") {
+            mutations.assignToSlot(task, resolved.slot);
             // Remove the FC ghost silently — the task rides the slot now, not its
             // own block. Revert() animates snap-back before the cache patch lands.
             info.event.remove();

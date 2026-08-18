@@ -2163,6 +2163,33 @@ select.field { appearance: none; -webkit-appearance: none; }
   transform: scale(1.015);
   z-index: 6;
 }
+/* Left/right edge bands — place beside the slot, not into it. */
+.fc-event.evt-slot.slot-drop-target-before,
+.fc-event.evt-slot.slot-drop-target-after {
+  border-style: solid !important;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--slot)) !important;
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent),
+    var(--shadow-lift) !important;
+  transform: scale(1.008);
+  z-index: 6;
+}
+.fc-event.evt-slot.slot-drop-target-before {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 22%, var(--surface)) 0%,
+    color-mix(in srgb, var(--accent) 22%, var(--surface)) 28%,
+    transparent 28%
+  ) !important;
+}
+.fc-event.evt-slot.slot-drop-target-after {
+  background: linear-gradient(
+    270deg,
+    color-mix(in srgb, var(--accent) 22%, var(--surface)) 0%,
+    color-mix(in srgb, var(--accent) 22%, var(--surface)) 28%,
+    transparent 28%
+  ) !important;
+}
 .over-slot .fc-event-mirror,
 .over-slot .fc-event-dragging {
   opacity: 0.1 !important;
