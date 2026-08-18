@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
 // One spelling for what a block IS — shared with Plan the week's grid.
 import {
+  adjacentPreviewRect,
   blockDesignation,
   resolveSlotDrop,
   slotDropZoneFromPointer,
@@ -335,6 +336,8 @@ export default function CalendarPane({
   // highlighted target over time-range math, which breaks when FC snaps the ghost
   // adjacent to the slot to avoid overlap.
   const slotDropIntentRef = useRef<SlotDropIntent | null>(null);
+  // Frozen at pointer-up so async FullCalendar drops still read the edge zone.
+  const committedSlotDropIntentRef = useRef<SlotDropIntent | null>(null);
   // The multi-selection being dragged, captured at drag START rather than read
   // off the DOM at drop time. The rail clears `selectedIds` when the gesture
   // ends, which re-renders the rows without their `data-task-drag-group` — a
@@ -348,6 +351,23 @@ export default function CalendarPane({
   mutationsRef.current = mutations;
   const resolveDropTaskRef = useRef(resolveDropTask);
   resolveDropTaskRef.current = resolveDropTask;
+
+  /** Slot drop intent captured during drag — recomputed from the last pointer
+   *  position if FullCalendar consumed the live ref before firing. */
+  const takeSlotDropIntent = (): SlotDropIntent | null => {
+    let intent = committedSlotDropIntentRef.current ?? slotDropIntentRef.current;
+    committedSlotDropIntentRef.current = null;
+    slotDropIntentRef.current = null;
+    if (intent) return intent;
+    const { x, y } = dropPointRef.current;
+    for (const el of document.querySelectorAll<HTMLElement>(".fc-event.evt-slot[data-slot-id]")) {
+      const r = el.getBoundingClientRect();
+      const zone = slotDropZoneFromPointer(r, x, y);
+      const slotId = el.getAttribute("data-slot-id");
+      if (zone && slotId) return { slotId, zone };
+    }
+    return null;
+  };
 
   /** A dropped id → its task. The render set first, then the wider lookup for
    *  rows that live outside it (project backlog offered by the week crown).
@@ -783,10 +803,10 @@ export default function CalendarPane({
   //   body.cal-dragging        → the day cells glow as "anytime" drop targets
   //   body.over-slot           → fade the drag ghost (it's "dropping into" a slot)
   //   .evt-slot.slot-drop-target → the hovered slot lights up, ready to accept
+  //   .slot-adjacent-preview    → ghost block at the landing spot beside a slot
   //   .rail-drop-active        → the left rail is highlighted as the Inbox zone
-  // The slot/rail are hit-tested per move via elementFromPoint (the ghost is
-  // pointer-events:none, so it sees the element underneath). Armed for tasks
-  // only — dragging an event/slot itself stays quiet.
+  // The slot/rail are hit-tested per move via geometry (the ghost is
+  // pointer-events:none). Armed for tasks only — dragging an event/slot stays quiet.
   useEffect(() => {
     let armed = false;
     let active = false;
@@ -799,28 +819,72 @@ export default function CalendarPane({
     let fromRail = false; // did this drag start inside the rail itself?
     let calTask = false; // calendar block being dragged (inbox via eventDragStop, not here)
     let overRail = false; // is the pointer currently over the rail?
-    // Rail-origin drags (reorder, and the tab strip's take-it-off-the-day /
-    // put-it-on-the-day acts) belong to the rail — `LeftRail`'s `useListReorder`
-    // owns them, chip and Undo included. This effect keeps only what it alone
-    // can know: a CALENDAR item dragged over the rail, where the whole rail is
-    // the zone.
-    // A cursor-following label that names the slot you're about to drop into. The
-    // ghost fades to ~10% over a slot, so this is what tells you the target — and it
-    // shows the full slot title even when a narrow/inset slot truncates its own.
     const chip = document.createElement("div");
     chip.className = "slot-drop-chip";
     chip.setAttribute("aria-hidden", "true");
     document.body.appendChild(chip);
+    const preview = document.createElement("div");
+    preview.className = "slot-adjacent-preview";
+    preview.innerHTML = '<span class="slot-adjacent-preview-bar" aria-hidden="true"></span><span class="slot-adjacent-preview-title"></span>';
+    preview.setAttribute("aria-hidden", "true");
+    document.body.appendChild(preview);
+    const previewTitle = preview.querySelector(".slot-adjacent-preview-title") as HTMLElement;
+
+    const dragDurationMins = (): number => {
+      if (dragId) {
+        const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${CSS.escape(dragId)}"]`);
+        const group = dragEl?.getAttribute("data-task-drag-group");
+        if (group) {
+          const ids = group.split(",").filter(Boolean);
+          return sizeSlotToContents(
+            ids.map((id) => resolveDroppedTask(id)?.duration_minutes ?? null),
+          );
+        }
+        return Number(dragEl?.getAttribute("data-task-duration")) || defaultDurationMins;
+      }
+      const mirror = document.querySelector<HTMLElement>(".fc-event-mirror, .fc-event-dragging");
+      if (mirror) {
+        const h = mirror.getBoundingClientRect().height;
+        const col = mirror.closest<HTMLElement>(".fc-timegrid-col");
+        const sample = col?.querySelector<HTMLElement>(".fc-event.evt-slot[data-slot-id], .fc-event.evt-task");
+        if (sample && h > 0) {
+          const slot = slotsRef.current.find((s) => s.id === sample.getAttribute("data-slot-id"));
+          const sampleMins = slot?.duration_minutes ?? defaultDurationMins;
+          const sampleH = sample.getBoundingClientRect().height;
+          if (sampleH > 0) return Math.max(15, Math.round((h / sampleH) * sampleMins));
+        }
+      }
+      return defaultDurationMins;
+    };
+
+    const dragLabel = (): string => {
+      if (dragId) {
+        const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${CSS.escape(dragId)}"]`);
+        const group = dragEl?.getAttribute("data-task-drag-group");
+        if (group) return `${group.split(",").filter(Boolean).length} tasks`;
+        return dragEl?.getAttribute("data-task-title")?.trim() || "Task";
+      }
+      const mirror = document.querySelector(".fc-event-mirror .fc-event-main, .fc-event-dragging .fc-event-main");
+      return mirror?.textContent?.trim() || "Task";
+    };
+
+    const hideAdjacentPreview = () => {
+      preview.classList.remove("is-visible");
+      document.body.classList.remove("slot-adjacent-drop");
+    };
+
     const reset = () => {
-      document.body.classList.remove("cal-dragging", "over-slot");
-      overSlot?.classList.remove("slot-drop-target", "slot-drop-target-before", "slot-drop-target-after");
+      document.body.classList.remove("cal-dragging", "over-slot", "slot-adjacent-drop");
+      overSlot?.classList.remove("slot-drop-target", "slot-adjacent-anchor");
       overSlot = null;
       overZone = null;
       chip.classList.remove("is-visible");
+      hideAdjacentPreview();
       railRef.current?.classList.remove("rail-drop-active", "rail-return-armed");
     };
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement | null;
+      committedSlotDropIntentRef.current = null;
       armed = Boolean(el?.closest?.("[data-task-drag], [data-project-drag], .evt-task"));
       // A project row is a rail-origin drag like any other — it just has no task
       // id to return to the Inbox. Resolving `dragEl` off both attributes is what
@@ -863,31 +927,43 @@ export default function CalendarPane({
         break;
       }
       if (slotEl !== overSlot || zone !== overZone) {
-        overSlot?.classList.remove("slot-drop-target", "slot-drop-target-before", "slot-drop-target-after");
-        if (slotEl && zone) {
-          if (zone === "inside") slotEl.classList.add("slot-drop-target");
-          else if (zone === "before") slotEl.classList.add("slot-drop-target-before");
-          else slotEl.classList.add("slot-drop-target-after");
-        }
+        overSlot?.classList.remove("slot-drop-target", "slot-adjacent-anchor");
         overSlot = slotEl;
         overZone = zone;
         const slotId = slotEl?.getAttribute("data-slot-id") ?? null;
         slotDropIntentRef.current = slotId && zone ? { slotId, zone } : null;
-        // Slots use a custom renderer (no .fc-event-title); .fc-event-main holds
-        // just the slot title, no time text.
-        const title = slotEl?.querySelector(".fc-event-main")?.textContent?.trim();
-        if (zone === "before") chip.textContent = `Place before ${title || "this slot"}`;
-        else if (zone === "after") chip.textContent = `Place after ${title || "this slot"}`;
-        else chip.textContent = `↳ Drop into ${title || "this slot"}`;
+        if (slotEl && zone === "inside") slotEl.classList.add("slot-drop-target");
+        else if (slotEl && (zone === "before" || zone === "after")) slotEl.classList.add("slot-adjacent-anchor");
       }
       document.body.classList.toggle("over-slot", zone === "inside");
-      if (slotEl) {
-        // clientX/Y are post-zoom; fixed left/top are pre-zoom under CSS zoom.
-        chip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
-        chip.style.top = `${fixedCssPx(e.clientY + 16)}px`;
-        chip.classList.add("is-visible");
-      } else {
+      if (zone === "before" || zone === "after") {
         chip.classList.remove("is-visible");
+        const slotId = slotEl?.getAttribute("data-slot-id");
+        const slot = slotId ? slotsRef.current.find((s) => s.id === slotId) : null;
+        if (slotEl && slot) {
+          const r = slotEl.getBoundingClientRect();
+          const rect = adjacentPreviewRect(r, slot.duration_minutes, dragDurationMins(), zone);
+          preview.style.left = `${fixedCssPx(rect.left)}px`;
+          preview.style.top = `${fixedCssPx(rect.top)}px`;
+          preview.style.width = `${fixedCssPx(rect.width)}px`;
+          preview.style.height = `${fixedCssPx(rect.height)}px`;
+          previewTitle.textContent = dragLabel();
+          preview.classList.add("is-visible");
+          document.body.classList.add("slot-adjacent-drop");
+        } else {
+          hideAdjacentPreview();
+        }
+      } else {
+        hideAdjacentPreview();
+        if (slotEl && zone === "inside") {
+          const title = slotEl.querySelector(".fc-event-main")?.textContent?.trim();
+          chip.textContent = `↳ Drop into ${title || "this slot"}`;
+          chip.style.left = `${fixedCssPx(e.clientX + 14)}px`;
+          chip.style.top = `${fixedCssPx(e.clientY + 16)}px`;
+          chip.classList.add("is-visible");
+        } else {
+          chip.classList.remove("is-visible");
+        }
       }
       const rail = railRef.current;
       if (rail) {
@@ -912,6 +988,8 @@ export default function CalendarPane({
       armed = false;
       if (active && moved) {
         active = false;
+        // Freeze intent before FullCalendar's async drop handlers run.
+        committedSlotDropIntentRef.current = slotDropIntentRef.current;
         const dropInbox = Boolean(dragId) && !fromRail && overRail;
         if (dropInbox) {
           const dragEl = document.querySelector<HTMLElement>(`[data-task-drag="${dragId}"]`);
@@ -922,16 +1000,6 @@ export default function CalendarPane({
             if (task) mutationsRef.current.backToInbox(task);
           });
         }
-        // onReceive fires after onUp in the same task. Clear slotDropIntentRef after a
-        // microtask so onReceive can read it; if no drop occurred it clears itself.
-        //
-        // dragGroupRef is deliberately NOT cleared here. FullCalendar does not
-        // promise to fire `eventReceive` in this task — it can land an animation
-        // frame (or longer) after the release — and a group nulled on pointerup
-        // is the whole bug: the drop then sees one id and places one task out of
-        // four. The next drag overwrites it in `eventData`, and `onReceive`
-        // consumes it, so there is nothing stale to leak.
-        Promise.resolve().then(() => { slotDropIntentRef.current = null; });
         reset();
       } else if (!moved) {
         reset();
@@ -959,6 +1027,7 @@ export default function CalendarPane({
       fromRail = false;
       calTask = false;
       overRail = false;
+      committedSlotDropIntentRef.current = null;
       slotDropIntentRef.current = null;
       dragGroupRef.current = null;
       reset();
@@ -979,8 +1048,9 @@ export default function CalendarPane({
       window.removeEventListener("keydown", onKey);
       reset();
       chip.remove();
+      preview.remove();
     };
-  }, [railRef]);
+  }, [railRef, defaultDurationMins]);
 
   useEffect(() => {
     if (!isFcView(view)) return; // the board and the Year aren't FullCalendar views
@@ -1517,8 +1587,7 @@ export default function CalendarPane({
 
     // Prefer the sitting the pointer was over (highlighted zone) to time-range
     // math, which breaks when FC snaps the ghost clear of an overlap.
-    const intent = slotDropIntentRef.current;
-    slotDropIntentRef.current = null;
+    const intent = takeSlotDropIntent();
     const resolved = resolveSlotDrop(start, intent, slotsRef.current, defaultDurationMins);
 
     if (resolved?.kind === "adjacent") {
@@ -1613,8 +1682,7 @@ export default function CalendarPane({
     // Dropped onto a slot → join it, or beside it when the pointer was on an edge.
     // Prefer the visually-highlighted target (slotDropIntentRef) over time-range
     // math, which breaks when FC snaps the ghost adjacent to avoid overlap.
-    const intent = slotDropIntentRef.current;
-    slotDropIntentRef.current = null; // consume it — onUp intentionally left it for us
+    const intent = takeSlotDropIntent();
     const resolved = resolveSlotDrop(start, intent, slotsRef.current, defaultDurationMins);
 
     if (resolved?.kind === "adjacent") {
@@ -1719,8 +1787,7 @@ export default function CalendarPane({
         if (info.event.allDay) {
           mutations.planFor(task, toDateISO(info.event.start));
         } else {
-          const intent = slotDropIntentRef.current;
-          slotDropIntentRef.current = null;
+          const intent = takeSlotDropIntent();
           const resolved = resolveSlotDrop(
             info.event.start,
             intent,
@@ -1931,11 +1998,11 @@ export default function CalendarPane({
 
   // Click-drag on empty grid → open the quick-create card. Modifiers pick the
   // type up front (⌥ event, ⌘/Ctrl slot); otherwise the toolbar create mode.
+  // A drag is create intent even if the pointerdown closed a popover — the
+  // dismiss guard belongs on dateClick (a tap), not here. Skipping select
+  // without unselect() left FullCalendar's select-mirror stuck on the grid
+  // (`unselectAuto` is false so the composer can own the ghost).
   const onSelect = (arg: DateSelectArg) => {
-    // This same click may have just dismissed an open event/task/slot popover
-    // (a separate system reacting to the same physical click) — that click
-    // was a dismiss, not a request to also start a new draft.
-    if (consumeCalendarClickHandled()) return;
     if (isMonth || arg.allDay) {
       const je = arg.jsEvent;
       const start = new Date(arg.start);
@@ -1947,20 +2014,23 @@ export default function CalendarPane({
       let kind = allDayKindFromModifiers(je);
       if (multiDay) kind = "event";
       setDraft({ start, end: inclusiveEnd, kind, point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 }, allDay: true });
-      return;
+    } else {
+      clearFocus();
+      const je = arg.jsEvent;
+      let kind: CreateKind = createMode;
+      if (je?.altKey) kind = "event";
+      else if (je?.metaKey || je?.ctrlKey) kind = "slot";
+      if (kind === "event" && !canCreateEvents) kind = "task";
+      setDraft({
+        start: arg.start,
+        end: arg.end,
+        kind,
+        point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 },
+      });
     }
-    clearFocus();
-    const je = arg.jsEvent;
-    let kind: CreateKind = createMode;
-    if (je?.altKey) kind = "event";
-    else if (je?.metaKey || je?.ctrlKey) kind = "slot";
-    if (kind === "event" && !canCreateEvents) kind = "task";
-    setDraft({
-      start: arg.start,
-      end: arg.end,
-      kind,
-      point: { x: je?.clientX ?? 0, y: je?.clientY ?? 0 },
-    });
+    // React's draft preview is the ghost now. Drop FC's own mirror so it
+    // can't outlive the composer if the leftover mouseup click dismisses it.
+    queueMicrotask(() => calRef.current?.getApi().unselect());
   };
 
   const onDateClick = (arg: DateClickArg) => {

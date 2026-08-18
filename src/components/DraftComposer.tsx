@@ -133,6 +133,16 @@ export default function DraftComposer({
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  // The drag that opened us still has a `click` queued (mouseup → click). If
+  // the backdrop listens for that leftover click, the composer mounts and
+  // immediately cancels — leaving FullCalendar's select-mirror stuck on the
+  // grid with no card. Arm dismiss only after that gesture has finished.
+  const [backdropArmed, setBackdropArmed] = useState(false);
+  useEffect(() => {
+    const id = window.setTimeout(() => setBackdropArmed(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
   // Re-place whenever the card *or* the window changes size, not just on mount:
   // switching to Event widens the card and adds the guest column, which would
   // otherwise grow past the bottom edge with no way to scroll to it.
@@ -259,7 +269,7 @@ export default function DraftComposer({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40" onClick={onCancel} />
+      <div className="fixed inset-0 z-40" onClick={backdropArmed ? onCancel : undefined} />
       <div
         ref={cardRef}
         className="moment fixed z-50 flex flex-col rounded-[var(--radius-lg)] border border-line bg-surface"

@@ -48,6 +48,19 @@ export function adjacentBlockStart(
   return snapMinutes(new Date(slotStart.getTime() - durationMins * 60_000));
 }
 
+/** Screen rect for the dragged item's landing zone beside a slot. */
+export function adjacentPreviewRect(
+  slotRect: DOMRect,
+  slotDurationMins: number,
+  dragDurationMins: number,
+  zone: "before" | "after",
+): { top: number; left: number; width: number; height: number } {
+  const pxPerMin = slotRect.height / Math.max(slotDurationMins, 1);
+  const height = Math.max(pxPerMin * dragDurationMins, 8);
+  const top = zone === "after" ? slotRect.bottom : slotRect.top - height;
+  return { top, left: slotRect.left, width: slotRect.width, height };
+}
+
 /** Resolve whether a drop joins a slot or lands beside it. */
 export function resolveSlotDrop(
   dropStart: Date,
@@ -66,6 +79,7 @@ export function resolveSlotDrop(
       start: adjacentBlockStart(slot, intent.zone, durationMins),
     };
   }
+  // No pointer intent — only join when the drop time actually falls inside the slot.
   const t0 = dropStart.getTime();
   const slot = slots.find((s) => {
     const ss = new Date(s.start_time).getTime();
