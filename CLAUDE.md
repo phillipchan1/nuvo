@@ -164,6 +164,17 @@ it needs to work on a phone.
   use (`readOnDeck` · `allOpenInitiativeLanes` · `readShipped`) — a wall of columns becomes
   a thinnest-first stack of cards. Never re-derive "how shaped is this" in a surface.
   Verify both at `?build` (`mobile/BuildFacesHarness.tsx`) — see D-099.
+- **A task wears ONE row wherever it appears** — `TaskRow`, on both shells. Both week crowns
+  render a project's work through the *same component* the day lists use, handed down as
+  `renderTask` (`RenderCrownTask`, declared in `useWeekCrown.ts` so neither shell owns it):
+  `LeftRail` supplies it on the desktop, `MobileShell` on the phone. The mounting surface
+  keeps selection, the context menu, open and complete/undo in one place. A surface that
+  needs a different trailing mark passes `action`; one that already states the row's *when*
+  passes `whenShown`. **Never build a reduced task row** — both crowns had one, and it
+  drifted until a project's work could be neither ticked nor touched on *either* shell
+  (D-111). Corollary: an act may live on many surfaces, a **move** lives on one — you
+  complete anywhere, you re-time a block on the calendar, and other surfaces link to it
+  (`revealOnCalendar`) instead of growing a second handle.
 - **A record's lifecycle acts live in one vocabulary** — `src/lib/recordActions.ts`
   (Open · Ship/Reopen · Park/Resume · Delete). The desktop reaches it by right-click
   (`RecordContextMenu`), the phone by long-press *and* the record sheet's visible ⋯

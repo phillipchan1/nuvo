@@ -64,17 +64,6 @@ export const TONE_COLOR: Record<DeckTone, string> = {
 /** How heavy the card's domain spine is — see the altitude note above. */
 export type DeckVariant = "marked" | "bounded";
 
-/** Remaining effort, for the eye — the card's *weight*. The week header counts
- *  cards; hours are the currency the pinch math actually runs on, so a column of
- *  weights explains an overloaded sprint in a way "5/2" can't. Never rounded up
- *  from nothing: a project with no sized steps returns null and says nothing. */
-export function deckWeight(mins: number): string | null {
-  if (!mins || mins <= 0) return null;
-  if (mins < 60) return `${Math.round(mins)}m`;
-  const h = mins / 60;
-  return `${h < 10 ? Math.round(h * 10) / 10 : Math.round(h)}h`;
-}
-
 export default function DeckCard({
   variant = "marked",
   size = "deck",

@@ -2305,14 +2305,23 @@ export default function CalendarPane({
   // (lib/calendarReveal.ts explains why). Also drains a reveal published just
   // before this pane mounted, which is the ⌘K-from-a-floor path.
   useEffect(() => {
-    const go = (dateISO: string) => calRef.current?.getApi().gotoDate(`${dateISO}T12:00:00`);
+    const go = (r: { dateISO: string; scrollToTime?: string }) => {
+      const api = calRef.current?.getApi();
+      if (!api) return;
+      api.gotoDate(`${r.dateISO}T12:00:00`);
+      // Landing on the day is only half of "show me that": in the week view the
+      // day is usually already on screen, so without this the reveal is silent.
+      // Deferred a frame — `gotoDate` may swap the rendered range, and scrolling
+      // the range you just left does nothing.
+      if (r.scrollToTime) requestAnimationFrame(() => api.scrollToTime(r.scrollToTime!));
+    };
     const pending = pendingCalendarReveal();
     if (pending) {
-      go(pending.dateISO);
+      go(pending);
       clearCalendarReveal();
     }
     return onCalendarReveal((r) => {
-      go(r.dateISO);
+      go(r);
       clearCalendarReveal();
     });
   }, []);

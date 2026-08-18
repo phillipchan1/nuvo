@@ -180,3 +180,19 @@ export function demandByWeekDetailed(d: VerticalData, now: Date, weekStarts: Dat
 export function demandByWeek(d: VerticalData, now: Date, weekStarts: Date[]): WeekDemand[] {
   return demandByWeekDetailed(d, now, weekStarts).map(({ weekStart, demandMins }) => ({ weekStart, demandMins }));
 }
+
+/** Remaining effort, for the eye — a project's *weight*. Hours are the currency
+ *  the pinch math actually runs on, so a column of weights explains an
+ *  overloaded sprint in a way "5/2" can't. Never rounded up from nothing: a
+ *  project with no sized steps returns null and says nothing.
+ *
+ *  Lives here rather than in `DeckCard` (where it started) because the Schedule
+ *  rail's crown wears the same weight, and the rail must not pull the On Deck
+ *  chunk into the entry bundle to format a number.
+ */
+export function deckWeight(mins: number): string | null {
+  if (!mins || mins <= 0) return null;
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const h = mins / 60;
+  return `${h < 10 ? Math.round(h * 10) / 10 : Math.round(h)}h`;
+}

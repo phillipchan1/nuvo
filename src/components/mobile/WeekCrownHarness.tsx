@@ -24,6 +24,7 @@ import type { BigRock, Slot, Sprint, Task } from "../../lib/types";
 import MobileWeekCrown from "./MobileWeekCrown";
 import MobileCalendar from "./MobileCalendar";
 import WeekPanel from "../WeekPanel";
+import TaskRow from "../TaskRow";
 
 const WEEK_ISO = planningWeekStartISO();
 const MONDAY = parseDateISO(WEEK_ISO);
@@ -260,9 +261,22 @@ export default function WeekCrownHarness() {
                     <MobileWeekCrown
                       now={new Date()}
                       onOpenProject={(id) => say(`open project ${id}`)}
-                      onOpenTask={(id) => say(`open task ${id}`)}
                       onOpenDay={(d) => say(`jump to ${toDateISO(d)}`)}
                       onPlanWeek={() => say("plan the week")}
+                      renderTask={(t, { action, whenShown }) => (
+                        <TaskRow
+                          key={t.id}
+                          task={t}
+                          labels={[]}
+                          selected={false}
+                          draggable={false}
+                          action={action}
+                          whenShown={whenShown}
+                          onSelect={() => say(`select ${t.title}`)}
+                          onOpen={() => say(`open ${t.title}`)}
+                          onToggleDone={() => say(`toggle ${t.title}`)}
+                        />
+                      )}
                     />
                     <div className="px-4 py-6 text-caption text-muted">
                       (the month grid would continue here)
@@ -289,8 +303,22 @@ export default function WeekCrownHarness() {
                     <MobileCalendar
                       now={new Date()}
                       onOpenProject={(id) => say(`open project ${id}`)}
-                      onOpenTask={(id) => say(`open task ${id}`)}
                       onPlanWeek={() => say("plan the week")}
+                      renderCrownTask={(t, { action, whenShown, draggable, dragData }) => (
+                        <TaskRow
+                          key={t.id}
+                          task={t}
+                          labels={[]}
+                          selected={false}
+                          draggable={draggable ?? false}
+                          action={action}
+                          whenShown={whenShown}
+                          dragData={dragData}
+                          onSelect={() => say(`select ${t.title}`)}
+                          onOpen={() => say(`open ${t.title}`)}
+                          onToggleDone={() => say(`toggle ${t.title}`)}
+                        />
+                      )}
                       onNewEvent={(d) => say(`new event ${toDateISO(d)}`)}
                       onTapEvent={() => say("tap event")}
                       onOpenUpkeep={() => say("open upkeep")}
@@ -304,7 +332,26 @@ export default function WeekCrownHarness() {
                 <div className="section-label !p-0 !pb-1">Desktop · the Schedule rail</div>
                 <div className="overflow-hidden rounded-xl border border-line-strong" style={{ width: 320 }}>
                   <div className="atmosphere">
-                    <WeekPanel />
+                    <WeekPanel
+                      // The harness renders the REAL row, so the crown's one
+                      // grammar is what gets verified here — a stub list would
+                      // verify a layout the app doesn't ship.
+                      renderTask={(t, { action, draggable, dragData, whenShown }) => (
+                        <TaskRow
+                          key={t.id}
+                          task={t}
+                          labels={[]}
+                          selected={false}
+                          draggable={draggable ?? false}
+                          action={action}
+                          whenShown={whenShown}
+                          dragData={dragData}
+                          onSelect={() => say(`select ${t.title}`)}
+                          onOpen={() => say(`open ${t.title}`)}
+                          onToggleDone={() => say(`toggle ${t.title}`)}
+                        />
+                      )}
+                    />
                   </div>
                 </div>
               </div>

@@ -723,7 +723,35 @@ export default function LeftRail({
       <div data-tauri-drag-region="deep" className="shrink-0">
         {/* The week's plan — priorities held in view all week, crowning the rail.
             Its header is the week door ("Plan the week"). */}
-        <WeekPanel door={weekDoor} />
+        <WeekPanel
+          door={weekDoor}
+          // ONE task grammar (see WeekPanel's header): a project's work renders
+          // through the same `TaskRow` — and the same wiring — as the day list
+          // below. The rail owns selection, the context menu, opening a record
+          // and complete/undo, so the crown borrows that rather than growing a
+          // second copy of it, which is exactly how the two grammars happened.
+          //
+          // `ref` is dropped on purpose: a project task dated today appears in
+          // BOTH the crown and the Today list (it is genuinely both), and the
+          // handle map is keyed by task id — letting the crown register would
+          // hand keyboard completion to whichever copy rendered last.
+          //
+          // `meta` is dropped too: inside a project's group the row's place is
+          // what you opened to get here, so the place tag restated the parent's
+          // name on every child — and cost each row a second line to do it.
+          renderTask={(t, { action, draggable, dragData, whenShown }) => (
+            <TaskRow
+              key={t.id}
+              {...rowProps(t)}
+              ref={undefined}
+              meta={undefined}
+              draggable={draggable ?? false}
+              action={action}
+              whenShown={whenShown}
+              dragData={dragData}
+            />
+          )}
+        />
         {/* Tabs — Today first (the day is where the rail's lower zone lives);
             Inbox second. This zone is "work the day," under the week crown. */}
         {/* The strip carries one continuous baseline so the active underline sits ON

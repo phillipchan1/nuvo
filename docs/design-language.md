@@ -251,9 +251,12 @@ the rule that keeps a dense screen calm.
    stacking it at hero size made two headlines, which this rule forbids. An *execution*
    surface anchors with a **functional header** — a
    tracked-caps eyebrow over a quiet status line, numbers in `mono`, the meter idiom the
-   spine and Standing gauges use. The Schedule rail's crown is execution: "THIS WEEK · JUL
-   13–19" over "0 of 2 landed" + a thin landed meter — **not** a serif scoreboard (a count
-   in `masthead` reads like a marketing stat). If a second hero of either voice appears
+   spine and Standing gauges use. The Schedule rail's crown is execution: "THIS WEEK · AUG
+   17–23" over the week **drawn** — one pip per project in its domain's hue, filled when it
+   landed, plus the amber count when something has no time (D-110, D-111) — **not** a serif
+   scoreboard (a count in `masthead` reads like a marketing stat). The sentence it replaced
+   ("0 of 4 landed") survives in `aria-label` and `title`: the drawing is for the eye, the
+   words are for the screen reader. If a second hero of either voice appears
    below the anchor, demote one (see `FloorStanding`'s `quietSynthesis`: under the "Table"
    masthead its synthesis drops to `text-body text-muted`). Never stack two near-equal peers
    and hope the eye picks one — it won't.
@@ -320,6 +323,16 @@ the rule that keeps a dense screen calm.
    `open ▸` in `view` while `plan` and `review` got accent pills. One pill, one position,
    three verbs (`Plan the week` · `The plan ▸` · `Review`): **the state changes the word,
    never the weight.**
+
+10. **One grammar per noun, wherever it appears.** A task is a task: the same row, the same
+   checkbox, the same drag, whether it hangs under a project in the crown or sits loose in
+   the day. Not "the same design" — the **same component**. The crown once had its own
+   reduced list (a bare `<li>`, a truncated title) and it drifted until you could neither
+   tick nor touch a project's work; a surface that needs a different *trailing mark* takes a
+   prop for that mark, never a second row (D-111). The corollary: **an act may live on many
+   surfaces, but a *move* lives on one.** Completing works everywhere, because completing
+   isn't moving; moving a block belongs to the calendar, and the other surface links to it
+   rather than growing a second handle.
 
 Reference: the **Schedule rail** (`WeekPanel` crown → one `--line-strong` zone divider →
 flat Today list → floating capture) and the **Projects/Initiatives floors** (`FloorHeader`

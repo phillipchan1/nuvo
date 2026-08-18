@@ -37,6 +37,7 @@ import { useBulkOps } from "../../hooks/useBulkOps";
 import { useTaskFilter } from "../../hooks/useTaskFilter";
 import { describeQuery, queryFacetCount } from "../../lib/taskFilter";
 import MobileCalendar from "./MobileCalendar";
+import TaskRow from "../TaskRow";
 import RecurringUpkeepPanel from "../RecurringUpkeepPanel";
 import MobileProjects from "./MobileProjects";
 import MobileInitiatives from "./MobileInitiatives";
@@ -566,12 +567,35 @@ export default function MobileShell() {
             onOpenUpkeep={() => setUpkeepOpen(true)}
             onNewEvent={setNewEventDate}
             // The week crown's three doors: a project opens its record sheet, a
-            // loose piece opens its task sheet (where it gets a time), and the
-            // door opens the same ritual the Week segment's card does — no
+            // piece of its work opens its task sheet (where it gets a time), and
+            // the door opens the same ritual the Week segment's card does — no
             // second copy of any of them.
             onOpenProject={(id) => openDetail("project", id)}
-            onOpenTask={(id) => setTaskId(id)}
             onPlanWeek={() => setPlanOpen(true)}
+            // ONE task grammar (D-111). A project's work in the crown is the same
+            // `TaskRow` as the Tasks screen's, so it can be ticked from here — it
+            // used to be a bare button with a truncated title and no checkbox.
+            // The shell owns it because the shell owns the mutations and the task
+            // sheet, the way `LeftRail` owns it on the desktop.
+            //
+            // No `meta`: inside a project's group the row's place is what you
+            // opened to get here. No `swipeActions`: the month grid under this
+            // crown pages horizontally, and swipe-to-defer would fight the pager.
+            renderCrownTask={(t, { action, whenShown }) => (
+              <TaskRow
+                key={t.id}
+                task={t}
+                labels={labels}
+                now={now}
+                selected={false}
+                draggable={false}
+                action={action}
+                whenShown={whenShown}
+                onSelect={() => {}}
+                onOpen={() => setTaskId(t.id)}
+                onToggleDone={() => (t.status === "done" ? mutations.uncomplete(t) : mutations.complete(t))}
+              />
+            )}
           />
         ) : tab === "projects" ? (
           <MobileProjects onOpenItem={openDetail} />

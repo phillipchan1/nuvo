@@ -1,25 +1,50 @@
-// The week's plan — the rail's crown. The week's priorities held in view all
-// week (glance, don't re-open the Review), each row tracking its OWN work, so a
-// priority reads honest even when you never tap it: progress derives from the
-// linked project's tasks, and a fully-worked priority *invites* the seal instead
-// of sitting at a silent 0. Replaces the buried WeekReadiness footer — intent
-// on top; the crown's "Plan the week" door is the only CTA (no second "loose
-// ends" strip that restates the same invite).
+// The week's plan — the rail's crown, worn as a STACK of projects.
 //
-// The header IS the week door (the toolbar's copy is gone — it sat in the
-// calendar's control cluster, which acts on the *canvas*, while the door acts on
-// the *plan* that lives right here). It takes the lifecycle from Planner so the
-// door on top of the priorities is the same one, not a weaker twin: identity on
-// the left, the state's verb on the right. The toolbar keeps a door only in
-// focus mode, where this rail is slid shut.
+// The week's projects ARE the main event, and the rail used to draw them as the
+// same size as a loose task: 13px `text-body`, a grey "all placed ▸" pill, a
+// meter and an `n/m`, with their own work hanging underneath as bare <li>s you
+// could neither tick nor (once placed) touch. Two grammars for one noun, and a
+// hierarchy the type never stated. This is the fix, and it is deliberately the
+// **deck card's** anatomy at rail density — because a project on the On Deck
+// board and a project in this week's crown are the same object:
+//
+//   identity (3px domain spine, inset — DeckCard's `marked` variant)
+//   NAME, the hero — full width, nothing to its left
+//   ONE marks line: pips · weight · what's wrong
+//
+// The laws this surface now keeps, all of which the old crown broke:
+//
+//  1 · ONE TASK GRAMMAR. A project's work renders through `TaskRow` — the same
+//      component the Today and Inbox lists use. Not a copy of it: the component.
+//      That is what makes "I can't check these off" unfixable-by-drift.
+//  2 · COMPLETE ANYWHERE, PLACE ONCE. Ticking is not a move, so it works on a
+//      placed row too. *Moving* stays the calendar's act (D-084 stands) — the
+//      time chip is a jump link onto the grid, not a drag handle.
+//  3 · THE PROJECT'S MARK IS AN ARC, not a checkbox. A ring that fills with
+//      progress and offers the ship assessment; the tasks below wear squares.
+//      Round vs square is what stops a nested pair reading as one tick twice.
+//      (Shipping stays a judgment — D-048 took the checkbox off the deck card
+//      for the same reason.)
+//  4 · NUMBERS BECOME MARKS. `3/5` → five pips in the domain's hue; `all placed`
+//      → silence (P9 — only homeless work has news). `wk N` survives: carrying
+//      is a fact you must not hide. Every phrase removed is still in the
+//      `aria-label` and the `title`.
+//  5 · MASS, NOT FRAMES. The name is `text-head`; a loose task is `text-caption`.
+//      Never a serif, never a tinted card — D-049 settled that twice.
+//
+// The header IS the week door: identity left, the state's verb right. The
+// toolbar keeps a door only in focus mode, where this rail is slid shut.
 
 import { useState } from "react";
+import { Icon } from "./Icon";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
-import { useWeekCrown, type WeekCrownRow } from "../hooks/useWeekCrown";
+import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../hooks/useWeekCrown";
 import { carryMark } from "../lib/priorities";
-import { fmtDayTime } from "../lib/dates";
+import { fmtDayTime, toDateISO } from "../lib/dates";
+import { revealOnCalendar } from "../lib/calendarReveal";
 import { MARQUEE_OPEN_EVENT } from "../lib/marquee";
+import { deckWeight } from "../lib/pace";
 import { ProjectShipAssess } from "./record/ShipAssess";
 import type { EmblemSpec } from "../lib/weekEmblem";
 
@@ -34,7 +59,18 @@ export interface WeekDoor {
   onOpen: () => void;
 }
 
-export default function WeekPanel({ door }: { door?: WeekDoor }) {
+
+/** Past this many pieces, pips stop being countable at a glance and become the
+ *  meter they stood in for — the same ceiling the phone's crown uses (D-110). */
+const PIP_CEILING = 10;
+
+export default function WeekPanel({
+  door,
+  renderTask,
+}: {
+  door?: WeekDoor;
+  renderTask: RenderCrownTask;
+}) {
   const { data, togglePushLanded } = useVertical();
   const { openFlow, openRecord, nav } = useAppNavigation();
   // A project places onto a TIME grid — that's what a sitting is. The board and
@@ -44,8 +80,9 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   const canPlaceProjects =
     nav.rung === "day" && (nav.calView === "timeGridWeek" || nav.calView === "timeGridDay");
   const [shipId, setShipId] = useState<string | null>(null);
-  // Which project rows are open to their loose work. Collapsed by default — the
+  // Which project rows are open to their work. Collapsed by default — the
   // crown's job is the glance; the depth is there when the glance isn't enough.
+  // It also keeps the cost honest: an open project mounts real `TaskRow`s.
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   // The week's slate, read once and shared with the phone's crown — the
   // priorities ARE the projects On Deck committed to this week, derived, so this
@@ -54,7 +91,7 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   const crown = useWeekCrown();
   if (!data || !crown) return null;
 
-  const { rows, landed, composed } = crown;
+  const { rows, landed, looseCount } = crown;
   // The label follows the sprint the way it always has: no sprint row, no span.
   const weekLabel = data.sprint?.week_start ? crown.weekLabel : "";
 
@@ -65,68 +102,58 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   const openWeekPlan =
     door?.onOpen ??
     (() => {
-      if (composed) window.dispatchEvent(new CustomEvent(MARQUEE_OPEN_EVENT, { detail: { surface: "week-plan" } }));
+      if (crown.composed) window.dispatchEvent(new CustomEvent(MARQUEE_OPEN_EVENT, { detail: { surface: "week-plan" } }));
       else openFlow("sunday");
     });
-  const mode = door?.mode ?? (composed ? "view" : "plan");
+  const mode = door?.mode ?? (crown.composed ? "view" : "plan");
   // The verb the door is offering, right-aligned: identity left, action right.
-  // "Plan the week" is the product name for the ritual — keep it spelled out so
-  // the crown CTA reads as the major act it is, not a quiet chip. And `view` gets
-  // the SAME pill: the week's plan is what guides the week, so its door can't be
-  // the quietest thing in the rail (it was 9.5px muted "open ▸"). One door shape,
-  // one position, three verbs — the state changes the word, never the weight.
+  // One door shape, one position, three verbs — the state changes the word,
+  // never the weight.
   const action = mode === "review" ? "Review" : mode === "plan" ? "Plan the week" : "The plan ▸";
 
   // Ticking a priority SHIPS its project — one completion act, not two. The
-  // circle used to write only the week's verdict (done_at), which read as
-  // "complete" and finalized nothing, so a priority could go struck-through
-  // while five tasks stayed live underneath. Now it opens the same assessment
-  // every other ship path uses: you see what's still open before anything is
-  // written. (A legacy landed-but-not-shipped verdict can still be tapped to
-  // reopen; shipped rows are inert — reopen from the record.)
+  // circle opens the same assessment every other ship path uses: you see what's
+  // still open before anything is written. (A legacy landed-but-not-shipped
+  // verdict can still be tapped to reopen; shipped rows are inert.)
   const onTick = (row: WeekCrownRow) => {
     if (row.state === "shipped") return;
     if (row.rock.done_at) return togglePushLanded(row.projectId);
     setShipId(row.projectId);
   };
 
+  // The scoreboard, kept as WORDS for anyone who can't read the pips — the
+  // drawing is for the eye, this is for the screen reader and the tooltip.
+  const slateSentence =
+    rows.length === 0
+      ? "No projects on this week yet"
+      : `${landed} of ${rows.length} landed` +
+        (looseCount > 0 ? ` · ${looseCount} piece${looseCount === 1 ? "" : "s"} with no time` : "");
+
   return (
-    <div className="shrink-0 border-b border-line-strong px-3 pb-3 pt-3.5">
-      {/* The crown — the rail's anchor, in an EXECUTION voice, not ceremony: a
-          tracked-caps eyebrow (identity) over a functional scoreboard (numbers in
-          mono, words quiet) + a thin landed meter — the same meter idiom the spine
-          and Standing gauges use. NOT a Fraunces headline: a serif scoreboard read
-          like a marketing stat; a floor's NAME earns serif, a count does not. */}
+    <div className="shrink-0 border-b border-line-strong">
+      {/* The crown — identity + the week DRAWN, not written. The old header
+          spent six text objects on this (span, "0 of 4 landed", a meter, a door)
+          above a stack that is itself dense; the pips carry count, progress and
+          which domains are carrying the week in one line and no sentence. The
+          sentence survives in `aria-label` and `title`. */}
       <button
         onClick={openWeekPlan}
-        title={door?.title ?? "The week's plan"}
-        className="fast tap group mb-3 flex w-full items-start gap-2 text-left"
+        title={door?.title ?? `The week's plan — ${slateSentence}`}
+        aria-label={`The week's plan. ${slateSentence}.`}
+        className="fast tap group flex w-full items-center gap-2 px-3 pb-2.5 pt-3.5 text-left"
       >
-        <div className="min-w-0 flex-1">
-          <div className="section-label !px-0 !pb-0" style={{ color: "var(--accent)" }}>
-            This week{weekLabel ? ` · ${weekLabel}` : ""}
-          </div>
-          {rows.length === 0 ? (
-            <div className="mt-1 text-body text-muted">No priorities named yet</div>
-          ) : (
-            <div className="mt-1.5 flex items-center gap-2.5">
-              <span className="shrink-0 text-body">
-                <span className="mono font-medium text-ink">{landed}</span>
-                <span className="text-muted"> of </span>
-                <span className="mono font-medium text-ink">{rows.length}</span>
-                <span className="text-muted"> landed</span>
-              </span>
-              <span className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-                <span
-                  className="block h-full rounded-full"
-                  style={{ width: `${(landed / rows.length) * 100}%`, background: "var(--accent)" }}
-                />
-              </span>
-            </div>
-          )}
-        </div>
+        <span className="section-label !px-0 !pb-0 shrink-0" style={{ color: "var(--accent)" }}>
+          This week{weekLabel ? ` · ${weekLabel}` : ""}
+        </span>
+        {rows.length > 0 && (
+          <span className="flex min-w-0 items-center gap-2" aria-hidden>
+            <SlatePips rows={rows} />
+            {looseCount > 0 && <AmberMark count={looseCount} />}
+          </span>
+        )}
+        <span className="flex-1" />
         <span
-          className="mt-0.5 flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium"
+          className="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium"
           style={
             mode === "review"
               ? { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
@@ -138,35 +165,33 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
         </span>
       </button>
 
-      {/* priorities — directly under the crown; the crown states the count, so
-          there's no repeated "Priorities" label. */}
       {rows.length > 0 ? (
-        <div className="flex flex-col gap-0.5">
-            {rows.map((row) => (
-              <PriorityRow
-                key={row.rock.id}
-                row={row}
-                onToggle={() => onTick(row)}
-                // Open a priority where its work lives: its Record, to manage
-                // and close its tasks.
-                onOpen={() => openRecord("project", row.projectId)}
-                canPlace={canPlaceProjects}
-                expanded={openIds.has(row.rock.id)}
-                onExpand={() =>
-                  setOpenIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(row.rock.id)) next.delete(row.rock.id);
-                    else next.add(row.rock.id);
-                    return next;
-                  })
-                }
-              />
-            ))}
-          </div>
+        <div className="border-t border-line" data-tauri-drag-region="false">
+          {rows.map((row) => (
+            <ProjectStackRow
+              key={row.rock.id}
+              row={row}
+              renderTask={renderTask}
+              onToggle={() => onTick(row)}
+              // Open a priority where its work lives: its Record.
+              onOpen={() => openRecord("project", row.projectId)}
+              canPlace={canPlaceProjects}
+              expanded={openIds.has(row.rock.id)}
+              onExpand={() =>
+                setOpenIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(row.rock.id)) next.delete(row.rock.id);
+                  else next.add(row.rock.id);
+                  return next;
+                })
+              }
+            />
+          ))}
+        </div>
       ) : (
         <button
           onClick={() => openFlow("sunday")}
-          className="fast tap flex w-full items-center gap-1.5 py-1 text-label text-muted hover:text-accent"
+          className="fast tap flex w-full items-center gap-1.5 px-3 pb-3 text-label text-muted hover:text-accent"
         >
           ＋ Name this week's priorities
         </button>
@@ -177,20 +202,129 @@ export default function WeekPanel({ door }: { door?: WeekDoor }) {
   );
 }
 
-// ── one priority row — derived progress, one completion act ───────────────────
-// The leading dot is a domain-colored ring: tap it to SHIP the project this
-// priority is. Every priority here IS a project (weekPushes derives the slate
-// from the board), so there's one completion act, not two — the circle opens the
-// ship assessment, which shows what's still open before anything is written.
-// It's quiet (hover-revealed ✓) on partial rows so it doesn't invite a premature
-// ship; loud only when earned. The title opens the project's work.
-//  shipped  → shipped this week → the crown; the circle is inert (reopen in the record)
-//  landed   → a legacy week-verdict (done_at, no ship); struck, tap to reopen
-//  ship     → every task done → a loud `ship ✓` invite (the earned path)
-//  motion   → mini progress bar + done/total from priorityWork; hover to ship
-//  carrying → unfinished + rolled from a prior week → a quiet "wk N" nag
-function PriorityRow({
+// ── the marks ────────────────────────────────────────────────────────────────
+
+/** The week itself: one pip per project in its domain's hue, filled when it
+ *  landed. Count, progress and which domains are carrying the week, in one line
+ *  and no words — the phone's crown language (D-110), brought to the desk. */
+function SlatePips({ rows }: { rows: WeekCrownRow[] }) {
+  if (rows.length > PIP_CEILING) {
+    const pct = Math.round((rows.filter((r) => r.state === "landed" || r.state === "shipped").length / rows.length) * 100);
+    return (
+      <span className="block h-1 w-16 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+        <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: "var(--accent)" }} />
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1">
+      {rows.map((r) => {
+        const on = r.state === "landed" || r.state === "shipped";
+        return (
+          <span
+            key={r.rock.id}
+            className="block h-[7px] w-[7px] shrink-0 rounded-full"
+            style={{
+              background: on ? r.color : "transparent",
+              boxShadow: on ? undefined : `inset 0 0 0 1.5px color-mix(in srgb, ${r.color} 55%, transparent)`,
+            }}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
+/** One pip per piece of a project's work, filled when it's done. Past the
+ *  ceiling it becomes the meter it stood in for. */
+function WorkPips({ done, total, color }: { done: number; total: number; color: string }) {
+  if (total === 0) return null;
+  if (total > PIP_CEILING) {
+    return (
+      <span className="flex items-center gap-1.5">
+        <span className="block h-1 w-12 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+          <span className="block h-full rounded-full" style={{ width: `${(done / total) * 100}%`, background: color }} />
+        </span>
+        <span className="mono text-micro text-muted">{done}/{total}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-[3px]">
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          className="block h-[5px] w-[5px] shrink-0 rounded-full"
+          style={{
+            background: i < done ? color : "transparent",
+            boxShadow: i < done ? undefined : `inset 0 0 0 1.25px color-mix(in srgb, ${color} 50%, transparent)`,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** The one thing that must never be missable: work with no time. Amber only
+ *  when something is actually homeless — a fully-placed project is not a
+ *  warning (P9), it is silence.
+ *
+ *  Two sizes of the same mark: a counted one on a project's marks line, and the
+ *  bare dot a single homeless row wears (the row IS the one, so a "1" beside it
+ *  is a number counting to itself). `count = 0` means the dot alone — it must
+ *  never render as the digit 0. */
+function AmberMark({ count, words }: { count: number; words?: boolean }) {
+  return (
+    <span className="mono flex shrink-0 items-center gap-1 text-micro font-medium" style={{ color: "var(--signal)" }}>
+      <span className="block h-[5px] w-[5px] rounded-full" style={{ background: "var(--signal)" }} />
+      {count > 0 ? `${count}${words ? " with no time" : ""}` : ""}
+    </span>
+  );
+}
+
+/** The project's mark: an ARC, never a checkbox (law 3). Fills with the work
+ *  that's done; goes solid with a ✓ only when the row is finished or earned. */
+function ProgressRing({ pct, color, filled }: { pct: number; color: string; filled: boolean }) {
+  const C = 2 * Math.PI * 8;
+  if (filled) {
+    return (
+      <span
+        className="flex h-[17px] w-[17px] items-center justify-center rounded-full text-micro"
+        style={{ background: color, color: "#fff" }}
+      >
+        <span style={{ lineHeight: 1 }}>✓</span>
+      </span>
+    );
+  }
+  return (
+    <svg width="17" height="17" viewBox="0 0 20 20" aria-hidden className="shrink-0">
+      <circle cx="10" cy="10" r="8" fill="none" stroke={color} strokeOpacity={0.22} strokeWidth="3" />
+      {pct > 0 && (
+        <circle
+          cx="10"
+          cy="10"
+          r="8"
+          fill="none"
+          stroke={color}
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={`${(pct / 100) * C} ${C}`}
+          transform="rotate(-90 10 10)"
+        />
+      )}
+    </svg>
+  );
+}
+
+// ── one project on the week — the deck card's anatomy at rail density ────────
+// identity (spine) · NAME (hero) · one marks line · its work, on request.
+//
+// The name opens the project's Record. The ring opens the ship assessment. The
+// chevron opens its work — and its work is `TaskRow`, the same row the day list
+// below is built from, so "why can't I tick this one" has no way back in.
+function ProjectStackRow({
   row,
+  renderTask,
   onToggle,
   onOpen,
   canPlace,
@@ -199,6 +333,7 @@ function PriorityRow({
 }: {
   /** the week's read model — this row computes nothing (see useWeekCrown) */
   row: WeekCrownRow;
+  renderTask: RenderCrownTask;
   onToggle: () => void;
   onOpen: () => void;
   /** the Schedule is showing a time grid, so a sitting has somewhere to land */
@@ -206,20 +341,20 @@ function PriorityRow({
   expanded: boolean;
   onExpand: () => void;
 }) {
-  const { rock, work, color, placed, loose, open, pct, rolls, continues, canExpand, placedLabel: pill } = row;
+  const { rock, work, color, placed, loose, open, pct, rolls, continues, canExpand, weightMins, placedLabel } = row;
   const shipped = row.state === "shipped";
   const done = shipped || row.state === "landed";
   const looksDone = row.state === "ready-to-ship";
+  const weight = done ? null : deckWeight(weightMins);
 
   // ── the project itself is draggable ──────────────────────────────────────
-  // The crown already offered a project's *pieces* one at a time; the whole
-  // point of the row is that they're one push, so the row places as one too.
-  // The payload is DOM-only on purpose: `CalendarPane` mounts a single
-  // FullCalendar `Draggable` over the rail and reads what it needs off the
-  // element, so this needs no new drag machinery and no second drop path.
-  // `data-project-placed` is what makes the drop honest — the sitting takes the
-  // loose work, and what already has a time is *offered*, never moved silently.
-  // Every field comes off the read model: what you drag is what the row says.
+  // The crown offers a project's *pieces* one at a time; the whole point of the
+  // row is that they're one push, so the row places as one too. The payload is
+  // DOM-only on purpose: `CalendarPane` mounts a single FullCalendar `Draggable`
+  // over the rail and reads what it needs off the element, so this needs no new
+  // drag machinery and no second drop path. `data-project-placed` is what makes
+  // the drop honest — the sitting takes the loose work, and what already has a
+  // time is *offered*, never moved silently.
   const canDrag = canPlace && !done && open > 0;
   const dragProps = canDrag
     ? {
@@ -229,193 +364,213 @@ function PriorityRow({
         "data-project-domain": row.domainId ?? "",
         "data-project-tasks": loose.map((t) => t.id).join(","),
         "data-project-placed": placed.map((p) => p.task.id).join(","),
-        // The crown sits inside the rail's `data-tauri-drag-region="deep"` zone,
-        // so without this opt-out this drag moves the macOS WINDOW and the
-        // project never lands — the same trap the loose rows below hit (D-084).
-        "data-tauri-drag-region": "false",
       }
     : {};
 
+  // The visible amber mark is the loose half, and D-060 forbids letting only
+  // that half be the answer ("2 loose" reads as "and the rest is fine"). So the
+  // SPLIT — the read model's own `placedLabel` — is what the words carry.
+  const marksLabel =
+    `${work.done} of ${work.total} done` +
+    (weight ? ` · ${weight} left` : "") +
+    (open > 0 ? ` · ${placedLabel}` : "");
+
   return (
-    <>
-    <div
-      {...dragProps}
-      title={
-        canDrag
-          ? loose.length > 0
-            ? `Drag onto the calendar to sit ${row.title} — ${loose.length} piece${loose.length === 1 ? "" : "s"} with no time yet`
-            : `Drag onto the calendar to give ${row.title} a sitting`
-          : undefined
-      }
-      className={`group/row flex items-center gap-2 py-1 ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
-    >
-      <button
-        onClick={onToggle}
-        disabled={shipped}
+    <div className="relative border-b border-line last:border-b-0">
+      {/* The altitude tell, and the group's thread: a 3px rounded domain spine,
+          inset from the row's ends — DeckCard's `marked` variant, the bar this
+          project occupies on the grid. It runs the whole group when open, so a
+          project's work reads as hanging off it. Never a border, never a tinted
+          card: scope reads as mass (D-049). */}
+      <span
+        className="pointer-events-none absolute"
+        style={{ top: 12, bottom: 12, left: 7, width: 3, background: color, borderRadius: 999 }}
+        aria-hidden
+      />
+
+      <div
+        {...dragProps}
         title={
-          shipped
-            ? "Shipped this week"
-            : done
-              ? "Landed — tap to reopen"
-              : looksDone
-                ? "Every task is done — ship it"
-                : "Ship it — you'll see what's still open first"
+          canDrag
+            ? loose.length > 0
+              ? `Drag onto the calendar to sit ${row.title} — ${loose.length} piece${loose.length === 1 ? "" : "s"} with no time yet`
+              : `Drag onto the calendar to give ${row.title} a sitting`
+            : undefined
         }
-        aria-label={shipped ? "Shipped" : done ? "Reopen push" : "Ship project"}
-        className="tap-desk-bloom fast flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-micro"
-        style={{ borderColor: color, background: done ? color : "transparent", color: done ? "#fff" : color }}
+        className={`group/row py-2 pl-[22px] pr-2.5 ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
       >
-        <span className={done ? "" : "opacity-0 group-hover/row:opacity-100"} style={{ lineHeight: 1 }}>✓</span>
-      </button>
+        {/* the hero — full width, nothing to its left (DeckCard's rule 1) */}
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            onClick={onOpen}
+            title={`${row.title} — open`}
+            className="tap-desk-h fast min-w-0 flex-1 truncate text-left"
+          >
+            <span
+              className={`text-head font-semibold leading-snug ${done ? "text-muted line-through" : "text-ink"}`}
+            >
+              {rock.title}
+            </span>
+          </button>
 
-      <button
-        onClick={onOpen}
-        title="Open"
-        className="tap-desk-h fast flex min-w-0 flex-1 items-center truncate text-left"
-      >
-        <span className={`text-body ${done ? "text-muted line-through" : "text-ink"}`}>{rock.title}</span>
-      </button>
-
-      {/* The one thing the crown could never say: how much of this project has
-          no time yet. Opening it puts that work in the rail, where the calendar's
-          drag already reaches — the manual act the weekly plan automated. */}
-      {canExpand && (
-        <button
-          onClick={onExpand}
-          title={
-            expanded
-              ? "Hide this project's work"
-              : loose.length === 0
-                ? "Every piece has a time this week — open to see when"
-                : `${loose.length} piece${loose.length === 1 ? "" : "s"} with no time this week — open to place them`
-          }
-          aria-expanded={expanded}
-          aria-label={pill}
-          className="fast mono shrink-0 rounded-full px-1.5 py-0.5 text-micro"
-          style={
-            // Amber only when something is actually homeless. A fully-placed
-            // project is not a warning (P9 — quiet by default).
-            loose.length === 0
-              ? { color: "var(--muted)", background: "var(--surface-2)" }
-              : { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
-          }
-        >
-          {pill} {expanded ? "▾" : "▸"}
-        </button>
-      )}
-
-      {shipped ? (
-        // The week's win, crowned in the domain's own hue — never a vanished row.
-        <span
-          className="mono shrink-0 rounded-full px-1.5 py-0.5 text-micro font-medium"
-          style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
-        >
-          shipped
-        </span>
-      ) : done ? (
-        <span className="mono shrink-0 text-micro text-muted">{continues ? "landed · continues" : "landed"}</span>
-      ) : looksDone ? (
-        <button
-          onClick={onToggle}
-          title="Every task is done — ship it"
-          className="fast mono shrink-0 rounded-full border border-accent/50 px-2 py-0.5 text-micro font-medium text-accent hover:bg-accent-soft"
-        >
-          ship ✓
-        </button>
-      ) : (
-        <span className="flex shrink-0 items-center gap-1.5">
-          {/* Carrying isn't *now* — the number tells it, the border shouted it. */}
-          {rolls > 0 && (
-            <span className="mono text-micro text-muted" title={carryMark(rolls).title}>
+          {/* Carrying isn't *now* — the number tells it, a border would shout it. */}
+          {!done && rolls > 0 && (
+            <span className="mono shrink-0 text-micro text-muted" title={carryMark(rolls).title}>
               {carryMark(rolls).text}
             </span>
           )}
-          {work.total > 0 && (
-            <>
-              <span className="block h-1 w-10 overflow-hidden rounded-full bg-line">
-                <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-              </span>
-              <span className="mono text-micro text-muted">{work.done}/{work.total}</span>
-            </>
+
+          <button
+            onClick={onToggle}
+            disabled={shipped}
+            title={
+              shipped
+                ? "Shipped this week"
+                : done
+                  ? "Landed — tap to reopen"
+                  : looksDone
+                    ? "Every task is done — ship it"
+                    : "Ship it — you'll see what's still open first"
+            }
+            aria-label={shipped ? "Shipped" : done ? "Reopen push" : `Ship ${row.title}`}
+            className="tap-desk-bloom fast shrink-0"
+          >
+            <ProgressRing pct={pct} color={color} filled={done} />
+          </button>
+
+          {canExpand ? (
+            // The chevron is the surface's primary new affordance — the door to
+            // a project's work — so it is a real 14px glyph, not a `text-micro`
+            // triangle. The first draft was 9.5px muted text and read as a
+            // speck of dust beside the ring; an affordance you can't see is the
+            // same defect as one that can't land (D-084).
+            <button
+              onClick={onExpand}
+              title={expanded ? "Hide this project's work" : `Open this project's work — ${marksLabel}`}
+              aria-expanded={expanded}
+              aria-label={expanded ? `Hide ${row.title}'s work` : `Show ${row.title}'s work`}
+              className="tap-desk-h fast flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-2 hover:text-ink"
+            >
+              <Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} />
+            </button>
+          ) : (
+            <span className="w-5 shrink-0" aria-hidden />
           )}
-        </span>
+        </div>
+
+        {/* ONE marks line — pips · weight · what's wrong. Every number here is a
+            picture unless the picture can't say it (P9, D-110). */}
+        <div className="mt-1.5 flex min-w-0 items-center gap-2.5 pr-4" aria-label={marksLabel}>
+          <WorkPips done={work.done} total={work.total} color={color} />
+          {weight && <span className="mono shrink-0 text-micro text-muted">{weight} left</span>}
+          {!done && loose.length > 0 && <AmberMark count={loose.length} words />}
+
+          {shipped ? (
+            // The week's win, crowned in the domain's own hue — never a vanished row.
+            <span
+              className="mono shrink-0 rounded-full px-1.5 py-0.5 text-micro font-medium"
+              style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}
+            >
+              shipped
+            </span>
+          ) : done ? (
+            // "landed" itself is gone: the filled ring and the struck name say it.
+            // `continues` survives — it's the part the drawing can't say.
+            continues && <span className="mono shrink-0 text-micro text-muted">continues</span>
+          ) : looksDone ? (
+            <button
+              onClick={onToggle}
+              title="Every task is done — ship it"
+              className="fast mono shrink-0 rounded-full border border-accent/50 px-2 py-0.5 text-micro font-medium text-accent hover:bg-accent-soft"
+            >
+              ship ✓
+            </button>
+          ) : null}
+
+          {work.total === 0 && (
+            // The stranger's account, and every honest new project: nothing to
+            // draw yet, so say the fact rather than render an empty line (P7).
+            <span className="text-micro text-muted">nothing shaped yet</span>
+          )}
+        </div>
+      </div>
+
+      {/* Its work — ONE grammar. These are `TaskRow`s: the same component, the
+          same checkbox, the same context menu, the same drag as the day list
+          below. Placed pieces come first (the clock orders them), then what has
+          no time. No "has a time" / "loose" headers: each row says which it is,
+          and a label above an unlabelled sibling list over-claims. */}
+      {expanded && canExpand && (
+        <div className="pb-1 pl-[22px]">
+          {placed.map((p) => (
+            <div key={p.task.id}>
+              {renderTask(p.task, {
+                draggable: false,
+                whenShown: true,
+                action: <TimeChip startISO={p.startISO} slotTitle={p.slotTitle} color={color} />,
+              })}
+            </div>
+          ))}
+          {loose.map((t) => (
+            <div key={t.id}>
+              {renderTask(t, {
+                draggable: true,
+                // Project work placed by hand lands in the project's SITTING,
+                // never as a bare block — one piece or five, project time on the
+                // grid wears one shape. `data-task-week` commits it to the sprint
+                // too, so placing one never writes a day without a week (P2).
+                dragData: { "data-task-week": "1", "data-task-project": t.project_id ?? "" },
+                action: (
+                  <span
+                    className="shrink-0"
+                    title="No time this week yet — drag it onto the calendar"
+                    aria-label="No time this week yet"
+                  >
+                    <AmberMark count={0} />
+                  </span>
+                ),
+              })}
+            </div>
+          ))}
+        </div>
       )}
     </div>
+  );
+}
 
-    {/* `data-task-drag` is all this needs: CalendarPane mounts one FullCalendar
-        Draggable over the whole rail (railRef), so these rows drop onto the grid
-        — or into an existing sitting — through the same handlers the Today and
-        Inbox rows already use. Pointer-based, never HTML5 DnD (Tauri swallows it).
-        `data-task-week` marks them as week work: the drop commits them to the
-        sprint too, so placing one never writes a day without a week (P2). */}
-    {expanded && canExpand && (
-      <div
-        className="mb-1 ml-6 border-l border-line pl-2"
-        // The crown sits inside the rail's `data-tauri-drag-region="deep"` zone,
-        // so without this opt-out dragging one of these rows drags the macOS
-        // WINDOW and the task never moves — the row looks draggable and does
-        // nothing. Same guard `TaskRow` and the rail's own task list already
-        // carry; the crown never needed it until it started offering rows to drag.
-        data-tauri-drag-region="false"
-      >
-        {/* What HAS a time, and when. Not draggable: these are already on the
-            grid, and the calendar is where you move a block — a second place to
-            drag the same thing is a second answer to one question (P8). */}
-        {placed.length > 0 && (
-          <>
-            <div className="section-label !px-0 !pb-0 !pt-1">has a time</div>
-            <ul className="flex flex-col gap-0.5">
-              {placed.map((p) => (
-                <li key={p.task.id} className="flex items-baseline gap-2 py-0.5 pr-1">
-                  <span className="mono shrink-0 text-micro" style={{ color }}>
-                    {fmtDayTime(p.startISO)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-label text-muted">{p.task.title}</span>
-                  {/* A slot child has no block of its own — say what holds it,
-                      so "why does this one have no time of its own" has an
-                      answer on the row instead of looking like a bug. */}
-                  {p.slotTitle && (
-                    <span className="shrink-0 truncate text-micro text-muted" title={`Inside ${p.slotTitle}`}>
-                      in {p.slotTitle}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-
-        {loose.length > 0 && (
-          <>
-            {placed.length > 0 && <div className="section-label !px-0 !pb-0 !pt-1.5">loose</div>}
-            <ul className="flex flex-col gap-0.5">
-              {loose.map((t) => (
-                <li
-                  key={t.id}
-                  data-task-drag={t.id}
-                  data-task-title={t.title}
-                  data-task-duration={t.duration_minutes ?? ""}
-                  data-task-week="1"
-                  // Project work placed by hand lands in the project's SITTING,
-                  // never as a bare block — one piece or five, project time on
-                  // the grid wears one shape. The drop reads this to know the
-                  // difference between "a task that happens to have a project"
-                  // and "this project, being given time".
-                  data-task-project={t.project_id ?? ""}
-                  title="Drag onto the calendar to give it a time"
-                  className="fast flex cursor-grab items-center gap-2 rounded py-0.5 pr-1 hover:bg-surface-2 active:cursor-grabbing"
-                >
-                  <span className="min-w-0 flex-1 truncate text-label text-muted">{t.title}</span>
-                  {t.duration_minutes ? (
-                    <span className="mono shrink-0 text-micro text-muted">{t.duration_minutes}m</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
-    )}
-    </>
+/** A placed piece's time — and the way back to it. Law 2: you may *complete* a
+ *  placed row from here, but you may not *move* it; moving is the calendar's
+ *  act (D-084). So the chip is a jump link, riding the reveal bus search
+ *  already uses, rather than a drag handle that would be a second answer to one
+ *  question (P8). */
+function TimeChip({
+  startISO,
+  slotTitle,
+  color,
+}: {
+  startISO: string;
+  slotTitle: string | null;
+  color: string;
+}) {
+  const label = fmtDayTime(startISO);
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        const at = new Date(startISO);
+        revealOnCalendar({
+          dateISO: toDateISO(at),
+          // A shade earlier than the block, so it lands with its lead-in visible
+          // rather than flush against the top edge.
+          scrollToTime: `${String(Math.max(0, at.getHours() - 1)).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}:00`,
+        });
+      }}
+      title={slotTitle ? `${label} — inside ${slotTitle}. Show it on the calendar` : `${label} — show it on the calendar`}
+      className="mono fast tap-desk-h flex shrink-0 items-center gap-0.5 text-micro"
+      style={{ color }}
+    >
+      {label}
+      <span className="opacity-55" aria-hidden>↗</span>
+    </button>
   );
 }

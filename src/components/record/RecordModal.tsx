@@ -68,7 +68,8 @@ import {
   ProjectAttachPicker,
 } from "../floors/parts";
 import TaskList, { isTypingIn } from "../floors/TaskList";
-import DeckCard, { deckWeight } from "../ondeck/DeckCard";
+import DeckCard from "../ondeck/DeckCard";
+import { deckWeight } from "../../lib/pace";
 import { ShipStamp } from "../ShipStamp";
 import { QuarterBand, WeekBand } from "./PlacementBand";
 import { RecordLog } from "./RecordLog";

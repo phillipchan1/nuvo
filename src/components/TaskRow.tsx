@@ -215,6 +215,20 @@ const TaskRow = forwardRef<TaskRowHandle, {
   meta?: TaskMeta;
   /** Optional trailing control (e.g. "▸ today" in the Week rail). */
   action?: React.ReactNode;
+  /** The surface already states this row's *when* in its own voice, so the row
+   *  must not restate it as a bare date word. Set by the rail's crown, where a
+   *  placed piece carries a `Tue 7:15am ↗` chip: "45m · tomorrow" beside it is
+   *  the same day said twice, and two answers to one question is P8. Suppresses
+   *  ONLY the date label — lateness, a deadline and the roll count are different
+   *  facts the chip doesn't carry, and they stay. */
+  whenShown?: boolean;
+  /** Extra `data-*` stamped on the row's ROOT, for drops that need more than the
+   *  id. `CalendarPane` mounts one FullCalendar `Draggable` over the rail with
+   *  `itemSelector: "[data-task-drag]"` and reads `data-task-week` /
+   *  `data-task-project` off **that same element** — so a crown row carrying
+   *  them on a wrapper would drop as a bare block instead of into the project's
+   *  sitting. Omitted everywhere else; the row is byte-identical without it. */
+  dragData?: Record<string, string>;
   /** Apply the passive-grooming guess (placement / duration / energy). */
   onAcceptSuggestion?: () => void;
   /** Spend the guess without applying it. */
@@ -246,6 +260,8 @@ const TaskRow = forwardRef<TaskRowHandle, {
     accent,
     meta,
     action,
+    whenShown,
+    dragData,
     onAcceptSuggestion,
     onDismissSuggestion,
     now,
@@ -430,7 +446,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
   // very same block, and design-language's own rule kills a list that restates
   // the calendar.
   const durText = task.duration_minutes ? fmtDuration(task.duration_minutes) : null;
-  const dateText = dateLabel && !task.start_time ? dateLabel : null;
+  const dateText = dateLabel && !task.start_time && !whenShown ? dateLabel : null;
   const rollText = task.roll_count > 0 ? `↻${task.roll_count}` : null;
   const rollTitle = task.roll_count > 0 ? `Rolled over ${task.roll_count}×` : "Repeats";
   const pastDeadline = Boolean(task.deadline && !done && task.deadline < todayISO());
@@ -559,6 +575,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
       data-task-drag-group={dragGroup}
       data-task-title={task.title}
       data-task-duration={task.duration_minutes ?? ""}
+      {...dragData}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onContextMenu={onContextMenu}

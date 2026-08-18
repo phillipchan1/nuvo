@@ -27,12 +27,20 @@
 //     piece is to drag it onto the grid; there is no drag on a phone, so the
 //     piece opens its sheet, where the date and time already live. Same act, the
 //     phone's gesture (never a hover-only affordance).
+//
+// What is NOT a difference, since D-111: a project's work wears the same
+// `TaskRow` here as it does on the rail and in the phone's own task list, so it
+// can be TICKED from the crown. It used to be a bare `<button>` with a truncated
+// title on both shells — you could look at a project's pieces and complete none
+// of them. Fixing that on the desktop alone would have made the phone the shell
+// that couldn't. The row still carries no swipe here: the month grid under this
+// crown pages horizontally, and a swipe-to-defer inside it would fight the pager.
 
 import { useState } from "react";
 import { Icon } from "../Icon";
 import { fmtDayTime } from "../../lib/dates";
 import { carryMark } from "../../lib/priorities";
-import { useWeekCrown, type WeekCrownRow } from "../../hooks/useWeekCrown";
+import { useWeekCrown, type RenderCrownTask, type WeekCrownRow } from "../../hooks/useWeekCrown";
 import { WeekPlanSheet } from "./WeekPlanCard";
 
 const OPEN_KEY = "nuvo-mobile-weekcrown-open";
@@ -53,16 +61,19 @@ function readOpen(): boolean {
 
 export default function MobileWeekCrown({
   now,
+  renderTask,
   onOpenProject,
-  onOpenTask,
   onOpenDay,
   onPlanWeek,
 }: {
+  /** how a project's work renders — see `RenderCrownTask`. Owned by the shell,
+   *  which holds the mutations and the task sheet, exactly as the rail owns it
+   *  on the desktop. */
+  renderTask: RenderCrownTask;
   now: Date;
   /** the row's work lives in its record — the phone's project detail sheet */
   onOpenProject: (id: string) => void;
   /** a loose piece opens its own sheet, where it can be given a time */
-  onOpenTask: (id: string) => void;
   /** a placed piece takes you to the day it actually happens */
   onOpenDay: (d: Date) => void;
   /** the ritual — Plan the week */
@@ -184,8 +195,8 @@ export default function MobileWeekCrown({
                 })
               }
               onOpen={() => onOpenProject(row.projectId)}
-              onOpenTask={onOpenTask}
               onOpenDay={onOpenDay}
+              renderTask={renderTask}
             />
           ))}
         </ul>
@@ -249,15 +260,15 @@ function CrownRow({
   expanded,
   onExpand,
   onOpen,
-  onOpenTask,
   onOpenDay,
+  renderTask,
 }: {
   row: WeekCrownRow;
   expanded: boolean;
   onExpand: () => void;
   onOpen: () => void;
-  onOpenTask: (id: string) => void;
   onOpenDay: (d: Date) => void;
+  renderTask: RenderCrownTask;
 }) {
   const { color, work, placed, loose, pct, rolls, continues, canExpand, placedLabel } = row;
   const shipped = row.state === "shipped";
@@ -333,81 +344,94 @@ function CrownRow({
             // thing on the surface, for the quietest fact. And a `tap-bloom`
             // pseudo-element isn't enough here: it overlaps the row's own
             // button, which wins the tap, so the hit area has to be real.
-            className="tap-h fast flex shrink-0 items-center px-1"
+            // 44px in BOTH axes. `tap-h` only guarantees the height; dropping
+            // the word "all" from the mark shrank the target to 33px wide, which
+            // is how a tidy-up quietly becomes a tap-target regression.
+            className="tap-h fast flex min-w-[44px] shrink-0 items-center justify-center px-1"
           >
-            {/* "2 of 3 placed" → "2/3". Both numbers survive, because stating
-                only the loose half is the read that let work go missing (D-060);
-                it is the WORD that goes. The full phrase is the aria-label and
-                the title. */}
+            {/* A fully-placed project now says NOTHING but the chevron — the
+                same silence the rail keeps (P9, D-111). It used to say "all",
+                which is a word spent to report that nothing is wrong, in the
+                ink the amber count has to stand out from. Only homeless work
+                speaks, and it speaks in its own colour.
+                The SPLIT is still stated, in the aria-label and the title:
+                D-060 forbids letting the loose half be the whole answer, and
+                it is the visible WORD that goes, not the fact. */}
             <span
-              className="mono flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-micro"
+              className="mono flex items-center gap-1 rounded-full px-1.5 py-0.5 text-micro"
               style={
-                // Amber only when something is genuinely homeless (P9) — a
-                // fully-placed project is a fact, not a warning.
                 loose.length === 0
-                  ? { color: "var(--muted)", background: "var(--surface-2)" }
+                  ? { color: "var(--muted)" }
                   : { color: "var(--signal)", background: "color-mix(in srgb, var(--signal) 12%, transparent)" }
               }
             >
-              {loose.length === 0 ? "all" : `${placed.length}/${row.open}`} {expanded ? "▾" : "▸"}
+              {loose.length > 0 && (
+                <>
+                  <span className="block h-[5px] w-[5px] rounded-full" style={{ background: "var(--signal)" }} />
+                  {loose.length}
+                </>
+              )}
+              <Icon name={expanded ? "chevron-down" : "chevron-right"} size={13} />
             </span>
           </button>
         )}
       </div>
 
       {expanded && canExpand && (
-        <div className="mb-1.5 ml-4 border-l border-line pl-3">
-          {/* What HAS a time, and when — tap to land on that day. */}
-          {placed.length > 0 && (
-            <>
-              <div className="section-label !p-0 !pt-1">has a time</div>
-              <ul className="flex flex-col">
-                {placed.map((p) => (
-                  <li key={p.task.id}>
-                    <button
-                      onClick={() => onOpenDay(new Date(p.startISO))}
-                      className="tap-h fast flex w-full items-baseline gap-2 py-1 pr-1 text-left active:opacity-60"
-                    >
-                      <span className="mono shrink-0 text-micro" style={{ color }}>
-                        {fmtDayTime(p.startISO)}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-label text-muted">{p.task.title}</span>
-                      {/* A slot child has no block of its own — name what holds
-                          it, so "why has this one no time" has an answer here
-                          instead of looking like a bug. */}
-                      {p.slotTitle && (
-                        <span className="shrink-0 truncate text-micro text-muted">in {p.slotTitle}</span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {loose.length > 0 && (
-            <>
-              <div className="section-label !p-0 !pt-1.5">loose</div>
-              <div className="pb-0.5 text-micro text-muted">Tap one to give it a time.</div>
-              <ul className="flex flex-col">
-                {loose.map((t) => (
-                  <li key={t.id}>
-                    <button
-                      onClick={() => onOpenTask(t.id)}
-                      className="tap-h fast flex w-full items-center gap-2 py-1 pr-1 text-left active:opacity-60"
-                    >
-                      <span className="min-w-0 flex-1 truncate text-label text-muted">{t.title}</span>
-                      {t.duration_minutes ? (
-                        <span className="mono shrink-0 text-micro text-muted">{t.duration_minutes}m</span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+        <div className="mb-1.5 ml-4 border-l border-line pl-1">
+          {/* The same `TaskRow` the rail's crown and the phone's own task list
+              use — so a project's piece can be ticked here, which it could not
+              be on either shell before D-111. Placed first (the clock orders
+              them), then what has no time; no "has a time" / "loose" headers,
+              because each row now says which it is on its own right edge. */}
+          {placed.map((p) => (
+            <div key={p.task.id}>
+              {renderTask(p.task, {
+                whenShown: true,
+                action: (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenDay(new Date(p.startISO));
+                    }}
+                    aria-label={
+                      p.slotTitle
+                        ? `${fmtDayTime(p.startISO)}, inside ${p.slotTitle} — open that day`
+                        : `${fmtDayTime(p.startISO)} — open that day`
+                    }
+                    className="tap-h mono fast flex shrink-0 items-center gap-0.5 text-micro"
+                    style={{ color }}
+                  >
+                    {fmtDayTime(p.startISO)}
+                    <span className="opacity-55" aria-hidden>
+                      ›
+                    </span>
+                  </button>
+                ),
+              })}
+            </div>
+          ))}
+          {loose.map((t) => (
+            <div key={t.id}>
+              {renderTask(t, {
+                action: (
+                  <span
+                    className="shrink-0"
+                    title="No time this week yet — tap to give it one"
+                    aria-label="No time this week yet"
+                  >
+                    <span
+                      className="block h-[5px] w-[5px] rounded-full"
+                      style={{ background: "var(--signal)" }}
+                    />
+                  </span>
+                ),
+              })}
+            </div>
+          ))}
         </div>
       )}
+
     </li>
   );
 }

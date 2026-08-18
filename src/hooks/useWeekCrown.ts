@@ -28,8 +28,37 @@ import {
   type PushState,
   type RockWork,
 } from "../lib/priorities";
+import { projectPace } from "../lib/pace";
 import { planningWeekStartISO, weekRangeLabel } from "../lib/dates";
+import type { ReactNode } from "react";
 import type { BigRock, Task } from "../lib/types";
+
+/** How a crown renders one piece of a project's work.
+ *
+ *  It lives beside the read model because BOTH crowns take it, and neither owns
+ *  it: the surface that mounts the crown (the rail on the desktop, `MobileShell`
+ *  on the phone) already owns selection, opening a record and complete/undo, so
+ *  the crown borrows that wiring rather than growing a second copy. That copy is
+ *  exactly what a project's work used to be — a bare `<li>` you could neither
+ *  tick nor touch, on both shells (D-111).
+ *
+ *  The crown says *which* task, what rides on its right, and — desktop only —
+ *  whether it may be dragged. */
+export type RenderCrownTask = (
+  task: Task,
+  opts: {
+    /** the row's trailing mark — its time, or its "no time yet" */
+    action: ReactNode;
+    /** loose work drags onto the grid; placed work does not (D-084). The phone
+     *  passes neither: there is no drag on a phone, a loose piece taps to its
+     *  sheet (D-110), so the row is never draggable there. */
+    draggable?: boolean;
+    /** the crown's mark already carries this row's when — don't restate it */
+    whenShown?: boolean;
+    /** stamped on the row ROOT — the drop reads it off the dragged element */
+    dragData?: Record<string, string>;
+  },
+) => ReactNode;
 
 export interface WeekCrownRow {
   /** the stored verdict record, or a stand-in built from the live project */
@@ -46,6 +75,11 @@ export interface WeekCrownRow {
   work: RockWork;
   /** 0–100, derived from the project's own tasks */
   pct: number;
+  /** Remaining effort in minutes — the project's WEIGHT, the currency the pinch
+   *  math runs on. Taken from `projectPace` rather than re-summed here, so the
+   *  rail row and the On Deck card can never quote different hours for the same
+   *  project. Format it with `deckWeight` (0 → null → say nothing). */
+  weightMins: number;
   /** weeks it has been carrying past the week it was committed to — 0 when this
    *  is the week you actually chose it for. Derived (D-108), not stored; render
    *  it through `carryMark` so both shells say the same thing. */
@@ -89,6 +123,10 @@ export function useWeekCrown(): WeekCrown | null {
   return useMemo<WeekCrown | null>(() => {
     if (!data) return null;
 
+    // `projectPace` wants a clock for its trailing-throughput read; the only
+    // field this hook takes from it — `remainingMins` — doesn't depend on one.
+    const now = new Date();
+
     const rows = weekPushes(data, weekISO).map<WeekCrownRow>((push) => {
       const rock = pushAsRock(push);
       const work = priorityWork(data, rock);
@@ -110,6 +148,7 @@ export function useWeekCrown(): WeekCrown | null {
         state,
         work,
         pct: work.total > 0 ? Math.round((work.done / work.total) * 100) : 0,
+        weightMins: projectPace(data, push.project, now).remainingMins,
         rolls: rock.roll_count ?? 0,
         placed,
         loose,

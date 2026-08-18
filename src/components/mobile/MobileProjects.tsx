@@ -32,7 +32,8 @@ import MobileDeck, { type DeckCard, type DeckColumn } from "./deck/MobileDeck";
 import SkeletonRows from "./Skeleton";
 import { Hint, PHONE_WEEK_HORIZON, VerticalList } from "./detail/verticalDetail";
 // One card across both shells — the phone must not invent its own grammar (D-048).
-import PlannerCard, { deckWeight } from "../ondeck/DeckCard";
+import PlannerCard from "../ondeck/DeckCard";
+import { deckWeight } from "../../lib/pace";
 import { PIP_TONE, projectCardStatus } from "../ondeck/deckStatus";
 import { pressable } from "../../lib/a11y";
 import MobileGroom from "./MobileGroom";

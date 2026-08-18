@@ -41,6 +41,7 @@ import MobileDayView, { CalLensPill, type CalLens } from "./MobileDayView";
 import MobileWeekView from "./MobileWeekView";
 import MobileYearView, { mobileYearRange } from "./MobileYearView";
 import MobileWeekCrown from "./MobileWeekCrown";
+import type { RenderCrownTask } from "../../hooks/useWeekCrown";
 
 // The mobile Calendar — three lenses on the same live day-shape math:
 //   • Month — the whole month at a glance (free/busy density per day), swipe or
@@ -90,7 +91,7 @@ export default function MobileCalendar({
   onOpenUpkeep,
   onNewEvent,
   onOpenProject,
-  onOpenTask,
+  renderCrownTask,
   onPlanWeek,
 }: {
   now: Date;
@@ -101,7 +102,8 @@ export default function MobileCalendar({
   /** The week crown's doors — omit them and the crown stays off (harnesses,
    *  and any embed that has nowhere to route a record). */
   onOpenProject?: (id: string) => void;
-  onOpenTask?: (id: string) => void;
+  /** how the week crown renders a project's work — see `RenderCrownTask`. */
+  renderCrownTask?: RenderCrownTask;
   onPlanWeek?: () => void;
 }) {
   const { settings } = useSettings();
@@ -289,11 +291,11 @@ export default function MobileCalendar({
           have. The desktop rail never leaves either — it is beside the day grid,
           the week grid and the agenda alike. One position, one collapse state,
           every lens. */}
-      {onOpenProject && onOpenTask && onPlanWeek && (
+      {onOpenProject && renderCrownTask && onPlanWeek && (
         <MobileWeekCrown
           now={now}
           onOpenProject={onOpenProject}
-          onOpenTask={onOpenTask}
+          renderTask={renderCrownTask}
           onOpenDay={(d) => setLens("day", d)}
           onPlanWeek={onPlanWeek}
         />

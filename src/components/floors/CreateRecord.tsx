@@ -36,7 +36,7 @@ import { DEFAULT_PROJECT_DURATION_MINUTES } from "../../lib/types";
 import type { Energy } from "../../lib/energy";
 import { DomainPicker, FloatingMenu } from "./parts";
 import DurationSelect from "../DurationSelect";
-import { deckWeight } from "../ondeck/DeckCard";
+import { deckWeight } from "../../lib/pace";
 import { QuarterBand, WeekBand } from "../record/PlacementBand";
 import {
   Body,

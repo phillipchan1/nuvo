@@ -20,6 +20,7 @@ import { addDays } from "date-fns";
 import React from "react";
 import { describe, expect, it } from "vitest";
 import { useWeekCrown } from "../src/hooks/useWeekCrown";
+import { deckWeight, projectPace } from "../src/lib/pace";
 import { VerticalStoreProvider, type VerticalStore } from "../src/hooks/useVertical";
 import { parseDateISO, planningWeekStartISO, toDateISO } from "../src/lib/dates";
 import type { Domain, Project, VTask, VerticalData } from "../src/lib/vertical";
@@ -120,6 +121,19 @@ const BIG_ROCKS: BigRock[] = [
   { id: "r2", title: "Vendor consolidation", win: "", initiative_id: null, project_id: "p2", done_at: at(3, 11), roll_count: 0 },
 ];
 
+/** Module-level so a test can run the *other* reader (`projectPace`) over the
+ *  identical vertical and prove the two agree. */
+const DATA: VerticalData = {
+  domains: DOMAINS,
+  initiatives: [],
+  projects: PROJECTS,
+  tasks: VTASKS,
+  sprint: { id: "sp1", week_start: WEEK_ISO, big_rocks: BIG_ROCKS } as unknown as Sprint,
+  focusInitiativeIds: [],
+  bigRocks: BIG_ROCKS,
+  lastActivityByProject: {},
+} as unknown as VerticalData;
+
 function wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity, refetchOnMount: false, refetchOnWindowFocus: false } },
@@ -136,20 +150,9 @@ function wrapper({ children }: { children: React.ReactNode }) {
   );
   qc.setQueryData(["slots", start, end], SLOTS);
 
-  const data: VerticalData = {
-    domains: DOMAINS,
-    initiatives: [],
-    projects: PROJECTS,
-    tasks: VTASKS,
-    sprint: { id: "sp1", week_start: WEEK_ISO, big_rocks: BIG_ROCKS } as unknown as Sprint,
-    focusInitiativeIds: [],
-    bigRocks: BIG_ROCKS,
-    lastActivityByProject: {},
-  } as unknown as VerticalData;
-
   return (
     <QueryClientProvider client={qc}>
-      <VerticalStoreProvider value={{ data, ready: true } as unknown as VerticalStore}>
+      <VerticalStoreProvider value={{ data: DATA, ready: true } as unknown as VerticalStore}>
         {children}
       </VerticalStoreProvider>
     </QueryClientProvider>
@@ -222,6 +225,20 @@ describe("useWeekCrown", () => {
     // The carry is DERIVED from the lapsed span, not from a stored roll_count —
     // so the phone's crown gets it for free (D-108 + D-109).
     expect(carried.rolls).toBeGreaterThan(0);
+  });
+
+  it("carries the project's WEIGHT from the same source the deck card quotes", async () => {
+    const crown = await read();
+    const row = crown.rows.find((r) => r.projectId === "p1")!;
+    // p1 has four tasks at 60m; one is done, so three remain. The rail's row and
+    // the On Deck card must never quote different hours for one project, which
+    // is why this comes off `projectPace` rather than being re-summed in the
+    // crown — a second sum is a second answer to one question.
+    expect(row.weightMins).toBe(projectPace(DATA, PROJECTS[0], new Date()).remainingMins);
+    expect(row.weightMins).toBe(180);
+    // Nothing left to do is silence, not "0m": `deckWeight` returns null and the
+    // marks line says nothing (P9).
+    expect(deckWeight(crown.rows.find((r) => r.projectId === "p3")!.weightMins)).toBeNull();
   });
 
   it("carries the row's identity — domain hue, carry count, progress", async () => {

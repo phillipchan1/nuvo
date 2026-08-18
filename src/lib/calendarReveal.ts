@@ -19,6 +19,15 @@ export interface CalendarReveal {
   dateISO: string;
   /** The event to open once the range holding it has loaded. */
   eventId?: string;
+  /** Local `HH:MM:SS` to scroll the day into view at.
+   *
+   *  `gotoDate` alone is a no-op whenever the target is already on screen —
+   *  which, in the week view, is most of the time. A reveal that does nothing
+   *  visible is a dead affordance, and the rail crown's time chip is exactly
+   *  that reveal's front door ("Tue 7:15am ↗"), so the moment travels with the
+   *  day and the grid scrolls to it. Optional: a reveal that only knows a date
+   *  (search landing on an all-day event) simply doesn't send one. */
+  scrollToTime?: string;
   /** Distinguishes two reveals of the same date — see the header. */
   nonce: number;
 }

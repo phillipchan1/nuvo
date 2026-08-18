@@ -3837,3 +3837,133 @@ the "N pieces with no time yet" line (which every row restates in its own pill).
 And the first-run default flipped to **shut** — the original open default was
 argued on the grounds that a closed crown would be silent, and that stopped being
 true the moment the shut line carried the scoreboard.
+
+**D-111 · 2026-08-17 · The rail's crown is a STACK of projects, and a project's work
+wears the same row as the day's. One task grammar, one place to move a block.**
+
+Origin ⓟ: *"the subtasks within these projects are not treated the same from a UI
+perspective as the tasks below — I can't check them off, I can't drag them unless they are
+unassigned… projects are actually the main event of the week."* Correct on every count, and
+the diagnosis ran deeper than the complaint. Three concepts were mocked at the real 360px
+(Ledger · Stack · Stage, plus a rejected Stream); Phil chose **Stack**, and gave the
+argument that decided it: *"it visually looks the closest to a project in the project
+view."* That is the right reason — it makes the crown row and the **deck card** the same
+object at two densities, which is what the altitude law has said since D-048.
+
+**What was actually broken.** Not taste — seven findings, each a line of code:
+
+1. **Two grammars for one noun.** Under a project a task was a bare `<li>` — a truncated
+   title, maybe a duration. In the list below it was `TaskRow`: checkbox, spine, place tag,
+   context menu, drag. Same noun, two species.
+2. **Completion was collateral damage.** D-084 ruled placed rows non-draggable because the
+   calendar owns *moving*. That argument was never about *finishing*, and nobody noticed
+   the difference — so the pieces most likely to get done today were the ones you couldn't
+   tick.
+3. **The main event was drawn smaller than a loose task.** Project names were `text-body`;
+   so was "Cancel QV". The type stated no hierarchy at all.
+4. **Two circles, twenty pixels apart, different acts** — the project ring opened a *ship
+   assessment*, the task checkbox *completed*. Adding checkboxes underneath without moving
+   the ring would have made three nested circles and three acts.
+5. **Seven counted numbers**, of which the largest was `Trash 60` — a 30-day retention log
+   wearing a navigation face.
+6. **Four grey `all placed ▸` pills** saying nothing is wrong, in the same ink the amber
+   warning has to stand out from.
+7. **A project task dated today renders twice** — `todayTasksForRail` is every task with
+   `do_date = today`, project or not.
+
+**What shipped.** `WeekPanel` is now the deck card's anatomy at rail density — *identity
+(3px inset domain spine) · NAME as hero (`text-head`) · one marks line* — and its work is
+`TaskRow`. Not a copy of `TaskRow`: **the component**, handed down from `LeftRail` through
+one `renderTask` prop, so the rail keeps ownership of selection, the context menu, opening a
+record and complete/undo. That is what makes the two grammars unable to grow back.
+
+- **Complete anywhere; place once.** Ticking is not a move, so it works on a placed row.
+  *Moving* stays the calendar's act — the time chip is a **jump link** onto the grid.
+- **The mark is an arc, not a checkbox.** An SVG progress ring, filled with a ✓ only when
+  the row is finished. Round vs square is what stops a nested pair reading as one tick
+  twice. (SVG, not a conic-gradient: a gradient ring needs an opaque inner disc, and the
+  rail is transparent over the atmosphere — that disc is a frost seam.)
+- **Numbers became marks.** `3/5` → five pips in the domain's hue, ceiling 10 then a meter
+  (D-110's rule, one level down). `all placed` → **silence**; only homeless work speaks.
+  `0 of 4 landed` → four pips in the header. `wk N` survives — carrying is a fact you must
+  not hide. Every phrase removed is in the `aria-label` and the `title`.
+- **The row's weight is its remaining hours**, read from `projectPace` — the same source the
+  deck card quotes, so the two can never disagree about one project. `deckWeight` moved from
+  `DeckCard.tsx` to `lib/pace.ts` for this: the rail must not pull the On Deck chunk into
+  the entry bundle to format a number. Verified — entry 539.3 → 541.4 KB, `deck-card` still
+  only in `DeckCard-*.js`.
+
+**Three things the live app caught that a typecheck could not** — this is the "verify in
+the running app" rule earning its place again:
+
+1. **The place tag restated the parent.** Inside the Dayspring group every child row read
+   "Dayspring OST for Revisiting", and paid a second line (59px) to do it. Fixed by passing
+   no `meta` inside a group: the row is single-line, 44px.
+2. **The same day, said twice.** A slot child carries no `start_time` of its own, so
+   `TaskRow`'s date label survived beside the new chip: *"45m · tomorrow"* next to *"Tue
+   7:15am ↗"*. New `whenShown` prop suppresses **only** the date word — lateness, a deadline
+   and `↻N` are different facts the chip doesn't carry, and they stay.
+3. **The bare amber dot rendered the digit `0`.** `AmberMark count={0}` meant "dot only" and
+   printed it.
+
+**And one dead affordance, caught the same way.** The jump chip called `revealOnCalendar`,
+which only did `gotoDate` — a no-op whenever the target is already on screen, which in the
+week view is most of the time. A control labelled `↗` that does nothing visible is exactly
+the defect D-084's drag shipped with. The reveal bus now carries an optional `scrollToTime`
+and the grid scrolls to the moment; ⌘K search gets the same for free. Verified live: the
+week scroller moved 0 → 125px on a click.
+
+**Deliberately NOT done, and why.**
+
+- **Trash stays on the tab strip.** Demoting it re-opens an explicit P10 call ("not a sixth
+  destination, just a third face"). That is Phil's to re-open, not mine, and he approved a
+  rail concept, not that.
+- **The day list was not compressed.** The mockup showed 30px rows; `TaskRow`'s `min-h-52px`
+  was a deliberate fix for the *same* hierarchy complaint (rail-hierarchy pass). The
+  re-weighting comes from the projects gaining mass, not from the day losing it.
+- **Finding 7 (the duplicate) stands.** A project task at 9am *is* your day; hiding it from
+  Today to satisfy tidiness would break D1. Both rows are bound to one task, so ticking
+  either ticks both. `ref` is dropped on the crown's copy so the keyboard-completion handle
+  map isn't handed to whichever rendered last.
+
+→ **Extended the same day · the phone gets it too, because the defect was never
+desktop-only.** Asked to make it work well on mobile, and the honest finding is that
+`MobileWeekCrown` had the *identical* bare-`<button>` work list: a truncated title, a
+duration, no checkbox. Fixing the rail alone would have made the phone the shell that
+couldn't tick its own week — the exact shape of the Delete-is-desktop-only failure the
+record-actions vocabulary exists to prevent.
+
+- `RenderCrownTask` moved to **`useWeekCrown.ts`**, beside the read model, so neither shell
+  owns the contract. `MobileShell` supplies it (it holds the mutations and the task sheet)
+  through `MobileCalendar` — the same two hops, the same single owner, as the rail.
+- **D-110's three deliberate differences all survive**: the phone still collapses to one
+  line, still has no ship circle (shipping is the record sheet's act), and its work still
+  *taps* rather than drags — `draggable` is simply never passed there. What is no longer a
+  difference is whether a project's piece can be completed.
+- **No `swipeActions` in the crown**, deliberately: the month grid underneath pages
+  horizontally, and swipe-to-defer would fight the pager. The checkbox completes, the tap
+  opens the sheet.
+- **The `all ▸` divergence is closed, not carried.** A fully-placed project now says nothing
+  but the chevron on the phone too — silence is the good state (P9), and "all" spent a word
+  reporting that nothing is wrong in the ink the amber count must stand out from. The split
+  is still stated, in the `aria-label` and the `title`, on **both** shells: D-060 forbids
+  letting the loose half be the whole answer, and it is the visible word that goes, not the
+  fact. The desktop's marks line took the same correction.
+
+**And one regression that tidying caused, caught by measuring rather than looking:** dropping
+"all" shrank the phone chevron's tap target to **33px wide** (`tap-h` guarantees only the
+height). Now `min-w-[44px]`. Worth keeping as a pattern — removing text from a control
+shrinks its hit area, and the golden rule's 44px is not something a screenshot shows you.
+
+*Mobile status: driven at 375px on real data and on `?weekcrown` fixtures — a placed piece
+ticked from the phone crown, loose work wearing the amber dot, zero horizontal overflow,
+checkbox 43px bloom (`tap-bloom`, unchanged and shared with every other phone row), time chip
+61×44, chevron 44×44.*
+
+*Status: standing — typecheck clean, 1077 tests green (1 new: the crown's weight comes from
+the same reader the deck card uses), web + desktop builds green. **Driven in the running dev
+app on real data**: four projects at 15px with spines, rings and pips; a placed piece ticked
+from the crown; a loose piece carrying `data-task-week` + `data-task-project`; the jump chip
+scrolling the grid; 375px unchanged (the rail isn't mounted there) with zero horizontal
+overflow. Loose-path and tick-path verified on `?weekcrown` fixtures rather than by mutating
+Phil's own week.*
