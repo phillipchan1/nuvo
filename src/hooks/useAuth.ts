@@ -40,7 +40,18 @@ export function useAuth() {
         writeWasEntitled(false);
       }
     });
-    return () => sub.subscription.unsubscribe();
+    // BroadcastChannel does not cross Tauri WKWebViews. localStorage does —
+    // when main rotates the session (or signs out), the ⌥Space window has to
+    // pick that up without running its own refresh.
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key?.includes("-auth-token")) return;
+      void supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      sub.subscription.unsubscribe();
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   return { session, loading };

@@ -3,7 +3,7 @@ import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Toaster, toast } from "sonner";
 import { supabase } from "./lib/supabase";
-import { isMobileTauri } from "./lib/platform";
+import { isSpotlightWindow } from "./lib/platform";
 import { configureSync, createSupabaseTransport, teardownSync } from "./lib/sync";
 import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
@@ -142,26 +142,8 @@ function isTransientWriteError(error: unknown): boolean {
 
 // In Tauri, the dedicated "spotlight" window (the floating ⌥Space panel) loads
 // the same bundle as the main window; this flag swaps in the bare panel instead
-// of the full app. Always false in the browser / PWA.
-const IS_SPOTLIGHT = (() => {
-  // DEV-only: `?spotlight` renders the global summon in the browser so its
-  // Tauri-only surface can be verified against live data (the panel's Tauri
-  // wiring no-ops outside Tauri). Tree-shaken from production builds.
-  if (import.meta.env.DEV && new URLSearchParams(globalThis.location?.search).has("spotlight")) {
-    return true;
-  }
-  // iOS ships one full-screen window — never the desktop ⌥Space panel.
-  if (isMobileTauri()) return false;
-  if (!("__TAURI_INTERNALS__" in globalThis)) return false;
-  try {
-    // Lazy require avoids touching the Tauri API outside the shell.
-    const meta = (globalThis as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } })
-      .__TAURI_INTERNALS__?.metadata?.currentWindow?.label;
-    return meta === "spotlight";
-  } catch {
-    return false;
-  }
-})();
+// of the full app. Always false in the browser / PWA (except the DEV harness).
+const IS_SPOTLIGHT = isSpotlightWindow();
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({

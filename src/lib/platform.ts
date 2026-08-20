@@ -39,3 +39,35 @@ export function isMac(): boolean {
     navigator.platform === "MacArm"
   );
 }
+
+/**
+ * True inside the ⌥Space spotlight webview (or the DEV `?spotlight` harness).
+ *
+ * That window is a second, long-lived client on the same origin as main. It
+ * must not run its own token refresh — two heaps rotating one refresh token
+ * is `refresh_token_already_used`, and GoTrue revokes the session. See
+ * `src/lib/supabase.ts`.
+ */
+export function isSpotlightWindow(): boolean {
+  // DEV-only: `?spotlight` renders the global summon in the browser so its
+  // Tauri-only surface can be verified against live data. Tree-shaken from
+  // production builds.
+  if (import.meta.env.DEV && typeof window !== "undefined") {
+    try {
+      if (new URLSearchParams(window.location.search).has("spotlight")) return true;
+    } catch {
+      /* ignore */
+    }
+  }
+  // iOS ships one full-screen window — never the desktop ⌥Space panel.
+  if (isMobileTauri()) return false;
+  if (!isTauri()) return false;
+  try {
+    const label = (
+      globalThis as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } }
+    ).__TAURI_INTERNALS__?.metadata?.currentWindow?.label;
+    return label === "spotlight";
+  } catch {
+    return false;
+  }
+}

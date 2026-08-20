@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { authLock } from "./authLock";
+import { isSpotlightWindow } from "./platform";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -32,8 +34,20 @@ const timedFetch: typeof fetch | undefined = import.meta.env.DEV
     }
   : undefined;
 
+// Spotlight is a consumer of the session main writes, not a second refresher.
+// Two heaps rotating one refresh token is `refresh_token_already_used`, and
+// GoTrue revokes the family — that's the "booted to login" bug. The storage
+// lock serializes any remaining refresh (getSession on an expired token still
+// hits /token even with autoRefresh off).
+const spotlight = isSpotlightWindow();
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: timedFetch ? { fetch: timedFetch } : {},
+  auth: {
+    autoRefreshToken: !spotlight,
+    detectSessionInUrl: !spotlight,
+    lock: authLock,
+  },
 });
 
 /** Invoke an edge function, fire-and-forget, logging failures to console. */

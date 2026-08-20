@@ -359,9 +359,8 @@ const PAPER: Record<IconName, PaperGlyph> = {
       </>
     ),
   },
-  // Normalised to currentColor. The one call site (Login's hero) hardcoded #fff
-  // in the markup; that is the call site's business, not the glyph's, and it now
-  // passes the colour in like every other coloured icon does.
+  // Normalised to currentColor so a call site that needs a coloured sun
+  // (theme toggle, weather) passes the colour in like every other glyph.
   sun: {
     vb: "0 0 18 18",
     body: (
