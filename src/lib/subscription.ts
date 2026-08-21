@@ -16,6 +16,9 @@ export interface Subscription {
   /** Personal share code (Stripe Promotion Code). Null until Billing asks
    *  `referral-code` to mint or attach one. */
   referral_code?: string | null;
+  /** Free months granted via friend-codes (stripe-webhook). */
+  referral_credits_earned?: number;
+  referral_last_credit_at?: string | null;
   /** Computed by the `entitled(subscriptions)` Postgres function — the
    *  single source of truth for "does this account have access right now."
    *  Never re-derive this from trial_ends_at/status on the client. */

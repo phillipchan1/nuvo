@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { supabase } from "../lib/supabase";
 import { interpretSubscriptionRead, writeWasEntitled } from "../lib/subscription";
 import type { Subscription } from "../lib/subscription";
@@ -112,8 +113,21 @@ export function useSubscriptionLiveSync() {
   useEffect(() => {
     const channel = supabase
       .channel("nuvo-subscription")
-      .on("postgres_changes", { event: "*", schema: "public", table: "subscriptions" }, () =>
-        qc.invalidateQueries({ queryKey: KEY }),
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "subscriptions" },
+        (payload) => {
+          if (payload.eventType === "UPDATE") {
+            const prev = (payload.old as { referral_credits_earned?: number } | null)
+              ?.referral_credits_earned;
+            const next = (payload.new as { referral_credits_earned?: number } | null)
+              ?.referral_credits_earned;
+            if (typeof next === "number" && typeof prev === "number" && next > prev) {
+              toast.success("A friend subscribed — you got a free month on your next bill.");
+            }
+          }
+          qc.invalidateQueries({ queryKey: KEY });
+        },
       )
       .subscribe();
     // The cache key isn't user-scoped, so drop it whenever the signed-in

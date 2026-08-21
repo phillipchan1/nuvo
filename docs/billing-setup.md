@@ -199,15 +199,17 @@ get the free-month credit.
 
 ### D. After launch — zero ops
 
-- Codes: Settings → Billing → **Share Nuvo** (auto).
+- Codes: Settings → Billing → **Share Nuvo** (auto, unique `NAME-XXXX`).
 - Links: `https://nuvo.day/?code=CODE` or `https://app.nuvo.day/?code=CODE`.
+- Explainer: https://nuvo.day/share
+- When a friend pays: referrer gets −$29 Customer Balance, a Billing line, an in-app toast,
+  a web push (if enabled), and an email **if** `RESEND_API_KEY` is set
+  (`RESEND_FROM` optional, defaults to `Nuvo <hello@nuvo.day>`).
 - Watch: Stripe → Coupons → redemptions; or
-  `select user_id, referred_by, referral_code_used, referral_reward_granted_at from subscriptions where referred_by is not null`.
-- Do **not** build an affiliate portal, leaderboard, or manual approval flow.
+  `select user_id, referral_credits_earned, referred_by, referral_reward_granted_at from subscriptions where referral_credits_earned > 0 or referred_by is not null`.
 
 ### E. Smoke check
 
-1. Open Settings → Billing as Phil — a code appears (or "not configured" until B).
-2. Incognito: `https://nuvo.day/?code=PHIL` → Start free → subscribe with the code
-   prefilled / typed → first invoice ~50% off.
-3. Phil's Stripe customer shows a **−$29** balance transaction after `invoice.paid`.
+1. Open Settings → Billing — a unique code appears (or "not configured" until B).
+2. Incognito: `https://nuvo.day/?code=…` → Start free → subscribe → first invoice ~50%.
+3. Sharer's Stripe customer shows a **−$29** balance; Billing says they've earned a free month.

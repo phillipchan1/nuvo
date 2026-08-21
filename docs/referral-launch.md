@@ -51,6 +51,15 @@ Paste texts from the script output, **or** point them at:
 - Public explainer: **https://nuvo.day/share**
 - In-app: Settings → Billing → **Share Nuvo** (code self-mints on open — unique `NAME-XXXX`, no apply form)
 
+Optional email on credit:
+
+```bash
+supabase secrets set RESEND_API_KEY=re_… RESEND_FROM="Nuvo <hello@nuvo.day>" --project-ref ebibzojtkzkphykznomv
+supabase functions deploy stripe-webhook --project-ref ebibzojtkzkphykznomv
+```
+
+Without Resend, sharers still get Billing copy, an in-app toast, and web push (if they enabled reminders/push).
+
 ### 7. Done — hands-off
 
 New accounts get a code automatically when they open Billing. Do not create an apply form, partner portal, or spreadsheet workflow.

@@ -4,6 +4,7 @@
 // No CORS/OPTIONS handling needed: Stripe never sends a browser preflight.
 import Stripe from "npm:stripe@18";
 import { admin, logSync } from "../_shared/admin.ts";
+import { notifyReferralCredit } from "../_shared/referralNotify.ts";
 import {
   REFERRAL_MONTHLY_CREDIT_CENTS,
   monthsCreditRemaining,
@@ -72,6 +73,39 @@ async function referralFromCheckout(
   }
 }
 
+/** Recover attribution when invoice.paid races ahead of checkout.session.completed. */
+async function referralFromInvoice(
+  invoice: Stripe.Invoice,
+  checkoutUserId: string,
+): Promise<{ referrerUserId: string; code: string } | null> {
+  try {
+    const full = await stripe.invoices.retrieve(invoice.id, {
+      expand: ["discounts.promotion_code", "discount.promotion_code"],
+    });
+    // deno-lint-ignore no-explicit-any
+    const inv = full as any;
+    const candidates: unknown[] = [];
+    if (Array.isArray(inv.discounts)) {
+      for (const d of inv.discounts) {
+        if (d && typeof d === "object" && "promotion_code" in d) candidates.push(d.promotion_code);
+      }
+    }
+    if (inv.discount?.promotion_code) candidates.push(inv.discount.promotion_code);
+
+    for (const raw of candidates) {
+      let promo = raw;
+      if (typeof promo === "string") {
+        promo = await stripe.promotionCodes.retrieve(promo);
+      }
+      const accepted = acceptPromo(promo, checkoutUserId);
+      if (accepted) return accepted;
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
 function acceptPromo(
   // deno-lint-ignore no-explicit-any
   promo: any,
@@ -84,6 +118,78 @@ function acceptPromo(
   const code = typeof promo.code === "string" ? promo.code : null;
   if (!code) return null;
   return { referrerUserId: referrer, code };
+}
+
+/** Trial sharers may never have checked out — create a Stripe customer so
+ *  Customer Balance credit has somewhere to land until they subscribe. */
+async function ensureStripeCustomer(userId: string, existingId: string | null): Promise<string | null> {
+  if (existingId) {
+    try {
+      const cust = await stripe.customers.retrieve(existingId);
+      if (!cust.deleted) return existingId;
+    } catch {
+      /* recreate below */
+    }
+  }
+
+  const { data, error } = await admin.auth.admin.getUserById(userId);
+  if (error || !data.user) {
+    await logSync("stripe", "referral_ensure_customer", "error", "user not found", userId);
+    return null;
+  }
+
+  const customer = await stripe.customers.create({
+    email: data.user.email ?? undefined,
+    metadata: { app: "nuvo", user_id: userId },
+  });
+  await admin
+    .from("subscriptions")
+    .update({ stripe_customer_id: customer.id })
+    .eq("user_id", userId);
+  return customer.id;
+}
+
+type FriendRow = {
+  user_id: string;
+  referred_by: string | null;
+  referral_reward_granted_at: string | null;
+  referral_code_used: string | null;
+};
+
+async function loadFriendForInvoice(invoice: Stripe.Invoice, customerId: string): Promise<FriendRow | null> {
+  const { data: byCustomer } = await admin
+    .from("subscriptions")
+    .select("user_id, referred_by, referral_reward_granted_at, referral_code_used")
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+  if (byCustomer) return byCustomer as FriendRow;
+
+  // deno-lint-ignore no-explicit-any
+  const subRef = (invoice as any).subscription as string | { id?: string } | null;
+  const subId = typeof subRef === "string" ? subRef : subRef?.id;
+  if (!subId) return null;
+  try {
+    const sub = await stripe.subscriptions.retrieve(subId);
+    const userId = sub.metadata?.user_id;
+    if (!userId) return null;
+    const { data: byUser } = await admin
+      .from("subscriptions")
+      .select("user_id, referred_by, referral_reward_granted_at, referral_code_used, stripe_customer_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (byUser && !byUser.stripe_customer_id) {
+      await admin.from("subscriptions").update({ stripe_customer_id: customerId }).eq("user_id", userId);
+    }
+    if (!byUser) return null;
+    return {
+      user_id: byUser.user_id,
+      referred_by: byUser.referred_by,
+      referral_reward_granted_at: byUser.referral_reward_granted_at,
+      referral_code_used: byUser.referral_code_used,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -102,30 +208,45 @@ async function maybeCreditReferrer(invoice: Stripe.Invoice): Promise<void> {
     typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
   if (!customerId) return;
 
-  const { data: friend } = await admin
-    .from("subscriptions")
-    .select("user_id, referred_by, referral_reward_granted_at, referral_code_used")
-    .eq("stripe_customer_id", customerId)
-    .maybeSingle();
-  if (!friend?.referred_by || friend.referral_reward_granted_at) return;
+  let friend = await loadFriendForInvoice(invoice, customerId);
+  if (!friend) return;
+  if (friend.referral_reward_granted_at) return;
 
+  if (!friend.referred_by) {
+    const recovered = await referralFromInvoice(invoice, friend.user_id);
+    if (!recovered) return;
+    await admin
+      .from("subscriptions")
+      .update({
+        referred_by: recovered.referrerUserId,
+        referral_code_used: recovered.code,
+      })
+      .eq("user_id", friend.user_id);
+    friend = {
+      ...friend,
+      referred_by: recovered.referrerUserId,
+      referral_code_used: recovered.code,
+    };
+  }
+
+  const referrerUserId = friend.referred_by!;
   const { data: referrer } = await admin
     .from("subscriptions")
-    .select("user_id, stripe_customer_id")
-    .eq("user_id", friend.referred_by)
+    .select("user_id, stripe_customer_id, referral_credits_earned")
+    .eq("user_id", referrerUserId)
     .maybeSingle();
-  if (!referrer?.stripe_customer_id) {
-    await logSync(
-      "stripe",
-      "referral_credit_skipped",
-      "error",
-      "referrer has no stripe_customer_id yet",
-      friend.referred_by,
-    );
+  if (!referrer) {
+    await logSync("stripe", "referral_credit_skipped", "error", "referrer row missing", referrerUserId);
     return;
   }
 
-  const cust = await stripe.customers.retrieve(referrer.stripe_customer_id);
+  const stripeCustomerId = await ensureStripeCustomer(
+    referrer.user_id,
+    referrer.stripe_customer_id,
+  );
+  if (!stripeCustomerId) return;
+
+  const cust = await stripe.customers.retrieve(stripeCustomerId);
   if (cust.deleted) return;
   const balance = typeof cust.balance === "number" ? cust.balance : 0;
   if (monthsCreditRemaining(balance) < 1) {
@@ -134,7 +255,7 @@ async function maybeCreditReferrer(invoice: Stripe.Invoice): Promise<void> {
       "referral_credit_capped",
       "ok",
       "referrer already at 6 months outstanding credit",
-      friend.referred_by,
+      referrerUserId,
     );
     await admin
       .from("subscriptions")
@@ -143,7 +264,7 @@ async function maybeCreditReferrer(invoice: Stripe.Invoice): Promise<void> {
     return;
   }
 
-  await stripe.customers.createBalanceTransaction(referrer.stripe_customer_id, {
+  await stripe.customers.createBalanceTransaction(stripeCustomerId, {
     amount: -REFERRAL_MONTHLY_CREDIT_CENTS,
     currency: "usd",
     description: `Nuvo friend-code reward (${friend.referral_code_used ?? "code"} → paid)`,
@@ -155,12 +276,24 @@ async function maybeCreditReferrer(invoice: Stripe.Invoice): Promise<void> {
     },
   });
 
+  const now = new Date().toISOString();
+  const earned = (referrer.referral_credits_earned ?? 0) + 1;
+
   await admin
     .from("subscriptions")
-    .update({ referral_reward_granted_at: new Date().toISOString() })
+    .update({ referral_reward_granted_at: now })
     .eq("user_id", friend.user_id);
 
-  await logSync("stripe", "referral_credit", "ok", undefined, friend.referred_by);
+  await admin
+    .from("subscriptions")
+    .update({
+      referral_credits_earned: earned,
+      referral_last_credit_at: now,
+    })
+    .eq("user_id", referrerUserId);
+
+  await logSync("stripe", "referral_credit", "ok", undefined, referrerUserId);
+  await notifyReferralCredit(referrerUserId);
 }
 
 Deno.serve(async (req) => {
@@ -214,6 +347,14 @@ Deno.serve(async (req) => {
                 .eq("user_id", userId);
             }
           }
+        }
+        // If invoice.paid already fired (or arrives out of order), credit now.
+        // deno-lint-ignore no-explicit-any
+        const invRef = (session as any).invoice as string | { id?: string } | null;
+        const invId = typeof invRef === "string" ? invRef : invRef?.id;
+        if (invId) {
+          const inv = await stripe.invoices.retrieve(invId);
+          await maybeCreditReferrer(inv);
         }
         break;
       }

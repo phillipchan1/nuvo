@@ -35,7 +35,10 @@ export function BillingPane() {
       )}
 
       {subscription && (subscription.status === "trialing" || subscription.status === "active") && (
-        <ShareCodeBlock initial={subscription.referral_code ?? null} />
+        <ShareCodeBlock
+          initial={subscription.referral_code ?? null}
+          creditsEarned={subscription.referral_credits_earned ?? 0}
+        />
       )}
 
       {upgrading && <UpgradeModal onClose={() => setUpgrading(false)} />}
@@ -43,9 +46,16 @@ export function BillingPane() {
   );
 }
 
-/** One quiet line — their personal code, a copy button, no referral counts
- *  (P9). Lives on Billing because that's already "what's my plan?" (P8). */
-function ShareCodeBlock({ initial }: { initial: string | null }) {
+/** Their personal code + any free months already earned. Quiet — no referral
+ *  counts of other people (P9). Lives on Billing because that's already
+ *  "what's my plan?" (P8). */
+function ShareCodeBlock({
+  initial,
+  creditsEarned,
+}: {
+  initial: string | null;
+  creditsEarned: number;
+}) {
   const [code, setCode] = useState<string | null>(initial);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -107,6 +117,12 @@ function ShareCodeBlock({ initial }: { initial: string | null }) {
           open this pane and we mint one.
         </div>
       ) : null}
+      {creditsEarned > 0 && (
+        <p className="mt-3 text-caption leading-snug text-ink">
+          You’ve earned {creditsEarned} free month{creditsEarned === 1 ? "" : "s"} from friends.
+          Credit applies to your next invoice automatically.
+        </p>
+      )}
       {error && <div className="mt-2 text-caption text-signal">{error}</div>}
     </div>
   );
