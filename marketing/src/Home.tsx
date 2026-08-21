@@ -11,6 +11,7 @@ import ScatterVisual from './components/ScatterVisual'
 import { useCallback, useState, type ReactNode } from 'react'
 import { useReveal } from './useReveal'
 import { ACCESS_MAILTO, APP_URL, DOWNLOAD_MAC_URL, RELEASES_REPO } from './config'
+import { appUrlWithCode } from './referral'
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THE PAGE IS ONE SENTENCE, IN ORDER.
@@ -295,7 +296,7 @@ function DownloadMacButton({ className = '' }: { className?: string }) {
 function CtaGroup({ className = '' }: { className?: string }) {
   return (
     <div className={`flex flex-wrap items-center gap-3 ${className}`}>
-      <a href={APP_URL} className="btn-primary tap" rel="noopener noreferrer">
+      <a href={appUrlWithCode(APP_URL)} className="btn-primary tap" rel="noopener noreferrer">
         Start free
       </a>
       <DownloadMacButton />
@@ -344,7 +345,7 @@ export default function Home() {
           <a href="/support" className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
             Support
           </a>
-          <a href={APP_URL} className="btn-ghost tap hidden text-[13px] sm:inline-flex" rel="noopener noreferrer">
+          <a href={appUrlWithCode(APP_URL)} className="btn-ghost tap hidden text-[13px] sm:inline-flex" rel="noopener noreferrer">
             Open app
           </a>
         </nav>
@@ -795,7 +796,7 @@ export default function Home() {
           </div>
 
           <div className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-3">
-            <a href={APP_URL} className="btn-primary tap" rel="noopener noreferrer">
+            <a href={appUrlWithCode(APP_URL)} className="btn-primary tap" rel="noopener noreferrer">
               Start free — plan your week in ten minutes
             </a>
           </div>

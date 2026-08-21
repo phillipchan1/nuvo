@@ -1,7 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Btn } from "../ui";
 import { useSubscription } from "../../hooks/useSubscription";
-import { fetchPortalUrl, openBillingUrl, trialDaysRemaining, type Subscription } from "../../lib/subscription";
+import {
+  fetchPortalUrl,
+  fetchReferralCode,
+  openBillingUrl,
+  trialDaysRemaining,
+  type Subscription,
+} from "../../lib/subscription";
+import { shareBlurb } from "../../lib/referral";
 import { UpgradeModal } from "./UpgradeModal";
 
 /** Settings is for MANAGING a subscription — the selling happens in
@@ -27,7 +34,79 @@ export function BillingPane() {
         <div className="text-caption text-muted">Loading…</div>
       )}
 
+      {subscription && (subscription.status === "trialing" || subscription.status === "active") && (
+        <ShareCodeBlock initial={subscription.referral_code ?? null} />
+      )}
+
       {upgrading && <UpgradeModal onClose={() => setUpgrading(false)} />}
+    </div>
+  );
+}
+
+/** One quiet line — their personal code, a copy button, no referral counts
+ *  (P9). Lives on Billing because that's already "what's my plan?" (P8). */
+function ShareCodeBlock({ initial }: { initial: string | null }) {
+  const [code, setCode] = useState<string | null>(initial);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (code) return;
+    let cancelled = false;
+    setBusy(true);
+    fetchReferralCode()
+      .then((c) => {
+        if (!cancelled) setCode(c);
+      })
+      .catch((e) => {
+        // Coupon not configured yet (503) — stay quiet; Phil still seeds via
+        // scripts/create-referral-codes.mjs. Don't paint an error into Billing.
+        const msg = e instanceof Error ? e.message : "";
+        if (!cancelled && !/not configured/i.test(msg)) {
+          setError(msg || "Could not load your code");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
+
+  const copy = async () => {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Couldn’t copy — select the code instead");
+    }
+  };
+
+  return (
+    <div className="mt-6 border-t border-line pt-4">
+      <div className="text-label uppercase tracking-wider text-muted">Share Nuvo</div>
+      <p className="mt-1 text-caption leading-snug text-muted">{shareBlurb()}</p>
+      {busy && !code ? (
+        <div className="mt-2 text-caption text-muted">Getting your code…</div>
+      ) : code ? (
+        <div className="mt-2 flex items-center gap-2">
+          <code className="mono rounded-md border border-line bg-surface-2 px-3 py-2 text-body text-ink">
+            {code}
+          </code>
+          <Btn kind="ghost" onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </Btn>
+        </div>
+      ) : !error ? (
+        <div className="mt-2 text-caption text-muted">
+          Your code will appear here once friend-codes are turned on.
+        </div>
+      ) : null}
+      {error && <div className="mt-2 text-caption text-signal">{error}</div>}
     </div>
   );
 }

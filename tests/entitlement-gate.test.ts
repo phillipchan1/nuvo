@@ -14,6 +14,7 @@ const paid: Subscription = {
   price_id: "price_x",
   current_period_end: "2026-09-01T00:00:00Z",
   cancel_at_period_end: false,
+  referral_code: null,
   entitled: true,
 };
 

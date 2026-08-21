@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { isDesktopTauri } from "./platform";
+import { clearPendingReferralCode, readPendingReferralCode } from "./referral";
 
 export type SubscriptionStatus = "trialing" | "active" | "past_due" | "cancelled";
 
@@ -12,6 +13,9 @@ export interface Subscription {
   price_id: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  /** Personal share code (Stripe Promotion Code). Null until Billing asks
+   *  `referral-code` to mint or attach one. */
+  referral_code?: string | null;
   /** Computed by the `entitled(subscriptions)` Postgres function — the
    *  single source of truth for "does this account have access right now."
    *  Never re-derive this from trial_ends_at/status on the client. */
@@ -107,11 +111,28 @@ function returnOrigin(): string | undefined {
 }
 
 export async function startCheckout(plan: Plan): Promise<string> {
+  const code = readPendingReferralCode() ?? undefined;
   const { data, error } = await supabase.functions.invoke<{ url: string }>("stripe-checkout", {
-    body: { plan, origin: returnOrigin() },
+    body: { plan, origin: returnOrigin(), code },
   });
   if (error || !data?.url) throw new Error(error?.message ?? "Could not start checkout");
+  // Applied (or offered) at Checkout — don't keep re-applying on a later attempt
+  // if they abandon and come back without the link.
+  if (code) clearPendingReferralCode();
   return data.url;
+}
+
+/** Mint or fetch this account's personal share code. BillingPane is the only
+ *  caller — quiet, no counts, no theater. */
+export async function fetchReferralCode(): Promise<string> {
+  const { data, error } = await supabase.functions.invoke<{ code?: string; error?: string }>(
+    "referral-code",
+    { body: {} },
+  );
+  if (error || !data?.code) {
+    throw new Error(data?.error ?? error?.message ?? "Could not load your code");
+  }
+  return data.code;
 }
 
 export async function fetchPortalUrl(): Promise<string> {

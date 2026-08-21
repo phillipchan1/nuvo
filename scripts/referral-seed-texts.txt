@@ -1,0 +1,15 @@
+# Texts after create-referral-codes.mjs (50% first invoice + free month for sharer)
+
+Phil Chan — PHIL:
+Your friends' code is PHIL. They get 50% off their first month when they subscribe — and you get a free month when they pay (up to 6). Share https://nuvo.day/?code=PHIL or have them type PHIL at checkout.
+
+Esther Chan — ESTHER:
+Your friends' code is ESTHER. They get 50% off their first month when they subscribe — and you get a free month when they pay (up to 6). Share https://nuvo.day/?code=ESTHER or have them type ESTHER at checkout.
+
+David Gunn — DAVID:
+Your friends' code is DAVID. They get 50% off their first month when they subscribe — and you get a free month when they pay (up to 6). Share https://nuvo.day/?code=DAVID or have them type DAVID at checkout.
+
+David Chung — CHUNG:
+Your friends' code is CHUNG. They get 50% off their first month when they subscribe — and you get a free month when they pay (up to 6). Share https://nuvo.day/?code=CHUNG or have them type CHUNG at checkout.
+
+Hands-off after launch: new operators get a code in Settings → Billing. No manual seeding required.

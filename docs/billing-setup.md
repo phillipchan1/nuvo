@@ -45,12 +45,13 @@ to update payment methods" and "Allow customers to cancel subscriptions".
 **Developers → Webhooks → + Add endpoint**
 
 - Endpoint URL: `https://ebibzojtkzkphykznomv.supabase.co/functions/v1/stripe-webhook`
-- Events to send — select exactly these five:
+- Events to send — select exactly these **six**:
   - `checkout.session.completed`
   - `customer.subscription.created`
   - `customer.subscription.updated`
   - `customer.subscription.deleted`
   - `invoice.payment_failed`
+  - `invoice.paid` ← required for friend-code **referrer credits**
 - Add endpoint, then copy the **Signing secret** (`whsec_...`)
 
 ## 4. Grab the secret key
@@ -149,3 +150,63 @@ multi-tenant now, not single-user.
 - **Gating** lives in `src/App.tsx`: no session → `Login`; entitled → the app;
   not entitled → `LockedScreen`. A *failed* subscription check is its own
   state ("couldn't verify") and never reads as cancelled.
+
+---
+
+## 10. Personal friend-codes — launch runbook (for Grokbot)
+
+**Offer (D-113):**
+
+| Side | What |
+|---|---|
+| Friend | **50% off first invoice** (Stripe Coupon `duration: once`) |
+| Sharer | **One free month** ($29 Customer Balance credit) when the friend **pays** — not on trial start |
+| Cap | **6 months** of outstanding credit on the sharer's Stripe customer |
+| Hands-off | New operators mint a code in Settings → Billing. No apply form. No `/affiliates` page. |
+
+Project ref: `ebibzojtkzkphykznomv`. Marketing FAQ already lives at `/support`.
+
+### A. Stripe coupon + seed codes (once)
+
+```bash
+cd /path/to/nuvo
+STRIPE_SECRET_KEY=sk_live_… node scripts/create-referral-codes.mjs
+```
+
+The script is idempotent. It prints `STRIPE_REFERRAL_COUPON=coup_…` and texts
+for PHIL · ESTHER · DAVID · CHUNG. Paste those texts (or point people at
+Settings → Billing).
+
+### B. Supabase secret + functions
+
+```bash
+supabase secrets set STRIPE_REFERRAL_COUPON=coup_xxx --project-ref ebibzojtkzkphykznomv
+supabase functions deploy stripe-checkout stripe-webhook referral-code --project-ref ebibzojtkzkphykznomv
+```
+
+Migrations `66_referral_codes` and `67_referral_reward` must be applied
+(`supabase db push` or the dashboard). Columns: `referral_code`,
+`stripe_promotion_code_id`, `referred_by`, `referral_code_used`,
+`referral_reward_granted_at`.
+
+### C. Webhook event (easy to miss)
+
+Stripe Dashboard → **Developers → Webhooks** → the Nuvo endpoint →
+**Add events** → enable **`invoice.paid`** (in addition to the five billing
+events from §3). Without it, friends still get the discount; sharers never
+get the free-month credit.
+
+### D. After launch — zero ops
+
+- Codes: Settings → Billing → **Share Nuvo** (auto).
+- Links: `https://nuvo.day/?code=CODE` or `https://app.nuvo.day/?code=CODE`.
+- Watch: Stripe → Coupons → redemptions; or
+  `select user_id, referred_by, referral_code_used, referral_reward_granted_at from subscriptions where referred_by is not null`.
+- Do **not** build an affiliate portal, leaderboard, or manual approval flow.
+
+### E. Smoke check
+
+1. Open Settings → Billing as Phil — a code appears (or "not configured" until B).
+2. Incognito: `https://nuvo.day/?code=PHIL` → Start free → subscribe with the code
+   prefilled / typed → first invoice ~50% off.
+3. Phil's Stripe customer shows a **−$29** balance transaction after `invoice.paid`.
