@@ -4,6 +4,7 @@ import Privacy from './pages/Privacy'
 import Support from './pages/Support'
 import Terms from './pages/Terms'
 import { HOME_CANONICAL, HOME_DESC, HOME_TITLE, ROUTES } from './routes'
+import { captureMarketingReferralCode } from './referral'
 
 function pathOf() {
   return window.location.pathname.replace(/\/+$/, '') || '/'
@@ -15,6 +16,10 @@ function setMeta(selector: string, attr: 'content' | 'href', value: string) {
 
 export default function App() {
   const [path, setPath] = useState(pathOf)
+
+  useEffect(() => {
+    captureMarketingReferralCode()
+  }, [])
 
   useEffect(() => {
     const onNav = () => setPath(pathOf())

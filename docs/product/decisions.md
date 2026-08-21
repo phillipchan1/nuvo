@@ -2261,6 +2261,7 @@ drag against the macOS Tauri window-drag region, and a project whose loose work 
 | **N-15** | Queuing recurring-series materialisation offline | Tried and reverted the same day. `materializeSeries` **reads server state** to work out which occurrences are missing, and `clearFuture` deletes by predicate — queued, you get a series row with no occurrences behind it: a recurring commitment that displays but does not exist. That is worse than an honest "needs connection", so the `field_ts` column and the `apply_patch` allowlist entry were backed out rather than shipped half-working (D-091) | Materialisation moves to a pure client-side computation over the already-cached occurrence set, so it needs no read to decide what to write |
 | **N-12** | Pasting the video-call link into the event description | It's the *unstructured* copy of a structured fact (D-056): invisible to every client's Join button, doesn't move when the meeting does, outlives a removed conference, and can't be told apart from a link a human typed. `conferenceData` is the field they all already read | A provider Nuvo writes to has no conference field at all — and even then, say plainly that the link is pasted |
 | **N-16** | A desktop **Agenda** (list) view on the Schedule | **Built, shipped, and removed within three days — 2026-08-14 to 2026-08-15.** It existed because the 2026-08-12 audit's rank 10 asked for it ("no agenda/list on desktop"), and that line was a *symmetry* observation, not a user need: the phone has a list because a 375px screen cannot draw a week grid, and the desktop, which can, gets nothing from a list it doesn't already get from Week. Phil used it and didn't want it. **This row exists so the same audit line doesn't rebuild it next quarter** — the audit's rank-10 row has been amended to say so too. Note carefully what this is NOT: the phone's `schedule` (List) lens predates all of this, is the phone's native idiom, and is untouched (D-044) | A *desktop* reason appears that Week genuinely can't serve — e.g. reading a range longer than a week in one scroll. Symmetry with the phone is not that reason, and "the audit says so" is not either |
+| **N-17** | A public **affiliate marketplace** / partner portal, commission payouts, or in-app referral leaderboard | Wrong identity (P9 — quiet steward, not optimizer theater) and wrong scale (a handful of operators who love Nuvo need a personal **code**, not PartnerStack). Commissions imply Stripe Connect / tax forms / a second program for content partners who aren't customers. D-113 is the yes to personal codes; this row is the no to the marketplace wearing the same coat | A real non-customer partner is driving paid signups — then a *separate* affiliate program (Rewardful or equivalent), never folded into Settings or gamified |
 
 ---
 
@@ -4018,3 +4019,30 @@ surface.
 and the 1:00 block never appeared. Realtime now applies the row to the query
 caches immediately (`applyLiveChange`) so a teammate's write lands like a
 Google Doc edit, not a later refetch.*
+
+**D-113 · 2026-08-21 · Growth for operators who already love Nuvo is a personal
+code — friend discount at Checkout — not an affiliate marketplace.**
+
+A handful of beta operators want to tell friends. The honest shape is Superhuman-
+style: one sayable word that is theirs (`PHIL`, `ESTHER`), 20% off the friend's
+**first three months**, typed at Stripe Checkout (or carried via `?code=`).
+Checkout already had `allow_promotion_codes`; what was missing was a shared
+Coupon, named Promotion Codes, attribution on the webhook, and one quiet line in
+Settings → Billing.
+
+**What this is not.** Not multi-player (two accounts, two funnels, a coupon
+between them — N-02 untouched). Not an invite (calendar guests keep that word).
+Not a commission, PartnerStack portal, or "invite 3 friends" nag (N-17 / P9).
+Does not close Question Ledger rows inside the funnel; it answers a founder
+problem (the next operator never hearing about Nuvo). Q-05 (transitional CTA on
+the marketing site) remains the stranger-funnel bet — referrals help lovers
+tell friends; they don't teach strangers the offer.
+
+**Mechanism.** One Stripe Coupon (`metadata.app=nuvo`, `kind=referral`); many
+Promotion Codes with `referrer_user_id`. `stripe-checkout` pre-applies a pending
+`?code=` when it isn't a self-referral. `stripe-webhook` writes `referred_by` /
+`referral_code_used` on first checkout. `referral-code` mints or attaches the
+operator's own code. Recipe: [`docs/billing-setup.md`](../billing-setup.md) §10.
+
+*Status: standing — seed codes via `scripts/create-referral-codes.mjs`; watch
+redemptions in Stripe before inventing anything louder.*

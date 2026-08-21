@@ -3,9 +3,14 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { isTauri as isTauriShell, isMac, isMobileTauri } from "./lib/platform";
+import { captureReferralCodeFromLocation } from "./lib/referral";
 // Side effect: captures beforeinstallprompt before React mounts (Settings →
 // About surfaces it as an "Install Nuvo" row).
 import "./lib/installPrompt";
+
+// Friend code from a shared link (`?code=PHIL`) — stash before React so it
+// survives signup → trial → checkout. Never called "invite" (calendar guests).
+captureReferralCodeFromLocation();
 
 const isTauri = isTauriShell();
 

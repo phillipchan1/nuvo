@@ -1,0 +1,18 @@
+# Texts to send once `scripts/create-referral-codes.mjs` has run
+# (STRIPE_SECRET_KEY=sk_live_… node scripts/create-referral-codes.mjs)
+
+Phil Chan — PHIL:
+Your friends' code is PHIL. They get 20% off their first 3 months when they subscribe — type it at checkout, or open https://nuvo.day/?code=PHIL.
+
+Esther Chan — ESTHER:
+Your friends' code is ESTHER. They get 20% off their first 3 months when they subscribe — type it at checkout, or open https://nuvo.day/?code=ESTHER.
+
+David Gunn — DAVID:
+Your friends' code is DAVID. They get 20% off their first 3 months when they subscribe — type it at checkout, or open https://nuvo.day/?code=DAVID.
+
+David Chung — CHUNG:
+Your friends' code is CHUNG. They get 20% off their first 3 months when they subscribe — type it at checkout, or open https://nuvo.day/?code=CHUNG.
+
+## Watch redemptions
+Stripe Dashboard → Product catalog → Coupons → "Nuvo friend code — 20% off first 3 months"
+Or SQL: select user_id, referral_code_used, referred_by from subscriptions where referred_by is not null;

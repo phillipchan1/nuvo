@@ -52,6 +52,7 @@ been used to argue against things it doesn't forbid.
 | **Operator** | What we call the person using Nuvo, in docs and copy. Preferred over "user". | — |
 | **Persona zero** | The builder, as a *verified instance* of P1. Evidence, cited **ⓞ**, never the definition. | [`personas.md`](./personas.md) |
 | **Guest** | Someone invited to one calendar event — an address on a Google event, nothing more. Not an assignee, not a collaborator, and they cannot see or change anything in the account. The word appears in the composer's guest picker and on the chat's invite card, which use one vocabulary for where an address came from: *Google · Apple · Met before* (D-046, D-069). | **Yes** — a guest is a fact about an event, not a shared object, so it doesn't touch Principle 12 |
+| **Code** *(billing)* | An operator's personal share word — a Stripe Promotion Code on the shared friend Coupon (`subscriptions.referral_code`). Friends type it at Checkout for a short discount. **Not** an invite (calendar guests), **not** an affiliate program (N-17). Lives in Settings → Billing and on `?code=` links (D-113). | — |
 | **ⓞ** | Marks a claim sourced from persona zero — **unvalidated beyond N=1.** | — |
 | **The stranger test** | *Would this be true and usable in a fresh account belonging to someone you've never met?* | Principle 16 · [`audit.md`](./audit.md) Pass 6 |
 

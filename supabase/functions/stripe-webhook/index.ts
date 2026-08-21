@@ -42,6 +42,53 @@ function periodEndISO(sub: Stripe.Subscription): string | null {
   return new Date(secs * 1000).toISOString();
 }
 
+/** Read which friend Promotion Code was applied on a Checkout Session.
+ *  Returns null on anything we shouldn't attribute (no code, not ours,
+ *  self-referral). Never throws — attribution is nice-to-have; billing
+ *  entitlement must still succeed if Stripe's expand shape drifts. */
+async function referralFromCheckout(
+  session: Stripe.Checkout.Session,
+): Promise<{ referrerUserId: string; code: string } | null> {
+  const userId = session.client_reference_id ?? session.metadata?.user_id;
+  if (!userId) return null;
+  try {
+    const full = await stripe.checkout.sessions.retrieve(session.id, {
+      expand: ["total_details.breakdown.discounts.discount.promotion_code"],
+    });
+    // deno-lint-ignore no-explicit-any
+    const discounts = (full as any)?.total_details?.breakdown?.discounts as any[] | undefined;
+    // deno-lint-ignore no-explicit-any
+    const promo = discounts?.map((d) => d?.discount?.promotion_code).find((p: any) => p && typeof p === "object");
+    if (!promo) {
+      // Fallback: session.discounts[] when the API returns them expanded.
+      // deno-lint-ignore no-explicit-any
+      const sessionDiscounts = (full as any)?.discounts as any[] | undefined;
+      for (const d of sessionDiscounts ?? []) {
+        const p = typeof d?.promotion_code === "object" ? d.promotion_code : null;
+        if (p) return acceptPromo(p, userId);
+      }
+      return null;
+    }
+    return acceptPromo(promo, userId);
+  } catch {
+    return null;
+  }
+}
+
+function acceptPromo(
+  // deno-lint-ignore no-explicit-any
+  promo: any,
+  checkoutUserId: string,
+): { referrerUserId: string; code: string } | null {
+  if (promo?.metadata?.app !== "nuvo" || promo?.metadata?.kind !== "referral") return null;
+  const referrer = promo.metadata?.referrer_user_id;
+  if (typeof referrer !== "string" || !referrer) return null;
+  if (referrer === checkoutUserId) return null; // self-referral
+  const code = typeof promo.code === "string" ? promo.code : null;
+  if (!code) return null;
+  return { referrerUserId: referrer, code };
+}
+
 Deno.serve(async (req) => {
   const sig = req.headers.get("stripe-signature");
   if (!sig) return new Response("missing signature", { status: 400 });
@@ -81,6 +128,27 @@ Deno.serve(async (req) => {
         const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
         if (userId && customerId) {
           await admin.from("subscriptions").update({ stripe_customer_id: customerId }).eq("user_id", userId);
+        }
+        // Attribution — first paid checkout with a friend code. Only write if
+        // referred_by is still null so a later plan switch doesn't overwrite.
+        if (userId) {
+          const ref = await referralFromCheckout(session);
+          if (ref) {
+            const { data: current } = await admin
+              .from("subscriptions")
+              .select("referred_by")
+              .eq("user_id", userId)
+              .maybeSingle();
+            if (!current?.referred_by) {
+              await admin
+                .from("subscriptions")
+                .update({
+                  referred_by: ref.referrerUserId,
+                  referral_code_used: ref.code,
+                })
+                .eq("user_id", userId);
+            }
+          }
         }
         break;
       }

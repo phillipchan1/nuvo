@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { APP_URL, PRIVACY_URL, RELEASES_REPO, SUPPORT_EMAIL, SUPPORT_MAILTO, SUPPORT_RESPONSE } from '../config'
+import { appUrlWithCode } from '../referral'
 
 /*
   Support — the page that has to be true.
@@ -316,7 +317,7 @@ export default function Support() {
           <a href={SUPPORT_MAILTO} className="hidden text-[13px] text-[var(--muted)] tap items-center sm:inline-flex hover:text-[var(--text)]">
             Email us
           </a>
-          <a href={APP_URL} className="btn-ghost tap text-[13px]" rel="noopener noreferrer">
+          <a href={appUrlWithCode(APP_URL)} className="btn-ghost tap text-[13px]" rel="noopener noreferrer">
             Open app
           </a>
         </nav>
@@ -885,6 +886,22 @@ export default function Support() {
                     <strong className="text-[var(--text)]">$19 a month billed annually</strong> —
                     $228 a year, which saves $120. There are no tiers and no add-ons: both plans
                     are the entire product.
+                  </p>
+                </Disclose>
+                <Disclose q="A friend sent me a code">
+                  <p>
+                    Type it in Stripe Checkout when you subscribe — there&apos;s an &ldquo;Add
+                    promotion code&rdquo; field. Or open the link they sent (
+                    <span className="mono text-[var(--text)]">nuvo.day/?code=…</span>
+                    ); we remember it through the trial and apply it at checkout. Codes are
+                    personal — one per operator who shared Nuvo with you — and they take 20%
+                    off the first three months. There is no affiliate marketplace and no
+                    commission dashboard; if someone loves Nuvo, they just give you their
+                    code.
+                  </p>
+                  <p className="mt-3">
+                    Already on Nuvo and want to share? Settings → Billing shows{' '}
+                    <strong className="text-[var(--text)]">your code</strong>.
                   </p>
                 </Disclose>
                 <Disclose q="Changing your card, plan, or invoices">

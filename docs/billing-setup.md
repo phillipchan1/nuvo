@@ -149,3 +149,55 @@ multi-tenant now, not single-user.
 - **Gating** lives in `src/App.tsx`: no session → `Login`; entitled → the app;
   not entitled → `LockedScreen`. A *failed* subscription check is its own
   state ("couldn't verify") and never reads as cancelled.
+
+---
+
+## 10. Personal friend-codes (referral — not affiliates)
+
+Operators who already love Nuvo share a **personal code**. Friends get 20% off
+their **first 3 months** at Stripe Checkout. There is **no** affiliate
+marketplace, commission, or leaderboard — see D-113 / N-17.
+
+### One Coupon, many Promotion Codes
+
+1. Create (or re-run) the shared Coupon + named codes:
+
+```bash
+STRIPE_SECRET_KEY=sk_live_… node scripts/create-referral-codes.mjs
+```
+
+That script is idempotent. It prints `STRIPE_REFERRAL_COUPON=coup_…` and a
+one-line text for each current beta operator (PHIL · ESTHER · DAVID · CHUNG).
+
+2. Set the Supabase secret and redeploy billing functions:
+
+```bash
+supabase secrets set STRIPE_REFERRAL_COUPON=coup_xxx
+supabase functions deploy stripe-checkout stripe-webhook referral-code
+```
+
+3. Apply migration `66_referral_codes` (columns on `subscriptions` for the
+   operator's own code + who referred them).
+
+4. Text each person the printed sentence. Example:
+
+> Your friends' code is PHIL. They get 20% off their first 3 months when they
+> subscribe — type it at checkout, or open https://nuvo.day/?code=PHIL.
+
+Checkout already has **Add promotion code**. A `?code=` link is remembered
+through the trial and pre-applied when they subscribe. Settings → Billing
+shows **Share Nuvo** with their code once `referral-code` has minted or
+attached it.
+
+### Watching redemptions
+
+Until volume justifies a dashboard (it doesn't):
+
+- Stripe Dashboard → **Product catalog → Coupons** → open the Nuvo friend
+  coupon → redemptions / times redeemed.
+- Or SQL: `select user_id, referral_code_used, referred_by from subscriptions
+  where referred_by is not null`.
+
+If nobody redeems after a few weeks of sharing, the bottleneck isn't the
+code — it's the stranger funnel (Q-05) or the product itself. Don't build an
+affiliate portal to fix a silence.
