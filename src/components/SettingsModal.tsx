@@ -1529,7 +1529,7 @@ function InstallRow() {
 function DeveloperControls() {
   const [on, setOn] = useDeveloperMode();
   return (
-    <div className="divide-y divide-line rounded-lg border border-line bg-surface-2/40">
+    <div className="divide-y divide-line rounded-lg border border-line bg-surface-2/40 px-3.5">
       <Row
         title="Developer mode"
         desc="Unlock the desktop web inspector and console. Off by default — nothing here affects how Nuvo plans."
