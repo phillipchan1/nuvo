@@ -559,4 +559,56 @@ describe("no-storage fallback", () => {
       resetIdbForTests();
     }
   }, 15_000);
+
+  // Regression: a Safari transaction that never fires onsuccess used to leave
+  // `queueWrite` pending forever, which froze CreateRecord on "Creating…".
+  it("enqueue still resolves when a transaction never settles", async () => {
+    const hangingDb = {
+      objectStoreNames: { contains: () => true },
+      close() {},
+      transaction() {
+        return {
+          objectStore() {
+            return {
+              add() {
+                return {};
+              },
+              put() {
+                return {};
+              },
+              get() {
+                return {};
+              },
+              getAll() {
+                return {};
+              },
+              delete() {
+                return {};
+              },
+            };
+          },
+        };
+      },
+    };
+    const origOpen = indexedDB.open.bind(indexedDB);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (indexedDB as any).open = () => {
+      const req: { result?: typeof hangingDb; onsuccess?: () => void } = {};
+      queueMicrotask(() => {
+        req.result = hangingDb;
+        req.onsuccess?.();
+      });
+      return req;
+    };
+    resetIdbForTests();
+
+    try {
+      const stored = await enqueue(newTask("hang", "Hung write"));
+      expect(stored.rowId).toBe("hang");
+    } finally {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (indexedDB as any).open = origOpen;
+      resetIdbForTests();
+    }
+  }, 15_000);
 });

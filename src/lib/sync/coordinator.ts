@@ -12,18 +12,24 @@
  * instead, and refetched the moment its queue drains. The optimistic cache
  * carries the UI in between, which is precisely the window it exists for.
  *
+ * That gate only covers *our* `invalidateQueries` calls. TanStack also
+ * refetches on its own (window focus, reconnect, mount, an in-flight select
+ * `cancelQueries` couldn't abort because the request had no AbortSignal).
+ * Those writes are merged through `preserveOwingRows` so a create cannot
+ * vanish, and skipped entirely via `queryKeyOwesServer` when possible.
+ *
  * The alternative — overlaying pending ops onto every query result — was
  * rejected: Nuvo's task caches are membership-filtered (inbox / day / anytime /
  * scheduled / slot), so an overlay would have to re-derive which filtered list
  * each queued row now belongs to, duplicating `patchCaches` in a second place.
  * Two copies of that rule is the drift this codebase already has a standing law
- * against.
+ * against. `preserveOwingRows` only keeps rows already in *that* query's cache.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
 import { drain, type Transport } from "./engine";
 import { pendingOps, refreshOutboxStatus, setOutboxStatus } from "./outbox";
-import type { SyncTable } from "./ops";
+import { SYNC_TABLES, type SyncTable } from "./ops";
 
 /** Tables whose queries are waiting for a drain before they may refetch. */
 const deferred = new Map<SyncTable, readonly string[][]>();
@@ -42,6 +48,64 @@ let owing = new Set<SyncTable>();
 
 export function tablesOwing(): ReadonlySet<SyncTable> {
   return owing;
+}
+
+/**
+ * True when a refetch of this query would paint a server snapshot that
+ * predates work this device still owes. `invalidateWhenSafe` already gates
+ * explicit invalidation — this is for the paths that bypass it
+ * (`refetchOnWindowFocus`, `refetchOnReconnect`, an in-flight select).
+ */
+export function queryKeyOwesServer(queryKey: readonly unknown[]): boolean {
+  const root = String(queryKey[0] ?? "");
+  if (root === "vertical") {
+    const sub = queryKey[1];
+    if (typeof sub === "string" && VERTICAL_SOURCES.has(sub as SyncTable)) {
+      return owing.has(sub as SyncTable);
+    }
+    return [...VERTICAL_SOURCES].some((t) => owing.has(t));
+  }
+  if (root === "tasks" || root === "task_labels") {
+    return owing.has("tasks") || owing.has("task_labels");
+  }
+  if ((SYNC_TABLES as readonly string[]).includes(root)) return owing.has(root as SyncTable);
+  return false;
+}
+
+/**
+ * A refetch of a table we still owe must not drop rows this device already
+ * painted. Create used to: optimistic project lands in the cache, a 15s-stale
+ * window-focus refetch returns the pre-insert server list, and the project
+ * (and every task hanging off it) vanishes. Keep local-only ids until the
+ * outbox drains; then the next refetch is allowed to be authoritative.
+ *
+ * This is not "overlay pending ops onto every filtered task list" — that was
+ * rejected above. It only preserves rows *already in this query's cache*.
+ */
+export function preserveOwingRows<T extends { id: string }>(
+  table: SyncTable,
+  previous: unknown,
+  incoming: unknown,
+): T[] {
+  const next = incoming as T[];
+  if (!Array.isArray(next)) return next;
+  if (!owing.has(table) || !Array.isArray(previous)) return next;
+  const incomingIds = new Set(next.map((r) => r.id));
+  const extras = (previous as T[]).filter((r) => r?.id && !incomingIds.has(r.id));
+  return extras.length ? [...next, ...extras] : next;
+}
+
+/** Install cache-merge + refetch gates on the queries the outbox writes to. */
+export function installOwingGuards(qc: QueryClient): void {
+  const share = (table: SyncTable) => ({
+    structuralSharing: (previous: unknown, incoming: unknown) =>
+      preserveOwingRows(table, previous, incoming),
+  });
+  qc.setQueryDefaults(["vertical", "projects"], share("projects"));
+  qc.setQueryDefaults(["vertical", "initiatives"], share("initiatives"));
+  qc.setQueryDefaults(["vertical", "domains"], share("domains"));
+  qc.setQueryDefaults(["tasks"], share("tasks"));
+  qc.setQueryDefaults(["slots"], share("slots"));
 }
 
 /**

@@ -32,6 +32,11 @@ let dbPromise: Promise<IDBDatabase | null> | null = null;
 let memory: MemoryStore | null = null;
 let durable = true;
 
+/** Open and transaction both give up after this. Safari has shipped builds
+ *  where `indexedDB.open` never settles, and others where a transaction's
+ *  request never fires onsuccess — either one used to freeze a create. */
+const SETTLE_MS = 3_000;
+
 function memoryStore(): MemoryStore {
   memory ??= { ops: new Map(), kv: new Map(), seq: 0 };
   return memory;
@@ -99,7 +104,7 @@ function openDb(): Promise<IDBDatabase | null> {
       if (settled) return;
       durable = false;
       finish(null);
-    }, 3_000);
+    }, SETTLE_MS);
   });
   return dbPromise;
 }
@@ -113,14 +118,30 @@ function tx<T>(
     (db) =>
       new Promise<T | null>((resolve) => {
         if (!db) return resolve(null);
+        let settled = false;
+        const finish = (value: T | null) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+        };
+        // Same Safari class as the open hang: a transaction that never fires
+        // onsuccess/onerror/oncomplete. CreateRecord used to await this, so a
+        // wedged write froze the sheet on "Creating…" with the task still in
+        // the composer. Fall back to memory the same way a failed open does.
+        const timer = setTimeout(() => finish(null), SETTLE_MS);
+        const done = (value: T | null) => {
+          clearTimeout(timer);
+          finish(value);
+        };
         try {
           const t = db.transaction(store, mode);
           const req = run(t.objectStore(store));
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => resolve(null);
-          t.onabort = () => resolve(null);
+          req.onsuccess = () => done(req.result);
+          req.onerror = () => done(null);
+          t.onabort = () => done(null);
+          t.oncomplete = () => done(req.result ?? null);
         } catch {
-          resolve(null);
+          done(null);
         }
       }),
   );
@@ -151,15 +172,32 @@ export async function idbDeleteOps(seqs: number[]): Promise<void> {
     return;
   }
   await new Promise<void>((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const timer = setTimeout(done, SETTLE_MS);
     try {
       const t = db.transaction(OPS_STORE, "readwrite");
       const s = t.objectStore(OPS_STORE);
       for (const seq of seqs) s.delete(seq);
-      t.oncomplete = () => resolve();
-      t.onerror = () => resolve();
-      t.onabort = () => resolve();
+      t.oncomplete = () => {
+        clearTimeout(timer);
+        done();
+      };
+      t.onerror = () => {
+        clearTimeout(timer);
+        done();
+      };
+      t.onabort = () => {
+        clearTimeout(timer);
+        done();
+      };
     } catch {
-      resolve();
+      clearTimeout(timer);
+      done();
     }
   });
 }
