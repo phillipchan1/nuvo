@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Home from './Home'
 import Privacy from './pages/Privacy'
+import Share from './pages/Share'
 import Support from './pages/Support'
 import Terms from './pages/Terms'
 import { HOME_CANONICAL, HOME_DESC, HOME_TITLE, ROUTES } from './routes'
@@ -65,6 +66,7 @@ export default function App() {
 
   if (path === '/privacy') return <Privacy />
   if (path === '/terms') return <Terms />
+  if (path === '/share') return <Share />
   if (path === '/support' || path === '/help') return <Support />
   return <Home />
 }

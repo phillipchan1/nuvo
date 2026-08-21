@@ -28,12 +28,45 @@ export function normalizeReferralCode(raw: unknown): string | null {
   return cleaned.length >= 2 ? cleaned : null;
 }
 
-/** First-name slug for a personal code. "David Chung" → "DAVID"; collisions
- *  are resolved by the issuer (suffix), not here. */
+/** First-name slug for a personal code prefix. "David Chung" → "DAVID".
+ *  New codes are never the bare prefix — see `personalReferralCode`. */
 export function slugFromDisplayName(name: string | null | undefined): string {
   const first = (name ?? "").trim().split(/\s+/)[0] ?? "";
   const slug = normalizeReferralCode(first);
   return slug ?? "FRIEND";
+}
+
+/** Ambiguity-safe alphabet (no 0/O, 1/I/L). 32^4 ≈ 1M per name prefix. */
+export const REFERRAL_SUFFIX_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+export const REFERRAL_SUFFIX_LEN = 4;
+
+/** Cryptographic (or injected) 4-char suffix. */
+export function randomReferralSuffix(
+  randomBytes: (n: number) => Uint8Array = (n) => crypto.getRandomValues(new Uint8Array(n)),
+): string {
+  const bytes = randomBytes(REFERRAL_SUFFIX_LEN);
+  let out = "";
+  for (let i = 0; i < REFERRAL_SUFFIX_LEN; i++) {
+    out += REFERRAL_SUFFIX_ALPHABET[bytes[i]! % REFERRAL_SUFFIX_ALPHABET.length];
+  }
+  return out;
+}
+
+/**
+ * Sayable *and* unique: `PHIL-K7RM`, never bare `PHIL`.
+ * Early beta seeds (manual Stripe codes) may still be a bare name; everything
+ * the app mints uses this shape so a thousand Phils don't collide.
+ */
+export function personalReferralCode(base: string, suffix: string): string {
+  const slug = normalizeReferralCode(base) ?? "FRIEND";
+  const tail = suffix
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, REFERRAL_SUFFIX_LEN);
+  if (tail.length !== REFERRAL_SUFFIX_LEN) {
+    throw new Error("referral suffix must be 4 characters");
+  }
+  return `${slug}-${tail}`.slice(0, MAX_CODE_LEN);
 }
 
 /** Persist a landing `?code=` so it survives signup → trial → checkout. */

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { ComponentType } from 'react'
 import Home from './Home'
 import Privacy from './pages/Privacy'
+import Share from './pages/Share'
 import Support from './pages/Support'
 import Terms from './pages/Terms'
 
@@ -13,6 +14,7 @@ const PAGES: Record<string, ComponentType> = {
   '/privacy': Privacy,
   '/terms': Terms,
   '/support': Support,
+  '/share': Share,
 }
 
 export function render(path: string): string {

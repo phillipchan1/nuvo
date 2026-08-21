@@ -839,6 +839,9 @@ export default function Home() {
       <footer className="mx-auto flex max-w-6xl flex-col gap-4 border-t border-[var(--line)] px-5 py-8 text-[13px] text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <span className="wordmark text-[var(--text)]">Nuvo</span>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <a href="/share" className="hover:text-[var(--text)]">
+            Share
+          </a>
           <a href="/support" className="hover:text-[var(--text)]">
             Support
           </a>

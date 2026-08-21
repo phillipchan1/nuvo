@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { APP_URL, PRIVACY_URL, RELEASES_REPO, SUPPORT_EMAIL, SUPPORT_MAILTO, SUPPORT_RESPONSE } from '../config'
 import { appUrlWithCode } from '../referral'
 
@@ -293,10 +293,25 @@ function Section({
 }
 
 /** Disclosure — native <details>, so it works without JS, is keyboard-navigable,
- *  and Cmd-F finds closed content in most browsers. */
-function Disclose({ q, children }: { q: string; children: ReactNode }) {
+ *  and Cmd-F finds closed content in most browsers. Optional `id` for deep
+ *  links (`/support#share`); the hash opens that row and scrolls it into view. */
+function Disclose({ q, id, children }: { q: string; id?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null)
+  useEffect(() => {
+    if (!id) return
+    if (window.location.hash !== `#${id}`) return
+    const el = ref.current
+    if (!el) return
+    el.open = true
+    el.scrollIntoView({ block: 'start' })
+  }, [id])
+
   return (
-    <details className="disclose group border-t border-[var(--line)]">
+    <details
+      ref={ref}
+      id={id}
+      className={`disclose group border-t border-[var(--line)]${id ? ' scroll-mt-8' : ''}`}
+    >
       <summary className="tap flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-[0.9375rem] font-medium text-[var(--text)]">
         <span>{q}</span>
         <span className="disclose-mark shrink-0 text-[var(--muted)]" aria-hidden />
@@ -896,13 +911,14 @@ export default function Support() {
                     ); we remember it through the trial and apply it at checkout. You get{' '}
                     <strong className="text-[var(--text)]">50% off your first month</strong>.
                     The person who shared gets a free month on their bill when you actually
-                    pay (not when you start the trial) — up to six free months outstanding.
-                    There is no affiliate marketplace; if someone loves Nuvo, they just give
-                    you their code.
+                    pay (not when you start the trial).
                   </p>
                   <p className="mt-3">
-                    Already on Nuvo and want to share? Settings → Billing shows{' '}
-                    <strong className="text-[var(--text)]">your code</strong>.
+                    Want a code of your own?{' '}
+                    <a href="/share" className="text-[var(--text)] underline underline-offset-2">
+                      nuvo.day/share
+                    </a>
+                    .
                   </p>
                 </Disclose>
                 <Disclose q="Changing your card, plan, or invoices">
@@ -1058,6 +1074,9 @@ export default function Support() {
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <a href="/" className="hover:text-[var(--text)]">
             Home
+          </a>
+          <a href="/share" className="hover:text-[var(--text)]">
+            Share
           </a>
           <a href="/privacy" className="hover:text-[var(--text)]">
             Privacy

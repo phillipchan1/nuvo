@@ -18,7 +18,7 @@ export function friendShareSentence(code: string): string {
 }
 
 export function shareBlurb(): string {
-  return "Friends get 50% off their first month. When they subscribe, you get a free month (up to six).";
+  return "Your unique code — nothing to apply for. Friends get 50% off their first month; when they pay, you get a free month (up to six).";
 }
 
 /**

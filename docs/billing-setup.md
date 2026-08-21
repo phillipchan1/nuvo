@@ -162,9 +162,9 @@ multi-tenant now, not single-user.
 | Friend | **50% off first invoice** (Stripe Coupon `duration: once`) |
 | Sharer | **One free month** ($29 Customer Balance credit) when the friend **pays** — not on trial start |
 | Cap | **6 months** of outstanding credit on the sharer's Stripe customer |
-| Hands-off | New operators mint a code in Settings → Billing. No apply form. No `/affiliates` page. |
+| Hands-off | New operators mint a unique `NAME-XXXX` code in Settings → Billing. No apply form. Explainer: `/share`. No `/affiliates` portal. |
 
-Project ref: `ebibzojtkzkphykznomv`. Marketing FAQ already lives at `/support`.
+Project ref: `ebibzojtkzkphykznomv`. Point people at https://nuvo.day/share.
 
 ### A. Stripe coupon + seed codes (once)
 
@@ -174,8 +174,9 @@ STRIPE_SECRET_KEY=sk_live_… node scripts/create-referral-codes.mjs
 ```
 
 The script is idempotent. It prints `STRIPE_REFERRAL_COUPON=coup_…` and texts
-for PHIL · ESTHER · DAVID · CHUNG. Paste those texts (or point people at
-Settings → Billing).
+for early bare-name seeds (PHIL · ESTHER · DAVID · CHUNG). New accounts get
+`NAME-XXXX` via the `referral-code` function — never a bare first name.
+Paste seed texts, or point everyone at https://nuvo.day/share.
 
 ### B. Supabase secret + functions
 

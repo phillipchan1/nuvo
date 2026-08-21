@@ -103,7 +103,8 @@ function ShareCodeBlock({ initial }: { initial: string | null }) {
         </div>
       ) : !error ? (
         <div className="mt-2 text-caption text-muted">
-          Your code will appear here once friend-codes are turned on.
+          Your code will appear here once friend-codes are turned on. Nothing to apply for —
+          open this pane and we mint one.
         </div>
       ) : null}
       {error && <div className="mt-2 text-caption text-signal">{error}</div>}

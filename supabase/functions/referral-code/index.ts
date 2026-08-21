@@ -2,31 +2,18 @@
 // referral Coupon, and returns it. Authenticated — BillingPane calls this
 // via supabase.functions.invoke("referral-code").
 //
+// New mints are always `NAME-XXXX` (unique by construction). Bare names like
+// PHIL are launch seeds only — attached if already issued for this user.
+//
 // Env: STRIPE_SECRET_KEY, STRIPE_REFERRAL_COUPON (coup_… created once by
 // scripts/create-referral-codes.mjs).
 import { admin, handleOptions, json, requireUser } from "../_shared/admin.ts";
+import {
+  personalReferralCode,
+  randomReferralSuffix,
+  slugFromUser,
+} from "../_shared/referralCode.ts";
 import { stripe } from "../_shared/stripe.ts";
-
-function normalizeCode(raw: string): string {
-  return raw
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 20);
-}
-
-function slugFromUser(user: { user_metadata?: Record<string, unknown>; email?: string | null }): string {
-  const meta = user.user_metadata ?? {};
-  const name =
-    (typeof meta.full_name === "string" && meta.full_name) ||
-    (typeof meta.name === "string" && meta.name) ||
-    (user.email ? user.email.split("@")[0] : "") ||
-    "FRIEND";
-  const first = name.trim().split(/\s+/)[0] ?? "FRIEND";
-  return normalizeCode(first) || "FRIEND";
-}
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -73,11 +60,9 @@ Deno.serve(async (req) => {
     }
 
     const base = slugFromUser(user);
-    let code = base;
     let promo: { id: string; code: string } | null = null;
     for (let attempt = 0; attempt < 12; attempt++) {
-      const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
-      code = normalizeCode(candidate) || `FRIEND-${attempt + 1}`;
+      const code = personalReferralCode(base, randomReferralSuffix());
       try {
         const created = await stripe.promotionCodes.create({
           coupon: couponId,
@@ -91,7 +76,7 @@ Deno.serve(async (req) => {
         promo = { id: created.id, code: created.code };
         break;
       } catch (e) {
-        // Code already taken — try a suffix.
+        // Extremely unlikely collision — draw another suffix.
         const msg = e instanceof Error ? e.message : String(e);
         if (!/already|exists|taken|duplicate/i.test(msg)) throw e;
       }

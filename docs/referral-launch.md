@@ -7,7 +7,7 @@
 - **Friend:** 50% off first invoice  
 - **Sharer:** one free month ($29 Stripe Customer Balance) when friend **pays** (not trial)  
 - **Cap:** 6 months outstanding credit  
-- **UX:** Settings → Billing shows the code. Marketing = Support FAQ only. No affiliates page.
+- **UX:** Settings → Billing shows the code. Public explainer: [`nuvo.day/share`](https://nuvo.day/share). No affiliate portal.
 
 ## Do these in order
 
@@ -46,7 +46,10 @@ Stripe Dashboard → Developers → Webhooks → Nuvo endpoint → ensure **`inv
 
 ### 6. Notify betas (optional)
 
-Paste texts from the script output, **or** tell them: open Nuvo → Settings → Billing → Share Nuvo.
+Paste texts from the script output, **or** point them at:
+
+- Public explainer: **https://nuvo.day/share**
+- In-app: Settings → Billing → **Share Nuvo** (code self-mints on open — unique `NAME-XXXX`, no apply form)
 
 ### 7. Done — hands-off
 

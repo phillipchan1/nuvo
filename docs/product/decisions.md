@@ -4024,14 +4024,18 @@ Google Doc edit, not a later refetch.*
 code — two-sided friend discount + free-month credit — not an affiliate
 marketplace.**
 
-A handful of beta operators want to tell friends. The honest shape is Superhuman-
-style: one sayable word that is theirs (`PHIL`, `ESTHER`), typed at Stripe
-Checkout (or carried via `?code=`).
+A handful of beta operators want to tell friends. The honest shape is a personal
+**code** typed at Stripe Checkout (or carried via `?code=`). Early launch seeds
+were bare names (`PHIL`, `ESTHER`); everything the app mints now is unique by
+construction: `NAME-XXXX` (first name + four ambiguity-safe characters), so a
+thousand Phils never collide.
 
 **The offer.** Friend gets **50% off the first invoice**. When that friend
 **pays** (not trial), the sharer gets **one free month** ($29 Stripe Customer
 Balance), capped at **six months** of outstanding credit. Quiet Settings →
-Billing line; no counts, no leaderboard.
+Billing line; no counts, no leaderboard. Public explainer at
+[`nuvo.day/share`](https://nuvo.day/share) — an offer page, not a partner portal
+(N-17 still forbids `/affiliates`, apply forms, commissions, leaderboards).
 
 **What this is not.** Not multi-player (two accounts, two funnels, a coupon
 between them — N-02 untouched). Not an invite (calendar guests keep that word).
@@ -4046,7 +4050,7 @@ tell friends; they don't teach strangers the offer.
 `stripe-checkout` pre-applies a pending `?code=` when it isn't a self-referral.
 `stripe-webhook` writes `referred_by` / `referral_code_used` on checkout, and
 on `invoice.paid` (`billing_reason=subscription_create`) credits the referrer
-unless capped. `referral-code` mints or attaches the operator's own code.
+unless capped. `referral-code` mints `NAME-XXXX` (or attaches a prior seed).
 Launch: [`docs/referral-launch.md`](../referral-launch.md) · recipe
 [`docs/billing-setup.md`](../billing-setup.md) §10.
 
