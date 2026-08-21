@@ -1,13 +1,13 @@
 import { format } from "date-fns";
 import { Icon } from "./Icon";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin, { Draggable } from "@fullcalendar/interaction";
 import type { DatesSetArg, DateSelectArg, DayCellContentArg, EventApi, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from "@fullcalendar/core";
 import type { DateClickArg, EventReceiveArg, EventResizeDoneArg, EventDragStopArg } from "@fullcalendar/interaction";
-import type { CalendarAccount, ExternalEvent, RecurrenceScope, Slot, Task, UserSettings } from "../lib/types";
+import { restingStatus, type CalendarAccount, type ExternalEvent, type RecurrenceScope, type Slot, type Task, type UserSettings } from "../lib/types";
 import { DEFAULT_DURATION_MINUTES } from "../lib/types";
 import { firstDayOfWeek } from "../hooks/useSettings";
 import { allDayRangeFromStart, endOf, isOverdue, parseDateISO, toDateISO } from "../lib/dates";
@@ -200,6 +200,24 @@ const remountCache: { dateISO: string | null; scrollTop: number | null } = {
   dateISO: null,
   scrollTop: null,
 };
+
+/** Paint a block's done state on the event element this frame.
+ *
+ *  Checking a box used to wait for React to rebuild `fcEvents` and FullCalendar
+ *  to reconcile the whole grid — a hundred-millisecond hitch with the check
+ *  appearing after it. `.evt-done` on the harness is the whole visual (fill,
+ *  mark, strike, dim), so this class toggle is the click. The cache write is
+ *  deferred until after paint so it cannot steal the frame. */
+function paintCalendarTaskDone(el: HTMLElement, done: boolean) {
+  el.classList.toggle("evt-done", done);
+  const btn = el.querySelector<HTMLElement>("[data-done-toggle]");
+  if (!btn) return;
+  btn.classList.remove("bloom");
+  if (done) {
+    void btn.offsetWidth;
+    btn.classList.add("bloom");
+  }
+}
 
 // ── Main component ─────────────────────────────────────────────────────────
 export default function CalendarPane({
@@ -1362,6 +1380,22 @@ export default function CalendarPane({
   const findEvent = (id: string) => eventsRef.current.find((e) => e.id === id);
   const findSlot = (id: string) => slotsRef.current.find((s) => s.id === id);
 
+  /** Instant check, then the write. The paint is the click; the mutation is
+   *  scheduled as a macrotask so React/FullCalendar cannot take this frame. */
+  const toggleCalendarTaskDone = (task: Task, el?: HTMLElement | null) => {
+    const goingDone = task.status !== "done";
+    if (el) paintCalendarTaskDone(el, goingDone);
+    const nextStatus = goingDone ? "done" : restingStatus(task);
+    tasksRef.current = tasksRef.current.map((t) =>
+      t.id === task.id
+        ? { ...t, status: nextStatus, completed_at: goingDone ? new Date().toISOString() : null }
+        : t,
+    );
+    window.setTimeout(() => {
+      goingDone ? mutations.complete(task) : mutations.uncomplete(task);
+    }, 0);
+  };
+
   // ── Hide / show (Fantastical "hide", not delete) ─────────────────────────
   const hideEvent = (event: ExternalEvent, scope: RecurrenceScope) => {
     hide(event, scope);
@@ -2171,7 +2205,7 @@ export default function CalendarPane({
       })();
       if (onCheckbox) {
         const task = findTask(refId);
-        if (task) task.status === "done" ? mutations.uncomplete(task) : mutations.complete(task);
+        if (task) toggleCalendarTaskDone(task, info.el);
         return;
       }
     }
@@ -2207,13 +2241,12 @@ export default function CalendarPane({
   };
   useEffect(() => () => { if (hoverWarmRef.current) window.clearTimeout(hoverWarmRef.current); }, []);
 
-  const renderEvent = (arg: EventContentArg) => {
+  const renderEvent = useCallback((arg: EventContentArg) => {
     const { kind, calColor, recurring, done: doneProp } = arg.event.extendedProps as ExtendedProps;
     const inMonth = arg.view.type === "dayGridMonth";
 
     // ── Month view: compact dot + title pill ──────────────────────────────
     if (inMonth) {
-      const done = kind === "task" ? (doneProp ?? false) : false;
       const dotColor = kind === "task" ? "var(--accent)" : (calColor ?? "var(--muted)");
       return (
         <div className="flex min-w-0 items-center gap-1 px-1.5 py-[2px]">
@@ -2222,9 +2255,7 @@ export default function CalendarPane({
             className="h-[6px] w-[6px] shrink-0 rounded-full"
             style={{ backgroundColor: dotColor, opacity: kind === "m365" ? 0.55 : 1 }}
           />
-          <span
-            className={`truncate text-label font-medium leading-none ${done ? "line-through opacity-50" : ""}`}
-          >
+          <span data-evt-title="" className="truncate text-label font-medium leading-none">
             {arg.event.title}
           </span>
         </div>
@@ -2379,31 +2410,30 @@ export default function CalendarPane({
     }
 
     // ── Task: checkbox tinted to its own color ─────────────────────────────
-    const done = doneProp ?? false;
+    // Done styling lives on `.fc-event.evt-done` (index.css), not on these
+    // nodes — a click paints the harness class this frame, and this markup
+    // must already be able to show the check without a React rerender.
     return (
       <div className="flex h-full min-w-0 overflow-hidden">
         {Bar}
         <div className={`flex min-w-0 flex-1 gap-1.5 overflow-hidden px-1.5 ${padY} ${compact ? "items-center" : "items-start"}`}>
           <button
             aria-label="toggle done"
+            aria-pressed={doneProp ?? false}
             data-done-toggle
-            className={`fast mt-[1px] flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border ${
-              done ? "border-accent bg-accent text-on-accent" : "bg-surface"
-            }`}
-            style={done ? undefined : { borderColor: bar }}
+            className="relative mt-[1px] flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px] border"
+            style={{ ["--evt-check-border" as string]: bar }}
             onMouseDown={(e) => {
               // Don't let a press on the checkbox begin an event drag.
               e.stopPropagation();
               e.nativeEvent.stopImmediatePropagation();
             }}
           >
-            {done && (
-              <Icon name="check" size={8} />
-            )}
+            <Icon name="check" size={8} className="evt-check" />
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1">
-              <span className={`${titleCls} ${done ? "line-through opacity-55" : ""}`}>
+              <span data-evt-title="" className={titleCls}>
                 {isProject ? `▸ ${arg.event.title}` : arg.event.title}
               </span>
               {Recur}
@@ -2413,7 +2443,7 @@ export default function CalendarPane({
         </div>
       </div>
     );
-  };
+  }, []);
 
   const isMonth = view === "dayGridMonth";
 
@@ -2780,8 +2810,9 @@ export default function CalendarPane({
                   Open
                 </EventMenuItem>
                 <EventMenuItem onClick={() => {
+                  const el = taskMenu.el;
                   setTaskMenu(null);
-                  task.status === "done" ? mutations.uncomplete(task) : mutations.complete(task);
+                  toggleCalendarTaskDone(task, el);
                 }}>
                   {task.status === "done" ? "Reopen" : "Mark done"}
                 </EventMenuItem>

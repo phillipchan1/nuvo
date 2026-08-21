@@ -8,7 +8,7 @@ import { RecurMark } from "./ui";
 import { pressable } from "../lib/a11y";
 
 /** Row exit + checkbox bloom — keep in sync with `--d-task-complete` in index.css. */
-const COMPLETE_MS = 640;
+const COMPLETE_MS = 180;
 
 export interface TaskMeta {
   project?: string | null;
@@ -593,8 +593,8 @@ const TaskRow = forwardRef<TaskRowHandle, {
       // rail doesn't implement.
       aria-current={selected || multiSelected ? "true" : undefined}
       title={rowHint}
-      className={`fast group cursor-pointer select-none border-b border-line px-3.5 py-2.5 last:border-b-0 ${
-        completing ? "task-completing" : ""
+      className={`group cursor-pointer select-none border-b border-line px-3.5 py-2.5 last:border-b-0 ${
+        completing ? "task-completing" : "fast"
       } ${dragging ? "row-dragging" : bg} ${swipeActions ? "relative overflow-hidden" : ""}`}
       style={swipeActions ? { touchAction: "pan-y" } : undefined}
     >
@@ -630,7 +630,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
           // tap-bloom gives the phone 44px; tap-desk-bloom gives the mouse its
           // own 24px floor. Both are invisible ::before area — the drawn 15px
           // box is untouched, so the row's density reads exactly as before.
-          className={`tap-bloom tap-desk-bloom fast relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${
+          className={`tap-bloom tap-desk-bloom relative flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border transition-none ${
             completing ? "bloom" : ""
           } ${done || completing ? "border-accent bg-accent text-on-accent" : "border-muted hover:border-accent"}`}
         >

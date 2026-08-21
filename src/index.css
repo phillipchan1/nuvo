@@ -1548,10 +1548,11 @@ body.nuvo-selecting * {
   .orient-stagger, .orient-drop, .orient-pulse, .orient-flow { animation: none; }
 }
 
-/* The completion bloom — a soft ring of light, not confetti. */
+/* The completion bloom — a soft ring of light, not confetti. Snappy: the
+   check is the click, this is a flash, not a linger. */
 @keyframes bloom {
   0% { transform: scale(0.4); opacity: 0.55; }
-  100% { transform: scale(2.6); opacity: 0; }
+  100% { transform: scale(2.4); opacity: 0; }
 }
 .bloom::after {
   content: "";
@@ -1559,7 +1560,7 @@ body.nuvo-selecting * {
   inset: 0;
   border-radius: inherit;
   box-shadow: 0 0 0 2px var(--accent);
-  animation: bloom 520ms var(--ease-out) forwards;
+  animation: bloom 180ms var(--ease-out) forwards;
   pointer-events: none;
 }
 
@@ -1807,24 +1808,20 @@ select.field { appearance: none; -webkit-appearance: none; }
   background: color-mix(in srgb, var(--muted) 55%, transparent);
 }
 
-/* Completion micro-interaction: check blooms, title strikes, row holds, then fades
-   out and collapses — mutation waits for `--d-task-complete` so the list doesn't
-   yank the row early. */
-:root { --d-task-complete: 640ms; }
+/* Completion micro-interaction: check blooms, title strikes, row collapses.
+   Mutation waits for `--d-task-complete` so the list doesn't yank the row
+   before it's gone — keep the delay short so a check feels like a click. */
+:root { --d-task-complete: 180ms; }
 @keyframes task-complete {
-  0%, 45% {
+  0% {
     opacity: 1;
     max-height: 2.75rem;
     transform: translateX(0) scale(1);
   }
-  58% {
-    opacity: 0.78;
-    transform: translateX(2px) scale(0.995);
-  }
   100% {
     opacity: 0;
     max-height: 0;
-    transform: translateX(5px) scale(0.97);
+    transform: translateX(4px) scale(0.98);
     border-bottom-color: transparent;
   }
 }
@@ -2056,6 +2053,26 @@ select.field { appearance: none; -webkit-appearance: none; }
   backdrop-filter: blur(14px) saturate(1.4);
 }
 .fc-event.evt-done { opacity: 0.5; }
+/* Checkbox + strike are driven by the harness class so a click can paint
+   them this frame (CalendarPane.paintCalendarTaskDone) without waiting for
+   React to rebuild event content. The global `button` transition would ease
+   the fill in — that's the chunky check; snap instead. */
+.fc-event [data-done-toggle] {
+  background: var(--surface);
+  border-color: var(--evt-check-border, var(--accent));
+  transition: none;
+}
+.fc-event.evt-done [data-done-toggle] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.fc-event [data-done-toggle] .evt-check { opacity: 0; }
+.fc-event.evt-done [data-done-toggle] .evt-check { opacity: 1; }
+.fc-event.evt-done [data-evt-title] {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
 
 /* M365: striped, dashed, display-only (fill + border come from CSS here, not
    inline, so the diagonal hatch reads through). */
