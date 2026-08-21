@@ -9,7 +9,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { enqueue } from "./outbox";
-import { installOwingGuards, markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
+import { installOwingGuards, markDeleted, markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
 import type { NewOp, Op, SyncTable } from "./ops";
 import type { Transport } from "./engine";
 
@@ -24,7 +24,7 @@ export {
   unpark,
   type OutboxStatus,
 } from "./outbox";
-export { invalidateWhenSafe, tablesOwing, queryKeyOwesServer, preserveOwingRows, installOwingGuards, resetOwingForTests } from "./coordinator";
+export { invalidateWhenSafe, tablesOwing, queryKeyOwesServer, preserveOwingRows, installOwingGuards, markDeleted, resetOwingForTests } from "./coordinator";
 export { classifyError, type Transport, type SendResult } from "./engine";
 export { createSupabaseTransport, conflictResolutionAvailable } from "./transport";
 export { isDurable } from "./idb";
@@ -57,7 +57,8 @@ export async function queueWrite(op: NewOp): Promise<Op> {
   // `void` and immediately calls `invalidateWhenSafe` (the standard
   // optimistic-patch shape) must not see a stale "nothing owed" the
   // instant this function is entered — see markOwing's own comment.
-  markOwing(op.table);
+  if (op.kind === "delete") markDeleted(op.table, op.rowId);
+  else markOwing(op.table);
   const stored = await enqueue(op);
   await refreshOwing();
   // Fire and forget: a drain failure is the engine's business, not the caller's.

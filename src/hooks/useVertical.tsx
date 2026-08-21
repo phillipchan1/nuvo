@@ -13,7 +13,7 @@ import { useEventRouting } from "./useEventRouting";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { fetchAllTasks, patchCaches } from "./useTasks";
 import { insertSlotCache, patchSlotCaches } from "./useSlots";
-import { invalidateWhenSafe, makeOp, queueWrite, type SyncTable } from "../lib/sync";
+import { invalidateWhenSafe, makeOp, markDeleted, queueWrite, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
 import { upsertPushVerdict } from "../lib/priorities";
 import { titleCase } from "../lib/text";
@@ -500,6 +500,9 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
     const deleteProjectRows = async (ids: string[]) => {
       if (!ids.length) return;
       const doomed = new Set(ids);
+      // Tombstone before any await — child detaches yield, and a stale
+      // projects refetch in that window used to walk the row back in.
+      for (const id of ids) markDeleted("projects", id);
       removeRows<ProjectRow>(["vertical", "projects"], ids);
 
       const tasks = qc.getQueryData<Task[]>(["tasks", "all"]) ?? [];
@@ -542,6 +545,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
     const deleteInitiativeRows = (ids: string[]) => {
       if (!ids.length) return;
       const doomed = new Set(ids);
+      for (const id of ids) markDeleted("initiatives", id);
 
       const projects = qc.getQueryData<ProjectRow[]>(["vertical", "projects"]) ?? [];
       // Key results have no query key of their own — they ride the initiatives
@@ -744,9 +748,21 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           // design token — this mirrors the schema default in migration 1.)
           color: NEW_DOMAIN_COLOR,
         };
+        // Same class as addInitiative's outcome.trim() crash: a partial
+        // optimistic DomainRow left `intention` undefined, and the wall's
+        // first-run card does `domain.intention.trim()` the moment the
+        // empty-state create lands in the cache.
+        const optimisticRow: DomainRow = {
+          id,
+          ...row,
+          intention: "",
+          charter: "",
+          context: null,
+          weekly_target_hours: 0,
+        };
 
         qc.setQueryData<DomainRow[]>(["vertical", "domains"], (old) =>
-          old ? [...old, { id, ...row } as DomainRow] : old,
+          old ? [...old, optimisticRow] : [optimisticRow],
         );
         await queueWrite(makeOp("domains", "insert", id, row));
         invalidateWhenSafe(qc, "domains", ["vertical"]);
@@ -797,6 +813,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         persistVertical("domains", id, rowPatch);
       },
       deleteDomain: (id) => {
+        markDeleted("domains", id);
         removeRows<DomainRow>(["vertical", "domains"], [id]);
         void queueWrite(makeOp("domains", "delete", id));
         invalidateWhenSafe(qc, "domains", ["vertical"]);

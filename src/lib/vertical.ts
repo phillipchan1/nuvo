@@ -658,7 +658,7 @@ export function buildVertical(
         name: d.name,
         color: d.color,
         icon: d.icon || "◇",
-        intention: d.intention,
+        intention: d.intention ?? "",
         charter: d.charter ?? "",
         context: d.context ?? null,
         weeklyTargetHours: d.weekly_target_hours ?? 0,
