@@ -9,7 +9,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { enqueue } from "./outbox";
-import { markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
+import { installOwingGuards, markOwing, refreshOwing, startSync, syncNow } from "./coordinator";
 import type { NewOp, Op, SyncTable } from "./ops";
 import type { Transport } from "./engine";
 
@@ -24,7 +24,7 @@ export {
   unpark,
   type OutboxStatus,
 } from "./outbox";
-export { invalidateWhenSafe, tablesOwing } from "./coordinator";
+export { invalidateWhenSafe, tablesOwing, queryKeyOwesServer, preserveOwingRows, installOwingGuards } from "./coordinator";
 export { classifyError, type Transport, type SendResult } from "./engine";
 export { createSupabaseTransport, conflictResolutionAvailable } from "./transport";
 export { isDurable } from "./idb";
@@ -36,6 +36,7 @@ let stop: (() => void) | null = null;
 export function configureSync(qc: QueryClient, transport: Transport) {
   if (client) stop?.();
   client = { qc, transport };
+  installOwingGuards(qc);
   stop = startSync({ qc, transport });
 }
 

@@ -4,7 +4,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { Toaster, toast } from "sonner";
 import { supabase } from "./lib/supabase";
 import { isSpotlightWindow } from "./lib/platform";
-import { configureSync, createSupabaseTransport, teardownSync } from "./lib/sync";
+import { configureSync, createSupabaseTransport, installOwingGuards, queryKeyOwesServer, teardownSync } from "./lib/sync";
 import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
 import { useWatchSession } from "./hooks/useWatchSession";
@@ -180,7 +180,13 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 15_000,
       retry: 1,
-      refetchOnWindowFocus: true,
+      // A table this device still owes must not be replaced by a server
+      // snapshot that predates the create. That's how a project appeared in
+      // the rail and then vanished — refetchOnWindowFocus (stale after 15s)
+      // painted the pre-insert list over the optimistic row.
+      refetchOnWindowFocus: (query) => !queryKeyOwesServer(query.queryKey),
+      refetchOnReconnect: (query) => !queryKeyOwesServer(query.queryKey),
+      refetchOnMount: (query) => !queryKeyOwesServer(query.queryKey),
     },
     mutations: {
       // Save the first tap after a reconnect: a transient write blips and retries
@@ -191,6 +197,7 @@ const queryClient = new QueryClient({
     },
   },
 });
+installOwingGuards(queryClient);
 
 function Shell() {
   const { session, loading } = useAuth();

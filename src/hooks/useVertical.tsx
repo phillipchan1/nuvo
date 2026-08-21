@@ -322,8 +322,10 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
   const domainsQ = useQuery({
     queryKey: ["vertical", "domains"],
-    queryFn: async (): Promise<DomainRow[]> => {
-      const { data, error } = await supabase.from("domains").select("*").order("sort_order");
+    queryFn: async ({ signal }): Promise<DomainRow[]> => {
+      let q = supabase.from("domains").select("*").order("sort_order");
+      if (signal) q = q.abortSignal(signal);
+      const { data, error } = await q;
       if (error) throw error;
       return data as DomainRow[];
     },
@@ -331,11 +333,10 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
   const initiativesQ = useQuery({
     queryKey: ["vertical", "initiatives"],
-    queryFn: async (): Promise<InitiativeRow[]> => {
-      const { data, error } = await supabase
-        .from("initiatives")
-        .select("*, key_results(*)")
-        .order("sort_order");
+    queryFn: async ({ signal }): Promise<InitiativeRow[]> => {
+      let q = supabase.from("initiatives").select("*, key_results(*)").order("sort_order");
+      if (signal) q = q.abortSignal(signal);
+      const { data, error } = await q;
       if (error) throw error;
       return data as InitiativeRow[];
     },
@@ -343,8 +344,10 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
   const projectsQ = useQuery({
     queryKey: ["vertical", "projects"],
-    queryFn: async (): Promise<ProjectRow[]> => {
-      const { data, error } = await supabase.from("projects").select("*").order("sort_order");
+    queryFn: async ({ signal }): Promise<ProjectRow[]> => {
+      let q = supabase.from("projects").select("*").order("sort_order");
+      if (signal) q = q.abortSignal(signal);
+      const { data, error } = await q;
       if (error) throw error;
       return data as ProjectRow[];
     },
@@ -838,8 +841,12 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         qc.setQueryData<InitiativeRow[]>(["vertical", "initiatives"], (old) =>
           old ? [...old, optimisticRow] : [optimisticRow],
         );
-        await queueWrite(makeOp("initiatives", "insert", id, insert));
-        invalidateWhenSafe(qc, "initiatives", ["vertical"]);
+        // Same contract as addTask: the cache moves now, IndexedDB is the
+        // outbox's job. Awaiting the queue froze CreateRecord on "Creating…"
+        // whenever Safari left a transaction unsettled.
+        void queueWrite(makeOp("initiatives", "insert", id, insert)).then(() =>
+          invalidateWhenSafe(qc, "initiatives", ["vertical"]),
+        );
 
         return {
           id, domainId, name, outcome, description, startDate, targetDate,
@@ -957,12 +964,15 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         if ("startDate" in (init ?? {})) insert.start_date = init?.startDate ?? null;
         if ("targetDate" in (init ?? {})) insert.target_date = init?.targetDate ?? null;
 
-        // `tempId` is no longer temporary — it is the row's real primary key, so
-        // the reconcile-and-swap that used to follow the insert is gone, and so
-        // is the catch that removed the optimistic row when the write failed. A
-        // queued create is not a failed create.
-        await queueWrite(makeOp("projects", "insert", tempId, insert));
-        invalidateWhenSafe(qc, "projects", ["vertical"]);
+        // `tempId` is the row's real primary key, so there is no reconcile-swap
+        // and no unwind-on-failure. A queued create is not a failed create —
+        // and we must not await IndexedDB here. CreateRecord's commit used to,
+        // which left the sheet stuck on "Creating…" (project already painted
+        // in the rail, tasks still sitting in local state) whenever a Safari
+        // IDB transaction never settled.
+        void queueWrite(makeOp("projects", "insert", tempId, insert)).then(() =>
+          invalidateWhenSafe(qc, "projects", ["vertical"]),
+        );
         return rowToProject(optimistic);
       },
       updateProject: (id, patch) => {
@@ -1079,23 +1089,26 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         // One op per draft rather than one batch insert: a batch that
         // half-lands has no safe retry, whereas each per-row upsert is
         // independently idempotent. The optimistic rows already carry the ids
-        // the inserts will use, so nothing is swapped afterwards.
-        for (const [i, d] of drafts.entries()) {
-          await queueWrite(
-            makeOp("tasks", "insert", temps[i].id, {
-              title: d.title,
-              status: "backlog",
-              project_id: parent.projectId ?? null,
-              initiative_id: parent.initiativeId ?? null,
-              domain_id: parent.domainId ?? null,
-              big_rock_id: d.bigRockId ?? null,
-              energy: d.energy,
-              duration_minutes: d.durationMins,
-              sort_order: baseSort + i,
-            }),
-          );
-        }
-        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+        // the inserts will use, so nothing is swapped afterwards. Don't await
+        // the queue — CreateRecord opens the record the moment the cache has
+        // the rows; a hung IDB write must not eat the tasks.
+        void Promise.all(
+          drafts.map((d, i) =>
+            queueWrite(
+              makeOp("tasks", "insert", temps[i].id, {
+                title: d.title,
+                status: "backlog",
+                project_id: parent.projectId ?? null,
+                initiative_id: parent.initiativeId ?? null,
+                domain_id: parent.domainId ?? null,
+                big_rock_id: d.bigRockId ?? null,
+                energy: d.energy,
+                duration_minutes: d.durationMins,
+                sort_order: baseSort + i,
+              }),
+            ),
+          ),
+        ).then(() => invalidateWhenSafe(qc, "tasks", ["tasks"]));
       },
       addTasksToWeek: async (parent, drafts) => {
         if (!drafts.length) return;
@@ -1123,24 +1136,25 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           old ? [...old, ...temps] : temps,
         );
         // Per-row ops, ids already minted into the optimistic rows.
-        for (const [i, d] of drafts.entries()) {
-          await queueWrite(
-            makeOp("tasks", "insert", temps[i].id, {
-              title: d.title,
-              status: "backlog",
-              project_id: parent.projectId ?? null,
-              initiative_id: parent.initiativeId ?? null,
-              domain_id: parent.domainId ?? null,
-              sprint_id: sprint.id,
-              big_rock_id: d.bigRockId ?? null,
-              deadline: d.deadline ?? null,
-              energy: d.energy,
-              duration_minutes: d.durationMins,
-              sort_order: baseSort + i,
-            }),
-          );
-        }
-        invalidateWhenSafe(qc, "tasks", ["tasks"]);
+        void Promise.all(
+          drafts.map((d, i) =>
+            queueWrite(
+              makeOp("tasks", "insert", temps[i].id, {
+                title: d.title,
+                status: "backlog",
+                project_id: parent.projectId ?? null,
+                initiative_id: parent.initiativeId ?? null,
+                domain_id: parent.domainId ?? null,
+                sprint_id: sprint.id,
+                big_rock_id: d.bigRockId ?? null,
+                deadline: d.deadline ?? null,
+                energy: d.energy,
+                duration_minutes: d.durationMins,
+                sort_order: baseSort + i,
+              }),
+            ),
+          ),
+        ).then(() => invalidateWhenSafe(qc, "tasks", ["tasks"]));
       },
       updateTask: (id, patch) => {
         const rowPatch: Partial<Task> = {};

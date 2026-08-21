@@ -199,8 +199,14 @@ function ProjectRecord({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Don't snap the sheet shut the instant the row is missing. Create used to
+  // race a refetch that hadn't seen the insert yet, which closed the record
+  // and took the new tasks with it. Give the optimistic row a beat to land;
+  // if this was a delete, DeleteBtn already called onClose.
   useEffect(() => {
-    if (!project) onClose();
+    if (project) return;
+    const t = window.setTimeout(onClose, 800);
+    return () => window.clearTimeout(t);
   }, [project, onClose]);
   if (!project) return null;
 
@@ -481,7 +487,9 @@ function InitiativeRecord({
   }, [addKeyResult, id]);
 
   useEffect(() => {
-    if (!initiative) onClose();
+    if (initiative) return;
+    const t = window.setTimeout(onClose, 800);
+    return () => window.clearTimeout(t);
   }, [initiative, onClose]);
   if (!initiative) return null;
 

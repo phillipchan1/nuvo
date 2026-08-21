@@ -186,6 +186,16 @@ export default function CreateRecord({
   // ── commit ─────────────────────────────────────────────────────────────────
   const submit = async () => {
     if (!canCreate || busy) return;
+    // The composer is a draft, not a row — tapping Create (especially on a
+    // phone, where Return is "dismiss keyboard") used to throw away whatever
+    // was still in the field. Fold it in before the write so the task they
+    // typed is the task that lands.
+    const pending = draft.trim();
+    const toCreate = pending ? [...tasks, push(pending)] : tasks;
+    if (pending) {
+      setTasks(toCreate);
+      setDraft("");
+    }
     setBusy(true);
     setError(null);
     const today = format(new Date(), "yyyy-MM-dd");
@@ -204,12 +214,12 @@ export default function CreateRecord({
         kind === "project"
           ? await addProject(domainId, initiativeId, shared)
           : await addInitiative(domainId, shared);
-      if (tasks.length) {
+      if (toCreate.length) {
         await addTasks(
           kind === "project"
             ? { projectId: created.id, initiativeId, domainId }
             : { initiativeId: created.id, domainId },
-          tasks.map((t) => ({ title: t.title, energy: t.energy, durationMins: t.durationMins })),
+          toCreate.map((t) => ({ title: t.title, energy: t.energy, durationMins: t.durationMins })),
         );
       }
       onCreated(created.id);

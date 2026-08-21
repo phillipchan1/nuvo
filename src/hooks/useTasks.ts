@@ -140,10 +140,10 @@ export function usePlannedAnytimeTasks(rangeStartISO: string, rangeEndISO: strin
  *  tiebreak makes the page order total, so rows can't dup or skip across a
  *  page seam when sort_order values collide. */
 const TASK_PAGE = 1000;
-export async function fetchAllTasks(): Promise<Task[]> {
+export async function fetchAllTasks(ctx?: { signal?: AbortSignal }): Promise<Task[]> {
   const out: Task[] = [];
   for (let from = 0; ; from += TASK_PAGE) {
-    const { data, error } = await supabase
+    let q = supabase
       .from("tasks")
       .select("*")
       .neq("status", "trashed")
@@ -152,6 +152,8 @@ export async function fetchAllTasks(): Promise<Task[]> {
       .order("created_at")
       .order("id")
       .range(from, from + TASK_PAGE - 1);
+    if (ctx?.signal) q = q.abortSignal(ctx.signal);
+    const { data, error } = await q;
     if (error) throw error;
     const rows = (data ?? []) as Task[];
     out.push(...rows);
