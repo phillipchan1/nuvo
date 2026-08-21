@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
-import { writeWasEntitled } from "../lib/subscription";
+import { interpretSubscriptionRead, writeWasEntitled } from "../lib/subscription";
 import type { Subscription } from "../lib/subscription";
 
 const KEY = ["subscription"];
@@ -44,34 +44,46 @@ export function useSubscription() {
         return data as Subscription | null;
       };
 
-      const first = await fetchOnce();
-      // Every account gets a subscriptions row atomically at signup — a null
-      // read here isn't "no subscription," it's RLS's silent zero-rows
-      // answer, which is indistinguishable from "this request raced the
-      // session attaching and went out unauthenticated." That race is rare
-      // but has happened, and its cost is a real paying customer staring at
-      // a paywall. So a null doesn't get trusted on one read: confirm a
-      // session is actually live, then re-read once before believing it.
-      if (first === null) {
+      const read = async (alreadyRetried: boolean): Promise<Subscription | null> => {
+        const row = await fetchOnce();
         const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          console.warn("[nuvo] subscription read null with a live session — retrying once");
-          return fetchOnce();
+        const verdict = interpretSubscriptionRead(row, {
+          hasSession: Boolean(session),
+          alreadyRetried,
+        });
+        if (verdict.action === "return") return verdict.row;
+        if (verdict.action === "fail") {
+          throw new Error("Couldn't verify your subscription");
         }
-      }
-      return first;
+        // A live session with an empty read is usually a JWT that went stale
+        // while the tab slept — RLS then answers zero rows, not 401. Refresh
+        // and try once more before treating it as a failure.
+        console.warn("[nuvo] subscription read null with a live session — refreshing and retrying");
+        await supabase.auth.refreshSession();
+        return read(true);
+      };
+      return read(false);
     },
+    // Keep the last good row through a refetch blip so the shell doesn't
+    // unmount the planner the moment the network hiccups.
+    placeholderData: (prev) => prev,
     // Three bounded attempts (~7s of backoff) before showing the error card, so
     // an ordinary blip still self-heals without the user seeing anything.
     retry: 2,
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 4_000),
+    // A paying account looking at the error card (or the app held up by last
+    // launch's hint) should recover on its own, not wait for a tap.
+    refetchInterval: (q) => (q.state.status === "error" ? 5_000 : false),
   });
 
   // Record the outcome as the device-local optimistic-render hint (see
   // lib/subscription.ts) — every settle, not just the first, so a lapse
-  // clears the hint just as readily as a renewal sets it.
+  // clears the hint just as readily as a renewal sets it. A null success is
+  // not a real answer (interpretSubscriptionRead fails those), so we never
+  // clear the hint on an empty read.
   useEffect(() => {
-    if (query.isSuccess) writeWasEntitled(Boolean(query.data?.entitled));
+    if (!query.isSuccess || query.data == null) return;
+    writeWasEntitled(query.data.entitled);
   }, [query.isSuccess, query.data]);
 
   // isPending (not isLoading) is the right "we don't know yet" signal here:

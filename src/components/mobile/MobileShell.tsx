@@ -564,6 +564,7 @@ export default function MobileShell() {
           <MobileCalendar
             now={now}
             onTapEvent={setCalendarTap}
+            onTapTask={(id) => setTaskId(id)}
             onOpenUpkeep={() => setUpkeepOpen(true)}
             onNewEvent={setNewEventDate}
             // The week crown's three doors: a project opens its record sheet, a
@@ -754,7 +755,7 @@ export default function MobileShell() {
           labels={labels}
           onCreate={mutations.create}
           onClose={() => setQuickOpen(false)}
-          defaultDoDate={tab === "tasks" && sub === "today" ? today : null}
+          defaultDoDate={tab === "calendar" || (tab === "tasks" && sub === "today") ? today : null}
         />
       )}
       {openTask && (

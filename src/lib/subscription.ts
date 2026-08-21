@@ -50,6 +50,51 @@ export function writeWasEntitled(entitled: boolean): void {
   }
 }
 
+/**
+ * A subscriptions SELECT that returns zero rows is not "this account isn't
+ * entitled." RLS answers empty for an expired/missing JWT the same way it
+ * answers empty for a missing row, and PostgREST reports that as `null`, not
+ * an error. Trusting that null as cancelled is how a paying customer lands
+ * on the paywall (or has the was-entitled hint cleared) after a blip.
+ *
+ * `retry` = refresh the JWT and read again. `fail` = throw, so the shell
+ * can keep the app up on last launch's hint instead of locking them out.
+ */
+export function interpretSubscriptionRead(
+  row: Subscription | null,
+  opts: { hasSession: boolean; alreadyRetried: boolean },
+): { action: "return"; row: Subscription | null } | { action: "retry" } | { action: "fail" } {
+  if (row !== null) return { action: "return", row };
+  if (!opts.hasSession) return { action: "return", row: null };
+  if (!opts.alreadyRetried) return { action: "retry" };
+  return { action: "fail" };
+}
+
+export type EntitlementView = "loading" | "verify-error" | "locked" | "open";
+
+/**
+ * What the signed-in shell should render. A failed or empty subscription
+ * check is never "not entitled" — only an actual row with `entitled = false`
+ * is. Last launch's hint lets a paying account keep working through a blip
+ * instead of unmounting the planner (and the capture they just typed).
+ */
+export function resolveEntitlementView(args: {
+  subPending: boolean;
+  subError: boolean;
+  subscription: Subscription | null | undefined;
+  checkoutPending: boolean;
+  wasEntitled: boolean;
+}): EntitlementView {
+  const entitled = Boolean(args.subscription?.entitled);
+  const trust = entitled || args.wasEntitled;
+  const waiting = args.subPending || (args.checkoutPending && !entitled);
+
+  if (waiting && !trust) return "loading";
+  if (args.subError && !trust) return "verify-error";
+  if (!entitled && !trust) return "locked";
+  return "open";
+}
+
 export type Plan = "monthly" | "annual";
 
 /** Where Stripe should return us. The desktop app sends nothing: checkout

@@ -17,7 +17,7 @@ export default function QuickTaskSheet({
   labels: Label[];
   onCreate: (input: NewTaskInput) => Promise<unknown>;
   onClose: () => void;
-  /** When opened from a dated tab (Today/Week), pre-file there unless the text says otherwise. */
+  /** When opened from Calendar or Today, pre-file there unless the text says otherwise. */
   defaultDoDate?: string | null;
 }) {
   const [text, setText] = useState("");

@@ -14,7 +14,7 @@ import {
 } from "date-fns";
 import { useSettings, firstDayOfWeek } from "../../hooks/useSettings";
 import { useExternalEvents } from "../../hooks/useCalendar";
-import { useScheduledTasks } from "../../hooks/useTasks";
+import { useScheduledTasks, usePlannedAnytimeTasks } from "../../hooks/useTasks";
 import { useSlots, useSlotTasks } from "../../hooks/useSlots";
 import { useVertical } from "../../hooks/useVertical";
 import { blockDesignation, deriveSlotTitle } from "../../lib/slots";
@@ -88,6 +88,7 @@ function readMode(): Mode {
 export default function MobileCalendar({
   now,
   onTapEvent,
+  onTapTask,
   onOpenUpkeep,
   onNewEvent,
   onOpenProject,
@@ -96,6 +97,8 @@ export default function MobileCalendar({
 }: {
   now: Date;
   onTapEvent?: (tap: CalendarTap) => void;
+  /** Untimed (anytime) task chips — open the task sheet, not the event sheet. */
+  onTapTask?: (taskId: string) => void;
   onOpenUpkeep?: () => void;
   /** Opens the new-event sheet, seeded on the day the user was looking at. */
   onNewEvent?: (date: Date) => void;
@@ -198,9 +201,12 @@ export default function MobileCalendar({
   // Standing slots — a slot is its own timed container; a task placed inside
   // one rides the slot's time instead of carrying its own start_time (see
   // assignToSlot, useTasks.ts), so it has to be fetched alongside the plain
-  // scheduled blocks or it's invisible here. Same two queries desktop's
-  // Planner.tsx uses for CalendarPane.
+  // scheduled blocks or it's invisible here. Same queries desktop's
+  // Planner.tsx uses for CalendarPane — including anytime (planned, no clock),
+  // which used to exist only on the desktop all-day row, so a ＋ capture from
+  // this tab vanished the moment the sheet closed.
   const { data: slots = [], isLoading: slotLoading } = useSlots(range.start, range.end);
+  const { data: anytime = [] } = usePlannedAnytimeTasks(range.start, range.end);
   const slotIds = useMemo(() => slots.map((s) => s.id), [slots]);
   const { data: slotChildTasks = [] } = useSlotTasks(slotIds);
   const { data: vertical } = useVertical();
@@ -235,8 +241,8 @@ export default function MobileCalendar({
 
   const dayCtx = useMemo<DayCtx>(() => {
     const visibleEvents = events.filter((e) => !hidden.has(e.calendar_id) && !isEventHidden(e, hiddenEventKeys));
-    return { visibleEvents, blocks, slots, slotChildren, slotTitles, hidden, workStart, workEnd, now };
-  }, [events, blocks, slots, slotChildren, slotTitles, hidden, hiddenEventKeys, workStart, workEnd, now]);
+    return { visibleEvents, blocks, anytime, slots, slotChildren, slotTitles, hidden, workStart, workEnd, now };
+  }, [events, blocks, anytime, slots, slotChildren, slotTitles, hidden, hiddenEventKeys, workStart, workEnd, now]);
 
   const loading = evLoading || blkLoading || slotLoading;
 
@@ -359,6 +365,7 @@ export default function MobileCalendar({
           onLens={(l) => setLens(l)}
           onBack={backToMonth}
           onTapEvent={onTapEvent}
+          onTapTask={onTapTask}
           onNewEvent={onNewEvent ? () => onNewEvent(selected) : undefined}
         />
       ) : (
@@ -370,6 +377,7 @@ export default function MobileCalendar({
           pastDays={pastDays}
           onLoadEarlier={() => setPastDays((p) => p + PAST_STEP)}
           onTapEvent={onTapEvent}
+          onTapTask={onTapTask}
           onBack={backToMonth}
           onDayLens={(d) => setLens("day", d)}
           onNewEvent={onNewEvent ? () => onNewEvent(selected) : undefined}
@@ -631,8 +639,8 @@ function MonthCell({
   wx: { wmo: number } | undefined;
   onPick: (d: Date) => void;
 }) {
-  const { date, isToday, timed, allDay, openMins, isPast } = day;
-  const blkCount = timed.filter((t) => t.kind === "block" || t.kind === "slot").length;
+  const { date, isToday, timed, allDay, anytime, openMins, isPast } = day;
+  const blkCount = timed.filter((t) => t.kind === "block" || t.kind === "slot").length + anytime.length;
   const evCount = timed.filter((t) => t.kind === "event").length + allDay.length;
   // Up to 3 density dots — tasks (accent) first, then events (neutral).
   const dots = [
@@ -695,8 +703,8 @@ function MonthCell({
 // A single line under the grid: the tapped day and whether it's open, plus a
 // nudge into its full schedule.
 function SelectedSummary({ day, onOpen }: { day: DayPlan; onOpen: () => void }) {
-  const { date, timed, allDay, openMins, isPast } = day;
-  const busy = timed.length + allDay.length;
+  const { date, timed, allDay, anytime, openMins, isPast } = day;
+  const busy = timed.length + allDay.length + anytime.length;
   const status = isPast
     ? "done for today"
     : openMins > 0
@@ -736,6 +744,7 @@ export function ScheduleView({
   pastDays,
   onLoadEarlier,
   onTapEvent,
+  onTapTask,
   onBack,
   onDayLens,
   onJumpTo,
@@ -748,6 +757,7 @@ export function ScheduleView({
   pastDays: number;
   onLoadEarlier: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
+  onTapTask?: (taskId: string) => void;
   onBack: () => void;
   onDayLens: (topDay: Date) => void;
   /** Jump the schedule's anchor to an arbitrary date (the header's picker).
@@ -916,7 +926,7 @@ export function ScheduleView({
         <div ref={stripRef} className="mobile-scroll flex gap-1.5 overflow-x-auto px-3 py-2.5">
           {days.map((d) => {
             const key = dayKey(d.date);
-            const busyDay = d.timed.length > 0 || d.allDay.length > 0;
+            const busyDay = d.timed.length > 0 || d.allDay.length > 0 || d.anytime.length > 0;
             const dateStr = d.date.toLocaleDateString("en-CA");
             const wx = weatherIndex?.get(dateStr);
             return (
@@ -951,7 +961,7 @@ export function ScheduleView({
         </div>
       </div>
 
-      {loading && days.every((d) => d.timed.length === 0 && d.allDay.length === 0) ? (
+      {loading && days.every((d) => d.timed.length === 0 && d.allDay.length === 0 && d.anytime.length === 0) ? (
         <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>
       ) : (
         // overflow-anchor: none so the one scroll-anchoring authority is our
@@ -973,6 +983,7 @@ export function ScheduleView({
               day={d}
               innerRef={innerRefFor(dayKey(d.date))}
               onTapEvent={onTapEvent}
+              onTapTask={onTapTask}
             />
           ))}
         </div>
@@ -990,13 +1001,15 @@ const DayCard = memo(function DayCard({
   day,
   innerRef,
   onTapEvent,
+  onTapTask,
 }: {
   day: DayPlan;
   innerRef: (el: HTMLElement | null) => void;
   onTapEvent?: (tap: CalendarTap) => void;
+  onTapTask?: (taskId: string) => void;
 }) {
-  const { date, isToday, label, allDay, timed, gaps, isPast, isBygone } = day;
-  const fullyOpen = timed.length === 0 && allDay.length === 0;
+  const { date, isToday, label, allDay, anytime, timed, gaps, isPast, isBygone } = day;
+  const fullyOpen = timed.length === 0 && allDay.length === 0 && anytime.length === 0;
 
   // A past date is a record of what happened, not an availability question —
   // its readout counts commitments and it never advertises open windows.
@@ -1042,6 +1055,23 @@ const DayCard = memo(function DayCard({
               className="tap fast mono rounded-md border border-line bg-surface-2 px-2 py-0.5 text-label text-muted active:bg-surface"
             >
               {e.title || "Busy"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Anytime — planned for the day, no clock. Same chips the desktop
+          all-day row shows; without them a ＋ capture from this tab vanished. */}
+      {anytime.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {anytime.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => onTapTask?.(t.id)}
+              className="tap fast rounded-md border border-accent/40 bg-accent-soft px-2 py-1.5 text-label font-medium text-accent active:bg-accent/15"
+            >
+              {t.title}
             </button>
           ))}
         </div>
@@ -1130,7 +1160,7 @@ const DayCard = memo(function DayCard({
       {/* Open windows — the availability answer. A bygone day is history, so we
           don't offer to fill windows that have already elapsed. */}
       {!isPast && !isBygone && gaps.length > 0 && (
-        <div className={timed.length > 0 || allDay.length > 0 ? "mt-3" : ""}>
+        <div className={timed.length > 0 || allDay.length > 0 || anytime.length > 0 ? "mt-3" : ""}>
           {!fullyOpen && <div className="section-label mb-1.5 !p-0">Free</div>}
           <div className="flex flex-wrap gap-1.5">
             {gaps.map((g, i) => (

@@ -12,7 +12,7 @@ import { useDeveloperModeShortcut } from "./lib/devtools";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useApplyTheme, useSettings } from "./hooks/useSettings";
 import { useSubscription, useSubscriptionLiveSync } from "./hooks/useSubscription";
-import { readWasEntitled } from "./lib/subscription";
+import { readWasEntitled, resolveEntitlementView } from "./lib/subscription";
 import { useSkin, useScheme } from "./hooks/useSkin";
 import { useThemeColor } from "./hooks/useThemeColor";
 import Login from "./components/Login";
@@ -34,7 +34,10 @@ import { UndoProvider } from "./hooks/useUndoStack";
  *  in well under 2s (the realtime hook in useSubscription flips `entitled`
  *  the moment it does) — but there's a brief window where it hasn't yet.
  *  Rather than flash LockedScreen at someone who just paid, show a "setting
- *  up" loader for that window instead, then strip the query param. */
+ *  up" loader for that window instead, then strip the query param.
+ *  Cap the wait: a hung fetch used to leave this true forever, which is an
+ *  infinite splash with no Try again. */
+const CHECKOUT_WAIT_MS = 12_000;
 function useCheckoutReturn(entitled: boolean | undefined) {
   const [outcome] = useState(() => new URLSearchParams(globalThis.location?.search).get("checkout"));
   const [pending, setPending] = useState(() => outcome === "success");
@@ -55,6 +58,15 @@ function useCheckoutReturn(entitled: boolean | undefined) {
       toast.success("You're all set — welcome to Nuvo.");
     }
   }, [pending, entitled]);
+
+  useEffect(() => {
+    if (!pending) return;
+    const t = setTimeout(() => {
+      clearParam();
+      setPending(false);
+    }, CHECKOUT_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [pending]);
 
   useEffect(() => {
     // Backing out of Stripe used to land here with a dead ?checkout=cancelled
@@ -195,17 +207,15 @@ function Shell() {
   useScheme(); // keep <html data-palette> applied (the material's colour scheme)
   useThemeColor(); // keep the browser/status-bar chrome on the resolved --bg
   const showAuthWordmark = useDelayedTrue(loading, SPLASH_DELAY_MS);
-  const subscriptionPending = subPending || (checkoutPending && !subscription?.entitled);
-  const showSubscriptionWordmark = useDelayedTrue(subscriptionPending, SPLASH_DELAY_MS);
-  // The entitlement check is deliberately never cached to disk (see
-  // readWasEntitled), so it's a real network round-trip on every launch —
-  // blocking on it is what actually caused the splash to keep flashing on
-  // mobile networks even after the delay above. Render straight through on
-  // the strength of last launch's answer instead, and let the live check
-  // correct the screen a moment later if it landed differently this time.
-  // Scoped to the first-fetch window only — a just-completed Checkout still
-  // waits for a real answer, since there's nothing stale to trust yet.
-  const optimisticEntitled = subPending && readWasEntitled();
+  const wasEntitled = readWasEntitled();
+  const entitlement = resolveEntitlementView({
+    subPending,
+    subError,
+    subscription,
+    checkoutPending,
+    wasEntitled,
+  });
+  const showSubscriptionWordmark = useDelayedTrue(entitlement === "loading", SPLASH_DELAY_MS);
 
   // The floating ⌥Space window: just the panel (no app chrome, no updater).
   // SpotlightHost owns the signed-out state too — a summon that renders nothing
@@ -238,15 +248,16 @@ function Shell() {
   // First subscription fetch (isPending covers a network-paused fetch too,
   // not just an in-flight one — see useSubscription), or the brief window
   // right after Checkout where the webhook hasn't landed yet. Skipped when
-  // we're rendering optimistically on last launch's entitlement instead.
-  if (subscriptionPending && !optimisticEntitled) {
+  // last launch said this account was entitled — unmounting the planner on a
+  // blip is how captures vanish and a paying customer sees "couldn't verify."
+  if (entitlement === "loading") {
     return <LoadingCanvas showWordmark={showSubscriptionWordmark} />;
   }
 
   // A fetch error (network blip, transient outage) is NOT the same as
   // "not entitled" — never read a failed check as a cancelled subscription.
-  // Only render LockedScreen once we've actually heard back "not entitled".
-  if (subError) {
+  // Only this card when we have nothing to trust; otherwise stay in the app.
+  if (entitlement === "verify-error") {
     return (
       <div className="atmosphere flex h-full items-center justify-center px-4">
         <div className="moment elev-3 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-7 text-center">
@@ -264,7 +275,7 @@ function Shell() {
     );
   }
 
-  if (!subscription?.entitled && !optimisticEntitled) {
+  if (entitlement === "locked") {
     return (
       <>
         <LockedScreen subscription={subscription} />

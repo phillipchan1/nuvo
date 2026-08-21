@@ -209,7 +209,7 @@ export default function MobileWeekView({
                 </span>
                 <span
                   className="h-1 w-1 rounded-full"
-                  style={{ background: d.allDay.length ? "var(--line-strong)" : "transparent" }}
+                  style={{ background: d.allDay.length || d.anytime.length ? "var(--line-strong)" : "transparent" }}
                 />
               </button>
             );
@@ -217,7 +217,7 @@ export default function MobileWeekView({
         </div>
       </div>
 
-      {loading && days.every((d) => d.timed.length === 0 && d.allDay.length === 0) ? (
+      {loading && days.every((d) => d.timed.length === 0 && d.allDay.length === 0 && d.anytime.length === 0) ? (
         <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>
       ) : (
         <div className="touch-pan-y" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>

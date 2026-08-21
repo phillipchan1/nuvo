@@ -94,6 +94,7 @@ export default function MobileDayView({
   onLens,
   onBack,
   onTapEvent,
+  onTapTask,
   onNewEvent,
 }: {
   selected: Date;
@@ -106,6 +107,7 @@ export default function MobileDayView({
   onLens: (l: CalLens) => void;
   onBack: () => void;
   onTapEvent?: (tap: CalendarTap) => void;
+  onTapTask?: (taskId: string) => void;
   onNewEvent?: () => void;
 }) {
   const plan = useMemo(() => buildDayPlan(selected, ctx), [selected, ctx]);
@@ -236,7 +238,7 @@ export default function MobileDayView({
             {stripDays.map((d) => {
               const key = dayKey(d.date);
               const isSel = key === dayKey(selected);
-              const busyDay = d.timed.length > 0 || d.allDay.length > 0;
+              const busyDay = d.timed.length > 0 || d.allDay.length > 0 || d.anytime.length > 0;
               const wx = weatherIndex?.get(d.date.toLocaleDateString("en-CA"));
               return (
                 <button
@@ -281,7 +283,7 @@ export default function MobileDayView({
           swipe.ts ignores edge starts (iOS back) and anything that scrolled. */}
       <div className="touch-pan-y" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
         {/* Don't claim a day is open before the calendar has answered. */}
-        {loading && plan.timed.length === 0 && plan.allDay.length === 0 ? (
+        {loading && plan.timed.length === 0 && plan.allDay.length === 0 && plan.anytime.length === 0 ? (
           <div className="px-4 py-10 text-center text-body text-muted">Reading your calendar…</div>
         ) : (
         <div
@@ -340,7 +342,22 @@ export default function MobileDayView({
             </div>
           )}
 
-          {plan.isBygone && plan.timed.length === 0 && plan.allDay.length === 0 && (
+          {plan.anytime.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-4 pb-1 pt-1">
+              {plan.anytime.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => onTapTask?.(t.id)}
+                  className="tap fast rounded-md border border-accent/40 bg-accent-soft px-2 py-1.5 text-label font-medium text-accent active:bg-accent/15"
+                >
+                  {t.title}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {plan.isBygone && plan.timed.length === 0 && plan.allDay.length === 0 && plan.anytime.length === 0 && (
             <div className="px-4 pt-1 text-body text-muted">Nothing scheduled.</div>
           )}
 

@@ -11,6 +11,7 @@ import {
   dayReadout as sharedDayReadout,
   type DayLoad,
 } from "../../../supabase/functions/_shared/dayShape.ts";
+import { parseDateISO } from "../../lib/dates";
 import type { AttendeeStatus, ExternalEvent, Slot, Task } from "../../lib/types";
 
 export type { DayLoad };
@@ -67,6 +68,10 @@ export interface DayPlan {
   isToday: boolean;
   label: string; // "Today" / "Tomorrow" / weekday
   allDay: ExternalEvent[];
+  /** Planned for the day, no clock yet — the desktop anytime row. Untimed
+   *  captures used to vanish from this surface because only timed blocks
+   *  were indexed. */
+  anytime: { id: string; title: string }[];
   timed: TimedItem[];
   gaps: Gap[];
   openMins: number;
@@ -80,6 +85,9 @@ export interface DayPlan {
 export interface DayCtx {
   visibleEvents: ExternalEvent[];
   blocks: Task[];
+  /** Planned for a day with no start_time — the anytime row. Optional so
+   *  year/harness ctxs that don't fetch it still type-check. */
+  anytime?: Task[];
   /** Standing slots — a slot is a timed container; a task placed inside one
    *  loses its own start_time and rides the slot's (see assignToSlot in
    *  useTasks.ts), so a slot has to be fetched and rendered separately from
@@ -113,6 +121,7 @@ interface DayIndex {
   eventsByDay: Map<string, ExternalEvent[]>;
   blocksByDay: Map<string, Task[]>;
   slotsByDay: Map<string, Slot[]>;
+  anytimeByDay: Map<string, Task[]>;
 }
 const dayIndexCache = new WeakMap<DayCtx, DayIndex>();
 
@@ -148,7 +157,15 @@ function indexOf(ctx: DayCtx): DayIndex {
     if (arr) arr.push(s);
     else slotsByDay.set(k, [s]);
   }
-  const idx = { allDay, eventsByDay, blocksByDay, slotsByDay };
+  const anytimeByDay = new Map<string, Task[]>();
+  for (const t of ctx.anytime ?? []) {
+    if (!t.do_date || t.start_time || t.status === "trashed") continue;
+    const k = dayKey(parseDateISO(t.do_date));
+    const arr = anytimeByDay.get(k);
+    if (arr) arr.push(t);
+    else anytimeByDay.set(k, [t]);
+  }
+  const idx = { allDay, eventsByDay, blocksByDay, slotsByDay, anytimeByDay };
   dayIndexCache.set(ctx, idx);
   return idx;
 }
@@ -173,6 +190,7 @@ function dayFrame(date: Date, ctx: DayCtx) {
   const dayEvents = idx.eventsByDay.get(dayKey(date)) ?? [];
   const dayBlocks = idx.blocksByDay.get(dayKey(date)) ?? [];
   const daySlots = idx.slotsByDay.get(dayKey(date)) ?? [];
+  const dayAnytime = idx.anytimeByDay.get(dayKey(date)) ?? [];
   const busy = toBusyBlocks(dayEvents, dayBlocks, hidden);
   // A slot occupies real time on the day even though its children carry no
   // start_time of their own (the slot owns the block, see DayCtx.slots) — fold
@@ -196,7 +214,7 @@ function dayFrame(date: Date, ctx: DayCtx) {
   const we = new Date(dStart);
   we.setHours(0, workEnd, 0, 0);
 
-  return { dStart, dEnd, allDay, dayEvents, dayBlocks, daySlots, busy, ws, we };
+  return { dStart, dEnd, allDay, dayEvents, dayBlocks, daySlots, dayAnytime, busy, ws, we };
 }
 
 /** The kernel's load band for a day, from the frame's own busy list. The
@@ -266,7 +284,7 @@ export function monthDates(year: number, month: number): Date[] {
 export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
   const { now } = ctx;
   const frame = dayFrame(date, ctx);
-  const { dStart, allDay, dayEvents, dayBlocks, daySlots, busy, ws, we } = frame;
+  const { dStart, allDay, dayEvents, dayBlocks, daySlots, dayAnytime, busy, ws, we } = frame;
   const startNow = startOfDay(now);
   const isToday = isSameDay(date, now);
   const isBygone = dStart.getTime() < startNow.getTime();
@@ -338,6 +356,7 @@ export function buildDayPlan(date: Date, ctx: DayCtx): DayPlan {
     isToday,
     label,
     allDay,
+    anytime: dayAnytime.map((t) => ({ id: t.id, title: t.title || "Untitled" })),
     timed,
     gaps: read.gaps,
     openMins: read.openMins,
