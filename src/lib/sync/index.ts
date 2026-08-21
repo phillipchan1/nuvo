@@ -24,7 +24,7 @@ export {
   unpark,
   type OutboxStatus,
 } from "./outbox";
-export { invalidateWhenSafe, tablesOwing, queryKeyOwesServer, preserveOwingRows, installOwingGuards } from "./coordinator";
+export { invalidateWhenSafe, tablesOwing, queryKeyOwesServer, preserveOwingRows, installOwingGuards, resetOwingForTests } from "./coordinator";
 export { classifyError, type Transport, type SendResult } from "./engine";
 export { createSupabaseTransport, conflictResolutionAvailable } from "./transport";
 export { isDurable } from "./idb";

@@ -42,6 +42,13 @@ describe("preserveOwingRows", () => {
     const rows = [{ id: "a", name: "A" }];
     expect(preserveOwingRows("projects", rows, rows)).toBe(rows);
   });
+
+  it("keeps a local edit of an existing row over a stale server snapshot", () => {
+    markOwing("tasks");
+    const previous = [{ id: "t1", title: "Renamed on the Mac" }];
+    const incoming = [{ id: "t1", title: "Old title" }];
+    expect(preserveOwingRows("tasks", previous, incoming)).toEqual(previous);
+  });
 });
 
 describe("queryKeyOwesServer", () => {
@@ -51,5 +58,17 @@ describe("queryKeyOwesServer", () => {
     expect(queryKeyOwesServer(["vertical", "projects"])).toBe(true);
     expect(queryKeyOwesServer(["vertical", "initiatives"])).toBe(false);
     expect(queryKeyOwesServer(["tasks", "all"])).toBe(false);
+  });
+
+  it("gates task queries while a capture is still queued", () => {
+    markOwing("tasks");
+    expect(queryKeyOwesServer(["tasks", "all"])).toBe(true);
+    expect(queryKeyOwesServer(["tasks", "inbox"])).toBe(true);
+    expect(queryKeyOwesServer(["vertical", "projects"])).toBe(false);
+  });
+
+  it("gates settings via the user_settings table", () => {
+    markOwing("user_settings");
+    expect(queryKeyOwesServer(["settings"])).toBe(true);
   });
 });

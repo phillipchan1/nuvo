@@ -111,7 +111,7 @@ const { drain } = await import("../../src/lib/sync/engine");
 const { createSupabaseTransport, resetTransportProbeForTests } = await import(
   "../../src/lib/sync/transport"
 );
-const { refreshOwing, syncNow } = await import("../../src/lib/sync/coordinator");
+const { refreshOwing, syncNow, installOwingGuards } = await import("../../src/lib/sync/coordinator");
 
 const transport = createSupabaseTransport(async () => "user-1");
 
@@ -119,6 +119,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  installOwingGuards(qc);
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
 }
 
@@ -161,6 +162,37 @@ describe("creating a task offline", () => {
     expect(queued[0].payload).toMatchObject({ title: "Call David" });
     expect(queued[0].rowId).toBe(created!.id);
     expect(net.recorded).toEqual([]);
+  });
+
+  it("a stale refetch cannot drop a task just created on this device", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    installOwingGuards(qc);
+    const existing = [{ id: "old", title: "Already there", status: "inbox" }];
+    qc.setQueryData(["tasks", "inbox"], existing);
+    qc.setQueryData(["tasks", "all"], existing);
+
+    const localWrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    setOnline(false);
+    const { result } = renderHook(() => useTaskMutations(), { wrapper: localWrapper });
+
+    let created: { id: string } | undefined;
+    await act(async () => {
+      created = await result.current.create({ title: "Typed on the Mac" });
+    });
+
+    act(() => {
+      qc.setQueryData(["tasks", "inbox"], [{ id: "old", title: "Already there", status: "inbox" }]);
+      qc.setQueryData(["tasks", "all"], [{ id: "old", title: "Already there", status: "inbox" }]);
+    });
+
+    const inbox = qc.getQueryData<{ id: string }[]>(["tasks", "inbox"]);
+    const all = qc.getQueryData<{ id: string }[]>(["tasks", "all"]);
+    expect(inbox?.some((t) => t.id === created!.id)).toBe(true);
+    expect(all?.some((t) => t.id === created!.id)).toBe(true);
   });
 
   it("delivers it on reconnect under the id the client minted", async () => {

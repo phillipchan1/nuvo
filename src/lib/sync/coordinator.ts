@@ -16,7 +16,8 @@
  * refetches on its own (window focus, reconnect, mount, an in-flight select
  * `cancelQueries` couldn't abort because the request had no AbortSignal).
  * Those writes are merged through `preserveOwingRows` so a create cannot
- * vanish, and skipped entirely via `queryKeyOwesServer` when possible.
+ * vanish and a local edit cannot snap back, and skipped entirely via
+ * `queryKeyOwesServer` when possible.
  *
  * The alternative — overlaying pending ops onto every query result — was
  * rejected: Nuvo's task caches are membership-filtered (inbox / day / anytime /
@@ -45,9 +46,58 @@ const VERTICAL_SOURCES: ReadonlySet<SyncTable> = new Set([
 /** Synchronous mirror of which tables owe the server, so `invalidate` can
  *  decide without awaiting IndexedDB on every mutation. */
 let owing = new Set<SyncTable>();
+/** False until the first `refreshOwing` reads the outbox. A launch refetch
+ *  that runs in that window sees an empty owing set and will clobber the
+ *  dehydrated cache — treat every sync query as owing until we know. */
+let owingReady = false;
 
 export function tablesOwing(): ReadonlySet<SyncTable> {
   return owing;
+}
+
+/** Test seam: drop the owing mirror so a suite does not leak across cases. */
+export function resetOwingForTests() {
+  owing = new Set();
+  owingReady = false;
+  deferred.clear();
+}
+
+/**
+ * Query-key root → outbox table. The cache names are not always the Postgres
+ * names (`settings` vs `user_settings`, `sprint` vs `sprints`); missing that
+ * map meant a Settings toggle or a week-plan edit could still refetch-clobber.
+ */
+const QUERY_ROOT_TABLE: Record<string, SyncTable | readonly SyncTable[]> = {
+  tasks: ["tasks", "task_labels"],
+  task_labels: ["tasks", "task_labels"],
+  slots: "slots",
+  labels: "labels",
+  recurrences: "recurrences",
+  reminders: "reminders",
+  settings: "user_settings",
+  user_settings: "user_settings",
+  sprint: "sprints",
+  sprints: "sprints",
+  week_reviews: "week_reviews",
+  record_comments: "record_comments",
+  key_results: "key_results",
+};
+
+function tablesForQueryKey(queryKey: readonly unknown[]): SyncTable[] {
+  const root = String(queryKey[0] ?? "");
+  if (root === "vertical") {
+    const sub = queryKey[1];
+    if (typeof sub === "string" && VERTICAL_SOURCES.has(sub as SyncTable)) {
+      // Key results are nested on initiative/project rows, not their own query.
+      if (sub === "initiatives" || sub === "projects") return [sub as SyncTable, "key_results"];
+      return [sub as SyncTable];
+    }
+    return [...VERTICAL_SOURCES];
+  }
+  const mapped = QUERY_ROOT_TABLE[root];
+  if (mapped) return (Array.isArray(mapped) ? mapped : [mapped]) as SyncTable[];
+  if ((SYNC_TABLES as readonly string[]).includes(root)) return [root as SyncTable];
+  return [];
 }
 
 /**
@@ -57,30 +107,22 @@ export function tablesOwing(): ReadonlySet<SyncTable> {
  * (`refetchOnWindowFocus`, `refetchOnReconnect`, an in-flight select).
  */
 export function queryKeyOwesServer(queryKey: readonly unknown[]): boolean {
-  const root = String(queryKey[0] ?? "");
-  if (root === "vertical") {
-    const sub = queryKey[1];
-    if (typeof sub === "string" && VERTICAL_SOURCES.has(sub as SyncTable)) {
-      return owing.has(sub as SyncTable);
-    }
-    return [...VERTICAL_SOURCES].some((t) => owing.has(t));
-  }
-  if (root === "tasks" || root === "task_labels") {
-    return owing.has("tasks") || owing.has("task_labels");
-  }
-  if ((SYNC_TABLES as readonly string[]).includes(root)) return owing.has(root as SyncTable);
-  return false;
+  const tables = tablesForQueryKey(queryKey);
+  if (!tables.length) return false;
+  if (!owingReady) return true;
+  return tables.some((t) => owing.has(t));
 }
 
 /**
  * A refetch of a table we still owe must not drop rows this device already
- * painted. Create used to: optimistic project lands in the cache, a 15s-stale
- * window-focus refetch returns the pre-insert server list, and the project
- * (and every task hanging off it) vanishes. Keep local-only ids until the
- * outbox drains; then the next refetch is allowed to be authoritative.
+ * painted, *or revert fields we already wrote*. Create used to vanish when a
+ * 15s-stale window-focus refetch returned the pre-insert list. Rename / complete
+ * used to snap back because same-id rows were taken from the server snapshot.
  *
  * This is not "overlay pending ops onto every filtered task list" — that was
- * rejected above. It only preserves rows *already in this query's cache*.
+ * rejected above. It only preserves rows *already in this query's cache*: keep
+ * the local body for ids we already have, keep local-only ids, and still admit
+ * genuinely new remote ids.
  */
 export function preserveOwingRows<T extends { id: string }>(
   table: SyncTable,
@@ -90,9 +132,14 @@ export function preserveOwingRows<T extends { id: string }>(
   const next = incoming as T[];
   if (!Array.isArray(next)) return next;
   if (!owing.has(table) || !Array.isArray(previous)) return next;
+  const prevRows = previous as T[];
+  const prevById = new Map(prevRows.filter((r) => r?.id).map((r) => [r.id, r]));
+  if (prevById.size === 0) return next;
   const incomingIds = new Set(next.map((r) => r.id));
-  const extras = (previous as T[]).filter((r) => r?.id && !incomingIds.has(r.id));
-  return extras.length ? [...next, ...extras] : next;
+  const merged = next.map((r) => (r?.id && prevById.get(r.id)) || r);
+  const extras = prevRows.filter((r) => r?.id && !incomingIds.has(r.id));
+  if (!extras.length && merged.every((r, i) => r === next[i])) return next;
+  return extras.length ? [...merged, ...extras] : merged;
 }
 
 /** Install cache-merge + refetch gates on the queries the outbox writes to. */
@@ -106,6 +153,11 @@ export function installOwingGuards(qc: QueryClient): void {
   qc.setQueryDefaults(["vertical", "domains"], share("domains"));
   qc.setQueryDefaults(["tasks"], share("tasks"));
   qc.setQueryDefaults(["slots"], share("slots"));
+  qc.setQueryDefaults(["labels"], share("labels"));
+  qc.setQueryDefaults(["recurrences"], share("recurrences"));
+  qc.setQueryDefaults(["reminders"], share("reminders"));
+  qc.setQueryDefaults(["week_reviews"], share("week_reviews"));
+  qc.setQueryDefaults(["record_comments"], share("record_comments"));
 }
 
 /**
@@ -129,6 +181,7 @@ export function markOwing(table: SyncTable): void {
 export async function refreshOwing(): Promise<void> {
   const ops = await pendingOps();
   owing = new Set(ops.map((o) => o.table));
+  owingReady = true;
 }
 
 /**
