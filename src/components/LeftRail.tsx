@@ -134,7 +134,9 @@ export default function LeftRail({
   const railWidth = squeezed ? Math.min(railWidthPref, MIN_RAIL_WIDTH) : railWidthPref;
   const [capture, setCapture] = useState("");
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const [capturing, setCapturing] = useState(false);
+  // Dedupes Enter-keydown + form-submit of the same text. Different text can
+  // go through while a write is still flushing — the field itself stays live.
+  const capturingRef = useRef<string | null>(null);
   // Done starts collapsed — it's the quiet tail, a single line until you want it
   // (the Loose-ends pattern). The active day work is one flat list, not sections.
   const [todayOpen, setTodayOpen] = useState({ done: false });
@@ -359,14 +361,22 @@ export default function LeftRail({
     return () => window.removeEventListener("keydown", onKey);
   }, [hotkeysEnabled, selected, selectedIds, visible, mutations, onOpenTask, setTab, tab]);
 
-  const submitCapture = async (e?: React.FormEvent) => {
+  const submitCapture = (e?: React.FormEvent) => {
     e?.preventDefault();
     const text = capture.trim();
-    if (!text || capturing) return;
+    if (!text || capturingRef.current === text) return;
+    capturingRef.current = text;
     setCaptureError(null);
-    setCapturing(true);
-    try {
-      const p = parseCapture(text);
+    // Clear before the write — same contract as ⌘K (`NuvoSpotlight`): the
+    // cache update is synchronous, so the row is in Inbox before IndexedDB
+    // (or the network) has anything to say. Awaiting that used to disable
+    // this input; WebKit then often never restored a caret, which is the
+    // "landed in Inbox, field is frozen" report.
+    setCapture("");
+    captureRef.current?.focus();
+
+    const p = parseCapture(text);
+    const persist = async () => {
       if (p.recurrence) {
         const anchor = p.recurrenceAnchor ?? p.doDate ?? todayISO(now);
         const startMins = p.startTime
@@ -383,7 +393,6 @@ export default function LeftRail({
             priority: p.priority,
           },
         });
-        setCapture("");
         setTab("today");
         return;
       }
@@ -399,16 +408,21 @@ export default function LeftRail({
         priority: p.priority,
         labelIds,
       };
-      const task = await mutations.create(input);
-      setCapture("");
-      if (task.status !== "inbox") setTab("today");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not save task";
-      setCaptureError(msg);
-      console.error("[nuvo] capture failed:", err);
-    } finally {
-      setCapturing(false);
-    }
+      await mutations.create(input);
+      if (input.do_date) setTab("today");
+    };
+
+    void persist()
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : "Could not save task";
+        setCaptureError(msg);
+        setCapture((cur) => (cur === "" ? text : cur));
+        console.error("[nuvo] capture failed:", err);
+      })
+      .finally(() => {
+        if (capturingRef.current === text) capturingRef.current = null;
+        captureRef.current?.focus();
+      });
   };
 
   const metaOf = (t: Task): TaskMeta => {
@@ -929,14 +943,13 @@ export default function LeftRail({
           hierarchy: it interrupts every mode, so it isn't a titled section (and
           mirrors the mobile ＋ FAB). Stays a real <input> so iOS dictation works
           (low-data-entry). Press C to focus. */}
-      <form onSubmit={(e) => void submitCapture(e)} className="shrink-0 border-t border-line p-2.5" data-tauri-drag-region="false" data-teach="capture">
+      <form onSubmit={submitCapture} className="shrink-0 border-t border-line p-2.5" data-tauri-drag-region="false" data-teach="capture">
         <div className="relative">
           {/* A quill — capture is organic free text, the front door, not a form. */}
           <Icon name="pen" size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-accent" />
           <input
             ref={captureRef}
             value={capture}
-            disabled={capturing}
             onChange={(e) => {
               setCapture(e.target.value);
               if (captureError) setCaptureError(null);
@@ -944,11 +957,11 @@ export default function LeftRail({
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                void submitCapture();
+                submitCapture();
               }
             }}
             placeholder="Capture anything…"
-            className="w-full rounded-full border border-line-strong bg-surface py-2 pl-10 pr-9 text-body outline-none placeholder:text-muted/70 focus:border-accent disabled:opacity-60"
+            className="w-full rounded-full border border-line-strong bg-surface py-2 pl-10 pr-9 text-body outline-none placeholder:text-muted/70 focus:border-accent"
           />
           {!capture && (
             <kbd className="mono pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-line px-1 text-micro text-muted">
