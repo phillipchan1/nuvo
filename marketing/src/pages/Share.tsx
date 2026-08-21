@@ -3,10 +3,7 @@ import { appUrlWithCode } from '../referral'
 
 /**
  * /share — the public friend-code explainer.
- *
- * Not an affiliate portal (N-17): no apply form, no leaderboard, no commissions.
- * Operators self-mint in Settings → Billing; this page is what you point a
- * friend (or a beta) at so the offer isn't buried in Support.
+ * Operators self-mint in Settings → Billing; this page is what you point people at.
  */
 
 export default function Share() {
@@ -25,9 +22,8 @@ export default function Share() {
         <p className="section-label text-[var(--muted)]">Share Nuvo</p>
         <h1 className="masthead mt-3 text-display text-[var(--text)]">A code for people who already love it.</h1>
         <p className="mt-5 max-w-xl text-lead text-[var(--muted)]">
-          Not an affiliate program. If Nuvo fits how you run your life, you get a personal
-          code — your friends save on their first month, and you get a free month when they
-          actually pay.
+          If Nuvo fits how you run your life, you get a personal code. Your friends save on
+          their first month, and you get a free month when they pay.
         </p>
 
         <div className="mt-14 grid gap-10 border-t border-[var(--line)] pt-10 sm:grid-cols-2 sm:gap-12">
@@ -37,16 +33,15 @@ export default function Share() {
               <strong className="text-[var(--text)]">50% off their first month</strong>. They open
               the link you sent (
               <span className="mono text-[var(--text)]">nuvo.day/?code=…</span>
-              ), or type your code at Stripe Checkout when they subscribe. We remember it
-              through the trial.
+              ), or type your code at Checkout when they subscribe. We remember it through the
+              trial.
             </p>
           </section>
           <section>
             <h2 className="masthead text-[1.35rem] text-[var(--text)]">You</h2>
             <p className="mt-3 text-[0.975rem] leading-relaxed text-[var(--muted)]">
               <strong className="text-[var(--text)]">One free month</strong> on your bill when
-              they pay — not when they start the trial. Up to six free months outstanding.
-              Quiet credit, no leaderboard.
+              they pay — not when they start the trial. Up to 6 free months.
             </p>
           </section>
         </div>
@@ -54,11 +49,9 @@ export default function Share() {
         <section className="mt-14 border-t border-[var(--line)] pt-10">
           <h2 className="masthead text-[1.35rem] text-[var(--text)]">How you get your code</h2>
           <p className="mt-3 max-w-xl text-[0.975rem] leading-relaxed text-[var(--muted)]">
-            Nothing to apply for. Sign in →{' '}
-            <strong className="text-[var(--text)]">Settings → Billing → Share Nuvo</strong>.
-            The first time you open that pane we mint a unique code — your first name plus a
-            short tag, like <span className="mono text-[var(--text)]">PHIL-K7RM</span>, so it
-            stays yours even if a thousand Phils show up. Copy it, or send{' '}
+            Sign in → <strong className="text-[var(--text)]">Settings → Billing → Share Nuvo</strong>.
+            Your code appears the first time you open that pane — something like{' '}
+            <span className="mono text-[var(--text)]">MAYA-K7RM</span>. Copy it, or send{' '}
             <span className="mono text-[var(--text)]">nuvo.day/?code=YOURCODE</span>.
           </p>
           <a
