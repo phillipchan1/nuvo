@@ -176,6 +176,8 @@ Settings → Secrets and variables → Actions:
 |---|---|---|
 | `VITE_SUPABASE_URL` | yes | Same as web/desktop build |
 | `VITE_SUPABASE_ANON_KEY` | yes | Same as web/desktop build |
+| `VITE_POSTHOG_PROJECT_TOKEN` | yes | Same as web/desktop build (D-114) |
+| `VITE_POSTHOG_HOST` | yes | Same as web/desktop build |
 | `APPLE_TEAM_ID` | yes | 10-char Team ID (Membership page) |
 | `APPSTORE_KEY_ID` | yes | App Store Connect API Key ID |
 | `APPSTORE_ISSUER_ID` | yes | App Store Connect Issuer ID |

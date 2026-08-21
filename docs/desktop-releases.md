@@ -59,6 +59,7 @@ Create **public** repo `phillipchan1/nuvo-releases` (empty is fine).
 
 **Build inputs**
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — same values the web build uses.
+- `VITE_POSTHOG_PROJECT_TOKEN`, `VITE_POSTHOG_HOST` — same values the web build uses (D-114).
 - `RELEASES_TOKEN` — a PAT (fine-grained: `contents:read/write` on `nuvo-releases`)
   used to publish releases + read/write `last-built-sha.txt`.
 - `OPENAI_API_KEY` — for AI release notes (`scripts/release-notes.mjs`). Optional

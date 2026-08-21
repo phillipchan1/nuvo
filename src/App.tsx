@@ -4,6 +4,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { Toaster, toast } from "sonner";
 import { supabase } from "./lib/supabase";
 import { isSpotlightWindow } from "./lib/platform";
+import { identifyUser, resetUser } from "./lib/posthog";
 import { configureSync, createSupabaseTransport, installOwingGuards, queryKeyOwesServer, teardownSync } from "./lib/sync";
 import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
@@ -204,6 +205,13 @@ function Shell() {
   // Keep a paired Apple Watch's credential in step with this session. No-op
   // outside the iOS shell.
   useWatchSession(session);
+  // Account id only — never email. Reset on sign-out so the next person on
+  // this device isn't glued to the previous distinct id.
+  useEffect(() => {
+    const id = session?.user?.id;
+    if (id) identifyUser(id);
+    else resetUser();
+  }, [session?.user?.id]);
   useDeveloperModeShortcut();
   const { settings } = useSettings();
   const { subscription, isPending: subPending, isError: subError, refetch: refetchSubscription } = useSubscription();

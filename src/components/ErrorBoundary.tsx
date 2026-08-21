@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { captureAppException } from "../lib/posthog";
 
 // The app-level crash net. Without one, a render error anywhere unmounts the
 // whole tree to a white screen — unrecoverable in an installed PWA, where there
@@ -17,8 +18,13 @@ export default class ErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     this.setState({ stack: info.componentStack ?? null });
-    // Keep the console trail — this is the only diagnostics surface in prod.
+    // Console stays for local debugging; PostHog is how we see this without
+    // waiting for someone to paste "Copy details".
     console.error("Nuvo crashed:", error, info.componentStack);
+    captureAppException(error, {
+      boundary: this.props.label ?? "app",
+      componentStack: info.componentStack ?? undefined,
+    });
   }
 
   private copyDetails = async () => {

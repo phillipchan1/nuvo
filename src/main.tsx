@@ -2,7 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { PostHogProvider } from "@posthog/react";
 import { isTauri as isTauriShell, isMac, isMobileTauri } from "./lib/platform";
+import { initPosthog, posthog } from "./lib/posthog";
 import { captureReferralCodeFromLocation } from "./lib/referral";
 // Side effect: captures beforeinstallprompt before React mounts (Settings →
 // About surfaces it as an "Install Nuvo" row).
@@ -145,9 +147,12 @@ if (showPickHarness) {
     );
   });
 } else {
+  initPosthog();
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <App />
+      <PostHogProvider client={posthog}>
+        <App />
+      </PostHogProvider>
     </React.StrictMode>,
   );
 }
