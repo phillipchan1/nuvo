@@ -15,6 +15,7 @@ import {
 } from "../../src/lib/sync/ops";
 import {
   installOwingGuards,
+  markDeleted,
   markOwing,
   preserveOwingRows,
   queryKeyOwesServer,
@@ -330,6 +331,20 @@ describe("stale refetch cannot destroy local writes", () => {
     const kept = preserveOwingRows("tasks", previous, incoming);
     expect(kept.map((r) => r.id).sort()).toEqual(["local", "remote"]);
   });
+
+  it.each(FIXTURES.filter((f) => f.list))(
+    "$table: a stale refetch cannot restore a locally deleted row",
+    (fix) => {
+      markDeleted(fix.table, fix.rowId);
+      const previous = [{ id: "existing", name: "Old" }];
+      const incoming = [
+        { id: "existing", name: "Old" },
+        { id: fix.rowId, ...(fix.insert as object) },
+      ];
+      const kept = preserveOwingRows(fix.table, previous, incoming);
+      expect(kept.map((r) => r.id)).toEqual(["existing"]);
+    },
+  );
 });
 
 describe("queryKeyOwesServer maps every UI cache", () => {
@@ -380,6 +395,15 @@ describe("TanStack cache guards", () => {
     qc.setQueryData(["vertical", "projects"], [{ id: "p", name: "Old server name" }]);
     const after = qc.getQueryData<{ id: string; name: string }[]>(["vertical", "projects"]);
     expect(after?.[0].name).toBe("Renamed locally");
+  });
+
+  it("a stale refetch cannot restore a locally deleted project", () => {
+    const qc = new QueryClient();
+    installOwingGuards(qc);
+    markDeleted("projects", "p");
+    qc.setQueryData(["vertical", "projects"], []);
+    qc.setQueryData(["vertical", "projects"], [{ id: "p", name: "Still on the server" }]);
+    expect(qc.getQueryData(["vertical", "projects"])).toEqual([]);
   });
 
   it("once the outbox is empty the next refetch is authoritative", async () => {

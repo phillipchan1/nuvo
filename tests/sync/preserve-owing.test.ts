@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { resetIdbForTests } from "../../src/lib/sync/idb";
 import {
+  markDeleted,
   markOwing,
   preserveOwingRows,
   queryKeyOwesServer,
@@ -48,6 +49,23 @@ describe("preserveOwingRows", () => {
     const previous = [{ id: "t1", title: "Renamed on the Mac" }];
     const incoming = [{ id: "t1", title: "Old title" }];
     expect(preserveOwingRows("tasks", previous, incoming)).toEqual(previous);
+  });
+
+  it("does not restore a locally deleted row from a stale refetch", () => {
+    markDeleted("projects", "local");
+    const previous = [{ id: "existing", name: "Old" }];
+    const incoming = [
+      { id: "existing", name: "Old" },
+      { id: "local", name: "HRC Marketing Plan" },
+    ];
+    expect(preserveOwingRows("projects", previous, incoming)).toEqual([
+      { id: "existing", name: "Old" },
+    ]);
+  });
+
+  it("does not restore the only project when the cache is empty after delete", () => {
+    markDeleted("projects", "solo");
+    expect(preserveOwingRows("projects", [], [{ id: "solo", name: "Just created" }])).toEqual([]);
   });
 });
 

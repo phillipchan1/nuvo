@@ -16,8 +16,8 @@
  * refetches on its own (window focus, reconnect, mount, an in-flight select
  * `cancelQueries` couldn't abort because the request had no AbortSignal).
  * Those writes are merged through `preserveOwingRows` so a create cannot
- * vanish and a local edit cannot snap back, and skipped entirely via
- * `queryKeyOwesServer` when possible.
+ * vanish, a local edit cannot snap back, and a local delete cannot walk
+ * back in, and skipped entirely via `queryKeyOwesServer` when possible.
  *
  * The alternative — overlaying pending ops onto every query result — was
  * rejected: Nuvo's task caches are membership-filtered (inbox / day / anytime /
@@ -50,6 +50,11 @@ let owing = new Set<SyncTable>();
  *  that runs in that window sees an empty owing set and will clobber the
  *  dehydrated cache — treat every sync query as owing until we know. */
 let owingReady = false;
+/** Row ids this device has already deleted while the table still owes. A stale
+ *  refetch still carries those rows (the delete has not landed), and without
+ *  this set `preserveOwingRows` would admit them as "new remote" ids — Confirm
+ *  would delete, then the project would walk back onto the table. */
+let deletedIds = new Map<SyncTable, Set<string>>();
 
 export function tablesOwing(): ReadonlySet<SyncTable> {
   return owing;
@@ -59,6 +64,7 @@ export function tablesOwing(): ReadonlySet<SyncTable> {
 export function resetOwingForTests() {
   owing = new Set();
   owingReady = false;
+  deletedIds = new Map();
   deferred.clear();
 }
 
@@ -121,8 +127,8 @@ export function queryKeyOwesServer(queryKey: readonly unknown[]): boolean {
  *
  * This is not "overlay pending ops onto every filtered task list" — that was
  * rejected above. It only preserves rows *already in this query's cache*: keep
- * the local body for ids we already have, keep local-only ids, and still admit
- * genuinely new remote ids.
+ * the local body for ids we already have, keep local-only ids, drop ids this
+ * device has already deleted, and still admit genuinely new remote ids.
  */
 export function preserveOwingRows<T extends { id: string }>(
   table: SyncTable,
@@ -134,11 +140,14 @@ export function preserveOwingRows<T extends { id: string }>(
   if (!owing.has(table) || !Array.isArray(previous)) return next;
   const prevRows = previous as T[];
   const prevById = new Map(prevRows.filter((r) => r?.id).map((r) => [r.id, r]));
-  if (prevById.size === 0) return next;
+  const gone = deletedIds.get(table);
   const incomingIds = new Set(next.map((r) => r.id));
-  const merged = next.map((r) => (r?.id && prevById.get(r.id)) || r);
-  const extras = prevRows.filter((r) => r?.id && !incomingIds.has(r.id));
-  if (!extras.length && merged.every((r, i) => r === next[i])) return next;
+  const merged = next
+    .filter((r) => !r?.id || !gone?.has(r.id))
+    .map((r) => (r?.id && prevById.get(r.id)) || r);
+  const extras = prevRows.filter((r) => r?.id && !incomingIds.has(r.id) && !gone?.has(r.id));
+  if (prevById.size === 0 && !gone?.size) return next;
+  if (!extras.length && merged.length === next.length && merged.every((r, i) => r === next[i])) return next;
   return extras.length ? [...merged, ...extras] : merged;
 }
 
@@ -177,11 +186,49 @@ export function markOwing(table: SyncTable): void {
   owing.add(table);
 }
 
+/** Record a local delete so a stale refetch cannot walk the row back in.
+ *  Also marks the table owing — a delete is a write the server has not seen. */
+export function markDeleted(table: SyncTable, rowId: string): void {
+  markOwing(table);
+  let ids = deletedIds.get(table);
+  if (!ids) {
+    ids = new Set();
+    deletedIds.set(table, ids);
+  }
+  ids.add(rowId);
+}
+
 /** Recompute the mirror. Called after every enqueue and every drain. */
 export async function refreshOwing(): Promise<void> {
   const ops = await pendingOps();
   owing = new Set(ops.map((o) => o.table));
   owingReady = true;
+
+  const fromOutbox = new Map<SyncTable, Set<string>>();
+  for (const op of ops) {
+    if (op.kind !== "delete") continue;
+    let ids = fromOutbox.get(op.table);
+    if (!ids) {
+      ids = new Set();
+      fromOutbox.set(op.table, ids);
+    }
+    ids.add(op.rowId);
+  }
+
+  // Keep synchronously-marked tombstones for tables that still owe, so a
+  // refresh that raced ahead of enqueue cannot drop a delete we just painted.
+  // Drop tombstones for tables that owe nothing — the next refetch is allowed
+  // to be authoritative.
+  const next = new Map<SyncTable, Set<string>>();
+  for (const [table, ids] of fromOutbox) {
+    const extra = deletedIds.get(table);
+    next.set(table, extra ? new Set([...ids, ...extra]) : ids);
+  }
+  for (const [table, ids] of deletedIds) {
+    if (!owing.has(table) || next.has(table)) continue;
+    next.set(table, ids);
+  }
+  deletedIds = next;
 }
 
 /**

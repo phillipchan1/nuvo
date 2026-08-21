@@ -395,3 +395,13 @@ describe("a task's domain is its parent's, not its own stale copy", () => {
     expect(data.domains[0].investedThisWeek).toBe(1);
   });
 });
+
+describe("first-run domain rows", () => {
+  it("a row missing intention/charter still maps to trim-safe strings", () => {
+    const { dom } = build([], [], [
+      domainRow({ intention: undefined as unknown as string, charter: undefined }),
+    ]);
+    expect(dom.intention.trim()).toBe("");
+    expect(dom.charter.trim()).toBe("");
+  });
+});
