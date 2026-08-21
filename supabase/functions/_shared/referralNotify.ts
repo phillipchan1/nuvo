@@ -1,4 +1,4 @@
-/** Tell the referrer they earned a free month — push (if subscribed) + email (if Resend configured). */
+/** Notify the referrer — code used, or free-month credit landed. */
 
 import { admin, logSync } from "./admin.ts";
 import { sendWebPush, webPushConfigured, type PushSubscriptionRow } from "./webpush.ts";
@@ -7,17 +7,38 @@ const RESEND_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const MAIL_FROM = Deno.env.get("RESEND_FROM") ?? "Nuvo <hello@nuvo.day>";
 const APP_URL = Deno.env.get("APP_URL") ?? "https://app.nuvo.day";
 
-export async function notifyReferralCredit(referrerUserId: string): Promise<void> {
-  const title = "You earned a free month";
-  const body = "A friend subscribed with your code. $29 credit will apply to your next Nuvo invoice.";
+export async function notifyReferralCodeUsed(referrerUserId: string): Promise<void> {
+  await notify(referrerUserId, {
+    title: "A friend used your Nuvo code",
+    body: "Nice. You’ll get a free month when they pay — up to 6.",
+    kind: "referral_use",
+  });
+}
 
+export async function notifyReferralCredit(referrerUserId: string): Promise<void> {
+  await notify(referrerUserId, {
+    title: "You earned a free month of Nuvo",
+    body: "A friend paid with your code. $29 credit lands on your next invoice.",
+    kind: "referral_credit",
+  });
+}
+
+async function notify(
+  userId: string,
+  msg: { title: string; body: string; kind: string },
+): Promise<void> {
   await Promise.all([
-    pushCredit(referrerUserId, title, body),
-    emailCredit(referrerUserId, title, body),
+    pushNotify(userId, msg.title, msg.body, msg.kind),
+    emailNotify(userId, msg.title, msg.body, msg.kind),
   ]);
 }
 
-async function pushCredit(userId: string, title: string, body: string): Promise<void> {
+async function pushNotify(
+  userId: string,
+  title: string,
+  body: string,
+  kind: string,
+): Promise<void> {
   if (!webPushConfigured()) return;
   const { data: subs } = await admin
     .from("push_subscriptions")
@@ -28,7 +49,7 @@ async function pushCredit(userId: string, title: string, body: string): Promise<
   const payload = JSON.stringify({
     title,
     body,
-    key: `referral-credit-${Date.now()}`,
+    key: `${kind}-${Date.now()}`,
     url: "/",
   });
 
@@ -50,7 +71,12 @@ async function pushCredit(userId: string, title: string, body: string): Promise<
   }
 }
 
-async function emailCredit(userId: string, subject: string, body: string): Promise<void> {
+async function emailNotify(
+  userId: string,
+  subject: string,
+  body: string,
+  kind: string,
+): Promise<void> {
   if (!RESEND_KEY) return;
   try {
     const { data, error } = await admin.auth.admin.getUserById(userId);
@@ -67,17 +93,17 @@ async function emailCredit(userId: string, subject: string, body: string): Promi
         from: MAIL_FROM,
         to: [to],
         subject,
-        text: `${body}\n\nSee Settings → Billing: ${APP_URL}\n`,
+        text: `${body}\n\nSettings → Billing: ${APP_URL}\n`,
       }),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      await logSync("stripe", "referral_credit_email", "error", `${res.status} ${detail}`, userId);
+      await logSync("stripe", `${kind}_email`, "error", `${res.status} ${detail}`, userId);
     } else {
-      await logSync("stripe", "referral_credit_email", "ok", undefined, userId);
+      await logSync("stripe", `${kind}_email`, "ok", undefined, userId);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await logSync("stripe", "referral_credit_email", "error", msg, userId);
+    await logSync("stripe", `${kind}_email`, "error", msg, userId);
   }
 }

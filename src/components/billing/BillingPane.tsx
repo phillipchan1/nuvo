@@ -38,6 +38,7 @@ export function BillingPane() {
         <ShareCodeBlock
           initial={subscription.referral_code ?? null}
           creditsEarned={subscription.referral_credits_earned ?? 0}
+          uses={subscription.referral_uses ?? 0}
         />
       )}
 
@@ -52,9 +53,11 @@ export function BillingPane() {
 function ShareCodeBlock({
   initial,
   creditsEarned,
+  uses,
 }: {
   initial: string | null;
   creditsEarned: number;
+  uses: number;
 }) {
   const [code, setCode] = useState<string | null>(initial);
   const [busy, setBusy] = useState(false);
@@ -117,7 +120,16 @@ function ShareCodeBlock({
           open this pane and we mint one.
         </div>
       ) : null}
-      {creditsEarned > 0 && (
+      {uses > 0 && (
+        <p className="mt-3 text-caption leading-snug text-ink">
+          {uses === 1 ? "1 friend has used your code" : `${uses} friends have used your code`}
+          {creditsEarned > 0
+            ? ` · you’ve earned ${creditsEarned} free month${creditsEarned === 1 ? "" : "s"}`
+            : " · free month when they pay"}
+          {creditsEarned > 0 ? ". Credit applies to your next invoice automatically." : "."}
+        </p>
+      )}
+      {uses === 0 && creditsEarned > 0 && (
         <p className="mt-3 text-caption leading-snug text-ink">
           You’ve earned {creditsEarned} free month{creditsEarned === 1 ? "" : "s"} from friends.
           Credit applies to your next invoice automatically.

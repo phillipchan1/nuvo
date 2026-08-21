@@ -16,6 +16,9 @@ export interface Subscription {
   /** Personal share code (Stripe Promotion Code). Null until Billing asks
    *  `referral-code` to mint or attach one. */
   referral_code?: string | null;
+  /** Friends who used this code at Checkout. */
+  referral_uses?: number;
+  referral_last_use_at?: string | null;
   /** Free months granted via friend-codes (stripe-webhook). */
   referral_credits_earned?: number;
   referral_last_credit_at?: string | null;

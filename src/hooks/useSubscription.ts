@@ -118,12 +118,22 @@ export function useSubscriptionLiveSync() {
         { event: "*", schema: "public", table: "subscriptions" },
         (payload) => {
           if (payload.eventType === "UPDATE") {
-            const prev = (payload.old as { referral_credits_earned?: number } | null)
-              ?.referral_credits_earned;
-            const next = (payload.new as { referral_credits_earned?: number } | null)
-              ?.referral_credits_earned;
-            if (typeof next === "number" && typeof prev === "number" && next > prev) {
-              toast.success("A friend subscribed — you got a free month on your next bill.");
+            const oldRow = payload.old as {
+              referral_credits_earned?: number;
+              referral_uses?: number;
+            } | null;
+            const newRow = payload.new as {
+              referral_credits_earned?: number;
+              referral_uses?: number;
+            } | null;
+            const prevCredit = oldRow?.referral_credits_earned;
+            const nextCredit = newRow?.referral_credits_earned;
+            const prevUses = oldRow?.referral_uses;
+            const nextUses = newRow?.referral_uses;
+            if (typeof nextCredit === "number" && typeof prevCredit === "number" && nextCredit > prevCredit) {
+              toast.success("You earned a free month of Nuvo — it’ll apply to your next bill.");
+            } else if (typeof nextUses === "number" && typeof prevUses === "number" && nextUses > prevUses) {
+              toast.success("A friend used your code — free month when they pay.");
             }
           }
           qc.invalidateQueries({ queryKey: KEY });

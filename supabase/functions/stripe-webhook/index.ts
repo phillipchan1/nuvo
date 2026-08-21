@@ -4,7 +4,7 @@
 // No CORS/OPTIONS handling needed: Stripe never sends a browser preflight.
 import Stripe from "npm:stripe@18";
 import { admin, logSync } from "../_shared/admin.ts";
-import { notifyReferralCredit } from "../_shared/referralNotify.ts";
+import { notifyReferralCodeUsed, notifyReferralCredit } from "../_shared/referralNotify.ts";
 import {
   REFERRAL_MONTHLY_CREDIT_CENTS,
   monthsCreditRemaining,
@@ -192,6 +192,24 @@ async function loadFriendForInvoice(invoice: Stripe.Invoice, customerId: string)
   }
 }
 
+/** First time a friend attributes to a code — bump the sharer's use count + notify. */
+async function recordCodeUsed(referrerUserId: string): Promise<void> {
+  const { data: referrer } = await admin
+    .from("subscriptions")
+    .select("referral_uses")
+    .eq("user_id", referrerUserId)
+    .maybeSingle();
+  const uses = (referrer?.referral_uses ?? 0) + 1;
+  await admin
+    .from("subscriptions")
+    .update({
+      referral_uses: uses,
+      referral_last_use_at: new Date().toISOString(),
+    })
+    .eq("user_id", referrerUserId);
+  await notifyReferralCodeUsed(referrerUserId);
+}
+
 /**
  * Friend paid → credit the referrer one free month (Customer Balance), if
  * under the 6-month outstanding cap and we haven't already rewarded this
@@ -227,6 +245,7 @@ async function maybeCreditReferrer(invoice: Stripe.Invoice): Promise<void> {
       referred_by: recovered.referrerUserId,
       referral_code_used: recovered.code,
     };
+    await recordCodeUsed(recovered.referrerUserId);
   }
 
   const referrerUserId = friend.referred_by!;
@@ -345,6 +364,7 @@ Deno.serve(async (req) => {
                   referral_code_used: ref.code,
                 })
                 .eq("user_id", userId);
+              await recordCodeUsed(ref.referrerUserId);
             }
           }
         }
