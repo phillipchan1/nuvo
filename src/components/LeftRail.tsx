@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { createPortal } from "react-dom";
 import type { Label, Task } from "../lib/types";
@@ -312,13 +312,21 @@ export default function LeftRail({
           if (tab !== "today") completeAndAdvance();
           break;
         case "x":
+        case "Backspace":
+        case "Delete":
           // On the trash face `x` is already spent — the row IS trashed. Purging
           // is the one act with no undo, so it never rides a bare keystroke; the
           // row's own confirm-then-commit button is the only path.
+          // Delete/Backspace are the same act as `x`: a Mac keyboard labels the
+          // key "delete", and a right-click then Delete is how every other list
+          // on the machine works. Binding only `x` made that path a no-op.
           if (tab === "trash") break;
+          if (targets.length === 0) break;
+          e.preventDefault();
           targets.forEach((t) => mutations.trash(t));
           setSelectedId(null);
           setSelectedIds(new Set());
+          setContextMenu(null);
           break;
         // Restore — only means anything on the trash face, so it costs no letter
         // anywhere else.
@@ -1062,26 +1070,52 @@ function TaskContextMenu({
     ? recurrences.find((r) => r.id === task.recurrence_id) ?? null
     : null;
   const recurring = Boolean(task.recurrence_id && recurrence);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const bornAt = useRef(performance.now());
+  const [pos, setPos] = useState({ top: y, left: x });
+
+  // The menu is ~14 rows, not the 260px the first clamp budgeted, so Trash
+  // (last item) sat below the viewport on a Today row in the lower half of
+  // the rail. Clicks there hit the scrim and the menu closed; the task stayed.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    setPos({
+      left: Math.max(8, Math.min(x, vw - width - 8)),
+      top: Math.max(8, Math.min(y, vh - height - 8)),
+    });
+  }, [x, y, deleteMode]);
+
+  const trashTask = () => {
+    mutations.trash(task);
+    onClose();
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (deleteMode) setDeleteMode(false);
-      else onClose();
+      if (e.key === "Escape") {
+        e.stopImmediatePropagation();
+        if (deleteMode) setDeleteMode(false);
+        else onClose();
+        return;
+      }
+      if (e.key === "Backspace" || e.key === "Delete" || e.key.toLowerCase() === "x") {
+        if (isTypingIn(e.target)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        mutations.trash(task);
+        onClose();
+      }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, deleteMode]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose, deleteMode, task, mutations]);
 
   const done = task.status === "done";
   const inWeek = Boolean(task.sprint_id && task.sprint_id === vertical.sprint?.id);
-
-  // Clamp to viewport
-  const POP_W = 200;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const left = x + POP_W > vw - 8 ? vw - POP_W - 8 : x;
-  const top = y + 260 > vh - 8 ? vh - 260 - 8 : y;
 
   type Item =
     | { kind: "action"; label: string; key?: string; danger?: boolean; action: () => void }
@@ -1169,16 +1203,27 @@ function TaskContextMenu({
           label: "Trash",
           key: "X",
           danger: true,
-          action: () => { mutations.trash(task); onClose(); },
+          action: trashTask,
         },
   ];
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-50" onClick={onClose} />
       <div
-        className="rise elev-3 fixed z-50 w-[200px] overflow-hidden rounded-[var(--radius)] border border-line bg-surface py-1"
-        style={{ top, left }}
+        className="fixed inset-0 z-[60]"
+        onClick={() => {
+          // The opening right-click's leftover click can land on this scrim
+          // the instant it mounts and close the menu before Trash is reachable.
+          if (performance.now() - bornAt.current < 250) return;
+          onClose();
+        }}
+        onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+      />
+      <div
+        ref={menuRef}
+        className="rise elev-3 fixed z-[61] w-[200px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
+        style={{ top: pos.top, left: pos.left, maxHeight: "calc(100vh - 16px)" }}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         {items.map((item, i) => {
           if (item.kind === "sep")

@@ -35,6 +35,7 @@ import TimeZoneChip from "./TimeZoneChip";
 import { fixedCssPx, useUiScale } from "../hooks/useUiScale";
 import { useOptionalUndoStack } from "../hooks/useUndoStack";
 import { consumeCalendarClickHandled } from "../lib/calendarDismissGuard";
+import { isTypingIn } from "../lib/a11y";
 import { toast } from "sonner";
 // One rule for "how big is this block", shared with the chat's `create_slot`.
 import { sizeSlotToContents } from "../../supabase/functions/_shared/slotSizing.ts";
@@ -1490,17 +1491,31 @@ export default function CalendarPane({
       if (taskMenuRef.current?.contains(e.target as Node)) return;
       setTaskMenu(null);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setTaskMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setTaskMenu(null);
+        return;
+      }
+      // Same act as the rail: Delete/Backspace trash. The menu used to ignore
+      // them, so right-click → Delete on a calendar block was a silent no-op.
+      if (e.key === "Backspace" || e.key === "Delete") {
+        if (isTypingIn(e.target)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        mutations.trash(taskMenu.task);
+        setTaskMenu(null);
+      }
+    };
     const onBlur = () => setTaskMenu(null);
     window.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     window.addEventListener("blur", onBlur);
     return () => {
       window.removeEventListener("pointerdown", onDown, true);
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("blur", onBlur);
     };
-  }, [taskMenu]);
+  }, [taskMenu, mutations]);
 
   const slotMenuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
