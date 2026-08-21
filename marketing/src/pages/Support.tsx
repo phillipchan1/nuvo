@@ -893,11 +893,12 @@ export default function Support() {
                     Type it in Stripe Checkout when you subscribe — there&apos;s an &ldquo;Add
                     promotion code&rdquo; field. Or open the link they sent (
                     <span className="mono text-[var(--text)]">nuvo.day/?code=…</span>
-                    ); we remember it through the trial and apply it at checkout. Codes are
-                    personal — one per operator who shared Nuvo with you — and they take 20%
-                    off the first three months. There is no affiliate marketplace and no
-                    commission dashboard; if someone loves Nuvo, they just give you their
-                    code.
+                    ); we remember it through the trial and apply it at checkout. You get{' '}
+                    <strong className="text-[var(--text)]">50% off your first month</strong>.
+                    The person who shared gets a free month on their bill when you actually
+                    pay (not when you start the trial) — up to six free months outstanding.
+                    There is no affiliate marketplace; if someone loves Nuvo, they just give
+                    you their code.
                   </p>
                   <p className="mt-3">
                     Already on Nuvo and want to share? Settings → Billing shows{' '}

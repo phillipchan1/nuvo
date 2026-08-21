@@ -62,10 +62,11 @@ describe("pending referral storage", () => {
 });
 
 describe("friendShareSentence", () => {
-  it("names the code and the discount", () => {
+  it("names the code and the two-sided offer", () => {
     const s = friendShareSentence("PHIL");
     expect(s).toContain("PHIL");
-    expect(s).toContain("20%");
+    expect(s).toContain("50%");
+    expect(s).toContain("free month");
     expect(s).toContain("nuvo.day/?code=PHIL");
   });
 });

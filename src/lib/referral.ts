@@ -100,7 +100,4 @@ export function captureReferralCodeFromLocation(
   return code;
 }
 
-/** One-line paste for a friend. Discount copy must match the live Coupon. */
-export function friendShareSentence(code: string): string {
-  return `Your friends' code is ${code}. They get 20% off their first 3 months when they subscribe — type it at checkout, or open https://nuvo.day/?code=${code}.`;
-}
+export { friendShareSentence, shareBlurb, FRIEND_OFFER_SHORT } from "./referralOffer";

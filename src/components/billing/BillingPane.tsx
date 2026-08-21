@@ -8,6 +8,7 @@ import {
   trialDaysRemaining,
   type Subscription,
 } from "../../lib/subscription";
+import { shareBlurb } from "../../lib/referral";
 import { UpgradeModal } from "./UpgradeModal";
 
 /** Settings is for MANAGING a subscription — the selling happens in
@@ -88,9 +89,7 @@ function ShareCodeBlock({ initial }: { initial: string | null }) {
   return (
     <div className="mt-6 border-t border-line pt-4">
       <div className="text-label uppercase tracking-wider text-muted">Share Nuvo</div>
-      <p className="mt-1 text-caption leading-snug text-muted">
-        Friends use your code at checkout for 20% off their first 3 months.
-      </p>
+      <p className="mt-1 text-caption leading-snug text-muted">{shareBlurb()}</p>
       {busy && !code ? (
         <div className="mt-2 text-caption text-muted">Getting your code…</div>
       ) : code ? (

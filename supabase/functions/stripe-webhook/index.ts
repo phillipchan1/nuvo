@@ -4,6 +4,10 @@
 // No CORS/OPTIONS handling needed: Stripe never sends a browser preflight.
 import Stripe from "npm:stripe@18";
 import { admin, logSync } from "../_shared/admin.ts";
+import {
+  REFERRAL_MONTHLY_CREDIT_CENTS,
+  monthsCreditRemaining,
+} from "../_shared/referralOffer.ts";
 import { stripe, stripeStatusToStatus } from "../_shared/stripe.ts";
 
 function json(data: unknown, status = 200): Response {
@@ -13,11 +17,6 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-// This Stripe account also sells Dayspring, so this endpoint receives that
-// app's subscription events too. Every Nuvo object is tagged `app: "nuvo"`
-// at Checkout time (see stripe-checkout), and its price is always one of
-// ours — anything else is another product's event and must be ignored
-// outright rather than left to "probably match no rows".
 const NUVO_PRICES = new Set(
   [Deno.env.get("STRIPE_PRICE_MONTHLY"), Deno.env.get("STRIPE_PRICE_ANNUAL")].filter(Boolean),
 );
@@ -27,12 +26,15 @@ function isOurSubscription(sub: Stripe.Subscription): boolean {
   return sub.items.data.some((i) => i.price?.id && NUVO_PRICES.has(i.price.id));
 }
 
-/** Stripe moved `current_period_end` off the Subscription onto each
- *  subscription item in API version 2025-03-31.basil; we're pinned past
- *  that, so read the item first and only fall back to the legacy top-level
- *  field. Returns null rather than throwing on a missing/!finite value —
- *  a bad date must not fail the whole handler, because the idempotency
- *  claim above means Stripe's retry would be skipped as a duplicate. */
+function isOurInvoice(invoice: Stripe.Invoice): boolean {
+  // deno-lint-ignore no-explicit-any
+  const lines = ((invoice as any)?.lines?.data ?? []) as any[];
+  return lines.some((l) => {
+    const id = l?.price?.id ?? l?.pricing?.price_details?.price;
+    return typeof id === "string" && NUVO_PRICES.has(id);
+  });
+}
+
 function periodEndISO(sub: Stripe.Subscription): string | null {
   // deno-lint-ignore no-explicit-any
   const item = sub.items?.data?.[0] as any;
@@ -42,10 +44,6 @@ function periodEndISO(sub: Stripe.Subscription): string | null {
   return new Date(secs * 1000).toISOString();
 }
 
-/** Read which friend Promotion Code was applied on a Checkout Session.
- *  Returns null on anything we shouldn't attribute (no code, not ours,
- *  self-referral). Never throws — attribution is nice-to-have; billing
- *  entitlement must still succeed if Stripe's expand shape drifts. */
 async function referralFromCheckout(
   session: Stripe.Checkout.Session,
 ): Promise<{ referrerUserId: string; code: string } | null> {
@@ -60,7 +58,6 @@ async function referralFromCheckout(
     // deno-lint-ignore no-explicit-any
     const promo = discounts?.map((d) => d?.discount?.promotion_code).find((p: any) => p && typeof p === "object");
     if (!promo) {
-      // Fallback: session.discounts[] when the API returns them expanded.
       // deno-lint-ignore no-explicit-any
       const sessionDiscounts = (full as any)?.discounts as any[] | undefined;
       for (const d of sessionDiscounts ?? []) {
@@ -83,10 +80,87 @@ function acceptPromo(
   if (promo?.metadata?.app !== "nuvo" || promo?.metadata?.kind !== "referral") return null;
   const referrer = promo.metadata?.referrer_user_id;
   if (typeof referrer !== "string" || !referrer) return null;
-  if (referrer === checkoutUserId) return null; // self-referral
+  if (referrer === checkoutUserId) return null;
   const code = typeof promo.code === "string" ? promo.code : null;
   if (!code) return null;
   return { referrerUserId: referrer, code };
+}
+
+/**
+ * Friend paid → credit the referrer one free month (Customer Balance), if
+ * under the 6-month outstanding cap and we haven't already rewarded this
+ * conversion.
+ */
+async function maybeCreditReferrer(invoice: Stripe.Invoice): Promise<void> {
+  if (invoice.status !== "paid") return;
+  if (!isOurInvoice(invoice)) return;
+  // deno-lint-ignore no-explicit-any
+  const reason = (invoice as any).billing_reason as string | undefined;
+  if (reason && reason !== "subscription_create") return;
+
+  const customerId =
+    typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+  if (!customerId) return;
+
+  const { data: friend } = await admin
+    .from("subscriptions")
+    .select("user_id, referred_by, referral_reward_granted_at, referral_code_used")
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+  if (!friend?.referred_by || friend.referral_reward_granted_at) return;
+
+  const { data: referrer } = await admin
+    .from("subscriptions")
+    .select("user_id, stripe_customer_id")
+    .eq("user_id", friend.referred_by)
+    .maybeSingle();
+  if (!referrer?.stripe_customer_id) {
+    await logSync(
+      "stripe",
+      "referral_credit_skipped",
+      "error",
+      "referrer has no stripe_customer_id yet",
+      friend.referred_by,
+    );
+    return;
+  }
+
+  const cust = await stripe.customers.retrieve(referrer.stripe_customer_id);
+  if (cust.deleted) return;
+  const balance = typeof cust.balance === "number" ? cust.balance : 0;
+  if (monthsCreditRemaining(balance) < 1) {
+    await logSync(
+      "stripe",
+      "referral_credit_capped",
+      "ok",
+      "referrer already at 6 months outstanding credit",
+      friend.referred_by,
+    );
+    await admin
+      .from("subscriptions")
+      .update({ referral_reward_granted_at: new Date().toISOString() })
+      .eq("user_id", friend.user_id);
+    return;
+  }
+
+  await stripe.customers.createBalanceTransaction(referrer.stripe_customer_id, {
+    amount: -REFERRAL_MONTHLY_CREDIT_CENTS,
+    currency: "usd",
+    description: `Nuvo friend-code reward (${friend.referral_code_used ?? "code"} → paid)`,
+    metadata: {
+      app: "nuvo",
+      kind: "referral_reward",
+      referred_user_id: friend.user_id,
+      invoice_id: invoice.id,
+    },
+  });
+
+  await admin
+    .from("subscriptions")
+    .update({ referral_reward_granted_at: new Date().toISOString() })
+    .eq("user_id", friend.user_id);
+
+  await logSync("stripe", "referral_credit", "ok", undefined, friend.referred_by);
 }
 
 Deno.serve(async (req) => {
@@ -96,8 +170,6 @@ Deno.serve(async (req) => {
 
   let event: Stripe.Event;
   try {
-    // Deno needs the async + Web Crypto variant — Stripe's default
-    // constructEvent uses Node's sync crypto, unavailable here.
     const cryptoProvider = Stripe.createSubtleCryptoProvider();
     event = await stripe.webhooks.constructEventAsync(
       raw,
@@ -111,11 +183,6 @@ Deno.serve(async (req) => {
     return new Response(`signature verification failed: ${msg}`, { status: 400 });
   }
 
-  // Idempotency: claim the event id before handling, so a concurrent
-  // redelivery can't double-apply. If the handler then fails we release the
-  // claim (see the catch below) — otherwise a deterministic bug would burn
-  // the claim on the first delivery and Stripe's retries would all
-  // short-circuit as duplicates, turning a transient failure permanent.
   const { error: dupe } = await admin.from("stripe_webhook_events").insert({ event_id: event.id });
   if (dupe) return json({ received: true, duplicate: true });
 
@@ -123,14 +190,12 @@ Deno.serve(async (req) => {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        if (session.metadata?.app !== "nuvo") break; // another product's checkout
+        if (session.metadata?.app !== "nuvo") break;
         const userId = session.client_reference_id;
         const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
         if (userId && customerId) {
           await admin.from("subscriptions").update({ stripe_customer_id: customerId }).eq("user_id", userId);
         }
-        // Attribution — first paid checkout with a friend code. Only write if
-        // referred_by is still null so a later plan switch doesn't overwrite.
         if (userId) {
           const ref = await referralFromCheckout(session);
           if (ref) {
@@ -169,8 +234,6 @@ Deno.serve(async (req) => {
         if (userId) {
           await admin.from("subscriptions").update(patch).eq("user_id", userId);
         } else {
-          // Defensive fallback — metadata.user_id should always be present
-          // since stripe-checkout sets it, but don't drop the event if not.
           await admin.from("subscriptions").update(patch).eq("stripe_customer_id", customerId);
         }
         break;
@@ -188,14 +251,12 @@ Deno.serve(async (req) => {
         }
         break;
       }
+      case "invoice.paid": {
+        const invoice = event.data.object as Stripe.Invoice;
+        await maybeCreditReferrer(invoice);
+        break;
+      }
       case "invoice.payment_failed": {
-        // Log only — never mutate status here. Stripe auto-retries failed
-        // invoices; `past_due` is written exclusively from
-        // customer.subscription.updated's own status field, so a single
-        // card blip doesn't instant-lock a paying user.
-        // Line-item price moved to `pricing.price_details.price` in recent
-        // API versions; check both shapes so this stays a log-only no-op
-        // rather than an exception if Stripe reshapes it again.
         // deno-lint-ignore no-explicit-any
         const lines = ((event.data.object as any)?.lines?.data ?? []) as any[];
         const ours = lines.some((l) => {
@@ -206,12 +267,10 @@ Deno.serve(async (req) => {
         break;
       }
       default:
-        break; // unhandled events are fine
+        break;
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // Release the idempotency claim so Stripe's automatic retry gets a real
-    // second attempt instead of being turned away as a duplicate.
     await admin.from("stripe_webhook_events").delete().eq("event_id", event.id);
     await logSync("stripe", event.type, "error", msg);
     return json({ error: "handler failed" }, 500);
