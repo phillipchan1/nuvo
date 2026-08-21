@@ -7,6 +7,7 @@
  * that write is a different bug (`preserveOwingRows`).
  */
 import { describe, expect, it, vi } from "vitest";
+import React from "react";
 import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useCollectionSelection } from "../src/hooks/useCollectionSelection";
