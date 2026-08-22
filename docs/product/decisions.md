@@ -4093,9 +4093,11 @@ two writers.
   cannot demote an active row on the other rail.
 - iOS binary is StoreKit only. Missing products → stub, never Stripe.
   Product identifiers are env (`NUVO_IAP_MONTHLY` / `NUVO_IAP_ANNUAL`).
-  **IAP dollar amounts are unset** — Marketing has not priced the App Store
-  SKUs; do not invent them. Localized price comes from StoreKit or not at all.
-- Web Stripe prices stay as they are. Dayspring is untouched.
+  Phil named App Store Connect prices ($29.99/month, $229.99/year) —
+  **Connect-only.** They must not appear in the iOS binary, env, IapChooser,
+  or Swift. Localized price comes from StoreKit or not at all.
+- Web Stripe prices stay $29/month and $228/year. Dayspring is untouched.
 
-*Status: standing — App Store Connect products / IAP prices still Phil +
-Marketing. Do not deploy this as "iOS IAP is for sale" until those exist.*
+*Status: standing — create the Connect SKUs at the named prices; do not
+ship those numbers in the IPA. Do not deploy as "iOS IAP is for sale"
+until the products exist in Connect.*

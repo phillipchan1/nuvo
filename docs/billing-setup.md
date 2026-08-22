@@ -167,9 +167,11 @@ multi-tenant now, not single-user.
 
 ## 11. iOS App Store IAP (StoreKit)
 
-**Status: wired in code; IAP dollar amounts are unset.** Marketing has not
-priced Nuvo on the App Store. Do not invent them. Product identifiers are env
-placeholders until App Store Connect exists.
+**Status: wired in code.** Phil named App Store Connect prices
+($29.99/month, $229.99/year). Those amounts live in Connect only — not in
+env, not in `IapChooser`, not in Swift, not in the iOS binary. Env still
+holds product identifiers (`NUVO_IAP_*`), never dollar amounts. Web Stripe
+copy in `plans.ts` stays $29/month and $228/year.
 
 The iOS binary (`tauri ios build`, `TAURI_ENV_PLATFORM=ios`) sets
 `VITE_IAP_ONLY=1` so Stripe checkout, the portal, and `plans.ts` web prices
@@ -213,8 +215,9 @@ Server Notifications V2 at:
 Migration `70_plan_source` adds `plan_source`, Apple transaction columns, the
 `plan` / `is_entitled` computed columns, and `apple_webhook_events`.
 
-This section does **not** create App Store Connect products, set IAP prices,
-or change the Dayspring Stripe catalog. Those stay with Phil.
+This section does **not** create App Store Connect products or write the
+named IAP prices into the binary. Set $29.99 / $229.99 in Connect when you
+create the SKUs. Dayspring Stripe catalog untouched.
 
 ---
 

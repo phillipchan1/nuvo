@@ -3,7 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /** Paths that ship inside (or only exist for) the iOS / Tauri-iOS binary.
- *  Apple rejects Stripe UI, web prices, and "cheaper on the web" copy here. */
+ *  Apple rejects Stripe UI, web prices, "cheaper on the web" copy, and any
+ *  hardcoded App Store Connect dollar amounts. Localized price comes from
+ *  StoreKit product objects only. */
 const IOS_PATHS = [
   "src-tauri/ios",
   "src-tauri/plugins/nuvo-iap",
@@ -16,6 +18,12 @@ const FORBIDDEN = [
   /\$29\b/,
   /\$19\b/,
   /\$228\b/,
+  // App Store Connect prices — named, but they must not ship in the binary.
+  // Localized amounts come from StoreKit product objects only.
+  /\$29\.99/,
+  /\$229\.99/,
+  /29\.99/,
+  /229\.99/,
   /cheaper on the web/i,
   /billed yearly/i,
   /secure checkout/i,
@@ -40,7 +48,7 @@ function walk(path: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("iOS / Tauri-iOS path has no Stripe and no web prices", () => {
+describe("iOS / Tauri-iOS path has no Stripe, no web prices, and no ASC dollars", () => {
   const files = IOS_PATHS.flatMap((p) => walk(p)).filter((f) =>
     /\.(swift|ts|tsx|rs|toml|md)$/.test(f),
   );
