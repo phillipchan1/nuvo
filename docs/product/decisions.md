@@ -4097,6 +4097,10 @@ two writers.
   **Connect-only.** They must not appear in the iOS binary, env, IapChooser,
   or Swift. Localized price comes from StoreKit or not at all.
 - Web Stripe prices stay $29/month and $228/year. Dayspring is untouched.
+- **One trial.** `handle_new_user` grants 14 days on `subscriptions.trial_ends_at`.
+  iOS signup reads that same row. No second trial table. No StoreKit
+  introductory-offer implementation in code. An Apple intro offer, if any,
+  is Connect when Marketing creates SKUs (after listing screenshots; no Submit).
 
 *Status: standing — create the Connect SKUs at the named prices; do not
 ship those numbers in the IPA. Do not deploy as "iOS IAP is for sale"

@@ -137,3 +137,31 @@ describe("isEntitled is one function", () => {
     expect(readFileSync("supabase/functions/apple-iap/index.ts", "utf8")).toContain("applyPlanUpdate");
   });
 });
+
+describe("one trial, both rails", () => {
+  it("handle_new_user still grants the 14-day trial on subscriptions", () => {
+    const src = readFileSync("supabase/migrations/00000000000042_domain_seed_after_billing.sql", "utf8");
+    expect(src).toMatch(/insert into public\.subscriptions \(user_id, status, trial_ends_at\)/);
+    expect(src).toContain("interval '14 days'");
+  });
+
+  it("does not add a second trial table", () => {
+    const mig = readFileSync("supabase/migrations/00000000000070_plan_source.sql", "utf8");
+    expect(mig).not.toMatch(/create table\s+\w*trial/i);
+  });
+
+  it("Stripe Checkout does not grant a trial", () => {
+    const src = readFileSync("supabase/functions/stripe-checkout/index.ts", "utf8");
+    expect(src).not.toMatch(/trial_period_days/);
+  });
+
+  it("no StoreKit introductory-offer implementation in code", () => {
+    const files = [...sourceFiles("src"), ...sourceFiles("supabase/functions")];
+    const offenders = files.filter((f) =>
+      /introductoryOffer|SKPaymentDiscount|promotionalOffer/.test(readFileSync(f, "utf8")),
+    );
+    expect(offenders).toEqual([]);
+    const swift = readFileSync("src-tauri/plugins/nuvo-iap/ios/Sources/NuvoIapPlugin.swift", "utf8");
+    expect(swift).not.toMatch(/introductoryOffer|SKPaymentDiscount|promotionalOffer/);
+  });
+});

@@ -146,10 +146,13 @@ multi-tenant now, not single-user.
 - **One updater.** Stripe's webhook and Apple's (StoreKit verify + App Store
   Server Notifications V2) both call `applyPlanUpdate`. The unused rail cannot
   demote an active row on the other rail.
-- **Trials** are granted by `handle_new_user` (the existing `auth.users`
-  insert trigger), atomically with the domains/settings seed — so a trial row
-  always exists before the app can query it. `plan_source` stays null until a
-  rail is charged.
+- **One trial, both rails.** `handle_new_user` inserts the `subscriptions`
+  row with `status = 'trialing'` and `trial_ends_at = now() + 14 days`.
+  That is the trial — app-side, no card, not Stripe Checkout, not a StoreKit
+  introductory offer. iOS signup uses this same row. There is no second trial
+  table. An Apple intro offer, if Marketing adds one, lives in App Store
+  Connect when they create SKUs (after listing screenshots; no Submit).
+  `plan_source` stays null until a rail is charged.
 - **The webhook is the only writer** of billing state (plus the authenticated
   `apple-iap` confirm after a StoreKit purchase). Stripe claims each
   `event.id` in `stripe_webhook_events`; Apple claims `notificationUUID` in
@@ -176,7 +179,9 @@ copy in `plans.ts` stays $29/month and $228/year.
 The iOS binary (`tauri ios build`, `TAURI_ENV_PLATFORM=ios`) sets
 `VITE_IAP_ONLY=1` so Stripe checkout, the portal, and `plans.ts` web prices
 are tree-shaken out of the IPA. If StoreKit products are missing, the paywall
-is a stub — it never falls back to Stripe.
+is a stub — it never falls back to Stripe. iOS signup is already entitled
+for 14 days via the same `handle_new_user` row; this plugin is for paying
+after that trial, not a second trial.
 
 ### Env (Supabase secrets + optional Vite)
 
