@@ -52,3 +52,29 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+# GHSA-wrw7-89jp-8q8g / RUSTSEC-2024-0429: glib < 0.20.0 has an unsound
+# VariantStrIter. Dependabot cannot jump 0.18.x → 0.20.0 because Tauri 2's
+# Linux stack (gtk 0.18 / webkit2gtk 2.0) requires glib ^0.18, and gtk3-rs
+# is unmaintained — there is no gtk 0.20. crates.io glib 0.20 is a gtk-rs-core
+# major and will not compile against those GTK3 crates.
+#
+# The path crate is glib 0.18.5 + the upstream `&p` → `&mut p` fix
+# (gtk-rs-core#1343), versioned 0.20.0 so the lock clears the advisory.
+# The other path crates are the same GTK3 releases with only their glib
+# requirement rewritten to 0.20. Drop this section when Tauri 3 / GTK4
+# ships. See patched/README.md.
+[patch.crates-io]
+glib = { path = "patched/glib" }
+atk = { path = "patched/atk" }
+cairo-rs = { path = "patched/cairo-rs" }
+gdk = { path = "patched/gdk" }
+gdk-pixbuf = { path = "patched/gdk-pixbuf" }
+gdkx11 = { path = "patched/gdkx11" }
+gio = { path = "patched/gio" }
+gtk = { path = "patched/gtk" }
+javascriptcore-rs = { path = "patched/javascriptcore-rs" }
+libappindicator = { path = "patched/libappindicator" }
+pango = { path = "patched/pango" }
+soup3 = { path = "patched/soup3" }
+webkit2gtk = { path = "patched/webkit2gtk" }

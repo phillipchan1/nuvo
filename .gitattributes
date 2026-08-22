@@ -1,0 +1,3 @@
+# gtk-rs 0.18 sources vendored only so Cargo.lock can carry glib 0.20.0
+# (RUSTSEC-2024-0429). Not first-party code.
+src-tauri/patched/** linguist-vendored

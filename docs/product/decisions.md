@@ -4078,3 +4078,22 @@ Recipe: `src/lib/posthog.ts`. Project token is `VITE_POSTHOG_PROJECT_TOKEN`
 
 *Status: standing — token in `.env.local` + Vercel; confirm `$exception` in
 PostHog before turning on source maps or Self-driving.*
+
+**D-115 · 2026-08-22 · glib in the Tauri lock is patched to 0.20.0; we do not
+take crates.io glib 0.20 or Tauri 3 to clear Dependabot.**
+
+Dependabot's cargo job on master failed
+(`security_update_not_possible` for `glib`: latest resolvable 0.18.5, lowest
+patched 0.20.0). The crate is a transitive GTK3 dep of Tauri 2 / wry /
+webkit2gtk 2.0 — Linux-only, not a Nuvo import. gtk3-rs is unmaintained and
+pins `glib ^0.18`; crates.io 0.20 is a gtk-rs-core major and will not compile
+against that stack. We `[patch]` glib to 0.18.5 + the upstream
+`VariantStrIter` fix (gtk-rs-core#1343), versioned 0.20.0, and rewrite only
+the GTK3 crates' glib requirement so the lock contains no 0.18.5.
+
+**What we are not doing.** Bumping Node/vite. Taking Tauri 3 / GTK4 / webkit6
+just to consume crates.io glib 0.20. A lockfile version rewrite that would
+break the desktop build.
+
+*Status: standing — drop the `src-tauri/patched/` tree when Tauri 3 ships the
+GTK4 Linux backend. Trigger: tauri 3.x on crates.io using `gtk4` / `webkit6`.*
