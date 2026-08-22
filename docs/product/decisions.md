@@ -4078,3 +4078,30 @@ Recipe: `src/lib/posthog.ts`. Project token is `VITE_POSTHOG_PROJECT_TOKEN`
 
 *Status: standing — token in `.env.local` + Vercel; confirm `$exception` in
 PostHog before turning on source maps or Self-driving.*
+
+**D-115 · 2026-08-22 · One subscription, two payment rails.**
+
+Apple will reject an App Store binary that collects cards through Stripe or
+points at a cheaper web price. Web already sells via Stripe Checkout +
+Customer Portal (trial / monthly / annual). So: **one entitlement row**,
+two writers.
+
+- Surfaces read `plan` (trialing \| active \| cancelled \| past_due) +
+  `plan_source` (stripe \| apple). `isEntitled()` is one function
+  (`_shared/planRules.ts`); SQL twins `entitled` / `is_entitled`.
+- Both Stripe and Apple webhooks call `applyPlanUpdate`. The unused rail
+  cannot demote an active row on the other rail.
+- iOS binary is StoreKit only. Missing products → stub, never Stripe.
+  Product identifiers are env (`NUVO_IAP_MONTHLY` / `NUVO_IAP_ANNUAL`).
+  Phil named App Store Connect prices ($29.99/month, $229.99/year) —
+  **Connect-only.** They must not appear in the iOS binary, env, IapChooser,
+  or Swift. Localized price comes from StoreKit or not at all.
+- Web Stripe prices stay $29/month and $228/year. Dayspring is untouched.
+- **One trial.** `handle_new_user` grants 14 days on `subscriptions.trial_ends_at`.
+  iOS signup reads that same row. No second trial table. No StoreKit
+  introductory-offer implementation in code. An Apple intro offer, if any,
+  is Connect when Marketing creates SKUs (after listing screenshots; no Submit).
+
+*Status: standing — create the Connect SKUs at the named prices; do not
+ship those numbers in the IPA. Do not deploy as "iOS IAP is for sale"
+until the products exist in Connect.*

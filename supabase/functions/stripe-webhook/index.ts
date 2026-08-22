@@ -9,7 +9,9 @@ import {
   REFERRAL_MONTHLY_CREDIT_CENTS,
   monthsCreditRemaining,
 } from "../_shared/referralOffer.ts";
-import { stripe, stripeStatusToStatus } from "../_shared/stripe.ts";
+import { applyPlanUpdate } from "../_shared/plan.ts";
+import { stripeStatusToPlan } from "../_shared/planRules.ts";
+import { stripe } from "../_shared/stripe.ts";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -384,19 +386,16 @@ Deno.serve(async (req) => {
         if (!isOurSubscription(sub)) break;
         const userId = sub.metadata?.user_id;
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
-        const patch = {
-          status: stripeStatusToStatus(sub.status),
-          stripe_subscription_id: sub.id,
-          stripe_customer_id: customerId,
-          price_id: sub.items.data[0]?.price?.id ?? null,
-          current_period_end: periodEndISO(sub),
-          cancel_at_period_end: sub.cancel_at_period_end,
-        };
-        if (userId) {
-          await admin.from("subscriptions").update(patch).eq("user_id", userId);
-        } else {
-          await admin.from("subscriptions").update(patch).eq("stripe_customer_id", customerId);
-        }
+        await applyPlanUpdate({
+          userId: userId || undefined,
+          plan: stripeStatusToPlan(sub.status),
+          planSource: "stripe",
+          stripeSubscriptionId: sub.id,
+          stripeCustomerId: customerId,
+          priceId: sub.items.data[0]?.price?.id ?? null,
+          currentPeriodEnd: periodEndISO(sub),
+          cancelAtPeriodEnd: sub.cancel_at_period_end,
+        });
         break;
       }
       case "customer.subscription.deleted": {
@@ -404,12 +403,14 @@ Deno.serve(async (req) => {
         if (!isOurSubscription(sub)) break;
         const userId = sub.metadata?.user_id;
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
-        const patch = { status: "cancelled" as const, cancel_at_period_end: false };
-        if (userId) {
-          await admin.from("subscriptions").update(patch).eq("user_id", userId);
-        } else {
-          await admin.from("subscriptions").update(patch).eq("stripe_customer_id", customerId);
-        }
+        await applyPlanUpdate({
+          userId: userId || undefined,
+          plan: "cancelled",
+          planSource: "stripe",
+          stripeSubscriptionId: sub.id,
+          stripeCustomerId: customerId,
+          cancelAtPeriodEnd: false,
+        });
         break;
       }
       case "invoice.paid": {

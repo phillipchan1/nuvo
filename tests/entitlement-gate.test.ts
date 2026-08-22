@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   interpretSubscriptionRead,
+  isEntitled,
   resolveEntitlementView,
   type Subscription,
 } from "../src/lib/subscription";
@@ -8,6 +9,8 @@ import {
 const paid: Subscription = {
   user_id: "u1",
   status: "active",
+  plan: "active",
+  plan_source: "stripe",
   trial_ends_at: "2026-08-01T00:00:00Z",
   stripe_customer_id: "cus_x",
   stripe_subscription_id: "sub_x",
@@ -18,7 +21,7 @@ const paid: Subscription = {
   entitled: true,
 };
 
-const lapsed: Subscription = { ...paid, status: "trialing", entitled: false };
+const lapsed: Subscription = { ...paid, status: "trialing", plan: "trialing", entitled: false };
 
 describe("interpretSubscriptionRead", () => {
   it("returns a real row", () => {
@@ -88,5 +91,11 @@ describe("resolveEntitlementView", () => {
   it("waits after checkout only when we cannot yet trust the account", () => {
     expect(resolveEntitlementView({ ...base, checkoutPending: true })).toBe("loading");
     expect(resolveEntitlementView({ ...base, checkoutPending: true, wasEntitled: true })).toBe("open");
+  });
+
+  it("opens an Apple-paid row the same as a Stripe-paid row", () => {
+    const apple: Subscription = { ...paid, plan_source: "apple", stripe_customer_id: null, stripe_subscription_id: null };
+    expect(isEntitled(apple)).toBe(true);
+    expect(resolveEntitlementView({ ...base, subscription: apple })).toBe("open");
   });
 });

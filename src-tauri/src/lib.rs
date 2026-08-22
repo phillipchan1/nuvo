@@ -238,7 +238,10 @@ pub fn run() {
         // The wrist. On iOS this hands a paired Apple Watch a credential over
         // WatchConnectivity; everywhere else every command is a no-op that
         // reports `supported: false`, so the SPA calls it unconditionally.
-        .plugin(tauri_plugin_nuvo_watch::init());
+        .plugin(tauri_plugin_nuvo_watch::init())
+        // StoreKit. On iOS this loads products / purchases / restores; everywhere
+        // else every command is a no-op that reports `supported: false`.
+        .plugin(tauri_plugin_nuvo_iap::init());
 
     #[cfg(desktop)]
     let builder = builder

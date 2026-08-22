@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "../lib/supabase";
-import { interpretSubscriptionRead, writeWasEntitled } from "../lib/subscription";
+import { interpretSubscriptionRead, isEntitled, writeWasEntitled } from "../lib/subscription";
 import type { Subscription } from "../lib/subscription";
 
 const KEY = ["subscription"];
@@ -38,7 +38,7 @@ export function useSubscription() {
       const fetchOnce = async (): Promise<Subscription | null> => {
         const { data, error } = await supabase
           .from("subscriptions")
-          .select("*, entitled")
+          .select("*, entitled, plan")
           .abortSignal(AbortSignal.timeout(8_000))
           .maybeSingle();
         if (error) throw error;
@@ -84,7 +84,7 @@ export function useSubscription() {
   // clear the hint on an empty read.
   useEffect(() => {
     if (!query.isSuccess || query.data == null) return;
-    writeWasEntitled(query.data.entitled);
+    writeWasEntitled(isEntitled(query.data));
   }, [query.isSuccess, query.data]);
 
   // isPending (not isLoading) is the right "we don't know yet" signal here:
