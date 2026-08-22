@@ -13,6 +13,17 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g (glib < 0.20, VariantStrIter unsoundness).
+# Dependabot cannot bump this — run 32581400656 on master (`security_update_not_possible`):
+# latest resolvable 0.18.5, patched 0.20.0.
+# glib is not a Nuvo dep. It is transitive Linux GTK3: tauri 2 → wry → webkit2gtk 2.0
+# + gtk 0.18, which requires glib ^0.18. crates.io glib 0.20 is a 0.x breaking
+# gtk-rs-core major; gtk3-rs is unmaintained. Reproduced:
+#   cargo update -p glib --precise 0.20.0
+#   → failed to select glib = "^0.18" (required by gtk v0.18.2 / tauri 2.11.2)
+# A [patch.crates-io] to crates.io 0.20.0 has the same resolve failure.
+# Do not vendor gtk-rs (closed #37). Revisit when Tauri ships GTK4 / webkit6.
+# Advisory is Linux-only; shipped targets are macOS + iOS, which do not compile glib.
 tauri = { version = "2", features = ["macos-private-api", "devtools"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
