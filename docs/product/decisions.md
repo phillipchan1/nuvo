@@ -4092,16 +4092,18 @@ two writers.
 - Both Stripe and Apple webhooks call `applyPlanUpdate`. The unused rail
   cannot demote an active row on the other rail.
 - iOS binary is StoreKit only. Missing products → stub, never Stripe.
-  Product identifiers are env (`NUVO_IAP_MONTHLY` / `NUVO_IAP_ANNUAL`).
-  Phil named App Store Connect prices ($29.99/month, $229.99/year) —
-  **Connect-only.** They must not appear in the iOS binary, env, IapChooser,
-  or Swift. Localized price comes from StoreKit or not at all.
+  Product identifiers are env (`NUVO_IAP_MONTHLY` / `NUVO_IAP_ANNUAL`) —
+  the StoreKit Product ID string from Connect, not the numeric Apple ID.
+  Connect SKUs (not submitted, no intro offer): group **Nuvo Pro**
+  `22327993` · monthly Apple ID `6804259519` · annual Apple ID `6804258767`.
+  Connect prices ($29.99/month, $229.99/year) stay **Connect-only.** They
+  must not appear in the iOS binary, env values, IapChooser, or Swift.
+  Localized price comes from StoreKit or not at all.
 - Web Stripe prices stay $29/month and $228/year. Dayspring is untouched.
 - **One trial.** `handle_new_user` grants 14 days on `subscriptions.trial_ends_at`.
   iOS signup reads that same row. No second trial table. No StoreKit
-  introductory-offer implementation in code. An Apple intro offer, if any,
-  is Connect when Marketing creates SKUs (after listing screenshots; no Submit).
+  introductory-offer implementation in code. Marketing created the SKUs
+  with no intro offer.
 
-*Status: standing — create the Connect SKUs at the named prices; do not
-ship those numbers in the IPA. Do not deploy as "iOS IAP is for sale"
-until the products exist in Connect.*
+*Status: standing — SKUs exist in Connect, not submitted. Do not ship
+Connect dollar amounts in the IPA. Do not Submit the app from this work.*

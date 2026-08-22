@@ -170,11 +170,22 @@ multi-tenant now, not single-user.
 
 ## 11. iOS App Store IAP (StoreKit)
 
-**Status: wired in code.** Phil named App Store Connect prices
-($29.99/month, $229.99/year). Those amounts live in Connect only — not in
-env, not in `IapChooser`, not in Swift, not in the iOS binary. Env still
-holds product identifiers (`NUVO_IAP_*`), never dollar amounts. Web Stripe
-copy in `plans.ts` stays $29/month and $228/year.
+**Status: SKUs exist in App Store Connect — not submitted.** No intro offer.
+Trial stays app-side (`handle_new_user` / `trial_ends_at`). Prices in the
+iOS UI come only from StoreKit product objects. Web Stripe copy in
+`plans.ts` stays $29/month and $228/year.
+
+**Subscription group:** Nuvo Pro · id `22327993`
+
+| SKU | Env (product identifier) | Apple ID | Connect price / period |
+|---|---|---|---|
+| Monthly | `NUVO_IAP_MONTHLY` | `6804259519` | $29.99 / 1 month |
+| Annual | `NUVO_IAP_ANNUAL` | `6804258767` | $229.99 / 1 year |
+
+The StoreKit **Product ID string** is not in this repo. Set each `NUVO_IAP_*`
+(and optional `VITE_NUVO_IAP_*`) to the Product ID from the Connect SKU —
+not the numeric Apple ID, not a dollar amount. Do not assume the identifier
+is the env name unless that is what Connect actually uses.
 
 The iOS binary (`tauri ios build`, `TAURI_ENV_PLATFORM=ios`) sets
 `VITE_IAP_ONLY=1` so Stripe checkout, the portal, and `plans.ts` web prices
@@ -186,9 +197,11 @@ after that trial, not a second trial.
 ### Env (Supabase secrets + optional Vite)
 
 ```bash
+# Paste the StoreKit Product ID string from each Connect SKU.
+# Monthly Apple ID 6804259519 · Annual Apple ID 6804258767 · group 22327993
 supabase secrets set \
-  NUVO_IAP_MONTHLY=NUVO_IAP_MONTHLY \
-  NUVO_IAP_ANNUAL=NUVO_IAP_ANNUAL \
+  NUVO_IAP_MONTHLY='<monthly Product ID from Connect>' \
+  NUVO_IAP_ANNUAL='<annual Product ID from Connect>' \
   APPLE_BUNDLE_ID=day.nuvo.app \
   APPLE_IAP_ENVIRONMENT=Sandbox \
   APPLE_NOTIFICATION_SECRET=long-random
@@ -196,8 +209,9 @@ supabase secrets set \
 
 | Var | Where | What |
 |---|---|---|
-| `NUVO_IAP_MONTHLY` / `NUVO_IAP_ANNUAL` | Supabase | Apple product identifiers. Placeholders until Phil / Marketing set real ones. **Not prices.** |
-| `VITE_NUVO_IAP_MONTHLY` / `VITE_NUVO_IAP_ANNUAL` | iOS Vite build (optional) | Same identifiers baked into the binary so StoreKit can be queried offline. |
+| `NUVO_IAP_MONTHLY` | Supabase | StoreKit Product ID for Apple ID `6804259519`. **Not** the Apple ID, **not** a price. |
+| `NUVO_IAP_ANNUAL` | Supabase | StoreKit Product ID for Apple ID `6804258767`. **Not** the Apple ID, **not** a price. |
+| `VITE_NUVO_IAP_MONTHLY` / `VITE_NUVO_IAP_ANNUAL` | iOS Vite build (optional) | Same Product ID strings baked into the binary so StoreKit can be queried offline. |
 | `APPLE_BUNDLE_ID` | Supabase | Must match the transaction's `bundleId` (`day.nuvo.app`). |
 | `APPLE_IAP_ENVIRONMENT` | Supabase | `Sandbox` or `Production`. Record-keeping; notifications carry their own environment. |
 | `APPLE_NOTIFICATION_SECRET` | Supabase | Optional query secret on the App Store Server Notifications URL. |
@@ -220,9 +234,9 @@ Server Notifications V2 at:
 Migration `70_plan_source` adds `plan_source`, Apple transaction columns, the
 `plan` / `is_entitled` computed columns, and `apple_webhook_events`.
 
-This section does **not** create App Store Connect products or write the
-named IAP prices into the binary. Set $29.99 / $229.99 in Connect when you
-create the SKUs. Dayspring Stripe catalog untouched.
+SKUs are already in Connect (not submitted). Do not write $29.99 / $229.99
+into the binary. Do not Submit the app from this PR. Dayspring Stripe
+catalog untouched.
 
 ---
 
