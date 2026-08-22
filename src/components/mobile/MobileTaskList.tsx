@@ -336,7 +336,7 @@ function MobileTrash({
 }
 
 function buildTodaySections(today: Task[], now: Date) {
-  const active = today.filter((t) => t.status !== "done");
+  const active = today.filter((t) => t.status !== "done" && t.status !== "trashed");
   const done = today.filter((t) => t.status === "done");
   // Overdue only — keep in step with LeftRail's twin: a rolled task dated today
   // with no time is today's plan, not a late one, and including it made the

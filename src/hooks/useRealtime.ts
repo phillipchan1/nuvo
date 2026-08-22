@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { applyLiveChange } from "../lib/sync/liveApply";
-import { invalidateWhenSafe, pendingOps, SYNC_TABLES, tablesOwing, type SyncTable } from "../lib/sync";
+import { invalidateWhenSafe, pendingOps, pullSyncTables, SYNC_TABLES, tablesOwing, type SyncTable } from "../lib/sync";
 
 const isSyncTable = (t: string): t is SyncTable =>
   (SYNC_TABLES as readonly string[]).includes(t);
@@ -93,22 +94,115 @@ export function useRealtime(enabled: boolean) {
       paint([]);
     };
 
-    // Subscribe per table, never to the whole schema. A schema-wide listener
-    // asks Realtime to decode and deliver EVERY public write — including the
-    // ones this client has no query for — so unrelated server-side churn still
-    // costs WAL decode, RLS checks and socket traffic per row. Naming the
-    // tables keeps the fan-out proportional to what the UI actually renders.
-    const channel = supabase.channel("nuvo-db-changes");
-    for (const table of Object.keys(TABLE_TO_KEYS)) {
-      channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) =>
+    // ── One channel per table ────────────────────────────────────────────
+    //
+    // This used to be a single `nuvo-db-changes` channel carrying all sixteen
+    // `postgres_changes` bindings, and it silently delivered NOTHING. The
+    // channel reported `SUBSCRIBED`, `channel.state` was `"joined"`, all
+    // sixteen bindings were present client-side — and no row ever arrived.
+    // Verified against the live project by subscribing two channels on one
+    // socket in the same tick and writing a single row: the sixteen-binding
+    // channel got nothing, a one-binding channel got the INSERT, and sixteen
+    // channels of one binding each get everything.
+    //
+    // That silence is the whole "my Mac is minutes behind my phone" report.
+    // Realtime was the desktop's ONLY live path — there is no pull-to-refresh
+    // there, and a Tauri window that never leaves the foreground never fires
+    // the visibility event TanStack's focus refetching rides on — so a
+    // subscription that delivered nothing meant a desktop that learned nothing
+    // until it was reloaded.
+    //
+    // Still per-table rather than schema-wide: a schema-wide listener asks
+    // Realtime to decode and deliver EVERY public write, including the ones
+    // this client has no query for.
+    const TABLES = Object.keys(TABLE_TO_KEYS);
+    const channels = new Map<string, RealtimeChannel>();
+    const retries = new Map<string, ReturnType<typeof setTimeout>>();
+    const attempts = new Map<string, number>();
+    const joinedOnce = new Set<string>();
+    let torn = false;
+
+    const clearRetry = (table: string) => {
+      const t = retries.get(table);
+      if (t !== undefined) {
+        clearTimeout(t);
+        retries.delete(table);
+      }
+    };
+
+    /**
+     * Realtime never replays what was missed while a channel was down, so a
+     * *re*join is the moment this device is most wrong. One pull covers a
+     * burst of them: sixteen channels recovering together after a laptop wakes
+     * is one gap to close, not sixteen.
+     */
+    let backfill: ReturnType<typeof setTimeout> | null = null;
+    const scheduleBackfill = () => {
+      if (backfill !== null) return;
+      backfill = setTimeout(() => {
+        backfill = null;
+        if (!torn) pullSyncTables(qc);
+      }, 250);
+    };
+
+    const connect = (table: string) => {
+      if (torn) return;
+      clearRetry(table);
+      const existing = channels.get(table);
+      if (existing) supabase.removeChannel(existing);
+
+      const ch = supabase.channel(`nuvo-rt-${table}`);
+      channels.set(table, ch);
+      ch.on("postgres_changes", { event: "*", schema: "public", table }, (payload) =>
         onChange(payload),
       );
-    }
-    channel.subscribe();
+      ch.subscribe((status) => {
+        if (torn) return;
+        if (status === "SUBSCRIBED") {
+          attempts.set(table, 0);
+          if (joinedOnce.has(table)) scheduleBackfill();
+          joinedOnce.add(table);
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          // Backoff, capped: a rejoin storm against a server that is refusing
+          // us is how a quiet account generates a loud bill.
+          const n = (attempts.get(table) ?? 0) + 1;
+          attempts.set(table, n);
+          const delay = Math.min(30_000, 1_000 * 2 ** Math.min(n - 1, 5));
+          clearRetry(table);
+          retries.set(table, setTimeout(() => connect(table), delay));
+        }
+      });
+    };
+
+    for (const table of TABLES) connect(table);
+
+    // Coming back to the app is the moment a dead channel matters. Rejoining
+    // now rather than waiting out the backoff is also what makes the backfill
+    // above fire while the user is still looking at the stale board.
+    const onWake = () => {
+      if (torn) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      for (const table of TABLES) {
+        if (channels.get(table)?.state === "joined") continue;
+        attempts.set(table, 0);
+        connect(table);
+      }
+    };
+    window.addEventListener("focus", onWake);
+    window.addEventListener("online", onWake);
+    document.addEventListener("visibilitychange", onWake);
 
     return () => {
+      torn = true;
+      for (const table of TABLES) clearRetry(table);
+      if (backfill !== null) clearTimeout(backfill);
       if (timer !== null) clearTimeout(timer);
-      supabase.removeChannel(channel);
+      window.removeEventListener("focus", onWake);
+      window.removeEventListener("online", onWake);
+      document.removeEventListener("visibilitychange", onWake);
+      for (const ch of channels.values()) supabase.removeChannel(ch);
     };
   }, [enabled, qc]);
 }

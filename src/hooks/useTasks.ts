@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { mirrorTask, supabase } from "../lib/supabase";
-import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
+import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, restingStatus, type Recurrence, type Slot, type Task, type TaskPriority, type TaskStatus } from "../lib/types";
 import { todayISO } from "../lib/dates";
 import { needsGrooming } from "../lib/grooming";
@@ -272,9 +272,11 @@ function findCachedTask(qc: QueryClient, id: string): Task | undefined {
 
 /** Insert a newly minted task row into every `tasks`-keyed cache fragment. */
 export function insertTaskCache(qc: QueryClient, task: Task) {
-  qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-    old ? [...old, task] : [task],
-  );
+  runWithoutOwingPreserve(() => {
+    qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+      old ? [...old, task] : [task],
+    );
+  });
 }
 
 /**
@@ -288,6 +290,7 @@ export function insertTaskCache(qc: QueryClient, task: Task) {
  * lets it appear on the Schedule without waiting for a refetch.
  */
 export function putTaskInCaches(qc: QueryClient, id: string, next: Task | null) {
+  runWithoutOwingPreserve(() => {
   for (const [key, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
     if (!Array.isArray(data)) continue;
     const existing = data.find((t) => t.id === id);
@@ -393,6 +396,7 @@ export function putTaskInCaches(qc: QueryClient, id: string, next: Task | null) 
 
     if (updated) qc.setQueryData(key, updated);
   }
+  });
 }
 
 export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
@@ -403,7 +407,9 @@ export function patchCaches(qc: QueryClient, id: string, patch: Partial<Task>) {
     if (!Array.isArray(data)) continue;
     const hit = data.find((t) => t.id === id);
     if (hit) {
-      resolved = { ...hit, ...patch };
+      // Stamp now so the rail/calendar merge (`mergeTaskLists`) and the owing
+      // same-id compare can tell this write from a stale fragment / refetch.
+      resolved = { ...hit, ...patch, updated_at: new Date().toISOString() };
       break;
     }
   }
@@ -553,18 +559,16 @@ export function useTaskMutations() {
     };
 
     if (isStep) {
-      // Only its parent's checklist. The blanket append below is right for a
-      // capture — every task list is a plausible home for one — but a step
-      // belongs to exactly one list, and seeding it into the others would flash
-      // a checklist line in the inbox until the refetch corrected it (and, if
-      // the write were queued offline, leave it there).
-      qc.setQueryData<Task[]>(["tasks", "steps", input.parent_task_id], (old) =>
-        old ? [...old, optimistic] : [optimistic],
-      );
+      // Only its parent's checklist. Seeding a step into the other task lists
+      // would flash a checklist line in the inbox until the refetch corrected
+      // it (and, if the write were queued offline, leave it there).
+      runWithoutOwingPreserve(() => {
+        qc.setQueryData<Task[]>(["tasks", "steps", input.parent_task_id], (old) =>
+          old ? [...old, optimistic] : [optimistic],
+        );
+      });
     } else {
-      qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-        old ? [...old, optimistic] : [optimistic],
-      );
+      putTaskInCaches(qc, id, optimistic);
     }
 
     await queueWrite(
@@ -931,7 +935,10 @@ export function useGroomInbox(inbox: Task[], enabled = true) {
       const { error } = await supabase.functions.invoke("agent", {
         body: { enrichInbox: { taskIds: pending.map((t) => t.id) } },
       });
-      if (!error && !cancelled) qc.invalidateQueries({ queryKey: ["tasks", "inbox"] });
+      // Deferred while the outbox owes tasks: the enrich response predates
+      // anything still queued here, and refetching over it takes the user's
+      // own capture off the screen to show a groom of an older row.
+      if (!error && !cancelled) invalidateWhenSafe(qc, "tasks", ["tasks", "inbox"]);
       running.current = false;
     })();
 
@@ -953,8 +960,11 @@ export function useRolloverGuard(lastRolloverDate: string | null | undefined) {
     if (lastRolloverDate === today) return;
     const { error } = await supabase.functions.invoke("rollover", { body: {} });
     if (!error) {
-      qc.invalidateQueries({ queryKey: ["tasks"] });
-      qc.invalidateQueries({ queryKey: ["settings"] });
+      // The first open of a new day is exactly when a device is most likely to
+      // be carrying yesterday's unsent edits, so this refetch defers behind the
+      // drain rather than painting the pre-rollover server list over them.
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      invalidateWhenSafe(qc, "user_settings", ["settings"]);
     }
   };
   return run;

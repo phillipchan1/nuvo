@@ -337,11 +337,17 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
 
   const openRecord = useCallback(
     (kind: "project" | "initiative", id: string) =>
-      navigate({
-        overlay: kind === "project" ? "project-record" : "initiative-record",
-        overlayId: id,
-        floorModal: null,
-      }),
+      // Replace when the create sheet is up: Create used to PUSH the record on
+      // top of `new-project`, so Esc / ✕ / the scrim ran `history.back()` and
+      // the create modal came straight back — ⌘⏎ looked like a no-op.
+      navigate(
+        {
+          overlay: kind === "project" ? "project-record" : "initiative-record",
+          overlayId: id,
+          floorModal: null,
+        },
+        navRef.current.floorModal ? "replace" : "push",
+      ),
     [navigate],
   );
 

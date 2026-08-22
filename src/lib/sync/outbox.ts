@@ -123,6 +123,22 @@ export async function parkedOps(): Promise<Op[]> {
 }
 
 /**
+ * Both halves of the queue from one read.
+ *
+ * The coordinator needs them together — pending decides whether a refetch may
+ * run at all, parked decides which individual rows that refetch must not
+ * delete — and reading the store twice per drain to answer one question was
+ * pure cost.
+ */
+export async function outboxSnapshot(): Promise<{ pending: Op[]; parked: Op[] }> {
+  const all = await idbAllOps<Op>();
+  const live = all.filter((o) => !isParked(o));
+  const { send, dead } = fold(live);
+  if (dead.length) void sweep(all, dead);
+  return { pending: send, parked: all.filter(isParked) };
+}
+
+/**
  * Retire delivered work.
  *
  * Coalescing means one sent op can stand for several stored ones, so an ack

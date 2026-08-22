@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invokeQuiet, supabase } from "../lib/supabase";
-import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
+import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve } from "../lib/sync";
 import { DEFAULT_DURATION_MINUTES, type Slot, type Task } from "../lib/types";
 import { toDateISO } from "../lib/dates";
-import { useTaskMutations } from "./useTasks";
+import { patchCaches, useTaskMutations } from "./useTasks";
 import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 // One rule for "how big is this block", shared with the chat's `create_slot` —
@@ -61,34 +61,40 @@ export function useSlotTasks(slotIds: string[]) {
 }
 
 export function patchSlotCaches(qc: QueryClient, id: string, patch: Partial<Slot>) {
-  qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
-    old?.map((s) => (s.id === id ? { ...s, ...patch } : s)),
-  );
+  runWithoutOwingPreserve(() => {
+    qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+      old?.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    );
+  });
 }
 
 export function insertSlotCache(qc: QueryClient, slot: Slot) {
-  qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
-    old ? [...old, slot] : [slot],
-  );
+  runWithoutOwingPreserve(() => {
+    qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
+      old ? [...old, slot] : [slot],
+    );
+  });
 }
 
 /** Place a slot's post-image into every mounted range query. `null` removes it. */
 export function putSlotInCaches(qc: QueryClient, id: string, next: Slot | null) {
-  for (const [key, data] of qc.getQueriesData<Slot[]>({ queryKey: ["slots"] })) {
-    if (!Array.isArray(data)) continue;
-    const rangeStart = key[1] as string | undefined;
-    const rangeEnd = key[2] as string | undefined;
-    const existing = data.find((s) => s.id === id);
-    const belongs =
-      next != null &&
-      (!rangeStart || !rangeEnd ||
-        (next.start_time >= rangeStart && next.start_time < rangeEnd));
-    let updated: Slot[];
-    if (!belongs) updated = data.filter((s) => s.id !== id);
-    else if (existing) updated = data.map((s) => (s.id === id ? next! : s));
-    else updated = [...data, next!];
-    qc.setQueryData(key, updated);
-  }
+  runWithoutOwingPreserve(() => {
+    for (const [key, data] of qc.getQueriesData<Slot[]>({ queryKey: ["slots"] })) {
+      if (!Array.isArray(data)) continue;
+      const rangeStart = key[1] as string | undefined;
+      const rangeEnd = key[2] as string | undefined;
+      const existing = data.find((s) => s.id === id);
+      const belongs =
+        next != null &&
+        (!rangeStart || !rangeEnd ||
+          (next.start_time >= rangeStart && next.start_time < rangeEnd));
+      let updated: Slot[];
+      if (!belongs) updated = data.filter((s) => s.id !== id);
+      else if (existing) updated = data.map((s) => (s.id === id ? next! : s));
+      else updated = [...data, next!];
+      qc.setQueryData(key, updated);
+    }
+  });
 }
 
 export interface NewSlotInput {
@@ -166,9 +172,11 @@ export function useSlotMutations() {
     const paint = () => {
       patchSlotCaches(qc, id, patch);
       if (patch.do_date !== undefined) {
-        qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-          old?.map((t) => (t.slot_id === id ? { ...t, do_date: patch.do_date! } : t)),
-        );
+        runWithoutOwingPreserve(() => {
+          qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+            old?.map((t) => (t.slot_id === id ? { ...t, do_date: patch.do_date! } : t)),
+          );
+        });
       }
     };
     paint();
@@ -317,9 +325,24 @@ export function useSlotMutations() {
   };
 
   const removeSlot = (slot: Slot) => {
-    qc.setQueriesData<Slot[]>({ queryKey: ["slots"] }, (old) =>
-      old?.filter((s) => s.id !== slot.id),
-    );
+    putSlotInCaches(qc, slot.id, null);
+
+    // Release the children *here*, not only on the server.
+    //
+    // `tasks.slot_id` is `on delete set null`, so Postgres does re-home them —
+    // but only once the delete lands, and only visibly once something refetches.
+    // Until then this device holds tasks pointing at a slot it has already
+    // removed: they fail the slot query's membership test and are absent from
+    // the day rail too, so deleting a sitting offline made everything inside it
+    // disappear until the drain. Mirroring the cascade locally is what keeps
+    // them on their day the whole time.
+    const orphans = new Set<string>();
+    for (const [, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
+      if (!Array.isArray(data)) continue;
+      for (const t of data) if (t.slot_id === slot.id) orphans.add(t.id);
+    }
+    for (const id of orphans) patchCaches(qc, id, { slot_id: null });
+
     // The mirror teardown carries the event id directly — the row is about to
     // go, and slot-mirror cannot read a deleted row.
     if (navigator.onLine) {

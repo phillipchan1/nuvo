@@ -28,6 +28,7 @@ import { useExternalEvents } from "../../hooks/useCalendar";
 import { useVertical } from "../../hooks/useVertical";
 import { firstDayOfWeek } from "../../hooks/useSettings";
 import { deriveSlotTitle } from "../../lib/slots";
+import { mergeTaskLists } from "../../lib/taskMerge";
 import { taskDomainColor } from "../../lib/vertical";
 
 type Mutations = ReturnType<typeof useTaskMutations>;
@@ -291,11 +292,10 @@ export default function WeekBoard({
   const boardRef = useRef<HTMLDivElement | null>(null);
 
   // Resolve any draggable id → its Task across every pool the board can touch.
-  const taskById = useMemo(() => {
-    const m = new Map<string, Task>();
-    for (const t of [...inbox, ...sprintTasks, ...scheduled, ...anytime, ...slotChildren]) m.set(t.id, t);
-    return m;
-  }, [inbox, sprintTasks, scheduled, anytime, slotChildren]);
+  const taskById = useMemo(
+    () => mergeTaskLists([inbox, sprintTasks, scheduled, anytime, slotChildren]),
+    [inbox, sprintTasks, scheduled, anytime, slotChildren],
+  );
 
   // The board grabs ANY `[data-task-drag]` row in the rail, including the week
   // crown's loose project work — which is in none of the pools above (no

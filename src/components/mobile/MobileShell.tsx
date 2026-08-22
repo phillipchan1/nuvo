@@ -21,6 +21,7 @@ import { useRecurrenceMutations } from "../../hooks/useRecurrence";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
+import { mergeTaskLists } from "../../lib/taskMerge";
 import { isTauri } from "../../lib/platform";
 import { shortcutFromUrl, type Shortcut } from "../../lib/shortcuts";
 import type { Floor } from "../../lib/readiness";
@@ -377,11 +378,10 @@ export default function MobileShell() {
 
   // Include every task so a global-search result (which can be any task) always
   // resolves to a row the task sheet can open.
-  const taskById = useMemo(() => {
-    const m = new Map<string, Task>();
-    for (const t of [...inbox, ...todayTasks, ...weekTasks, ...allTasks]) m.set(t.id, t);
-    return m;
-  }, [inbox, todayTasks, weekTasks, allTasks]);
+  const taskById = useMemo(
+    () => mergeTaskLists([inbox, todayTasks, weekTasks, allTasks]),
+    [inbox, todayTasks, weekTasks, allTasks],
+  );
   const openTask = taskId ? taskById.get(taskId) ?? null : null;
 
   // The bulk bar's acts — the same hook the desktop rail uses, so a phone bulk

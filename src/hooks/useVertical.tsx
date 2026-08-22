@@ -11,9 +11,9 @@ import { useExternalEvents } from "./useCalendar";
 import { useSettings } from "./useSettings";
 import { useEventRouting } from "./useEventRouting";
 import { useOptionalUndoStack } from "./useUndoStack";
-import { fetchAllTasks, patchCaches } from "./useTasks";
+import { fetchAllTasks, patchCaches, putTaskInCaches } from "./useTasks";
 import { insertSlotCache, patchSlotCaches } from "./useSlots";
-import { invalidateWhenSafe, makeOp, queueWrite, type SyncTable } from "../lib/sync";
+import { invalidateWhenSafe, makeOp, queueWrite, runWithoutOwingPreserve, type SyncTable } from "../lib/sync";
 import { planningWeekStartISO } from "../lib/dates";
 import { upsertPushVerdict } from "../lib/priorities";
 import { titleCase } from "../lib/text";
@@ -473,12 +473,16 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
 
     /** Optimistically patch a row cache, then persist + reconcile. */
     const patchRows = <R extends { id: string }>(key: string[], id: string, rowPatch: Partial<R>) =>
-      qc.setQueryData<R[]>(key, (old) => old?.map((r) => (r.id === id ? { ...r, ...rowPatch } : r)));
+      runWithoutOwingPreserve(() =>
+        qc.setQueryData<R[]>(key, (old) => old?.map((r) => (r.id === id ? { ...r, ...rowPatch } : r))),
+      );
 
     const removeRows = <R extends { id: string }>(key: string[], ids: string[]) => {
       if (!ids.length) return;
       const drop = new Set(ids);
-      qc.setQueryData<R[]>(key, (old) => old?.filter((r) => !drop.has(r.id)));
+      runWithoutOwingPreserve(() => {
+        qc.setQueryData<R[]>(key, (old) => old?.filter((r) => !drop.has(r.id)));
+      });
     };
 
     /**
@@ -719,7 +723,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
       await writeTable("tasks", id, rowPatch);
       // keep the Google "Nuvo" mirror in sync, same contract as useTasks
       if (MIRROR_FIELDS.some((f) => f in rowPatch)) mirrorTask(id);
-      invalidate(["tasks"]);
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
     };
 
     return {
@@ -1042,9 +1046,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
           durationMins,
         });
         void qc.cancelQueries({ queryKey: ["tasks"] });
-        qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-          old ? [...old, optimistic] : [optimistic],
-        );
+        putTaskInCaches(qc, tempId, optimistic);
         // Queued, like `useTasks.createTask`. These two paths had diverged:
         // capturing from the rail survived a dead network and adding a task
         // inside a project record did not — the same act with two different
@@ -1083,9 +1085,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         );
 
         void qc.cancelQueries({ queryKey: ["tasks"] });
-        qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-          old ? [...old, ...temps] : temps,
-        );
+        for (const temp of temps) putTaskInCaches(qc, temp.id, temp);
         // One op per draft rather than one batch insert: a batch that
         // half-lands has no safe retry, whereas each per-row upsert is
         // independently idempotent. The optimistic rows already carry the ids
@@ -1132,9 +1132,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         );
 
         void qc.cancelQueries({ queryKey: ["tasks"] });
-        qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-          old ? [...old, ...temps] : temps,
-        );
+        for (const temp of temps) putTaskInCaches(qc, temp.id, temp);
         // Per-row ops, ids already minted into the optimistic rows.
         void Promise.all(
           drafts.map((d, i) =>
@@ -1190,7 +1188,7 @@ export function VerticalProvider({ children }: { children: ReactNode }) {
         void (async () => {
           ids.forEach((id, i) => patchRows<Task>(["tasks", "all"], id, { sort_order: i }));
           for (let i = 0; i < ids.length; i++) await writeTable("tasks", ids[i], { sort_order: i });
-          invalidate(["tasks"]);
+          invalidateWhenSafe(qc, "tasks", ["tasks"]);
         })();
       },
       toggleTask: (id) => {

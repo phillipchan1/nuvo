@@ -65,9 +65,15 @@ export default function SyncPanel() {
           )}
         </div>
 
+        {/* Two causes now, so the copy names neither: storage that was never
+            available (private browsing, an evicted origin) and storage that
+            refused a single write (a full disk). The second recovers on its
+            own the next time a write lands, so this must read as a current
+            state rather than a verdict on the browser. */}
         {!status.durable && (
           <p className="mt-2 border-t border-line pt-2 text-caption text-signal">
-            This browser blocked local storage, so unsent work won't survive a restart.
+            Local storage isn't accepting writes right now, so unsent work is being
+            kept in memory and won't survive a restart. It still sends normally.
           </p>
         )}
 

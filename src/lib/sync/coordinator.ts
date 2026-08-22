@@ -29,7 +29,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { drain, type Transport } from "./engine";
-import { pendingOps, refreshOutboxStatus, setOutboxStatus } from "./outbox";
+import { outboxSnapshot, refreshOutboxStatus, setOutboxStatus } from "./outbox";
 import { SYNC_TABLES, type SyncTable } from "./ops";
 
 /** Tables whose queries are waiting for a drain before they may refetch. */
@@ -58,6 +58,7 @@ export function tablesOwing(): ReadonlySet<SyncTable> {
 /** Test seam: drop the owing mirror so a suite does not leak across cases. */
 export function resetOwingForTests() {
   owing = new Set();
+  parkedRows = new Map();
   owingReady = false;
   deferred.clear();
 }
@@ -123,7 +124,61 @@ export function queryKeyOwesServer(queryKey: readonly unknown[]): boolean {
  * rejected above. It only preserves rows *already in this query's cache*: keep
  * the local body for ids we already have, keep local-only ids, and still admit
  * genuinely new remote ids.
+ *
+ * This runs as TanStack `structuralSharing` on *every* data write, including
+ * our own `setQueryData`. A trash (or any membership drop) while the table is
+ * owing used to get undone: the previous row was "missing from incoming", so
+ * it was glued back on as a local-only extra — toast fired, the Today row
+ * stayed. Local cache writes opt out via `runWithoutOwingPreserve`.
  */
+let bypassOwingPreserve = 0;
+
+/** Run a local cache write without the refetch-merge. `setQueryData` from
+ *  `putTaskInCaches` is the new truth, not a server snapshot to defend against. */
+export function runWithoutOwingPreserve<T>(fn: () => T): T {
+  bypassOwingPreserve++;
+  try {
+    return fn();
+  } finally {
+    bypassOwingPreserve--;
+  }
+}
+
+function rowUpdatedAt(row: unknown): string {
+  if (!row || typeof row !== "object") return "";
+  const ts = (row as { updated_at?: unknown }).updated_at;
+  return typeof ts === "string" ? ts : "";
+}
+
+/**
+ * Rows the server refused, per table.
+ *
+ * A parked op is the one state where the queue is "clean" — nothing pending,
+ * nothing draining — while a row the user is looking at exists *only* on this
+ * device. `owing` deliberately excludes parked work, because a table held
+ * owing forever would never refetch again and the device would go permanently
+ * stale. But that left the row itself unprotected: the next refetch returned a
+ * list without it and structural sharing dropped it, so the task disappeared
+ * off the screen while a toast in a settings pane explained why.
+ *
+ * So protection is row-scoped rather than table-scoped here. Everything else
+ * in the refetch lands normally — a task deleted on the phone still leaves —
+ * and only the ids with a rejected write behind them are held.
+ */
+let parkedRows = new Map<SyncTable, Set<string>>();
+
+function keepParkedRows<T extends { id: string }>(
+  table: SyncTable,
+  previous: T[],
+  next: T[],
+): T[] {
+  const ids = parkedRows.get(table);
+  if (!ids?.size) return next;
+  const incomingIds = new Set(next.map((r) => r?.id));
+  const held = previous.filter((r) => r?.id && ids.has(r.id) && !incomingIds.has(r.id));
+  return held.length ? [...next, ...held] : next;
+}
+
 export function preserveOwingRows<T extends { id: string }>(
   table: SyncTable,
   previous: unknown,
@@ -131,12 +186,25 @@ export function preserveOwingRows<T extends { id: string }>(
 ): T[] {
   const next = incoming as T[];
   if (!Array.isArray(next)) return next;
-  if (!owing.has(table) || !Array.isArray(previous)) return next;
+  if (bypassOwingPreserve > 0) return next;
+  if (!Array.isArray(previous)) return next;
+  if (!owing.has(table)) return keepParkedRows(table, previous as T[], next);
   const prevRows = previous as T[];
   const prevById = new Map(prevRows.filter((r) => r?.id).map((r) => [r.id, r]));
   if (prevById.size === 0) return next;
   const incomingIds = new Set(next.map((r) => r.id));
-  const merged = next.map((r) => (r?.id && prevById.get(r.id)) || r);
+  // Same-id: keep the local body against a stale refetch, but take incoming
+  // when it is strictly newer. Completing a task is a field write on a row
+  // that still belongs in Today/scheduled — the extras path never runs, and
+  // always preferring previous is what left the rail unchecked after the
+  // toast. Membership drops (inbox, trash) still rely on extras + the local
+  // write opting out via `runWithoutOwingPreserve`.
+  const merged = next.map((r) => {
+    if (!r?.id) return r;
+    const prev = prevById.get(r.id);
+    if (!prev) return r;
+    return rowUpdatedAt(r) > rowUpdatedAt(prev) ? r : prev;
+  });
   const extras = prevRows.filter((r) => r?.id && !incomingIds.has(r.id));
   if (!extras.length && merged.every((r, i) => r === next[i])) return next;
   return extras.length ? [...merged, ...extras] : merged;
@@ -179,8 +247,20 @@ export function markOwing(table: SyncTable): void {
 
 /** Recompute the mirror. Called after every enqueue and every drain. */
 export async function refreshOwing(): Promise<void> {
-  const ops = await pendingOps();
-  owing = new Set(ops.map((o) => o.table));
+  const { pending, parked } = await outboxSnapshot();
+  owing = new Set(pending.map((o) => o.table));
+  const held = new Map<SyncTable, Set<string>>();
+  for (const op of parked) {
+    // `rowId` is the table's own key: a uuid for most, a composite for
+    // `task_labels`, a week start for `sprints`/`week_reviews`. Each is
+    // compared against the `id` of the rows in that table's own caches, so a
+    // composite simply never matches — which is right, a rejected label is not
+    // a reason to hold a task row.
+    let set = held.get(op.table);
+    if (!set) held.set(op.table, (set = new Set()));
+    set.add(op.rowId);
+  }
+  parkedRows = held;
   owingReady = true;
 }
 
@@ -207,6 +287,85 @@ function releaseDeferred(qc: QueryClient, tables: Iterable<SyncTable>) {
     for (const key of keys) qc.invalidateQueries({ queryKey: key });
   }
 }
+
+/**
+ * Queries that mounted while the outbox was still unread skipped their
+ * launch refetch (`queryKeyOwesServer` is true until `owingReady`). On a
+ * desktop with a hydrated persist cache that looks like success — the
+ * Schedule paints immediately from last night's snapshot — and then sits
+ * there, because `refetchOnMount` already decided, and Tauri does not get
+ * a window-focus event on an app that never left the foreground.
+ *
+ * Once we know what is actually owed, refetch everything that is stale and
+ * not owed. Owed tables stay on the optimistic cache until their drain.
+ * Inactive queries are only marked stale (`refetchType: "active"` default)
+ * so a background tab does not stampede.
+ */
+export function catchUpAfterOwingKnown(qc: QueryClient) {
+  if (!owingReady) return;
+  qc.invalidateQueries({
+    predicate: (query) => {
+      if (queryKeyOwesServer(query.queryKey)) return false;
+      return query.isStale();
+    },
+  });
+}
+
+/**
+ * The desktop's pull.
+ *
+ * Everything else in this file is about not letting the server overwrite local
+ * work. This is the opposite problem, and it is the one beta reported: a task
+ * moved on the phone took minutes to show up on the Mac, or never did until a
+ * relaunch.
+ *
+ * The reason is that on desktop *nothing pulls*. `refetchOnWindowFocus` rides
+ * TanStack's focus manager, which listens for `visibilitychange` — and a Tauri
+ * window that never leaves the foreground never fires it. `refetchOnMount` has
+ * already decided by then. `syncNow` only refetches tables **this** device just
+ * wrote. Pull-to-refresh is mobile-only. So the entire desktop refresh story
+ * was one Realtime socket, and a socket that dies over a lunch break (sleep,
+ * VPN, a captive network) takes the whole app stale with it, silently.
+ *
+ * So: pull the sync tables on a slow timer whenever the window is visible.
+ * Scoped deliberately to the tables the outbox owns rather than every query —
+ * `external_events` is the one that produced 3.6M reads when it was refetched
+ * carelessly, and it has its own sync job. Owed tables are skipped, as always;
+ * `isStale` means an idle app costs one round of queries a minute, not a
+ * refetch per tick.
+ */
+const PULL_ROOTS = ["tasks", "slots", "labels", "recurrences", "sprint"] as const;
+
+/**
+ * Fragments the timer leaves alone because they cost too much to ask for every
+ * minute. `["tasks","all"]` is the unfiltered pool — it pages every non-trashed
+ * row in the account — and `["tasks","trashed"]` is a screen nobody is watching
+ * in the background. Both still refresh on focus via `catchUpAfterOwingKnown`,
+ * on any Realtime row, and after every drain.
+ */
+const PULL_SKIP_FRAGMENTS = new Set(["all", "trashed"]);
+
+export function pullSyncTables(qc: QueryClient) {
+  if (!owingReady) return;
+  // `=== false`, not `!onLine`: outside a browser (and in a few embedded
+  // webviews) `navigator` exists with no `onLine` at all, and the loose test
+  // reads that absence as "offline" and skips the pull entirely.
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+  qc.invalidateQueries({
+    predicate: (query) => {
+      const root = String(query.queryKey[0] ?? "");
+      if (!(PULL_ROOTS as readonly string[]).includes(root)) return false;
+      if (PULL_SKIP_FRAGMENTS.has(String(query.queryKey[1] ?? ""))) return false;
+      if (queryKeyOwesServer(query.queryKey)) return false;
+      return query.isStale();
+    },
+  });
+}
+
+/** How often an open, visible window re-reads the tables another device may
+ *  have changed. Long enough to be cheap, short enough that "I moved it on my
+ *  phone" is true on the Mac before the user goes looking for it. */
+export const PULL_INTERVAL_MS = 60_000;
 
 export interface SyncRunOptions {
   qc: QueryClient;
@@ -296,9 +455,17 @@ export function startSync(opts: SyncRunOptions): () => void {
     timer = setTimeout(() => void run(), ms);
   };
 
+  /**
+   * Push, then pull. The drain has to go first — a refetch that overtook it
+   * would return rows predating the very write we are about to send — and
+   * `catchUpAfterOwingKnown` skips anything still owed, so the ordering is
+   * belt and braces rather than the only guard.
+   */
   const kick = () => {
     backoff = 0;
-    void run();
+    void run().then(() => {
+      if (!stopped) catchUpAfterOwingKnown(opts.qc);
+    });
   };
 
   const onVisible = () => {
@@ -309,13 +476,27 @@ export function startSync(opts: SyncRunOptions): () => void {
   window.addEventListener("focus", kick);
   document.addEventListener("visibilitychange", onVisible);
 
+  // The slow pull. `focus` covers switching back to the app; this covers
+  // sitting in front of it while a phone in the other hand changes something.
+  const pullTimer = setInterval(() => {
+    if (stopped) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    pullSyncTables(opts.qc);
+  }, PULL_INTERVAL_MS);
+
   // An app that opens with work still queued from a previous life must not wait
-  // for an event that may never come.
-  void refreshOwing().then(kick);
+  // for an event that may never come. The catch-up refetch has to wait for
+  // that same read: running it earlier would treat every query as owed and
+  // skip the launch refresh this exists to restore.
+  void refreshOwing().then(() => {
+    catchUpAfterOwingKnown(opts.qc);
+    kick();
+  });
 
   return () => {
     stopped = true;
     if (timer) clearTimeout(timer);
+    clearInterval(pullTimer);
     window.removeEventListener("online", kick);
     window.removeEventListener("focus", kick);
     document.removeEventListener("visibilitychange", onVisible);

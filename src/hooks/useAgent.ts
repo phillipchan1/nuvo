@@ -4,6 +4,7 @@ import { supabase, supabaseUrl, supabaseAnonKey } from "../lib/supabase";
 import { attachmentPromptBlock, isImageAttachment } from "../lib/agentAttachments";
 import { marqueeManifest } from "../lib/marqueeRegistry";
 import { detectDeviceTz } from "../lib/timezone";
+import { invalidateWhenSafe } from "../lib/sync";
 import type {
   AgentAction,
   AgentAttachment,
@@ -209,14 +210,17 @@ export function useAgent(range: { start: string; end: string }, navFocus?: NavFo
 
         if (finalActions?.length) {
           const tools = finalActions.map((a) => a.tool);
-          qc.invalidateQueries({ queryKey: ["tasks"] });
+          // Syncable tables defer behind the drain — the agent wrote through
+          // the service role, so its result and this device's queued edits are
+          // two concurrent writers and the refetch must not land first.
+          invalidateWhenSafe(qc, "tasks", ["tasks"]);
           qc.invalidateQueries({ queryKey: ["external_events"] });
           if (tools.some((t) => isVerticalAgentTool(t))) {
             qc.invalidateQueries({ queryKey: ["vertical"] });
           }
           // Priorities (big rocks) live on the week's sprint record.
           if (tools.some((t) => t.endsWith("_priority"))) {
-            qc.invalidateQueries({ queryKey: ["sprint"] });
+            invalidateWhenSafe(qc, "sprints", ["sprint"]);
           }
         }
       } catch (e) {

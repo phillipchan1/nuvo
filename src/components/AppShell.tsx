@@ -1,8 +1,6 @@
 import { lazy, startTransition, Suspense, useCallback, useEffect, useState } from "react";
 import {
-  initiativeById,
   initiativesOf,
-  projectById,
   projectsOf,
 } from "../lib/vertical";
 import { VerticalProvider, useVertical } from "../hooks/useVertical";
@@ -160,8 +158,6 @@ function AppShellInner() {
     openFlow,
     closeFlow,
     focusDomain: navFocusDomain,
-    openInitiative,
-    openProject,
     openRecord,
     openOverlay,
     closeOverlay,
@@ -267,25 +263,6 @@ function AppShellInner() {
       domainId: id,
       initiativeId: init?.id ?? "",
       projectId: proj?.id ?? "",
-    });
-  };
-
-  const openInitiativeDetail = (id: string) => {
-    const init = initiativeById(data, id);
-    const proj = projectsOf(data, id)[0];
-    openInitiative({
-      domainId: init?.domainId ?? focus.domainId,
-      initiativeId: id,
-      projectId: proj?.id ?? "",
-    });
-  };
-
-  const openProjectDetail = (id: string) => {
-    const proj = projectById(data, id);
-    openProject({
-      domainId: proj?.domainId ?? focus.domainId,
-      initiativeId: proj?.initiativeId ?? focus.initiativeId,
-      projectId: id,
     });
   };
 
@@ -519,15 +496,16 @@ function AppShellInner() {
       )}
 
       {/* Create — summoned by P / I or any "＋ new" button, mounted globally so it
-          works from any rung. It is the RECORD's frame with a draft inside it, so
-          committing doesn't hand you a different-looking sheet. */}
+          works from any rung. ⌘⏎ / Create dismisses: the tasks are already on
+          the sheet, and swapping in the record (a second history entry) made
+          Esc reopen the create modal. */}
       {nav.floorModal === "new-project" && (
         <Suspense fallback={null}>
           <CreateRecord
             kind="project"
             initialDomainId={focus.domainId || null}
             onClose={closeCreate}
-            onCreated={openProjectDetail}
+            onCreated={closeCreate}
           />
         </Suspense>
       )}
@@ -537,7 +515,7 @@ function AppShellInner() {
             kind="initiative"
             initialDomainId={focus.domainId || null}
             onClose={closeCreate}
-            onCreated={openInitiativeDetail}
+            onCreated={closeCreate}
           />
         </Suspense>
       )}

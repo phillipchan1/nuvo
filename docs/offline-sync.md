@@ -103,6 +103,25 @@ that predate them and wipes the user's offline work. `invalidateWhenSafe`
 refetches immediately when the table owes nothing, and defers until the drain
 otherwise.
 
+**Local cache writes opt out of the owing merge.** `preserveOwingRows` runs as
+TanStack `structuralSharing` on *every* `setQueryData`, including our own
+optimistic patches. A calendar → inbox drag (or a trash leaving Today) would
+paint, then get glued back onto the filtered list the moment the table owed a
+write — the desktop sat on a ghost block while the phone, which was not owing,
+showed the truth. `runWithoutOwingPreserve` wraps `putTaskInCaches` /
+`putSlotInCaches` / live apply so a local membership drop is the new truth,
+not a stale snapshot to defend. Completing is not a membership drop — the
+row stays on Today — so the same-id path now takes an incoming row when its
+`updated_at` is newer, which is what `patchCaches` stamps. The rail and
+calendar then merge fragments by that stamp (`mergeTaskLists`) so a stale
+scheduled copy cannot uncheck a row the toast already announced.
+
+**Launch catch-up.** Until the outbox has been read, `queryKeyOwesServer` is
+true for every sync query so a launch refetch cannot clobber dehydrated rows.
+`refetchOnMount` therefore no-ops on a desktop that restored from persist, and
+Tauri never gets a focus event to retry. `catchUpAfterOwingKnown` runs once
+that read finishes and invalidates stale queries that are not actually owed.
+
 **Agent writes paint immediately.** Realtime used to only invalidate, so a
 teammate's edit waited on a refetch — and if this device owed any write on
 that table, the refetch waited on the outbox. `applyLiveChange` writes the
@@ -113,6 +132,68 @@ lands on the Schedule the way a Google Doc edit lands on the page.
 **The persisted cache is cleared on sign-out.** Nuvo is multi-tenant and the
 cache is on disk; leaving it would rehydrate one account's tasks for the next
 person to sign in on that device.
+
+**A failed IndexedDB write is not a dropped write.** `idbAppendOp` falls back to
+an in-memory store when the `ops` transaction fails — but `idbAllOps` used to
+read *only* IndexedDB, so a single failed append made the op invisible to every
+drain that followed. The capture was painted, dehydrated into the read cache,
+never sent, and gone the first time anything refetched, with `isDurable()` still
+reporting `true`. `idbAllOps` now returns the **union** of both stores, memory
+keys are fractional (auto-increment only mints integers, so they cannot collide
+and they still sort in replay order), `durable` flips so the UI stops claiming
+crash-safety, and `reclaimMemoryOps` migrates them back — seq preserved — the
+next time the store accepts a write. Appends also resolve on transaction
+*commit* rather than `req.onsuccess`, which fires while the transaction is still
+open.
+
+**Parked rows are protected per-row, not per-table.** `owing` is computed from
+*pending* ops only, and deliberately so: a table held owing forever would never
+refetch and the device would go permanently stale. But that left a parked row —
+the one state where the queue is clean while a row exists only on this device —
+unprotected, so the next refetch dropped it and the task vanished with only a
+Settings toast to explain it. `preserveOwingRows` now holds the specific ids
+with a rejected write behind them when the table itself is not owing. A row
+deleted on another device still leaves.
+
+**Two windows, one outbox.** The desktop shell runs the main window and the
+⌥Space panel as separate WKWebViews over one IndexedDB, so both drain the same
+queue. Ops are idempotent, so a double send is harmless — but `recordFailure`'s
+plain `put` could resurrect an op the other window had just acked away, and a
+resurrected *delete* would eventually be re-sent against a legitimately
+recreated row. `idbPutOp` now reads and writes inside one transaction and skips
+an op that is already gone.
+
+**Sixteen `postgres_changes` bindings on one channel deliver nothing.** This is
+the root of the "my Mac is minutes behind my phone" report, and it failed
+*silently*: `subscribe()` reported `SUBSCRIBED`, `channel.state` was `joined`,
+all sixteen bindings were present client-side, and no row ever arrived.
+Confirmed against the live project by subscribing two channels on one socket in
+the same tick and writing a single row — the sixteen-binding channel got
+nothing, a one-binding channel got the INSERT, and sixteen channels of one
+binding each get everything. `useRealtime` now opens one channel per table
+(`nuvo-rt-<table>`). Do not consolidate them again to save connections.
+
+**The desktop had no pull.** The other half of the same report. `refetchOnWindowFocus` rides TanStack's focus
+manager, which listens for `visibilitychange` — a Tauri window that never leaves
+the foreground never fires it. `refetchOnMount` has already decided. `syncNow`
+only refetches tables *this* device just wrote. Pull-to-refresh is mobile-only.
+So the entire desktop refresh story was one Realtime socket, which had no status
+callback, no re-subscribe, and no backfill. Three fixes, each sufficient on its
+own: `kick()` now runs `catchUpAfterOwingKnown` after every drain (so app focus
+refreshes); `useRealtime` handles subscribe status, re-subscribes with capped
+backoff, and **pulls on rejoin** because Realtime does not replay what was
+missed while the socket was down; and `pullSyncTables` runs on a 60s timer while
+the window is visible, scoped to the outbox's own tables and skipping
+`["tasks","all"]` / `["tasks","trashed"]` so the heavy queries stay on the focus
+path.
+
+**A Realtime row must not destroy what it does not carry.** The payload is the
+bare table row — no joins — so painting it straight over the cache erased
+`task_labels` on every remote edit until the next refetch. `applyTask` merges
+onto the cached row. Relatedly, a remote DELETE for a row this device has queued
+work on used to return `true` (handled) while doing nothing, which suppressed
+the fallback invalidate and left the row on this device permanently; it now
+returns `false` so the caller defers an invalidate behind the drain.
 
 ## 5. Conflict resolution
 
@@ -277,4 +358,9 @@ unattended in CI; it needs Docker, which was not available on this machine.
 | `multi-device.test.ts` (12) | Concurrent edits, convergence, out-of-order permutations, delete-vs-edit, idempotent replay, clock skew |
 | `check-apply-patch.mjs` (13, opt-in) | The **deployed** RPC: allowlist, injection-shaped names, empty match, apply/reject by stamp, cross-field merge, protected columns |
 | `transport.test.ts` (10) | Row identity: plain id, composite key, natural key; conflict targets; missing-session backoff |
+| `idb-partial-failure.test.ts` (2) | A healthy store that refuses one write: the op stays reachable and `durable` tells the truth |
+| `parked-rows-survive.test.ts` (3) | A rejected write keeps its row through a refetch, without freezing the table |
+| `two-windows.test.ts` (3) | Two WKWebViews on one queue: an acked op is never resurrected |
+| `desktop-pull.test.ts` (5) | The 60s pull: scope, owing gate, skipped heavy fragments |
+| `live-apply-fidelity.test.ts` (3) | Realtime keeps `task_labels`; a DELETE with queued work defers instead of claiming success |
 | `task-offline.test.tsx` (12) | The real `useTaskMutations` hook: offline create, reconnect delivery, force-quit survival, coalesced edits, label diffing, parked rejections |

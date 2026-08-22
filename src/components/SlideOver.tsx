@@ -19,6 +19,7 @@ import ReminderSelect from "./ReminderSelect";
 import TaskSteps from "./TaskSteps";
 import { plainTextFromHtml } from "../lib/text";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateWhenSafe } from "../lib/sync";
 import { useVertical } from "../hooks/useVertical";
 import { useSettings } from "../hooks/useSettings";
 import { domainById, initiativeById, isProjectComplete, projectById, taskDomainId, taskInitiativeId } from "../lib/vertical";
@@ -321,7 +322,7 @@ export function TaskPopover({
         body: { prepare: { taskId: task.id } },
       });
       if (error) throw error;
-      qc.invalidateQueries({ queryKey: ["tasks"] });
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
     } catch (e) {
       setPrepError(e instanceof Error ? e.message : "prepare failed");
     } finally {

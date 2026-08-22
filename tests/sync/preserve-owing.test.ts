@@ -49,6 +49,17 @@ describe("preserveOwingRows", () => {
     const incoming = [{ id: "t1", title: "Old title" }];
     expect(preserveOwingRows("tasks", previous, incoming)).toEqual(previous);
   });
+
+  it("takes an incoming row whose updated_at is strictly newer (complete while owing)", () => {
+    markOwing("tasks");
+    const previous = [
+      { id: "t1", title: "Call", status: "planned", updated_at: "2026-08-21T21:00:00.000Z" },
+    ];
+    const incoming = [
+      { id: "t1", title: "Call", status: "done", updated_at: "2026-08-21T21:00:01.000Z" },
+    ];
+    expect(preserveOwingRows("tasks", previous, incoming)).toEqual(incoming);
+  });
 });
 
 describe("queryKeyOwesServer", () => {

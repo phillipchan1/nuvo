@@ -17,6 +17,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { putSlotInCaches } from "../../hooks/useSlots";
 import { putTaskInCaches } from "../../hooks/useTasks";
 import type { Slot, Task } from "../types";
+import { runWithoutOwingPreserve } from "./coordinator";
 import { mergeFieldLww, type Op, type SyncTable } from "./ops";
 
 export interface LiveChange {
@@ -85,16 +86,38 @@ function upsertById<T extends { id: string }>(
   row: T | null,
   belongs?: (item: T, key: readonly unknown[]) => boolean,
 ): void {
-  for (const [key, data] of qc.getQueriesData<T[]>({ queryKey })) {
+  // Live apply already folded unsent local ops through field-LWW. The owing
+  // structuralSharing merge would then prefer the previous cache body and
+  // undo both a membership drop and Friday's newer fields.
+  runWithoutOwingPreserve(() => {
+    for (const [key, data] of qc.getQueriesData<T[]>({ queryKey })) {
+      if (!Array.isArray(data)) continue;
+      const existing = data.find((r) => r.id === id);
+      const keep = row != null && (belongs ? belongs(row, key) : true);
+      let updated: T[];
+      if (!keep) updated = data.filter((r) => r.id !== id);
+      else if (existing) updated = data.map((r) => (r.id === id ? { ...r, ...row! } : r));
+      else updated = [...data, row!];
+      qc.setQueryData(key, updated);
+    }
+  });
+}
+
+/**
+ * The row as this device currently holds it, from whichever `tasks` fragment
+ * has it. Realtime sends the bare table row — no joins — so a payload painted
+ * straight over the cache erases every column the *query* assembles rather than
+ * selects. `task_labels` is the one that shows: a colour on a row, gone the
+ * moment anyone touched that task from another device, back again after the
+ * next refetch, and impossible to reproduce on purpose.
+ */
+function cachedTask(qc: QueryClient, id: string): Task | undefined {
+  for (const [, data] of qc.getQueriesData<Task[]>({ queryKey: ["tasks"] })) {
     if (!Array.isArray(data)) continue;
-    const existing = data.find((r) => r.id === id);
-    const keep = row != null && (belongs ? belongs(row, key) : true);
-    let updated: T[];
-    if (!keep) updated = data.filter((r) => r.id !== id);
-    else if (existing) updated = data.map((r) => (r.id === id ? { ...r, ...row! } : r));
-    else updated = [...data, row!];
-    qc.setQueryData(key, updated);
+    const hit = data.find((t) => t.id === id);
+    if (hit) return hit;
   }
+  return undefined;
 }
 
 function applyTask(qc: QueryClient, change: LiveChange, pending: Op[]): boolean {
@@ -103,7 +126,12 @@ function applyTask(qc: QueryClient, change: LiveChange, pending: Op[]): boolean 
   const local = opsFor(pending, "tasks", id);
 
   if (change.eventType === "DELETE") {
-    if (local.length) return true;
+    // This device still owes work on a row the server says is gone. Keeping the
+    // optimistic row is right — our op may be a recreate — but claiming the
+    // change was *handled* is not: it suppressed the fallback invalidate, so
+    // nothing ever reconciled the two and the row outlived the delete forever.
+    // Hand it back so the caller defers an invalidate behind the drain.
+    if (local.length) return false;
     putTaskInCaches(qc, id, null);
     return true;
   }
@@ -111,7 +139,9 @@ function applyTask(qc: QueryClient, change: LiveChange, pending: Op[]): boolean 
   if (!change.new) return false;
   const merged = mergePending(change.new, fieldTsOf(change.new), local);
   if (merged === "deleted") return true;
-  putTaskInCaches(qc, id, coerceTask(merged));
+  const existing = cachedTask(qc, id);
+  const next = coerceTask(merged);
+  putTaskInCaches(qc, id, existing ? { ...existing, ...next } : next);
   return true;
 }
 
@@ -121,7 +151,7 @@ function applySlot(qc: QueryClient, change: LiveChange, pending: Op[]): boolean 
   const local = opsFor(pending, "slots", id);
 
   if (change.eventType === "DELETE") {
-    if (local.length) return true;
+    if (local.length) return false; // see applyTask
     putSlotInCaches(qc, id, null);
     return true;
   }
@@ -146,7 +176,7 @@ function applyListRow(
   const local = opsFor(pending, table, id);
 
   if (change.eventType === "DELETE") {
-    if (local.length) return true;
+    if (local.length) return false; // see applyTask
     upsertById(qc, queryKey, id, null);
     return true;
   }

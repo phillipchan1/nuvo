@@ -279,6 +279,9 @@ const TaskRow = forwardRef<TaskRowHandle, {
   );
   const done = task.status === "done";
   const overdue = !done && isOverdue(task, now);
+  useEffect(() => {
+    if (done) setCompleting(false);
+  }, [done]);
   const taskLabels = (task.task_labels ?? [])
     .map((tl) => labels.find((l) => l.id === tl.label_id))
     .filter((l): l is Label => Boolean(l));
@@ -329,6 +332,14 @@ const TaskRow = forwardRef<TaskRowHandle, {
       e.stopPropagation();
       return;
     }
+    // Right-click (and WebKit's leftover click after contextmenu) must not
+    // also open the task — that swapped the nav, unmounted the menu, and
+    // made "right-click → Delete" a no-op.
+    if (e.button !== 0 || Date.now() - justContexted.current < 500) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     // The release that ended a swipe — or a long press — must not also open it.
     if (Date.now() - justHeld.current < 500) {
       e.preventDefault();
@@ -359,6 +370,7 @@ const TaskRow = forwardRef<TaskRowHandle, {
   const LONG_PRESS_MS = 450;
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justHeld = useRef(0);
+  const justContexted = useRef(0);
   const cancelHold = () => {
     if (holdTimer.current) clearTimeout(holdTimer.current);
     holdTimer.current = null;
@@ -578,7 +590,10 @@ const TaskRow = forwardRef<TaskRowHandle, {
       {...dragData}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
-      onContextMenu={onContextMenu}
+      onContextMenu={(e) => {
+        justContexted.current = Date.now();
+        onContextMenu?.(e);
+      }}
       {...swipeHandlers}
       // The row is a div (it carries a drag handle, a context menu, swipe
       // gestures and nested buttons — none of which survive a <button>), so it

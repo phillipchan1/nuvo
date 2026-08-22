@@ -477,6 +477,7 @@ export default function LeftRail({
     // ctrl-click also fires contextmenu — don't let it hijack the toggle).
     if (e.metaKey || e.ctrlKey) return;
     e.preventDefault();
+    e.stopPropagation();
     setContextMenu({ task: t, x: e.clientX, y: e.clientY });
     setSelectedId(t.id);
   };
@@ -1071,7 +1072,6 @@ function TaskContextMenu({
     : null;
   const recurring = Boolean(task.recurrence_id && recurrence);
   const menuRef = useRef<HTMLDivElement>(null);
-  const bornAt = useRef(performance.now());
   const [pos, setPos] = useState({ top: y, left: x });
 
   // The menu is ~14 rows, not the 260px the first clamp budgeted, so Trash
@@ -1110,8 +1110,19 @@ function TaskContextMenu({
         onClose();
       }
     };
+    // No full-screen scrim — a same-z overlay sat on top of Trash and ate the
+    // click (and a 250ms guard made the first click a no-op). Dismiss the same
+    // way the calendar menus do: pointerdown outside.
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      onClose();
+    };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
   }, [onClose, deleteMode, task, mutations]);
 
   const done = task.status === "done";
@@ -1208,55 +1219,48 @@ function TaskContextMenu({
   ];
 
   return createPortal(
-    <>
-      <div
-        className="fixed inset-0 z-[60]"
-        onClick={() => {
-          // The opening right-click's leftover click can land on this scrim
-          // the instant it mounts and close the menu before Trash is reachable.
-          if (performance.now() - bornAt.current < 250) return;
-          onClose();
-        }}
-        onContextMenu={(e) => { e.preventDefault(); onClose(); }}
-      />
-      <div
-        ref={menuRef}
-        className="rise elev-3 fixed z-[61] w-[200px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
-        style={{ top: pos.top, left: pos.left, maxHeight: "calc(100vh - 16px)" }}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        {items.map((item, i) => {
-          if (item.kind === "sep")
-            return <div key={i} className="my-1 border-t border-line" />;
-          if (item.kind === "label")
-            return (
-              <div key={i} className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
-                {item.label}
-              </div>
-            );
+    <div
+      ref={menuRef}
+      className="rise elev-3 fixed z-[70] w-[200px] overflow-y-auto rounded-[var(--radius)] border border-line bg-surface py-1"
+      style={{ top: pos.top, left: pos.left, maxHeight: "calc(100vh - 16px)" }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {items.map((item, i) => {
+        if (item.kind === "sep")
+          return <div key={i} className="my-1 border-t border-line" />;
+        if (item.kind === "label")
           return (
-            <button
-              key={i}
-              onClick={item.action}
-              className={`fast flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption hover:bg-bg ${
-                item.danger ? "text-signal" : "text-text"
-              }`}
-            >
-              <span className="flex-1">{item.label}</span>
-              {item.key && (
-                <span className="mono text-meta text-muted">{item.key}</span>
-              )}
-            </button>
+            <div key={i} className="mono px-3 pt-2 pb-1 text-micro font-semibold uppercase tracking-widest text-muted">
+              {item.label}
+            </div>
           );
-        })}
-      </div>
-    </>,
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              item.action();
+            }}
+            className={`fast flex w-full items-center gap-2 px-3 py-1.5 text-left text-caption hover:bg-bg ${
+              item.danger ? "text-signal" : "text-text"
+            }`}
+          >
+            <span className="flex-1">{item.label}</span>
+            {item.key && (
+              <span className="mono text-meta text-muted">{item.key}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>,
     document.body,
   );
 }
 
 function buildTodaySections(today: Task[], now: Date) {
-  const active = today.filter((t) => t.status !== "done");
+  const active = today.filter((t) => t.status !== "done" && t.status !== "trashed");
   const done = today.filter((t) => t.status === "done");
   // Overdue ONLY. A rolled task dated today with no time on it isn't late — it's
   // today's plan, and folding it in here made the group's label lie (P6). Its ↻N

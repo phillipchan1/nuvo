@@ -18,6 +18,7 @@ import { useOnline } from "../hooks/useOnline";
 import { useVertical } from "../hooks/useVertical";
 import { useAppNavigation } from "../hooks/useAppNavigation";
 import { domainById, projectById, taskDomainColor, taskDomainId } from "../lib/vertical";
+import { mergeTaskLists } from "../lib/taskMerge";
 import { isReadOnlyCalendarId, isWritableAccount } from "../lib/calendarWrite";
 import {
   applySpotlightNav,
@@ -290,27 +291,12 @@ export default function Planner({
     return m;
   }, [slotChildTasks]);
 
-  // The one merged, deduped view of every task query — CalendarPane reads this
-  // too (via allTasksArray below). Resolving the Today rail through this same
-  // map (rather than reading todayTasks/scheduled independently) is what keeps
-  // a task's checked state from disagreeing between the rail and the calendar
-  // block when the "day" and "scheduled" query caches refetch at slightly
-  // different times after a completion toggle.
-  const allKnownTasks = useMemo(() => {
-    const map = new Map<string, Task>();
-    // `weekTasks` (useSprintTasks) deliberately leaves a trashed row in its
-    // cache rather than dropping it — see the "sprint" branch of patchCaches
-    // in useTasks.ts, which relies on every downstream reader filtering it
-    // out explicitly (the way buildVertical does). This merge didn't, so a
-    // task trashed off the calendar stayed on the grid as long as it was
-    // still committed to the week: `map.delete` here undoes an earlier
-    // source's entry too, not just skips adding the trashed one.
-    for (const t of [...inbox, ...weekTasks, ...todayTasks, ...scheduled, ...anytime, ...slotChildTasks]) {
-      if (t.status === "trashed") map.delete(t.id);
-      else map.set(t.id, t);
-    }
-    return map;
-  }, [inbox, weekTasks, todayTasks, scheduled, anytime, slotChildTasks]);
+  // Newest `updated_at` wins across fragments — a later scheduled copy must
+  // not resurrect a just-completed or just-inboxed row (see mergeTaskLists).
+  const allKnownTasks = useMemo(
+    () => mergeTaskLists([inbox, weekTasks, todayTasks, scheduled, anytime, slotChildTasks]),
+    [inbox, weekTasks, todayTasks, scheduled, anytime, slotChildTasks],
+  );
 
   // Today's slot children augmented with their slot's start_time so they appear
   // in the "Scheduled on Calendar" section of the Today rail (slot children have
@@ -327,14 +313,17 @@ export default function Planner({
     for (const raw of slotChildTasks) {
       if (!raw.slot_id || !todaySlotMap.has(raw.slot_id) || raw.status === "trashed") continue;
       if (seen.has(raw.id)) continue;
+      const t = allKnownTasks.get(raw.id);
+      if (!t || t.status === "trashed") continue;
       seen.add(raw.id);
-      const t = allKnownTasks.get(raw.id) ?? raw;
       out.push({ ...t, start_time: todaySlotMap.get(raw.slot_id)!.start_time });
     }
     for (const raw of todayTasks) {
-      if (raw.slot_id || seen.has(raw.id)) continue;
+      if (raw.slot_id || seen.has(raw.id) || raw.status === "trashed") continue;
+      const t = allKnownTasks.get(raw.id);
+      if (!t || t.status === "trashed") continue;
       seen.add(raw.id);
-      out.push(allKnownTasks.get(raw.id) ?? raw);
+      out.push(t);
     }
     return out;
   }, [todayTasks, slotChildTasks, slots, today, allKnownTasks]);

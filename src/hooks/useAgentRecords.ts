@@ -142,9 +142,9 @@ export function useAgentUndo() {
       else addBigRocks([restore]);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tasks"] });
-      qc.invalidateQueries({ queryKey: ["sprint"] });
-      qc.invalidateQueries({ queryKey: ["slots"] });
+      invalidateWhenSafe(qc, "tasks", ["tasks"]);
+      invalidateWhenSafe(qc, "sprints", ["sprint"]);
+      invalidateWhenSafe(qc, "slots", ["slots"]);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't undo that."),
   });

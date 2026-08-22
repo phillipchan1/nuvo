@@ -9,10 +9,10 @@
 // carried domain / initiative / name across).
 //
 // So creating is now the same sheet as owning: `recordFrame`'s Sheet · Head ·
-// Body · Sec · rail, with local draft state instead of a row. Commit is meant to
-// be visually inert — you press Create and the sheet you're looking at becomes
-// the record, name in the same place, tasks on the same spine. Nothing about the
-// fast path got slower: it is still name → ⏎ → ⌘⏎.
+// Body · Sec · rail, with local draft state instead of a row. ⌘⏎ / Create
+// writes and dismisses — the work is already on the sheet, and swapping in
+// the record used to leave a second modal on the history stack. Nothing about
+// the fast path got slower: it is still name → ⏎ → ⌘⏎.
 //
 // What create adds to the frame, and why each one earns it:
 //   · a footer with ONE commit. The record has no footer because esc / ✕ / the
@@ -223,6 +223,7 @@ export default function CreateRecord({
         );
       }
       onCreated(created.id);
+      setBusy(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : `Couldn't create the ${noun}.`);
       setBusy(false);
