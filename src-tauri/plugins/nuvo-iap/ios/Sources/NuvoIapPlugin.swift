@@ -56,7 +56,10 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
 
     @objc public func products(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(ProductIdsArgs.self)
-        let ids = Set(args.productIds.filter { !$0.isEmpty })
+        // StoreKit Product ID strings only — drop empty and all-digit Apple internal IDs.
+        let ids = Set(args.productIds.filter { id in
+            !id.isEmpty && id.range(of: "^[0-9]+$", options: .regularExpression) == nil
+        })
         guard !ids.isEmpty else {
             return invoke.resolve(ProductsPayload(supported: true, products: [], invalidIds: []))
         }
@@ -72,6 +75,11 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
         let args = try invoke.parseArgs(ProductIdArgs.self)
         guard SKPaymentQueue.canMakePayments() else {
             return invoke.reject("Purchases are not allowed on this Apple ID")
+        }
+        // Never accept Apple internal IDs (all digits) as a product identifier.
+        guard !args.productId.isEmpty,
+              args.productId.range(of: "^[0-9]+$", options: .regularExpression) == nil else {
+            return invoke.reject("Unknown App Store product")
         }
         guard let product = cached[args.productId] else {
             return invoke.reject("Unknown App Store product — load products first")

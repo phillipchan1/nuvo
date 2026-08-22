@@ -29,6 +29,8 @@ const FORBIDDEN = [
   /billed yearly/i,
   /secure checkout/i,
   /continue to checkout/i,
+  /6804259519/,
+  /6804258767/,
   // Intro trial is app-side (handle_new_user). Do not implement a StoreKit
   // introductory offer in the binary — that, if any, is Connect.
   /introductory\s*offer/i,

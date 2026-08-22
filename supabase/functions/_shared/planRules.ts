@@ -153,18 +153,36 @@ export function planRowPatch(
   return patch;
 }
 
+/** StoreKit Product ID strings — confirmed in App Store Connect. The 6804…
+ *  values are Apple internal IDs only; never pass those to product(). */
+export const IAP_PRODUCT_MONTHLY = "NUVO_IAP_MONTHLY";
+export const IAP_PRODUCT_ANNUAL = "NUVO_IAP_ANNUAL";
+
+function storeKitProductId(raw: string | undefined, fallback: string): string {
+  const v = raw?.trim();
+  if (!v || /^\d+$/.test(v)) return fallback;
+  return v;
+}
+
 export function configuredIapProductIds(env: {
   NUVO_IAP_MONTHLY?: string;
   NUVO_IAP_ANNUAL?: string;
-}): { monthly: string | null; annual: string | null } {
-  const monthly = env.NUVO_IAP_MONTHLY?.trim() || null;
-  const annual = env.NUVO_IAP_ANNUAL?.trim() || null;
-  return { monthly, annual };
+}): { monthly: string; annual: string } {
+  return {
+    monthly: storeKitProductId(env.NUVO_IAP_MONTHLY, IAP_PRODUCT_MONTHLY),
+    annual: storeKitProductId(env.NUVO_IAP_ANNUAL, IAP_PRODUCT_ANNUAL),
+  };
+}
+
+/** IDs that may be handed to StoreKit product(). Drops empty and all-digit
+ *  Apple internal IDs (6804…). */
+export function storeKitProductIds(ids: readonly string[]): string[] {
+  return ids.filter((id) => Boolean(id) && !/^\d+$/.test(id));
 }
 
 export function isOurIapProduct(
   productId: string | null | undefined,
-  env: { NUVO_IAP_MONTHLY?: string; NUVO_IAP_ANNUAL?: string },
+  env: { NUVO_IAP_MONTHLY?: string; NUVO_IAP_ANNUAL?: string } = {},
 ): boolean {
   if (!productId) return false;
   const ids = configuredIapProductIds(env);

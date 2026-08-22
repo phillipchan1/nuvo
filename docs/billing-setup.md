@@ -182,10 +182,10 @@ iOS UI come only from StoreKit product objects. Web Stripe copy in
 | Monthly | `NUVO_IAP_MONTHLY` | `6804259519` | $29.99 / 1 month |
 | Annual | `NUVO_IAP_ANNUAL` | `6804258767` | $229.99 / 1 year |
 
-The StoreKit **Product ID string** is not in this repo. Set each `NUVO_IAP_*`
-(and optional `VITE_NUVO_IAP_*`) to the Product ID from the Connect SKU —
-not the numeric Apple ID, not a dollar amount. Do not assume the identifier
-is the env name unless that is what Connect actually uses.
+The StoreKit Product ID strings **are** `NUVO_IAP_MONTHLY` and
+`NUVO_IAP_ANNUAL`. Those are what `product()` asks StoreKit for. The `6804…`
+values are Apple internal IDs only — never pass them to `product()`. Env
+may repeat the same strings; a numeric override is ignored.
 
 The iOS binary (`tauri ios build`, `TAURI_ENV_PLATFORM=ios`) sets
 `VITE_IAP_ONLY=1` so Stripe checkout, the portal, and `plans.ts` web prices
@@ -197,11 +197,11 @@ after that trial, not a second trial.
 ### Env (Supabase secrets + optional Vite)
 
 ```bash
-# Paste the StoreKit Product ID string from each Connect SKU.
-# Monthly Apple ID 6804259519 · Annual Apple ID 6804258767 · group 22327993
+# Product ID strings (not Apple IDs 6804259519 / 6804258767, not prices).
+# Group Nuvo Pro 22327993.
 supabase secrets set \
-  NUVO_IAP_MONTHLY='<monthly Product ID from Connect>' \
-  NUVO_IAP_ANNUAL='<annual Product ID from Connect>' \
+  NUVO_IAP_MONTHLY=NUVO_IAP_MONTHLY \
+  NUVO_IAP_ANNUAL=NUVO_IAP_ANNUAL \
   APPLE_BUNDLE_ID=day.nuvo.app \
   APPLE_IAP_ENVIRONMENT=Sandbox \
   APPLE_NOTIFICATION_SECRET=long-random

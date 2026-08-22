@@ -4092,8 +4092,9 @@ two writers.
 - Both Stripe and Apple webhooks call `applyPlanUpdate`. The unused rail
   cannot demote an active row on the other rail.
 - iOS binary is StoreKit only. Missing products → stub, never Stripe.
-  Product identifiers are env (`NUVO_IAP_MONTHLY` / `NUVO_IAP_ANNUAL`) —
-  the StoreKit Product ID string from Connect, not the numeric Apple ID.
+  StoreKit Product IDs **are** the strings `NUVO_IAP_MONTHLY` /
+  `NUVO_IAP_ANNUAL` (what `product()` asks for). The numeric Apple IDs are
+  Connect-internal only and must never be passed to `product()`.
   Connect SKUs (not submitted, no intro offer): group **Nuvo Pro**
   `22327993` · monthly Apple ID `6804259519` · annual Apple ID `6804258767`.
   Connect prices ($29.99/month, $229.99/year) stay **Connect-only.** They
