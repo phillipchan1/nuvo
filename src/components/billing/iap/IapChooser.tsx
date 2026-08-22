@@ -19,7 +19,8 @@ const INCLUDED = [
   "The Mac app and your iPhone",
 ];
 
-/** StoreKit-only offer. If products are missing, a stub — never another rail. */
+/** StoreKit-only pay. If products are missing, a stub — never another rail.
+ *  The 14-day trial is the same `subscriptions` row every signup gets. */
 export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
   const { refetch } = useSubscription();
   const [products, setProducts] = useState<IapProduct[] | null>(null);

@@ -17,6 +17,7 @@ const FORBIDDEN = [
   /stripe/i,
   /\$29\b/,
   /\$19\b/,
+  /\$19\s*\/\s*mo/i,
   /\$228\b/,
   // App Store Connect prices — named, but they must not ship in the binary.
   // Localized amounts come from StoreKit product objects only.
@@ -28,6 +29,12 @@ const FORBIDDEN = [
   /billed yearly/i,
   /secure checkout/i,
   /continue to checkout/i,
+  // Intro trial is app-side (handle_new_user). Do not implement a StoreKit
+  // introductory offer in the binary — that, if any, is Connect.
+  /introductory\s*offer/i,
+  /introductoryOffer/,
+  /SKPaymentDiscount/,
+  /promotionalOffer/,
 ];
 
 function walk(path: string, out: string[] = []): string[] {
