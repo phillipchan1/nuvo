@@ -395,12 +395,23 @@ export function AppNavigationProvider({ children }: { children: ReactNode }) {
   );
 
   const setProjectView = useCallback(
-    (v: ProjectView) => navigate({ projectView: v, floorModal: null }),
+    (v: ProjectView) => {
+      // Re-asserting the current face (On Deck tab while already there, TeachPanel
+      // landing on Projects) must not dismiss the create sheet — that made the
+      // empty-state CTA look like a no-op. Switching faces still closes it.
+      const patch: Partial<AppNavState> = { projectView: v };
+      if (navRef.current.projectView !== v) patch.floorModal = null;
+      navigate(patch);
+    },
     [navigate],
   );
 
   const setInitiativeView = useCallback(
-    (v: DetailView) => navigate({ initiativeView: v, floorModal: null }),
+    (v: DetailView) => {
+      const patch: Partial<AppNavState> = { initiativeView: v };
+      if (navRef.current.initiativeView !== v) patch.floorModal = null;
+      navigate(patch);
+    },
     [navigate],
   );
 
