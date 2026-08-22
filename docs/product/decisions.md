@@ -4175,3 +4175,39 @@ the stranger.
 
 *Status: standing — cheap gate green. Production needs migration 70 +
 `supabase functions deploy delete-account` before Vera's wipe lands.*
+
+**D-118 · 2026-08-22 · One subscription, two payment rails.**
+
+Apple will reject an App Store binary that collects cards through Stripe or
+points at a cheaper web price. Web already sells via Stripe Checkout +
+Customer Portal (trial / monthly / annual). So: **one entitlement row**,
+two writers.
+
+- Surfaces read `plan` (trialing \| active \| cancelled \| past_due) +
+  `plan_source` (stripe \| apple). `isEntitled()` is one function
+  (`_shared/planRules.ts`); SQL twins `entitled` / `is_entitled`.
+- Both Stripe and Apple webhooks call `applyPlanUpdate`. The unused rail
+  cannot demote an active row on the other rail.
+- iOS binary is StoreKit only. Missing products → stub, never Stripe.
+  After the app-managed 14-day trial, the lock screen is `IapChooser`
+  (`purchase()`, never Stripe Checkout or the Customer Portal). Paywall
+  shows StoreKit title, duration, and `displayPrice`, plus Terms
+  (`https://nuvo.day/terms`) and Privacy (`https://nuvo.day/privacy`).
+  Restore Purchases lives on the paywall and in Settings → Billing.
+  StoreKit Product IDs **are** the strings `NUVO_IAP_MONTHLY` /
+  `NUVO_IAP_ANNUAL` (what `product()` asks for). The numeric Apple IDs are
+  Connect-internal only and must never be passed to `product()`.
+  Connect SKUs (not submitted, no intro offer): group **Nuvo Pro**
+  `22327993` · monthly Apple ID `6804259519` · annual Apple ID `6804258767`.
+  Connect prices ($29.99/month, $229.99/year) stay **Connect-only.** They
+  must not appear in the iOS binary, env values, IapChooser, or Swift.
+  Localized price comes from StoreKit or not at all.
+- Web Stripe prices stay $29/month and $228/year. Dayspring is untouched.
+- **One trial.** `handle_new_user` grants 14 days on `subscriptions.trial_ends_at`.
+  iOS signup reads that same row. No second trial table. No StoreKit
+  introductory-offer implementation in code. Marketing created the SKUs
+  with no intro offer.
+
+*Status: standing — SKUs exist in Connect. Closes #44 on this PR. Do not
+deploy migration 70 from this work (70 is `delete_secret` on master). Do not
+ship Connect dollar amounts in the IPA. Do not Submit.*

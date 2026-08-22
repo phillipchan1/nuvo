@@ -17,6 +17,12 @@ verify_jwt = false
 [functions.stripe-webhook]
 verify_jwt = false
 
+# App Store Server Notifications V2 — Apple calls this directly (no Supabase
+# JWT). The function decodes the signed payload and optionally checks
+# APPLE_NOTIFICATION_SECRET on the URL.
+[functions.apple-webhook]
+verify_jwt = false
+
 # The Capture API authenticates with an opaque per-connection bearer token, not
 # a Supabase JWT, so the gateway has to pass the header through to us. The
 # function hashes the token and looks it up in `connections` (owner-scoped, RLS,

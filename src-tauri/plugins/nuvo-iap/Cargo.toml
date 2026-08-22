@@ -1,0 +1,20 @@
+# StoreKit bridge for the iOS App Store binary.
+#
+# Same shape as nuvo-watch: a plugin crate is the only Tauri v2 path into
+# Swift. Desktop every command is a no-op (`supported: false`) so the SPA
+# can call it unconditionally. No card checkout. No prices — those come from
+# StoreKit product objects at runtime.
+
+[package]
+name = "tauri-plugin-nuvo-iap"
+version = "0.1.0"
+edition = "2021"
+links = "tauri-plugin-nuvo-iap"
+
+[dependencies]
+tauri = "2"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
