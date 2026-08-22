@@ -155,6 +155,18 @@ describe("one trial, both rails", () => {
     expect(src).not.toMatch(/trial_period_days/);
   });
 
+  it("docs and env examples name the Connect SKUs", () => {
+    const setup = readFileSync("docs/billing-setup.md", "utf8");
+    const env = readFileSync(".env.example", "utf8");
+    for (const src of [setup, env]) {
+      expect(src).toContain("22327993");
+      expect(src).toContain("6804259519");
+      expect(src).toContain("6804258767");
+      expect(src).toContain("NUVO_IAP_MONTHLY");
+      expect(src).toContain("NUVO_IAP_ANNUAL");
+    }
+  });
+
   it("no StoreKit introductory-offer implementation in code", () => {
     const files = [...sourceFiles("src"), ...sourceFiles("supabase/functions")];
     const offenders = files.filter((f) =>
