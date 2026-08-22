@@ -1,7 +1,12 @@
-// StoreKit bridge for the iOS App Store binary. Product identifiers come
-// from env / iap-catalog — never prices. Localized price strings exist only
-// on StoreKit product objects the native plugin returns.
+// StoreKit bridge for the iOS App Store binary. Product identifiers are the
+// Connect strings NUVO_IAP_MONTHLY / NUVO_IAP_ANNUAL — never Apple internal
+// IDs, never prices. Localized price strings exist only on StoreKit product
+// objects the native plugin returns.
 import { supabase } from "./supabase";
+import {
+  configuredIapProductIds,
+  storeKitProductIds,
+} from "../../supabase/functions/_shared/planRules.ts";
 
 export type IapProduct = {
   id: string;
@@ -23,24 +28,18 @@ export type IapPurchase = {
 };
 
 function catalogFromEnv(): IapCatalog {
-  const monthly = (import.meta.env.VITE_NUVO_IAP_MONTHLY as string | undefined)?.trim() || null;
-  const annual = (import.meta.env.VITE_NUVO_IAP_ANNUAL as string | undefined)?.trim() || null;
-  return { monthly, annual };
+  return configuredIapProductIds({
+    NUVO_IAP_MONTHLY: import.meta.env.VITE_NUVO_IAP_MONTHLY,
+    NUVO_IAP_ANNUAL: import.meta.env.VITE_NUVO_IAP_ANNUAL,
+  });
 }
 
 export async function fetchIapCatalog(): Promise<IapCatalog> {
-  const fromEnv = catalogFromEnv();
-  if (fromEnv.monthly || fromEnv.annual) return fromEnv;
-  const { data, error } = await supabase.functions.invoke<IapCatalog>("iap-catalog", { body: {} });
-  if (error || !data) return { monthly: null, annual: null };
-  return {
-    monthly: data.monthly?.trim() || null,
-    annual: data.annual?.trim() || null,
-  };
+  return catalogFromEnv();
 }
 
 export function catalogProductIds(catalog: IapCatalog): string[] {
-  return [catalog.monthly, catalog.annual].filter((id): id is string => Boolean(id));
+  return storeKitProductIds([catalog.monthly, catalog.annual].filter((id): id is string => Boolean(id)));
 }
 
 async function invokeIap<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -49,10 +48,11 @@ async function invokeIap<T>(cmd: string, args?: Record<string, unknown>): Promis
 }
 
 export async function loadIapProducts(productIds: string[]): Promise<IapProduct[]> {
-  if (productIds.length === 0) return [];
+  const ids = storeKitProductIds(productIds);
+  if (ids.length === 0) return [];
   try {
     const result = await invokeIap<{ products: IapProduct[]; supported?: boolean }>("products", {
-      productIds,
+      productIds: ids,
     });
     return Array.isArray(result?.products) ? result.products : [];
   } catch {
@@ -61,7 +61,9 @@ export async function loadIapProducts(productIds: string[]): Promise<IapProduct[
 }
 
 export async function purchaseIap(productId: string): Promise<IapPurchase> {
-  return invokeIap<IapPurchase>("purchase", { productId });
+  const [id] = storeKitProductIds([productId]);
+  if (!id) throw new Error("Unknown App Store product");
+  return invokeIap<IapPurchase>("purchase", { productId: id });
 }
 
 export async function restoreIap(): Promise<IapPurchase[]> {

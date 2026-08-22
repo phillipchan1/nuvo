@@ -3,10 +3,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   appleNotificationToPlan,
+  configuredIapProductIds,
   isEntitled,
   isOurIapProduct,
   planRowPatch,
   shouldWritePlan,
+  storeKitProductIds,
   stripeStatusToPlan,
 } from "../supabase/functions/_shared/planRules.ts";
 
@@ -100,6 +102,22 @@ describe("isOurIapProduct", () => {
   it("accepts only configured identifiers", () => {
     expect(isOurIapProduct("NUVO_IAP_MONTHLY", env)).toBe(true);
     expect(isOurIapProduct("com.other.app.pro", env)).toBe(false);
+  });
+
+  it("defaults product() ids to the Connect strings", () => {
+    expect(configuredIapProductIds({})).toEqual({
+      monthly: "NUVO_IAP_MONTHLY",
+      annual: "NUVO_IAP_ANNUAL",
+    });
+  });
+
+  it("does not pass Apple internal IDs to product()", () => {
+    expect(
+      configuredIapProductIds({ NUVO_IAP_MONTHLY: "6804259519", NUVO_IAP_ANNUAL: "6804258767" }),
+    ).toEqual({ monthly: "NUVO_IAP_MONTHLY", annual: "NUVO_IAP_ANNUAL" });
+    expect(storeKitProductIds(["NUVO_IAP_MONTHLY", "6804259519", "6804258767"])).toEqual([
+      "NUVO_IAP_MONTHLY",
+    ]);
   });
 });
 
