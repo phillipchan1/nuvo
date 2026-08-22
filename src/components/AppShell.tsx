@@ -1,4 +1,5 @@
 import { lazy, startTransition, Suspense, useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   initiativesOf,
   projectsOf,
@@ -47,6 +48,15 @@ export interface Focus {
 
 // Top-to-bottom on the spine: ⌘1 = Schedule … ⌘4 = Domain. ⌘↓ widens, ⌘↑ narrows.
 export const LADDER: Rung[] = ["day", "project", "initiative", "domain"];
+
+/** Dim the floor the instant P / the empty CTA fires, so a still-loading
+ *  CreateRecord chunk never reads as a dead button. Same z as RecordScrim. */
+function CreateSheetFallback() {
+  return createPortal(
+    <div className="fixed inset-0 z-[81] bg-black/35" aria-hidden />,
+    document.body,
+  );
+}
 
 // Focus mode — one gesture (⌘. / the toolbar's "Show panels" exit when collapsed)
 // slides the spine + the inbox·today rail out of the way so the calendar goes
@@ -255,6 +265,13 @@ function AppShellInner() {
   // fork any more — it swapped in a second layout mid-typing and dropped the
   // subtasks you'd already entered.
   const closeCreate = () => closeFloorModal();
+
+  // The empty On Deck CTA and P share this lazy chunk. Prefetch it the moment
+  // you land on a Build floor so "Add your first project" isn't a blank wait
+  // (Suspense fallback was `null` — two clicks looked like a no-op).
+  useEffect(() => {
+    if (rung === "project" || rung === "initiative") void import("./floors/CreateRecord");
+  }, [rung]);
 
   const focusDomain = (id: string) => {
     const init = initiativesOf(data, id)[0];
@@ -500,7 +517,7 @@ function AppShellInner() {
           the sheet, and swapping in the record (a second history entry) made
           Esc reopen the create modal. */}
       {nav.floorModal === "new-project" && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<CreateSheetFallback />}>
           <CreateRecord
             kind="project"
             initialDomainId={focus.domainId || null}
@@ -510,7 +527,7 @@ function AppShellInner() {
         </Suspense>
       )}
       {nav.floorModal === "new-initiative" && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<CreateSheetFallback />}>
           <CreateRecord
             kind="initiative"
             initialDomainId={focus.domainId || null}

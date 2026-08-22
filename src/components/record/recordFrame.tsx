@@ -73,7 +73,12 @@ export function useRecordKeys(sheetRef: RefObject<HTMLDivElement>, onClose: () =
 export function RecordScrim({ onClose, children }: { onClose: () => void; children: ReactNode }) {
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center px-4 py-[5vh]"
+      // Above the live walkthrough (teach dim 78 · orb 79 · panel 80). Create used
+      // to sit at z-60 — under that stack — so Projects → On Deck empty "Add your
+      // first project" (the walk's own target) opened a sheet nobody could see.
+      // Same class of bug as Modal's z-70 climb over Plan the week. Settings stays
+      // at 70 on purpose so the calendars step can still cut a hole into it.
+      className="fixed inset-0 z-[81] flex items-start justify-center px-4 py-[5vh]"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       {/* Blur and dim split so only the (cheap) dim fades — animating opacity on

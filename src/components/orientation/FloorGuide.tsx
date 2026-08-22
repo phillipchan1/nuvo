@@ -32,11 +32,13 @@ export function FloorGuide({
         <div className="rise section-label mb-2">{eyebrow}</div>
         <h1 className="rise masthead text-display leading-tight text-ink">{title}</h1>
         <p className="rise text-lead mx-auto mt-3 max-w-sm leading-relaxed text-muted">{teach}</p>
-        {actionLabel && (
+        {actionLabel && onAction && (
           // Tagged for the live walkthrough: on a floor with nothing on it yet,
           // this button IS the floor's only act, so it's what the orb lights.
+          // No label without a handler — a painted no-op is how "Add your first
+          // project" failed the live walk.
           <div className="rise mt-6 flex justify-center" data-teach="floor-new">
-            <Btn kind="primary" onClick={onAction}>{actionLabel}</Btn>
+            <Btn kind="primary" className="tap" onClick={onAction}>{actionLabel}</Btn>
           </div>
         )}
       </div>
