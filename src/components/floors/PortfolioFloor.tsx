@@ -74,7 +74,7 @@ export default function PortfolioFloor({ onOpen }: { onOpen: (id: string) => voi
         actions={<ShippedStrip rung="project" />}
       >
         <h1 className="text-display masthead">Table</h1>
-        <p className="mt-1 text-body text-muted">Every project at a glance — filter, sort, and bulk-edit. Click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">N</kbd> to create.</p>
+        <p className="mt-1 text-body text-muted">Every project at a glance — filter, sort, and bulk-edit. Click any to drill in. Press <kbd className="mono rounded px-1 py-0.5 bg-bg text-label text-muted border border-line">P</kbd> to create.</p>
       </FloorHeader>
 
       {/* The Standing — the floor's readiness echo of the spine gauge (Defined ·
