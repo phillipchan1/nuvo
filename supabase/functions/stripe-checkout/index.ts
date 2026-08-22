@@ -22,9 +22,13 @@ Deno.serve(async (req) => {
 
     const { data: existing } = await admin
       .from("subscriptions")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, status, plan_source")
       .eq("user_id", user.id)
       .maybeSingle();
+
+    if (existing?.status === "active" && existing.plan_source === "apple") {
+      return json({ error: "Already subscribed through the App Store" }, 409);
+    }
 
     // Come back to wherever the request came from (dev machine or production),
     // not to one hardcoded APP_URL.

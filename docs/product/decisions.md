@@ -4078,3 +4078,24 @@ Recipe: `src/lib/posthog.ts`. Project token is `VITE_POSTHOG_PROJECT_TOKEN`
 
 *Status: standing — token in `.env.local` + Vercel; confirm `$exception` in
 PostHog before turning on source maps or Self-driving.*
+
+**D-115 · 2026-08-22 · One subscription, two payment rails.**
+
+Apple will reject an App Store binary that collects cards through Stripe or
+points at a cheaper web price. Web already sells via Stripe Checkout +
+Customer Portal (trial / monthly / annual). So: **one entitlement row**,
+two writers.
+
+- Surfaces read `plan` (trialing \| active \| cancelled \| past_due) +
+  `plan_source` (stripe \| apple). `isEntitled()` is one function
+  (`_shared/planRules.ts`); SQL twins `entitled` / `is_entitled`.
+- Both Stripe and Apple webhooks call `applyPlanUpdate`. The unused rail
+  cannot demote an active row on the other rail.
+- iOS binary is StoreKit only. Missing products → stub, never Stripe.
+  Product identifiers are env (`NUVO_IAP_MONTHLY` / `NUVO_IAP_ANNUAL`).
+  **IAP dollar amounts are unset** — Marketing has not priced the App Store
+  SKUs; do not invent them. Localized price comes from StoreKit or not at all.
+- Web Stripe prices stay as they are. Dayspring is untouched.
+
+*Status: standing — App Store Connect products / IAP prices still Phil +
+Marketing. Do not deploy this as "iOS IAP is for sale" until those exist.*

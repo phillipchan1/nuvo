@@ -1,0 +1,14 @@
+[default]
+description = """
+Default permissions for the nuvo-iap plugin.
+
+Grants StoreKit product / purchase / restore / manage commands. These are
+Tauri IPC permissions for the app's own webview. Nothing here is reachable
+from remote content.
+"""
+permissions = [
+  "allow-products",
+  "allow-purchase",
+  "allow-restore",
+  "allow-manage-subscriptions",
+]

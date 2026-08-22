@@ -13,9 +13,13 @@ Deno.serve(async (req) => {
 
     const { data: row } = await admin
       .from("subscriptions")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, plan_source")
       .eq("user_id", user.id)
       .maybeSingle();
+
+    if (row?.plan_source === "apple" && !row.stripe_customer_id) {
+      return json({ error: "This subscription is managed through the App Store." }, 409);
+    }
 
     if (!row?.stripe_customer_id) {
       return json({ error: "No billing account yet — subscribe first." }, 404);
