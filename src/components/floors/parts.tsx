@@ -78,17 +78,20 @@ export function FloatingMenu({
   }, [open, align, anchorRef, minWidth]);
 
   if (!open) return null;
-  // Above RecordModal (z-60) and its scrim so pickers still work inside a record.
+  // Above RecordScrim (z-81). The sheet climbed over the walkthrough (teach
+  // dim 78 · orb 79 · panel 80); this menu used to sit at 70/71 — under that
+  // sheet — so the record kebab (and every picker inside a record) opened a
+  // portal nobody could see. Vera 2026-08-23.
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[70]"
+        className="fixed inset-0 z-[82]"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
         onContextMenu={(e) => { e.preventDefault(); onClose(); }}
       />
       <div
         ref={menuRef}
-        className="rise elev-2 fixed z-[71] rounded-md border border-line bg-surface py-1"
+        className="rise elev-2 fixed z-[83] rounded-md border border-line bg-surface py-1"
         style={{
           top: pos?.top ?? -9999,
           left: pos?.left ?? -9999,
