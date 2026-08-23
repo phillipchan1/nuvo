@@ -4,11 +4,14 @@
  * must not steal that landing to ✕. The lock-screen ＋ opens the sheet with
  * no webview gesture; if focus starts on Close, iOS then ignores the input.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, render, screen } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useDialogFocus } from "../src/hooks/useDialogFocus";
 import { useRaiseKeyboard } from "../src/hooks/useRaiseKeyboard";
+import QuickTaskSheet from "../src/components/mobile/QuickTaskSheet";
 
 function RaiseHost() {
   const ref = useRef<HTMLInputElement>(null);
@@ -26,6 +29,17 @@ function DialogHost({ withField = true }: { withField?: boolean }) {
     </div>
   );
 }
+
+describe("one hook, not three timers", () => {
+  it("capture, chat, and search all call useRaiseKeyboard", () => {
+    const src = join(__dirname, "..", "src", "components", "mobile");
+    for (const file of ["QuickTaskSheet.tsx", "ChatPane.tsx", "MobileSearch.tsx"]) {
+      const text = readFileSync(join(src, file), "utf8");
+      expect(text, file).toContain("useRaiseKeyboard");
+      expect(text, file).not.toMatch(/setTimeout\(\(\) => \w+\.current\?\.focus/);
+    }
+  });
+});
 
 describe("useRaiseKeyboard", () => {
   beforeEach(() => {
@@ -107,6 +121,14 @@ describe("useDialogFocus", () => {
   it("still focuses the first control when there is no field", () => {
     render(<DialogHost withField={false} />);
     expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+
+  it("QuickTaskSheet lands the caret in the field, not on ✕", () => {
+    render(
+      <QuickTaskSheet labels={[]} onCreate={async () => {}} onClose={() => {}} />,
+    );
+    expect(screen.getByLabelText("New task")).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Close" })).not.toHaveFocus();
   });
 
   it("does not steal focus already inside the panel", () => {
