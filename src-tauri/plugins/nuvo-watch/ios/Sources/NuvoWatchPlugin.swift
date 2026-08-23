@@ -52,7 +52,30 @@ class NuvoWatchPlugin: Plugin, WCSessionDelegate {
     private let lock = NSLock()
 
     public override func load(webview: WKWebView) {
+        // This plugin is the only Swift `load(webview:)` hook we have. The
+        // watch credential bridge is why the crate exists; the keyboard policy
+        // lives here too so we don't mint a second plugin for one setter.
+        allowProgrammaticKeyboard(webview)
         activate()
+    }
+
+    /// Widget / deep-link launches (`nuvo://capture`, `nuvo://chat`) have no
+    /// webview user gesture. Stock WKWebView then silently no-ops a
+    /// programmatic `input.focus()`, so the lock-screen ＋ opens the sheet
+    /// and leaves you tapping the field. Capacitor / Cordova ship the same
+    /// `keyboardDisplayRequiresUserAction = false` for this reason (D-115).
+    /// Undocumented; if a review rejects it, revert this setter — the SPA
+    /// half still lands the caret.
+    private func allowProgrammaticKeyboard(_ webview: WKWebView) {
+        let sel = sel_registerName("_setKeyboardDisplayRequiresUserAction:")
+        if webview.responds(to: sel) {
+            typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+            let impl = webview.method(for: sel)
+            let fn = unsafeBitCast(impl, to: Setter.self)
+            fn(webview, sel, false)
+            return
+        }
+        webview.setValue(false, forKey: "keyboardDisplayRequiresUserAction")
     }
 
     private func activate() {
