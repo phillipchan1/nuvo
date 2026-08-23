@@ -3,6 +3,13 @@ import { useEffect, type RefObject } from "react";
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// A composer, not the ✕. Sheet's title row puts Close first in DOM, so a
+// plain FOCUSABLE query lands there and iOS then refuses a later input.focus()
+// that has no user gesture (lock-screen widget → capture). Tab order is
+// unchanged — this is only the *initial* move.
+const INITIAL_FIELD =
+  'input:not([disabled]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea:not([disabled])';
+
 /**
  * Dialog focus management for Sheet and Modal: move focus into the panel on
  * open (unless something inside already took it — e.g. an autofocused input),
@@ -16,7 +23,8 @@ export function useDialogFocus(panelRef: RefObject<HTMLElement | null>) {
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     if (!panel.contains(document.activeElement)) {
-      const first = panel.querySelector<HTMLElement>(FOCUSABLE);
+      const field = panel.querySelector<HTMLElement>(INITIAL_FIELD);
+      const first = field ?? panel.querySelector<HTMLElement>(FOCUSABLE);
       (first ?? panel).focus();
     }
 

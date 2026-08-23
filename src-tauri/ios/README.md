@@ -17,7 +17,11 @@ here is committed and reviewable; the Xcode project that consumes it
   `scripts/ios-postinit.sh` and delivered by `tauri-plugin-deep-link`. The
   vocabulary both sides share lives in `src/lib/shortcuts.ts`; a widget that
   opens capture and a long-pressed app icon that opens capture must not be able
-  to mean different things.
+  to mean different things. Opening capture or chat also has to raise the
+  keyboard (D-115): `useRaiseKeyboard` in the SPA, and
+  `keyboardDisplayRequiresUserAction = false` in `NuvoWatchPlugin.load` —
+  the only Swift `load(webview:)` hook we have, so the setter lives there
+  rather than in a second plugin.
 
 - **`NuvoWatch/`** — the watchOS companion app. watchOS has **no web view**, so
   none of `src/` is reachable: this is native SwiftUI over HTTPS. The rule that

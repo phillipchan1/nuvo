@@ -4,12 +4,13 @@
 // items open their Plan detail, tasks open the task sheet. No drill-down, no tab
 // hunting. Pure read: it searches the live VerticalData snapshot + task rows.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { domainById, initiativeById, projectById, taskDomainColor, type VerticalData } from "../../lib/vertical";
 import type { Task } from "../../lib/types";
 import { useEventSearch } from "../../hooks/useEventSearch";
 import { eventHitSubtitle, type EventHit } from "../../lib/eventSearch";
+import { useRaiseKeyboard } from "../../hooks/useRaiseKeyboard";
 import Sheet from "./Sheet";
 
 export type JumpKind = "domain" | "initiative" | "project";
@@ -33,11 +34,7 @@ export default function MobileSearch({
 }) {
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  // Focus after the sheet's rise so iOS reliably raises the keyboard.
-  useEffect(() => {
-    const id = window.setTimeout(() => inputRef.current?.focus(), 120);
-    return () => window.clearTimeout(id);
-  }, []);
+  useRaiseKeyboard(inputRef);
 
   const query = q.trim().toLowerCase();
 

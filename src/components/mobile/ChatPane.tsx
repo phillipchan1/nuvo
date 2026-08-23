@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboardInset } from "../../hooks/useKeyboardInset";
+import { useRaiseKeyboard } from "../../hooks/useRaiseKeyboard";
 import type { AgentAttachment, AgentSuggestion } from "../../lib/agentTypes";
 import type { AgentHandle } from "../../hooks/useAgent";
 import { useFileDrop } from "../../hooks/useFileDrop";
@@ -35,6 +36,9 @@ export default function ChatPane({
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const kbInset = useKeyboardInset();
+  // Same composer-first landing as QuickTaskSheet — in-app ✦ is a gesture;
+  // the lock-screen widget is not. See useRaiseKeyboard / D-115.
+  useRaiseKeyboard(inputRef);
 
   // Swipe-down-to-dismiss on the handle + header — the ✕ sits top-right,
   // opposite the ✦ launcher that opened this (bottom-right thumb zone), so
@@ -45,16 +49,6 @@ export default function ChatPane({
   // screen with no scrim of its own to coordinate.
   const panelRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ startY: number } | null>(null);
-
-  useEffect(() => {
-    // Opening the chat is a deliberate tap — land straight in "type now" like
-    // Claude/ChatGPT do, rather than making that a second tap on the composer.
-    // Delay tied to the same gesture (same pattern as QuickTaskSheet) so iOS
-    // Safari still raises the keyboard instead of silently no-op'ing a focus()
-    // called too late after the tap.
-    const t = window.setTimeout(() => inputRef.current?.focus(), 120);
-    return () => window.clearTimeout(t);
-  }, []);
 
   const onHandlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);

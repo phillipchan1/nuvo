@@ -3531,9 +3531,9 @@ merged, and took three runs to land:
   branch run as a break.
 - **#14** — green end to end on the merged commit, uploaded to TestFlight.
 
-**Still unverified: the `nuvo://` leg itself.** No CI run can prove it — it needs a tap on a
-device, or `xcrun simctl openurl booted nuvo://capture` on a simulator. Until someone does
-that, "the widget opens the capture sheet" is a claim, not an observation.*
+**The `nuvo://` tap is now an observation, not a claim** — a lock-screen ＋
+opens the capture sheet (2026-08-23). The missing last inch was the caret:
+the sheet opened and you still had to tap the field. That's D-115.*
 
 ---
 
@@ -4078,3 +4078,40 @@ Recipe: `src/lib/posthog.ts`. Project token is `VITE_POSTHOG_PROJECT_TOKEN`
 
 *Status: standing — token in `.env.local` + Vercel; confirm `$exception` in
 PostHog before turning on source maps or Self-driving.*
+
+**D-115 · 2026-08-23 · The lock-screen ＋ is not done until the field is
+focused and the keyboard is up.**
+
+D-100 shipped the widgets as launchers. A tap on the lock-screen ＋ opens
+`QuickTaskSheet` through the one parser — observed, not claimed. What it did
+not do is let you type. The sheet already called `input.focus()` 120ms after
+mount, which is enough for the in-app ＋ (that tap *is* a WKWebView gesture)
+and not enough for a widget: iOS treats the native tap as no user activation,
+`useDialogFocus` lands on ✕ first, and a later `input.focus()` is silently
+ignored. The thought is what's lost, which is the failure D-100 named.
+
+→ **One hook, not three timers.** `useRaiseKeyboard` is what capture, the
+chat, and search call: focus immediately (so ✕ cannot win), retry at 120ms
+(same-gesture window), retry once more when the page becomes visible (a
+lock-screen resume can fire the timer before the webview is first responder).
+`useDialogFocus` prefers an `input` / `textarea` over Close on open; Tab
+order is unchanged.
+
+→ **The keyboard itself is a WKWebView policy.** Stock WebKit will not raise
+keys without a webview gesture. The native shell sets
+`keyboardDisplayRequiresUserAction = false` in the only Swift `load(webview:)`
+hook we have (`NuvoWatchPlugin` — a second plugin crate for one setter would
+strain P15 more). Same undocumented property Capacitor / Cordova ship. If a
+review rejects it, revert the setter; the SPA half still lands the caret.
+
+→ **The widget stays a launcher.** No native text field, no second capture
+path, `applyShortcut` is still the only applier. Safari PWA
+`?shortcut=capture` cannot raise a keyboard — we don't own that WKWebView.
+
+→ **Principle strained: P15** (a native exception to the boring core). Worth
+it: the SPA cannot keep the promise D-100 made. P5 and P13 are what this
+strengthens.
+
+*Status: standing — SPA half verified in the running dev app at 375px
+(`?shortcut=capture` / `?shortcut=chat` land the caret). The widget →
+keyboard path needs TestFlight or `xcrun simctl openurl booted nuvo://capture`.*

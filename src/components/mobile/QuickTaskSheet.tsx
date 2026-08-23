@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState } from "react";
 import { captureTitle, parseCapture } from "../../lib/nlp";
 import { todayISO, tomorrowISO, nextWeekISO } from "../../lib/dates";
 import type { Label } from "../../lib/types";
 import type { NewTaskInput } from "../../hooks/useTasks";
+import { useRaiseKeyboard } from "../../hooks/useRaiseKeyboard";
 import Sheet from "./Sheet";
 
 // Quick-capture, reachable from every tab. The same natural-language parser the
@@ -25,12 +26,10 @@ export default function QuickTaskSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    // Delay focus so the keyboard rises after the sheet animates in.
-    const t = window.setTimeout(() => inputRef.current?.focus(), 120);
-    return () => window.clearTimeout(t);
-  }, []);
+  // In-app ＋ is a webview gesture so the 120ms retry raises the keyboard;
+  // a lock-screen widget is not — useRaiseKeyboard still lands the caret,
+  // and the native WKWebView flag (D-115) is what lets the keys come up.
+  useRaiseKeyboard(inputRef);
 
   const parsed = useMemo(() => (text.trim() ? parseCapture(text) : null), [text]);
 
