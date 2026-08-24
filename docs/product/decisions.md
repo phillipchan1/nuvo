@@ -4103,6 +4103,10 @@ keys without a webview gesture. The native shell sets
 hook we have (`NuvoWatchPlugin` — a second plugin crate for one setter would
 strain P15 more). Same undocumented property Capacitor / Cordova ship. If a
 review rejects it, revert the setter; the SPA half still lands the caret.
+**Do not KVC the key.** It is a UIWebView leftover; WKWebView raises
+`NSUnknownKeyException` and the process dies before the SPA mounts — that
+was the TestFlight "won't open" after D-115. Apply the private setter only
+where `responds(to:)` is true (on iOS 13+ that is `WKContentView`).
 
 → **The widget stays a launcher.** No native text field, no second capture
 path, `applyShortcut` is still the only applier. Safari PWA
