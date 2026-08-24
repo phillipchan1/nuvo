@@ -66,16 +66,31 @@ class NuvoWatchPlugin: Plugin, WCSessionDelegate {
     /// `keyboardDisplayRequiresUserAction = false` for this reason (D-115).
     /// Undocumented; if a review rejects it, revert this setter — the SPA
     /// half still lands the caret.
+    ///
+    /// Never KVC this. `keyboardDisplayRequiresUserAction` is a UIWebView
+    /// leftover; WKWebView is not KVC-compliant for it. `setValue(_:forKey:)`
+    /// raises `NSUnknownKeyException`, Swift `do/catch` does not catch that,
+    /// and the process dies in `load(webview:)` — the app never opens.
+    /// On iOS 13+ the private setter lives on `WKContentView` (a scroll-view
+    /// child), not on `WKWebView`. Apply only where `responds(to:)` is true.
     private func allowProgrammaticKeyboard(_ webview: WKWebView) {
         let sel = sel_registerName("_setKeyboardDisplayRequiresUserAction:")
-        if webview.responds(to: sel) {
+        func apply(_ target: NSObject) -> Bool {
+            guard target.responds(to: sel) else { return false }
             typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
-            let impl = webview.method(for: sel)
-            let fn = unsafeBitCast(impl, to: Setter.self)
-            fn(webview, sel, false)
-            return
+            let fn = unsafeBitCast(target.method(for: sel), to: Setter.self)
+            fn(target, sel, false)
+            return true
         }
-        webview.setValue(false, forKey: "keyboardDisplayRequiresUserAction")
+        if apply(webview) { return }
+        func walk(_ view: UIView) -> Bool {
+            if apply(view) { return true }
+            for child in view.subviews {
+                if walk(child) { return true }
+            }
+            return false
+        }
+        _ = walk(webview)
     }
 
     private func activate() {
