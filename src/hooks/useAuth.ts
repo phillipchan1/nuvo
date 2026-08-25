@@ -9,6 +9,7 @@ import {
   AUTH_SESSION_EVENT,
   broadcastAuthSession,
   payloadToSession,
+  initialAuthState,
   persistSessionIfAbsent,
   readPersistedSession,
   requestAuthSession,
@@ -20,8 +21,9 @@ import {
 const SPOTLIGHT_AUTH_WAIT_MS = 1_200;
 
 export function useAuth() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [boot] = useState(initialAuthState);
+  const [session, setSession] = useState<Session | null>(boot.session);
+  const [loading, setLoading] = useState(boot.loading);
 
   useEffect(() => {
     const spotlight = isSpotlightWindow();

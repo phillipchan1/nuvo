@@ -83,8 +83,9 @@ const pwa = VitePWA({
   // src/sw.ts instead. The glob rules stay here because they decide the manifest.
   injectManifest: {
     globPatterns: ["**/*.{js,css,html,woff,woff2,png,svg,ico}"],
-    // Startup images are fetched once by iOS at install time — precaching all
-    // twenty into every visitor's SW cache is pure weight.
+    // Startup images are fetched once by iOS at install time (and are paper
+    // only — D-117). Precaching all twenty into every visitor's SW cache is
+    // pure weight.
     globIgnores: ["splash/**"],
     // The entry chunk is the largest precached file; the default ceiling is
     // 2 MiB and silently DROPS anything over it, which would mean an installed

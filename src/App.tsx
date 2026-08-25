@@ -85,12 +85,11 @@ function errMsg(e: unknown) {
   return e instanceof Error ? e.message : "Something went wrong";
 }
 
-// Session restore and the subscription check are usually warm-cache-fast
-// (well under this delay), so painting the wordmark for every one of them
-// reads as a splash screen on every launch instead of a real desktop app
-// that's just already there. Only earn the wordmark once a wait has gone on
-// long enough to actually need reassurance; a fast load never shows it —
-// the atmosphere canvas underneath is the whole transition.
+// First-visit / signed-out restore is usually warm-cache-fast (well under
+// this delay). Painting the wordmark for every one of them used to read as
+// a splash on every launch. Returning opens skip this canvas entirely
+// (persisted session + was-entitled — D-117). Only earn the wordmark once
+// a wait has gone on long enough to actually need reassurance.
 const SPLASH_DELAY_MS = 200;
 function useDelayedTrue(active: boolean, delayMs: number) {
   const [show, setShow] = useState(false);
@@ -246,7 +245,9 @@ function Shell() {
     );
   }
 
-  if (loading) {
+  // A persisted session is enough to open the planner. Holding the canvas
+  // until getSession() confirms it is what made every mobile launch a splash.
+  if (loading && !session) {
     return <LoadingCanvas showWordmark={showAuthWordmark} />;
   }
 

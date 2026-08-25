@@ -10,6 +10,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import {
   authStorageKey,
   payloadToSession,
+  initialAuthState,
   persistSessionIfAbsent,
   readPersistedSession,
   sessionToPayload,
@@ -118,5 +119,24 @@ describe("persisted session slot", () => {
     expect(readPersistedSession(storage)).toBeNull();
     storage.setItem(KEY, "not-json");
     expect(readPersistedSession(storage)).toBeNull();
+  });
+});
+
+describe("initialAuthState", () => {
+  it("opens immediately when the slot already has a session", () => {
+    storage.setItem(KEY, JSON.stringify(session()));
+    const boot = initialAuthState(storage, false);
+    expect(boot.loading).toBe(false);
+    expect(boot.session?.access_token).toBe("aaa.bbb.ccc");
+  });
+
+  it("waits when this device has never signed in", () => {
+    const boot = initialAuthState(storage, false);
+    expect(boot).toEqual({ session: null, loading: true });
+  });
+
+  it("always waits in the spotlight window — its store can be empty on the first tick", () => {
+    storage.setItem(KEY, JSON.stringify(session()));
+    expect(initialAuthState(storage, true)).toEqual({ session: null, loading: true });
   });
 });

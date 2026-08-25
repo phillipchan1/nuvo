@@ -4139,3 +4139,34 @@ sync bug, not an honest empty state. The signed-out card stays for the
 genuine case (no account on this device).
 
 Recipe: `src/lib/authSync.ts`, `src/hooks/useAuth.ts`.
+
+**D-117 · 2026-08-25 · A returning open is not a launch ceremony.**
+
+The phone showed a branded splash on every open: iOS held the `apple-touch-startup-image`
+(the N on paper) until first paint, then `useAuth` started `loading: true` and painted
+`LoadingCanvas` until `getSession()` resolved — often past the 200ms wordmark delay
+(811c540) even after the entitlement hint (2b62785) stopped blocking on billing. A
+planner you already live in should be *there*, the way the desktop already tried to be.
+
+iOS still requires *a* launch image (white flash otherwise). It is now paper only —
+same ground as the inline first-paint style in `index.html` — so the OS hold and the
+HTML dissolve into each other. Auth hydrates synchronously from the persisted slot
+(`initialAuthState`); a session already on the device skips the canvas. Spotlight
+still waits (D-116). Native TestFlight gets the same paper `LaunchScreen` via
+`ios-postinit.sh`.
+
+iOS caches the PWA startup image at "Add to Home Screen." Existing installs keep the
+old N until the icon is removed and re-added; TestFlight / a fresh add pick this up.
+
+→ Ledger: no unanswered row — this is the app being present, not a planning question.
+A human does not ask "what is Nuvo?" every time they open it.
+→ Principle strained: **P14** (a framed mark is the opposite of dissolve). Strengthens
+**P9** (quiet) and **P13** (the phone is the daily driver).
+→ Four no's: none.
+
+*Status: standing — contract in `tests/auth-sync.test.ts`. Phone-in-hand confirmation
+is the next TestFlight / re-added PWA open.*
+
+Recipe: `src/lib/authSync.ts` (`initialAuthState`), `src/hooks/useAuth.ts`,
+`src/hooks/useSubscription.ts`, `src/App.tsx`, `index.html`, `public/splash/`,
+`scripts/gen-pwa-splash.py`, `scripts/ios-postinit.sh`.

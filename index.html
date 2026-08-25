@@ -19,8 +19,17 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Nuvo" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <!-- iOS startup images (an installed PWA otherwise flashes plain white).
-         Generated solid-ground + mark per current iPhone size, light and dark. -->
+    <!-- Paper on the first HTML paint, before the CSS bundle. iOS holds the
+         startup image until this; matching it means the branded splash is gone
+         and a returning open dissolves into the planner (D-117). -->
+    <style>
+      html, body, #root { height: 100%; margin: 0; background: #f4f1ea; }
+      @media (prefers-color-scheme: dark) {
+        html, body, #root { background: #141320; }
+      }
+    </style>
+    <!-- iOS startup images: paper only, no mark. An installed PWA otherwise
+         flashes white; a logo here is a splash on every open. -->
     <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (prefers-color-scheme: light)" href="/splash/splash-750x1334.png" />
     <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (prefers-color-scheme: dark)" href="/splash/splash-750x1334-dark.png" />
     <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: light)" href="/splash/splash-1125x2436.png" />
