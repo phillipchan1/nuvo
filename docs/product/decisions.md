@@ -4120,6 +4120,19 @@ strengthens.
 (`?shortcut=capture` / `?shortcut=chat` land the caret). The widget →
 keyboard path needs TestFlight or `xcrun simctl openurl booted nuvo://capture`.*
 
+**2026-08-25 follow-up.** Two holes survived the first two TestFlight
+builds. The setter walk at `load(webview:)` was a silent no-op:
+`WKContentView` is often not in the tree yet, so `responds(to:)` never
+fired and the widget still needed a second tap. The load-bearing half is
+now Capacitor's once-only swizzle of
+`_elementDidFocus:userIsInteracting:…` (force `userIsInteracting = true`),
+plus delayed setter retries and `becomeFirstResponder`. Still never KVC.
+
+And a widget capture was inheriting **Today** because the phone's last tab
+is almost always Calendar. A lock-screen thought is Inbox.
+`captureDefaultDoDate("shortcut", …)` returns null; the in-app ＋ may still
+pre-file Today when you are looking at the day.
+
 **D-116 · 2026-08-24 · The ⌥Space panel is a consumer of the session, not a
 second client.**
 

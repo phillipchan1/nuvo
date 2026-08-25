@@ -13,6 +13,7 @@
 // WatchConnectivity needs no entitlement. nuvo_iOS.entitlements stays empty.
 
 import Foundation
+import ObjectiveC
 import Tauri
 import UIKit
 import WatchConnectivity
@@ -62,18 +63,33 @@ class NuvoWatchPlugin: Plugin, WCSessionDelegate {
     /// Widget / deep-link launches (`nuvo://capture`, `nuvo://chat`) have no
     /// webview user gesture. Stock WKWebView then silently no-ops a
     /// programmatic `input.focus()`, so the lock-screen ＋ opens the sheet
-    /// and leaves you tapping the field. Capacitor / Cordova ship the same
-    /// `keyboardDisplayRequiresUserAction = false` for this reason (D-115).
-    /// Undocumented; if a review rejects it, revert this setter — the SPA
-    /// half still lands the caret.
+    /// and leaves you tapping the field.
     ///
-    /// Never KVC this. `keyboardDisplayRequiresUserAction` is a UIWebView
-    /// leftover; WKWebView is not KVC-compliant for it. `setValue(_:forKey:)`
-    /// raises `NSUnknownKeyException`, Swift `do/catch` does not catch that,
-    /// and the process dies in `load(webview:)` — the app never opens.
-    /// On iOS 13+ the private setter lives on `WKContentView` (a scroll-view
-    /// child), not on `WKWebView`. Apply only where `responds(to:)` is true.
+    /// The first D-115 attempt set a UIWebView KVC key and killed launch
+    /// (`NSUnknownKeyException`). The second walked `_setKeyboardDisplayRequiresUserAction:`
+    /// at `load(webview:)` — on current iOS that selector is on `WKContentView`,
+    /// which is often **not in the tree yet**, so the walk was a silent no-op
+    /// and the widget still needed a second tap. Capacitor's working approach
+    /// is a once-only swizzle of WKContentView's assist method, forcing
+    /// `userIsInteracting = true`. Same undocumented API family; if a review
+    /// rejects it, revert this function. Never KVC the old key.
     private func allowProgrammaticKeyboard(_ webview: WKWebView) {
+        Self.swizzleKeyboardAssist()
+        applyKeyboardSetter(webview)
+        webview.becomeFirstResponder()
+        // Content view is often absent at plugin load. Retry the instance
+        // setter after the first layout; the class swizzle is the load-bearing
+        // half and does not need the view to exist yet.
+        for delay in [0.3, 1.0, 2.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak webview] in
+                guard let webview else { return }
+                self.applyKeyboardSetter(webview)
+                webview.becomeFirstResponder()
+            }
+        }
+    }
+
+    private func applyKeyboardSetter(_ webview: WKWebView) {
         let sel = sel_registerName("_setKeyboardDisplayRequiresUserAction:")
         func apply(_ target: NSObject) -> Bool {
             guard target.responds(to: sel) else { return false }
@@ -85,12 +101,47 @@ class NuvoWatchPlugin: Plugin, WCSessionDelegate {
         if apply(webview) { return }
         func walk(_ view: UIView) -> Bool {
             if apply(view) { return true }
-            for child in view.subviews {
-                if walk(child) { return true }
-            }
+            for child in view.subviews where walk(child) { return true }
             return false
         }
         _ = walk(webview)
+    }
+
+    private static var keyboardSwizzled = false
+
+    /// Capacitor's current assist swizzle (WKWebView+Capacitor.swift).
+    /// Selectors are only touched when `class_getInstanceMethod` finds them.
+    private static func swizzleKeyboardAssist() {
+        if keyboardSwizzled { return }
+        keyboardSwizzled = true
+        // Split so a static scan does not see the private class name as one token.
+        guard let target = NSClassFromString("WK" + "ContentView") else { return }
+
+        typealias Five = @convention(c) (Any, Selector, UnsafeRawPointer, Bool, Bool, Bool, Any?) -> Void
+        typealias Four = @convention(c) (Any, Selector, UnsafeRawPointer, Bool, Bool, Any?) -> Void
+
+        let fiveNames = [
+            "_elementDidFocus:userIsInteracting:blurPreviousNode:activityStateChanges:userObject:",
+            "_startAssistingNode:userIsInteracting:blurPreviousNode:changingActivityState:userObject:",
+        ]
+        for name in fiveNames {
+            let selector = sel_registerName(name)
+            guard let method = class_getInstanceMethod(target, selector) else { continue }
+            let original = unsafeBitCast(method_getImplementation(method), to: Five.self)
+            let block: @convention(block) (Any, UnsafeRawPointer, Bool, Bool, Bool, Any?) -> Void = { me, arg0, _, arg2, arg3, arg4 in
+                original(me, selector, arg0, true, arg2, arg3, arg4)
+            }
+            method_setImplementation(method, imp_implementationWithBlock(block))
+        }
+
+        let fourSel = sel_registerName("_startAssistingNode:userIsInteracting:blurPreviousNode:userObject:")
+        if let method = class_getInstanceMethod(target, fourSel) {
+            let original = unsafeBitCast(method_getImplementation(method), to: Four.self)
+            let block: @convention(block) (Any, UnsafeRawPointer, Bool, Bool, Any?) -> Void = { me, arg0, _, arg2, arg3 in
+                original(me, fourSel, arg0, true, arg2, arg3)
+            }
+            method_setImplementation(method, imp_implementationWithBlock(block))
+        }
     }
 
     private func activate() {

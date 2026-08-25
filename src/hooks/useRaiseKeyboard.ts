@@ -6,27 +6,46 @@ import { useLayoutEffect, type RefObject } from "react";
 // useDialogFocus; this delay is the original "same gesture" retry.
 const GESTURE_FOCUS_MS = 120;
 
+// A lock-screen resume can take longer than 120ms for the webview to become
+// first responder. Keep trying for a beat, then stop so a tap on a day chip
+// is not stolen back.
+const LINGER_AT_MS = [400, 800, 1500] as const;
+
 /**
  * Land the caret in a composer and raise the keyboard.
  *
- * Three moments, then stop:
+ * Moments, then stop:
  *   1. Immediately (`useLayoutEffect`) so the field is active before
  *      `useDialogFocus` looks — otherwise the sheet's ✕ wins the race.
  *   2. 120ms later, still inside a real tap's activation window.
- *   3. Once more on the next time the page becomes visible / the window
- *      focuses (`visibilitychange`, `pageshow`, `focus`). A lock-screen
- *      widget tap resumes the app; the 120ms timer can fire while the
- *      webview is not yet first responder, and never retry.
+ *   3. A few more times over ~1.5s — a widget resume can fire the first
+ *      two while the webview is not yet first responder.
+ *   4. Once more on the next time the page becomes visible / the window
+ *      focuses. Then the resume listener is spent.
  *
- * The resume retry is once-only so a later tap on a day chip is not stolen
- * back. The keyboard itself still needs a webview user gesture on stock
- * iOS — the native shell turns that off for widget launches (D-115).
+ * Linger and resume both refuse to steal focus the user has already moved
+ * (a day chip, the close button). The keyboard itself still needs the
+ * native WKContentView assist swizzle (D-115) after a widget tap.
  */
 export function useRaiseKeyboard<T extends HTMLElement>(ref: RefObject<T>) {
   useLayoutEffect(() => {
-    const focus = () => ref.current?.focus();
+    const fieldOwnsFocus = () => {
+      const el = ref.current;
+      if (!el) return false;
+      const active = document.activeElement;
+      if (!active || active === el || active === document.body) return true;
+      // Something else inside the same dialog already has it — a chip, ✕.
+      const dialog = el.closest('[role="dialog"]') ?? el.parentElement;
+      return !dialog?.contains(active);
+    };
+
+    const focus = () => {
+      if (!fieldOwnsFocus()) return;
+      ref.current?.focus();
+    };
+
     focus();
-    const t = window.setTimeout(focus, GESTURE_FOCUS_MS);
+    const timers = [GESTURE_FOCUS_MS, ...LINGER_AT_MS].map((ms) => window.setTimeout(focus, ms));
 
     let resumeUsed = false;
     const onResume = () => {
@@ -39,7 +58,7 @@ export function useRaiseKeyboard<T extends HTMLElement>(ref: RefObject<T>) {
     window.addEventListener("pageshow", onResume);
     window.addEventListener("focus", onResume);
     return () => {
-      window.clearTimeout(t);
+      for (const t of timers) window.clearTimeout(t);
       document.removeEventListener("visibilitychange", onResume);
       window.removeEventListener("pageshow", onResume);
       window.removeEventListener("focus", onResume);

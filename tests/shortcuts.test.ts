@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shortcutFromUrl, isShortcut } from "../src/lib/shortcuts";
+import { shortcutFromUrl, isShortcut, captureDefaultDoDate } from "../src/lib/shortcuts";
 
 // The launch vocabulary is shared by the PWA manifest shortcuts and the iOS
 // widgets (src-tauri/ios/NuvoWidgets). Both spellings have to keep naming the
@@ -43,5 +43,17 @@ describe("shortcutFromUrl", () => {
     expect(isShortcut("capture")).toBe(true);
     expect(isShortcut("nope")).toBe(false);
     expect(isShortcut(null)).toBe(false);
+  });
+});
+
+describe("captureDefaultDoDate", () => {
+  it("files a widget / shortcut capture to Inbox, even on Calendar", () => {
+    expect(captureDefaultDoDate("shortcut", true, "2026-08-25")).toBeNull();
+    expect(captureDefaultDoDate("shortcut", false, "2026-08-25")).toBeNull();
+  });
+
+  it("lets the in-app ＋ pre-file Today only when you are looking at the day", () => {
+    expect(captureDefaultDoDate("fab", true, "2026-08-25")).toBe("2026-08-25");
+    expect(captureDefaultDoDate("fab", false, "2026-08-25")).toBeNull();
   });
 });

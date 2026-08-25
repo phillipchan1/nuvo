@@ -18,11 +18,13 @@ here is committed and reviewable; the Xcode project that consumes it
   vocabulary both sides share lives in `src/lib/shortcuts.ts`; a widget that
   opens capture and a long-pressed app icon that opens capture must not be able
   to mean different things. Opening capture or chat also has to raise the
-  keyboard (D-115): `useRaiseKeyboard` in the SPA, and the private
-  `_setKeyboardDisplayRequiresUserAction:` setter in `NuvoWatchPlugin.load`
-  (the only Swift `load(webview:)` hook we have). Apply it only where
-  `responds(to:)` is true — never via `setValue(_:forKey:)`, which raises
-  `NSUnknownKeyException` on WKWebView and kills the process on launch.
+  keyboard (D-115): `useRaiseKeyboard` in the SPA, and a once-only
+  WKContentView assist swizzle in `NuvoWatchPlugin.load` (Capacitor's
+  `_elementDidFocus:userIsInteracting:…`, force interacting). Walking
+  `_setKeyboardDisplayRequiresUserAction:` at load is often a no-op —
+  the content view is not in the tree yet. Never KVC that key
+  (`NSUnknownKeyException` kills launch). A widget capture files to
+  Inbox (`captureDefaultDoDate`), not Today inherited from Calendar.
 
 - **`NuvoWatch/`** — the watchOS companion app. watchOS has **no web view**, so
   none of `src/` is reachable: this is native SwiftUI over HTTPS. The rule that

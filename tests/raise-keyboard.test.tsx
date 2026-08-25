@@ -11,6 +11,7 @@ import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useDialogFocus } from "../src/hooks/useDialogFocus";
 import { useRaiseKeyboard } from "../src/hooks/useRaiseKeyboard";
+import { todayISO } from "../src/lib/dates";
 import QuickTaskSheet from "../src/components/mobile/QuickTaskSheet";
 
 function RaiseHost() {
@@ -66,6 +67,40 @@ describe("useRaiseKeyboard", () => {
       vi.advanceTimersByTime(1);
     });
     expect(screen.getByLabelText("field")).toHaveFocus();
+  });
+
+  it("lingers after 120ms so a late webview first-responder still lands", () => {
+    render(<RaiseHost />);
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+    screen.getByLabelText("field").blur();
+    act(() => {
+      vi.advanceTimersByTime(280);
+    });
+    expect(screen.getByLabelText("field")).toHaveFocus();
+  });
+
+  it("does not steal focus the user has already moved to another control", () => {
+    function SheetHost() {
+      const ref = useRef<HTMLInputElement>(null);
+      useRaiseKeyboard(ref);
+      return (
+        <div role="dialog">
+          <input ref={ref} aria-label="field" />
+          <button type="button">Today</button>
+        </div>
+      );
+    }
+    render(<SheetHost />);
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+    screen.getByRole("button", { name: "Today" }).focus();
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(screen.getByRole("button", { name: "Today" })).toHaveFocus();
   });
 
   it("retries once when the page becomes visible, then stops", () => {
@@ -129,6 +164,28 @@ describe("useDialogFocus", () => {
     );
     expect(screen.getByLabelText("New task")).toHaveFocus();
     expect(screen.getByRole("button", { name: "Close" })).not.toHaveFocus();
+  });
+
+  it("defaults the day chip to Inbox when no date is passed", () => {
+    render(
+      <QuickTaskSheet labels={[]} onCreate={async () => {}} onClose={() => {}} />,
+    );
+    const inbox = screen.getByRole("button", { name: "Inbox" });
+    expect(inbox.className).toMatch(/bg-accent/);
+    expect(screen.getByRole("button", { name: "Today" }).className).not.toMatch(/bg-accent/);
+  });
+
+  it("selects Today only when a date is passed in", () => {
+    render(
+      <QuickTaskSheet
+        labels={[]}
+        onCreate={async () => {}}
+        onClose={() => {}}
+        defaultDoDate={todayISO()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Today" }).className).toMatch(/bg-accent/);
+    expect(screen.getByRole("button", { name: "Inbox" }).className).not.toMatch(/bg-accent/);
   });
 
   it("does not steal focus already inside the panel", () => {

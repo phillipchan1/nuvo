@@ -23,7 +23,7 @@ import { useAgentContext } from "../../hooks/useAgentContext";
 import { taskDomainColor } from "../../lib/vertical";
 import { mergeTaskLists } from "../../lib/taskMerge";
 import { isTauri } from "../../lib/platform";
-import { shortcutFromUrl, type Shortcut } from "../../lib/shortcuts";
+import { captureDefaultDoDate, shortcutFromUrl, type Shortcut } from "../../lib/shortcuts";
 import type { Floor } from "../../lib/readiness";
 import type { AgentHintContext } from "../../lib/agentHints";
 import type { Task } from "../../lib/types";
@@ -181,6 +181,11 @@ export default function MobileShell() {
 
 
   const [quickOpen, setQuickOpen] = useState(false);
+  // Widget / icon-shortcut capture is a thought dump — Inbox, not "Today"
+  // inherited from the last tab (usually Calendar). Bumped so a second ＋
+  // remounts the sheet and re-raises the keyboard.
+  const [quickSource, setQuickSource] = useState<"shortcut" | "fab">("fab");
+  const [quickGen, setQuickGen] = useState(0);
   // Plan the week — the phone's weekly ritual, a full-screen overlay like the chat.
   const [planOpen, setPlanOpen] = useState(false);
   // The Nuvo chat overlay — a floating action, reachable over any screen.
@@ -224,6 +229,8 @@ export default function MobileShell() {
   const applyShortcut = useCallback((act: Shortcut) => {
     if (act === "capture") {
       setChatOpen(false);
+      setQuickSource("shortcut");
+      setQuickGen((n) => n + 1);
       setQuickOpen(true);
     } else if (act === "chat") {
       setQuickOpen(false);
@@ -711,7 +718,11 @@ export default function MobileShell() {
             </button>
             {/* Capture — the one primary action. */}
             <button
-              onClick={() => setQuickOpen(true)}
+              onClick={() => {
+                setQuickSource("fab");
+                setQuickGen((n) => n + 1);
+                setQuickOpen(true);
+              }}
               aria-label="Quick task"
               data-teach="capture"
               className="elev-3 fast absolute right-4 bottom-[calc(100%_+_0.75rem)] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-[28px] font-light leading-none text-on-accent active:scale-95"
@@ -752,10 +763,15 @@ export default function MobileShell() {
       )}
       {quickOpen && (
         <QuickTaskSheet
+          key={quickGen}
           labels={labels}
           onCreate={mutations.create}
           onClose={() => setQuickOpen(false)}
-          defaultDoDate={tab === "calendar" || (tab === "tasks" && sub === "today") ? today : null}
+          defaultDoDate={captureDefaultDoDate(
+            quickSource,
+            tab === "calendar" || (tab === "tasks" && sub === "today"),
+            today,
+          )}
         />
       )}
       {openTask && (
