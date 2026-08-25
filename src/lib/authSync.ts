@@ -66,6 +66,22 @@ export function payloadToSession(payload: AuthSessionPayload): Session | null {
   };
 }
 
+/**
+ * First-paint auth. A returning device already has the session in
+ * localStorage; waiting on `getSession()` to say so is what painted the
+ * splash on every mobile open (auth `loading` started `true` even when the
+ * slot was full). Spotlight still waits — its store can be empty on the
+ * first tick (see useAuth).
+ */
+export function initialAuthState(
+  storage: Storage | null = storageOrNull(),
+  spotlight = isSpotlightWindow(),
+): { session: Session | null; loading: boolean } {
+  if (spotlight) return { session: null, loading: true };
+  const session = readPersistedSession(storage);
+  return { session, loading: !session };
+}
+
 /** Read the persisted supabase session without touching the auth client.
  *  Safe to call from the panel: it never rotates tokens. */
 export function readPersistedSession(storage: Storage | null = storageOrNull()): Session | null {

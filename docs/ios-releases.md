@@ -40,6 +40,13 @@ src-tauri/
 **D-012** still holds: one SPA, no router. **D-099** adds a third delivery
 channel (native iOS shell) without forking the frontend.
 
+**Launch screen (D-117).** iOS requires one. Ours is paper only — no N — so a
+returning open is the planner, not a ceremony. `scripts/ios-postinit.sh`
+paints the generated `LaunchScreen.storyboard` Warm Paper; the PWA's
+`apple-touch-startup-image` files in `public/splash/` are the same ground
+(regenerate with `python3 scripts/gen-pwa-splash.py`). Existing "Add to Home
+Screen" installs cache the old image until the icon is removed and re-added.
+
 ---
 
 ## Phase 1 — TestFlight auto-upload (this doc)

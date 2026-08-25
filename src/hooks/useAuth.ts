@@ -9,6 +9,7 @@ import {
   AUTH_SESSION_EVENT,
   broadcastAuthSession,
   payloadToSession,
+  initialAuthState,
   persistSessionIfAbsent,
   readPersistedSession,
   requestAuthSession,
@@ -20,8 +21,9 @@ import {
 const SPOTLIGHT_AUTH_WAIT_MS = 1_200;
 
 export function useAuth() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [boot] = useState(initialAuthState);
+  const [session, setSession] = useState<Session | null>(boot.session);
+  const [loading, setLoading] = useState(boot.loading);
 
   useEffect(() => {
     const spotlight = isSpotlightWindow();
@@ -71,8 +73,10 @@ export function useAuth() {
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       // INITIAL_SESSION with null is "this heap hasn't recovered yet", not
       // "the account is signed out". The panel used to take that as gospel
-      // and paint the signed-out card over a logged-in main window.
-      if (spotlight && event === "INITIAL_SESSION" && !s) return;
+      // and paint the signed-out card over a logged-in main window. The same
+      // tick can land after we already painted from the persisted slot
+      // (D-117) — don't wipe that with a null.
+      if (event === "INITIAL_SESSION" && !s && (spotlight || readPersistedSession())) return;
       apply(s);
       if (!spotlight) void broadcastAuthSession(s);
       // Nuvo is multi-tenant and the offline read cache is written to disk, so
@@ -137,6 +141,10 @@ export function useAuth() {
 
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
+      // getSession() can report empty on the first tick of a WKWebView that
+      // already has the token in the slot we painted from (D-117). Don't
+      // let that null clobber the first paint.
+      const recovered = data.session ?? readPersistedSession();
 
       // Dev-only convenience: skip the login wall by auto-signing-in a test
       // account from .env.local (gitignored). `import.meta.env.DEV` is false in
@@ -144,7 +152,7 @@ export function useAuth() {
       // the shipped app. Set VITE_DEV_EMAIL / VITE_DEV_PASSWORD to enable.
       // Spotlight never signs in on its own — two heaps rotating one refresh
       // token is `refresh_token_already_used`.
-      if (!data.session && !spotlight && import.meta.env.DEV) {
+      if (!recovered && !spotlight && import.meta.env.DEV) {
         const email = import.meta.env.VITE_DEV_EMAIL as string | undefined;
         const password = import.meta.env.VITE_DEV_PASSWORD as string | undefined;
         if (email && password) {
@@ -159,16 +167,16 @@ export function useAuth() {
         }
       }
 
-      apply(data.session);
+      apply(recovered);
       if (!spotlight) {
-        void broadcastAuthSession(data.session);
+        void broadcastAuthSession(recovered);
         if (!cancelled) setLoading(false);
         return;
       }
 
       // Panel: if storage already had it, we're done. If not, ask main and
       // hold the loader so a logged-in summon doesn't flash "Not signed in".
-      if (data.session) {
+      if (recovered) {
         if (!cancelled) setLoading(false);
         return;
       }

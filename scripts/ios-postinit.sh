@@ -102,4 +102,53 @@ if bad:
     sys.exit(1)
 PY
 
+# Paper-only launch screen. iOS requires *a* launch screen; a logo here is a
+# splash on every cold open (D-117). Match Warm Paper so the WKWebView's first
+# paint dissolves in instead of staging a mark.
+/usr/libexec/PlistBuddy -c "Delete :UILaunchScreen" "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :UILaunchScreen dict" "$PLIST"
+
+STORYBOARD="${ROOT}/src-tauri/gen/apple/LaunchScreen.storyboard"
+if [ ! -f "$STORYBOARD" ]; then
+  STORYBOARD="$(find "${ROOT}/src-tauri/gen/apple" -name 'LaunchScreen.storyboard' -print -quit || true)"
+fi
+if [ -n "${STORYBOARD:-}" ] && [ -f "$STORYBOARD" ]; then
+  python3 - "$STORYBOARD" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+xml = path.read_text()
+# Drop any brand mark / label Tauri (or a previous patch) put in the storyboard.
+xml = re.sub(r"\s*<imageView[\s\S]*?</imageView>", "", xml)
+xml = re.sub(r"\s*<label[\s\S]*?</label>", "", xml)
+# Warm Paper light ground (#f4f1ea) — dark mode still uses the same launch
+# image on native iOS; the HTML first-paint style handles prefers-color-scheme.
+paper = '<color key="backgroundColor" red="0.9568627450980393" green="0.9450980392156862" blue="0.9176470588235294" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>'
+xml = re.sub(
+    r'<color key="backgroundColor"[^/]*/>',
+    paper,
+    xml,
+    count=1,
+)
+if 'key="backgroundColor"' not in xml:
+    xml = xml.replace(
+        '<view key="view"',
+        f'<view key="view"',
+        1,
+    )
+    xml = re.sub(
+        r'(<view key="view"[^>]*>)',
+        r"\1\n                        " + paper,
+        xml,
+        count=1,
+    )
+path.write_text(xml)
+print(f"ios-postinit: paper launch screen at {path}")
+PY
+else
+  echo "ios-postinit: no LaunchScreen.storyboard (ok if this template uses UILaunchScreen only)"
+fi
+
 echo "ios-postinit: patched $PLIST"

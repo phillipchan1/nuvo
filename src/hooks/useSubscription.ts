@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "../lib/supabase";
 import { isSpotlightWindow } from "../lib/platform";
+import { readPersistedSession } from "../lib/authSync";
 import { interpretSubscriptionRead, writeWasEntitled } from "../lib/subscription";
 import type { Subscription } from "../lib/subscription";
 
@@ -18,7 +19,13 @@ export function useSubscription() {
   // error — RLS just returns zero rows, so `maybeSingle()` resolves to null
   // and a fully paid-up account reads as "not entitled" and gets thrown at
   // the paywall on every cold load. `undefined` here means "don't know yet".
-  const [hasSession, setHasSession] = useState<boolean | undefined>(undefined);
+  // A returning device already has the session in localStorage. Starting
+  // `undefined` here blocked the subscription query (and the shell) until a
+  // second getSession() — the same wait that kept the splash up on mobile.
+  const [hasSession, setHasSession] = useState<boolean | undefined>(() => {
+    if (isSpotlightWindow()) return false;
+    return readPersistedSession() ? true : undefined;
+  });
   useEffect(() => {
     // The panel is not a billing surface. Skip the session probe — getSession
     // on an expired token still hits /token, and two heaps rotating one
