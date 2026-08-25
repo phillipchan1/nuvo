@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "../lib/supabase";
+import { isSpotlightWindow } from "../lib/platform";
 import { interpretSubscriptionRead, writeWasEntitled } from "../lib/subscription";
 import type { Subscription } from "../lib/subscription";
 
@@ -19,6 +20,13 @@ export function useSubscription() {
   // the paywall on every cold load. `undefined` here means "don't know yet".
   const [hasSession, setHasSession] = useState<boolean | undefined>(undefined);
   useEffect(() => {
+    // The panel is not a billing surface. Skip the session probe — getSession
+    // on an expired token still hits /token, and two heaps rotating one
+    // refresh token is `refresh_token_already_used`.
+    if (isSpotlightWindow()) {
+      setHasSession(false);
+      return;
+    }
     supabase.auth.getSession().then(({ data }) => setHasSession(!!data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setHasSession(!!s));
     return () => sub.subscription.unsubscribe();
@@ -26,7 +34,8 @@ export function useSubscription() {
 
   const query = useQuery({
     queryKey: KEY,
-    enabled: hasSession === true,
+    // The ⌥Space panel is not a billing surface and must not rotate tokens.
+    enabled: hasSession === true && !isSpotlightWindow(),
     queryFn: async (): Promise<Subscription | null> => {
       // Bound the request. App.tsx renders the splash for as long as this is
       // pending, and a saturated database makes PostgREST accept the connection
@@ -58,7 +67,9 @@ export function useSubscription() {
         }
         // A live session with an empty read is usually a JWT that went stale
         // while the tab slept — RLS then answers zero rows, not 401. Refresh
-        // and try once more before treating it as a failure.
+        // and try once more before treating it as a failure. The ⌥Space panel
+        // never rotates tokens (two heaps, one refresh token).
+        if (isSpotlightWindow()) return row;
         console.warn("[nuvo] subscription read null with a live session — refreshing and retrying");
         await supabase.auth.refreshSession();
         return read(true);
@@ -111,6 +122,7 @@ export function useSubscription() {
 export function useSubscriptionLiveSync() {
   const qc = useQueryClient();
   useEffect(() => {
+    if (isSpotlightWindow()) return;
     const channel = supabase
       .channel("nuvo-subscription")
       .on(

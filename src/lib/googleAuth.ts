@@ -7,9 +7,9 @@ import { supabase } from "./supabase";
  *  falls back to the project's **Site URL**. In the Tauri shell that fallback is
  *  catastrophically quiet — the desktop webview lands on the hosted web app and
  *  signs in *there*, so the session is stored under `https://app.nuvo.day` while
- *  the bundled app (and the ⌥Space spotlight window, which always loads
- *  `tauri://localhost/index.html`) stays signed out forever. The panel came up
- *  blank and nothing anywhere said why. Keep `tauri://localhost` allow-listed.
+ *  the bundled app (and the ⌥Space spotlight window, which loads the same
+ *  `tauri://localhost` origin as main) stays signed out forever. The panel came
+ *  up blank and nothing anywhere said why. Keep `tauri://localhost` allow-listed.
  *
  *  Non-special schemes can serialize `location.origin` as the string "null", so
  *  rebuild it from protocol + host rather than trusting `origin` in the shell. */

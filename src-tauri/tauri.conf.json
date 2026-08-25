@@ -24,7 +24,6 @@
       },
       {
         "label": "spotlight",
-        "url": "index.html",
         "width": 680,
         "height": 480,
         "visible": false,

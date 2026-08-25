@@ -4119,3 +4119,23 @@ strengthens.
 *Status: standing — SPA half verified in the running dev app at 375px
 (`?shortcut=capture` / `?shortcut=chat` land the caret). The widget →
 keyboard path needs TestFlight or `xcrun simctl openurl booted nuvo://capture`.*
+
+**D-116 · 2026-08-24 · The ⌥Space panel is a consumer of the session, not a
+second client.**
+
+⌥Space is a long-lived WKWebView. supabase-js syncs tabs with BroadcastChannel;
+WebKit delivers neither that nor the `storage` event across webviews, and a
+hidden panel often finishes `getSession()` before the slot even has the token
+main just wrote. The summon then paints "Not signed in" over a logged-in app —
+capture (D6) as a dead end, which is worse than a blank panel.
+
+Main is the only refresher. It pushes the live session over a Tauri event;
+the panel adopts it, re-reads storage on every summon, and never calls
+`refreshSession`. Two heaps rotating one refresh token is
+`refresh_token_already_used`, and GoTrue treats that as theft.
+
+→ Consequence: a logged-in main window and a signed-out ⌥Space panel is a
+sync bug, not an honest empty state. The signed-out card stays for the
+genuine case (no account on this device).
+
+Recipe: `src/lib/authSync.ts`, `src/hooks/useAuth.ts`.

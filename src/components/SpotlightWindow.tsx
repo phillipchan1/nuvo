@@ -60,7 +60,9 @@ function useSpotlightChrome() {
 
 /** What the ⌥Space window mounts — the panel once there's a session, an honest
  *  card before then. Never nothing: an empty summon is indistinguishable from a
- *  broken app, and the window is already floating over whatever you were doing. */
+ *  broken app, and the window is already floating over whatever you were doing.
+ *  "Not signed in" is the genuine empty case. A logged-in main window with a
+ *  blank panel is a session-sync bug — see `lib/authSync.ts`. */
 export function SpotlightHost({ signedIn, loading }: { signedIn: boolean; loading: boolean }) {
   useSpotlightChrome();
 
