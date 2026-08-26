@@ -237,8 +237,10 @@ Server Notifications V2 at:
 
 `https://<project>.supabase.co/functions/v1/apple-webhook?secret=<APPLE_NOTIFICATION_SECRET>`
 
-Migration `70_plan_source` adds `plan_source`, Apple transaction columns, the
-`plan` / `is_entitled` computed columns, and `apple_webhook_events`.
+Migration `71_plan_source` adds `plan_source`, Apple transaction columns, the
+`plan` / `is_entitled` computed columns, and `apple_webhook_events`. Do **not**
+apply it from this PR. Master's migration 70 is `delete_secret` (account
+deletion) — leave it alone. No `supabase db push`, no deploy of 71.
 
 SKUs are already in Connect (not submitted). Do not write $29.99 / $229.99
 into the binary. Do not Submit the app from this PR. Dayspring Stripe

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -59,8 +59,19 @@ describe("the two doors still mount Delete account", () => {
     const accountPane = settings.slice(settings.indexOf("function AccountPane"));
     expect(accountPane).toContain("<DeleteAccount");
 
-    const locked = read("components/billing/LockedScreen.tsx");
-    expect(locked).toMatch(/import\s*\{\s*DeleteAccount\s*\}\s*from\s*"\.\.\/account\/DeleteAccount"/);
-    expect(locked.split("<DeleteAccount").length - 1).toBe(2);
+    const webLocked = read("components/billing/web/LockedScreen.tsx");
+    const iapLocked = read("components/billing/iap/LockedScreen.tsx");
+    expect(webLocked).toMatch(/import\s*\{\s*DeleteAccount\s*\}\s*from\s*"\.\.\/\.\.\/account\/DeleteAccount"/);
+    expect(iapLocked).toMatch(/import\s*\{\s*DeleteAccount\s*\}\s*from\s*"\.\.\/\.\.\/account\/DeleteAccount"/);
+    expect(webLocked.split("<DeleteAccount").length - 1).toBe(2);
+    expect(iapLocked.split("<DeleteAccount").length - 1).toBe(2);
+  });
+
+  it("keeps master's migration 70 as delete_secret; plan_source is 71", () => {
+    const seventy = readFileSync("supabase/migrations/00000000000070_delete_secret.sql", "utf8");
+    expect(seventy).toMatch(/delete_secret/);
+    expect(existsSync("supabase/functions/delete-account/index.ts")).toBe(true);
+    expect(existsSync("supabase/migrations/00000000000070_plan_source.sql")).toBe(false);
+    expect(existsSync("supabase/migrations/00000000000071_plan_source.sql")).toBe(true);
   });
 });

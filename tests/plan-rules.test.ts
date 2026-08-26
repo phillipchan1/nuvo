@@ -164,7 +164,7 @@ describe("one trial, both rails", () => {
   });
 
   it("does not add a second trial table", () => {
-    const mig = readFileSync("supabase/migrations/00000000000070_plan_source.sql", "utf8");
+    const mig = readFileSync("supabase/migrations/00000000000071_plan_source.sql", "utf8");
     expect(mig).not.toMatch(/create table\s+\w*trial/i);
   });
 
