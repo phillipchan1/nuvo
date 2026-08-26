@@ -3,12 +3,13 @@ import { supabase } from "../../lib/supabase";
 import { fetchPortalUrl, openBillingUrl, type Subscription } from "../../lib/subscription";
 import { Btn } from "../ui";
 import { PlanChooser } from "./PlanChooser";
+import { DeleteAccount } from "../account/DeleteAccount";
 
 /** The hard gate. Renders in the same slot Login occupies when there's no
  *  session — here for a signed-in account that isn't entitled. It's the
  *  highest-stakes surface in the app, so it carries the full offer rather
  *  than a bare "your trial ended" apology, and it always leaves a way out
- *  (billing portal, sign out, support). */
+ *  (billing portal, sign out, delete account, support). */
 export default function LockedScreen({
   subscription,
 }: {
@@ -34,20 +35,23 @@ export default function LockedScreen({
 
         <PlanChooser cta="Subscribe and continue" />
 
-        <div className="mt-5 flex items-center gap-4 border-t border-line pt-3">
-          <button
-            type="button"
-            onClick={() => supabase.auth.signOut()}
-            className="tap fast text-caption text-muted hover:text-ink"
-          >
-            Sign out
-          </button>
-          <a
-            href="mailto:hello@nuvo.day?subject=Nuvo%20subscription"
-            className="tap fast ml-auto inline-flex items-center text-caption text-muted hover:text-ink"
-          >
-            Need help?
-          </a>
+        <div className="mt-5 border-t border-line pt-3">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => supabase.auth.signOut()}
+              className="tap fast text-caption text-muted hover:text-ink"
+            >
+              Sign out
+            </button>
+            <a
+              href="mailto:hello@nuvo.day?subject=Nuvo%20subscription"
+              className="tap fast ml-auto inline-flex items-center text-caption text-muted hover:text-ink"
+            >
+              Need help?
+            </a>
+          </div>
+          <DeleteAccount compact />
         </div>
       </div>
     </div>
@@ -88,20 +92,23 @@ function PastDue() {
           {busy ? "Opening…" : "Update payment method"}
         </Btn>
         {error && <div className="mt-3 text-caption text-signal">{error}</div>}
-        <div className="mt-5 flex items-center gap-4 border-t border-line pt-3">
-          <button
-            type="button"
-            onClick={() => supabase.auth.signOut()}
-            className="tap fast text-caption text-muted hover:text-ink"
-          >
-            Sign out
-          </button>
-          <a
-            href="mailto:hello@nuvo.day?subject=Nuvo%20payment"
-            className="tap fast ml-auto inline-flex items-center text-caption text-muted hover:text-ink"
-          >
-            Need help?
-          </a>
+        <div className="mt-5 border-t border-line pt-3">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => supabase.auth.signOut()}
+              className="tap fast text-caption text-muted hover:text-ink"
+            >
+              Sign out
+            </button>
+            <a
+              href="mailto:hello@nuvo.day?subject=Nuvo%20payment"
+              className="tap fast ml-auto inline-flex items-center text-caption text-muted hover:text-ink"
+            >
+              Need help?
+            </a>
+          </div>
+          <DeleteAccount compact />
         </div>
       </div>
     </div>

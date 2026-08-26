@@ -23,6 +23,7 @@ import Sheet from "./mobile/Sheet";
 import { Field, PaneHeader, TextInput, Select, Toggle, Stepper, Segmented } from "./form";
 import { AppsDevicesPane } from "./AppsDevicesPane";
 import { BillingPane } from "./billing/BillingPane";
+import { DeleteAccount } from "./account/DeleteAccount";
 import SyncPanel from "./SyncPanel";
 import type { SettingsSection } from "../lib/appNav";
 import { useMaxPerWeek, useMaxPerQuarter } from "../hooks/usePlannerPrefs";
@@ -1485,6 +1486,8 @@ function AccountPane() {
           </div>
         </div>
       )}
+
+      <DeleteAccount />
     </div>
   );
 }

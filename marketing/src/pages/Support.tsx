@@ -957,14 +957,19 @@ export default function Support() {
                 </Disclose>
                 <Disclose q="Deleting your account">
                   <p>
-                    Email{' '}
+                    In the app: Settings → Account → Delete account. Type DELETE to confirm.
+                    If your trial or subscription has ended, the same act is on the locked
+                    screen. That wipes the account and the planning data we store — you will
+                    not be able to sign back in. If you subscribed through Apple, cancel in
+                    Apple Account settings first; we cannot cancel an App Store subscription
+                    for you. A web or Mac (Stripe) subscription is cancelled as part of the
+                    wipe. If you cannot open the app, email{' '}
                     <a href={SUPPORT_MAILTO} className="text-[var(--accent)] underline-offset-2 hover:underline">
                       {SUPPORT_EMAIL}
                     </a>{' '}
-                    from the address on the account and we’ll delete it, along with the planning
-                    data in it. If you’d rather just cut the calendar link, you can disconnect any
-                    calendar yourself in Settings → Calendars at any time — that revokes Nuvo’s
-                    access immediately.
+                    from the address on the account. If you’d rather just cut the calendar
+                    link, disconnect any calendar in Settings → Calendars — that revokes
+                    Nuvo’s access immediately.
                   </p>
                 </Disclose>
                 <Disclose q="Refunds and anything unusual">

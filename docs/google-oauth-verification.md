@@ -96,8 +96,8 @@ from here to full verification (removes the cap and the warning).
 
 - [ ] **Branding page submitted for verification** — see §4. Quick, automated.
 - [ ] **Redirect URI on a domain you own** — see §5. Do this before submitting.
-- [ ] **Self-serve account deletion** — the policy currently says "email us."
-      Google increasingly expects an in-app route. Not built; see §6.
+- [x] **Self-serve account deletion** — Settings → Account (and the locked
+      screen). Type DELETE. Spec: [`account-deletion.md`](./account-deletion.md).
 - [ ] **Demo video** — script in §7.
 - [ ] **DECIDE: read-only Google vs. commit to CASA** — see §1. Gates the video
       script and the redirect-URI demo beats.
@@ -145,13 +145,16 @@ has bitten us before. Change it carefully.
 
 ## 6. Account deletion
 
-Policy says email `hello@nuvo.day`. That's defensible but weak, and the trend is
-toward requiring self-serve.
+**Built 2026-08-26 (D-117).** Hard-delete. Settings → Account → Delete account,
+and the same act on the locked screen. Type DELETE. The function cancels a
+Stripe subscription if one exists, drops Vault secrets, and deletes the auth
+user (every user-owned table already cascades). Apple subscriptions cannot be
+cancelled from here — the confirm panel says so.
 
-Not built, deliberately — it touches the auth-gated product surfaces, needs a
-real cascade across every user-owned table, and needs a decision first:
-**hard-delete or anonymize?** Worth its own pass. Settings → Account is the
-natural home, next to the existing billing portal link.
+Privacy (`/privacy`) describes the in-app path first; email `hello@nuvo.day` is
+the fallback when they cannot open the app.
+
+Spec: [`account-deletion.md`](./account-deletion.md).
 
 ---
 

@@ -49,6 +49,7 @@ been used to argue against things it doesn't forbid.
 | **Multi-tenant** | Many independent accounts on one deployment, isolated by RLS on `user_id`. | **Yes** — a deployment fact, not a product opinion (D-024) |
 | **Multi-player** | Several people sharing one funnel. | **No** (N-02) |
 | **Account** | One operator's entire funnel — the tenancy boundary. There is no workspace, team, or org object above it. | — |
+| **Delete account** | Settings → Account · locked screen · `delete-account` | The in-app wipe. Type **DELETE**. Removes the auth user and cascaded planning data. Cancels a Stripe subscription if one exists. An Apple subscription must be cancelled in Apple Account settings — we cannot cancel StoreKit. **Not** Delete forever (a trashed task). D-117. |
 | **Operator** | What we call the person using Nuvo, in docs and copy. Preferred over "user". | — |
 | **Persona zero** | The builder, as a *verified instance* of P1. Evidence, cited **ⓞ**, never the definition. | [`personas.md`](./personas.md) |
 | **Guest** | Someone invited to one calendar event — an address on a Google event, nothing more. Not an assignee, not a collaborator, and they cannot see or change anything in the account. The word appears in the composer's guest picker and on the chat's invite card, which use one vocabulary for where an address came from: *Google · Apple · Met before* (D-046, D-069). | **Yes** — a guest is a fact about an event, not a shared object, so it doesn't touch Principle 12 |
