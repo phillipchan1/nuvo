@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-purchase"
+description = "Enables the purchase command without any pre-configured scope."
+commands.allow = ["purchase"]
+
+[[permission]]
+identifier = "deny-purchase"
+description = "Denies the purchase command without any pre-configured scope."
+commands.deny = ["purchase"]

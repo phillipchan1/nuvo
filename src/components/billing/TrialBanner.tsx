@@ -6,7 +6,7 @@ import { UpgradeModal } from "./UpgradeModal";
 /** Slim dismissible bar shown while trialing, in both shells. Dismiss is
  *  in-memory only — it reappears next load, same as the trial itself.
  *
- *  It opens the upgrade modal rather than jumping to Stripe: "Subscribe"
+ *  It opens the upgrade modal rather than jumping to a rail: "Subscribe"
  *  must never pick a plan on someone's behalf. */
 export function TrialBanner() {
   const { subscription } = useSubscription();

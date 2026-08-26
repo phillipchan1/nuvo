@@ -133,23 +133,118 @@ multi-tenant now, not single-user.
 
 ## How it works (for future you)
 
-- **Entitlement** is one Postgres function, `entitled(subscriptions)`, exposed
-  as a computed column. The client reads `sub.entitled` and never re-derives
-  the date math. There's no cron: an expired trial keeps `status = 'trialing'`
-  and simply computes `entitled = false` at read time.
-- **Trials** are granted by `handle_new_user` (the existing `auth.users`
-  insert trigger), atomically with the domains/settings seed — so a trial row
-  always exists before the app can query it.
-- **The webhook is the only writer** of billing state. It claims each
-  `event.id` in `stripe_webhook_events` before handling, so redeliveries are
-  no-ops — and releases the claim if handling fails, so Stripe's retry gets a
-  real second attempt.
+- **One row, two rails.** Web pays with Stripe Checkout + Customer Portal.
+  The iOS App Store binary pays with StoreKit auto-renewable IAP only — no
+  Stripe UI, no web prices, no "cheaper on the web." Both write the same
+  `subscriptions` row: `plan` (computed alias of `status`: trialing | active |
+  cancelled | past_due) + `plan_source` (`stripe` | `apple`). iOS signup
+  unlocks web; web signup unlocks iOS.
+- **Entitlement** is one function, `isEntitled` in
+  `supabase/functions/_shared/planRules.ts`. SQL twins: `entitled(subscriptions)`
+  and `is_entitled(subscriptions)`. Active, or trialing with a future
+  `trial_ends_at`. `past_due` is not entitled. Source does not matter.
+- **One updater.** Stripe's webhook and Apple's (StoreKit verify + App Store
+  Server Notifications V2) both call `applyPlanUpdate`. The unused rail cannot
+  demote an active row on the other rail.
+- **One trial, both rails.** `handle_new_user` inserts the `subscriptions`
+  row with `status = 'trialing'` and `trial_ends_at = now() + 14 days`.
+  That is the trial — app-side, no card, not Stripe Checkout, not a StoreKit
+  introductory offer. iOS signup uses this same row. There is no second trial
+  table. An Apple intro offer, if Marketing adds one, lives in App Store
+  Connect when they create SKUs (after listing screenshots; no Submit).
+  `plan_source` stays null until a rail is charged.
+- **The webhook is the only writer** of billing state (plus the authenticated
+  `apple-iap` confirm after a StoreKit purchase). Stripe claims each
+  `event.id` in `stripe_webhook_events`; Apple claims `notificationUUID` in
+  `apple_webhook_events`. Redeliveries are no-ops; a failed handle releases
+  the claim so the retry is real.
 - `invoice.payment_failed` deliberately does **not** set `past_due` — Stripe
   retries failed invoices, and one blip shouldn't lock out a paying customer.
   `past_due` comes only from `customer.subscription.updated`'s own status.
 - **Gating** lives in `src/App.tsx`: no session → `Login`; entitled → the app;
-  not entitled → `LockedScreen`. A *failed* subscription check is its own
+  not entitled → `LockedScreen` (Stripe `PlanChooser` on web/macOS, StoreKit
+  `IapChooser` on the iOS binary). A *failed* subscription check is its own
   state ("couldn't verify") and never reads as cancelled.
+
+---
+
+## 11. iOS App Store IAP (StoreKit)
+
+**Status: SKUs exist in App Store Connect — not submitted.** No intro offer.
+Trial stays app-side (`handle_new_user` / `trial_ends_at`). Prices in the
+iOS UI come only from StoreKit product objects. Web Stripe copy in
+`plans.ts` stays $29/month and $228/year.
+
+**Subscription group:** Nuvo Pro · id `22327993`
+
+| SKU | Env (product identifier) | Apple ID | Connect price / period |
+|---|---|---|---|
+| Monthly | `NUVO_IAP_MONTHLY` | `6804259519` | $29.99 / 1 month |
+| Annual | `NUVO_IAP_ANNUAL` | `6804258767` | $229.99 / 1 year |
+
+The StoreKit Product ID strings **are** `NUVO_IAP_MONTHLY` and
+`NUVO_IAP_ANNUAL`. Those are what `product()` asks StoreKit for. The `6804…`
+values are Apple internal IDs only — never pass them to `product()`. Env
+may repeat the same strings; a numeric override is ignored.
+
+The iOS binary (`tauri ios build`, `TAURI_ENV_PLATFORM=ios`) sets
+`VITE_IAP_ONLY=1` so Stripe checkout, the portal, and `plans.ts` web prices
+are tree-shaken out of the IPA. `tauri ios dev` still uses `isTauriIOS()` so
+Subscribe never opens Stripe. If StoreKit products are missing, the paywall
+is a stub — it never falls back to Stripe. iOS signup is already entitled
+for 14 days via the same `handle_new_user` row; this plugin is for paying
+after that trial, not a second trial.
+
+The expired-trial lock screen is `IapChooser`. Each SKU shows StoreKit's
+title, duration, and `displayPrice`. Terms (`https://nuvo.day/terms`) and
+Privacy (`https://nuvo.day/privacy`) sit on the paywall. Restore Purchases
+is on the paywall and in Settings → Billing.
+
+### Env (Supabase secrets + optional Vite)
+
+```bash
+# Product ID strings (not Apple IDs 6804259519 / 6804258767, not prices).
+# Group Nuvo Pro 22327993.
+supabase secrets set \
+  NUVO_IAP_MONTHLY=NUVO_IAP_MONTHLY \
+  NUVO_IAP_ANNUAL=NUVO_IAP_ANNUAL \
+  APPLE_BUNDLE_ID=day.nuvo.app \
+  APPLE_IAP_ENVIRONMENT=Sandbox \
+  APPLE_NOTIFICATION_SECRET=long-random
+```
+
+| Var | Where | What |
+|---|---|---|
+| `NUVO_IAP_MONTHLY` | Supabase | StoreKit Product ID for Apple ID `6804259519`. **Not** the Apple ID, **not** a price. |
+| `NUVO_IAP_ANNUAL` | Supabase | StoreKit Product ID for Apple ID `6804258767`. **Not** the Apple ID, **not** a price. |
+| `VITE_NUVO_IAP_MONTHLY` / `VITE_NUVO_IAP_ANNUAL` | iOS Vite build (optional) | Same Product ID strings baked into the binary so StoreKit can be queried offline. |
+| `APPLE_BUNDLE_ID` | Supabase | Must match the transaction's `bundleId` (`day.nuvo.app`). |
+| `APPLE_IAP_ENVIRONMENT` | Supabase | `Sandbox` or `Production`. Record-keeping; notifications carry their own environment. |
+| `APPLE_NOTIFICATION_SECRET` | Supabase | Optional query secret on the App Store Server Notifications URL. |
+| `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL` | Supabase | Unchanged. Web only. |
+
+Do **not** put dollar amounts in these values. Localized prices exist only on
+StoreKit product objects at runtime.
+
+### Functions to deploy
+
+```bash
+supabase functions deploy stripe-checkout stripe-portal stripe-webhook apple-iap apple-webhook iap-catalog
+```
+
+`apple-webhook` is `verify_jwt = false`. Point App Store Connect → App Store
+Server Notifications V2 at:
+
+`https://<project>.supabase.co/functions/v1/apple-webhook?secret=<APPLE_NOTIFICATION_SECRET>`
+
+Migration `71_plan_source` adds `plan_source`, Apple transaction columns, the
+`plan` / `is_entitled` computed columns, and `apple_webhook_events`. Do **not**
+apply it from this PR. Master's migration 70 is `delete_secret` (account
+deletion) — leave it alone. No `supabase db push`, no deploy of 71.
+
+SKUs are already in Connect (not submitted). Do not write $29.99 / $229.99
+into the binary. Do not Submit the app from this PR. Dayspring Stripe
+catalog untouched.
 
 ---
 

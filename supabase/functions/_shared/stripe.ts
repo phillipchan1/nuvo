@@ -1,4 +1,5 @@
 import Stripe from "npm:stripe@18";
+import { stripeStatusToPlan, type PlanState } from "./planRules.ts";
 
 export const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
   apiVersion: "2026-05-27.dahlia",
@@ -28,23 +29,11 @@ export function resolveReturnOrigin(requested?: unknown): string {
   return fallback;
 }
 
-export type OurStatus = "trialing" | "active" | "past_due" | "cancelled";
+export type OurStatus = PlanState;
 
 // nuvo never sets `trial_period_days` on the Stripe subscription (trials are
 // granted app-side, see handle_new_user), so Stripe's own "trialing" status
 // should never occur for us — deliberately no case for it below.
 export function stripeStatusToStatus(s: Stripe.Subscription.Status): OurStatus {
-  switch (s) {
-    case "active":
-      return "active";
-    case "past_due":
-    case "unpaid":
-    case "incomplete":
-      return "past_due";
-    case "canceled":
-    case "incomplete_expired":
-      return "cancelled";
-    default:
-      return "past_due"; // conservative — never silently entitle
-  }
+  return stripeStatusToPlan(s);
 }

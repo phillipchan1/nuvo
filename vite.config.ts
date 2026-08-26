@@ -19,6 +19,10 @@ const appVersion = JSON.parse(
 // TAURI_BUILD=1 (see tauri.conf.json beforeBuildCommand) so the plugin — and
 // therefore sw.js / manifest — is only emitted for the web build.
 const isTauriBuild = process.env.TAURI_BUILD === "1";
+// iOS App Store binary: tree-shake Stripe checkout / portal / web prices.
+// `tauri ios build` sets TAURI_ENV_PLATFORM=ios. Override with VITE_IAP_ONLY=1.
+const isIosTauriBuild =
+  process.env.TAURI_ENV_PLATFORM === "ios" || process.env.VITE_IAP_ONLY === "1";
 
 const pwa = VitePWA({
   // Disabled (not removed) for Tauri builds: no sw.js / manifest is emitted, yet
@@ -98,6 +102,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), pwa],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    "import.meta.env.VITE_IAP_ONLY": JSON.stringify(isIosTauriBuild ? "1" : ""),
   },
   clearScreen: false,
   server: {

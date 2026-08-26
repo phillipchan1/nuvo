@@ -54,6 +54,12 @@ here is committed and reviewable; the Xcode project that consumes it
   portal before a TestFlight export succeeds — an App Store Connect API key can
   create a *profile* but not a new identifier. Same wall the widgets hit.
 
+- **StoreKit IAP** lives in `../plugins/nuvo-iap/`, **not here** — same
+  placement rule as the watch bridge: Tauri only compiles Swift that sits
+  under a plugin's `ios/` path. The plugin talks StoreKit 1 (delegates, no
+  async/await). Product identifiers come from env; localized prices come from
+  `SKProduct`. Card checkout does not live here.
+
 - **The credential bridge** lives in `../plugins/nuvo-watch/`, **not here** —
   and that placement is forced, not stylistic. Tauri's only JS→Swift path is a
   plugin crate whose `ios/` directory `tauri_plugin::Builder::ios_path` hands to

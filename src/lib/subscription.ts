@@ -1,18 +1,26 @@
-import { supabase } from "./supabase";
-import { isDesktopTauri } from "./platform";
-import { clearPendingReferralCode, readPendingReferralCode } from "./referral";
+import { isEntitled, planOf, type PlanState, type PlanSource } from "../../supabase/functions/_shared/planRules.ts";
 
-export type SubscriptionStatus = "trialing" | "active" | "past_due" | "cancelled";
+export type { PlanSource, PlanState };
+export { isEntitled, planOf };
+
+export type SubscriptionStatus = PlanState;
 
 export interface Subscription {
   user_id: string;
+  /** Physical column — same value as `plan`. */
   status: SubscriptionStatus;
+  /** Public name for `status`. Computed by `public.plan(subscriptions)`. */
+  plan?: PlanState;
+  /** stripe | apple. Null while trialing (neither rail has been charged). */
+  plan_source?: PlanSource | null;
   trial_ends_at: string;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   price_id: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  apple_original_transaction_id?: string | null;
+  apple_product_id?: string | null;
   /** Personal share code (Stripe Promotion Code). Null until Billing asks
    *  `referral-code` to mint or attach one. */
   referral_code?: string | null;
@@ -22,9 +30,9 @@ export interface Subscription {
   /** Free months granted via friend-codes (stripe-webhook). */
   referral_credits_earned?: number;
   referral_last_credit_at?: string | null;
-  /** Computed by the `entitled(subscriptions)` Postgres function — the
-   *  single source of truth for "does this account have access right now."
-   *  Never re-derive this from trial_ends_at/status on the client. */
+  /** Computed by `public.entitled` / `public.is_entitled` — the SQL twin of
+   *  `isEntitled`. Prefer `isEntitled(row)` in app code so both rails share
+   *  one function. */
   entitled: boolean;
 }
 
@@ -84,9 +92,9 @@ export type EntitlementView = "loading" | "verify-error" | "locked" | "open";
 
 /**
  * What the signed-in shell should render. A failed or empty subscription
- * check is never "not entitled" — only an actual row with `entitled = false`
- * is. Last launch's hint lets a paying account keep working through a blip
- * instead of unmounting the planner (and the capture they just typed).
+ * check is never "not entitled" — only an actual row that `isEntitled`
+ * rejects is. Last launch's hint lets a paying account keep working through
+ * a blip instead of unmounting the planner (and the capture they just typed).
  */
 export function resolveEntitlementView(args: {
   subPending: boolean;
@@ -95,7 +103,7 @@ export function resolveEntitlementView(args: {
   checkoutPending: boolean;
   wasEntitled: boolean;
 }): EntitlementView {
-  const entitled = Boolean(args.subscription?.entitled);
+  const entitled = isEntitled(args.subscription);
   const trust = entitled || args.wasEntitled;
   const waiting = args.subPending || (args.checkoutPending && !entitled);
 
@@ -105,57 +113,6 @@ export function resolveEntitlementView(args: {
   return "open";
 }
 
+/** @deprecated Use CheckoutPlan from stripeBilling — monthly/annual is a
+ *  Stripe Checkout interval, not the entitlement plan. */
 export type Plan = "monthly" | "annual";
-
-/** Where Stripe should return us. The desktop app sends nothing: checkout
- *  opens in the system browser, which can't navigate back to Tauri's
- *  internal origin, so the server falls back to APP_URL. On web/PWA this is
- *  what lets a dev machine return to itself instead of production. */
-function returnOrigin(): string | undefined {
-  if (isDesktopTauri()) return undefined;
-  return typeof window === "undefined" ? undefined : window.location.origin;
-}
-
-export async function startCheckout(plan: Plan): Promise<string> {
-  const code = readPendingReferralCode() ?? undefined;
-  const { data, error } = await supabase.functions.invoke<{ url: string }>("stripe-checkout", {
-    body: { plan, origin: returnOrigin(), code },
-  });
-  if (error || !data?.url) throw new Error(error?.message ?? "Could not start checkout");
-  // Applied (or offered) at Checkout — don't keep re-applying on a later attempt
-  // if they abandon and come back without the link.
-  if (code) clearPendingReferralCode();
-  return data.url;
-}
-
-/** Mint or fetch this account's personal share code. BillingPane is the only
- *  caller — quiet, no counts, no theater. */
-export async function fetchReferralCode(): Promise<string> {
-  const { data, error } = await supabase.functions.invoke<{ code?: string; error?: string }>(
-    "referral-code",
-    { body: {} },
-  );
-  if (error || !data?.code) {
-    throw new Error(data?.error ?? error?.message ?? "Could not load your code");
-  }
-  return data.code;
-}
-
-export async function fetchPortalUrl(): Promise<string> {
-  const { data, error } = await supabase.functions.invoke<{ url: string }>("stripe-portal", {
-    body: { origin: returnOrigin() },
-  });
-  if (error || !data?.url) throw new Error(error?.message ?? "Could not open billing portal");
-  return data.url;
-}
-
-/** Desktop opens the system browser — a card-entry page must never load
- *  inside the embedded Tauri webview. Web/PWA just navigates the tab. */
-export async function openBillingUrl(url: string): Promise<void> {
-  if (isDesktopTauri()) {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(url);
-  } else {
-    window.location.href = url;
-  }
-}

@@ -1,12 +1,13 @@
-import type { Plan } from "../../lib/subscription";
+import type { CheckoutPlan } from "../../lib/stripeBilling";
 
 /** One source of truth for what we charge and what we say about it — the
  *  upgrade modal, the paywall, and the Settings billing pane all read this,
  *  so a price change is one edit and can't drift between surfaces.
  *  Keep in sync with the Stripe Prices behind STRIPE_PRICE_* (see
  *  docs/billing-setup.md). */
+/** Web / Stripe display copy only. Never imported by the iOS IAP path. */
 export interface PlanCopy {
-  id: Plan;
+  id: CheckoutPlan;
   label: string;
   /** Headline number — what it costs per month on this plan. */
   perMonth: number;

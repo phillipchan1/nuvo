@@ -1,0 +1,116 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+/** Paths that ship inside (or only exist for) the iOS / Tauri-iOS binary.
+ *  Apple rejects Stripe UI, web prices, "cheaper on the web" copy, and any
+ *  hardcoded App Store Connect dollar amounts. Localized price comes from
+ *  StoreKit product objects only. */
+const IOS_PATHS = [
+  "src-tauri/ios",
+  "src-tauri/plugins/nuvo-iap",
+  "src/components/billing/iap",
+  "src/lib/iap.ts",
+];
+
+const FORBIDDEN = [
+  /stripe/i,
+  /\$29\b/,
+  /\$19\b/,
+  /\$19\s*\/\s*mo/i,
+  /\$228\b/,
+  // App Store Connect prices — named, but they must not ship in the binary.
+  // Localized amounts come from StoreKit product objects only.
+  /\$29\.99/,
+  /\$229\.99/,
+  /29\.99/,
+  /229\.99/,
+  /cheaper on the web/i,
+  /billed yearly/i,
+  /secure checkout/i,
+  /continue to checkout/i,
+  /6804259519/,
+  /6804258767/,
+  // Intro trial is app-side (handle_new_user). Do not implement a StoreKit
+  // introductory offer in the binary — that, if any, is Connect.
+  /introductory\s*offer/i,
+  /introductoryOffer/,
+  /SKPaymentDiscount/,
+  /promotionalOffer/,
+];
+
+function walk(path: string, out: string[] = []): string[] {
+  try {
+    const st = statSync(path);
+    if (st.isFile()) {
+      out.push(path);
+      return out;
+    }
+    if (!st.isDirectory()) return out;
+  } catch {
+    return out;
+  }
+  for (const entry of readdirSync(path)) {
+    if (entry === "node_modules" || entry.startsWith(".")) continue;
+    walk(join(path, entry), out);
+  }
+  return out;
+}
+
+describe("iOS / Tauri-iOS path has no Stripe, no web prices, and no ASC dollars", () => {
+  const files = IOS_PATHS.flatMap((p) => walk(p)).filter((f) =>
+    /\.(swift|ts|tsx|rs|toml|md)$/.test(f),
+  );
+
+  it("finds the iOS billing surfaces", () => {
+    expect(files.some((f) => f.endsWith("IapChooser.tsx"))).toBe(true);
+    expect(files.some((f) => f.endsWith("NuvoIapPlugin.swift"))).toBe(true);
+  });
+
+  for (const pattern of FORBIDDEN) {
+    it(`no ${pattern} in the iOS path`, () => {
+      const hits: string[] = [];
+      for (const file of files) {
+        const src = readFileSync(file, "utf8");
+        if (pattern.test(src)) hits.push(file);
+      }
+      expect(hits, `these files match ${pattern}`).toEqual([]);
+    });
+  }
+});
+
+describe("expired-trial iOS subscribe is StoreKit, not Stripe", () => {
+  const chooser = readFileSync("src/components/billing/iap/IapChooser.tsx", "utf8");
+  const locked = readFileSync("src/components/billing/iap/LockedScreen.tsx", "utf8");
+  const pane = readFileSync("src/components/billing/iap/BillingPane.tsx", "utf8");
+  const dispatch = readFileSync("src/components/billing/LockedScreen.tsx", "utf8");
+  const swift = readFileSync("src-tauri/plugins/nuvo-iap/ios/Sources/NuvoIapPlugin.swift", "utf8");
+
+  it("expired-trial lock screen is IapChooser, never Stripe Checkout or the portal", () => {
+    expect(locked).toContain("IapChooser");
+    expect(locked).toContain("Subscribe and continue");
+    expect(locked).not.toMatch(/createCheckout|stripe-checkout|openPortal|stripe-portal|PlanChooser/);
+    expect(chooser).toContain("purchaseIap");
+    expect(chooser).not.toMatch(/createCheckout|stripe-checkout|openPortal|stripe-portal/);
+    expect(dispatch).toContain("usesIapPaywall");
+    expect(dispatch).toContain("IapLocked");
+  });
+
+  it("paywall shows StoreKit title, duration, and displayPrice", () => {
+    expect(chooser).toContain("displayName");
+    expect(chooser).toContain("p.duration");
+    expect(chooser).toContain("displayPrice");
+    expect(swift).toContain("localizedTitle");
+    expect(swift).toContain("subscriptionPeriod");
+    expect(swift).toContain("durationLabel");
+  });
+
+  it("links Terms and Privacy and restores on the paywall and in Settings", () => {
+    expect(chooser).toContain("https://nuvo.day/terms");
+    expect(chooser).toContain("https://nuvo.day/privacy");
+    expect(chooser).toContain("Restore purchases");
+    expect(pane).toContain("Restore purchases");
+    expect(pane).toContain("restoreAndConfirm");
+    expect(pane).not.toMatch(/createCheckout|openPortal|stripe/i);
+  });
+});

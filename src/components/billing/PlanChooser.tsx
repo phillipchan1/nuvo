@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Icon } from "../Icon";
-import { startCheckout, openBillingUrl, type Plan } from "../../lib/subscription";
+import { startCheckout, openBillingUrl, type CheckoutPlan } from "../../lib/stripeBilling";
 import { INCLUDED, PLANS } from "./plans";
 
 /** The sell. Shared by the upgrade modal and the paywall so the offer reads
  *  identically wherever someone meets it — an explicit choice (annual
  *  preselected, never assumed) then one commit button. */
 export function PlanChooser({ cta = "Continue to checkout" }: { cta?: string }) {
-  const [plan, setPlan] = useState<Plan>("annual");
+  const [plan, setPlan] = useState<CheckoutPlan>("annual");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

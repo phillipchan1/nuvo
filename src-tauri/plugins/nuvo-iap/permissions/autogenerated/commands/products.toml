@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-products"
+description = "Enables the products command without any pre-configured scope."
+commands.allow = ["products"]
+
+[[permission]]
+identifier = "deny-products"
+description = "Denies the products command without any pre-configured scope."
+commands.deny = ["products"]

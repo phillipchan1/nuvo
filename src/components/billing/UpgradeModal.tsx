@@ -1,27 +1,19 @@
-import { Modal } from "../ui";
-import { useSubscription } from "../../hooks/useSubscription";
-import { trialDaysRemaining } from "../../lib/subscription";
-import { PlanChooser } from "./PlanChooser";
+import { lazy, Suspense } from "react";
+import { IAP_ONLY, usesIapPaywall } from "../../lib/billingRail";
 
-/** The upgrade moment. Deliberately NOT the Settings billing pane: settings
- *  is where you manage a subscription, this is where we make the case for
- *  one. Opened from the trial bar and from Billing's "See plans". */
+const IapModal = lazy(() =>
+  import("./iap/UpgradeModal").then((m) => ({ default: m.IapUpgradeModal })),
+);
+const WebModal = IAP_ONLY
+  ? null
+  : lazy(() => import("./web/UpgradeModal").then((m) => ({ default: m.WebUpgradeModal })));
+
 export function UpgradeModal({ onClose }: { onClose: () => void }) {
-  const { subscription } = useSubscription();
-  const days = trialDaysRemaining(subscription);
-  const trialing = subscription?.status === "trialing";
-
+  const Modal = IAP_ONLY || usesIapPaywall() ? IapModal : WebModal;
+  if (!Modal) return null;
   return (
-    <Modal onClose={onClose} width="max-w-md">
-      <div className="p-6 sm:p-7">
-        <h2 className="masthead text-display leading-tight text-ink">Keep your whole day in one place</h2>
-        <p className="mt-2 mb-5 text-caption leading-relaxed text-muted">
-          {trialing && days > 0
-            ? `You have ${days} day${days === 1 ? "" : "s"} left on your trial. Pick a plan and nothing changes — your work, calendars, and plans stay exactly as they are.`
-            : "Pick a plan and nothing changes — your work, calendars, and plans stay exactly as they are."}
-        </p>
-        <PlanChooser />
-      </div>
-    </Modal>
+    <Suspense fallback={null}>
+      <Modal onClose={onClose} />
+    </Suspense>
   );
 }
