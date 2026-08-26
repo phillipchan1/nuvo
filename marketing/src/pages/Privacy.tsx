@@ -1,7 +1,7 @@
 import { ACCESS_EMAIL, ACCESS_MAILTO } from '../config'
 
 export default function Privacy() {
-  const updated = 'July 24, 2026'
+  const updated = 'August 26, 2026'
 
   return (
     <div className="atmosphere min-h-dvh">
@@ -132,13 +132,23 @@ export default function Privacy() {
             <p className="mt-3">
               We retain your account and planning data while your account is active. You can
               disconnect Google (or other calendars) in Settings at any time — that revokes
-              further API access and we stop syncing that account. To delete your Nuvo
-              account and associated data, email{' '}
+              further API access and we stop syncing that account.
+            </p>
+            <p className="mt-3">
+              To delete your Nuvo account and the planning data we store, open the app and
+              go to <strong className="text-[var(--text)]">Settings → Account → Delete
+              account</strong>. If your trial or subscription has ended and you are on the
+              locked screen, Delete account is there too. Type DELETE to confirm. That wipe
+              is immediate: the account cannot sign back in. If you subscribed through
+              Apple, cancel in Apple Account settings first (Settings → your name →
+              Subscriptions) — we cannot cancel an App Store subscription for you. If you
+              pay through the web or Mac, we cancel that Stripe subscription when you
+              delete. If you cannot open the app, email{' '}
               <a href={ACCESS_MAILTO} className="text-[var(--accent)] underline-offset-2 hover:underline">
                 {ACCESS_EMAIL}
-              </a>
-              . We will delete or anonymize personal data within a reasonable period, except
-              where we must retain records for legal or security reasons.
+              </a>{' '}
+              from the address on the account. We retain billing records where the law
+              requires it.
             </p>
           </section>
 

@@ -88,6 +88,11 @@ export async function readSecret(id: string): Promise<string | null> {
   return (data as string | null) ?? null;
 }
 
+export async function deleteSecret(id: string): Promise<void> {
+  const { error } = await admin.rpc("delete_secret", { p_id: id });
+  if (error) throw new Error(`delete_secret failed: ${error.message}`);
+}
+
 // ── Signed OAuth state (HMAC with the service role key) ────────────────
 async function hmac(payload: string): Promise<string> {
   const key = await crypto.subtle.importKey(

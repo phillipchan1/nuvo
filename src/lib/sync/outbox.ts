@@ -202,3 +202,11 @@ export async function discard(seqs: number[]): Promise<void> {
   await idbDeleteOps(seqs);
   await refreshOutboxStatus();
 }
+
+/** Drop every queued write. Account deletion is the only caller — sign-out
+ *  keeps the outbox so a later sign-in on the same device can still drain. */
+export async function clearOutbox(): Promise<void> {
+  const all = await idbAllOps<Op>();
+  await idbDeleteOps(all.map((o) => o.seq));
+  await refreshOutboxStatus();
+}

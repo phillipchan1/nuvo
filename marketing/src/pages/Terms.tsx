@@ -1,7 +1,7 @@
 import { ACCESS_EMAIL, ACCESS_MAILTO, GOVERNING_LAW } from '../config'
 
 export default function Terms() {
-  const updated = 'July 26, 2026'
+  const updated = 'August 26, 2026'
 
   return (
     <div className="atmosphere min-h-dvh">
@@ -166,14 +166,19 @@ export default function Terms() {
           <section>
             <h2 className="masthead text-[1.35rem] text-[var(--text)]">Ending it</h2>
             <p className="mt-3">
-              You can stop using Nuvo whenever you like, and can request deletion of your
-              account and data by emailing{' '}
+              You can stop using Nuvo whenever you like. Delete your account in the app
+              (Settings → Account → Delete account, or on the locked screen if you are
+              locked out) by typing DELETE. That wipes the Nuvo account and the planning
+              data we store. Apple subscriptions must be cancelled in Apple Account
+              settings first; a Stripe subscription on the web or Mac is cancelled as part
+              of the wipe. If you cannot open the app, email{' '}
               <a href={ACCESS_MAILTO} className="text-[var(--accent)] underline-offset-2 hover:underline">
                 {ACCESS_EMAIL}
-              </a>
-              . We may terminate or suspend your account for a material breach of these terms,
-              or for non-payment. On termination your right to use Nuvo ends; deletion of your
-              data follows the retention section of the Privacy Policy.
+              </a>{' '}
+              from the address on the account. We may terminate or suspend your account for
+              a material breach of these terms, or for non-payment. On termination your
+              right to use Nuvo ends; deletion of your data follows the retention section of
+              the Privacy Policy.
             </p>
           </section>
 

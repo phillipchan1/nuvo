@@ -4139,3 +4139,39 @@ sync bug, not an honest empty state. The signed-out card stays for the
 genuine case (no account on this device).
 
 Recipe: `src/lib/authSync.ts`, `src/hooks/useAuth.ts`.
+
+**D-117 · 2026-08-26 · Account deletion is in-app, hard-delete, type DELETE.**
+
+App Review 5.1.1v and the privacy page both said "email hello@nuvo.day." That
+is not an in-app delete. Dayspring already had the two-step bar; Nuvo did not.
+
+→ **One function, two doors.** `delete-account` is the wipe. Settings → Account
+is the entitled door. The locked screen is the other — a lapsed trial still has
+to be able to leave, and Settings is not mounted there. Type DELETE. The
+confirm word is shared (`_shared/accountDeletion.ts`) so the UI and the
+function cannot drift.
+
+→ **Hard-delete, not anonymize.** `auth.admin.deleteUser` + existing
+`ON DELETE CASCADE` on every user-owned table. Vault secrets do not cascade, so
+migration 70 adds `delete_secret`. Google refresh tokens are revoked best-effort
+before the secret is dropped. This device's outbox is cleared so the next
+account on the phone cannot see queued titles.
+
+→ **Stripe we cancel; Apple we name.** If `stripe_subscription_id` is set, we
+`subscriptions.cancel` with the existing Stripe client. If that fails and the
+sub is not already gone, the wipe stops. StoreKit is out of scope (nuvo#34) —
+we cannot cancel an App Store subscription, and the confirm panel says so.
+
+→ **Privacy describes the in-app path.** `/privacy`, `/terms`, and Support
+lead with Settings → Account. Email is the fallback when they cannot open the
+app.
+
+→ Ledger: not a planning question. Closest is O4 (who can see my work) — this
+is the leave path, not the visibility answer, so O4 stays ○. Principle strained:
+**P8** (Account now holds identity *and* leave). Mitigation: leave is a
+collapsed two-step, not a second pane. Four no's: no pool, no overlapping name
+(Delete account ≠ Delete forever), works on an empty or locked account, Vera is
+the stranger.
+
+*Status: standing — cheap gate green. Production needs migration 70 +
+`supabase functions deploy delete-account` before Vera's wipe lands.*
