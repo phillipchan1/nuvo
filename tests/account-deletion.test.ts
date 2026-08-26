@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ACCOUNT_DELETE_CONFIRM,
@@ -5,6 +7,9 @@ import {
   isIgnorableStripeCancelError,
   stripeSubscriptionIdToCancel,
 } from "../supabase/functions/_shared/accountDeletion.ts";
+
+const SRC = join(import.meta.dirname, "..", "src");
+const read = (rel: string) => readFileSync(join(SRC, rel), "utf8");
 
 describe("isAccountDeleteConfirm", () => {
   it("accepts the exact confirm word", () => {
@@ -44,5 +49,18 @@ describe("isIgnorableStripeCancelError", () => {
 
   it("does not swallow a real billing failure", () => {
     expect(isIgnorableStripeCancelError("Invalid API Key provided")).toBe(false);
+  });
+});
+
+describe("the two doors still mount Delete account", () => {
+  it("Settings → Account and both locked-screen cards import the same act", () => {
+    const settings = read("components/SettingsModal.tsx");
+    expect(settings).toMatch(/import\s*\{\s*DeleteAccount\s*\}\s*from\s*"\.\/account\/DeleteAccount"/);
+    const accountPane = settings.slice(settings.indexOf("function AccountPane"));
+    expect(accountPane).toContain("<DeleteAccount");
+
+    const locked = read("components/billing/LockedScreen.tsx");
+    expect(locked).toMatch(/import\s*\{\s*DeleteAccount\s*\}\s*from\s*"\.\.\/account\/DeleteAccount"/);
+    expect(locked.split("<DeleteAccount").length - 1).toBe(2);
   });
 });
