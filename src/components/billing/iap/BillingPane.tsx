@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Btn } from "../../ui";
 import { useSubscription } from "../../../hooks/useSubscription";
-import { manageIapSubscriptions } from "../../../lib/iap";
+import { manageIapSubscriptions, restoreAndConfirm } from "../../../lib/iap";
 import { planOf, trialDaysRemaining, type Subscription } from "../../../lib/subscription";
 import { IapUpgradeModal } from "./UpgradeModal";
 
@@ -28,7 +28,40 @@ export function IapBillingPane() {
         <div className="text-caption text-muted">Loading…</div>
       )}
 
+      {(plan === "trialing" || plan === "active") && <RestorePurchases />}
+
       {upgrading && <IapUpgradeModal onClose={() => setUpgrading(false)} />}
+    </div>
+  );
+}
+
+function RestorePurchases() {
+  const { refetch } = useSubscription();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="mt-4">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            await restoreAndConfirm();
+            await refetch();
+          } catch (e) {
+            setError(e instanceof Error ? e.message : "Restore didn’t complete");
+          } finally {
+            setBusy(false);
+          }
+        }}
+        className="tap fast w-full py-3 text-caption text-muted hover:text-ink"
+      >
+        Restore purchases
+      </button>
+      {error && <div className="mt-2 text-caption text-signal">{error}</div>}
     </div>
   );
 }

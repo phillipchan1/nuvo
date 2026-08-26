@@ -189,10 +189,16 @@ may repeat the same strings; a numeric override is ignored.
 
 The iOS binary (`tauri ios build`, `TAURI_ENV_PLATFORM=ios`) sets
 `VITE_IAP_ONLY=1` so Stripe checkout, the portal, and `plans.ts` web prices
-are tree-shaken out of the IPA. If StoreKit products are missing, the paywall
+are tree-shaken out of the IPA. `tauri ios dev` still uses `isTauriIOS()` so
+Subscribe never opens Stripe. If StoreKit products are missing, the paywall
 is a stub — it never falls back to Stripe. iOS signup is already entitled
 for 14 days via the same `handle_new_user` row; this plugin is for paying
 after that trial, not a second trial.
+
+The expired-trial lock screen is `IapChooser`. Each SKU shows StoreKit's
+title, duration, and `displayPrice`. Terms (`https://nuvo.day/terms`) and
+Privacy (`https://nuvo.day/privacy`) sit on the paywall. Restore Purchases
+is on the paywall and in Settings → Billing.
 
 ### Env (Supabase secrets + optional Vite)
 

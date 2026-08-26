@@ -6,7 +6,7 @@ import {
   fetchIapCatalog,
   loadIapProducts,
   purchaseIap,
-  restoreIap,
+  restoreAndConfirm,
   type IapProduct,
 } from "../../../lib/iap";
 import { useSubscription } from "../../../hooks/useSubscription";
@@ -68,10 +68,7 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
     setBusy(true);
     setError(null);
     try {
-      const txs = await restoreIap();
-      const ok = txs.find((t) => t.originalTransactionId && t.productId);
-      if (!ok) throw new Error("No subscription to restore on this Apple ID");
-      await confirmApplePurchase(ok);
+      await restoreAndConfirm();
       await refetch();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Restore didn’t complete");
@@ -90,12 +87,33 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
           Subscriptions aren’t available from the App Store on this build yet. Your work is
           still here. Try again after the next update, or write us if you need a hand.
         </p>
-        <a
-          href="mailto:hello@nuvo.day?subject=Nuvo%20App%20Store%20subscription"
-          className="tap fast mt-4 inline-flex text-caption text-muted hover:text-ink"
+        <button
+          type="button"
+          disabled={busy}
+          onClick={restore}
+          className="tap fast mt-4 w-full py-3 text-caption text-muted hover:text-ink"
         >
-          Need help?
-        </a>
+          Restore purchases
+        </button>
+        {error && <div className="mt-2 text-caption text-signal">{error}</div>}
+        <div className="mt-4 flex items-center gap-4">
+          <a
+            href="https://nuvo.day/terms"
+            target="_blank"
+            rel="noreferrer"
+            className="tap inline-flex items-center text-caption text-muted hover:text-ink"
+          >
+            Terms
+          </a>
+          <a
+            href="https://nuvo.day/privacy"
+            target="_blank"
+            rel="noreferrer"
+            className="tap inline-flex items-center text-caption text-muted hover:text-ink"
+          >
+            Privacy
+          </a>
+        </div>
       </div>
     );
   }
@@ -119,6 +137,9 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
               }`}
             >
               <div className="text-body font-medium text-ink">{p.displayName || p.id}</div>
+              {p.duration ? (
+                <div className="mt-0.5 text-caption text-muted">{p.duration}</div>
+              ) : null}
               {p.displayPrice ? (
                 <div className="mt-1.5 mono text-lead text-ink">{p.displayPrice}</div>
               ) : null}
@@ -163,6 +184,24 @@ export function IapChooser({ cta = "Subscribe" }: { cta?: string }) {
         Payment is charged to your Apple ID. The subscription renews automatically unless you
         cancel at least 24 hours before the end of the current period. Manage it in your
         Apple ID settings.
+      </div>
+      <div className="mt-2 flex items-center gap-4">
+        <a
+          href="https://nuvo.day/terms"
+          target="_blank"
+          rel="noreferrer"
+          className="tap inline-flex items-center text-caption text-muted hover:text-ink"
+        >
+          Terms
+        </a>
+        <a
+          href="https://nuvo.day/privacy"
+          target="_blank"
+          rel="noreferrer"
+          className="tap inline-flex items-center text-caption text-muted hover:text-ink"
+        >
+          Privacy
+        </a>
       </div>
     </div>
   );

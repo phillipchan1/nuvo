@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../../../lib/supabase";
-import { manageIapSubscriptions, restoreIap, confirmApplePurchase } from "../../../lib/iap";
+import { manageIapSubscriptions, restoreAndConfirm } from "../../../lib/iap";
 import { planOf, type Subscription } from "../../../lib/subscription";
 import { useSubscription } from "../../../hooks/useSubscription";
 import { Btn } from "../../ui";
@@ -73,9 +73,7 @@ function PastDue() {
     setBusy(true);
     setError(null);
     try {
-      const txs = await restoreIap();
-      const ok = txs.find((t) => t.originalTransactionId && t.productId);
-      if (ok) await confirmApplePurchase(ok);
+      await restoreAndConfirm();
       await refetch();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Restore didn’t complete");

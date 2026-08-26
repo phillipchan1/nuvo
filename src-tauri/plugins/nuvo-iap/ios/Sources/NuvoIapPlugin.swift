@@ -23,6 +23,8 @@ struct IapProductPayload: Encodable {
     let displayName: String
     let description: String
     let displayPrice: String
+    /// StoreKit subscription period, localized. Empty if the product has none.
+    let duration: String
 }
 
 struct ProductsPayload: Encodable {
@@ -122,7 +124,8 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
                 id: product.productIdentifier,
                 displayName: product.localizedTitle,
                 description: product.localizedDescription,
-                displayPrice: price
+                displayPrice: price,
+                duration: durationLabel(for: product)
             ))
         }
         lock.lock()
@@ -189,6 +192,25 @@ class NuvoIapPlugin: Plugin, SKProductsRequestDelegate, SKPaymentTransactionObse
         restored = []
         lock.unlock()
         invoke?.resolve(RestorePayload(supported: true, transactions: txs))
+    }
+
+    /// Title, duration, and price come from StoreKit — never invented here.
+    private func durationLabel(for product: SKProduct) -> String {
+        guard let period = product.subscriptionPeriod else { return "" }
+        var comps = DateComponents()
+        switch period.unit {
+        case .day: comps.day = period.numberOfUnits
+        case .week: comps.weekOfMonth = period.numberOfUnits
+        case .month: comps.month = period.numberOfUnits
+        case .year: comps.year = period.numberOfUnits
+        @unknown default: return ""
+        }
+        let fmt = DateComponentsFormatter()
+        fmt.allowedUnits = [.day, .weekOfMonth, .month, .year]
+        fmt.unitsStyle = .full
+        fmt.maximumUnitCount = 1
+        fmt.calendar = product.priceLocale.calendar
+        return fmt.string(from: comps) ?? ""
     }
 
     func paymentQueue(_ queue: SKPaymentQueue, restoreCompletedTransactionsFailedWithError error: Error) {

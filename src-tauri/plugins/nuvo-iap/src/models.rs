@@ -20,6 +20,9 @@ pub struct IapProduct {
     pub description: String,
     /// StoreKit localized price. Never invented in JS.
     pub display_price: String,
+    /// StoreKit subscription period label. Empty if the product has none.
+    #[serde(default)]
+    pub duration: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

@@ -14,6 +14,8 @@ export type IapProduct = {
   description: string;
   /** StoreKit's localized price string. Empty if the product didn't load. */
   displayPrice: string;
+  /** StoreKit subscription period (localized). Empty if the product has none. */
+  duration: string;
 };
 
 export type IapCatalog = {
@@ -54,7 +56,13 @@ export async function loadIapProducts(productIds: string[]): Promise<IapProduct[
     const result = await invokeIap<{ products: IapProduct[]; supported?: boolean }>("products", {
       productIds: ids,
     });
-    return Array.isArray(result?.products) ? result.products : [];
+    return Array.isArray(result?.products)
+      ? result.products.map((p) => ({
+          ...p,
+          displayPrice: p.displayPrice ?? "",
+          duration: p.duration ?? "",
+        }))
+      : [];
   } catch {
     return [];
   }
@@ -69,6 +77,14 @@ export async function purchaseIap(productId: string): Promise<IapPurchase> {
 export async function restoreIap(): Promise<IapPurchase[]> {
   const result = await invokeIap<{ transactions?: IapPurchase[] }>("restore");
   return Array.isArray(result?.transactions) ? result.transactions : [];
+}
+
+/** Restore → confirm the matching Apple transaction on the one entitlement row. */
+export async function restoreAndConfirm(): Promise<void> {
+  const txs = await restoreIap();
+  const ok = txs.find((t) => t.originalTransactionId && t.productId);
+  if (!ok) throw new Error("No subscription to restore on this Apple ID");
+  await confirmApplePurchase(ok);
 }
 
 export async function manageIapSubscriptions(): Promise<void> {

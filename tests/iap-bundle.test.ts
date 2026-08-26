@@ -78,3 +78,39 @@ describe("iOS / Tauri-iOS path has no Stripe, no web prices, and no ASC dollars"
     });
   }
 });
+
+describe("expired-trial iOS subscribe is StoreKit, not Stripe", () => {
+  const chooser = readFileSync("src/components/billing/iap/IapChooser.tsx", "utf8");
+  const locked = readFileSync("src/components/billing/iap/LockedScreen.tsx", "utf8");
+  const pane = readFileSync("src/components/billing/iap/BillingPane.tsx", "utf8");
+  const dispatch = readFileSync("src/components/billing/LockedScreen.tsx", "utf8");
+  const swift = readFileSync("src-tauri/plugins/nuvo-iap/ios/Sources/NuvoIapPlugin.swift", "utf8");
+
+  it("expired-trial lock screen is IapChooser, never Stripe Checkout or the portal", () => {
+    expect(locked).toContain("IapChooser");
+    expect(locked).toContain("Subscribe and continue");
+    expect(locked).not.toMatch(/createCheckout|stripe-checkout|openPortal|stripe-portal|PlanChooser/);
+    expect(chooser).toContain("purchaseIap");
+    expect(chooser).not.toMatch(/createCheckout|stripe-checkout|openPortal|stripe-portal/);
+    expect(dispatch).toContain("usesIapPaywall");
+    expect(dispatch).toContain("IapLocked");
+  });
+
+  it("paywall shows StoreKit title, duration, and displayPrice", () => {
+    expect(chooser).toContain("displayName");
+    expect(chooser).toContain("p.duration");
+    expect(chooser).toContain("displayPrice");
+    expect(swift).toContain("localizedTitle");
+    expect(swift).toContain("subscriptionPeriod");
+    expect(swift).toContain("durationLabel");
+  });
+
+  it("links Terms and Privacy and restores on the paywall and in Settings", () => {
+    expect(chooser).toContain("https://nuvo.day/terms");
+    expect(chooser).toContain("https://nuvo.day/privacy");
+    expect(chooser).toContain("Restore purchases");
+    expect(pane).toContain("Restore purchases");
+    expect(pane).toContain("restoreAndConfirm");
+    expect(pane).not.toMatch(/createCheckout|openPortal|stripe/i);
+  });
+});
