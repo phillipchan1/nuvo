@@ -87,20 +87,25 @@ fn install_spotlight_panel(app: &tauri::AppHandle) {
     panel.set_event_handler(Some(handler.as_ref()));
 }
 
+#[cfg(desktop)]
+#[tauri::command]
+fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    // macOS 13.3+ WKWebView is not inspectable unless we say so — open_devtools
+    // alone is a silent no-op on a release build without this.
+    let _ = win.set_inspectable(true);
+    win.open_devtools();
+    Ok(())
+}
+
 // Dismiss the spotlight from the webview. The window is an NSPanel, and a
 // panel's visibility is owned by the native panel object — a JS
 // `getCurrentWebviewWindow().hide()` no-ops against it (and desyncs
 // `panel.is_visible()`, breaking the next ⌥Space toggle). So capture / Esc /
 // backdrop dismissal all route here, to the same `panel.hide()` the
-#[cfg(desktop)]
-#[tauri::command]
-fn open_devtools(app: tauri::AppHandle) {
-    use tauri::Manager;
-    if let Some(win) = app.get_webview_window("main") {
-        win.open_devtools();
-    }
-}
-
 // resign-key handler and the hotkey toggle use.
 #[cfg(target_os = "macos")]
 #[tauri::command]
@@ -259,6 +264,17 @@ pub fn run() {
                 )
                 .build(),
         );
+
+    // StoreKit. The phone sells through Apple because the App Store requires
+    // it; the Mac app sells through Stripe. Both land on the same
+    // `subscriptions` row, so an account bought either way unlocks everywhere.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_purchases::init());
+
+    // Sign in with Apple's native sheet (guideline 4.8). iOS only — see the
+    // Cargo.toml note for why the Mac app doesn't carry the entitlement.
+    #[cfg(target_os = "ios")]
+    let builder = builder.plugin(tauri_plugin_siwa::init());
 
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());

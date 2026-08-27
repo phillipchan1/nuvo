@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { formatAppError } from "../lib/appError";
 import type { ActivityBinding, ActivitySource, ActivityUnit } from "../lib/types";
 
 const SOURCE_KEY = ["activity_source"];
@@ -61,19 +62,9 @@ export function useActivityUnits(startISO: string, endISO: string) {
   });
 }
 
-/** Lift the readable error out of a Supabase functions error (the body holds it). */
-async function edgeError(err: unknown): Promise<string> {
-  const e = err as { message?: string; context?: { json?: () => Promise<{ error?: string }> } };
-  try {
-    const body = await e.context?.json?.();
-    if (body?.error) return body.error;
-  } catch { /* ignore */ }
-  return e.message ?? "Something went wrong.";
-}
-
 async function invokeGitHub<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke("github-activity", { body });
-  if (error) throw new Error(await edgeError(error));
+  if (error) throw new Error((await formatAppError(error)).message);
   if (data?.error) throw new Error(data.error as string);
   return data as T;
 }

@@ -5,6 +5,7 @@ import { Toaster, toast } from "sonner";
 import { supabase } from "./lib/supabase";
 import { isSpotlightWindow } from "./lib/platform";
 import { identifyUser, resetUser } from "./lib/posthog";
+import { reportAppError } from "./lib/appError";
 import { configureSync, createSupabaseTransport, installOwingGuards, queryKeyOwesServer, teardownSync } from "./lib/sync";
 import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
@@ -79,10 +80,6 @@ function useCheckoutReturn(entitled: boolean | undefined) {
   }, [outcome]);
 
   return pending;
-}
-
-function errMsg(e: unknown) {
-  return e instanceof Error ? e.message : "Something went wrong";
 }
 
 // Session restore and the subscription check are usually warm-cache-fast
@@ -171,11 +168,19 @@ const queryClient = new QueryClient({
       // Offline is announced once by the shell's strip — a red toast per
       // failing query on top of it is pure noise.
       if (typeof navigator !== "undefined" && !navigator.onLine) return;
-      toast.error(errMsg(e));
+      void reportAppError(e, {
+        source: String(query.queryKey[0] ?? "query"),
+        toast: (msg) => toast.error(msg),
+      });
     },
   }),
   mutationCache: new MutationCache({
-    onError: (e) => toast.error(errMsg(e)),
+    onError: (e, _vars, _ctx, mutation) => {
+      void reportAppError(e, {
+        source: String(mutation.options.mutationKey?.[0] ?? "mutation"),
+        toast: (msg) => toast.error(msg),
+      });
+    },
   }),
   defaultOptions: {
     queries: {

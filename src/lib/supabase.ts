@@ -53,7 +53,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 /** Invoke an edge function, fire-and-forget, logging failures to console. */
 export function invokeQuiet(fn: string, body: Record<string, unknown>) {
   supabase.functions.invoke(fn, { body }).then(({ error }) => {
-    if (error) console.warn(`[nuvo] edge fn ${fn} failed:`, error.message);
+    if (!error) return;
+    void import("./appError").then(({ reportAppError }) => {
+      void reportAppError(error, { source: fn });
+    });
+    console.warn(`[nuvo] edge fn ${fn} failed:`, error.message);
   });
 }
 

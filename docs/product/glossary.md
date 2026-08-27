@@ -54,6 +54,8 @@ been used to argue against things it doesn't forbid.
 | **Persona zero** | The builder, as a *verified instance* of P1. Evidence, cited **ⓞ**, never the definition. | [`personas.md`](./personas.md) |
 | **Guest** | Someone invited to one calendar event — an address on a Google event, nothing more. Not an assignee, not a collaborator, and they cannot see or change anything in the account. The word appears in the composer's guest picker and on the chat's invite card, which use one vocabulary for where an address came from: *Google · Apple · Met before* (D-046, D-069). | **Yes** — a guest is a fact about an event, not a shared object, so it doesn't touch Principle 12 |
 | **Code** *(billing)* | An operator's unique share word — a Stripe Promotion Code on the shared friend Coupon (`subscriptions.referral_code`), shaped `NAME-XXXX` when minted by the app. Friends get 50% off their first invoice; the sharer gets a free month when they pay (up to six). **Not** an invite (calendar guests), **not** an affiliate program (N-17). Settings → Billing · [`/share`](https://nuvo.day/share) · `?code=` links (D-113). | — |
+| **Billed through the App Store** | What the phone says when Apple, not Stripe, is charging this account (`billing_source = 'apple'`). The one place cancelling is *not* ours to offer — Settings → Billing hands over to Apple's own manage-subscriptions sheet, and no Stripe portal button appears. D-115 · [`apple-billing-setup.md`](../apple-billing-setup.md) | — |
+| **Restore purchases** | The route back for someone who reinstalled, switched phones, or signed in on a second device — re-presents their App Store transactions for verification. Required by guideline 3.1.1, so it must be reachable **without buying first**: it's on the paywall and in Settings → Billing. Never a second way to *pay*. | — |
 | **ⓞ** | Marks a claim sourced from persona zero — **unvalidated beyond N=1.** | — |
 | **The stranger test** | *Would this be true and usable in a fresh account belonging to someone you've never met?* | Principle 16 · [`audit.md`](./audit.md) Pass 6 |
 
@@ -148,6 +150,7 @@ been used to argue against things it doesn't forbid.
 | **Masthead** | Fraunces display type for heroes (floors, records, days). Never `font-semibold`. |
 | **`--signal`** | The token reserved for **now** (and overdue). Not for emphasis. |
 | **`--slot`** | Open / unclaimed time. |
+| **Developer mode** | Settings → About. Local toggle. On the Mac app it unlocks DevTools (⌘⌥I); on every shell it keeps a **Recent errors** log on the device so a failure is copyable. Off by default. Does not change planning. |
 
 ---
 

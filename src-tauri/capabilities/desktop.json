@@ -4,5 +4,14 @@
   "description": "Persisted window geometry. Split out of default.json because tauri-plugin-window-state is only a dependency on macOS/Windows/Linux (src-tauri/Cargo.toml) — the crate doesn't compile for iOS/Android, so its permission can't be in a capability that mobile also loads (D-105-adjacent: it broke the iOS build with 'Permission window-state:default not found').",
   "platforms": ["macOS", "windows", "linux"],
   "windows": ["main", "spotlight"],
-  "permissions": ["window-state:default"]
+  "permissions": [
+    "window-state:default",
+    "core:webview:allow-internal-toggle-devtools",
+    {
+      "identifier": "allow-open-devtools",
+      "commands": {
+        "allow": ["open_devtools"]
+      }
+    }
+  ]
 }

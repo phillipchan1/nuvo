@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { rememberError } from "../lib/appError";
 import { captureAppException } from "../lib/posthog";
 
 // The app-level crash net. Without one, a render error anywhere unmounts the
@@ -21,6 +22,12 @@ export default class ErrorBoundary extends Component<
     // Console stays for local debugging; PostHog is how we see this without
     // waiting for someone to paste "Copy details".
     console.error("Nuvo crashed:", error, info.componentStack);
+    rememberError({
+      at: Date.now(),
+      message: error.message || error.name,
+      detail: info.componentStack?.trim() || undefined,
+      source: this.props.label ?? "crash",
+    });
     captureAppException(error, {
       boundary: this.props.label ?? "app",
       componentStack: info.componentStack ?? undefined,

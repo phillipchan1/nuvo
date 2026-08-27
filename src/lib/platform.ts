@@ -16,11 +16,15 @@ export function isTauriIOS(): boolean {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
-/** True inside the Tauri app on a touch device. iPadOS can masquerade as
- *  "Macintosh" in the UA, so multi-touch is the tell on iPad. */
+/** True inside the native phone/tablet shell (TestFlight / iPhone app).
+ *
+ *  Do not use `maxTouchPoints` here. A MacBook trackpad reports 1–5 in WKWebView,
+ *  which used to flip the *desktop* app onto MobileShell and hide Developer
+ *  mode. iPadOS-as-Macintosh is a Safari lie; this function is already gated
+ *  on `isTauri()`, and the iOS shell's UA still says iPhone/iPad. */
 export function isMobileTauri(): boolean {
   if (!isTauri()) return false;
-  return isTauriIOS() || /Android/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1;
+  return isTauriIOS() || /Android/i.test(navigator.userAgent);
 }
 
 /** Tauri on an actual desktop (macOS) — the only place the overlay title bar,

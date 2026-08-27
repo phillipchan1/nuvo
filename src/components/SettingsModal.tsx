@@ -40,6 +40,7 @@ import { detectDeviceTz, supportedTimeZones, tzAbbrev, tzCity, tzStatus } from "
 import { useUpdater } from "../hooks/useUpdater";
 import { isDesktopTauri } from "../lib/platform";
 import { openDevTools, useDeveloperMode } from "../lib/devtools";
+import { clearErrorLog, formatErrorLog, useErrorLog } from "../lib/appError";
 import { loadChangelog, isMinor, type ChangelogEntry } from "../lib/changelog";
 
 /** Stable-named universal DMG on the public releases repo. */
@@ -1531,23 +1532,74 @@ function InstallRow() {
 
 function DeveloperControls() {
   const [on, setOn] = useDeveloperMode();
+  const notes = useErrorLog();
+  const desktop = isDesktopTauri();
+  const [copied, setCopied] = useState(false);
+
+  const copyLog = async () => {
+    try {
+      await navigator.clipboard.writeText(formatErrorLog(notes));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
+
   return (
     <div className="divide-y divide-line rounded-lg border border-line bg-surface-2/40 px-3.5">
       <Row
         title="Developer mode"
-        desc="Unlock the desktop web inspector and console. Off by default — nothing here affects how Nuvo plans."
+        desc={
+          desktop
+            ? "Unlock the web inspector and the recent-error log. Off by default — nothing here affects how Nuvo plans."
+            : "Keep a recent-error log on this device so a failure is copyable instead of a dead 'Something went wrong'. Off by default."
+        }
       >
         <Toggle checked={on} onChange={setOn} label="Developer mode" />
       </Row>
-      {on && (
-        <Row
-          title="Web inspector"
-          desc="Opens DevTools for this window. Shortcut: ⌘⌥I."
-        >
+      {on && desktop && (
+        <Row title="Web inspector" desc="Opens DevTools for this window. Shortcut: ⌘⌥I.">
           <Btn className="tap" onClick={() => void openDevTools()}>
             Open DevTools
           </Btn>
         </Row>
+      )}
+      {on && (
+        <div className="py-3.5">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-body font-medium text-ink">Recent errors</div>
+              <p className="text-caption leading-snug text-muted">
+                Kept on this device. Nothing here is sent anywhere.
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Btn className="tap" disabled={!notes.length} onClick={() => void copyLog()}>
+                {copied ? "Copied" : "Copy"}
+              </Btn>
+              <Btn className="tap" disabled={!notes.length} onClick={() => clearErrorLog()}>
+                Clear
+              </Btn>
+            </div>
+          </div>
+          {notes.length === 0 ? (
+            <p className="text-caption text-muted">Nothing recorded yet.</p>
+          ) : (
+            <ul className="max-h-56 space-y-2 overflow-y-auto">
+              {notes.slice(0, 8).map((n) => (
+                <li key={n.at} className="text-left">
+                  <div className="mono text-micro text-muted">
+                    {new Date(n.at).toLocaleString()}
+                    {n.source ? ` · ${n.source}` : ""}
+                  </div>
+                  <div className="text-caption text-ink">{n.message}</div>
+                  {n.detail && <div className="text-micro text-muted">{n.detail}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1570,12 +1622,7 @@ function AboutPane({ onClose }: { onClose: () => void }) {
 
       {/* Auto-update controls in the native app; a download link on web/iOS. */}
       {desktop ? (
-        <>
-          <UpdateControls />
-          <div className="mt-4">
-            <DeveloperControls />
-          </div>
-        </>
+        <UpdateControls />
       ) : (
         <Row title="Download for Mac" desc="Native app — Apple Silicon & Intel, updates itself in the background.">
           <a
@@ -1586,6 +1633,10 @@ function AboutPane({ onClose }: { onClose: () => void }) {
           </a>
         </Row>
       )}
+
+      <div className="mt-4">
+        <DeveloperControls />
+      </div>
 
       {!desktop && <InstallRow />}
 

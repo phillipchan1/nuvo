@@ -28,7 +28,7 @@ export function useIsMobile(): boolean {
   useEffect(() => {
     if (!window.matchMedia) return;
     const mq = window.matchMedia(QUERY);
-    const onChange = () => setMobile(mq.matches);
+    const onChange = () => setMobile(read());
     onChange();
     // Safari < 14 only supports addListener
     if (mq.addEventListener) mq.addEventListener("change", onChange);

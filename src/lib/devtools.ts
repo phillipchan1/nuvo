@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { isDesktopTauri } from "./platform";
 
 const KEY = "nuvo.developerMode";
@@ -22,11 +23,24 @@ export function setDeveloperMode(on: boolean): void {
   window.dispatchEvent(new Event(CHANGE));
 }
 
-/** Desktop-only: open the webview inspector. No-op unless developer mode is on. */
+/** Desktop-only: open the webview inspector. */
 export async function openDevTools(): Promise<void> {
-  if (!isDeveloperMode() || !isDesktopTauri()) return;
-  const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("open_devtools");
+  if (!isDesktopTauri()) {
+    toast.error("DevTools only exist in the Mac app.");
+    return;
+  }
+  if (!isDeveloperMode()) {
+    toast.error("Turn on Developer mode first.");
+    return;
+  }
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_devtools");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[nuvo] open_devtools failed:", e);
+    toast.error(msg || "Couldn't open DevTools");
+  }
 }
 
 export function useDeveloperMode(): [boolean, (on: boolean) => void] {

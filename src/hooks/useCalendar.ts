@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { invokeQuiet, supabase } from "../lib/supabase";
+import { formatAppError } from "../lib/appError";
 import { invalidateWhenSafe, makeOp, queueWrite } from "../lib/sync";
 import {
   normalizeRawEvent,
@@ -22,8 +23,8 @@ import { useOptionalUndoStack } from "./useUndoStack";
 import { useSettings } from "./useSettings";
 import { useOnline } from "./useOnline";
 
-function throwIfInvokeFailed(data: unknown, error: Error | null) {
-  if (error) throw error;
+async function throwIfInvokeFailed(data: unknown, error: Error | null) {
+  if (error) throw new Error((await formatAppError(error)).message);
   if (data && typeof data === "object" && "error" in data && (data as { error?: unknown }).error) {
     throw new Error(String((data as { error: unknown }).error));
   }
@@ -229,7 +230,7 @@ export function useExternalEventMutations() {
       // and the sync kick so the next refetch actually sees future instances.
       if (patch.recurrence !== undefined) {
         const { data, error } = await supabase.functions.invoke(fn, { body });
-        throwIfInvokeFailed(data, error);
+        await throwIfInvokeFailed(data, error);
       } else {
         invokeQuiet(fn, body);
       }
@@ -375,7 +376,7 @@ export function useExternalEventMutations() {
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(await resolveProviderForEvent(id)), {
         body: { action: "rsvp", eventId: id, responseStatus, sendNotifications },
       });
-      throwIfInvokeFailed(data, error);
+      await throwIfInvokeFailed(data, error);
     },
     // Optimistically flip self_rsvp in the grid cache so the event de-dims
     // immediately without waiting for the edge function round-trip.
@@ -449,7 +450,7 @@ export function useExternalEventMutations() {
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
         body: { action: "delete", eventId: id, scope, notifyGuests },
       });
-      throwIfInvokeFailed(data, error);
+      await throwIfInvokeFailed(data, error);
     },
     onMutate: async ({ id }) => {
       await qc.cancelQueries({ queryKey: ["external_events"] });
@@ -755,35 +756,31 @@ export function usePrefetchEventDetails() {
 
 /** Read the recurrence rule for a calendar event. Instances don't carry the
  *  RRULE locally — this fetches it from the series master on Google/iCloud. */
-export function useEventSeriesRule(eventId: string | null, isRecurring: boolean) {
-  const qc = useQueryClient();
+export function useEventSeriesRule(
+  eventId: string | null,
+  isRecurring: boolean,
+  provider?: CalendarProvider | null,
+) {
+  const writable = provider === "google" || provider === "icloud";
   return useQuery({
-    queryKey: ["event_series_rule", eventId],
-    enabled: Boolean(eventId && isRecurring),
+    queryKey: ["event_series_rule", eventId, provider],
+    // Don't guess google. A cache miss used to POST series_rule at
+    // google-events for iCloud/ICS/M365 series, which 400'd ("event is
+    // read-only") and showed up in the console as a failed functions request
+    // with nothing in the Network tab (Chrome logs it after the fact).
+    enabled: Boolean(eventId && isRecurring && writable),
     staleTime: 30_000,
+    retry: false,
     queryFn: async (): Promise<RecurrenceRule | null> => {
-      if (!eventId) return null;
-      let provider: CalendarProvider = "google";
-      for (const [, data] of qc.getQueriesData<ExternalEvent[]>({ queryKey: ["external_events"] })) {
-        const ev = data?.find((e) => e.id === eventId);
-        if (ev) {
-          provider = providerForAccountFromCache(qc, ev.account_id) ?? "google";
-          break;
-        }
-      }
+      if (!eventId || !provider) return null;
       const { data, error } = await supabase.functions.invoke(eventsFunctionFor(provider), {
         body: { action: "series_rule", eventId },
       });
-      throwIfInvokeFailed(data, error);
+      await throwIfInvokeFailed(data, error);
       const recurrence = (data as { recurrence?: string[] | null })?.recurrence;
       return fromGoogleRRULE(recurrence ?? null);
     },
   });
-}
-
-function providerForAccountFromCache(qc: ReturnType<typeof useQueryClient>, accountId: string): CalendarProvider | null {
-  const accounts = qc.getQueryData<CalendarAccount[]>(["calendar_accounts"]);
-  return accounts?.find((a) => a.id === accountId)?.provider ?? null;
 }
 
 /** Mirrors the `labels.color` schema default — client-minted rows must name it

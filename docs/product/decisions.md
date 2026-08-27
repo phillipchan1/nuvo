@@ -4240,3 +4240,20 @@ stays answered on the week-scoped lenses, on both shells.
 
 *Status: standing — refines D-110's "every lens" clause, does not replace the
 read model.*
+
+**D-120 · 2026-08-27 · A failure has to be readable on the device that hit it.**
+
+The Mac console was full of `functions/v1/*` 400s and 404s, and the phone
+showed "Something went wrong" with nothing behind it. Developer mode lived
+only on `isDesktopTauri()`, and that helper treated a MacBook trackpad
+(`maxTouchPoints > 1`) as a phone — so the Mac app hid DevTools and showed
+"Download for Mac" instead.
+
+→ One formatter (`lib/appError.ts`) unwraps Supabase's generic
+"non-2xx" into the function name, status, and body `error`. Query/mutation
+failures toast that line, write a local **Recent errors** ring, and send a
+title-free exception to PostHog (D-114 still holds — no request bodies, no
+task copy). Developer mode is on every shell. `isMobileTauri()` is UA-only.
+
+*Status: shipped in code; DevTools in the installed Mac app needs the next
+desktop build.*
