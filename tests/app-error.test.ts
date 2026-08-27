@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, expect, it } from "vitest";
-import { formatAppError, formatAppErrorSync } from "../src/lib/appError";
+import { formatAppError, formatAppErrorSync, isAbortError } from "../src/lib/appError";
 
 describe("formatAppErrorSync", () => {
   it("keeps a real Error message", () => {
@@ -23,12 +23,36 @@ describe("formatAppErrorSync", () => {
     expect(out.detail).toContain("42703");
   });
 
+  it("does not toast 'Something went wrong' when only code/details exist", () => {
+    const out = formatAppErrorSync({
+      code: "PGRST116",
+      message: "",
+      details: "The result contains 2 rows",
+      hint: null,
+    });
+    expect(out.message).not.toBe("Something went wrong");
+    expect(out.message).toContain("PGRST116");
+    expect(out.message).toContain("The result contains 2 rows");
+  });
+
   it("names a missing edge function instead of the generic non-2xx line", () => {
     const err = Object.assign(new Error("Edge Function returned a non-2xx status code"), {
       context: { status: 404, url: "https://example.supabase.co/functions/v1/delete-account" },
     });
     const out = formatAppErrorSync(err);
     expect(out.message).toBe("delete-account isn't deployed on the server.");
+  });
+});
+
+describe("isAbortError", () => {
+  it("recognises supabase-js aborted fetches", () => {
+    expect(isAbortError({ name: "AbortError", message: "The user aborted a request." })).toBe(true);
+    expect(
+      isAbortError({
+        code: "25P02",
+        message: "current transaction is aborted, commands ignored until end of transaction block",
+      }),
+    ).toBe(false);
   });
 });
 

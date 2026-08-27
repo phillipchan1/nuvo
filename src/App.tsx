@@ -5,7 +5,7 @@ import { Toaster, toast } from "sonner";
 import { supabase } from "./lib/supabase";
 import { isSpotlightWindow } from "./lib/platform";
 import { identifyUser, resetUser } from "./lib/posthog";
-import { reportAppError } from "./lib/appError";
+import { isAbortError, reportAppError } from "./lib/appError";
 import { configureSync, createSupabaseTransport, installOwingGuards, queryKeyOwesServer, teardownSync } from "./lib/sync";
 import { createIdbPersister, MAX_CACHE_AGE_MS, shouldDehydrateQuery } from "./lib/sync/persist";
 import { useAuth } from "./hooks/useAuth";
@@ -155,6 +155,11 @@ function isTransientWriteError(error: unknown): boolean {
 // of the full app. Always false in the browser / PWA (except the DEV harness).
 const IS_SPOTLIGHT = isSpotlightWindow();
 
+// A first-load failure that stays broken used to toast again on every focus
+// refetch — that's the stack of identical "Something went wrong" cards on the
+// phone. Toast once per query hash; clear when it eventually succeeds.
+const toastedQueryHashes = new Set<string>();
+
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
     // Only alarm on a *first-load* failure (nothing on screen yet). A background
@@ -162,23 +167,30 @@ const queryClient = new QueryClient({
     // TanStack refetches everything, like right after the ⌥Space hand-off — still
     // has cached data showing, so a red toast there is pure noise.
     onError: (e, query) => {
+      if (isAbortError(e)) return;
       if (query.state.data !== undefined) return;
       // Queries flagged silent (e.g. decorative weather) never raise a toast.
       if (query.meta?.silent) return;
       // Offline is announced once by the shell's strip — a red toast per
       // failing query on top of it is pure noise.
       if (typeof navigator !== "undefined" && !navigator.onLine) return;
+      if (toastedQueryHashes.has(query.queryHash)) return;
+      toastedQueryHashes.add(query.queryHash);
       void reportAppError(e, {
         source: String(query.queryKey[0] ?? "query"),
-        toast: (msg) => toast.error(msg),
+        toast: (msg, detail) => toast.error(msg, { description: detail }),
       });
+    },
+    onSuccess: (_data, query) => {
+      toastedQueryHashes.delete(query.queryHash);
     },
   }),
   mutationCache: new MutationCache({
     onError: (e, _vars, _ctx, mutation) => {
+      if (isAbortError(e)) return;
       void reportAppError(e, {
         source: String(mutation.options.mutationKey?.[0] ?? "mutation"),
-        toast: (msg) => toast.error(msg),
+        toast: (msg, detail) => toast.error(msg, { description: detail }),
       });
     },
   }),

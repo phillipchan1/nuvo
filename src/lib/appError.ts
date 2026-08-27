@@ -25,6 +25,19 @@ const MAX = 30;
 const GENERIC = "Something went wrong";
 const EDGE_GENERIC = /edge function returned a non-2xx|failed to send a request to the edge function/i;
 
+/** Fetch/query cancellation — not a real failure, not worth a toast. */
+export function isAbortError(error: unknown): boolean {
+  if (typeof error !== "object" || error == null) return false;
+  const e = error as { name?: unknown; message?: unknown };
+  if (e.name === "AbortError") return true;
+  return (
+    typeof e.message === "string" &&
+    /^(AbortError:?\s*)?(The user aborted a request|The operation was aborted|signal is aborted)/i.test(
+      e.message,
+    )
+  );
+}
+
 export function readErrorLog(): AppErrorNote[] {
   try {
     const raw = localStorage.getItem(KEY);
@@ -90,7 +103,10 @@ export function formatAppErrorSync(error: unknown): { message: string; detail?: 
   const fn = functionFromContext(e.context);
 
   const parts = [code, details, hint].filter((p): p is string => Boolean(p && p !== raw));
-  const detail = [fn && status ? `${fn} ${status}` : fn, ...parts].filter(Boolean).join(" · ") || undefined;
+  const meta = [fn && status ? `${fn} ${status}` : fn, status && !fn ? `HTTP ${status}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  const detail = [meta, ...parts].filter(Boolean).join(" · ") || undefined;
 
   if (raw && !EDGE_GENERIC.test(raw)) {
     return { message: raw, detail };
@@ -103,6 +119,11 @@ export function formatAppErrorSync(error: unknown): { message: string; detail?: 
     return { message: "Couldn't reach the server — try signing in again.", detail: fn ? `${fn} 401` : "401" };
   }
   if (raw) return { message: raw, detail: detail ?? (status ? `HTTP ${status}` : undefined) };
+
+  // PostgREST sometimes lands with code/details and an empty message. The old
+  // path returned GENERIC for the toast and hid the useful line in `detail`.
+  if (parts.length) return { message: parts.join(" — "), detail: meta || undefined };
+  if (meta) return { message: meta };
   return { message: GENERIC, detail };
 }
 
@@ -123,8 +144,13 @@ export async function formatAppError(error: unknown): Promise<{ message: string;
 
 export async function reportAppError(
   error: unknown,
-  opts?: { source?: string; toast?: (message: string) => void },
-): Promise<string> {
+  opts?: {
+    source?: string;
+    /** When false, log + PostHog only (background jobs). Default true if toast is set. */
+    toast?: (message: string, detail?: string) => void;
+  },
+): Promise<string | null> {
+  if (isAbortError(error)) return null;
   const formatted = await formatAppError(error);
   rememberError({
     at: Date.now(),
@@ -132,12 +158,16 @@ export async function reportAppError(
     detail: formatted.detail,
     source: opts?.source,
   });
-  captureAppException(error, {
+  // Wrap plain PostgREST objects so Error tracking gets a real message, not
+  // "[object Object]".
+  const forCapture =
+    error instanceof Error ? error : new Error([formatted.message, formatted.detail].filter(Boolean).join(" — "));
+  captureAppException(forCapture, {
     source: opts?.source,
     message: formatted.message,
     detail: formatted.detail,
   });
-  opts?.toast?.(formatted.message);
+  opts?.toast?.(formatted.message, formatted.detail);
   return formatted.message;
 }
 
