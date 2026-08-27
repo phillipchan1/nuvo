@@ -51,6 +51,27 @@ if (!isTauri && "serviceWorker" in navigator && window.isSecureContext) {
     .catch(() => {
       /* no SW in this build (e.g. Tauri bundle) — ignore */
     });
+
+  // A deploy can leave the SW holding index.html that points at hashed chunks
+  // that no longer exist. That surfaces as "Failed to fetch dynamically
+  // imported module" (PostHog) and a half-broken app. One reload after a new
+  // SW activates is enough; the session flag stops a loop if the chunk is
+  // genuinely gone.
+  window.addEventListener("unhandledrejection", (ev) => {
+    const msg = String(
+      (ev.reason as { message?: unknown } | null)?.message ?? ev.reason ?? "",
+    );
+    if (!/Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(msg)) {
+      return;
+    }
+    try {
+      if (sessionStorage.getItem("nuvo.reload-stale-chunk")) return;
+      sessionStorage.setItem("nuvo.reload-stale-chunk", "1");
+    } catch {
+      /* private mode — still try once */
+    }
+    window.location.reload();
+  });
 }
 
 // Dev verify harnesses — reached at ?emblem / ?planweek / ?daycal / ?sitting / ?domains / ?build / ?weekcrown / ?meet / ?invite / ?chat, no auth/shell.

@@ -36,6 +36,10 @@ export function useEventRouting(): Record<string, string> {
       return map;
     },
     staleTime: 60_000,
+    // Background AI-router cache — the Calendar still works without it. A
+    // failure here used to stack two "Something went wrong" cards on every
+    // open (this query + event_domain_routing/keys) while events painted fine.
+    meta: { silent: true },
   });
   return data ?? EMPTY;
 }

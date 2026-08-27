@@ -55,6 +55,8 @@ export function useEventRouter() {
       return keys;
     },
     staleTime: 60_000,
+    // Same reason as useEventRouting — quiet attribution, not a load-bearing read.
+    meta: { silent: true },
   });
 
   const inFlight = useRef(false);
