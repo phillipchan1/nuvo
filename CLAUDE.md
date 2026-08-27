@@ -185,9 +185,11 @@ it needs to work on a phone.
 - **Desktop-only (NOT mounted on mobile):** the other rituals (Summit/Blueprint), the Record
   *modal* (the phone has its own detail Sheet), Collection board/table/timeline, and
   the FullCalendar `CalendarPane`. Mobile uses **`MobileCalendar`** instead of
-  FullCalendar: month grid → drill into **List** (agenda + Free chips) or **Day** (one
-  day as a proportional time grid), both over one `buildDayPlan` (`dayPlan.ts`) — see
-  D-044.
+  FullCalendar: **Year → Month (home) → Day / List / Week**, all over one
+  `buildDayPlan` (`dayPlan.ts`). On Month a day tap **selects** (the list under
+  the grid is that day); a second tap or the list header opens **Day**. An
+  upward flick expands into the last drill-in lens. Week's day headers open
+  Day. See D-044, D-119, D-121.
 
 ## One rule, two runtimes — the app and the agent must never disagree
 

@@ -41,22 +41,21 @@ import MobileWeekView from "./MobileWeekView";
 import MobileYearView, { mobileYearRange } from "./MobileYearView";
 import MobileWeekCrown from "./MobileWeekCrown";
 import TimePager from "./TimePager";
+import { clampDayToMonth, monthDayIntent } from "./monthTap";
 import type { RenderCrownTask } from "../../hooks/useWeekCrown";
 
-// The mobile Calendar — three lenses on the same live day-shape math:
-//   • Month — the whole month at a glance (free/busy density per day), swipe or
-//     arrow between months, tap any day to drop into its schedule. The selected
-//     day's plan sits under the grid (D-119) — not the week's crown.
-//   • Schedule (List) — a 14-day agenda from the selected day, where each day
-//     shows its commitments AND its open windows, computed by the same readDay()
-//     Now uses.
-//   • Day — one day as a proportional time grid (MobileDayView): the same
-//     commitments and open windows, drawn to scale so duration reads instantly.
-//   • Year — the whole year shaded by load (MobileYearView), reached by tapping
-//     the year beside the month name; a month taps back down into the grid.
-// All read from one buildDayPlan() (dayPlan.ts), so "what counts as busy" lives
-// in one place. Time travel (left = later, right = earlier) is one TimePager
-// on every paged lens — finger-follow + in/out, never a show-and-hide.
+// The mobile Calendar — four altitudes, one tap meaning each (D-121):
+//   • Year — where the year is heavy. A month tap drops into the month grid.
+//   • Month — where the month is heavy, and what's on the day you pointed at.
+//     Tap a day to SELECT it (the list under the grid is that day). Tap it
+//     again, or the list's header, to open Day. An upward flick expands into
+//     whichever drill-in lens you used last. The week's crown stays off this
+//     lens (D-119) — a week plan on a month is the surface arguing with itself.
+//   • Week — the week's shape. A day header opens that Day.
+//   • Day / List — the day's shape, or two weeks of agenda. The pill switches
+//     between them; back returns to the month.
+// All read from one buildDayPlan() (dayPlan.ts). Time travel (left = later,
+// right = earlier) is one TimePager on every paged lens.
 
 const HORIZON_DAYS = 14;
 // The schedule opens on the anchor day (today) as the FIRST rendered day, so the
@@ -168,10 +167,10 @@ export default function MobileCalendar({
   // at 0 so the schedule always opens ON the anchor day (top of the list); the
   // "Earlier" control grows it. Reset to 0 on each entry.
   const [pastDays, setPastDays] = useState(0);
-  // The last drill-in lens (List, Day or Week) — where a month tap lands you,
-  // seeded from the persisted mode so the preference survives a reload. Year is
-  // a drill-*out*, so it can never be the answer here: landing a day tap on it
-  // would zoom away from the very day you tapped.
+  // The last drill-in lens (List, Day or Week) — where an upward flick from
+  // the month lands you, seeded from the persisted mode so the preference
+  // survives a reload. Year is a drill-*out*, so it can never be the answer
+  // here. A day tap on the month no longer writes this (D-121).
   const drill = useRef<Exclude<Mode, "month" | "year">>(
     mode === "month" || mode === "year" ? "schedule" : mode,
   );
@@ -256,17 +255,32 @@ export default function MobileCalendar({
 
   const loading = evLoading || blkLoading || slotLoading;
 
-  const pickDay = (date: Date) => {
+  // A day on the month grid is a selection, not a zoom (D-121). Zooming on the
+  // first tap made the day's list unreachable for any date but today.
+  const selectDay = (date: Date) => {
     const d = startOfDay(date);
     setSelected(d);
     setMonthCursor(startOfMonth(d));
-    setPastDays(0);
-    setMode(drill.current);
   };
 
-  // Month is home; List and Day are the two drill-in lenses (a tap or an upward
-  // swipe opens whichever you used last). Their back headers pop to the month —
-  // synced to wherever the Day lens wandered.
+  // Opening a selected day goes to Day — they pointed at a day, not a week.
+  // Does not overwrite `drill`: an upward flick from the month still expands
+  // into whichever lens they last lived in (List / Day / Week).
+  const openDay = (date: Date) => {
+    selectDay(date);
+    setPastDays(0);
+    setMode("day");
+  };
+
+  const shiftMonth = (delta: -1 | 1) => {
+    const next = startOfMonth(addMonths(monthCursor, delta));
+    setMonthCursor(next);
+    // Keep the list alive while paging: same date-of-month, clamped.
+    setSelected((s) => clampDayToMonth(s, next));
+  };
+
+  // Month is home. An upward flick opens whichever drill-in lens you used last.
+  // Their back headers pop to the month — synced to wherever the Day lens wandered.
   const openSchedule = () => {
     setPastDays(0);
     setMode(drill.current);
@@ -296,7 +310,7 @@ export default function MobileCalendar({
   };
 
   return (
-    <div className="fab-clear">
+    <div className={mode === "month" ? "fab-clear flex h-full min-h-0 flex-col" : "fab-clear"}>
       {/* The week's crown — the Schedule rail's crown, on the phone.
           It rides the week-scoped lenses (List · Day · Week): "what is this
           week carrying" is the context you read a Tuesday against (D-110).
@@ -325,7 +339,9 @@ export default function MobileCalendar({
           onToday={() => setYearCursor(now.getFullYear())}
           onBack={() => setMode("month")}
           onPickMonth={(m) => {
-            setMonthCursor(startOfMonth(m));
+            const next = startOfMonth(m);
+            setMonthCursor(next);
+            setSelected((s) => clampDayToMonth(s, next));
             setMode("month");
           }}
         />
@@ -337,13 +353,14 @@ export default function MobileCalendar({
           selected={selected}
           weekStartsOn={firstDay}
           weatherIndex={showWeather ? weatherIndex : null}
-          onPrev={() => setMonthCursor((c) => startOfMonth(addMonths(c, -1)))}
-          onNext={() => setMonthCursor((c) => startOfMonth(addMonths(c, 1)))}
+          onPrev={() => shiftMonth(-1)}
+          onNext={() => shiftMonth(1)}
           onToday={() => {
             setMonthCursor(startOfMonth(now));
             setSelected(startOfDay(now));
           }}
-          onPick={pickDay}
+          onSelect={selectDay}
+          onOpen={openDay}
           onOpenSchedule={openSchedule}
           onOpenYear={openYear}
           onOpenUpkeep={onOpenUpkeep}
@@ -443,9 +460,11 @@ function DateJump({ anchor, onJumpTo }: { anchor: Date; onJumpTo: (d: Date) => v
 
 // ── Month grid ───────────────────────────────────────────────────────────
 // The whole month at a glance: each day carries free/busy density dots so you
-// can scan for open days, then tap in for the full schedule. Swipe or arrow
-// between months.
-function MonthView({
+// can scan for open days. A tap selects; the list under the grid is that day.
+// A second tap (or the list header) opens Day. Swipe or arrow pages months.
+// Exported for the ?daycal harness so the month tap (select vs open) can be
+// driven over fixtures without an account.
+export function MonthView({
   monthCursor,
   ctx,
   now,
@@ -455,7 +474,8 @@ function MonthView({
   onPrev,
   onNext,
   onToday,
-  onPick,
+  onSelect,
+  onOpen,
   onOpenSchedule,
   onOpenYear,
   onOpenUpkeep,
@@ -472,7 +492,8 @@ function MonthView({
   onPrev: () => void;
   onNext: () => void;
   onToday: () => void;
-  onPick: (d: Date) => void;
+  onSelect: (d: Date) => void;
+  onOpen: (d: Date) => void;
   onOpenSchedule: () => void;
   /** Stand back to the Year — the month title is the door. */
   onOpenYear: () => void;
@@ -482,25 +503,29 @@ function MonthView({
   onTapTask?: (taskId: string) => void;
 }) {
   const isCurrentMonth = isSameMonth(monthCursor, now);
-  const sheet = (month: Date) => (
+  const tapDay = (d: Date) => {
+    if (monthDayIntent(selected, d) === "open") onOpen(d);
+    else onSelect(d);
+  };
+  const sheet = (month: Date, interactive: boolean) => (
     <MonthSheet
       monthCursor={month}
       ctx={ctx}
-      selected={selected}
+      selected={clampDayToMonth(selected, month)}
       weekStartsOn={weekStartsOn}
       weatherIndex={weatherIndex}
-      onPick={onPick}
+      onTap={interactive ? tapDay : () => {}}
     />
   );
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Month header — serif month label, ≥44px nav controls. The title is the
           zoom-out door (iOS Calendar's grammar): tapping it stands back to the
           Year. A chevron marks it, because an invisible affordance is worse
           than a hover-only one — and on a phone there is no hover to fall back
           on. Costs no extra row: the header is already this tall. */}
-      <div className="flex items-center gap-1 px-4 pt-3 pb-1">
+      <div className="flex shrink-0 items-center gap-1 px-4 pt-3 pb-1">
         <button
           onClick={onOpenYear}
           aria-label={`Stand back to ${format(monthCursor, "yyyy")}`}
@@ -557,14 +582,15 @@ function MonthView({
           Adjacent months peek under the finger so the gesture is the animation.
           An upward flick still expands into the last drill-in lens. */}
       <TimePager
+        className="shrink-0"
         pageKey={format(monthCursor, "yyyy-MM")}
         onPrev={onPrev}
         onNext={onNext}
         onFlickUp={onOpenSchedule}
-        peekPrev={sheet(addMonths(monthCursor, -1))}
-        peekNext={sheet(addMonths(monthCursor, 1))}
+        peekPrev={sheet(addMonths(monthCursor, -1), false)}
+        peekNext={sheet(addMonths(monthCursor, 1), false)}
       >
-        {sheet(monthCursor)}
+        {sheet(monthCursor, true)}
       </TimePager>
 
       {/* Outside the pager on purpose: this is a list you scroll, not a
@@ -573,7 +599,7 @@ function MonthView({
       {isSameMonth(selected, monthCursor) && (
         <MonthDayPreview
           day={buildDayPlan(selected, ctx)}
-          onOpen={() => onPick(selected)}
+          onOpen={() => onOpen(selected)}
           onTapEvent={onTapEvent}
           onTapTask={onTapTask}
         />
@@ -588,14 +614,14 @@ function MonthSheet({
   selected,
   weekStartsOn,
   weatherIndex,
-  onPick,
+  onTap,
 }: {
   monthCursor: Date;
   ctx: DayCtx;
   selected: Date;
   weekStartsOn: 0 | 1;
   weatherIndex: ReturnType<typeof indexWeather> | null;
-  onPick: (d: Date) => void;
+  onTap: (d: Date) => void;
 }) {
   const gridStart = useMemo(
     () => startOfWeek(startOfMonth(monthCursor), { weekStartsOn }),
@@ -619,7 +645,7 @@ function MonthSheet({
     <div>
       <div className="grid grid-cols-7 px-2">
         {weekdays.map((w, i) => (
-          <div key={i} className="py-1.5 text-center text-micro font-medium uppercase text-muted">
+          <div key={i} className="py-1 text-center text-micro font-medium uppercase text-muted">
             {w}
           </div>
         ))}
@@ -633,7 +659,7 @@ function MonthSheet({
             inMonth={isSameMonth(d.date, monthCursor)}
             isSelected={isSameDay(d.date, selected)}
             wx={weatherIndex?.get(d.date.toLocaleDateString("en-CA"))}
-            onPick={onPick}
+            onTap={onTap}
           />
         ))}
       </div>
@@ -641,7 +667,7 @@ function MonthSheet({
       {/* What the marks mean — colour alone is not a legend, and a legend that
           names only some of what's on screen is worse than none: it reads as a
           complete key. So the weather row appears exactly when weather does. */}
-      <div aria-hidden className="flex items-center justify-center gap-3 px-4 pt-1.5">
+      <div aria-hidden className="flex items-center justify-center gap-3 px-4 pt-1">
         <span className="flex items-center gap-1 text-micro text-muted">
           <span className="h-1 w-1 rounded-full" style={{ background: "var(--accent)" }} />
           tasks
@@ -667,13 +693,13 @@ function MonthCell({
   inMonth,
   isSelected,
   wx,
-  onPick,
+  onTap,
 }: {
   day: DayPlan;
   inMonth: boolean;
   isSelected: boolean;
   wx: { wmo: number } | undefined;
-  onPick: (d: Date) => void;
+  onTap: (d: Date) => void;
 }) {
   const { date, isToday, timed, allDay, anytime, openMins, isPast } = day;
   const blkCount = timed.filter((t) => t.kind === "block" || t.kind === "slot").length + anytime.length;
@@ -694,16 +720,16 @@ function MonthCell({
 
   return (
     <button
-      onClick={() => onPick(date)}
-      aria-label={`${format(date, "EEEE, MMMM d")} — ${load}`}
+      onClick={() => onTap(date)}
+      aria-label={`${format(date, "EEEE, MMMM d")} — ${load}${isSelected ? ". Selected. Tap to open the day" : ""}`}
       aria-current={isToday ? "date" : undefined}
       aria-pressed={isSelected}
-      className={`tap fast relative flex aspect-square flex-col items-center justify-start gap-1 rounded-xl py-1.5 ${
+      className={`tap fast relative flex min-h-[44px] w-full flex-col items-center justify-start gap-0.5 rounded-xl py-1 ${
         isSelected ? "glass-lift" : "active:bg-surface-2"
       }`}
     >
       <span
-        className={`flex h-7 w-7 items-center justify-center rounded-full text-body leading-none ${
+        className={`flex h-6 w-6 items-center justify-center rounded-full text-body leading-none ${
           isToday ? "bg-accent font-semibold text-on-accent" : isSelected ? "font-semibold text-ink" : ""
         } ${!inMonth ? "text-muted/50" : isToday ? "" : "text-ink"}`}
       >
@@ -738,10 +764,9 @@ function MonthCell({
 
 // The selected day's plan under the month grid — the space the week crown
 // used to occupy, answering a day's question instead of a week's. Header
-// drills into the last lens; a row opens that commitment. Caps the list so a
-// packed day doesn't push the FAB off the paper.
-const PREVIEW_CAP = 6;
-
+// opens Day (they pointed at a day). A row opens that commitment. The list
+// fills leftover space and scrolls, so a packed day never pushes the grid
+// off the paper and never hides behind the FAB.
 function MonthDayPreview({
   day,
   onOpen,
@@ -761,16 +786,10 @@ function MonthDayPreview({
   const { date, timed, allDay, anytime, openMins, isPast, isBygone } = day;
   const busy = timed.length + allDay.length + anytime.length;
   const { text: readout, accent } = dayReadout(day);
-  const rest = Math.max(0, timed.length + allDay.length + anytime.length - PREVIEW_CAP);
-  const shownAllDay = allDay.slice(0, PREVIEW_CAP);
-  const afterAllDay = PREVIEW_CAP - shownAllDay.length;
-  const shownAnytime = anytime.slice(0, afterAllDay);
-  const afterAnytime = afterAllDay - shownAnytime.length;
-  const shownTimed = timed.slice(0, afterAnytime);
 
   return (
     <div
-      className="mt-2 border-t border-line"
+      className="mt-1 flex min-h-0 flex-1 flex-col overflow-hidden border-t border-line"
       data-time-pager-ignore
       onPointerDown={(e) => {
         dragged.current = false;
@@ -793,7 +812,7 @@ function MonthDayPreview({
     >
       <button
         onClick={onOpen}
-        className="tap fast flex w-full items-center gap-2 px-4 py-3 text-left active:bg-surface-2"
+        className="tap fast flex w-full shrink-0 items-center gap-2 px-4 py-3 text-left active:bg-surface-2"
       >
         <span className="text-body font-medium text-ink">
           {date.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
@@ -811,8 +830,9 @@ function MonthDayPreview({
           {isBygone ? "Nothing scheduled." : isPast ? "Done for today." : "No commitments — wide open."}
         </p>
       ) : (
-        <div className="flex flex-col gap-0.5 px-4 pb-3">
-          {shownAllDay.map((e) => (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3">
+          <div className="flex flex-col gap-0.5">
+          {allDay.map((e) => (
             <button
               key={e.id}
               onClick={() =>
@@ -835,7 +855,7 @@ function MonthDayPreview({
               <span className="min-w-0 truncate text-body text-ink">{e.title || "Busy"}</span>
             </button>
           ))}
-          {shownAnytime.map((t) => (
+          {anytime.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -846,7 +866,7 @@ function MonthDayPreview({
               <span className="min-w-0 truncate text-body text-accent">{t.title}</span>
             </button>
           ))}
-          {shownTimed.map((b, i) => {
+          {timed.map((b, i) => {
             const isSlot = b.kind === "slot";
             const tap: CalendarTap =
               b.kind === "event"
@@ -870,17 +890,10 @@ function MonthDayPreview({
               </button>
             );
           })}
-          {rest > 0 && (
-            <button
-              onClick={onOpen}
-              className="tap fast py-1.5 text-left text-label text-muted active:opacity-70"
-            >
-              +{rest} more
-            </button>
-          )}
           {!isPast && !isBygone && openMins > 0 && busy > 0 && (
             <p className="pt-1 text-label text-muted">{fmtMins(openMins)} still open</p>
           )}
+          </div>
         </div>
       )}
     </div>
