@@ -1508,8 +1508,14 @@ body.nuvo-selecting * {
    classes only settle the release. Information, not decoration. */
 .time-pager {
   position: relative;
-  overflow: hidden;
+  /* Clip only while a page is moving. Idle `overflow: hidden` plus the
+     pointer listeners made iOS hand vertical pans to this node — which
+     cannot scroll — so a drag on the day's events never reached the
+     page scroller and landed as a tap. */
   overscroll-behavior-x: none;
+}
+.time-pager.is-paging {
+  overflow: hidden;
 }
 .time-pager-layer {
   width: 100%;

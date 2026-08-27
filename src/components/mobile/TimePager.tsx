@@ -11,6 +11,11 @@
 // (three grids are cheap). Day / Week / Year settle from a snapshot instead —
 // their bodies are heavier, and the in+out is the thing that was missing.
 //
+// A child marked `data-time-pager-ignore` is not a page — a drag that starts
+// there is a scroll or a tap, never a month/day change. The day's plan under
+// the month grid wears this. Idle overflow stays visible so the page scroller
+// can actually move; we only clip while a page is traveling.
+//
 // Reduced motion: the page just changes. No travel, no fade.
 //
 // The classifier lives in swipe.ts (edge guard, axis lock, scroll rejection).
@@ -161,18 +166,24 @@ export default function TimePager({
     return () => cancelAnimationFrame(start);
   }, [pageKey, reduce]);
 
-  // Once we lock horizontal, native vertical scroll has to stop — `touch-action:
-  // pan-y` does not cancel an in-flight gesture. The listener is non-passive
-  // so preventDefault actually sticks (React's onTouchMove is passive).
-  useEffect(() => {
+  // Non-passive touchmove is attached only while a page is being dragged.
+  // A standing listener — even one that rarely preventDefaults — is enough
+  // for WebKit to give this node the gesture instead of the page scroller.
+  const blockScroll = useRef<((e: TouchEvent) => void) | null>(null);
+  const armBlock = () => {
     const el = rootRef.current;
-    if (!el) return;
-    const block = (e: TouchEvent) => {
-      if (axisRef.current === "h") e.preventDefault();
-    };
+    if (!el || blockScroll.current) return;
+    const block = (e: TouchEvent) => e.preventDefault();
+    blockScroll.current = block;
     el.addEventListener("touchmove", block, { passive: false });
-    return () => el.removeEventListener("touchmove", block);
-  }, []);
+  };
+  const disarmBlock = () => {
+    const el = rootRef.current;
+    if (!el || !blockScroll.current) return;
+    el.removeEventListener("touchmove", blockScroll.current);
+    blockScroll.current = null;
+  };
+  useEffect(() => () => disarmBlock(), []);
 
   const finishSwipe = (tx: number, elapsed: number) => {
     const w = widthRef.current;
@@ -250,6 +261,9 @@ export default function TimePager({
     if (mode.t !== "idle" && !(mode.t === "swipe" && !mode.settling)) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (e.clientX < EDGE_GUARD_PX) return;
+    // The day's plan under the month grid is a list, not a page. A drag
+    // that starts there is a scroll (or a tap on a row), never a month change.
+    if ((e.target as Element | null)?.closest?.("[data-time-pager-ignore]")) return;
     axisRef.current = null;
     touch.current = startSwipe(
       { touches: [{ clientX: e.clientX, clientY: e.clientY }] } as unknown as React.TouchEvent,
@@ -264,6 +278,9 @@ export default function TimePager({
     trackSwipe(tr);
     const { dx, dy } = swipeOffset(tr, e.clientX, e.clientY);
     if (!axisRef.current) axisRef.current = lockAxis(dx, dy);
+    // A vertical pan or an ancestor scroll is not a tap. Swallow the click
+    // that would otherwise open the row the finger started on.
+    if (tr.scrolled || axisRef.current === "v") suppressClick.current = true;
     if (axisRef.current !== "h") return;
     if (tr.scrolled || tr.edge) return;
     // Capture only once the gesture is a page, so a vertical scroll is
@@ -274,12 +291,14 @@ export default function TimePager({
       /* capture is best-effort — iOS is fine without it */
     }
     suppressClick.current = true;
+    armBlock();
     setMode({ t: "swipe", tx: dx });
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
     if (pointerId.current !== e.pointerId) return;
     pointerId.current = null;
+    disarmBlock();
     const tr = touch.current;
     touch.current = null;
     const axis = axisRef.current;
@@ -321,7 +340,7 @@ export default function TimePager({
   return (
     <div
       ref={rootRef}
-      className={`time-pager touch-pan-y ${className ?? ""}`}
+      className={`time-pager touch-pan-y ${mode.t !== "idle" ? "is-paging" : ""} ${className ?? ""}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

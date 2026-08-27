@@ -490,8 +490,6 @@ function MonthView({
       weekStartsOn={weekStartsOn}
       weatherIndex={weatherIndex}
       onPick={onPick}
-      onTapEvent={onTapEvent}
-      onTapTask={onTapTask}
     />
   );
 
@@ -568,6 +566,18 @@ function MonthView({
       >
         {sheet(monthCursor)}
       </TimePager>
+
+      {/* Outside the pager on purpose: this is a list you scroll, not a
+          page you swipe. Inside TimePager a drag on a row was claimed as
+          a tap and opened the event. */}
+      {isSameMonth(selected, monthCursor) && (
+        <MonthDayPreview
+          day={buildDayPlan(selected, ctx)}
+          onOpen={() => onPick(selected)}
+          onTapEvent={onTapEvent}
+          onTapTask={onTapTask}
+        />
+      )}
     </div>
   );
 }
@@ -579,8 +589,6 @@ function MonthSheet({
   weekStartsOn,
   weatherIndex,
   onPick,
-  onTapEvent,
-  onTapTask,
 }: {
   monthCursor: Date;
   ctx: DayCtx;
@@ -588,8 +596,6 @@ function MonthSheet({
   weekStartsOn: 0 | 1;
   weatherIndex: ReturnType<typeof indexWeather> | null;
   onPick: (d: Date) => void;
-  onTapEvent?: (tap: CalendarTap) => void;
-  onTapTask?: (taskId: string) => void;
 }) {
   const gridStart = useMemo(
     () => startOfWeek(startOfMonth(monthCursor), { weekStartsOn }),
@@ -652,18 +658,6 @@ function MonthSheet({
         )}
       </div>
 
-      {/* The selected day's plan — month's leftover space, filled with a day's
-          question, not the week's. The week crown used to sit above the grid
-          and argue with a month (D-119). Only while that day is in this month,
-          so the readout can't disagree with the grid on screen. */}
-      {isSameMonth(selected, monthCursor) && (
-        <MonthDayPreview
-          day={buildDayPlan(selected, ctx)}
-          onOpen={() => onPick(selected)}
-          onTapEvent={onTapEvent}
-          onTapTask={onTapTask}
-        />
-      )}
     </div>
   );
 }
@@ -759,6 +753,11 @@ function MonthDayPreview({
   onTapEvent?: (tap: CalendarTap) => void;
   onTapTask?: (taskId: string) => void;
 }) {
+  // A drag that starts on a row is a scroll. Without this, WebKit still
+  // fires click on the button the finger began on, and you fall into the
+  // event instead of seeing the rest of the list.
+  const dragged = useRef(false);
+  const origin = useRef({ x: 0, y: 0 });
   const { date, timed, allDay, anytime, openMins, isPast, isBygone } = day;
   const busy = timed.length + allDay.length + anytime.length;
   const { text: readout, accent } = dayReadout(day);
@@ -770,7 +769,28 @@ function MonthDayPreview({
   const shownTimed = timed.slice(0, afterAnytime);
 
   return (
-    <div className="mt-2 border-t border-line">
+    <div
+      className="mt-2 border-t border-line"
+      data-time-pager-ignore
+      onPointerDown={(e) => {
+        dragged.current = false;
+        origin.current = { x: e.clientX, y: e.clientY };
+      }}
+      onPointerMove={(e) => {
+        if (
+          Math.abs(e.clientX - origin.current.x) > 8 ||
+          Math.abs(e.clientY - origin.current.y) > 8
+        ) {
+          dragged.current = true;
+        }
+      }}
+      onClickCapture={(e) => {
+        if (!dragged.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragged.current = false;
+      }}
+    >
       <button
         onClick={onOpen}
         className="tap fast flex w-full items-center gap-2 px-4 py-3 text-left active:bg-surface-2"
