@@ -164,7 +164,11 @@ describe("one trial, both rails", () => {
   });
 
   it("does not add a second trial table", () => {
-    const mig = readFileSync("supabase/migrations/00000000000071_plan_source.sql", "utf8");
+    // By name, not by number — plan_source has been renumbered twice to get
+    // clear of a version another migration already claimed (see
+    // tests/migrations-unique.test.ts for why that matters).
+    const [file] = readdirSync("supabase/migrations").filter((f) => f.endsWith("_plan_source.sql"));
+    const mig = readFileSync(join("supabase/migrations", file), "utf8");
     expect(mig).not.toMatch(/create table\s+\w*trial/i);
   });
 

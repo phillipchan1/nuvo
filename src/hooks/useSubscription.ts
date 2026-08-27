@@ -45,9 +45,17 @@ export function useSubscription() {
       // "Couldn't verify your subscription" card with its Try again button,
       // which is recoverable; an infinite splash is not.
       const fetchOnce = async (): Promise<Subscription | null> => {
+        // `*` only — never the computed aliases (`entitled`, `plan`). They are
+        // SQL functions, not columns, so a migration that hasn't landed makes
+        // PostgREST 400 the whole select (42703) instead of omitting a field:
+        // this query is the gate in front of the entire shell, so a decorative
+        // alias took the app down on every device and re-toasted every 5s.
+        // App code never reads them anyway — `isEntitled` / `planOf` in
+        // _shared/planRules.ts both fall back to `status`, which IS a column.
+        // The SQL twins stay for SQL callers; the client asks for the rule.
         const { data, error } = await supabase
           .from("subscriptions")
-          .select("*, entitled, plan")
+          .select("*")
           .abortSignal(AbortSignal.timeout(8_000))
           .maybeSingle();
         if (error) throw error;

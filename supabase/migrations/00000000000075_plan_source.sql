@@ -6,6 +6,13 @@
 -- Both write `status` (the physical plan) + `plan_source` through the same
 -- updater (`applyPlanUpdate` in the edge functions). Surfaces read `plan`
 -- (computed alias of `status`) + `plan_source` + `entitled` / `is_entitled`.
+--
+-- Renumbered 71 → 75. It shipped as 00000000000071 while an untracked
+-- 00000000000071_review_account_otp.sql already held that version, so the CLI
+-- had 71 recorded as applied and skipped this file on every `db push` —
+-- silently. Production then 400'd `select=*,entitled,plan` (42703) on every
+-- launch, the subscription query refetched every 5s, and the phone toasted
+-- forever. One version number, one file: `npm test` now fails on a collision.
 -- ---------------------------------------------------------------------------
 
 alter table public.subscriptions

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   interpretSubscriptionRead,
@@ -97,5 +98,35 @@ describe("resolveEntitlementView", () => {
     const apple: Subscription = { ...paid, plan_source: "apple", stripe_customer_id: null, stripe_subscription_id: null };
     expect(isEntitled(apple)).toBe(true);
     expect(resolveEntitlementView({ ...base, subscription: apple })).toBe("open");
+  });
+});
+
+/**
+ * The subscription read is the gate in front of the ENTIRE shell — nothing
+ * renders until it answers. So it must only ever ask for things that are
+ * physically there. `entitled` and `plan` are Postgres FUNCTIONS, not columns;
+ * PostgREST 400s the whole select (42703) when one is missing rather than
+ * omitting the field, so a migration that hasn't landed does not degrade the
+ * billing pane — it takes down the app on every device at once. App code never
+ * reads either: `isEntitled` / `planOf` in _shared/planRules.ts both fall back
+ * to `status`, which is a real column, and `plan_source` is a real column too.
+ */
+describe("the gating subscription select", () => {
+  const source = readFileSync(new URL("../src/hooks/useSubscription.ts", import.meta.url).pathname, "utf8");
+
+  it("asks PostgREST only for physical columns", () => {
+    const selects = [...source.matchAll(/\.select\((["'`])([^"'`]*)\1\)/g)].map((m) => m[2]);
+    expect(selects.length).toBeGreaterThan(0);
+    for (const select of selects) {
+      const fields = select.split(",").map((f) => f.trim()).filter(Boolean);
+      for (const computed of ["entitled", "is_entitled", "plan"]) {
+        expect(
+          fields,
+          `useSubscription selects the computed alias \`${computed}\`. It is a SQL ` +
+            "function, so a database missing it 400s this query and the whole app " +
+            "goes down. Read the rule from _shared/planRules.ts instead.",
+        ).not.toContain(computed);
+      }
+    }
   });
 });

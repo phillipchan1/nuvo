@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -67,11 +67,20 @@ describe("the two doors still mount Delete account", () => {
     expect(iapLocked.split("<DeleteAccount").length - 1).toBe(2);
   });
 
-  it("keeps master's migration 70 as delete_secret; plan_source is 71", () => {
+  // plan_source has now been renumbered twice — off 70 (delete_secret owns it)
+  // and off 71 (an untracked review_account_otp already held it, which is why
+  // `db push` skipped plan_source in silence and production 400'd the whole
+  // shell for days). So pin the PROPERTY, not the number: delete_secret keeps
+  // 70, and plan_source exists exactly once, on a version of its own. Whether
+  // that version is unique across the whole folder is tests/migrations-unique.
+  it("keeps master's migration 70 as delete_secret, and gives plan_source a version of its own", () => {
     const seventy = readFileSync("supabase/migrations/00000000000070_delete_secret.sql", "utf8");
     expect(seventy).toMatch(/delete_secret/);
     expect(existsSync("supabase/functions/delete-account/index.ts")).toBe(true);
     expect(existsSync("supabase/migrations/00000000000070_plan_source.sql")).toBe(false);
-    expect(existsSync("supabase/migrations/00000000000071_plan_source.sql")).toBe(true);
+
+    const planSource = readdirSync("supabase/migrations").filter((f) => f.endsWith("_plan_source.sql"));
+    expect(planSource).toHaveLength(1);
+    expect(planSource[0]).toMatch(/^\d{14}_plan_source\.sql$/);
   });
 });

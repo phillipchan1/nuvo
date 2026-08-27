@@ -168,9 +168,18 @@ const queryClient = new QueryClient({
       // Offline is announced once by the shell's strip — a red toast per
       // failing query on top of it is pure noise.
       if (typeof navigator !== "undefined" && !navigator.onLine) return;
+      // Queries retry on a timer, not on a tap. A fault that isn't going to
+      // clear on its own — a missing column, a function that never deployed —
+      // otherwise raises the same red toast on every refetch for the life of
+      // the session (useSubscription refetches every 5s while erroring) and
+      // fills the Recent errors log with 30 copies of one line. Say it, then
+      // stay quiet for a minute unless the message itself changes; the stable
+      // id means the re-announcement replaces the toast instead of stacking.
+      const source = String(query.queryKey[0] ?? "query");
       void reportAppError(e, {
-        source: String(query.queryKey[0] ?? "query"),
-        toast: (msg) => toast.error(msg),
+        source,
+        repeatAfterMs: 60_000,
+        toast: (msg) => toast.error(msg, { id: `query:${source}` }),
       });
     },
   }),

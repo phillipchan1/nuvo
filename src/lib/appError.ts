@@ -121,11 +121,39 @@ export async function formatAppError(error: unknown): Promise<{ message: string;
   return base;
 }
 
+/** Last (source → message, when) actually announced, for `repeatAfterMs`. */
+const lastReported = new Map<string, { message: string; at: number }>();
+
+/** Test seam — the throttle is module state, so a suite must be able to clear it. */
+export function resetReportThrottle(): void {
+  lastReported.clear();
+}
+
+/**
+ * Format an error, keep it, and (optionally) say it once.
+ *
+ * `repeatAfterMs` is for failures that repeat on a TIMER rather than on a
+ * user's act. The subscription read refetches every 5s for as long as it is
+ * erroring, so a permanent server-side fault — a migration that never landed,
+ * say — raised a red toast every five seconds for the life of the session and
+ * pushed 30 identical rows through the error log, evicting everything that
+ * would have explained it. Same source, same message, inside the window: keep
+ * it, don't re-announce it. A *different* message always speaks immediately.
+ */
 export async function reportAppError(
   error: unknown,
-  opts?: { source?: string; toast?: (message: string) => void },
+  opts?: { source?: string; toast?: (message: string) => void; repeatAfterMs?: number },
 ): Promise<string> {
   const formatted = await formatAppError(error);
+  if (opts?.repeatAfterMs != null) {
+    const key = opts.source ?? "";
+    const prev = lastReported.get(key);
+    const at = Date.now();
+    if (prev && prev.message === formatted.message && at - prev.at < opts.repeatAfterMs) {
+      return formatted.message;
+    }
+    lastReported.set(key, { message: formatted.message, at });
+  }
   rememberError({
     at: Date.now(),
     message: formatted.message,
