@@ -94,9 +94,10 @@ fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
     let win = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
-    // macOS 13.3+ WKWebView is not inspectable unless we say so — open_devtools
-    // alone is a silent no-op on a release build without this.
-    let _ = win.set_inspectable(true);
+    // No set_inspectable() call here: b165928 added one and it is not a method
+    // on WebviewWindow in Tauri 2.x, so every desktop build since died with
+    // E0599. What actually makes the webview inspectable in a release build is
+    // the `devtools` crate feature, on in Cargo.toml since 83240ab.
     win.open_devtools();
     Ok(())
 }
@@ -265,16 +266,17 @@ pub fn run() {
                 .build(),
         );
 
-    // StoreKit. The phone sells through Apple because the App Store requires
-    // it; the Mac app sells through Stripe. Both land on the same
-    // `subscriptions` row, so an account bought either way unlocks everywhere.
-    #[cfg(mobile)]
-    let builder = builder.plugin(tauri_plugin_purchases::init());
-
-    // Sign in with Apple's native sheet (guideline 4.8). iOS only — see the
-    // Cargo.toml note for why the Mac app doesn't carry the entitlement.
-    #[cfg(target_os = "ios")]
-    let builder = builder.plugin(tauri_plugin_siwa::init());
+    // NOTE: no StoreKit registration here. b165928 added
+    // `tauri_plugin_purchases::init()` under #[cfg(mobile)] and
+    // `tauri_plugin_siwa::init()` under #[cfg(target_os = "ios")]. Neither
+    // crate exists — Cargo.toml declares `tauri-plugin-nuvo-iap`, and there is
+    // no Sign-in-with-Apple dependency at all — so every iOS TestFlight build
+    // since has died at `cargo build` with E0433, and no new build could ship.
+    // StoreKit is already registered above (`tauri_plugin_nuvo_iap::init()`, on
+    // every platform, no-op off iOS); a second registration of the same plugin
+    // panics at startup anyway. Sign in with Apple is genuinely not built yet —
+    // `scripts/ios-siwa.rb` and `src-tauri/ios/Nuvo.entitlements` are untracked
+    // local work — so it needs its crate before it can be registered here.
 
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
