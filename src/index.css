@@ -1502,9 +1502,34 @@ body.nuvo-selecting * {
 }
 .slide-in-right { animation: slide-in-right var(--d-base) var(--ease-out) both; }
 
-/* Day-lens traversal (mobile Calendar): the arriving day slides in from the
-   direction you moved, so a swipe answers "which way did I go" without chrome.
-   Information, not decoration — and gone under reduced motion. */
+/* Time travel on the mobile Calendar (TimePager). Swipe left is later, swipe
+   right is earlier. The leaving page exits the way you pushed it; the arriving
+   page comes in from the other side. Finger-follow is a live transform — these
+   classes only settle the release. Information, not decoration. */
+.time-pager {
+  position: relative;
+  overflow: hidden;
+  overscroll-behavior-x: none;
+}
+.time-pager-layer {
+  width: 100%;
+  backface-visibility: hidden;
+}
+.time-pager-layer.is-aside {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+.time-pager-layer.is-settling {
+  transition: transform var(--d-slow) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .time-pager-layer.is-settling { transition-duration: 1ms; }
+}
+
+/* Kept as aliases so a leftover `day-in-*` class still reduces. The pager
+   owns traversal now — these 16px fades were the "show and hide". */
 @keyframes day-in-fwd {
   from { opacity: 0; transform: translateX(16px); }
   to { opacity: 1; transform: translateX(0); }

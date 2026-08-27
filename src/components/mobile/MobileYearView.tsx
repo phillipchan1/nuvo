@@ -19,9 +19,7 @@ import { Icon } from "../Icon";
 import TimeZoneChip from "../TimeZoneChip";
 import { YearLegend, YearMonth, loadLabel, spanLoad } from "../calendar/YearParts";
 import { buildYearLoads, type DayCtx } from "./dayPlan";
-import { startSwipe, trackSwipe, endSwipe, type SwipeTracker } from "./swipe";
-import { useRef } from "react";
-import { scrollParent } from "./dayPlan";
+import TimePager from "./TimePager";
 
 export default function MobileYearView({
   year,
@@ -61,12 +59,6 @@ export default function MobileYearView({
   // The only question still asked in prose — see the header block below.
   const anyLoad = useMemo(() => flat.some((l) => l.band !== "clear"), [flat]);
   const nothingYet = loading && !anyLoad;
-
-  // Horizontal swipe pages a year — the same gesture (and the same classifier)
-  // the month grid uses to page a month, so traversal means one thing on this
-  // calendar however far out you're standing.
-  const gridRef = useRef<HTMLDivElement>(null);
-  const touch = useRef<SwipeTracker | null>(null);
 
   return (
     <div>
@@ -119,38 +111,27 @@ export default function MobileYearView({
       {/* The wall. Two columns at 375px (a ~22px cell still reads as a shade),
           three once there's room. Each month is one tap target — well past
           44px — because a day cell here never can be. */}
-      <div
-        ref={gridRef}
-        className="grid touch-pan-y grid-cols-2 gap-x-3 gap-y-4 px-3 pb-6 min-[560px]:grid-cols-3"
-        onTouchStart={(e) => {
-          touch.current = startSwipe(e, scrollParent(gridRef.current));
-        }}
-        onTouchMove={() => trackSwipe(touch.current)}
-        onTouchEnd={(e) => {
-          const dir = endSwipe(touch.current, e);
-          touch.current = null;
-          if (dir === "left") onNext();
-          else if (dir === "right") onPrev();
-        }}
-      >
-        {months.map((m, i) => (
-          <button
-            key={i}
-            onClick={() => onPickMonth(startOfMonth(m))}
-            aria-label={`${format(m, "MMMM yyyy")} — ${loadLabel(spanLoad(byMonth[i]).band)}, ${spanLoad(byMonth[i]).clearDays} days clear`}
-            className="fast min-w-0 rounded-lg p-1 text-left active:bg-surface-2"
-          >
-            <YearMonth
-              month={m}
-              loads={byMonth[i]}
-              now={now}
-              weekStartsOn={weekStartsOn}
-              showNumbers={false}
-              showWeekdays={false}
-            />
-          </button>
-        ))}
-      </div>
+      <TimePager pageKey={String(year)} onPrev={onPrev} onNext={onNext}>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-4 px-3 pb-6 min-[560px]:grid-cols-3">
+          {months.map((m, i) => (
+            <button
+              key={i}
+              onClick={() => onPickMonth(startOfMonth(m))}
+              aria-label={`${format(m, "MMMM yyyy")} — ${loadLabel(spanLoad(byMonth[i]).band)}, ${spanLoad(byMonth[i]).clearDays} days clear`}
+              className="fast min-w-0 rounded-lg p-1 text-left active:bg-surface-2"
+            >
+              <YearMonth
+                month={m}
+                loads={byMonth[i]}
+                now={now}
+                weekStartsOn={weekStartsOn}
+                showNumbers={false}
+                showWeekdays={false}
+              />
+            </button>
+          ))}
+        </div>
+      </TimePager>
     </div>
   );
 }

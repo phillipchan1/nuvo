@@ -580,7 +580,7 @@ export default function MobileShell() {
             // sheet, the way `LeftRail` owns it on the desktop.
             //
             // No `meta`: inside a project's group the row's place is what you
-            // opened to get here. No `swipeActions`: the month grid under this
+            // opened to get here. No `swipeActions`: the calendar under this
             // crown pages horizontally, and swipe-to-defer would fight the pager.
             renderCrownTask={(t, { action, whenShown }) => (
               <TaskRow

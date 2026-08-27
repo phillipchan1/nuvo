@@ -147,14 +147,16 @@ it needs to work on a phone.
   layouts over it. **Never re-derive the slate in a surface** — that composition
   (`weekPushes` → `pushAsRock` → `priorityWork` → `splitFor`) lived inside `WeekPanel`, and
   that is exactly why the phone couldn't say what the week was carrying at all (D-110).
-  The phone's crown rides **every** Calendar lens (Month · List · Day · Week · Year), the
-  way the rail crown sits beside every desktop view — it shipped Month-only and that made
-  it a crown you had to back out to reach. The phone deliberately differs in three ways and
-  no more: it collapses — and shut it is ONE line drawn rather than written (a pip per
-  project in its domain's hue, filled when it landed; one amber light when something has no
-  time; a chevron), because a phone screen already saying a great deal cannot afford a
-  header that must be *read*; there is no ship circle (shipping is the record sheet's act — one vocabulary),
-  and loose work **taps** to its sheet instead of dragging. Verify both at once at `?weekcrown`
+  The phone's crown rides the **week-scoped** Calendar lenses (List · Day · Week) — the
+  context you read a Tuesday against (D-110). Month and Year answer a different question
+  (where is this span heavy / what's on the day you tapped), so the crown stays off them
+  (D-119); putting it only on Month was the original failure, taking it *off* Month is not
+  that. The phone deliberately differs in three ways and no more: it collapses — and shut
+  it is ONE line drawn rather than written (a pip per project in its domain's hue, filled
+  when it landed; one amber light when something has no time; a chevron), because a phone
+  screen already saying a great deal cannot afford a header that must be *read*; there is
+  no ship circle (shipping is the record sheet's act — one vocabulary), and loose work
+  **taps** to its sheet instead of dragging. Verify both at once at `?weekcrown`
   (`mobile/WeekCrownHarness.tsx`), which also renders the in-situ Calendar tab.
 - **The Build rungs wear the same four faces on both shells** — **On Deck · Groom · All
   (Table) · Shipped**, in that order, at the project *and* initiative altitudes. Desktop:

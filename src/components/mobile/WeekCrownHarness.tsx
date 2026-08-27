@@ -279,16 +279,17 @@ export default function WeekCrownHarness() {
                       )}
                     />
                     <div className="px-4 py-6 text-caption text-muted">
-                      (the month grid would continue here)
+                      (the week lens would continue here)
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* In situ — the crown where it actually ships, above the month
-                  grid. The calendar's own queries aren't seeded, so the grid is
-                  empty here; what this frame verifies is the composition: the
-                  crown, the month header under it, and no horizontal scroll. */}
+              {/* In situ — the crown where it actually ships, above a week-
+                  scoped lens (D-119). The calendar's own queries aren't seeded,
+                  so the grid is empty here; what this frame verifies is the
+                  composition: the crown, the week header under it, and no
+                  horizontal scroll. */}
               <div>
                 <div className="section-label !p-0 !pb-1">Phone · in situ (Calendar tab)</div>
                 <div
@@ -302,6 +303,7 @@ export default function WeekCrownHarness() {
                         phone never has. */}
                     <MobileCalendar
                       now={new Date()}
+                      initialMode="week"
                       onOpenProject={(id) => say(`open project ${id}`)}
                       onPlanWeek={() => say("plan the week")}
                       renderCrownTask={(t, { action, whenShown, draggable, dragData }) => (
