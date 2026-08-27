@@ -79,7 +79,29 @@ export default function TimePager({
   const touch = useRef<SwipeTracker | null>(null);
   const pointerId = useRef<number | null>(null);
   const suppressClick = useRef(false);
+  const paging = useRef(false);
   const reduce = prefersReducedMotion();
+
+  const page = (dir: "prev" | "next") => {
+    if (paging.current) return;
+    paging.current = true;
+    window.setTimeout(() => {
+      paging.current = false;
+    }, 400);
+    if (dir === "next") onNext();
+    else onPrev();
+  };
+
+  // A swipe that ends over the ‹ › buttons would otherwise also click them
+  // and skip a page (August → October). Eat the trailing click.
+  const swallowNextClick = () => {
+    const block = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    document.addEventListener("click", block, true);
+    window.setTimeout(() => document.removeEventListener("click", block, true), 400);
+  };
 
   useLayoutEffect(() => {
     const el = rootRef.current;
@@ -170,6 +192,7 @@ export default function TimePager({
     const hasPeek = commit === "next" ? peekNext : peekPrev;
     if (hasPeek && w > 0) {
       const target = commit === "next" ? -w : w;
+      swallowNextClick();
       setMode({ t: "swipe", tx, settling: true, commit });
       requestAnimationFrame(() => setMode({ t: "swipe", tx: target, settling: true, commit }));
       return;
@@ -181,8 +204,8 @@ export default function TimePager({
     const dir = commit === "next" ? 1 : -1;
     const outgoing = childrenRef.current;
     skipKeyAnim.current = true;
-    if (commit === "next") onNext();
-    else onPrev();
+    swallowNextClick();
+    page(commit);
     setMode({
       t: "swap",
       leaving: outgoing,
@@ -201,8 +224,7 @@ export default function TimePager({
       if (m.t === "swipe" && m.settling) {
         if (m.commit) {
           skipKeyAnim.current = true;
-          if (m.commit === "next") onNext();
-          else onPrev();
+          page(m.commit);
         }
         return { t: "idle" };
       }
